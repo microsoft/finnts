@@ -1,4 +1,52 @@
 
+#' Finn Forecast Framework
+#' 
+#' @param input_data A data frame or tibble of historical time series data. Can also include external regressors for both 
+#'   historical and future data. 
+#' @param combo_variables List of column headers within input data to be used to separate individual time series. 
+#' @param target_variable The column header formatted as a character value within input data you want to forecast.
+#' @param date_type The date granularity of the input data. Finn accepts the following as a character string
+#'   day, week, month, quarter, year.
+#' @param forecast_horizon Number of periods to forecast into the future.
+#' @param external_regressors List of column headers within input data to be used as features in multivariate models.
+#' @param run_name Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string. 
+#' @param hist_start_date Date value of when your input_data starts. Default of NULL is to use earliest date value in 
+#'   input_data.
+#' @param hist_end_date Date value of when your input_data ends.Default of NULL is to use the latest date value in 
+#'   input_data.
+#' @param combo_cleanup_date Date value to remove individual time series that don't contain non-zero values after 
+#'   that specified date. Default of NULL is to not remove any time series and attempt to forecast all of them. 
+#' @param fiscal_year_start Month number of start of fiscal year of input data, aids in building out date features. 
+#'   Formatted as a numeric value. Default of 1 assumes fiscal year starts in January. 
+#' @param clean_missing_values Should missing values be inputted? Only inputes values for missing data within an 
+#'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said 
+#'   values. 
+#' @param clean_outliers Should outliers be cleaned and inputted with values more in line with historical data?
+#' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
+#'   Default of 'auto' will automatially choose the number of back tests to run based on historical data size, 
+#'   which tries to always use a minimum of 80% of the data when training a model. 
+#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of 'auto' 
+#' @param modeling_approach test
+#' @param forecast_approach test
+#' @param parallel_processing test
+#' @param run_model_parallel test
+#' @param azure_batch_credentials test
+#' @param azure_batch_cluster_config test
+#' @param azure_batch_cluster_delete test
+#' @param target_log_transformation test
+#' @param negative_fcst test
+#' @param fourier_periods test
+#' @param lag_periods test
+#' @param rolling_window_periods test
+#' @param reticulate_environment test
+#' @param models_to_run test
+#' @param models_not_to_run test
+#' @param run_deep_learning test
+#' @param run_all_data test
+#' @param average_models test
+#' @param max_model_average test
+#' @param weekly_to_daily test
+#' 
 #' @export
 forecast_time_series <- function(
   input_data, # data frame of historical data to train models on
@@ -1468,11 +1516,11 @@ forecast_time_series <- function(
             as.matrix()
           
           if(fcst_approach == "standard_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, nodes = get_nodes(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
             colnames(ts_combined) <- colnames(data_ts)
           } else if(fcst_approach == "grouped_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, groups = get_groups(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
             colnames(ts_combined) <- colnames(data_ts)
           }
@@ -1486,6 +1534,8 @@ forecast_time_series <- function(
           
         },
         error = function(e){ 
+          print(value)
+          print(e)
           print('skipping')
         }
       )
