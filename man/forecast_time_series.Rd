@@ -81,48 +81,71 @@ values.}
 Default of 'auto' will automatially choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80\% of the data when training a model.}
 
-\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of 'auto'}
+\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data.}
 
-\item{modeling_approach}{test}
+\item{modeling_approach}{How Finn should approach your data. Current default and only option is 'accuracy'. In the
+future this could evolve to other areas like optimizing for interpretability over accuracy.}
 
-\item{forecast_approach}{test}
+\item{forecast_approach}{How the forecast is created. The default of 'bottoms_up' trains models for each individual
+time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
+a more traditional hierarchical time series to forecast, both based on the hts package.}
 
-\item{parallel_processing}{test}
+\item{parallel_processing}{Default of 'none' runs no parallel processing and forecasts each individual time series
+one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+runs time series in parallel on a remote compute cluster in Azure Batch.}
 
-\item{run_model_parallel}{test}
+\item{run_model_parallel}{Run model training in parallel, only works when parallel_processing is set to
+'local_machine' or 'azure_batch'.}
 
-\item{azure_batch_credentials}{test}
+\item{azure_batch_credentials}{Credentials to run parallel_processing in Azure Batch.}
 
-\item{azure_batch_cluster_config}{test}
+\item{azure_batch_cluster_config}{Compute cluster specification to run parallel_processing in Azure Batch.}
 
-\item{azure_batch_cluster_delete}{test}
+\item{azure_batch_cluster_delete}{Delete the Azure Batch compute cluster after Finn finished running.}
 
-\item{target_log_transformation}{test}
+\item{target_log_transformation}{Log transform target variable before training models.}
 
-\item{negative_fcst}{test}
+\item{negative_fcst}{Allow forecasts to dip below zero.}
 
-\item{fourier_periods}{test}
+\item{fourier_periods}{List of values to use in creating fourier series as features. Default of NULL automatically chooses
+these values based on the date_type.}
 
-\item{lag_periods}{test}
+\item{lag_periods}{List of values to use in creating lag features. Default of NULL automatically chooses these values
+based on date_type.}
 
-\item{rolling_window_periods}{test}
+\item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
+chooses these values based on date_type.}
 
-\item{reticulate_environment}{test}
+\item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
+Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
+that has python environment already installed.}
 
-\item{models_to_run}{test}
+\item{models_to_run}{List of models to run. Default of NULL runs all models.}
 
-\item{models_not_to_run}{test}
+\item{models_not_to_run}{List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
+any model.}
 
-\item{run_deep_learning}{test}
+\item{run_deep_learning}{Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
+models_not_to_run.}
 
-\item{run_all_data}{test}
+\item{run_all_data}{Run multivariate models on the entire data set (across all time series). Can be override by
+models_to_run and models_not_to_run.}
 
-\item{average_models}{test}
+\item{average_models}{Create simple averages of individual models.}
 
-\item{max_model_average}{test}
+\item{max_model_average}{Max number of models to average together. Will create model averages for 2 models up until input value
+or max number of models ran.}
 
-\item{weekly_to_daily}{test}
+\item{weekly_to_daily}{Convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
+up to higher temporal levels like month or quarter.}
+}
+\value{
+A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
 }
 \description{
-Finn Forecast Framework
+Calls the Finn forecast framework to automatically forecast any historical time series.
+}
+\examples{
+
 }

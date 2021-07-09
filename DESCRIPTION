@@ -5,7 +5,11 @@ Authors@R:
     c(person(given = "Mike",
            family = "Tokic",
            role = c("aut", "cre"),
-           email = "mitokic@microsoft.com"))
+           email = "mitokic@microsoft.com"), 
+      person(given = "Aadharsh",
+           family = "Kannan",
+           role = c("aut"),
+           email = "akannan@microsoft.com"))
 Description: The Finn time series forecasting framework is an automated way of producing various 
     forecasts within corporate finance teams. Finn can be used to forecast any component of the income 
     statement, balance sheet, or any other area of interest by finance. Any numerical quantity over time, 
