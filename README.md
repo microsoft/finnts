@@ -1,11 +1,11 @@
 # Finn Time Series Forecast Framework
 
-> This repo has been populated by an initial template to help get you started. Please
-> make sure to update the content to build a great experience for community-building.
-
 Finn is an automated time series forecasting framework developed by Microsoft to be used in financial 
 forecast and beyond. 
 
+- Automated feature engineering, back testing, and model selection. 
+- Access to 25+ models. Univariate, multivariate, and deep learning models all included. 
+- Azure Batch integration to run thousands of time series in parallel within the cloud. 
 - Supports daily, weekly, monthly, quarterly, and yearly forecasts. 
 - Handles external regressors, either purely historical or historical+future values.
 
