@@ -1,7 +1,7 @@
 # Finn Time Series Forecast Framework
 
 Finn is an automated time series forecasting framework developed by Microsoft to be used in financial 
-forecast and beyond. 
+forecasting and beyond! 
 
 - Automated feature engineering, back testing, and model selection. 
 - Access to 25+ models. Univariate, multivariate, and deep learning models all included. 
