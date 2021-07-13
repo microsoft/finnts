@@ -604,7 +604,6 @@ nnetar <- function(train_data, frequency, horizon, parallel, tscv_initial,
   return(wflw_fit_nnetar_tscv)
 } 
 
-
 nnetar_xregs <- function(train_data, frequency, horizon, parallel, tscv_initial, date_rm_regex, 
                          fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
   
@@ -886,7 +885,6 @@ prophet_xregs <- function(train_data, parallel, horizon, tscv_initial, date_rm_r
   
   return(wflw_fit_prophet_xregs)
 }
-
 
 snaive <- function(train_data, frequency, models_to_run, models_not_to_run) {
   

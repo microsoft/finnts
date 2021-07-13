@@ -1,4 +1,5 @@
 # * Multivariate data prep function----
+
 multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_values_list, fourier_periods, 
                                        lag_periods, rolling_window_periods) {
   
