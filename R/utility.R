@@ -1,3 +1,14 @@
+# * package start up message ----
+
+.onAttach <- function(libname, pkgname) {
+  packageStartupMessage(
+    cli::cli({
+      cli::cli_text("To run deep learning, make sure gluonts python environemnt is set up correctly.") 
+      cli::cli_ul("https://business-science.github.io/modeltime.gluonts/articles/managing-envs.html")
+    })
+  )
+}
+
 # * cbind.fill custom function ----
 #create function to cbind dataframes that contain different amounts of rows
 #https://github.com/cvarrichio/rowr/blob/master/R/rowr.R

@@ -74,6 +74,7 @@
 #'   date_type = "month", 
 #'   forecast_horizon = 3, 
 #'   run_model_parallel = FALSE,
+#'   back_test_scenarios = 6,
 #'   models_to_run = c("arima", "ets", "snaive"))
 #'   
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -116,7 +117,7 @@ forecast_time_series <- function(
   max_model_average = 4,
   weekly_to_daily = TRUE
 ) {
-
+  
   # 1. Load Environment Info ----
   
   if(!is.null(reticulate_environment)) {
@@ -360,6 +361,8 @@ forecast_time_series <- function(
   }
   
   # 4. Prep Data ----
+  
+  cli::cli_h1("Prepping Data")
   
   # * Original Data ----
   data_tbl <- input_data %>%
@@ -656,7 +659,7 @@ forecast_time_series <- function(
   
   forecast_models <- function(combo_value) {
     
-    print(combo_value)
+    cli::cli_h2("Running Combo: {combo_value}")
     
     #filter on specific combo or all data
     model_name_suffix <- ""
@@ -674,6 +677,7 @@ forecast_time_series <- function(
       model_name_suffix <- "-all"
     }
     
+    cli::cli_h3("Initial Feature Engineering")
     
     #recipe 1: standard feature engineering
     run_data_full_recipe_1 <- run_data_full_tbl %>%
@@ -723,6 +727,8 @@ forecast_time_series <- function(
     #parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
       
+      cli::cli_h3("Creating Parallel Processing")
+      
       cores <- parallel::detectCores()
       cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
@@ -733,9 +739,10 @@ forecast_time_series <- function(
       }
     }
     
-    print("data_prepped")
-    
     #Run Individual Time Series Models
+    
+    cli::cli_h3("Individual Model Training")
+    
     if(combo_value != "All-Data") {
       
       #Auto ARIMA
@@ -874,10 +881,13 @@ forecast_time_series <- function(
     try(xgboost_r2 <- xgboost(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("xgboost-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
     try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, xgboost_r2, location = "top") %>% update_model_description(1, paste0("xgboost-R2", model_name_suffix)), silent = TRUE)
     
-    print(combined_models_recipe_1)
-    print(combined_models_recipe_2)
+    #print(combined_models_recipe_1)
+    #print(combined_models_recipe_2)
     
     #create resamples for back testing forecasts and ensemble training data
+    
+    cli::cli_h3("Refitting Individual Models")
+    
     resamples_tscv_recipe_1 <- run_data_full_recipe_1 %>%
       timetk::time_series_cv(
         date_var = Date,
@@ -990,9 +1000,9 @@ forecast_time_series <- function(
     is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial, is.nan)
     ensemble_train_data_initial[is.na(ensemble_train_data_initial)] = 0.01
     
-    print('prep_ensemble')
-    
     #create modeltime table to add ensembled trained models to
+    cli::cli_h3("Ensemble Model Training")
+    
     combined_ensemble_models <- modeltime::modeltime_table()
     
     #Cubist ensemble
@@ -1036,9 +1046,11 @@ forecast_time_series <- function(
     #try(combined_models <- modeltime::add_modeltime_model(combined_models, ensemble_fit_mean, location = "top") %>% update_model_description(1, paste0("average-ensemble", model_name_suffix)), silent = TRUE)
     #print('avg-ensemble')
     
-    print(combined_ensemble_models)
+    #print(combined_ensemble_models)
     
     #create ensemble resamples to train future and back test folds
+    cli::cli_h3("Refitting Ensemble Models")
+    
     ensemble_tscv <- submodels_resample_tscv_tbl %>% 
       dplyr::select(-.id) %>%
       tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
@@ -1146,6 +1158,8 @@ forecast_time_series <- function(
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
     
     #Create forecast output
+    cli::cli_h3("Create Forecast Output")
+    
     fcst_tbl <- fcst_tbl %>%
       rbind(
         submodels_resample_tscv_tbl %>%
@@ -1168,6 +1182,9 @@ forecast_time_series <- function(
   }
   
   # * Run Forecast ----
+  
+  cli::cli_h1("Kicking off Finn Modeling Process")
+  
   if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
   } else{
@@ -1192,7 +1209,7 @@ forecast_time_series <- function(
                                   'timetk', 'hts', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
                                   'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
                                   "doParallel", "parallel"), 
-                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
+                    .export = c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
                                 "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
                                 "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
                                 "multivariate_prep_recipe_1", "multivariate_prep_recipe_2")) %dopar% {forecast_models(i)}
@@ -1214,7 +1231,7 @@ forecast_time_series <- function(
                                   'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
                                   'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
                                   "doParallel", "parallel"), 
-                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
+                    .export = c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
                                 "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
                                 "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
                                 "multivariate_prep_recipe_1", "multivariate_prep_recipe_2"),
@@ -1241,6 +1258,8 @@ forecast_time_series <- function(
   model_list <- unique(fcst$Model)
   
   if(length(model_list) > 1 & average_models) {
+    
+    cli::cli_h1("Creating Simple Model Averages")
     
     fcst_prep <- fcst %>%
       tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
@@ -1359,6 +1378,10 @@ forecast_time_series <- function(
   
   # 6. Final Finn Outputs ----
   
+  cli::cli_h1("Final Finn Outputs")
+  
+  cli::cli_h3("Selecting Best Model")
+  
   #get back test results and replace missing model/back test scenario combos with zero
   back_test_initial <- fcst_combination %>%
     dplyr::filter(.id != "Final_FCST") %>%
@@ -1429,7 +1452,7 @@ forecast_time_series <- function(
     temp_best_model <- accuracy_final %>%
       dplyr::filter(Combo == combo)
     
-    print(combo)
+    #print(combo)
     
     temp <- fcst_combination %>%
       dplyr::filter(Combo == combo) %>%
@@ -1463,6 +1486,8 @@ forecast_time_series <- function(
   
   # reconcile a hierarchical forecast
   if(forecast_approach != "bottoms_up") {
+    
+    cli::cli_h3("Reconciling Hierarchical Forecast")
     
     #create tibble to append reconciled fcsts to
     reconciled_fcst <- tibble::tibble()

@@ -20,7 +20,7 @@ arima <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_auto_arima <- wflw_spec_arima %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("arima")
+  cli::cli_alert_success("arima")
   
   return(model_fit_auto_arima)
 }
@@ -94,7 +94,7 @@ arima_boost <- function(train_data, frequency, parallel, horizon, tscv_initial, 
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("arima-boost")
+  cli::cli_alert_success("arima-boost")
   
   return(wflw_fit_arima_boost)
 }
@@ -176,8 +176,8 @@ cubist <- function(train_data, parallel, model_type = "single", horizon, tscv_in
   wflw_fit_cubist <- wflw_spec_tune_cubist %>%
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
-  
-  print(model_name)
+
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_cubist)
   
@@ -200,7 +200,7 @@ croston <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_croston <- wflw_spec_croston %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("croston")
+  cli::cli_alert_success("croston")
   
   return(model_fit_croston)
 }
@@ -230,7 +230,7 @@ deepar <- function(train_data, horizon, frequency, model_name, run_deep_learning
     workflows::add_recipe(recipe_spec_gluon) %>%
     generics::fit(train_data)
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_deepar_1)
 }
@@ -257,7 +257,7 @@ ets <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_ets <- wflw_spec_ets %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('ets')
+  cli::cli_alert_success("ets")
   
   return(model_fit_ets)
 }
@@ -346,7 +346,7 @@ glmnet <- function(train_data, parallel, model_type = "single", horizon, tscv_in
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_glmnet)
 }
@@ -396,6 +396,8 @@ lightgbm <- function(train_data, parallel, models_to_run, models_not_to_run) {
   wflw_fit_lightgbm <- wflw_spec_tune_lightgbm %>%
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
+  
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_lightgbm)
 }
@@ -474,7 +476,7 @@ mars <- function(train_data, parallel, model_type = "single", horizon, tscv_init
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_mars)
 }
@@ -500,7 +502,7 @@ meanf <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_meanf <- wflw_spec_meanf %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('meanf')
+  cli::cli_alert_success("meanf")
   
   return(model_fit_meanf)
 }
@@ -530,7 +532,7 @@ nbeats <- function(train_data, horizon, frequency, model_name, run_deep_learning
     workflows::add_recipe(recipe_spec_gluon) %>%
     generics::fit(train_data)
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_nbeats)
   
@@ -599,7 +601,7 @@ nnetar <- function(train_data, frequency, horizon, parallel, tscv_initial,
     ) %>%
     generics::fit(train_data)
   
-  print('nnetar')
+  cli::cli_alert_success("nnetar")
   
   return(wflw_fit_nnetar_tscv)
 } 
@@ -678,7 +680,7 @@ nnetar_xregs <- function(train_data, frequency, horizon, parallel, tscv_initial,
     ) %>%
     generics::fit(train_data)
   
-  print('nnetar-xregs')
+  cli::cli_alert_success("nnetar-xregs")
   
   return(wflw_fit_nnetar_tscv)
 } 
@@ -734,7 +736,7 @@ prophet <- function(train_data, parallel, horizon, tscv_initial, back_test_spaci
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("prophet")
+  cli::cli_alert_success("prophet")
   
   return(wflw_fit_prophet)
   
@@ -812,7 +814,7 @@ prophet_boost <- function(train_data, parallel, horizon, tscv_initial, date_rm_r
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("prophet-boost")
+  cli::cli_alert_success("prophet-boost")
   
   return(wflw_fit_prophet_boost)
 }
@@ -882,7 +884,7 @@ prophet_xregs <- function(train_data, parallel, horizon, tscv_initial, date_rm_r
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("prophet-xregs")
+  cli::cli_alert_success("prophet-xregs")
   
   return(wflw_fit_prophet_xregs)
 }
@@ -906,7 +908,7 @@ snaive <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_snaive <- wflw_spec_snaive %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('snaive')
+  cli::cli_alert_success("snaive")
   
   return(model_fit_snaive)
 }
@@ -933,7 +935,7 @@ stlm_arima <- function(train_data, seasonal_period, models_to_run, models_not_to
   model_fit_stlm_arima <- wflw_spec_stlm_arima %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('stlm-arima')
+  cli::cli_alert_success("stlm-arima")
   
   return(model_fit_stlm_arima)
 }
@@ -960,7 +962,7 @@ stlm_ets <- function(train_data, seasonal_period, models_to_run, models_not_to_r
   model_fit_stlm_ets <- wflw_spec_stlm_ets %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('stlm-ets')
+  cli::cli_alert_success("stlm-ets")
   
   return(model_fit_stlm_ets)
 }
@@ -1044,7 +1046,7 @@ svm_poly <- function(train_data, parallel, model_type = "single", horizon, tscv_
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_svm)
   
@@ -1127,7 +1129,7 @@ svm_rbf <- function(train_data, parallel, model_type = "single", horizon, tscv_i
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_svm)
   
@@ -1178,8 +1180,9 @@ tabnet <- function(train_data, parallel, models_to_run, models_not_to_run) {
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  return(wflw_fit_tabnet)
+  cli::cli_alert_success(model_name)
   
+  return(wflw_fit_tabnet)
 }
 
 tbats <- function(train_data, seasonal_period, models_to_run, models_not_to_run) {
@@ -1204,7 +1207,7 @@ tbats <- function(train_data, seasonal_period, models_to_run, models_not_to_run)
   model_fit_tbats <- wflw_spec_tbats %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print('tbats')
+  cli::cli_alert_success("tbats")
   
   return(model_fit_tbats)
 }
@@ -1226,7 +1229,7 @@ theta <- function(train_data, frequency, models_to_run, models_not_to_run) {
   model_fit_theta <- wflw_spec_theta %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print("theta")
+  cli::cli_alert_success("theta")
   
   return(model_fit_theta)
 }
@@ -1308,7 +1311,7 @@ xgboost <- function(train_data, parallel, model_type = "single", horizon, tscv_i
     tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
   
-  print(model_name)
+  cli::cli_alert_success(model_name)
   
   return(wflw_fit_xgboost)
 }
