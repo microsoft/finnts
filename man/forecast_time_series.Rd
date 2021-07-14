@@ -147,5 +147,13 @@ A list of three separate data sets: the future forecast, the back test results, 
 Calls the Finn forecast framework to automatically forecast any historical time series.
 }
 \examples{
-
+finn_forecast <- forecast_time_series(
+  input_data = m750 \%>\% dplyr::rename(Date = date), 
+  combo_variables = c("id"), 
+  target_variable = "value", 
+  date_type = "month", 
+  forecast_horizon = 3, 
+  run_model_parallel = FALSE,
+  models_to_run = c("arima", "ets", "snaive"))
+  
 }
