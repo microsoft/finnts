@@ -888,6 +888,18 @@ forecast_time_series <- function(
     
     cli::cli_h3("Refitting Individual Models")
     
+    if((is.null(models_to_run) | sum(grepl("ensemble", models_to_run))>0) & sum(grepl("ensemble", models_not_to_run)) < 5) { #replace number 5 with real logic...
+      
+      slice_limit_amount <- 100
+      run_ensemble_models <- TRUE
+      
+    } else {
+      slice_limit_amount <- back_test_scenarios
+      run_ensemble_models <- FALSE
+    }
+    
+    print(slice_limit_amount)
+    
     resamples_tscv_recipe_1 <- run_data_full_recipe_1 %>%
       timetk::time_series_cv(
         date_var = Date,
@@ -895,7 +907,7 @@ forecast_time_series <- function(
         assess = forecast_horizon,
         skip = back_test_spacing,
         cumulative = TRUE,
-        slice_limit = 100)
+        slice_limit = slice_limit_amount)
     
     resamples_tscv_recipe_2 <- run_data_full_recipe_2 %>%
       timetk::time_series_cv(
@@ -904,7 +916,7 @@ forecast_time_series <- function(
         assess = forecast_horizon,
         skip = back_test_spacing,
         cumulative = TRUE,
-        slice_limit = 100) %>%
+        slice_limit = slice_limit_amount) %>%
       timetk::tk_time_series_cv_plan()
     
     #correctly filter test split to correct horizons per date
@@ -1000,159 +1012,323 @@ forecast_time_series <- function(
     is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial, is.nan)
     ensemble_train_data_initial[is.na(ensemble_train_data_initial)] = 0.01
     
-    #create modeltime table to add ensembled trained models to
-    cli::cli_h3("Ensemble Model Training")
-    
-    combined_ensemble_models <- modeltime::modeltime_table()
-    
-    #Cubist ensemble
-    #cubist_ensemble <- cubist(train_data = submodels_resample_tscv_tbl %>% dplyr::filter(Date <= hist_end_date), parallel = run_model_parallel)
-    try(cubist_ensemble <- cubist(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("cubist-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, cubist_ensemble, location = "top") %>% update_model_description(1, paste0("cubist-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #glmnet ensemble
-    #glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = FALSE, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex)
-    try(glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("glmnet-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, glmnet_ensemble, location = "top") %>% update_model_description(1, paste0("glmnet-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #Light GBM ensemble
-    #lightgbm_ensemble <- lightgbm_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
-    #combined_models <- modeltime::add_modeltime_model(combined_models, lightgbm_ensemble, location = "top") %>% update_model_description(1, paste0("lightgbm-ensemble", model_name_suffix))
-    
-    #MARS ensemble
-    #try(mars_ensemble <- mars_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel), silent= TRUE)
-    #try(combined_models <- modeltime::add_modeltime_model(combined_models, mars_ensemble, location = "top") %>% update_model_description(1, paste0("mars-ensemble", model_name_suffix)), silent = TRUE)
-    #print('mars-ensemble')
-    
-    #nnet ensemble
-    #nnet_ensemble <- nnet_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
-    #combined_models <- modeltime::add_modeltime_model(combined_models, nnet_ensemble, location = "top") %>% update_model_description(1, paste0("nnet-ensemble", model_name_suffix))
-    
-    #svm ensemble - polynomial
-    try(svm_poly_ensemble <- svm_poly(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-poly-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_poly_ensemble, location = "top") %>% update_model_description(1, paste0("svm-poly-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #svm ensemble - radial basis function
-    try(svm_rbf_ensemble <- svm_rbf(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-rbf-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_rbf_ensemble, location = "top") %>% update_model_description(1, paste0("svm-rbf-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #xgboost ensemble
-    #xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year")
-    try(xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("xgboost-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, xgboost_ensemble, location = "top") %>% update_model_description(1, paste0("xgboost-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #Average of all models
-    #try(ensemble_fit_mean <- combined_models %>% modeltime.ensemble::ensemble_average(type = "mean"), silent = TRUE)
-    #try(combined_models <- modeltime::add_modeltime_model(combined_models, ensemble_fit_mean, location = "top") %>% update_model_description(1, paste0("average-ensemble", model_name_suffix)), silent = TRUE)
-    #print('avg-ensemble')
-    
-    #print(combined_ensemble_models)
-    
-    #create ensemble resamples to train future and back test folds
-    cli::cli_h3("Refitting Ensemble Models")
-    
-    ensemble_tscv <- submodels_resample_tscv_tbl %>% 
-      dplyr::select(-.id) %>%
-      tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
-      timetk::time_series_cv(
-        date_var = Date,
-        initial = "1 year",
-        assess = forecast_horizon,
-        skip = back_test_spacing,
-        cumulative = TRUE,
-        slice_limit = back_test_scenarios) %>%
-      timetk::tk_time_series_cv_plan() %>%
-      dplyr::mutate(Horizon_char = as.character(Horizon))
-    
-    #return(ensemble_tscv)
-    
-    #Replace NaN/Inf with NA, then replace with zero
-    is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
-    is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.nan)
-    ensemble_tscv[is.na(ensemble_tscv)] = 0.01
-    
-    #correctly filter test split to correct horizons per date
-    rsplit_ensemble_function <- function(slice) {
-      
-      train <- ensemble_tscv %>%
-        dplyr::filter(.id == slice, 
-                      .key == "training")
-      
-      horizon <- 1
-      
-      test_dates <- ensemble_tscv %>%
-        dplyr::filter(.id == slice, 
-                      .key == "testing")
-      
-      test <- tibble::tibble()
-      
-      for(date in unique(test_dates$Date)) {
-        
-        date_horizon_tbl <- ensemble_tscv %>%
-          dplyr::filter(.id == slice, 
-                        .key == "testing", 
-                        Date == date, 
-                        Horizon == horizon)
-        
-        test <- rbind(test, date_horizon_tbl)
-        
-        horizon <- horizon+1
-        
-      }
-      
-      slice_tbl <- train %>%
-        rbind(test) %>%
-        dplyr::select(-.id, -.key)
-      
-      rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)), assessment = nrow(train) + seq(nrow(test))), class = "ts_cv_split")
-      
-      return(rsplit_obj)
-    }
-    
-    ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), .f=rsplit_ensemble_function)
-    
-    ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, ids = unique(ensemble_tscv$.id), subclass = c("time_series_cv", "rset"))
-    
+    #ensemble models
     fcst_tbl <- tibble::tibble()
     
-    if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
-      ensemble_fcst <- combined_ensemble_models %>%
-        modeltime.resample::modeltime_fit_resamples(
-          resamples = ensemble_tscv_final,
-          control = tune::control_resamples(
-            verbose = TRUE,
-            allow_par = run_model_parallel)) %>%
-        modeltime.resample::unnest_modeltime_resamples() %>%
-        dplyr::mutate(.id = .resample_id, 
-                      Model = .model_desc, 
-                      FCST = .pred) %>%
-        dplyr::select(.id, Model, FCST, .row) %>%
-        dplyr::left_join(
-          ensemble_tscv_final %>%
-            timetk::tk_time_series_cv_plan() %>%
-            dplyr::group_by(.id) %>%
-            dplyr::mutate(.row = dplyr::row_number()) %>%
-            dplyr::ungroup()) %>%
-        dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+    if(run_ensemble_models) {
       
-      fcst_tbl <- ensemble_fcst %>%
-        tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
-        dplyr::mutate(Number = as.numeric(Number)) %>%
-        dplyr::filter(Number == 1) %>%
-        dplyr::select(-Slice, -Number) %>%
-        dplyr::mutate(.id = "Final_FCST") %>%
-        rbind(
-          ensemble_fcst %>%
-            dplyr::filter(Date <= hist_end_date) %>%
-            tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
-            dplyr::mutate(Number = as.numeric(Number) - 1) %>%
-            dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
-                          .id = paste0("Back_Test_", Number_Char)) %>%
-            dplyr::select(-Slice, -Number, -Number_Char))
-      #dplyr::mutate(.id = paste0("Back_Test_", as.numeric(Number)-1)) %>%
-      #dplyr::select(-Number, -Slice))
+      #create modeltime table to add ensembled trained models to
+      cli::cli_h3("Ensemble Model Training")
+      
+      combined_ensemble_models <- modeltime::modeltime_table()
+      
+      #Cubist ensemble
+      #cubist_ensemble <- cubist(train_data = submodels_resample_tscv_tbl %>% dplyr::filter(Date <= hist_end_date), parallel = run_model_parallel)
+      try(cubist_ensemble <- cubist(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("cubist-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, cubist_ensemble, location = "top") %>% update_model_description(1, paste0("cubist-ensemble", model_name_suffix)), silent = TRUE)
+      
+      #glmnet ensemble
+      #glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = FALSE, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex)
+      try(glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("glmnet-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, glmnet_ensemble, location = "top") %>% update_model_description(1, paste0("glmnet-ensemble", model_name_suffix)), silent = TRUE)
+      
+      #Light GBM ensemble
+      #lightgbm_ensemble <- lightgbm_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
+      #combined_models <- modeltime::add_modeltime_model(combined_models, lightgbm_ensemble, location = "top") %>% update_model_description(1, paste0("lightgbm-ensemble", model_name_suffix))
+      
+      #MARS ensemble
+      #try(mars_ensemble <- mars_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel), silent= TRUE)
+      #try(combined_models <- modeltime::add_modeltime_model(combined_models, mars_ensemble, location = "top") %>% update_model_description(1, paste0("mars-ensemble", model_name_suffix)), silent = TRUE)
+      #print('mars-ensemble')
+      
+      #nnet ensemble
+      #nnet_ensemble <- nnet_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
+      #combined_models <- modeltime::add_modeltime_model(combined_models, nnet_ensemble, location = "top") %>% update_model_description(1, paste0("nnet-ensemble", model_name_suffix))
+      
+      #svm ensemble - polynomial
+      try(svm_poly_ensemble <- svm_poly(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-poly-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_poly_ensemble, location = "top") %>% update_model_description(1, paste0("svm-poly-ensemble", model_name_suffix)), silent = TRUE)
+      
+      #svm ensemble - radial basis function
+      try(svm_rbf_ensemble <- svm_rbf(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-rbf-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_rbf_ensemble, location = "top") %>% update_model_description(1, paste0("svm-rbf-ensemble", model_name_suffix)), silent = TRUE)
+      
+      #xgboost ensemble
+      #xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year")
+      try(xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("xgboost-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, xgboost_ensemble, location = "top") %>% update_model_description(1, paste0("xgboost-ensemble", model_name_suffix)), silent = TRUE)
+      
+      #Average of all models
+      #try(ensemble_fit_mean <- combined_models %>% modeltime.ensemble::ensemble_average(type = "mean"), silent = TRUE)
+      #try(combined_models <- modeltime::add_modeltime_model(combined_models, ensemble_fit_mean, location = "top") %>% update_model_description(1, paste0("average-ensemble", model_name_suffix)), silent = TRUE)
+      #print('avg-ensemble')
+      
+      #print(combined_ensemble_models)
+      
+      #create ensemble resamples to train future and back test folds
+      cli::cli_h3("Refitting Ensemble Models")
+      
+      ensemble_tscv <- submodels_resample_tscv_tbl %>% 
+        dplyr::select(-.id) %>%
+        tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
+        timetk::time_series_cv(
+          date_var = Date,
+          initial = "1 year",
+          assess = forecast_horizon,
+          skip = back_test_spacing,
+          cumulative = TRUE,
+          slice_limit = back_test_scenarios) %>%
+        timetk::tk_time_series_cv_plan() %>%
+        dplyr::mutate(Horizon_char = as.character(Horizon))
+      
+      #return(ensemble_tscv)
+      
+      #Replace NaN/Inf with NA, then replace with zero
+      is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
+      is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.nan)
+      ensemble_tscv[is.na(ensemble_tscv)] = 0.01
+      
+      #correctly filter test split to correct horizons per date
+      rsplit_ensemble_function <- function(slice) {
+        
+        train <- ensemble_tscv %>%
+          dplyr::filter(.id == slice, 
+                        .key == "training")
+        
+        horizon <- 1
+        
+        test_dates <- ensemble_tscv %>%
+          dplyr::filter(.id == slice, 
+                        .key == "testing")
+        
+        test <- tibble::tibble()
+        
+        for(date in unique(test_dates$Date)) {
+          
+          date_horizon_tbl <- ensemble_tscv %>%
+            dplyr::filter(.id == slice, 
+                          .key == "testing", 
+                          Date == date, 
+                          Horizon == horizon)
+          
+          test <- rbind(test, date_horizon_tbl)
+          
+          horizon <- horizon+1
+          
+        }
+        
+        slice_tbl <- train %>%
+          rbind(test) %>%
+          dplyr::select(-.id, -.key)
+        
+        rsplit_obj <- slice_tbl %>%
+          rsample::make_splits(ind = list(analysis = seq(nrow(train)), assessment = nrow(train) + seq(nrow(test))), class = "ts_cv_split")
+        
+        return(rsplit_obj)
+      }
+      
+      ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), .f=rsplit_ensemble_function)
+      
+      ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, ids = unique(ensemble_tscv$.id), subclass = c("time_series_cv", "rset"))
+      
+      fcst_tbl <- tibble::tibble()
+      
+      if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
+        ensemble_fcst <- combined_ensemble_models %>%
+          modeltime.resample::modeltime_fit_resamples(
+            resamples = ensemble_tscv_final,
+            control = tune::control_resamples(
+              verbose = TRUE,
+              allow_par = run_model_parallel)) %>%
+          modeltime.resample::unnest_modeltime_resamples() %>%
+          dplyr::mutate(.id = .resample_id, 
+                        Model = .model_desc, 
+                        FCST = .pred) %>%
+          dplyr::select(.id, Model, FCST, .row) %>%
+          dplyr::left_join(
+            ensemble_tscv_final %>%
+              timetk::tk_time_series_cv_plan() %>%
+              dplyr::group_by(.id) %>%
+              dplyr::mutate(.row = dplyr::row_number()) %>%
+              dplyr::ungroup()) %>%
+          dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+        
+        fcst_tbl <- ensemble_fcst %>%
+          tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
+          dplyr::mutate(Number = as.numeric(Number)) %>%
+          dplyr::filter(Number == 1) %>%
+          dplyr::select(-Slice, -Number) %>%
+          dplyr::mutate(.id = "Final_FCST") %>%
+          rbind(
+            ensemble_fcst %>%
+              dplyr::filter(Date <= hist_end_date) %>%
+              tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
+              dplyr::mutate(Number = as.numeric(Number) - 1) %>%
+              dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
+                            .id = paste0("Back_Test_", Number_Char)) %>%
+              dplyr::select(-Slice, -Number, -Number_Char))
+        #dplyr::mutate(.id = paste0("Back_Test_", as.numeric(Number)-1)) %>%
+        #dplyr::select(-Number, -Slice))
+      }
+      
     }
+    # #create modeltime table to add ensembled trained models to
+    # cli::cli_h3("Ensemble Model Training")
+    # 
+    # combined_ensemble_models <- modeltime::modeltime_table()
+    # 
+    # #Cubist ensemble
+    # #cubist_ensemble <- cubist(train_data = submodels_resample_tscv_tbl %>% dplyr::filter(Date <= hist_end_date), parallel = run_model_parallel)
+    # try(cubist_ensemble <- cubist(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("cubist-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+    # try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, cubist_ensemble, location = "top") %>% update_model_description(1, paste0("cubist-ensemble", model_name_suffix)), silent = TRUE)
+    # 
+    # #glmnet ensemble
+    # #glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = FALSE, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex)
+    # try(glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("glmnet-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+    # try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, glmnet_ensemble, location = "top") %>% update_model_description(1, paste0("glmnet-ensemble", model_name_suffix)), silent = TRUE)
+    # 
+    # #Light GBM ensemble
+    # #lightgbm_ensemble <- lightgbm_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
+    # #combined_models <- modeltime::add_modeltime_model(combined_models, lightgbm_ensemble, location = "top") %>% update_model_description(1, paste0("lightgbm-ensemble", model_name_suffix))
+    # 
+    # #MARS ensemble
+    # #try(mars_ensemble <- mars_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel), silent= TRUE)
+    # #try(combined_models <- modeltime::add_modeltime_model(combined_models, mars_ensemble, location = "top") %>% update_model_description(1, paste0("mars-ensemble", model_name_suffix)), silent = TRUE)
+    # #print('mars-ensemble')
+    # 
+    # #nnet ensemble
+    # #nnet_ensemble <- nnet_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
+    # #combined_models <- modeltime::add_modeltime_model(combined_models, nnet_ensemble, location = "top") %>% update_model_description(1, paste0("nnet-ensemble", model_name_suffix))
+    # 
+    # #svm ensemble - polynomial
+    # try(svm_poly_ensemble <- svm_poly(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-poly-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+    # try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_poly_ensemble, location = "top") %>% update_model_description(1, paste0("svm-poly-ensemble", model_name_suffix)), silent = TRUE)
+    # 
+    # #svm ensemble - radial basis function
+    # try(svm_rbf_ensemble <- svm_rbf(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-rbf-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+    # try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_rbf_ensemble, location = "top") %>% update_model_description(1, paste0("svm-rbf-ensemble", model_name_suffix)), silent = TRUE)
+    # 
+    # #xgboost ensemble
+    # #xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year")
+    # try(xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("xgboost-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
+    # try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, xgboost_ensemble, location = "top") %>% update_model_description(1, paste0("xgboost-ensemble", model_name_suffix)), silent = TRUE)
+    # 
+    # #Average of all models
+    # #try(ensemble_fit_mean <- combined_models %>% modeltime.ensemble::ensemble_average(type = "mean"), silent = TRUE)
+    # #try(combined_models <- modeltime::add_modeltime_model(combined_models, ensemble_fit_mean, location = "top") %>% update_model_description(1, paste0("average-ensemble", model_name_suffix)), silent = TRUE)
+    # #print('avg-ensemble')
+    # 
+    # #print(combined_ensemble_models)
+    # 
+    # #create ensemble resamples to train future and back test folds
+    # cli::cli_h3("Refitting Ensemble Models")
+    # 
+    # ensemble_tscv <- submodels_resample_tscv_tbl %>% 
+    #   dplyr::select(-.id) %>%
+    #   tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
+    #   timetk::time_series_cv(
+    #     date_var = Date,
+    #     initial = "1 year",
+    #     assess = forecast_horizon,
+    #     skip = back_test_spacing,
+    #     cumulative = TRUE,
+    #     slice_limit = back_test_scenarios) %>%
+    #   timetk::tk_time_series_cv_plan() %>%
+    #   dplyr::mutate(Horizon_char = as.character(Horizon))
+    # 
+    # #return(ensemble_tscv)
+    # 
+    # #Replace NaN/Inf with NA, then replace with zero
+    # is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
+    # is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.nan)
+    # ensemble_tscv[is.na(ensemble_tscv)] = 0.01
+    # 
+    # #correctly filter test split to correct horizons per date
+    # rsplit_ensemble_function <- function(slice) {
+    #   
+    #   train <- ensemble_tscv %>%
+    #     dplyr::filter(.id == slice, 
+    #                   .key == "training")
+    #   
+    #   horizon <- 1
+    #   
+    #   test_dates <- ensemble_tscv %>%
+    #     dplyr::filter(.id == slice, 
+    #                   .key == "testing")
+    #   
+    #   test <- tibble::tibble()
+    #   
+    #   for(date in unique(test_dates$Date)) {
+    #     
+    #     date_horizon_tbl <- ensemble_tscv %>%
+    #       dplyr::filter(.id == slice, 
+    #                     .key == "testing", 
+    #                     Date == date, 
+    #                     Horizon == horizon)
+    #     
+    #     test <- rbind(test, date_horizon_tbl)
+    #     
+    #     horizon <- horizon+1
+    #     
+    #   }
+    #   
+    #   slice_tbl <- train %>%
+    #     rbind(test) %>%
+    #     dplyr::select(-.id, -.key)
+    #   
+    #   rsplit_obj <- slice_tbl %>%
+    #     rsample::make_splits(ind = list(analysis = seq(nrow(train)), assessment = nrow(train) + seq(nrow(test))), class = "ts_cv_split")
+    #   
+    #   return(rsplit_obj)
+    # }
+    # 
+    # ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), .f=rsplit_ensemble_function)
+    # 
+    # ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, ids = unique(ensemble_tscv$.id), subclass = c("time_series_cv", "rset"))
+    # 
+    # fcst_tbl <- tibble::tibble()
+    # 
+    # if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
+    #   ensemble_fcst <- combined_ensemble_models %>%
+    #     modeltime.resample::modeltime_fit_resamples(
+    #       resamples = ensemble_tscv_final,
+    #       control = tune::control_resamples(
+    #         verbose = TRUE,
+    #         allow_par = run_model_parallel)) %>%
+    #     modeltime.resample::unnest_modeltime_resamples() %>%
+    #     dplyr::mutate(.id = .resample_id, 
+    #                   Model = .model_desc, 
+    #                   FCST = .pred) %>%
+    #     dplyr::select(.id, Model, FCST, .row) %>%
+    #     dplyr::left_join(
+    #       ensemble_tscv_final %>%
+    #         timetk::tk_time_series_cv_plan() %>%
+    #         dplyr::group_by(.id) %>%
+    #         dplyr::mutate(.row = dplyr::row_number()) %>%
+    #         dplyr::ungroup()) %>%
+    #     dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+    #   
+    #   fcst_tbl <- ensemble_fcst %>%
+    #     tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
+    #     dplyr::mutate(Number = as.numeric(Number)) %>%
+    #     dplyr::filter(Number == 1) %>%
+    #     dplyr::select(-Slice, -Number) %>%
+    #     dplyr::mutate(.id = "Final_FCST") %>%
+    #     rbind(
+    #       ensemble_fcst %>%
+    #         dplyr::filter(Date <= hist_end_date) %>%
+    #         tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
+    #         dplyr::mutate(Number = as.numeric(Number) - 1) %>%
+    #         dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
+    #                       .id = paste0("Back_Test_", Number_Char)) %>%
+    #         dplyr::select(-Slice, -Number, -Number_Char))
+    #   #dplyr::mutate(.id = paste0("Back_Test_", as.numeric(Number)-1)) %>%
+    #   #dplyr::select(-Number, -Slice))
+    # }
+    
+    ####################################
+    ############
+    #######################################
     
     #stop parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
@@ -1197,7 +1373,7 @@ forecast_time_series <- function(
     fcst <- lapply(combo_list, forecast_models)
     fcst <- do.call(rbind, fcst)
   }
-  
+
   # parallel run on local machine
   if(parallel_processing=="local_machine") {
     
