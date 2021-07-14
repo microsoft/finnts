@@ -20,6 +20,7 @@ Imports:
     doParallel,
     dplyr,
     earth,
+	matrixcalc,
     hts,
     kernlab,
     lightgbm,
