@@ -1158,7 +1158,7 @@ forecast_time_series <- function(
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
     
     #Create forecast output
-    cli::cli_h3("Create Forecast Output")
+    cli::cli_h3("Forecast Output")
     
     fcst_tbl <- fcst_tbl %>%
       rbind(
