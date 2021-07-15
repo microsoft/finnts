@@ -185,7 +185,7 @@ forecast_time_series <- function(
   
   # * Original Data ----
   data_tbl <- input_data %>%
-    tibble()
+    tibble::tibble()
   
   data_tbl$Combo <- do.call(paste, c(data_tbl[combo_variables], sep = "--"))
   
@@ -237,7 +237,7 @@ forecast_time_series <- function(
   
   
   #set up data based on fcst approach
-  if(fcst_approach != 'bottoms_up') {
+  if(forecast_approach != 'bottoms_up') {
     
     external_regressors <- NULL
     
@@ -248,7 +248,7 @@ forecast_time_series <- function(
       dplyr::summarise(Sum=sum(Target, na.rm=TRUE)) %>%
       data.frame()
     
-    if(fcst_approach == "grouped_hierarchy") {
+    if(forecast_approach == "grouped_hierarchy") {
       
       group_list <- vector()
       
@@ -261,9 +261,9 @@ forecast_time_series <- function(
       
       rownames(group_list) <- combo_variables
       
-    } else if(fcst_approach == "standard_hierarchy") {
+    } else if(forecast_approach == "standard_hierarchy") {
       
-      hierarchy_length_tbl <- tibble()
+      hierarchy_length_tbl <- tibble::tibble()
       
       node_list <- list()
       
@@ -271,7 +271,7 @@ forecast_time_series <- function(
       
       for(variable in combo_variables) {
         
-        hierarchy_length_tbl <- rbind(hierarchy_length_tbl, tibble(Variable = variable, Count = length(unique(data_tbl[[variable]]))))
+        hierarchy_length_tbl <- rbind(hierarchy_length_tbl, tibble::tibble(Variable = variable, Count = length(unique(data_tbl[[variable]]))))
         
       }
       
@@ -326,12 +326,12 @@ forecast_time_series <- function(
     
     data_ts <- ts(data_cast, frequency = frequency_number) 
     
-    if(fcst_approach == "grouped_hierarchy") {
+    if(forecast_approach == "grouped_hierarchy") {
       
       hts_gts <- data_ts %>%
         hts::gts(groups = group_list)
       
-    } else if(fcst_approach == "standard_hierarchy") {
+    } else if(forecast_approach == "standard_hierarchy") {
       
       hts_gts <- data_ts %>%
         hts::hts(nodes = node_list)
@@ -346,13 +346,13 @@ forecast_time_series <- function(
     
     data_tbl_final <- hts_gts_df %>%
       tidyr::pivot_longer(!Date, names_to = "Combo", values_to = "Target")
-    tibble()
+    tibble::tibble()
     
     xregs_future_values_tbl <- xregs_future_values_tbl %>%
-      tibble() %>%
+      tibble::tibble() %>%
       dplyr::select(Combo, Date)
     
-  } else if(fcst_approach == 'bottoms_up') {
+  } else if(forecast_approach == 'bottoms_up') {
     data_tbl_final <- data_tbl
   }
   
@@ -396,8 +396,8 @@ forecast_time_series <- function(
           column_names_final <- c(column)
           
           # if((column %in% xregs) & !(column %in% xregs_future_values_list)) {
-          #   numeric_xregs <- c(numeric_xregs, str_c(column, c("", "_squared", "_cubed", "_log")))
-          #   column_names_final <- str_c(column, c("", "_squared", "_cubed", "_log"))
+          #   numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
+          #   column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
           # }
           
           if(clean_outliers == TRUE) {
@@ -426,10 +426,10 @@ forecast_time_series <- function(
           }
         }
         
-        final_tbl <- cbind(final_tbl, df_clean %>% dplyr::select(column_names_final)) %>% tibble()
+        final_tbl <- cbind(final_tbl, df_clean %>% dplyr::select(column_names_final)) %>% tibble::tibble()
       }
       
-      return(tibble(final_tbl))
+      return(tibble::tibble(final_tbl))
       
     }) %>%
     dplyr::bind_rows() #%>%
@@ -442,7 +442,7 @@ forecast_time_series <- function(
   
   #replace future target variable values with NA
   full_data_tbl <- full_data_tbl %>%
-    tibble() %>%
+    tibble::tibble() %>%
     dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
   
   
@@ -747,8 +747,8 @@ forecast_time_series <- function(
     resamples_tscv_recipe_2_final <- rsample::new_rset(splits = split_objs, ids = unique(resamples_tscv_recipe_2$.id), subclass = c("time_series_cv", "rset"))
     
     #refit models on resamples
-    submodels_resample_tscv_recipe_1 <- tibble()
-    submodels_resample_tscv_recipe_2 <- tibble()
+    submodels_resample_tscv_recipe_1 <- tibble::tibble()
+    submodels_resample_tscv_recipe_2 <- tibble::tibble()
     
     if(length(unique(combined_models_recipe_1$.model_desc)) > 0) {
       submodels_resample_tscv_recipe_1 <- combined_models_recipe_1 %>%
@@ -895,7 +895,7 @@ forecast_time_series <- function(
         dplyr::filter(.id == slice, 
                       .key == "testing")
       
-      test <- tibble()
+      test <- tibble::tibble()
       
       for(date in unique(test_dates$Date)) {
         
@@ -925,7 +925,7 @@ forecast_time_series <- function(
     
     ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, ids = unique(ensemble_tscv$.id), subclass = c("time_series_cv", "rset"))
     
-    fcst_tbl <- tibble()
+    fcst_tbl <- tibble::tibble()
     
     if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
       ensemble_fcst <- combined_ensemble_models %>%
@@ -991,7 +991,7 @@ forecast_time_series <- function(
   }
   
   # * Run Forecast ----
-  if(fcst_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
   } else{
     combo_list <- unique(full_data_tbl$Combo)
@@ -1058,7 +1058,7 @@ forecast_time_series <- function(
   
   # * Create Average Ensembles ----
   
-  fcst_combination <- tibble(fcst)
+  fcst_combination <- tibble::tibble(fcst)
   
   #model average combinations
   model_list <- unique(fcst$Model)
@@ -1245,7 +1245,7 @@ forecast_time_series <- function(
     dplyr::select(Combo, Model, Best_Model)
   
   #filter results on individual models and best model
-  fcst_combination_final <- tibble()
+  fcst_combination_final <- tibble::tibble()
   
   for(combo in unique(fcst_combination$Combo)) {
     
@@ -1285,10 +1285,10 @@ forecast_time_series <- function(
   }
   
   # reconcile a hierarchical forecast
-  if(fcst_approach != "bottoms_up") {
+  if(forecast_approach != "bottoms_up") {
     
-    #create tibble to append reconciled fcsts to
-    reconciled_fcst <- tibble()
+    #create tibble::tibble to append reconciled fcsts to
+    reconciled_fcst <- tibble::tibble()
     
     #extract best model and append to dataset
     fcst_unreconciled <- fcst_final %>%
@@ -1369,11 +1369,11 @@ forecast_time_series <- function(
             dplyr::select(colnames(hts_gts_df), -Date) %>%
             as.matrix()
           
-          if(fcst_approach == "standard_hierarchy") {
+          if(forecast_approach == "standard_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, nodes = get_nodes(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
             colnames(ts_combined) <- colnames(data_ts)
-          } else if(fcst_approach == "grouped_hierarchy") {
+          } else if(forecast_approach == "grouped_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, groups = get_groups(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
             colnames(ts_combined) <- colnames(data_ts)
@@ -1440,7 +1440,7 @@ forecast_time_series <- function(
     
     #colnames(future_fcst_final)[colnames(future_fcst_final)== 'Target'] <- target_variable
     
-  } else if(fcst_approach == "bottoms_up") {
+  } else if(forecast_approach == "bottoms_up") {
     
     back_test_final <- fcst_combination_final %>%
       dplyr::filter(.id != "Final_FCST") %>%
