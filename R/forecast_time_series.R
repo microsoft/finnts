@@ -118,12 +118,12 @@ forecast_time_series <- function(
   weekly_to_daily = TRUE
 ) {
 
-  # 1. Load Evironment Info ----
+  #' @section  1. Load Evironment Info ----
   
   load_env_info(reticulate_environment)
   
   
-  # 2. Initial Unit Tests ----
+  #' @section 2. Initial Unit Tests ----
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -148,7 +148,7 @@ forecast_time_series <- function(
   hist_end_date <- hist_dt$hist_end_date
   
   
-  # 3. Update Input Values ----
+  #' @section 3. Update Input Values ----
   
   # * select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
@@ -181,61 +181,31 @@ forecast_time_series <- function(
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  # 4. Prep Data ----
+  #' @section 4. Prep Data ----
   
   # * Original Data ----
-  data_tbl <- input_data %>%
-    tibble::tibble()
   
-  data_tbl$Combo <- do.call(paste, c(data_tbl[combo_variables], sep = "--"))
+  #input (input_data,combo_variables,target_variable,external_regressors,combo_cleanup_date)
+  #output (data_tbl,xregs_future_values_tbl, xregs_future_values_list)
   
-  colnames(data_tbl)[colnames(data_tbl) == target_variable] <- "Target"
-  
+  # * get data table 
+  data_tbl <- get_data_tbl(input_data,
+                           combo_variables,
+                           target_variable) 
   
   #Determine which xregs have future values or not
-  xregs_future_values_list <- c()
-  
-  for(variable in external_regressors) {
-    
-    temp <- data_tbl %>%
-      dplyr::filter(Date > hist_end_date) %>%
-      dplyr::select(variable) %>%
-      tidyr::drop_na()
-    
-    if(nrow(temp) > 0) {
-      
-      xregs_future_values_list <- append(xregs_future_values_list, variable)
-    }
-  }
-  
+  xregs_future_values_list <- get_xreg_future_values_list(data_tbl,
+                                                          external_regressors,
+                                                          hist_end_date)
   xregs_future_values_tbl <- data_tbl %>%
     dplyr::select(Combo, Date, xregs_future_values_list)
   
   #select final data to be cleaned and prepped for modeling
-  data_tbl <- data_tbl %>%
-    dplyr::select(c("Combo", all_of(combo_variables), all_of(external_regressors), "Date", "Target")) %>%
-    dplyr::filter(Date <= hist_end_date) %>%
-    dplyr::arrange(Combo, Date) 
-  
-  #remove data combos that do not contain data
-  if(!is.null(combo_cleanup_date)) {
+  data_tbl <- data_tbl %>% get_modelling_ready_tbl(external_regressors,
+                                                   hist_end_date,
+                                                   combo_cleanup_date,
+                                                   combo_variables)
     
-    combo_df <- data_tbl %>%
-      dplyr::filter(Date >= combo_cleanup_date) %>%
-      tidyr::drop_na(Target) %>%
-      data.frame() %>%
-      dplyr::group_by(Combo) %>%
-      dplyr::summarise(Sum=sum(Target, na.rm = TRUE)) %>%
-      data.frame() %>%
-      dplyr::filter(Sum != 0)
-    
-    combo_df <- unique(as.character(combo_df$Combo))
-    
-    data_tbl <- data_tbl[data_tbl$Combo %in% combo_df,]
-    
-  }
-  
-  
   #set up data based on fcst approach
   if(forecast_approach != 'bottoms_up') {
     
@@ -271,7 +241,11 @@ forecast_time_series <- function(
       
       for(variable in combo_variables) {
         
-        hierarchy_length_tbl <- rbind(hierarchy_length_tbl, tibble::tibble(Variable = variable, Count = length(unique(data_tbl[[variable]]))))
+        hierarchy_length_tbl <- rbind(hierarchy_length_tbl, 
+                                      tibble::tibble(Variable = variable, 
+                                                     Count = length(unique(data_tbl[[variable]]))
+                                                     )
+                                      )
         
       }
       

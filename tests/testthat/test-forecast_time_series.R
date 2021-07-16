@@ -56,8 +56,8 @@ test_that("back test data rows are meaningful", {
   
   check_exist(1:forecast_horizon,horizons)
   
-  best_model_res <- back_test_data[back_test_data$Horizon==1 & 
-                                     back_test_data$Best_Model=='Yes',]
+  best_model_res <- back_test_data %>% dplyr::filter(Horizon==1,
+                                              Best_Model=='Yes')
   
   expect_lt(mean(best_model_res$MAPE)*100,1.5)
   
@@ -71,8 +71,8 @@ test_that("final forecast data rows are meaningful", {
   
   final_fc_dt <- max(final_fcst[final_fcst$Type=="Historical",'Date'])
   
-  future_frame <- final_fcst[final_fcst$Date>final_fc_dt & 
-                               final_fcst$Model=='Best Model',]
+  future_frame <- final_fcst %>% dplyr::filter(Date>final_fc_dt,
+                                    Model=='Best Model')
   
   expect_equal(nrow(future_frame),forecast_horizon)
   

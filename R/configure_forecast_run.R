@@ -32,7 +32,7 @@ get_fourier_periods <- function(fourier_periods,
 #' 
 #' @param lag_periods lag_periods override
 #' @param date_type year, quarter, month, week, day
-#' @param forecast_horizon 
+#' @param forecast_horizon horion input from user
 #' 
 #' @return Returns lag_periods
 get_lag_periods <- function(lag_periods, 
