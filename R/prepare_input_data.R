@@ -13,11 +13,11 @@ get_data_tbl<- function(input_data,
                         target_variable){
   input_data %>%
     tibble::tibble() %>%
-    unite("Combo",
+    tidyr::unite("Combo",
           combo_variables,
           sep="--",
           remove=F) %>%
-    rename("Target" =target_variable)
+    dplyr::rename("Target" =target_variable)
 }
 
 #' Gets the list of external regressors with future values
@@ -78,7 +78,7 @@ get_modelling_ready_tbl<-function(data_tbl,
       
       combo_df <- unique(as.character(combo_df$Combo))
       
-      df %>% filter(Combo %in% combo_df)
+      df %>% dplyr::filter(Combo %in% combo_df)
       
     }
     else{
@@ -94,5 +94,4 @@ get_modelling_ready_tbl<-function(data_tbl,
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::arrange(Combo, Date) %>%
     combo_cleanup_func(combo_cleanup_date)
-  
 }

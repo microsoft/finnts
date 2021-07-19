@@ -11,7 +11,7 @@ get_lag_periods(lag_periods, date_type, forecast_horizon)
 
 \item{date_type}{year, quarter, month, week, day}
 
-\item{forecast_horizon}{}
+\item{forecast_horizon}{horion input from user}
 }
 \value{
 Returns lag_periods

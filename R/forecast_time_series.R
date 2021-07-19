@@ -194,220 +194,58 @@ forecast_time_series <- function(
                            target_variable) 
   
   #Determine which xregs have future values or not
-  xregs_future_values_list <- get_xreg_future_values_list(data_tbl,
-                                                          external_regressors,
-                                                          hist_end_date)
+  xregs_future_values_list <- data_tbl %>%
+    get_xreg_future_values_list(external_regressors,
+                                hist_end_date)
+  
   xregs_future_values_tbl <- data_tbl %>%
-    dplyr::select(Combo, Date, xregs_future_values_list)
+    dplyr::select(Combo, 
+                  Date, 
+                  xregs_future_values_list) %>%
+    get_xregs_future_values_tbl(forecast_approach)
+  
+  external_regressors <- external_regressors %>%
+    get_external_regressors(forecast_approach)
   
   #select final data to be cleaned and prepped for modeling
-  data_tbl <- data_tbl %>% get_modelling_ready_tbl(external_regressors,
-                                                   hist_end_date,
-                                                   combo_cleanup_date,
-                                                   combo_variables)
-    
-  #set up data based on fcst approach
-  if(forecast_approach != 'bottoms_up') {
-    
-    external_regressors <- NULL
-    
-    data_hts_gts_df <- data_tbl %>%
-      dplyr::mutate(Target = tidyr::replace_na(Target, 0)) %>%
-      dplyr::group_by(.dots = combo_variables) %>%
-      #dplyr::group_by(combo_variables) %>%
-      dplyr::summarise(Sum=sum(Target, na.rm=TRUE)) %>%
-      data.frame()
-    
-    if(forecast_approach == "grouped_hierarchy") {
-      
-      group_list <- vector()
-      
-      for(variable in combo_variables) {
-        
-        var = data_hts_gts_df[[variable]]
-        
-        group_list = rbind(group_list, var)
-      }
-      
-      rownames(group_list) <- combo_variables
-      
-    } else if(forecast_approach == "standard_hierarchy") {
-      
-      hierarchy_length_tbl <- tibble::tibble()
-      
-      node_list <- list()
-      
-      num <- 1
-      
-      for(variable in combo_variables) {
-        
-        hierarchy_length_tbl <- rbind(hierarchy_length_tbl, 
-                                      tibble::tibble(Variable = variable, 
-                                                     Count = length(unique(data_tbl[[variable]]))
-                                                     )
-                                      )
-        
-      }
-      
-      hierarchy_combo_variables <- hierarchy_length_tbl %>%
-        dplyr::arrange(Count) %>%
-        dplyr::select(Variable) %>%
-        unlist(use.names = FALSE)
-      
-      for(variable in hierarchy_combo_variables) {
-        
-        if(num == 1) {
-          
-          node_list = append(node_list, length(unique(data_tbl[[variable]])))
-          
-          num <- num+1
-          
-        } else {
-          
-          grouping_current <- variable
-          
-          grouping_minus_1 <- hierarchy_combo_variables[num-1]
-          
-          grouping_values <- data_hts_gts_df %>%
-            dplyr::group_by(.dots = c(grouping_minus_1, grouping_current)) %>%
-            dplyr::summarise(Sum = sum(Sum, na.rm=TRUE)) %>%
-            dplyr::mutate(Sum = 1) %>%
-            dplyr::group_by(.dots = grouping_minus_1) %>%
-            dplyr::summarise(Count = sum(Sum)) %>%
-            dplyr::select(Count) %>%
-            unlist(use.names = FALSE)
-          
-          node_list = append(node_list, list(grouping_values))
-          
-          num <- num+1
-        }
-      }
-      #node_list = list(11, c(6, 4, 2, 1, 6, 1, 4, 2, 8, 2, 5))
-      #node_list = list(3, c(3, 5, 3), c(6, 4, 2, 1, 6, 1, 4, 2, 8, 2, 5))
-    }
-    
-    data_cast <- data_tbl %>%
-      dplyr::arrange(Combo, Date) %>%
-      dplyr::select(-combo_variables) %>%
-      tidyr::pivot_wider(names_from = Combo, values_from = Target)
-    
-    Date <- data_cast$Date
-    
-    data_cast <- data_cast %>%
-      dplyr::select(-Date)
-    
-    col_names <- colnames(data_cast)
-    
-    data_ts <- ts(data_cast, frequency = frequency_number) 
-    
-    if(forecast_approach == "grouped_hierarchy") {
-      
-      hts_gts <- data_ts %>%
-        hts::gts(groups = group_list)
-      
-    } else if(forecast_approach == "standard_hierarchy") {
-      
-      hts_gts <- data_ts %>%
-        hts::hts(nodes = node_list)
-    }
-    
-    
-    hts_gts_df <- hts_gts %>%
-      hts::allts() %>%
-      data.frame()
-    
-    hts_gts_df <- cbind(Date, hts_gts_df)
-    
-    data_tbl_final <- hts_gts_df %>%
-      tidyr::pivot_longer(!Date, names_to = "Combo", values_to = "Target")
-    tibble::tibble()
-    
-    xregs_future_values_tbl <- xregs_future_values_tbl %>%
-      tibble::tibble() %>%
-      dplyr::select(Combo, Date)
-    
-  } else if(forecast_approach == 'bottoms_up') {
-    data_tbl_final <- data_tbl
-  }
-  
-  # * Prepped Data ----
-  full_data_tbl <- data_tbl_final %>%
-    dplyr::select(Combo, Date, Target, external_regressors) %>%
+  full_data_tbl <- data_tbl %>% 
+    get_modelling_ready_tbl(external_regressors,
+                            hist_end_date,
+                            combo_cleanup_date,
+                            combo_variables) %>%  
+    get_data_tbl_final(combo_variables,
+                       forecast_approach,
+                       frequency_number) %>%
+    dplyr::select(Combo, 
+                  Date, 
+                  Target, 
+                  external_regressors) %>%
     dplyr::group_by(Combo) %>%
-    timetk::pad_by_time(Date, .by = date_type, .pad_value = pad_value, .end_date = hist_end_date) %>% #fill in missing values in between existing data points
-    timetk::pad_by_time(Date, .by = date_type, .pad_value = 0, .start_date = hist_start_date, .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
-    dplyr::ungroup()
-  
-  #log transformation of target variable
-  if(target_log_transformation) {
-    
-    full_data_tbl <- full_data_tbl %>%
-      dplyr::mutate(Target = log1p(Target),
-                    Target = ifelse(is.nan(Target), 0, Target))
-    
-  }
-  
-  #create future data and clean
-  full_data_tbl <- full_data_tbl %>%
+    timetk::pad_by_time(Date, 
+                        .by = date_type, 
+                        .pad_value = pad_value, 
+                        .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+    timetk::pad_by_time(Date, 
+                        .by = date_type, 
+                        .pad_value = 0, 
+                        .start_date = hist_start_date, 
+                        .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+    dplyr::ungroup() %>%
+    get_log_transformation(target_log_transformation) %>%
     dplyr::group_by(Combo) %>%
-    timetk::future_frame(Date, .length_out = forecast_horizon, .bind_data = TRUE) %>% #add future data
+    timetk::future_frame(Date, 
+                         .length_out = forecast_horizon, 
+                         .bind_data = TRUE) %>% #add future data
     dplyr::left_join(xregs_future_values_tbl) %>% #join xregs that contain values given by user
     dplyr::ungroup() %>%
     dplyr::group_by(Combo) %>%
     dplyr::group_split() %>%
-    purrr::map(.f = function(df) { #create polynomial transformations for numeric drivers, and rolling window calcs of Target, and create lags of each driver/target variable
-      
-      final_tbl <- df %>%
-        dplyr::select(-Target, -external_regressors)
-      
-      #clean outliers and missing values, apply polynomial transformations
-      numeric_xregs <- c()
-      
-      for(column in c("Target", external_regressors)) {
-        
-        if(is.numeric(dplyr::select(df, column)[[1]])) {
-          
-          column_names_final <- c(column)
-          
-          # if((column %in% xregs) & !(column %in% xregs_future_values_list)) {
-          #   numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
-          #   column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
-          # }
-          
-          if(clean_outliers == TRUE) {
-            
-            colnames(df)[colnames(df)== column] <- "Column"
-            
-            df_clean <- df %>%
-              dplyr::mutate(Column = timetk::ts_clean_vec(Column, period = frequency_number)) 
-            
-            colnames(df_clean)[colnames(df_clean)== "Column"] <- column
-            colnames(df)[colnames(df)== "Column"] <- column
-            
-          } else if(clean_missing_values == TRUE) {
-            
-            colnames(df)[colnames(df)== column] <- "Column"
-            
-            df_clean <- df %>%
-              dplyr::mutate(Column = timetk::ts_impute_vec(Column, period = frequency_number))
-            
-            colnames(df_clean)[colnames(df_clean)== "Column"] <- column
-            colnames(df)[colnames(df)== "Column"] <- column
-            
-          } else {
-            
-            df_clean <- df
-          }
-        }
-        
-        final_tbl <- cbind(final_tbl, df_clean %>% dplyr::select(column_names_final)) %>% tibble::tibble()
-      }
-      
-      return(tibble::tibble(final_tbl))
-      
-    }) %>%
-    dplyr::bind_rows() #%>%
-  #timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) #add fourier series
+    purrr::map(.f = function(df) { get_poly_trans_clean(df,
+                                                        clean_outliers,
+                                                        clean_missing_values,
+                                                        frequency_number,
+                                                        external_regressors) }) %>%
+    dplyr::bind_rows()
   
   #Replace NaN/Inf with NA, then replace with zero
   is.na(full_data_tbl) <- sapply(full_data_tbl, is.infinite)
