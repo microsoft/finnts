@@ -118,12 +118,12 @@ forecast_time_series <- function(
   weekly_to_daily = TRUE
 ) {
 
-  #' @section  1. Load Evironment Info ----
+  #' @section  1. Load Evironment Info:
   
   load_env_info(reticulate_environment)
   
   
-  #' @section 2. Initial Unit Tests ----
+  #' @section 2. Initial Unit Tests:
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -148,47 +148,42 @@ forecast_time_series <- function(
   hist_end_date <- hist_dt$hist_end_date
   
   
-  #' @section 3. Update Input Values ----
+  #' @section 3. Update Input Values:
   
-  # * select fourier values ----
+  #Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
                                          date_type)
-  # * select lag values ----
+  #Select lag values ----
   lag_periods <- get_lag_periods(lag_periods, 
                                  date_type,
                                  forecast_horizon)
   
-  # * select rolling window values ----
+  #Select rolling window values ----
   rolling_window_periods <- get_rolling_window_periods(rolling_window_periods,
                                                        date_type)
   
-  # * missing values ----
+  #Missing values ----
   pad_value <- ifelse(clean_missing_values,NA,0)
   
-  # * frequency number (year, quarter, month, etc) ----
+  #Frequency number (year, quarter, month, etc) ----
   frequency_number <- get_frequency_number(date_type)
   
-  # * ts frequency (year, quarter, month, etc) ----
+  #TS frequency (year, quarter, month, etc) ----
   gluon_ts_frequency <- get_gluon_ts_frequency(date_type)
   
-  # * seasonal_periods (year, quarter, month, etc) ----
+  #Seasonal_periods (year, quarter, month, etc) ----
   seasonal_periods <- get_seasonal_periods(date_type)
   
-  # * frequency number (year, quarter, month, etc) ----
+  #Frequency number (year, quarter, month, etc) ----
   date_regex <- get_date_regex(date_type)
   
   # * back test spacing ----
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  #' @section 4. Prep Data ----
+  #' @section 4. Prep Data:
   
-  # * Original Data ----
-  
-  #input (input_data,combo_variables,target_variable,external_regressors,combo_cleanup_date)
-  #output (data_tbl,xregs_future_values_tbl, xregs_future_values_list)
-  
-  # * get data table 
+  #Get initial data table 
   data_tbl <- get_data_tbl(input_data,
                            combo_variables,
                            target_variable) 
@@ -207,60 +202,26 @@ forecast_time_series <- function(
   external_regressors <- external_regressors %>%
     get_external_regressors(forecast_approach)
   
-  #select final data to be cleaned and prepped for modeling
-  full_data_tbl <- data_tbl %>% 
-    get_modelling_ready_tbl(external_regressors,
-                            hist_end_date,
-                            combo_cleanup_date,
-                            combo_variables) %>%  
-    get_data_tbl_final(combo_variables,
-                       forecast_approach,
-                       frequency_number) %>%
-    dplyr::select(Combo, 
-                  Date, 
-                  Target, 
-                  external_regressors) %>%
-    dplyr::group_by(Combo) %>%
-    timetk::pad_by_time(Date, 
-                        .by = date_type, 
-                        .pad_value = pad_value, 
-                        .end_date = hist_end_date) %>% #fill in missing values in between existing data points
-    timetk::pad_by_time(Date, 
-                        .by = date_type, 
-                        .pad_value = 0, 
-                        .start_date = hist_start_date, 
-                        .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
-    dplyr::ungroup() %>%
-    get_log_transformation(target_log_transformation) %>%
-    dplyr::group_by(Combo) %>%
-    timetk::future_frame(Date, 
-                         .length_out = forecast_horizon, 
-                         .bind_data = TRUE) %>% #add future data
-    dplyr::left_join(xregs_future_values_tbl) %>% #join xregs that contain values given by user
-    dplyr::ungroup() %>%
-    dplyr::group_by(Combo) %>%
-    dplyr::group_split() %>%
-    purrr::map(.f = function(df) { get_poly_trans_clean(df,
-                                                        clean_outliers,
-                                                        clean_missing_values,
-                                                        frequency_number,
-                                                        external_regressors) }) %>%
-    dplyr::bind_rows()
+  #Select final data to be cleaned and prepped for modeling
+  full_data_tbl <- get_full_data_tbl(data_tbl,
+                                     combo_cleanup_date,
+                                     combo_variables,
+                                     clean_outliers,
+                                     clean_missing_values,
+                                     date_type,
+                                     external_regressors,
+                                     forecast_approach,
+                                     frequency_number,
+                                     forecast_horizon,
+                                     hist_start_date,
+                                     hist_end_date,
+                                     pad_value,
+                                     target_log_transformation,
+                                     xregs_future_values_tbl)
   
-  #Replace NaN/Inf with NA, then replace with zero
-  is.na(full_data_tbl) <- sapply(full_data_tbl, is.infinite)
-  is.na(full_data_tbl) <- sapply(full_data_tbl, is.nan)
-  full_data_tbl[is.na(full_data_tbl)] = 0
+  #Back Testing and Future Forecast Splits ----
   
-  #replace future target variable values with NA
-  full_data_tbl <- full_data_tbl %>%
-    tibble::tibble() %>%
-    dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
-  
-  
-  # * Back Testing and Future Forecast Splits ----
-  
-  #calculate back test scenario number
+  #Calculate back test scenario number
   historical_periods <- full_data_tbl %>%
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::select(Date) %>%

@@ -12,7 +12,7 @@ get_external_regressors(external_regressors, forecast_approach)
 \item{forecast_approach}{forecasting approach}
 }
 \value{
-data_tbl_final
+external_regressors
 }
 \description{
 Function to create the external_regressors

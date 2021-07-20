@@ -5,27 +5,15 @@
 \title{Function to perform log transformation}
 \usage{
 get_log_transformation(df, target_log_transformation)
-
-get_log_transformation(df, target_log_transformation)
 }
 \arguments{
 \item{df}{data frame}
 
 \item{target_log_transformation}{variable to indicate log transformation}
-
-\item{clean_outliers}{clean_outliers}
-
-\item{clean_missing_values}{clean missing values}
-
-\item{frequency_number}{frequency number}
 }
 \value{
-full_data_tbl with or without log transformation
-
 full_data_tbl with or without log transformation
 }
 \description{
 Function to perform log transformation
-
-Function to perform outlier cleaning
 }

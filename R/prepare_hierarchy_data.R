@@ -125,30 +125,26 @@ get_data_tbl_final <- function(data_tbl,
         tidyr::pivot_wider(names_from = Combo, 
                            values_from = Target)
       
-      Date <- data_cast$Date
+      Date = data_cast$Date
       
-      data_cast <- data_cast %>%
-        dplyr::select(-Date)
-      
-      data_ts <- ts(data_cast, 
-                    frequency = frequency_number)
-      
-      
-      data_ts %>% 
+      data_cast %>%
+        dplyr::select(-Date) %>%
+        ts(frequency = frequency_number)%>% 
         get_hts(some_list)  %>%
         hts::allts() %>%
         data.frame() %>%
         add_column(Date = Date,
-                   .before =1)  %>%
+                   .before = 1)%>%
         tidyr::pivot_longer(!Date, 
-                            names_to = "Combo", 
-                            values_to = "Target") %>%
+                          names_to = "Combo", 
+                          values_to = "Target") %>%
         tibble::tibble()
     }
     
   }
   
   data_tbl %>% data_tbl_func
+  
 }
 
 #' Function to perform log transformation
@@ -183,6 +179,7 @@ get_poly_trans_clean <- function(df,
                                  frequency_number,
                                  external_regressors){
   
+  
   correct_clean_func <- function(col){
     if(clean_outliers){
       timetk::ts_clean_vec(col,period = frequency_number)
@@ -195,7 +192,7 @@ get_poly_trans_clean <- function(df,
   df %>% 
     dplyr::mutate(
       dplyr::across(
-        (dplyr::where(is.numeric) & c("Target", external_regressors)),
+        (where(is.numeric) & c("Target", external_regressors)),
         correct_clean_func
         )
     ) %>%
@@ -208,7 +205,7 @@ get_poly_trans_clean <- function(df,
 #' @param external_regressors existing external_regressors
 #' @param forecast_approach forecasting approach 
 #' 
-#' @return data_tbl_final
+#' @return external_regressors
 get_external_regressors <- function(external_regressors,
                                forecast_approach){
   if(forecast_approach != 'bottoms_up'){
@@ -234,4 +231,87 @@ get_xregs_future_values_tbl <- function(xregs_future_values_tbl,
   }
   
   return(xregs_future_values_tbl)
+}
+
+#' Final function to create the full_data_tbl
+#' 
+#' @param data_tbl data table from previous pipe
+#' @param combo_cleanup_date Date to clean up combo after
+#' @param combo_variables List of combo variables
+#' @param clean_outliers Is clean outliers out of data
+#' @param clean_missing_values Is clean missing values
+#' @param date_type date type from previous stage
+#' @param external_regressors existing external_regressors
+#' @param forecast_approach forecasting approach 
+#' @param frequency_number frequency number
+#' @param forecast_horizon forecast horizon
+#' @param hist_start_date historical start date
+#' @param hist_end_date historical end date
+#' @param pad_value Value for padding
+#' @param target_log_transformation Log transformation
+#' @param xregs_future_values_tbl external regressor table
+#' 
+#' @return full_data_tbl
+get_full_data_tbl <- function(data_tbl,
+                              combo_cleanup_date,
+                              combo_variables,
+                              clean_outliers,
+                              clean_missing_values,
+                              date_type,
+                              external_regressors,
+                              forecast_approach,
+                              frequency_number,
+                              forecast_horizon,
+                              hist_start_date,
+                              hist_end_date,
+                              pad_value,
+                              target_log_transformation,
+                              xregs_future_values_tbl){
+  data_tbl %>% 
+    get_modelling_ready_tbl(external_regressors,
+                            hist_end_date,
+                            combo_cleanup_date,
+                            combo_variables) %>%  
+    get_data_tbl_final(combo_variables,
+                       forecast_approach,
+                       frequency_number) %>%
+    dplyr::select(Combo, 
+                  Date, 
+                  Target, 
+                  external_regressors) %>%
+    dplyr::group_by(Combo) %>%
+    timetk::pad_by_time(Date, 
+                        .by = date_type, 
+                        .pad_value = pad_value, 
+                        .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+    timetk::pad_by_time(Date, 
+                        .by = date_type, 
+                        .pad_value = 0, 
+                        .start_date = hist_start_date, 
+                        .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+    dplyr::ungroup()%>%
+    get_log_transformation(target_log_transformation) %>%
+    dplyr::group_by(Combo) %>%
+    timetk::future_frame(Date, 
+                         .length_out = forecast_horizon, 
+                         .bind_data = TRUE) %>% #add future data
+    dplyr::left_join(xregs_future_values_tbl) %>% #join xregs that contain values given by user
+    dplyr::ungroup() %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::group_split() %>%
+    purrr::map(.f = function(df) { get_poly_trans_clean(df,
+                                                        clean_outliers,
+                                                        clean_missing_values,
+                                                        frequency_number,
+                                                        external_regressors) }) %>%
+    dplyr::bind_rows() %>%
+    dplyr::mutate(dplyr::across(where(is.numeric), 
+      list(~ifelse(is.infinite(.),NA, .)))) %>%
+    dplyr::mutate(dplyr::across(where(is.numeric),
+      list(~ifelse(is.nan(.),NA, .)))) %>%
+    dplyr::mutate(dplyr::across(where(is.numeric),
+      list(~ifelse(is.na(.),0,.)))) %>%
+    dplyr::mutate(Target = ifelse(Date > hist_end_date,
+                                  NA,
+                                  Target))
 }
