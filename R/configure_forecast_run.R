@@ -184,3 +184,50 @@ get_back_test_spacing <- function(back_test_spacing,
   return(back_test_spacing)
 }
 
+
+#' Gets the back testing scenarios
+#' 
+#' Gets back testing scenarios accounting for splits
+#' 
+#' 
+#' @param full_data_tbl full data table
+#' @param hist_end_date historical end date
+#' @param back_test_scenarios back test scenarios
+#' @param forecast_horizon forecast horizon
+#' @param back_test_spacing back test spacing
+#'  
+#' @return Returns back_test_scenarios and hist_periods_80
+get_back_test_scenario_hist_periods<- function(full_data_tbl,
+                                              hist_end_date,
+                                              back_test_scenarios,
+                                              forecast_horizon,
+                                              back_test_spacing){
+            
+  historical_periods <- full_data_tbl %>%
+    dplyr::filter(Date <= hist_end_date) %>%
+    dplyr::select(Date) %>%
+    unique() %>%
+    nrow() %>%
+    as.numeric()
+  
+  #historical_periods, back_test_scenarios, forecast_horizon,back_test_spacing
+  
+  hist_periods_80 <- floor(historical_periods*0.7) #used with time series CV in multivariate models
+  
+  if(back_test_scenarios == "auto") {
+    
+    historical_periods_20 <- floor(historical_periods*0.2)
+    
+    #account for initial back tests that are smaller than the forecast horizon (1, 2, 3, etc up to fcst horizon)
+    if(historical_periods_20 > forecast_horizon) {
+      back_test_scenarios <- floor(historical_periods_20/back_test_spacing)
+    } else {
+      back_test_scenarios <- floor(forecast_horizon/back_test_spacing)
+    }
+  }
+  
+  back_test_scenarios <- back_test_scenarios + 1
+  
+  return (list(hist_periods_80=hist_periods_80,
+               back_test_scenarios = back_test_scenarios))
+}
