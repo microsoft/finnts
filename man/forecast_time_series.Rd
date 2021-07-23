@@ -24,6 +24,7 @@ forecast_time_series(
   forecast_approach = "bottoms_up",
   parallel_processing = "none",
   run_model_parallel = TRUE,
+  num_cores = "auto",
   azure_batch_credentials = NULL,
   azure_batch_cluster_config = NULL,
   azure_batch_cluster_delete = FALSE,
@@ -36,7 +37,8 @@ forecast_time_series(
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE,
-  run_all_data = TRUE,
+  run_global_models = TRUE,
+  run_local_models = TRUE,
   average_models = TRUE,
   max_model_average = 4,
   weekly_to_daily = TRUE
@@ -98,6 +100,9 @@ runs time series in parallel on a remote compute cluster in Azure Batch.}
 \item{run_model_parallel}{Run model training in parallel, only works when parallel_processing is set to
 'local_machine' or 'azure_batch'.}
 
+\item{num_cores}{The number of cores to use when running parallel processing, either on local machine or in cloud.
+Default of 'auto' will use 2/3 of available cores. Users can also supply their own number to use, formatted as a numeric value.}
+
 \item{azure_batch_credentials}{Credentials to run parallel_processing in Azure Batch.}
 
 \item{azure_batch_cluster_config}{Compute cluster specification to run parallel_processing in Azure Batch.}
@@ -129,8 +134,10 @@ any model.}
 \item{run_deep_learning}{Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
 models_not_to_run.}
 
-\item{run_all_data}{Run multivariate models on the entire data set (across all time series). Can be override by
-models_to_run and models_not_to_run.}
+\item{run_global_models}{Run multivariate models on the entire data set (across all time series) as a global model.
+Can be override by models_to_run and models_not_to_run.}
+
+\item{run_local_models}{Run models by individual time series as local models.}
 
 \item{average_models}{Create simple averages of individual models.}
 

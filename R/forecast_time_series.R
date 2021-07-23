@@ -39,6 +39,8 @@
 #'   runs time series in parallel on a remote compute cluster in Azure Batch. 
 #' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
+#' @param num_cores The number of cores to use when running parallel processing, either on local machine or in cloud. 
+#'   Default of 'auto' will use 2/3 of available cores. Users can also supply their own number to use, formatted as a numeric value. 
 #' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_delete Delete the Azure Batch compute cluster after Finn finished running. 
@@ -58,8 +60,9 @@
 #'   any model. 
 #' @param run_deep_learning Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
 #'  models_not_to_run. 
-#' @param run_all_data Run multivariate models on the entire data set (across all time series). Can be override by 
-#'  models_to_run and models_not_to_run.
+#' @param run_global_models Run multivariate models on the entire data set (across all time series) as a global model. 
+#'   Can be override by models_to_run and models_not_to_run. 
+#' @param run_local_models Run models by individual time series as local models. 
 #' @param average_models Create simple averages of individual models. 
 #' @param max_model_average Max number of models to average together. Will create model averages for 2 models up until input value 
 #'   or max number of models ran.
@@ -100,6 +103,7 @@ forecast_time_series <- function(
   forecast_approach = "bottoms_up",
   parallel_processing = 'none',
   run_model_parallel = TRUE,
+  num_cores = "auto", 
   azure_batch_credentials = NULL, 
   azure_batch_cluster_config = NULL, 
   azure_batch_cluster_delete = FALSE, 
@@ -112,7 +116,8 @@ forecast_time_series <- function(
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE, 
-  run_all_data = TRUE,
+  run_global_models = TRUE,
+  run_local_models = TRUE,
   average_models = TRUE,
   max_model_average = 4,
   weekly_to_daily = TRUE
@@ -729,10 +734,20 @@ forecast_time_series <- function(
       
       cli::cli_h3("Creating Parallel Processing")
       
-      cores <- parallel::detectCores()
+      #pick number of cores
+      if(num_cores == "auto") {
+        cores <- floor(parallel::detectCores()*(2/3))
+      } else if(is.numeric(num_cores) & num_cores > 0) {
+        cores <- num_cores
+      } else {
+        stop("num_cores needs to either be set to 'auto' or a numeric value greater than zero.")
+      }
+      
+      cli::cli_alert_info("Running across {cores} cores")
+
       cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
-      
+
       #point to the correct libraries within Azure Batch
       if(parallel_processing=="azure_batch") {
         clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
@@ -1032,19 +1047,6 @@ forecast_time_series <- function(
       try(glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("glmnet-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
       try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, glmnet_ensemble, location = "top") %>% update_model_description(1, paste0("glmnet-ensemble", model_name_suffix)), silent = TRUE)
       
-      #Light GBM ensemble
-      #lightgbm_ensemble <- lightgbm_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
-      #combined_models <- modeltime::add_modeltime_model(combined_models, lightgbm_ensemble, location = "top") %>% update_model_description(1, paste0("lightgbm-ensemble", model_name_suffix))
-      
-      #MARS ensemble
-      #try(mars_ensemble <- mars_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel), silent= TRUE)
-      #try(combined_models <- modeltime::add_modeltime_model(combined_models, mars_ensemble, location = "top") %>% update_model_description(1, paste0("mars-ensemble", model_name_suffix)), silent = TRUE)
-      #print('mars-ensemble')
-      
-      #nnet ensemble
-      #nnet_ensemble <- nnet_ensemble(fitted_resamples = submodels_resample_tscv_tbl, parallel = run_model_parallel)
-      #combined_models <- modeltime::add_modeltime_model(combined_models, nnet_ensemble, location = "top") %>% update_model_description(1, paste0("nnet-ensemble", model_name_suffix))
-      
       #svm ensemble - polynomial
       try(svm_poly_ensemble <- svm_poly(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-poly-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
       try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_poly_ensemble, location = "top") %>% update_model_description(1, paste0("svm-poly-ensemble", model_name_suffix)), silent = TRUE)
@@ -1057,13 +1059,6 @@ forecast_time_series <- function(
       #xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year")
       try(xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("xgboost-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
       try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, xgboost_ensemble, location = "top") %>% update_model_description(1, paste0("xgboost-ensemble", model_name_suffix)), silent = TRUE)
-      
-      #Average of all models
-      #try(ensemble_fit_mean <- combined_models %>% modeltime.ensemble::ensemble_average(type = "mean"), silent = TRUE)
-      #try(combined_models <- modeltime::add_modeltime_model(combined_models, ensemble_fit_mean, location = "top") %>% update_model_description(1, paste0("average-ensemble", model_name_suffix)), silent = TRUE)
-      #print('avg-ensemble')
-      
-      #print(combined_ensemble_models)
       
       #create ensemble resamples to train future and back test folds
       cli::cli_h3("Refitting Ensemble Models")
@@ -1080,8 +1075,6 @@ forecast_time_series <- function(
           slice_limit = back_test_scenarios) %>%
         timetk::tk_time_series_cv_plan() %>%
         dplyr::mutate(Horizon_char = as.character(Horizon))
-      
-      #return(ensemble_tscv)
       
       #Replace NaN/Inf with NA, then replace with zero
       is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
@@ -1167,8 +1160,6 @@ forecast_time_series <- function(
               dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
                             .id = paste0("Back_Test_", Number_Char)) %>%
               dplyr::select(-Slice, -Number, -Number_Char))
-        #dplyr::mutate(.id = paste0("Back_Test_", as.numeric(Number)-1)) %>%
-        #dplyr::select(-Number, -Slice))
       }
       
     }
@@ -1361,9 +1352,16 @@ forecast_time_series <- function(
   
   cli::cli_h1("Kicking off Finn Modeling Process")
   
-  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
+    
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
+    
+  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models == TRUE & run_local_models == FALSE) {
+    
+    combo_list <- c('All-Data')
+    
   } else{
+    
     combo_list <- unique(full_data_tbl$Combo)
   }
   
@@ -1377,7 +1375,20 @@ forecast_time_series <- function(
   # parallel run on local machine
   if(parallel_processing=="local_machine") {
     
-    cl <- parallel::makeCluster(detectCores())
+    cli::cli_h2("Creating Parallel Processing")
+    
+    #pick number of cores
+    if(num_cores == "auto") {
+      cores <- floor(parallel::detectCores()*(2/3))
+    } else if(is.numeric(num_cores) & num_cores > 0) {
+      cores <- num_cores
+    } else {
+      stop("num_cores needs to either be set to 'auto' or a numeric value greater than zero.")
+    }
+    
+    cli::cli_alert_info("Running across {cores} cores")
+    
+    cl <- parallel::makeCluster(cores)
     doParallel::registerDoParallel(cl)
     
     fcst <- foreach(i = combo_list, .combine = 'rbind',
@@ -1401,6 +1412,7 @@ forecast_time_series <- function(
     cluster <- doAzureParallel::makeCluster(azure_batch_clusterConfig)
     doAzureParallel::registerDoAzureParallel(cluster)
     
+    cli::cli_h2("Submitting Tasks to Azure Batch")
     
     fcst <- foreach(i = combo_list, .combine = 'rbind',
                     .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
@@ -1454,7 +1466,15 @@ forecast_time_series <- function(
       #parallel processing
       if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
         
-        cores <- parallel::detectCores()
+        #pick number of cores
+        if(num_cores == "auto") {
+          cores <- floor(parallel::detectCores()*(2/3))
+        } else if(is.numeric(num_cores)) {
+          cores <- num_cores
+        } else {
+          stop("num_cores needs to either be set to 'auto' or a numeric value greater than zero.")
+        }
+
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
@@ -1513,7 +1533,16 @@ forecast_time_series <- function(
     # parallel run on local machine
     if(parallel_processing=="local_machine") {
       
-      cl <- parallel::makeCluster(detectCores())
+      #pick number of cores
+      if(num_cores == "auto") {
+        cores <- floor(parallel::detectCores()*(2/3))
+      } else if(is.numeric(num_cores)) {
+        cores <- num_cores
+      } else {
+        stop("num_cores needs to either be set to 'auto' or a numeric value greater than zero.")
+      }
+      
+      cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
