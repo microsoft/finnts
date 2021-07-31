@@ -231,13 +231,223 @@ forecast_time_series <- function(
   hist_periods_80 <- bt_conf$hist_periods_80
   
   
-
-  
   # 5. Modeling ----
   
   # * Create and Run Modeling Function ----
+  forecast_models <- construct_forecast_models(full_data_tbl,
+                                               external_regressors,
+                                               xregs_future_values_list,
+                                               fourier_periods,
+                                               lag_periods,
+                                               rolling_window_periods,
+                                               hist_end_date,
+                                               date_type,
+                                               forecast_horizon,
+                                               run_model_parallel,
+                                               parallel_processing,
+                                               init_azure_batch_parallel_within,
+                                               exit_azure_batch_parallel_within,
+                                               frequency_number,
+                                               models_to_run,
+                                               models_not_to_run,
+                                               hist_periods_80,
+                                               back_test_spacing,
+                                               back_test_scenarios,
+                                               date_regex,
+                                               fiscal_year_start,
+                                               seasonal_periods)
   
+  # * Run Forecast ----
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
+    combo_list <- c('All-Data', unique(full_data_tbl$Combo))
+  } else{
+    combo_list <- unique(full_data_tbl$Combo)
+  }
   
+  # no parallel processing
+  if(parallel_processing == "none") {
+    
+    fcst <- lapply(combo_list, forecast_models)
+    fcst <- do.call(rbind, fcst)
+  }
+  
+  # parallel run on local machine
+  if(parallel_processing=="local_machine") {
+    
+    cl <- parallel::makeCluster(detectCores())
+    doParallel::registerDoParallel(cl)
+    
+    fcst <- foreach(i = combo_list, .combine = 'rbind',
+                    .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+                                  'timetk', 'hts', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+                                  'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+                                  "doParallel", "parallel"), 
+                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
+                                "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
+                                "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
+                                "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
+                                "init_azure_batch_parallel_within","exit_azure_batch_parallel_within")) %dopar% {forecast_models(i)}
+    
+    parallel::stopCluster(cl)
+    
+  }
+  
+  # parallel run within azure batch
+  if(parallel_processing=="azure_batch") {
+    
+    doAzureParallel::setCredentials(azure_batch_credentials)
+    cluster <- doAzureParallel::makeCluster(azure_batch_clusterConfig)
+    doAzureParallel::registerDoAzureParallel(cluster)
+    
+    
+    fcst <- foreach(i = combo_list, .combine = 'rbind',
+                    .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+                                  'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+                                  'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+                                  "doParallel", "parallel"), 
+                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
+                                "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
+                                "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
+                                "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
+                                "init_azure_batch_parallel_within","exit_azure_batch_parallel_within"),
+                    .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                          job = substr(paste0('finn-fcst-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                              tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                    .errorhandling = "remove") %dopar% {forecast_models(i)}
+    
+  }
+  
+  #Replace NaN/Inf with NA, then replace with zero
+  is.na(fcst) <- sapply(fcst, is.infinite)
+  is.na(fcst) <- sapply(fcst, is.nan)
+  fcst[is.na(fcst)] = 0
+  
+  # convert negative forecasts to zero
+  if(negative_fcst == FALSE) {fcst$FCST <- replace(fcst$FCST, which(fcst$FCST < 0), 0)}
+  
+  # * Create Average Ensembles ----
+  
+  fcst_combination <- tibble(fcst)
+  
+  #model average combinations
+  model_list <- unique(fcst$Model)
+  
+  if(length(model_list) > 1 & average_models) {
+    
+    fcst_prep <- fcst %>%
+      tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
+      tidyr::pivot_longer(!c(".id", "Combo", "Target", "Date", "Horizon"), names_to='Model', values_to = "FCST") %>%
+      dplyr::mutate(FCST = ifelse(is.na(FCST), 0, FCST), 
+                    Target = ifelse(is.na(Target), 0, Target))
+    
+    
+    create_model_averages <- function(combination) {
+      
+      model_combinations <- data.frame(gtools::combinations(v=model_list, n=length(model_list), r=combination))
+      model_combinations$All <- model_combinations %>% tidyr::unite(All, colnames(model_combinations))
+      model_combinations <- model_combinations$All
+      
+      
+      #parallel processing
+      if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
+        
+        cores <- parallel::detectCores()
+        cl <- parallel::makeCluster(cores)
+        doParallel::registerDoParallel(cl)
+        
+        #point to the correct libraries within Azure Batch
+        if(parallel_processing=="azure_batch") {
+          clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
+        }
+        
+        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind', 
+                                              .packages = c('rlist', 'tidyverse', 'lubridate', 
+                                                            "doParallel", "parallel", "gtools"), 
+                                              .export = c("fcst_prep")) %dopar% {
+                                                
+                                                fcst_combination_temp <- fcst_prep %>%
+                                                  dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
+                                                  dplyr::group_by(.id, Combo, Date, Horizon) %>%
+                                                  dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+                                                                   Target = mean(Target, nam.rm=FALSE)) %>%
+                                                  dplyr::ungroup() %>%
+                                                  dplyr::mutate(Model = i)
+                                                
+                                                return(fcst_combination_temp)
+                                                
+                                              }
+        
+        #stop parallel processing
+        if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
+        
+      } else {
+        
+        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind') %do% {
+          
+          fcst_combination_temp <- fcst_prep %>%
+            dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
+            dplyr::group_by(.id, Combo, Date, Horizon) %>%
+            dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+                             Target = mean(Target, nam.rm=FALSE)) %>%
+            dplyr::ungroup() %>%
+            dplyr::mutate(Model = i)
+          
+          return(fcst_combination_temp)
+          
+        }
+      }
+      
+      return(combinations_tbl)
+    }
+    
+    # no parallel processing
+    if(parallel_processing == "none") {
+      
+      combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
+      combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
+    }
+    
+    # parallel run on local machine
+    if(parallel_processing=="local_machine") {
+      
+      cl <- parallel::makeCluster(detectCores())
+      doParallel::registerDoParallel(cl)
+      
+      combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                        .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+                                                      'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+                                                      'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+                                                      "doParallel", "parallel"), 
+                                        .export = c("fcst_prep")) %dopar% {create_model_averages(i)}
+      
+      parallel::stopCluster(cl)
+      
+    }
+    
+    # parallel run within azure batch
+    if(parallel_processing=="azure_batch") {
+      
+      
+      combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                        .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+                                                      'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+                                                      'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+                                                      "doParallel", "parallel"), 
+                                        .export = c("fcst_prep"),
+                                        .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                              job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                                                  tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                        .errorhandling = "remove") %dopar% {create_model_averages(i)}
+      
+    }
+    
+    if(parallel_processing == 'azure_batch' & azure_batch_cluster_delete == TRUE) {
+      stopCluster(cluster)
+    }
+    
+    # combine with individual model data
+    fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
+  }
   
   # 6. Final Finn Outputs ----
   
@@ -304,7 +514,7 @@ forecast_time_series <- function(
     dplyr::select(Combo, Model, Best_Model)
   
   #filter results on individual models and best model
-  fcst_combination_final <- tibble::tibble()
+  fcst_combination_final <- tibble()
   
   for(combo in unique(fcst_combination$Combo)) {
     
@@ -346,8 +556,8 @@ forecast_time_series <- function(
   # reconcile a hierarchical forecast
   if(forecast_approach != "bottoms_up") {
     
-    #create tibble::tibble to append reconciled fcsts to
-    reconciled_fcst <- tibble::tibble()
+    #create tibble to append reconciled fcsts to
+    reconciled_fcst <- tibble()
     
     #extract best model and append to dataset
     fcst_unreconciled <- fcst_final %>%

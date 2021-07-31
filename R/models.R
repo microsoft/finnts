@@ -1,41 +1,38 @@
-# * Individual Model Functions ----
-
-arima = function(train_data, frequency, models_to_run, models_not_to_run) {
-  
-  if((!('arima' %in% models_to_run) & !is.null(models_to_run)) | ('arima' %in% models_not_to_run)) {return()}
-  
-  frequency_arima = frequency
-  
-  recipe_spec_arima = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
-  
-  model_spec_arima = modeltime::arima_reg(
-    seasonal_period = frequency_arima
-  ) %>%
-    parsnip::set_engine("auto_arima")
-  
-  wflw_spec_arima = workflows::workflow() %>%
-    workflows::add_model(model_spec_arima) %>%
-    workflows::add_recipe(recipe_spec_arima)
-  
-  model_fit_auto_arima = wflw_spec_arima %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
-  
-  print("arima")
-  
-  return(model_fit_auto_arima)
+#' Gets a simple workflow from model
+#' 
+#' @param model_spec Model Spec A
+#' @param recipe_spec year, quarter, month, week, day
+#' 
+#' @return dplyr workflow spec
+get_workflow_simple <- function(model_spec,
+                                recipe_spec){
+    workflows::workflow() %>%
+    workflows::add_model(model_spec) %>%
+    workflows::add_recipe(recipe_spec)
 }
 
-arima_boost = function(train_data, frequency, parallel, horizon, tscv_initial, date_rm_regex, 
-                        back_test_spacing, fiscal_year_start, models_to_run, models_not_to_run) {
+#' Gets a simple recipe
+#' 
+#' @param train_data Training Data 
+#' 
+#' @return simple recipie
+get_recipie_simple <- function(train_data){
+  recipes::recipe(Target ~ Date, data = train_data %>% 
+                    dplyr::select(-Combo))
+}
+
+#' Gets a recipe that adjusts for fiscal year start
+#' 
+#' @param train_data Training Data 
+#' @param fiscal_year_start Start of Fiscal Year
+#' @param date_rm_regex_final Date removal RegEx Final
+#'  
+#' @return simple recipie
+get_recipie_fiscal_year_adj<- function(train_data,
+                                       fiscal_year_start,
+                                       date_rm_regex_final){
   
-  if((!('arima-boost' %in% models_to_run) & !is.null(models_to_run)) | ('arima-boost' %in% models_not_to_run)) {return()}
-  
-  frequency_arima_boost = frequency
-  
-  #create model recipe
-  date_rm_regex_final = paste0(date_rm_regex)
-  
-  recipe_spec_arima_boost = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
+    recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
     timetk::step_timeseries_signature(Date_Adj) %>%
     recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
@@ -44,6 +41,190 @@ arima_boost = function(train_data, frequency, parallel, horizon, tscv_initial, d
     recipes::step_zv(recipes::all_predictors()) %>%
     recipes::step_normalize(Date_Adj_index.num, Date_Adj_year) %>%
     recipes::step_dummy(recipes::all_nominal(), one_hot = TRUE)
+}
+
+#' Gets a recipe that adjusts for fiscal year start
+#' 
+#' @param train_data Training Data 
+#' @param fiscal_year_start Start of Fiscal Year
+#' @param date_rm_regex_final Date removal RegEx Final
+#' @param model_type Model Type
+#'  
+#' @return simple recipie
+get_recipie_fiscal_quarter_adj<- function(train_data,
+                                       fiscal_year_start,
+                                       date_rm_regex_final,
+                                       model_type){
+  
+  recepie_step_using_model_type <- function(df,model_type){
+    
+    if(model_type == "ensemble") {
+      df %>%
+        recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num)
+    }else{
+      df %>%
+        recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj)
+    }
+  }
+  
+  #create recipe
+  recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
+    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
+    timetk::step_timeseries_signature(Date_Adj) %>%
+    recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
+                         Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
+    recepie_step_using_model_type(model_type)%>%
+    recipes::step_nzv(recipes::all_predictors()) %>%
+    recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
+}
+
+
+#' Gets a simple fit
+#' 
+#' @param wflw_spec Worflow Spec
+#' @param train_data Training Data 
+#' 
+#' @return simple recipie
+get_fit_simple <- function(wflw_spec,
+                           train_data){
+  wflw_spec %>%
+    generics::fit(train_data %>% 
+                    dplyr::select(-Combo))
+}
+
+#' Gets a simple fit
+#' 
+#' @param train_data Training Data 
+#' @param tune_results Tune results
+#' @param wflw_spec_tune Worflow Spec after tuning
+#' 
+#' @return simple recipie
+get_fit_wkflw_best <- function(train_data,
+                               tune_results,
+                               wflw_spec_tune){
+  best_results <- tune_results %>%
+    tune::show_best(metric = "rmse", n = 10)
+  
+  wflw_spec_tune %>%
+    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
+    generics::fit(train_data %>% dplyr::select(-Combo))
+}
+
+
+#' Get simple orchestration
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' @param fnToCall usually a modeltime function e.x. modeltime::arima_reg
+#' @param parsnip_engine ex. 'auto_arima'
+#' 
+#' @return gives the model fit
+get_simple_orchestration <- function(train_data,
+                                     frequency,
+                                     fnToCall,
+                                     parsnip_engine){
+  
+  recipie_simple <- get_recipie_simple(train_data)
+  model_spec_fn <- fnToCall(frequency) %>%
+    parsnip::set_engine(parsnip_engine)
+  
+  wflw_spec <- get_workflow_simple(model_spec_fn,
+                                   recipie_simple)
+  
+  model_fit_fn <- get_fit_simple(wflw_spec,
+                                 train_data)
+  
+  return(model_fit_fn)
+}
+
+#' Get tuning grid with resample
+#' 
+#' @param train_data Training Data
+#' @param tscv_initial TS Cross Validation Initalization
+#' @param horizon Horizon
+#' @param back_test_spacing Back Testing Spacing
+#' @param wkflw Workflow Objet from previous stage
+#' @param parallel Allow Parallal (Default False) 
+#' 
+#' @return gives the model fit
+get_resample_tune_grid<- function(train_data,
+                                  tscv_initial,
+                                  horizon,
+                                  back_test_spacing,
+                                  wkflw,
+                                  parallel = FALSE){
+  set.seed(123)
+  resamples_tscv <- timetk::time_series_cv(
+    data = train_data,
+    initial = tscv_initial,
+    assess = horizon,
+    skip = back_test_spacing,
+    cumulative = TRUE,
+    slice_limit = 100
+  )
+  
+  tune::tune_grid(
+    object     = wkflw,
+    resamples  = resamples_tscv,
+    param_info = dials::parameters(wkflw) %>%
+      update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), trans = NULL)),
+    grid       = 10, 
+    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, 
+                                    parallel_over = "everything", 
+                                    pkgs = get_export_packages())
+    )
+}
+
+#' ARIMA Model 
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' 
+#' @return Get the ARIMA based model
+arima <- function(train_data, 
+                  frequency) {
+  
+  print("arima")
+  
+  model_fit_auto_arima <- train_data %>%
+    get_simple_orchestration(frequency,
+                             modeltime::arima_reg,
+                             "auto_arima")
+  
+  return(model_fit_auto_arima)
+}
+
+
+
+#' ARIMA Boost 
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' @param parallel Parallel Version or not
+#' @param horizon Horizon of model
+#' @param tscv_initial tscv initialization
+#' @param date_rm_regex Date removal Regex
+#' @param back_test_spacing Back Testing Spacing
+#' @param fiscal_year_start Fiscal Year Start
+#' 
+#' @return Get the ARIMA based model
+arima_boost <- function(train_data,
+                        frequency,
+                        parallel,
+                        horizon,
+                        tscv_initial,
+                        date_rm_regex,
+                        back_test_spacing,
+                        fiscal_year_start) {
+  
+  frequency_arima_boost <- frequency
+  
+  #create model recipe
+  date_rm_regex_final <- paste0(date_rm_regex)
+  
+  recipe_spec_arima_boost <-  train_data %>%
+    get_recipie_fiscal_year_adj(fiscal_year_start,
+                                date_rm_regex_final)
   
   #create model spec
   model_spec_arima_boost_tune = modeltime::arima_boost(
@@ -59,80 +240,59 @@ arima_boost = function(train_data, frequency, parallel, horizon, tscv_initial, d
     parsnip::set_engine("auto_arima_xgboost")
   
   
-  wflw_spec_tune_arima_boost = workflows::workflow() %>%
-    workflows::add_model(model_spec_arima_boost_tune) %>%
-    workflows::add_recipe(recipe_spec_arima_boost)
+  wflw_spec_tune_arima_boost <- get_workflow_simple(model_spec_arima_boost_tune,
+                                                    recipe_spec_arima_boost)
   
-  set.seed(123)
-  #resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
-  resamples_tscv = timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
   
-  tune_results_arima_boost = tune::tune_grid(
-    object     = wflw_spec_tune_arima_boost,
-    resamples  = resamples_tscv,
-    param_info = dials::parameters(wflw_spec_tune_arima_boost) %>%
-      update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), trans = NULL)),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
+  tune_results_arima_boost <- train_data%>%
+    get_resample_tune_grid(tscv_initial,
+                         horizon,
+                         back_test_spacing,
+                         wflw_spec_tune_arima_boost)
   
-  best_results = tune_results_arima_boost %>%
-    tune::show_best(metric = "rmse", n = 10)
   
-  wflw_fit_arima_boost = wflw_spec_tune_arima_boost %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
+  wflw_fit_arima_boost<- train_data %>% 
+    get_fit_wkflw_best(wflw_spec_tune_arima_boost,
+                       tune_results_arima_boost)
   
   print("arima-boost")
   
   return(wflw_fit_arima_boost)
 }
 
-cubist = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, model_name, 
-                   fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
+#' Cubist Function 
+#' 
+#' @param train_data Training Data
+#' @param parallel Parallel Version or not
+#' @param model_type "single" "ensemble" etc.
+#' @param horizon Horizon of model
+#' @param tscv_initial tscv initialization
+#' @param date_rm_regex Date removal Regex
+#' @param back_test_spacing Back Testing Spacing
+#' @param fiscal_year_start Fiscal Year Start
+#' 
+#' @return Get the ARIMA based model
+cubist <- function(train_data,
+                  parallel,
+                  model_type = "single",
+                  horizon,
+                  tscv_initial,
+                  date_rm_regex,
+                  back_test_spacing,
+                  fiscal_year_start) {
   
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
+
+  date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
+  
   
   #create recipe
-  if(model_type == "ensemble") {
-    
-    date_rm_regex_final = paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_cubist = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-      recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-      timetk::step_timeseries_signature(Date_Adj) %>%
-      recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                           Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-      recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num) %>%
-      recipes::step_nzv(recipes::all_predictors()) %>%
-      recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
-    
-  } else {
-    
-    date_rm_regex_final = paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_cubist = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-      recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-      timetk::step_timeseries_signature(Date_Adj) %>%
-      recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                           Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-      recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj) %>%
-      recipes::step_nzv(recipes::all_predictors()) %>%
-      recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
-  }
+  recipe_spec_cubist <-train_data %>% 
+    get_recipie_fiscal_quarter_adj(fiscal_year_start,
+                                   date_rm_regex_final,
+                                   model_type)
+
   
-  model_spec_cubist = rules::cubist_rules(
+  model_spec_cubist <- rules::cubist_rules(
     mode = "regression", 
     committees = tune::tune(), 
     neighbors = tune::tune(), 
@@ -140,77 +300,51 @@ cubist = function(train_data, parallel, model_type = "single", horizon, tscv_ini
   ) %>%
     parsnip::set_engine("Cubist")
   
-  wflw_spec_tune_cubist = workflows::workflow() %>%
-    workflows::add_model(model_spec_cubist) %>%
-    workflows::add_recipe(recipe_spec_cubist)
+  wflw_spec_tune_cubist <- get_workflow_simple(model_spec_cubist,
+                                               recipe_spec_cubist)
   
-  set.seed(123)
   
-  #resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
+  tune_results_cubist <- train_data%>%
+    get_resample_tune_grid(tscv_initial,
+                           horizon,
+                           back_test_spacing,
+                           wflw_spec_tune_cubist,
+                           parallel)
   
-  resamples_tscv = timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
   
-  tune_results_cubist = tune::tune_grid(
-    object     = wflw_spec_tune_cubist,
-    resamples  = resamples_tscv,
-    param_info = dials::parameters(wflw_spec_tune_cubist),
-    grid       = 10, 
-    metrics = modeltime::default_forecast_accuracy_metric_set(),
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
+  wflw_fit_cubist<- train_data %>% 
+    get_fit_wkflw_best(wflw_spec_tune_cubist,
+                       tune_results_cubist)
   
-  best_results = tune_results_cubist %>%
-    tune::show_best(metric = "rmse", n = 10)
   
-  wflw_fit_cubist = wflw_spec_tune_cubist %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
-  
-  print(model_name)
+  print("cubist")
   
   return(wflw_fit_cubist)
   
 }
 
-croston = function(train_data, frequency, models_to_run, models_not_to_run) {
-  
-  if((!('croston' %in% models_to_run) & !is.null(models_to_run)) | ('croston' %in% models_not_to_run)) {return()}
-  
-  recipe_spec_croston = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
-  
-  model_spec_croston = modeltime::exp_smoothing(
-    seasonal_period = frequency) %>%
-    parsnip::set_engine("croston")
-  
-  wflw_spec_croston = workflows::workflow() %>%
-    workflows::add_model(model_spec_croston) %>%
-    workflows::add_recipe(recipe_spec_croston)
-  
-  model_fit_croston = wflw_spec_croston %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
+#' Croston Model 
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' 
+#' @return Get the Croston based model
+croston <- function(train_data, 
+                   frequency) {
   
   print("croston")
+  
+  model_fit_croston <- train_data %>%
+    get_simple_orchestration(frequency,
+                             modeltime::exp_smoothing,
+                             "croston")
   
   return(model_fit_croston)
 }
 
-deepar = function(train_data, horizon, frequency, model_name, run_deep_learning, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | run_deep_learning == FALSE | (model_name %in% models_not_to_run)) {return()}
-  
-  #horizon_deepar = horizon 
-  #frequency_deepar = frequency
+deepar = function(train_data, 
+                  horizon, 
+                  frequency){
   
   recipe_spec_gluon = recipes::recipe(
     Target ~ Date + Combo, 
@@ -235,9 +369,8 @@ deepar = function(train_data, horizon, frequency, model_name, run_deep_learning,
   return(wflw_fit_deepar_1)
 }
 
-ets = function(train_data, frequency, models_to_run, models_not_to_run) {
-  
-  if((!('ets' %in% models_to_run) & !is.null(models_to_run)) | ('ets' %in% models_not_to_run)) {return()}
+ets = function(train_data, 
+               frequency) {
   
   frequency_ets = frequency
   
@@ -262,10 +395,13 @@ ets = function(train_data, frequency, models_to_run, models_not_to_run) {
   return(model_fit_ets)
 }
 
-glmnet = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, model_name, 
-                   fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
+glmnet = function(train_data,
+                  parallel,
+                  model_type = "single",
+                  horizon, tscv_initial,
+                  date_rm_regex,
+                  fiscal_year_start,
+                  back_test_spacing){
   
   #create model recipe
   if(model_type == 'ensemble') {
@@ -351,9 +487,8 @@ glmnet = function(train_data, parallel, model_type = "single", horizon, tscv_ini
   return(wflw_fit_glmnet)
 }
 
-lightgbm = function(train_data, parallel, models_to_run, models_not_to_run) {
-  
-  if((!('lightgbm' %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
+lightgbm = function(train_data, 
+                    parallel) {
   
   #create model recipe
   recipe_spec_lightgbm = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
@@ -400,25 +535,15 @@ lightgbm = function(train_data, parallel, models_to_run, models_not_to_run) {
   return(wflw_fit_lightgbm)
 }
 
-mars = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, model_name, 
-                 fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
-  
-  
-  #date_rm_regex_final = paste0(date_rm_regex, '|(year)')
-  
-  # recipe_spec_glmnet = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-  #   recipes::step_mutate(Date_Adj = Date %m-% months(6),
-  #                        Horizon_Factor = as.factor(paste0('H', Horizon))) %>%
-  #   timetk::step_timeseries_signature(Date_Adj) %>%
-  #   recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-  #                        Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-  #   recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj) %>%
-  #   recipes::step_nzv(recipes::all_predictors()) %>%
-  #   recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE) %>%
-  #   recipes::step_center(recipes::all_predictors()) %>%
-  #   recipes::step_scale(recipes::all_predictors())
+mars = function(train_data, 
+                parallel, 
+                model_type = "single",
+                horizon,
+                tscv_initial,
+                date_rm_regex,
+                model_name, 
+                fiscal_year_start,
+                back_test_spacing) {
   
   recipe_spec_mars = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
@@ -428,9 +553,6 @@ mars = function(train_data, parallel, model_type = "single", horizon, tscv_initi
     recipes::step_rm(matches(date_rm_regex), Date, Date_Adj) %>%
     recipes::step_nzv(recipes::all_predictors()) %>%
     recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
-  
-  #write.csv(recipe_spec_mars %>% prep() %>% juice(), "\\\\fsu\\shares\\EDGFinBI\\EdgUsers\\Finn\\Mike Tokic\\Other\\mars_recipe.csv")
-  
   
   model_spec_mars = parsnip::mars(
     mode = "regression", 
@@ -479,11 +601,12 @@ mars = function(train_data, parallel, model_type = "single", horizon, tscv_initi
   return(wflw_fit_mars)
 }
 
-meanf = function(train_data, frequency, models_to_run, models_not_to_run) {
+meanf = function(train_data, 
+                 frequency) {
   
-  if((!('meanf' %in% models_to_run) & !is.null(models_to_run)) | ('meanf' %in% models_not_to_run)) {return()}
-  
-  recipe_spec_meanf = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
+  recipe_spec_meanf = recipes::recipe(Target ~ Date, 
+                                      data = train_data %>% 
+                                        dplyr::select(-Combo))
   
   model_spec_meanf = modeltime::window_reg(
     window_size = frequency
@@ -505,9 +628,9 @@ meanf = function(train_data, frequency, models_to_run, models_not_to_run) {
   return(model_fit_meanf)
 }
 
-nbeats = function(train_data, horizon, frequency, model_name, run_deep_learning, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | run_deep_learning == FALSE | (model_name %in% models_not_to_run)) {return()}
+nbeats = function(train_data, 
+                  horizon, 
+                  frequency) {
   
   frequency_nbeats = frequency
   horizon_nbeats = horizon
@@ -536,10 +659,12 @@ nbeats = function(train_data, horizon, frequency, model_name, run_deep_learning,
   
 }
 
-nnetar = function(train_data, frequency, horizon, parallel, tscv_initial,
-                   back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!('nnetar' %in% models_to_run) & !is.null(models_to_run)) | ('nnetar' %in% models_not_to_run)) {return()}
+nnetar = function(train_data,
+                  frequency,
+                  horizon,
+                  parallel,
+                  tscv_initial,
+                  back_test_spacing) {
   
   resamples_tscv_lag = timetk::time_series_cv(
     data = train_data, 
@@ -604,10 +729,14 @@ nnetar = function(train_data, frequency, horizon, parallel, tscv_initial,
   return(wflw_fit_nnetar_tscv)
 } 
 
-nnetar_xregs = function(train_data, frequency, horizon, parallel, tscv_initial, date_rm_regex, 
-                         fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!('nnetar-xregs' %in% models_to_run) & !is.null(models_to_run)) | ('nnetar-xregs' %in% models_not_to_run)) {return()}
+nnetar_xregs = function(train_data, 
+                        frequency, 
+                        horizon, 
+                        parallel, 
+                        tscv_initial,
+                        date_rm_regex,
+                        fiscal_year_start,
+                        back_test_spacing) {
   
   resamples_tscv_lag = timetk::time_series_cv(
     data = train_data, 
@@ -682,9 +811,11 @@ nnetar_xregs = function(train_data, frequency, horizon, parallel, tscv_initial, 
   return(wflw_fit_nnetar_tscv)
 } 
 
-prophet = function(train_data, parallel, horizon, tscv_initial, back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!('prophet' %in% models_to_run) & !is.null(models_to_run)) | ('prophet' %in% models_not_to_run)) {return()}
+prophet = function(train_data,
+                   parallel,
+                   horizon,
+                   tscv_initial,
+                   back_test_spacing) {
   
   recipe_spec_prophet = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
   
@@ -736,19 +867,15 @@ prophet = function(train_data, parallel, horizon, tscv_initial, back_test_spacin
   print("prophet")
   
   return(wflw_fit_prophet)
-  
-  # model_fit_prophet = wflw_spec_prophet %>%
-  #   generics::fit(train_data %>% dplyr::select(-Combo))
-  # 
-  # print('prophet')
-  # 
-  # return(model_fit_prophet)
 }
 
-prophet_boost = function(train_data, parallel, horizon, tscv_initial, date_rm_regex, 
-                          back_test_spacing, fiscal_year_start, models_to_run, models_not_to_run) {
-  
-  if((!('prophet-boost' %in% models_to_run) & !is.null(models_to_run)) | ('prophet-boost' %in% models_not_to_run)) {return()}
+prophet_boost = function(train_data,
+                         parallel,
+                         horizon,
+                         tscv_initial,
+                         date_rm_regex,
+                         back_test_spacing,
+                         fiscal_year_start) {
   
   #create model recipe
   date_rm_regex_final = paste0(date_rm_regex)
@@ -816,16 +943,15 @@ prophet_boost = function(train_data, parallel, horizon, tscv_initial, date_rm_re
   return(wflw_fit_prophet_boost)
 }
 
-prophet_xregs = function(train_data, parallel, horizon, tscv_initial, date_rm_regex, 
-                          fiscal_year_start, back_test_spacing, models_to_run, models_not_to_run) {
-  
-  if((!('prophet-xregs' %in% models_to_run) & !is.null(models_to_run)) | ('prophet-xregs' %in% models_not_to_run)) {return()}
-  
-  #recipe_spec_prophet = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
+prophet_xregs = function(train_data,
+                         parallel,
+                         horizon,
+                         tscv_initial,
+                         date_rm_regex,
+                         fiscal_year_start,
+                         back_test_spacing) {
   
   date_rm_regex_final = paste0(date_rm_regex)
-  
-  #factor = function(x) {as.factor(x)}
   
   recipe_spec_prophet_xregs = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
@@ -886,9 +1012,8 @@ prophet_xregs = function(train_data, parallel, horizon, tscv_initial, date_rm_re
   return(wflw_fit_prophet_xregs)
 }
 
-snaive = function(train_data, frequency, models_to_run, models_not_to_run) {
-  
-  if((!('snaive' %in% models_to_run) & !is.null(models_to_run)) | ('snaive' %in% models_not_to_run)) {return()}
+snaive = function(train_data,
+                  frequency) {
   
   recipe_spec_snaive = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
   
@@ -909,9 +1034,7 @@ snaive = function(train_data, frequency, models_to_run, models_not_to_run) {
   return(model_fit_snaive)
 }
 
-stlm_arima = function(train_data, seasonal_period, models_to_run, models_not_to_run) {
-  
-  if((!('stlm-arima' %in% models_to_run) & !is.null(models_to_run)) | ('stlm-arima' %in% models_not_to_run)) {return()}
+stlm_arima = function(train_data, seasonal_period) {
   
   seasonal_period_stlm_arima = seasonal_period
   
@@ -936,9 +1059,7 @@ stlm_arima = function(train_data, seasonal_period, models_to_run, models_not_to_
   return(model_fit_stlm_arima)
 }
 
-stlm_ets = function(train_data, seasonal_period, models_to_run, models_not_to_run) {
-  
-  if((!('stlm-ets' %in% models_to_run) & !is.null(models_to_run)) | ('stlm-ets' %in% models_not_to_run)) {return()}
+stlm_ets = function(train_data, seasonal_period) {
   
   seasonal_period_stlm_ets = seasonal_period
   
@@ -963,11 +1084,14 @@ stlm_ets = function(train_data, seasonal_period, models_to_run, models_not_to_ru
   return(model_fit_stlm_ets)
 }
 
-svm_poly = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, 
-                     fiscal_year_start, back_test_spacing, model_name, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
-  
+svm_poly = function(train_data,
+                    parallel,
+                    model_type = "single",
+                    horizon,
+                    tscv_initial,
+                    date_rm_regex,
+                    fiscal_year_start,
+                    back_test_spacing) {
   
   if(model_type == 'ensemble') {
     
@@ -1012,7 +1136,6 @@ svm_poly = function(train_data, parallel, model_type = "single", horizon, tscv_i
   
   set.seed(123)
   
-  #resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
   
   resamples_tscv = timetk::time_series_cv(
     data = train_data,
@@ -1048,10 +1171,14 @@ svm_poly = function(train_data, parallel, model_type = "single", horizon, tscv_i
   
 }
 
-svm_rbf = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, 
-                    fiscal_year_start, back_test_spacing, model_name, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
+svm_rbf = function(train_data,
+                   parallel,
+                   model_type = "single",
+                   horizon,
+                   tscv_initial,
+                   date_rm_regex,
+                   fiscal_year_start,
+                   back_test_spacing) {
   
   if(model_type == 'ensemble') {
     
@@ -1131,9 +1258,8 @@ svm_rbf = function(train_data, parallel, model_type = "single", horizon, tscv_in
   
 }
 
-tabnet = function(train_data, parallel, models_to_run, models_not_to_run) {
-  
-  if((!('tabnet' %in% models_to_run) & !is.null(models_to_run)) | ('tabnet' %in% models_not_to_run)) {return()}
+tabnet = function(train_data,
+                  parallel) {
   
   #create model recipe
   recipe_spec_tabnet = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
@@ -1180,10 +1306,9 @@ tabnet = function(train_data, parallel, models_to_run, models_not_to_run) {
   
 }
 
-tbats = function(train_data, seasonal_period, models_to_run, models_not_to_run) {
-  
-  if((!('tbats' %in% models_to_run) & !is.null(models_to_run)) | ('tbats' %in% models_not_to_run)) {return()}
-  
+tbats = function(train_data,
+                 seasonal_period) {
+
   seasonal_period_tbats = seasonal_period
   
   recipe_spec_tbats = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
@@ -1207,9 +1332,8 @@ tbats = function(train_data, seasonal_period, models_to_run, models_not_to_run) 
   return(model_fit_tbats)
 }
 
-theta = function(train_data, frequency, models_to_run, models_not_to_run) {
-  
-  if((!('theta' %in% models_to_run) & !is.null(models_to_run)) | ('theta' %in% models_not_to_run)) {return()}
+theta = function(train_data,
+                 frequency) {
   
   recipe_spec_theta = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
   
@@ -1229,10 +1353,14 @@ theta = function(train_data, frequency, models_to_run, models_not_to_run) {
   return(model_fit_theta)
 }
 
-xgboost = function(train_data, parallel, model_type = "single", horizon, tscv_initial, date_rm_regex, 
-                    fiscal_year_start, back_test_spacing, model_name, models_to_run, models_not_to_run) {
-  
-  if((!(model_name %in% models_to_run) & !is.null(models_to_run)) | (model_name %in% models_not_to_run)) {return()}
+xgboost = function(train_data,
+                   parallel,
+                   model_type = "single",
+                   horizon,
+                   tscv_initial,
+                   date_rm_regex,
+                   fiscal_year_start,
+                   back_test_spacing) {
   
   #create model recipe
   if(model_type == 'ensemble') {

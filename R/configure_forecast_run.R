@@ -231,3 +231,16 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
   return (list(hist_periods_80=hist_periods_80,
                back_test_scenarios = back_test_scenarios))
 }
+
+#' Fetches a list of packages to be exported
+#' 
+#' Code gets used in multiple places where we need the packages list
+#' 
+#' @return Simple list of packages
+get_export_packages <- function(){
+  return(c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+    'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+    'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+    "doParallel", "parallel"))
+}
+

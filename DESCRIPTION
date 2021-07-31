@@ -2,11 +2,15 @@ Package: finnts
 Title: Finn time series forecasting framework for financial forecasting
 Version: 0.0.0.9000
 Authors@R: 
-    person(given = "Mike",
+    c(person(given = "Mike",
            family = "Tokic",
            role = c("aut", "cre"),
-           email = "mftokic@gmail.com",
-           comment = c(ORCID = "YOUR-ORCID-ID"))
+           email = "mftokic@gmail.com"), 
+      person(given = "Aadharsh",
+           family = "Kannan",
+           role = c("aut"),
+           email = "akannan@microsoft.com",
+           comment = c(ORCID = "0000-0002-6475-8211")))
 Description: What the package does (one paragraph).
 License: MIT + file LICENSE
 Encoding: UTF-8
