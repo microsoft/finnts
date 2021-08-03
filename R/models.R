@@ -1,16 +1,3 @@
-#' Gets a simple workflow from model
-#' 
-#' @param model_spec Model Spec A
-#' @param recipe_spec year, quarter, month, week, day
-#' 
-#' @return dplyr workflow spec
-get_workflow_simple <- function(model_spec,
-                                recipe_spec){
-    workflows::workflow() %>%
-    workflows::add_model(model_spec) %>%
-    workflows::add_recipe(recipe_spec)
-}
-
 #' Gets a simple recipe
 #' 
 #' @param train_data Training Data 
@@ -19,6 +6,16 @@ get_workflow_simple <- function(model_spec,
 get_recipie_simple <- function(train_data){
   recipes::recipe(Target ~ Date, data = train_data %>% 
                     dplyr::select(-Combo))
+}
+
+#' Gets a recipe with combo
+#' 
+#' @param train_data Training Data 
+#' 
+#' @return combo recipie
+get_recipie_combo <- function(train_data){
+  recipes::recipe(Target ~  Date + Combo, 
+                  data = train_data)
 }
 
 #' Gets a recipe that adjusts for fiscal year start
@@ -54,7 +51,8 @@ get_recipie_fiscal_year_adj<- function(train_data,
 get_recipie_fiscal_quarter_adj<- function(train_data,
                                        fiscal_year_start,
                                        date_rm_regex_final,
-                                       model_type){
+                                       model_type,
+                                       one_hot = FALSE){
   
   recepie_step_using_model_type <- function(df,model_type){
     
@@ -75,18 +73,30 @@ get_recipie_fiscal_quarter_adj<- function(train_data,
                          Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
     recepie_step_using_model_type(model_type)%>%
     recipes::step_nzv(recipes::all_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
+    recipes::step_dummy(recipes::all_nominal(), one_hot = one_hot)
 }
 
+#' Gets a simple workflow from model
+#' 
+#' @param model_spec Model Spec A
+#' @param recipe_spec year, quarter, month, week, day
+#' 
+#' @return dplyr workflow spec
+get_workflow_simple <- function(model_spec,
+                                recipe_spec){
+  workflows::workflow() %>%
+    workflows::add_model(model_spec) %>%
+    workflows::add_recipe(recipe_spec)
+}
 
 #' Gets a simple fit
 #' 
+#' @param train_data Training Data
 #' @param wflw_spec Worflow Spec
-#' @param train_data Training Data 
 #' 
 #' @return simple recipie
-get_fit_simple <- function(wflw_spec,
-                           train_data){
+get_fit_simple <- function(train_data,
+                           wflw_spec){
   wflw_spec %>%
     generics::fit(train_data %>% 
                     dplyr::select(-Combo))
@@ -110,31 +120,20 @@ get_fit_wkflw_best <- function(train_data,
     generics::fit(train_data %>% dplyr::select(-Combo))
 }
 
-
-#' Get simple orchestration
+#' Gets a simple fit
 #' 
-#' @param train_data Training Data
-#' @param frequency Frequency of Data
-#' @param fnToCall usually a modeltime function e.x. modeltime::arima_reg
-#' @param parsnip_engine ex. 'auto_arima'
+#' @param train_data Training Data 
+#' @param model_spec Model Spec
+#' @param recipie_spec Recipie Spec
 #' 
-#' @return gives the model fit
-get_simple_orchestration <- function(train_data,
-                                     frequency,
-                                     fnToCall,
-                                     parsnip_engine){
-  
-  recipie_simple <- get_recipie_simple(train_data)
-  model_spec_fn <- fnToCall(frequency) %>%
-    parsnip::set_engine(parsnip_engine)
-  
-  wflw_spec <- get_workflow_simple(model_spec_fn,
-                                   recipie_simple)
-  
-  model_fit_fn <- get_fit_simple(wflw_spec,
-                                 train_data)
-  
-  return(model_fit_fn)
+#' @return simple recipie
+get_fit_wkflw_nocombo <- function(train_data,
+                                  model_spec,
+                                  recipie_spec){
+  workflows::workflow() %>%
+    workflows::add_model(model_spec) %>%
+    workflows::add_recipe(recipe_spec) %>%
+    generics::fit(train_data)
 }
 
 #' Get tuning grid with resample
@@ -175,6 +174,32 @@ get_resample_tune_grid<- function(train_data,
     )
 }
 
+#' Get tuning grid k fold CV
+#' 
+#' @param train_data Training Data
+#' @param wkflw Workflow Objet from previous stage
+#' @param parallel Allow Parallal (Default False) 
+#' 
+#' @return gives the model fit
+get_kfold_tune_grid<- function(train_data,
+                               wkflw,
+                               parallel = FALSE){
+  
+  set.seed(123)
+  resamples_kfold <- train_data %>% rsample::vfold_cv(v = 5)
+  
+  tune::tune_grid(
+    object     = wkflw,
+    resamples  = resamples_kfold,
+    param_info = dials::parameters(wkflw),
+    grid       = 10, 
+    control    = tune::control_grid(verbose = FALSE, 
+                                    allow_par = parallel, 
+                                    parallel_over = "everything", 
+                                    pkgs = get_export_packages())
+  )
+}
+
 #' ARIMA Model 
 #' 
 #' @param train_data Training Data
@@ -184,17 +209,24 @@ get_resample_tune_grid<- function(train_data,
 arima <- function(train_data, 
                   frequency) {
   
-  print("arima")
+  recipie_simple <- train_data %>%
+    get_recipie_simple()
+  
+  model_spec_arima <- modeltime::arima_reg(
+    seasonal_period = frequency_arima
+  ) %>%
+    parsnip::set_engine("auto_arima")
+  
+  wflw_spec <- get_workflow_simple(model_spec_arima,
+                                   recipie_simple)
   
   model_fit_auto_arima <- train_data %>%
-    get_simple_orchestration(frequency,
-                             modeltime::arima_reg,
-                             "auto_arima")
+    get_fit_simple(wflw_spec)
+  
+  print("arima")
   
   return(model_fit_auto_arima)
 }
-
-
 
 #' ARIMA Boost 
 #' 
@@ -271,7 +303,7 @@ arima_boost <- function(train_data,
 #' @param back_test_spacing Back Testing Spacing
 #' @param fiscal_year_start Fiscal Year Start
 #' 
-#' @return Get the ARIMA based model
+#' @return Get the cubist
 cubist <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -283,7 +315,6 @@ cubist <- function(train_data,
   
 
   date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-  
   
   #create recipe
   recipe_spec_cubist <-train_data %>% 
@@ -332,25 +363,39 @@ cubist <- function(train_data,
 croston <- function(train_data, 
                    frequency) {
   
-  print("croston")
+  recipie_simple <- train_data %>%
+    get_recipie_simple()
+  
+  model_spec_croston <- modeltime::exp_smoothing(
+    seasonal_period = frequency) %>%
+    parsnip::set_engine("croston")
+  
+  wflw_spec <- get_workflow_simple(model_spec_croston,
+                                   recipie_simple)
   
   model_fit_croston <- train_data %>%
-    get_simple_orchestration(frequency,
-                             modeltime::exp_smoothing,
-                             "croston")
+    get_fit_simple(wflw_spec)
+  
+  print("croston")
   
   return(model_fit_croston)
 }
 
-deepar = function(train_data, 
+#' Deep AR Model 
+#' 
+#' @param train_data Training Data
+#' @param horizon Horizon of forecast
+#' @param frequency Frequency of Data
+#' 
+#' @return Get the DeepAR model
+deepar <- function(train_data, 
                   horizon, 
                   frequency){
   
-  recipe_spec_gluon = recipes::recipe(
-    Target ~ Date + Combo, 
-    data = train_data)
+  recipe_spec_gluon <- train_data %>%
+    get_recipie_combo()
   
-  model_spec_1 = modeltime.gluonts::deep_ar(
+  model_spec_1 <- modeltime.gluonts::deep_ar(
     id = "Combo", 
     freq = frequency, 
     prediction_length = as.numeric(horizon), 
@@ -359,202 +404,164 @@ deepar = function(train_data,
   ) %>%
     parsnip::set_engine("gluonts_deepar")
   
-  wflw_fit_deepar_1 = workflows::workflow() %>%
-    workflows::add_model(model_spec_1) %>%
-    workflows::add_recipe(recipe_spec_gluon) %>%
-    generics::fit(train_data)
+  wflw_fit_deepar_1 <- train_data %>%
+    get_fit_wkflw_nocombo(model_spec_1,
+                          recipe_spec_gluon)
   
-  print(model_name)
+  print("deepar")
   
   return(wflw_fit_deepar_1)
 }
 
-ets = function(train_data, 
+#' ETS Model 
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' 
+#' @return Get the ETS model
+ets <- function(train_data, 
                frequency) {
   
-  frequency_ets = frequency
+  recipie_simple <- train_data %>%
+    get_recipie_simple()
   
-  recipe_spec_ets = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo)) 
-  
-  model_spec_ets =modeltime::exp_smoothing(
+  model_spec_ets <-  modeltime::exp_smoothing(
     error = "auto",
     trend = "auto",
     season = "auto", 
-    seasonal_period = frequency_ets) %>%
+    seasonal_period = frequency) %>%
     parsnip::set_engine("ets")
   
-  wflw_spec_ets = workflows::workflow() %>%
-    workflows::add_model(model_spec_ets) %>%
-    workflows::add_recipe(recipe_spec_ets)
+  wflw_fit_deepar_1 <- train_data %>%
+    get_fit_wkflw_nocombo(model_spec_ets,
+                          recipie_simple)
   
-  model_fit_ets = wflw_spec_ets %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
+  model_fit_ets <- train_data %>%
+    get_fit_simple(wflw_fit_deepar_1)
   
   print('ets')
   
   return(model_fit_ets)
 }
 
-glmnet = function(train_data,
+#' GLM Net Function 
+#' 
+#' @param train_data Training Data
+#' @param parallel Parallel Version or not
+#' @param model_type "single" "ensemble" etc.
+#' @param horizon Horizon of model
+#' @param tscv_initial tscv initialization
+#' @param date_rm_regex Date removal Regex
+#' @param back_test_spacing Back Testing Spacing
+#' @param fiscal_year_start Fiscal Year Start
+#' 
+#' @return Get the GLM Net
+glmnet <- function(train_data,
                   parallel,
                   model_type = "single",
-                  horizon, tscv_initial,
+                  horizon,
+                  tscv_initial,
                   date_rm_regex,
                   fiscal_year_start,
                   back_test_spacing){
   
-  #create model recipe
-  if(model_type == 'ensemble') {
-    
-    date_rm_regex_final = paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_glmnet = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-      recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-      timetk::step_timeseries_signature(Date_Adj) %>%
-      recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                           Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-      recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num) %>%
-      recipes::step_nzv(recipes::all_predictors()) %>%
-      recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE) %>%
-      recipes::step_center(recipes::all_predictors()) %>%
-      recipes::step_scale(recipes::all_predictors())
-    
-    
-  } else {
-    
-    date_rm_regex_final = paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_glmnet = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-      recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-      timetk::step_timeseries_signature(Date_Adj) %>%
-      recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                           Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-      recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj) %>%
-      recipes::step_nzv(recipes::all_predictors()) %>%
-      recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE) %>%
-      recipes::step_center(recipes::all_predictors()) %>%
-      recipes::step_scale(recipes::all_predictors())
-    
-    # print(recipe_spec_glmnet %>% prep() %>% juice() %>% glimpse())
-    # return(recipe_spec_glmnet %>% prep() %>% juice())
-  }
+  date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
   
-  model_spec_glmnet = parsnip::linear_reg(
+  recipe_spec_glmnet <- train_data %>%
+    get_recipie_fiscal_quarter_adj(fiscal_year_start,
+                                   date_rm_regex_final,
+                                   model_type)%>%
+    recipes::step_center(recipes::all_predictors()) %>%
+    recipes::step_scale(recipes::all_predictors())
+  
+  model_spec_glmnet <- parsnip::linear_reg(
     mode = "regression", 
     penalty = tune::tune(), 
     mixture = tune::tune()
   ) %>%
     parsnip::set_engine("glmnet")
   
-  wflw_spec_tune_glmnet = workflows::workflow() %>%
-    workflows::add_model(model_spec_glmnet) %>%
-    workflows::add_recipe(recipe_spec_glmnet) 
+  wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
+                                               recipe_spec_glmnet)
+
+  tune_results_glmnet <- train_data %>%
+    get_resample_tune_grid(tscv_initial,
+                           horizon,
+                           back_test_spacing,
+                           wflw_spec_tune_glmnet,
+                           parallel)
   
-  set.seed(123)
+  wflw_fit_glmnet <- train_data %>%
+    get_fit_wkflw_best(tune_results_glmnet,
+                       wflw_spec_tune_glmnet)
   
-  #resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
-  resamples_tscv = timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
-  
-  
-  tune_results_glmnet = tune::tune_grid(
-    object     = wflw_spec_tune_glmnet,
-    resamples  = resamples_tscv,
-    param_info = dials::parameters(wflw_spec_tune_glmnet),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
-  
-  best_results = tune_results_glmnet %>%
-    tune::show_best(metric = "rmse", n = 10)
-  
-  wflw_fit_glmnet = wflw_spec_tune_glmnet %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
-  
-  print(model_name)
+  print('glmnet')
   
   return(wflw_fit_glmnet)
 }
 
-lightgbm = function(train_data, 
-                    parallel) {
+#' Light GBM Model 
+#' 
+#' @param train_data Training Data
+#' @param fiscal_year_start Fiscal Year Start
+#' @param parallel should it be parallel
+#' 
+#' @return Get the LightGBM based model
+lightgbm <- function(train_data,
+                     fiscal_year_start,
+                     parallel){
   
-  #create model recipe
-  recipe_spec_lightgbm = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-    timetk::step_timeseries_signature(Date_Adj) %>%
-    recipes::step_rm(matches("(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(day)|(week)"), Date, Date_Adj) %>%
-    recipes::step_nzv(recipes::all_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal(), one_hot = TRUE)
+  date_rm_regex_final <- "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(day)|(week)"
   
-  model_spec_lightgbm = parsnip::boost_tree(
+  recipe_spec_lightgbm <-train_data %>%
+    get_recipie_fiscal_quarter_adj(fiscal_year_start,
+                                   date_rm_regex_final,
+                                   "single",
+                                   TRUE)
+
+  model_spec_lightgbm <- parsnip::boost_tree(
     mode = "regression",
-    #trees = tune::tune(),
-    #min_n = tune::tune(),
     tree_depth = tune::tune()
   ) %>%
     parsnip::set_engine("lightgbm")
   
-  wflw_spec_tune_lightgbm = workflows::workflow() %>%
-    workflows::add_model(model_spec_lightgbm) %>%
-    workflows::add_recipe(recipe_spec_lightgbm) 
+  wflw_spec_tune_lightgbm <- get_workflow_simple(model_spec_lightgbm,
+                                                 recipe_spec_lightgbm)
   
-  set.seed(123)
-  resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
+  tune_reults_lightgbm <- train_data%>%
+    get_kfold_tune_grid(wflw_spec_tune_lightgbm,
+                        parallel)
   
-  tune_results_lightgbm = tune::tune_grid(
-    object     = wflw_spec_tune_lightgbm,
-    resamples  = resamples_kfold,
-    param_info = dials::parameters(wflw_spec_tune_lightgbm),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
+  wflw_fit_lightgbm = train_data %>%
+    get_fit_wkflw_best(tune_reults_lightgbm,
+                       wflw_spec_tune_lightgbm)
   
-  best_results = tune_results_lightgbm %>%
-    tune::show_best(metric = "rmse", n = 10)
-  
-  wflw_fit_lightgbm = wflw_spec_tune_lightgbm %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
-  
+  print("lightgbm")
   return(wflw_fit_lightgbm)
 }
 
-mars = function(train_data, 
+#' MARS Model 
+#' 
+#' @param train_data Training Data
+#' @param parallel Parallel Version or not
+#' @param model_type "single" "ensemble" etc.
+#' @param date_rm_regex Date removal Regex
+#' @param fiscal_year_start Fiscal Year Start
+#' 
+#' @return Get the GLM Net
+mars <- function(train_data, 
                 parallel, 
                 model_type = "single",
-                horizon,
-                tscv_initial,
                 date_rm_regex,
-                model_name, 
-                fiscal_year_start,
-                back_test_spacing) {
+                fiscal_year_start) {
   
-  recipe_spec_mars = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-    timetk::step_timeseries_signature(Date_Adj) %>%
-    recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                         Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-    recipes::step_rm(matches(date_rm_regex), Date, Date_Adj) %>%
-    recipes::step_nzv(recipes::all_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal(), one_hot = FALSE)
-  
-  model_spec_mars = parsnip::mars(
+  recipe_spec_mars <- train_data %>%
+    get_recipie_fiscal_quarter_adj(fiscal_year_start,
+                                   date_rm_regex,
+                                   model_type,
+                                   FALSE)
+
+  model_spec_mars <- parsnip::mars(
     mode = "regression", 
     num_terms = tune::tune(), 
     prod_degree = tune::tune(),
@@ -562,51 +569,33 @@ mars = function(train_data,
   ) %>%
     parsnip::set_engine("earth")
   
-  wflw_spec_tune_mars = workflows::workflow() %>%
-    workflows::add_model(model_spec_mars) %>%
-    workflows::add_recipe(recipe_spec_mars)
+  wflw_spec_tune_mars <- get_workflow_simple(model_spec_mars,
+                                             recipe_spec_mars)
   
-  set.seed(123)
-  resamples_kfold = train_data %>% rsample::vfold_cv(v = 5)
-  resamples_tscv = timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
+  tune_results_mars <- train_data %>%
+    get_kfold_tune_grid(wflw_spec_tune_mars,
+                        parallel)
   
-  tune_results_mars = tune::tune_grid(
-    object     = wflw_spec_tune_mars,
-    resamples  = resamples_kfold,
-    param_info = dials::parameters(wflw_spec_tune_mars),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
+  wflw_fit_mars <- train_data %>%
+    get_fit_wkflw_best(tune_results_mars,
+                       wflw_spec_tune_mars)
   
-  best_results = tune_results_mars %>%
-    tune::show_best(metric = "rmse", n = 10)
-  
-  wflw_fit_mars = wflw_spec_tune_mars %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
-  
-  print(model_name)
+  print("mars")
   
   return(wflw_fit_mars)
 }
 
-meanf = function(train_data, 
+#' Mean Forecast 
+#' 
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#' 
+#' @return Get Mean Forecast Model
+meanf <- function(train_data, 
                  frequency) {
   
-  recipe_spec_meanf = recipes::recipe(Target ~ Date, 
-                                      data = train_data %>% 
-                                        dplyr::select(-Combo))
+  recipe_spec_meanf <-train_data %>% 
+    get_recipie_simple()
   
   model_spec_meanf = modeltime::window_reg(
     window_size = frequency
@@ -616,50 +605,52 @@ meanf = function(train_data,
       window_function = mean, 
       na.rm = TRUE)
   
-  wflw_spec_meanf = workflows::workflow() %>%
-    workflows::add_model(model_spec_meanf) %>%
-    workflows::add_recipe(recipe_spec_meanf)
+  wflw_spec_meanf <-  get_workflow_simple(model_spec_meanf,
+                                          recipe_spec_meanf)
   
-  model_fit_meanf = wflw_spec_meanf %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
+  model_fit_meanf <- train_data %>%
+    get_fit_simple(wflw_spec_meanf)
   
   print('meanf')
   
   return(model_fit_meanf)
 }
 
-nbeats = function(train_data, 
+#' nbeats model
+#' 
+#' @param train_data Training Data
+#' @param horizon Horizon
+#' @param frequency Frequency of Data
+#' 
+#' @return Get nbeats Model
+nbeats <- function(train_data, 
                   horizon, 
                   frequency) {
   
-  frequency_nbeats = frequency
-  horizon_nbeats = horizon
-  
-  recipe_spec_gluon = recipes::recipe(
-    Target ~ Date + Combo, 
-    data = train_data)
-  
-  model_spec_nbeats = modeltime.gluonts::nbeats(
+  recipe_spec_gluon <- train_data %>%
+    get_recipie_combo()
+
+  model_spec_nbeats <- modeltime.gluonts::nbeats(
     id = "Combo", 
-    freq = frequency_nbeats,
-    prediction_length = horizon_nbeats, 
+    freq = frequency,
+    prediction_length = horizon, 
     epochs = 5, 
     num_batches_per_epoch = 5
   ) %>%
     parsnip::set_engine("gluonts_nbeats")
   
-  wflw_fit_nbeats = workflows::workflow() %>%
-    workflows::add_model(model_spec_nbeats) %>%
-    workflows::add_recipe(recipe_spec_gluon) %>%
-    generics::fit(train_data)
   
-  print(model_name)
+  wflw_fit_nbeats<- train_data %>%
+    get_fit_wkflw_nocombo(model_spec_nbeats,
+                          recipe_spec_gluon)
+  
+  print('nbeats')
   
   return(wflw_fit_nbeats)
-  
 }
 
-nnetar = function(train_data,
+## Pick Up Here ##
+nnetar <- function(train_data,
                   frequency,
                   horizon,
                   parallel,

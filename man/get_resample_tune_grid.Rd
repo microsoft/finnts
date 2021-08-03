@@ -9,7 +9,8 @@ get_resample_tune_grid(
   tscv_initial,
   horizon,
   back_test_spacing,
-  wkflw
+  wkflw,
+  parallel = FALSE
 )
 }
 \arguments{
@@ -22,6 +23,8 @@ get_resample_tune_grid(
 \item{back_test_spacing}{Back Testing Spacing}
 
 \item{wkflw}{Workflow Objet from previous stage}
+
+\item{parallel}{Allow Parallal (Default False)}
 }
 \value{
 gives the model fit
