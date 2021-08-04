@@ -79,7 +79,7 @@ arima_boost <- function(train_data, frequency, parallel, horizon, tscv_initial, 
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_arima_boost) %>%
       update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), trans = NULL)),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -161,7 +161,7 @@ cubist <- function(train_data, parallel, model_type = "single", horizon, tscv_in
     object     = wflw_spec_tune_cubist,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_cubist),
-    grid       = 10, 
+    grid       = 100, 
     metrics = modeltime::default_forecast_accuracy_metric_set(),
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
@@ -220,7 +220,7 @@ deepar <- function(train_data, horizon, frequency, model_name, run_deep_learning
     id = "Combo", 
     freq = frequency, 
     prediction_length = as.numeric(horizon), 
-    epochs = 5, 
+    epochs = 32, 
     num_batches_per_epoch = 5
   ) %>%
     parsnip::set_engine("gluonts_deepar")
@@ -331,7 +331,7 @@ glmnet <- function(train_data, parallel, model_type = "single", horizon, tscv_in
     object     = wflw_spec_tune_glmnet,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_glmnet),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -461,7 +461,7 @@ mars <- function(train_data, parallel, model_type = "single", horizon, tscv_init
     object     = wflw_spec_tune_mars,
     resamples  = resamples_kfold,
     param_info = dials::parameters(wflw_spec_tune_mars),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -523,7 +523,7 @@ nbeats <- function(train_data, horizon, frequency, model_name, run_deep_learning
     freq = frequency_nbeats,
     prediction_length = horizon_nbeats, 
     epochs = 5, 
-    num_batches_per_epoch = 5
+    num_batches_per_epoch = 32
   ) %>%
     parsnip::set_engine("gluonts_nbeats")
   
@@ -569,7 +569,7 @@ nnetar <- function(train_data, frequency, horizon, parallel, tscv_initial,
   
   grid_spec_nnetar <- dials::grid_latin_hypercube(
     dials::parameters(model_spec_nnetar), 
-    size = 10
+    size = 100
   )
   
   
@@ -649,7 +649,7 @@ nnetar_xregs <- function(train_data, frequency, horizon, parallel, tscv_initial,
   
   grid_spec_nnetar <- dials::grid_latin_hypercube(
     dials::parameters(model_spec_nnetar), 
-    size = 10
+    size = 100
   )
   
   wflw_tune_nnetar <- workflows::workflow() %>%
@@ -721,7 +721,7 @@ prophet <- function(train_data, parallel, horizon, tscv_initial, back_test_spaci
     object     = wflw_spec_prophet,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_prophet),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -799,7 +799,7 @@ prophet_boost <- function(train_data, parallel, horizon, tscv_initial, date_rm_r
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_prophet_boost) %>%
       update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), trans = NULL)),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -869,7 +869,7 @@ prophet_xregs <- function(train_data, parallel, horizon, tscv_initial, date_rm_r
     object     = wflw_spec_prophet_xregs,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_prophet_xregs),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -1031,7 +1031,7 @@ svm_poly <- function(train_data, parallel, model_type = "single", horizon, tscv_
     object     = wflw_spec_tune_svm,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_svm),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -1114,7 +1114,7 @@ svm_rbf <- function(train_data, parallel, model_type = "single", horizon, tscv_i
     object     = wflw_spec_tune_svm,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_svm),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
@@ -1296,7 +1296,7 @@ xgboost <- function(train_data, parallel, model_type = "single", horizon, tscv_i
     object     = wflw_spec_tune_xgboost,
     resamples  = resamples_tscv,
     param_info = dials::parameters(wflw_spec_tune_xgboost),
-    grid       = 10, 
+    grid       = 100, 
     control    = tune::control_grid(verbose = TRUE, allow_par = parallel, parallel_over = "everything", 
                                     pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
                                              'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
