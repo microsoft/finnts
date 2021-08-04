@@ -136,6 +136,30 @@ get_fit_wkflw_nocombo <- function(train_data,
     generics::fit(train_data)
 }
 
+#' Get resample Time Series CV
+#' 
+#' @param train_data Training Data
+#' @param tscv_initial TS Cross Validation Initalization
+#' @param horizon Horizon
+#' @param back_test_spacing Back Testing Spacing
+#' 
+#' @return gives the resample TS CV object
+get_resample_tscv <- function(train_data,
+                              tscv_initial,
+                              horizon,
+                              back_test_spacing)
+{
+  timetk::time_series_cv(
+    data = train_data,
+    initial = tscv_initial,
+    assess = horizon,
+    skip = back_test_spacing,
+    cumulative = TRUE,
+    slice_limit = 100
+  )
+}
+
+
 #' Get tuning grid with resample
 #' 
 #' @param train_data Training Data
@@ -151,27 +175,44 @@ get_resample_tune_grid<- function(train_data,
                                   horizon,
                                   back_test_spacing,
                                   wkflw,
-                                  parallel = FALSE){
+                                  parallel = FALSE,
+                                  isBoost = FALSE,
+                                  isMetrics = FALSE){
   set.seed(123)
-  resamples_tscv <- timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
+  resamples_tscv <- train_data %>%
+    get_resample_tscv( tscv_initial,
+                       horizon,
+                       back_test_spacing)
   
-  tune::tune_grid(
-    object     = wkflw,
-    resamples  = resamples_tscv,
-    param_info = dials::parameters(wkflw) %>%
-      update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), trans = NULL)),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, 
-                                    parallel_over = "everything", 
-                                    pkgs = get_export_packages())
-    )
+  dial_by_boost <- function(wkflw,isBoost){
+    
+    params <- dials::parameters(wkflw)
+    
+    if(isBoost){
+      params %>% update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), 
+                                                       trans = NULL))
+    }else
+    {
+      params
+    }
+  }
+  
+  tgCall <- list()
+  tgCall$object <- wkflw
+  tgCall$resamples <- resamples_tscv
+  tgCall$param_info <- dial_by_boost(wkflw,isBoost)
+  tgCall$grid <- 10
+  tgCall$control <- tune::control_grid(verbose = FALSE, 
+                                      allow_par = parallel, 
+                                      parallel_over = "everything", 
+                                      pkgs = get_export_packages())
+  
+  if(isMetrics){
+    tgCall$metrics <- modeltime::default_forecast_accuracy_metric_set()
+  }
+  
+  do.call(tune::tune_grid,
+          tgCall)
 }
 
 #' Get tuning grid k fold CV
@@ -197,6 +238,20 @@ get_kfold_tune_grid<- function(train_data,
                                     allow_par = parallel, 
                                     parallel_over = "everything", 
                                     pkgs = get_export_packages())
+  )
+}
+
+#' Get grid_latin_hypercube
+#' 
+#' @param model_spec Model Spec Obj
+#' 
+#' @return gives the latin hypercube grid
+get_latin_hypercube_grid<-function(model_spec){
+  set.seed(123)
+  
+  dials::grid_latin_hypercube(
+    dials::parameters(model_spec), 
+    size = 10
   )
 }
 
@@ -280,7 +335,9 @@ arima_boost <- function(train_data,
     get_resample_tune_grid(tscv_initial,
                          horizon,
                          back_test_spacing,
-                         wflw_spec_tune_arima_boost)
+                         wflw_spec_tune_arima_boost,
+                         parallel,
+                         TRUE)
   
   
   wflw_fit_arima_boost<- train_data %>% 
@@ -340,7 +397,9 @@ cubist <- function(train_data,
                            horizon,
                            back_test_spacing,
                            wflw_spec_tune_cubist,
-                           parallel)
+                           parallel,
+                           FALSE,
+                           TRUE)
   
   
   wflw_fit_cubist<- train_data %>% 
@@ -649,24 +708,25 @@ nbeats <- function(train_data,
   return(wflw_fit_nbeats)
 }
 
-## Pick Up Here ##
+#' nnetar model
+#' 
+#' @param train_data Training Data
+#' @param horizon Horizon
+#' @param frequency Frequency of Data
+#' @param parallel Parallel
+#' @param tscv_initial TS CV Initalization
+#' @param back_test_spacing Back Test Spacing
+#' 
+#' @return Get nnetar Model
 nnetar <- function(train_data,
-                  frequency,
-                  horizon,
-                  parallel,
-                  tscv_initial,
-                  back_test_spacing) {
+                   horizon,
+                   frequency,
+                   parallel,
+                   tscv_initial,
+                   back_test_spacing) {
   
-  resamples_tscv_lag = timetk::time_series_cv(
-    data = train_data, 
-    cumulative = TRUE, 
-    asses = horizon, 
-    skip = back_test_spacing, 
-    initial = tscv_initial, 
-    slice_limit = 100
-  )
-  
-  recipe_spec_nnetar = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
+  recipe_spec_nnetar <- train_data %>%
+    get_recipie_simple()
   
   model_spec_nnetar = modeltime::nnetar_reg(
     seasonal_period = frequency, 
@@ -679,77 +739,60 @@ nnetar <- function(train_data,
   ) %>%
     parsnip::set_engine('nnetar')
   
-  set.seed(123)
   
-  grid_spec_nnetar = dials::grid_latin_hypercube(
-    dials::parameters(model_spec_nnetar), 
-    size = 10
-  )
+  grid_spec_nnetar <- get_latin_hypercube_grid(model_spec_nnetar)
   
-  
-  wflw_tune_nnetar = workflows::workflow() %>%
-    workflows::add_recipe(recipe_spec_nnetar) %>%
-    workflows::add_model(model_spec_nnetar)
+  wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
+                                          recipe_spec_nnetar)
   
   set.seed(123)
-  
-  tune_results_nnetar = wflw_tune_nnetar %>%
-    tune::tune_grid(
-      resamples = resamples_tscv_lag, 
-      grid = grid_spec_nnetar, 
-      metrics = modeltime::default_forecast_accuracy_metric_set(), 
-      control = tune::control_grid(verbose = FALSE, save_pred = TRUE, allow_par = parallel, parallel_over = "everything", 
-                                   pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                            'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                            'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                            "doParallel", "parallel"))
-    )
-  
-  set.seed(123)
-  
-  wflw_fit_nnetar_tscv = wflw_tune_nnetar %>%
-    tune::finalize_workflow(
-      tune_results_nnetar %>%
-        tune::show_best(metric = "rmse", n = Inf) %>%
-        dplyr::slice(1)
-    ) %>%
-    generics::fit(train_data)
+  tune_results_nnetar <-  train_data%>%
+    get_resample_tune_grid(tscv_initial,
+                           horizon,
+                           back_test_spacing,
+                           wflw_tune_nnetar,
+                           parallel,
+                           FALSE,
+                           TRUE)
+
+  wflw_fit_nnetar_tscv <- train_data %>%
+    get_fit_wkflw_best(tune_results_nnetar,
+                       wflw_tune_nnetar)
   
   print('nnetar')
   
   return(wflw_fit_nnetar_tscv)
 } 
 
-nnetar_xregs = function(train_data, 
-                        frequency, 
+#' nnetar model
+#' 
+#' @param train_data Training Data
+#' @param horizon Horizon
+#' @param frequency Frequency of Data
+#' @param parallel Parallel
+#' @param tscv_initial TS CV Initalization
+#' @param date_rm_regex Date RM Regex
+#' @param fiscal_year_start
+#' @param back_test_spacing Back Test Spacing
+#' 
+#' @return Get nnetar Model
+nnetar_xregs <- function(train_data, 
                         horizon, 
+                        frequency,
                         parallel, 
                         tscv_initial,
                         date_rm_regex,
                         fiscal_year_start,
                         back_test_spacing) {
   
-  resamples_tscv_lag = timetk::time_series_cv(
-    data = train_data, 
-    cumulative = TRUE, 
-    asses = horizon, 
-    skip = back_test_spacing, 
-    initial = tscv_initial, 
-    slice_limit = 100
-  )
-  
+
   
   date_rm_regex_final = paste0(date_rm_regex)
   
-  recipe_spec_nnetar = recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
-    timetk::step_timeseries_signature(Date_Adj) %>%
-    recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                         Date_Adj_quarter_factor = as.factor(Date_Adj_quarter)) %>%
-    recipes::step_rm(matches(date_rm_regex_final), Date) %>%
-    recipes::step_normalize(Date_Adj_index.num, Date_Adj_year) %>%
-    recipes::step_nzv(recipes::all_predictors()) %>%
-    recipes::step_dummy(recipes::all_nominal(), one_hot = TRUE)
+  
+  recipe_spec_nnetar <- train_data %>%
+    get_recipie_fiscal_year_adj(fiscal_year_start,
+                                   date_rm_regex_final)
   
   model_spec_nnetar = modeltime::nnetar_reg(
     seasonal_period = frequency, 
@@ -762,53 +805,48 @@ nnetar_xregs = function(train_data,
   ) %>%
     parsnip::set_engine('nnetar')
   
-  set.seed(123)
+  grid_spec_nnetar <- get_latin_hypercube_grid(model_spec_nnetar)
   
-  grid_spec_nnetar = dials::grid_latin_hypercube(
-    dials::parameters(model_spec_nnetar), 
-    size = 10
-  )
   
-  wflw_tune_nnetar = workflows::workflow() %>%
-    workflows::add_recipe(recipe_spec_nnetar) %>%
-    workflows::add_model(model_spec_nnetar)
+  wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
+                                          recipe_spec_nnetar)
   
   set.seed(123)
+  tune_results_nnetar <-  train_data%>%
+    get_resample_tune_grid(tscv_initial,
+                           horizon,
+                           back_test_spacing,
+                           wflw_tune_nnetar,
+                           parallel,
+                           FALSE,
+                           TRUE)
   
-  tune_results_nnetar = wflw_tune_nnetar %>%
-    tune::tune_grid(
-      resamples = resamples_tscv_lag, 
-      grid = grid_spec_nnetar, 
-      metrics = modeltime::default_forecast_accuracy_metric_set(), 
-      control = tune::control_grid(verbose = FALSE, save_pred = TRUE, allow_par = parallel, parallel_over = "everything", 
-                                   pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                            'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                            'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                            "doParallel", "parallel"))
-    )
-  
-  set.seed(123)
-  
-  wflw_fit_nnetar_tscv = wflw_tune_nnetar %>%
-    tune::finalize_workflow(
-      tune_results_nnetar %>%
-        tune::show_best(metric = "rmse", n = Inf) %>%
-        dplyr::slice(1)
-    ) %>%
-    generics::fit(train_data)
+  wflw_fit_nnetar_tscv <- train_data %>%
+    get_fit_wkflw_best(tune_results_nnetar,
+                       wflw_tune_nnetar)
   
   print('nnetar-xregs')
   
   return(wflw_fit_nnetar_tscv)
-} 
+}
 
+#' prophet model
+#' 
+#' @param train_data Training Data
+#' @param horizon Horizon
+#' @param parallel Parallel
+#' @param tscv_initial TS CV Initalization
+#' @param back_test_spacing Back Test Spacing
+#' 
+#' @return Get prophet Model
 prophet = function(train_data,
-                   parallel,
                    horizon,
+                   parallel,
                    tscv_initial,
                    back_test_spacing) {
   
-  recipe_spec_prophet = recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
+  recipe_spec_prophet <- train_data %>%
+    get_recipie_simple()
   
   model_spec_prophet =modeltime::prophet_reg(
     growth = tune::tune(), 
@@ -822,38 +860,22 @@ prophet = function(train_data,
   ) %>%
     parsnip::set_engine("prophet")
   
-  wflw_spec_prophet = workflows::workflow() %>%
-    workflows::add_model(model_spec_prophet) %>%
-    workflows::add_recipe(recipe_spec_prophet)
+  wflw_spec_prophet<- get_workflow_simple(model_spec_prophet,
+                                          recipe_spec_prophet)
   
-  set.seed(123)
-  resamples_tscv = timetk::time_series_cv(
-    data = train_data,
-    initial = tscv_initial,
-    assess = horizon,
-    skip = back_test_spacing,
-    cumulative = TRUE,
-    slice_limit = 100
-  )
   
-  tune_results_prophet = tune::tune_grid(
-    object     = wflw_spec_prophet,
-    resamples  = resamples_tscv,
-    param_info = dials::parameters(wflw_spec_prophet),
-    grid       = 10, 
-    control    = tune::control_grid(verbose = FALSE, allow_par = parallel, parallel_over = "everything", 
-                                    pkgs = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                             'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                             'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                             "doParallel", "parallel"))
-  )
+  tune_results_prophet <- train_data %>%
+    get_resample_tune_grid(tscv_initial,
+                           horizon,
+                           back_test_spacing,
+                           wflw_spec_prophet,
+                           parallel)
   
-  best_results = tune_results_prophet %>%
-    tune::show_best(metric = "rmse", n = 10)
   
-  wflw_fit_prophet = wflw_spec_prophet %>%
-    tune::finalize_workflow(parameters = best_results %>% dplyr::slice(1)) %>%
-    generics::fit(train_data %>% dplyr::select(-Combo))
+  
+  wflw_fit_prophet <- train_data %>%
+    get_fit_wkflw_best(tune_results_prophet,
+                       wflw_spec_prophet)
   
   print("prophet")
   
@@ -865,8 +887,8 @@ prophet_boost = function(train_data,
                          horizon,
                          tscv_initial,
                          date_rm_regex,
-                         back_test_spacing,
-                         fiscal_year_start) {
+                         fiscal_year_start,
+                         back_test_spacing) {
   
   #create model recipe
   date_rm_regex_final = paste0(date_rm_regex)

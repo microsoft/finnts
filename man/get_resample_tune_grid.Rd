@@ -10,7 +10,9 @@ get_resample_tune_grid(
   horizon,
   back_test_spacing,
   wkflw,
-  parallel = FALSE
+  parallel = FALSE,
+  isBoost = FALSE,
+  isMetrics = FALSE
 )
 }
 \arguments{
