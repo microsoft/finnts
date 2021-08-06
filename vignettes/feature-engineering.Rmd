@@ -29,7 +29,8 @@ library(timetk)
 m4_monthly %>%
   timetk::tk_augment_timeseries_signature(date) %>%
   dplyr::group_by(id) %>%
-  timetk::tk_augment_fourier(date, .periods = c(3, 6, 12), .K = 1)
+  timetk::tk_augment_fourier(date, .periods = c(3, 6, 12), .K = 1) %>%
+  dplyr::ungroup()
 ```
 
 
@@ -63,8 +64,40 @@ Polynomial transformations are created for the target variable, and lags are the
 
 In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model. 
 
-1. In the first recipe, referred to as "R1" in finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. 
+In the first recipe, referred to as "R1" in finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recurive forecasting is not supported in  multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. 
 
-2. R2
+```{r, echo = FALSE, message = FALSE}
+# Simplified Example
+tibble(
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-06-01", "2020-07-01", "2020-08-01", "2020-09-01", "2020-10-01"), 
+  Target = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+) %>%
+  dplyr::mutate(Date = as.Date(Date)) %>%
+  timetk::tk_augment_lags(.value = "Target", .lags = c(3,6), .names = "auto") %>%
+  tidyr::fill(contains("lag"), .direction = "up") %>%
+  tk_augment_slidify(contains("lag"), .f = sum, .period = c(3, 6), .align = "right") %>%
+  tidyr::fill(contains("lag"), .direction = "up") %>%
+  dplyr::rename(
+    Target_lag3_roll3_sum = Target_lag3_roll_3, 
+    Target_lag6_roll3_sum = Target_lag6_roll_3, 
+    Target_lag3_roll6_sum = Target_lag3_roll_6, 
+    Target_lag6_roll6_sum = Target_lag6_roll_6
+  )
+
+```
+
+
+R2
+
+```{r, echo = FALSE, message = FALSE}
+
+tibble(
+  Combo = c("Country_1"), 
+  Date = c("2020-01-01")
+)
+
+```
+
 
 ## Model Specific Feature Engineering
