@@ -1,0 +1,70 @@
+---
+title: "Feature Engineering"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{feature-engineering}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Automated feature engineering is a cornerstone of the package. Below are some of the techniques we use in multivariate machine learning models, and the outside packages that make it possible. 
+
+## Date Features
+
+The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the timestamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed. 
+
+Fourier series are also added using the [tk_augment_fourier](https://business-science.github.io/timetk/reference/tk_augment_fourier.html) function from timetk. 
+
+```{r, message = FALSE}
+library(dplyr)
+library(timetk)
+
+m4_monthly %>%
+  timetk::tk_augment_timeseries_signature(date) %>%
+  dplyr::group_by(id) %>%
+  timetk::tk_augment_fourier(date, .periods = c(3, 6, 12), .K = 1)
+```
+
+
+## Missing Data and Outliers
+
+Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padding using NA. Then the same process is ran again, this time padding data from the "hist_start_date" input from the "forecast_time_series" finnts function, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step. 
+
+After missing data is padded, the [ts_impute_vec](https://business-science.github.io/timetk/reference/ts_impute_vec.html) function from the timetk package is called to impute any NA values. This only happens if the "clean_missing_values" input from the "forecast_time_series" finnts function is set to TRUE, otherwise NA values are replaced with zero. 
+
+Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. OUtliers are replaced after the missing data process, and only runs if the "clean_outliers" input from the "forecast_time_series" finnts function is set to TRUE. 
+
+**Important Note: ** Missing values and outliers are replaced for the target variable and any numeric external regressors.  
+
+## Lags, Rolling Windows, and Polynomial Transformations
+
+Lags of the target variable and external regressors are created using the [tk_augment_lags](https://business-science.github.io/timetk/reference/tk_augment_lags.html) function from timetk. 
+
+Rolling window calculations of the target variable are created using the [tk_augment_slidify](https://business-science.github.io/timetk/reference/tk_augment_slidify.html) function from timetk. The below calculations are created over various window values. 
+
+- sum
+- mean
+- standard deviation
+
+Polynomial transformations are created for the target variable, and lags are then created on top of them. The below transformations are created. 
+
+- squared
+- cubed
+- log
+
+## Custom Approaches
+
+In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model. 
+
+1. In the first recipe, referred to as "R1" in finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. 
+
+2. R2
+
+## Model Specific Feature Engineering
