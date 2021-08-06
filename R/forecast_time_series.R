@@ -1587,6 +1587,19 @@ forecast_time_series <- function(
   
   cli::cli_h3("Selecting Best Model")
   
+  #inverse log transformation
+  if(target_log_transformation) {
+
+    fcst_combination <- fcst_combination %>%
+      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
+      dplyr::mutate(Target = expm1(Target),
+                    FCST = expm1(FCST))
+
+  } else {
+
+    fcst_combination <- fcst_combination
+  }
+  
   #get back test results and replace missing model/back test scenario combos with zero
   back_test_initial <- fcst_combination %>%
     dplyr::filter(.id != "Final_FCST") %>%
@@ -1667,27 +1680,31 @@ forecast_time_series <- function(
   }
   
   # inverse log transformation
-  if(target_log_transformation) {
-    
-    fcst_final <- fcst_combination_final %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
-      dplyr::mutate(Target = expm1(Target), 
-                    FCST = expm1(FCST))
-    
-    # resamples_tscv_final <- resamples_tscv %>%
-    #   dplyr::mutate(Target = expm1(Target))
-    
-    back_test_initial_final <- back_test_initial %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
-      dplyr::mutate(Target = expm1(Target), 
-                    FCST = expm1(FCST))
-    
-  } else {
-    
-    fcst_final <- fcst_combination_final 
-    
-    back_test_initial_final <- back_test_initial 
-  }
+  # if(target_log_transformation) {
+  #   
+  #   fcst_final <- fcst_combination_final %>%
+  #     #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
+  #     dplyr::mutate(Target = expm1(Target), 
+  #                   FCST = expm1(FCST))
+  #   
+  #   # resamples_tscv_final <- resamples_tscv %>%
+  #   #   dplyr::mutate(Target = expm1(Target))
+  #   
+  #   back_test_initial_final <- back_test_initial %>%
+  #     #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
+  #     dplyr::mutate(Target = expm1(Target), 
+  #                   FCST = expm1(FCST))
+  #   
+  # } else {
+  #   
+  #   fcst_final <- fcst_combination_final 
+  #   
+  #   back_test_initial_final <- back_test_initial 
+  # }
+  
+  fcst_final <- fcst_combination_final 
+  
+  back_test_initial_final <- back_test_initial 
   
   # reconcile a hierarchical forecast
   if(forecast_approach != "bottoms_up") {
