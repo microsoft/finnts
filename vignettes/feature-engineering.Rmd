@@ -64,7 +64,7 @@ Polynomial transformations are created for the target variable, and lags are the
 
 In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model. 
 
-In the first recipe, referred to as "R1" in finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recurive forecasting is not supported in  multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. 
+In the first recipe, referred to as "R1" in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled "up". This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough. 
 
 ```{r, echo = FALSE, message = FALSE}
 # Simplified Example
@@ -88,14 +88,22 @@ tibble(
 ```
 
 
-R2
+The second recipe is referred to as "R2" in default finnts models. 
 
 ```{r, echo = FALSE, message = FALSE}
 
 tibble(
-  Combo = c("Country_1"), 
-  Date = c("2020-01-01")
-)
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-01-01", "2020-01-01", "2020-02-01", "2020-02-01", "2020-02-01", "2020-03-01", "2020-03-01", "2020-03-01", "2021-04-01", "2021-04-01", "2021-04-01", "2020-05-01", "2020-05-01", "2020-05-01", "2021-06-01", "2021-06-01", "2021-06-01"), 
+  Origin = c(0,-1, -2, 1, 0, -1, 2, 1, 0, 3, 2, 1, 4, 3, 2, 5, 4, 3), 
+  Horizon = c(1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3), 
+  Target = c(10, 10, 10, 20, 20, 20, 30, 30, 30, 40, 40, 40, 50, 50, 50, 60, 60, 60), 
+  Target_Lag1 = c(NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10, 40, 30, 20, 50, 40, 30), 
+  Target_Lag2 = c(NA, NA, NA, NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10, 40, 30, 20), 
+  Target_Lag3 = c(NA, NA, NA, NA, NA, NA, NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10)
+) %>%
+  dplyr::mutate(Date = as.Date(Date)) %>%
+  print(n=20)
 
 ```
 
