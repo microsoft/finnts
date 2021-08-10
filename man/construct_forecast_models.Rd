@@ -9,6 +9,7 @@ construct_forecast_models(
   external_regressors,
   xregs_future_values_list,
   fourier_periods,
+  combo_variables,
   lag_periods,
   rolling_window_periods,
   hist_end_date,
@@ -37,6 +38,8 @@ construct_forecast_models(
 \item{xregs_future_values_list}{External Regressors Future Values}
 
 \item{fourier_periods}{Fourier Periods}
+
+\item{combo_variables}{Combo Variables}
 
 \item{lag_periods}{Lag Periods}
 

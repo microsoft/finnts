@@ -27,6 +27,10 @@ get_resample_tune_grid(
 \item{wkflw}{Workflow Objet from previous stage}
 
 \item{parallel}{Allow Parallal (Default False)}
+
+\item{isBoost}{Add Boost}
+
+\item{isMetrics}{Add Metrics}
 }
 \value{
 gives the model fit

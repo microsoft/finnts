@@ -23,7 +23,7 @@ get_recipie_combo <- function(train_data){
 #' @param date_rm_regex_final Date removal RegEx Final
 #' @param mutate_adj_half parameter to add date adjustment
 #' @param rm_date "plain", "with_adj", "with_adj_index"
-#' @param step_zv (Zero or NearZero Variance) "zv", "nzv", or none
+#' @param step_nzv (Zero or NearZero Variance) "zv", "nzv", or none
 #' @param norm_date_adj_year normalize date & year
 #' @param dummy_one_hot one hot encoding
 #' @param character_factor is character factor 
@@ -285,6 +285,8 @@ get_tune_grid <- function(train_data,
 #' @param back_test_spacing Back Testing Spacing
 #' @param wkflw Workflow Objet from previous stage
 #' @param parallel Allow Parallal (Default False) 
+#' @param isBoost Add Boost
+#' @param isMetrics Add Metrics
 #' 
 #' @return gives the model fit
 get_resample_tune_grid<- function(train_data,
@@ -853,7 +855,7 @@ nnetar <- function(train_data,
 #' @param parallel Parallel
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
@@ -972,7 +974,7 @@ prophet <- function(train_data,
 #' @param parallel Parallel
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet boost Model
@@ -1035,7 +1037,7 @@ prophet_boost <- function(train_data,
 #' @param parallel Parallel
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet xregs Model
@@ -1186,7 +1188,7 @@ stlm_ets <- function(train_data, seasonal_period) {
 #' @param model_type Type of Model
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM Poly
@@ -1260,7 +1262,7 @@ svm_poly <- function(train_data,
 #' @param model_type Type of Model
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM RBF
@@ -1435,11 +1437,11 @@ theta <- function(train_data,
 #' @param model_type Type of Model
 #' @param tscv_initial TS CV Initalization
 #' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start
+#' @param fiscal_year_start Fiscal Year start
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get XGBoost
-xgboost = function(train_data,
+xgboost <-function(train_data,
                    horizon,
                    parallel,
                    model_type = "single",
@@ -1456,7 +1458,7 @@ xgboost = function(train_data,
     recipe_spec_xgboost <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
-                               rm_date = "with_adj_index"
+                               rm_date = "with_adj_index",
                                step_nzv = "zv",
                                one_hot = TRUE)
     
@@ -1467,7 +1469,7 @@ xgboost = function(train_data,
     recipe_spec_xgboost <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
-                               rm_date = "with_adj"
+                               rm_date = "with_adj",
                                step_nzv = "zv",
                                one_hot = TRUE)
   }

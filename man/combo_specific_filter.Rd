@@ -4,12 +4,14 @@
 \alias{combo_specific_filter}
 \title{Gets combo specific filter}
 \usage{
-combo_specific_filter(full_data_tbl, combo_value)
+combo_specific_filter(full_data_tbl, combo_value, combo_variables)
 }
 \arguments{
 \item{full_data_tbl}{Full Data Table}
 
 \item{combo_value}{Combo Value}
+
+\item{combo_variables}{Combo Variables List}
 }
 \value{
 combo_specific_filter function
