@@ -1,0 +1,43 @@
+---
+title: "Best Model Selection"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{best-model-selection}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The "Best Model" you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied each unique data combo and model combination. 
+
+A standard MAPE calculation is produced first, then instead of a simple average to get the final MAPE a weighted MAPE is taken based on the size of the Target variable value. Please see below for an example of the process. 
+
+```{r, echo = FALSE, message = FALSE}
+library(dplyr)
+
+tibble(
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01"), 
+  Model = c("arima", "arima", "arima", "arima", "arima", "ets", "ets", "ets", "ets", "ets"), 
+  FCST = c(8, 23, 35, 41, 48, 7, 22, 29, 42, 53), 
+  Target = c(10, 20, 30, 40, 50, 10, 20, 30, 40, 50)
+) %>%
+  dplyr::mutate(MAPE = abs(Target-FCST)/Target, 
+                Date = as.Date(Date)) %>%
+  dplyr::group_by(Combo, Model) %>%
+  dplyr::mutate(Target_Total = sum(Target), 
+                Percent_Total = Target/Target_Total, 
+                MAPE_Weighted = Percent_Total*MAPE) %>%
+  dplyr::ungroup()
+
+
+```
+
+
+Fix above table to show all columns
