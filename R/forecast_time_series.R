@@ -238,6 +238,7 @@ forecast_time_series <- function(
                                                external_regressors,
                                                xregs_future_values_list,
                                                fourier_periods,
+                                               combo_variables,
                                                lag_periods,
                                                rolling_window_periods,
                                                hist_end_date,

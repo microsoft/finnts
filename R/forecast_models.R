@@ -2,10 +2,12 @@
 #' 
 #' @param full_data_tbl Full Data Table
 #' @param combo_value Combo Value
+#' @param combo_variables Combo Variables List
 #' 
 #' @return combo_specific_filter function
 combo_specific_filter <-function(full_data_tbl,
-                                 combo_value){
+                                 combo_value,
+                                 combo_variables){
   
   if(combo_value != "All-Data") {
     
@@ -30,6 +32,7 @@ combo_specific_filter <-function(full_data_tbl,
 #' @param external_regressors External Regressors
 #' @param xregs_future_values_list External Regressors Future Values
 #' @param fourier_periods Fourier Periods
+#' @param combo_variables Combo Variables
 #' @param lag_periods Lag Periods
 #' @param rolling_window_periods Rolling window periods
 #' @param hist_end_date Historical End Date
@@ -55,6 +58,7 @@ construct_forecast_models <- function(full_data_tbl,
                                       external_regressors,
                                       xregs_future_values_list,
                                       fourier_periods,
+                                      combo_variables,
                                       lag_periods,
                                       rolling_window_periods,
                                       hist_end_date,
@@ -83,7 +87,8 @@ construct_forecast_models <- function(full_data_tbl,
     model_name_suffix <-  ifelse(combo_value=="All-Data","-all","") 
     
     run_data_full_tbl <- full_data_tbl %>%
-      combo_specific_filter(combo_value)
+      combo_specific_filter(combo_value,
+                            combo_variables)
     
     
     # recipe 1: standard feature engineering

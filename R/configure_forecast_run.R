@@ -173,14 +173,11 @@ get_back_test_spacing <- function(back_test_spacing,
     return(back_test_spacing)
   }
   
-  if(date_type == "day") {
-    back_test_spacing <- 7
-  } else if(date_type == "week") {
-    back_test_spacing <- 4
-  } else {
-    back_test_spacing <- 1
-  }
   
+  back_test_spacing <- switch (date_type,
+                               "day" = 7,
+                               "week" = 4,
+                               1)
   return(back_test_spacing)
 }
 
