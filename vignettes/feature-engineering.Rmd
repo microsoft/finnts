@@ -88,7 +88,7 @@ tibble(
 ```
 
 
-The second recipe is referred to as "R2" in default finnts models. 
+The second recipe is referred to as "R2" in default finnts models. It takes a very different approach than the "R1" recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created by depend on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, "Origin" and "Horizon" features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in "R1". 
 
 ```{r, echo = FALSE, message = FALSE}
 
@@ -109,3 +109,5 @@ tibble(
 
 
 ## Model Specific Feature Engineering
+
+In addition to everything called out above, some models have their own specific transformations that need to be applied before training a model. For example, the "glmnet" model needs to transform categorical variables into continuous variables and center/scale the data before training. Each default model in finnts has their own preprocessing steps that ensure the data fed into the model has the best chance of producing a high quality forecast. The [recipes](https://recipes.tidymodels.org/) package is used to easily apply various preprocessing transformations needed before training a model. 
