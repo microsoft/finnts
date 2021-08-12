@@ -17,6 +17,7 @@ construct_forecast_models(
   forecast_horizon,
   run_model_parallel,
   parallel_processing,
+  run_deep_learning,
   parallel_init_func,
   parallel_exit_func,
   frequency_number,
@@ -55,9 +56,11 @@ construct_forecast_models(
 
 \item{parallel_processing}{Which parallel processing to use}
 
+\item{run_deep_learning}{Run Deep Learning model}
+
 \item{parallel_init_func}{Init function for parallel module WITHIN}
 
-\item{parallel_exit_func}{Exit fnction for parallel module WITHIN}
+\item{parallel_exit_func}{Exit function for parallel module WITHIN}
 
 \item{frequency_number}{Frequency Number}
 

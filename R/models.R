@@ -347,9 +347,7 @@ get_latin_hypercube_grid<-function(model_spec){
   )
 }
 
-#' @details 
 #' There are modeling functions in this section
-#' 
 
 #' ARIMA Model 
 #' 
@@ -374,7 +372,7 @@ arima <- function(train_data,
   model_fit_auto_arima <- train_data %>%
     get_fit_simple(wflw_spec)
   
-  print("arima")
+  cli::cli_alert_success("arima")
   
   return(model_fit_auto_arima)
 }
@@ -441,7 +439,7 @@ arima_boost <- function(train_data,
     get_fit_wkflw_best(wflw_spec_tune_arima_boost,
                        tune_results_arima_boost)
   
-  print("arima-boost")
+  cli::cli_alert_success("arima-boost")
   
   return(wflw_fit_arima_boost)
 }
@@ -518,7 +516,7 @@ cubist <- function(train_data,
                        tune_results_cubist)
   
   
-  print("cubist")
+  cli::cli_alert_success("cubist")
   
   return(wflw_fit_cubist)
   
@@ -546,7 +544,7 @@ croston <- function(train_data,
   model_fit_croston <- train_data %>%
     get_fit_simple(wflw_spec)
   
-  print("croston")
+  cli::cli_alert_success("croston")
   
   return(model_fit_croston)
 }
@@ -578,7 +576,7 @@ deepar <- function(train_data,
     get_fit_wkflw_nocombo(model_spec_1,
                           recipe_spec_gluon)
   
-  print("deepar")
+  cli::cli_alert_success("deepar")
   
   return(wflw_fit_deepar_1)
 }
@@ -609,7 +607,7 @@ ets <- function(train_data,
   model_fit_ets <- train_data %>%
     get_fit_simple(wflw_fit_deepar_1)
   
-  print('ets')
+  cli::cli_alert_success('ets')
   
   return(model_fit_ets)
 }
@@ -678,7 +676,7 @@ glmnet <- function(train_data,
     get_fit_wkflw_best(tune_results_glmnet,
                        wflw_spec_tune_glmnet)
   
-  print('glmnet')
+  cli::cli_alert_success('glmnet')
   
   return(wflw_fit_glmnet)
 }
@@ -722,7 +720,7 @@ mars <- function(train_data,
     get_fit_wkflw_best(tune_results_mars,
                        wflw_spec_tune_mars)
   
-  print("mars")
+  cli::cli_alert_success("mars")
   
   return(wflw_fit_mars)
 }
@@ -753,7 +751,7 @@ meanf <- function(train_data,
   model_fit_meanf <- train_data %>%
     get_fit_simple(wflw_spec_meanf)
   
-  print('meanf')
+  cli::cli_alert_success('meanf')
   
   return(model_fit_meanf)
 }
@@ -786,7 +784,7 @@ nbeats <- function(train_data,
     get_fit_wkflw_nocombo(model_spec_nbeats,
                           recipe_spec_gluon)
   
-  print('nbeats')
+  cli::cli_alert_success('nbeats')
   
   return(wflw_fit_nbeats)
 }
@@ -842,7 +840,7 @@ nnetar <- function(train_data,
     get_fit_wkflw_best(tune_results_nnetar,
                        wflw_tune_nnetar)
   
-  print('nnetar')
+  cli::cli_alert_success('nnetar')
   
   return(wflw_fit_nnetar_tscv)
 } 
@@ -910,7 +908,7 @@ nnetar_xregs <- function(train_data,
     get_fit_wkflw_best(tune_results_nnetar,
                        wflw_tune_nnetar)
   
-  print('nnetar-xregs')
+  cli::cli_alert_success('nnetar-xregs')
   
   return(wflw_fit_nnetar_tscv)
 }
@@ -962,7 +960,7 @@ prophet <- function(train_data,
     get_fit_wkflw_best(tune_results_prophet,
                        wflw_spec_prophet)
   
-  print("prophet")
+  cli::cli_alert_success("prophet")
   
   return(wflw_fit_prophet)
 }
@@ -1025,7 +1023,7 @@ prophet_boost <- function(train_data,
     get_fit_wkflw_best(tune_results_prophet_boost,
                        wflw_spec_tune_prophet_boost)
   
-  print("prophet-boost")
+  cli::cli_alert_success("prophet-boost")
   
   return(wflw_fit_prophet_boost)
 }
@@ -1084,7 +1082,7 @@ prophet_xregs <- function(train_data,
     get_fit_wkflw_best(tune_results_prophet_xregs,
                        wflw_spec_prophet_xregs)
   
-  print("prophet-xregs")
+  cli::cli_alert_success("prophet-xregs")
   
   return(wkflw__fit_prophet_xregs)
 }
@@ -1112,7 +1110,7 @@ snaive <- function(train_data,
   model_fit_snaive <- train_data %>% 
     get_fit_simple(wflw_spec_snaive) 
   
-  print('snaive')
+  cli::cli_alert_success('snaive')
   
   return(model_fit_snaive)
 }
@@ -1123,7 +1121,8 @@ snaive <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM Arima Forecast Model
-stlm_arima <- function(train_data, seasonal_period){
+stlm_arima <- function(train_data, 
+                       seasonal_period){
   
   seasonal_period_stlm_arima <- seasonal_period
   
@@ -1143,7 +1142,7 @@ stlm_arima <- function(train_data, seasonal_period){
   model_fit_stlm_arima <- train_data %>% 
     get_fit_simple(wflw_spec_stlm_arima)
   
-  print('stlm-arima')
+  cli::cli_alert_success('stlm-arima')
   
   return(model_fit_stlm_arima)
 }
@@ -1175,7 +1174,7 @@ stlm_ets <- function(train_data, seasonal_period) {
   model_fit_stlm_ets <- train_data %>% 
     get_fit_simple(wflw_spec_stlm_ets)
   
-  print('stlm-ets')
+  cli::cli_alert_success('stlm-ets')
   
   return(model_fit_stlm_ets)
 }
@@ -1248,7 +1247,7 @@ svm_poly <- function(train_data,
                        wflw_spec_tune_svm)
   
   
-  print("svm-poly")
+  cli::cli_alert_success("svm-poly")
   
   return(wflw_fit_svm)
   
@@ -1319,7 +1318,7 @@ svm_rbf <- function(train_data,
     get_fit_wkflw_best(tune_results_svm,
                        wflw_spec_tune_svm)
   
-  print("svm-rbf")
+  cli::cli_alert_success("svm-rbf")
   
   return(wflw_fit_svm)
   
@@ -1363,7 +1362,7 @@ tabnet <- function(train_data,
     get_fit_wkflw_best(tune_results_tabnet,
                        wflw_spec_tune_tabnet)
   
-  print("tabnet")
+  cli::cli_alert_success("tabnet")
   
   return(wflw_fit_tabnet)
   
@@ -1396,7 +1395,7 @@ tbats <- function(train_data,
   model_fit_tbats <- train_data %>%
     get_fit_simple(wflw_spec_tbats)
   
-  print('tbats')
+  cli::cli_alert_success('tbats')
   
   return(model_fit_tbats)
 }
@@ -1424,7 +1423,7 @@ theta <- function(train_data,
   model_fit_theta <- train_data %>%
     get_fit_simple(wflw_spec_theta)
   
-  print("theta")
+  cli::cli_alert_success("theta")
   
   return(model_fit_theta)
 }
@@ -1498,7 +1497,7 @@ xgboost <-function(train_data,
     get_fit_wkflw_best(tune_results_xgboost,
                        wflw_fit_xgboost)
 
-  print("xgboost")
+  cli::cli_alert_success("xgboost")
   
   return(wflw_fit_xgboost)
 }

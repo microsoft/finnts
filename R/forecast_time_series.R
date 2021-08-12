@@ -118,12 +118,12 @@ forecast_time_series <- function(
   weekly_to_daily = TRUE
 ) {
 
-  #' @section  1. Load Evironment Info:
+  #' 1. Load Evironment Info:
   
   load_env_info(reticulate_environment)
   
   
-  #' @section 2. Initial Unit Tests:
+  #' 2. Initial Unit Tests:
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -148,7 +148,7 @@ forecast_time_series <- function(
   hist_end_date <- hist_dt$hist_end_date
   
   
-  #' @section 3. Update Input Values:
+  #' 3. Update Input Values:
   
   #Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
@@ -181,7 +181,7 @@ forecast_time_series <- function(
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  #' @section 4. Prep Data:
+  #' 4. Prep Data:
   
   #Get initial data table 
   data_tbl <- get_data_tbl(input_data,
@@ -246,6 +246,7 @@ forecast_time_series <- function(
                                                forecast_horizon,
                                                run_model_parallel,
                                                parallel_processing,
+                                               run_deep_learning,
                                                init_azure_batch_parallel_within,
                                                exit_azure_batch_parallel_within,
                                                frequency_number,

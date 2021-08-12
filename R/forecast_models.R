@@ -24,7 +24,160 @@ combo_specific_filter <-function(full_data_tbl,
   }
 }
 
+#' Get list of all-data models
+#' 
+#' @return List of all data models
+get_not_all_data_models <- function(){
+  c('arima','arima-boost','croston','ets','meanf','nnetar','nnetar-xregs',
+    'prophet','prophet-xregs','snaive','stlm-ets','stlm-arima',
+    'tbats','tabnet','theta')
+}
 
+#' Get list of r1 only models
+#' 
+#' @return List of r1 only models
+get_r1_data_models <- function(){
+  c('mars','deepar','nbeats')
+}
+
+#' Get list of r1 & r2 models
+#' 
+#' @return List of r1 & r2 models
+get_r2_data_models <- function(){
+  c('cubist','glmnet','svm-poly','svm-rbf','xgboost')
+}
+
+#' Get list of deep learning models
+#' 
+#' @return List of deep learning models
+get_deep_learning_models <- function(){
+  c('deepar','nbeats')
+}
+
+#' Get list of seasonal correction
+#' 
+#' @return List of models that need seasonal adjustment
+get_seasonal_adjustment_models <- function(){
+  c('meanf','snaive')
+}
+
+#' Get change of frequency
+#' 
+#' @param date_type Date Type
+#' @param frequency_number Original Frequency Number
+#' 
+#' @return adjusted frequency
+get_freq_adjustment <- function(date_type,
+                                frequency_number){
+  
+  switch (date_type,
+          "week" = 52,
+          "day" = 365,
+          frequency_number)
+}
+
+#' Gets list of pre-existing models
+#' 
+#' @param models_to_run List of models to run
+#' @param models_not_to_run List of models NOT to run
+#' @param run_deep_learning Deep Learning Models
+#' 
+#' @return uses models_to_run and models_not_to_run and returns correct list
+get_model_functions <- function(models_to_run,
+                                model_not_to_run,
+                                run_deep_learning){
+  
+  exhaustive_pre_load_list <- c(get_not_all_data_models(),
+                                get_r1_data_models(),
+                                get_r2_data_models())
+
+  deep_learning_models <- get_deep_learning_models()
+  
+  fnlist <- list()
+  
+  if(is.null(models_to_run)){
+    models_to_run <- exhaustive_pre_load_list
+  }
+  
+  
+  for(mr in models_to_run){
+    
+    if(mr %in% model_not_to_run){
+      next
+    }
+    
+    if((mr %in% deep_learning_models) & !run_deep_learning){
+      next
+    }
+    
+    fn_form <- get(stringr::str_replace(mr,"-","_")) 
+    
+    if(mr %in% exhaustive_pre_load_list){
+      cli::cli_alert_success(paste0("Known model:",mr," function:",fn_form))
+    }else{
+      cli::cli_alert_warning(paste0("Custom model:",mr," function:",fn_form))
+    }
+    
+    fnlist[mr] <- fn_form
+  }
+  
+  return(fnlist)
+}
+
+#' Invoke model function with params
+#' 
+#' @param fn_to_invoke Function to invoke
+#' @param train_data Training Data
+#' @param frequency Frequency used
+#' @param horizon Horizon of forecast
+#' @param parallel Is Include Parallel
+#' @param seasonal_period Seasonal Peiod
+#' @param tscv_inital Time Series CV Initialization
+#' @param date_rm_regex Date Remove Regex
+#' @param back_test_spacing Back Test Spacing
+#' @param fiscal_year_start Fiscal Year Start
+#' @param model_type Model Type
+#' 
+#' @return Forecast Object to be used down stream
+invoke_forecast_function <- function(fn_to_invoke,
+                                     train_data,
+                                     frequency,
+                                     horizon,
+                                     parallel,
+                                     seasonal_period,
+                                     tscv_inital,
+                                     date_rm_regex,
+                                     back_test_spacing,
+                                     fiscal_year_start,
+                                     model_type){
+  
+  exp_arg_list <- formalArgs(fn_to_invoke)
+  
+  avail_arg_list <- list('train_data' = train_data,
+                         'frequency' = frequency,
+                         'horizon' = horizon,
+                         'parallel' = parallel,
+                         'seasonal_period' = seasonal_period,
+                         'tscv_inital' = tscv_inital,
+                         'date_rm_regex' = date_rm_regex,
+                         'back_test_spacing' = back_test_spacing,
+                         'fiscal_year_start' = fiscal_year_start,
+                         'model_type' = model_type)
+  
+  avail_names <- names(avail_arg_list)
+  
+  inp_arg_list <- list()
+  
+  for(x in avail_names){
+    
+    if(x %in% exp_arg_list){
+      inp_arg_list[x] <- avail_arg_list[x]
+    }
+  }
+  
+  
+  do.call(fn_to_invoke,inp_arg_list)
+}
 
 #' Get a Forecast Model Functions
 #' 
@@ -40,8 +193,9 @@ combo_specific_filter <-function(full_data_tbl,
 #' @param forecast_horizon Forecast Horizon
 #' @param run_model_parallel Run Model in Parallel
 #' @param parallel_processing Which parallel processing to use
+#' @param run_deep_learning Run Deep Learning model
 #' @param parallel_init_func Init function for parallel module WITHIN
-#' @param parallel_exit_func Exit fnction for parallel module WITHIN
+#' @param parallel_exit_func Exit function for parallel module WITHIN
 #' @param frequency_number Frequency Number
 #' @param models_to_run Models to Run
 #' @param models_not_to_run Models not to run
@@ -66,6 +220,7 @@ construct_forecast_models <- function(full_data_tbl,
                                       forecast_horizon,
                                       run_model_parallel,
                                       parallel_processing,
+                                      run_deep_learning,
                                       parallel_init_func,
                                       parallel_exit_func,
                                       frequency_number,
@@ -146,8 +301,6 @@ construct_forecast_models <- function(full_data_tbl,
     
     # Run Individual Time Series Models
     if(combo_value != "All-Data") {
-      
-      
       
       
       #Auto ARIMA
