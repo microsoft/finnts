@@ -1,0 +1,80 @@
+---
+title: "Quick Start Guide"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{quick-start-guide}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+The finnts package, commonly referred to as "Finn", is a standardized times series forecast framework developed by Microsoft Finance. It's a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.
+
+Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, "forecast_time_series", takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package. 
+
+```{r, message = FALSE, eval = FALSE}
+library(finnts)
+
+browseVignettes("finnts")
+```
+
+
+Getting started with Finn is as simple as 1..2..3
+
+## 1. Bring Data
+
+Data used in Finn needs to follow a few requirements, called out below. 
+
+- Data is tabular, formatted as data frame or tibble.
+- Needs a time stamp or date column, which needs to be formatted as a date and labeled as "Date". The date values need to start at the beginning of the period. For example, a monthly data set needs to have each date period started on the first day of each month. For a quarterly forecast, the first day of the quarter, etc.
+- Contains at least one unique label to identify one time series from another. These are sometimes referred to as "data combos" or "combo variables" in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series. 
+- No duplicate rows at the intersection of data combos and date. 
+- Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors. 
+- External regressors are optional, not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors. 
+
+A good example to use when producing your first Finn forecast is to leverage existing data examples from the [timetk](https://business-science.github.io/timetk/) package. Let's take a monthly example and trim it down to speed up the run time of your first Finn forecast. 
+
+```{r, message = FALSE}
+library(finnts)
+
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(date >= "2010-01-01") %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+print(hist_data)
+
+print(unique(hist_data$id))
+```
+
+The above data set contains 4 individual time series, identified using the "id" column. 
+
+
+## 2. Create Finn Forecast
+
+Calling for "forecast_time_series" function is the easiest part. In this example we will be running just two models. 
+
+```{r, message = FALSE, eval = hist_data}
+library(finnts)
+library(tibble)
+
+finn_output <- forecast_time_series(
+  input_data = hist_data %>% tibble(),
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 12,
+  models_to_run = c("arima", "ets")
+)
+
+```
+
+
+
+## 3. Use Forecast Outputs
