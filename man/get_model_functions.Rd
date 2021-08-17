@@ -9,9 +9,9 @@ get_model_functions(models_to_run, model_not_to_run, run_deep_learning)
 \arguments{
 \item{models_to_run}{List of models to run}
 
-\item{run_deep_learning}{Deep Learning Models}
+\item{model_not_to_run}{List of models NOT to run}
 
-\item{models_not_to_run}{List of models NOT to run}
+\item{run_deep_learning}{Deep Learning Models}
 }
 \value{
 uses models_to_run and models_not_to_run and returns correct list

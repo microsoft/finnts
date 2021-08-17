@@ -57,7 +57,7 @@ get_deep_learning_models <- function(){
 #' Get list of seasonal correction
 #' 
 #' @return List of models that need seasonal adjustment
-get_seasonal_adjustment_models <- function(){
+get_frequency_adjustment_models <- function(){
   c('meanf','snaive')
 }
 
@@ -79,7 +79,7 @@ get_freq_adjustment <- function(date_type,
 #' Gets list of pre-existing models
 #' 
 #' @param models_to_run List of models to run
-#' @param models_not_to_run List of models NOT to run
+#' @param model_not_to_run List of models NOT to run
 #' @param run_deep_learning Deep Learning Models
 #' 
 #' @return uses models_to_run and models_not_to_run and returns correct list
@@ -110,15 +110,21 @@ get_model_functions <- function(models_to_run,
       next
     }
     
-    fn_form <- get(stringr::str_replace(mr,"-","_")) 
+    fn_name <- as.character(stringr::str_replace(mr,"-","_"))
     
     if(mr %in% exhaustive_pre_load_list){
-      cli::cli_alert_success(paste0("Known model:",mr," function:",fn_form))
+      cli::cli_alert_success(paste0("Known model:",
+                                    mr,
+                                    " function:",
+                                    fn_name))
     }else{
-      cli::cli_alert_warning(paste0("Custom model:",mr," function:",fn_form))
+      cli::cli_alert_warning(paste0("Custom model:",
+                                    mr,
+                                    " function:",
+                                    fn_name))
     }
     
-    fnlist[mr] <- fn_form
+    fnlist[mr] <- fn_name
   }
   
   return(fnlist)
@@ -178,6 +184,8 @@ invoke_forecast_function <- function(fn_to_invoke,
   
   do.call(fn_to_invoke,inp_arg_list)
 }
+
+
 
 #' Get a Forecast Model Functions
 #' 
@@ -294,170 +302,113 @@ construct_forecast_models <- function(full_data_tbl,
     # parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
       
-      parallel_args <- parallel_init_func
+      parallel_args <- parallel_init_func()
     }
     
     print("data_prepped")
     
-    # Run Individual Time Series Models
-    if(combo_value != "All-Data") {
+    
+    model_list <- get_model_functions(models_to_run,
+                                      models_not_to_run,
+                                      run_deep_learning)
+    
+    not_all_data_models <- get_not_all_data_models()
+    r1_models <- get_r1_data_models()
+    r2_models <- get_r2_data_models()
+    freq_models <- get_frequency_adjustment_models()
+    deep_nn_models <- get_deep_learning_models()
+    
+    models_to_go_over <- names(model_list)
+    
+    
+    for(model_name in models_to_go_over){
       
+      print(paste("Invoking",model_name,"using",model_list[model_name]))
+      model_fn <- get(model_list[model_name],mode = "function")
       
-      #Auto ARIMA
-      #arima(train_data = train_data_recipe_1, frequency = frequency_number)
-      try(arima <- arima(train_data = train_data_recipe_1,
-                         frequency = frequency_number),
-          silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
-                                                                     arima, 
-                                                                     location = "top") %>% 
-            update_model_description(1, "arima"),
-          silent = TRUE)
-      
-      
-      #Arima with XGBoost applied to arima residuals
-      try(arima_boost <- arima_boost(train_data = train_data_recipe_1, 
-                                     frequency = frequency_number,
+      if(model_name %in% not_all_data_models & combo_value != "All-Data"){
+        if(model_name %in% freq_models){
+          freq_val <- get_freq_adjustment(date_type,frequency_number)
+        }
+        else{
+          freq_val <- frequency_number
+        }
+        
+        try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                     train_data = train_data_recipe_1,
+                                     frequency = freq_val,
                                      parallel = run_model_parallel,
                                      horizon = forecast_horizon,
-                                     tscv_initial = hist_periods_80,
-                                     date_rm_regex = date_regex,
+                                     seasonal_period =seasonal_periods,
                                      back_test_spacing = back_test_spacing,
-                                     fiscal_year_start = fiscal_year_start),
-          silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
-                                                                     arima_boost,
-                                                                     location = "top") %>% 
-            update_model_description(1, "arima-boost"),
-          silent = TRUE)
-      
-      
-      #Croston
-      try(croston <- croston(train_data = train_data_recipe_1,
-                             frequency = frequency_number),
-          silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
-                                                                     croston,
-                                                                     location = "top") %>% 
-            update_model_description(1, "croston"), 
-          silent = TRUE)
-      
-      
-      #ETS
-      try(ets <- ets(train_data = train_data_recipe_1,
-                     frequency = frequency_number),
-          silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
-                                                                     ets,
-                                                                     location = "top") %>% 
-            update_model_description(1, "ets"),
-          silent = TRUE)
-      
-      
-      #Simple average of latest year
-      try(meanf <- meanf(train_data = train_data_recipe_1, frequency = ifelse(date_type == "week", 52, ifelse(date_type == "day", 365, frequency_number)), models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, meanf, location = "top") %>% update_model_description(1, "meanf"), silent = TRUE)
-      
-      #Neural Net Auto Regressive - NNETAR
-      #nnetar <- nnetar(train_data = train_data, frequency = frequency_number, horizon = forecast_horizon, spacing = back_test_spacing, parallel = run_model_parallel)
-      try(nnetar <- nnetar(train_data = train_data_recipe_1, frequency = frequency_number, horizon = forecast_horizon, parallel = run_model_parallel, models_to_run = models_to_run, models_not_to_run = models_not_to_run, tscv_initial = hist_periods_80, back_test_spacing = back_test_spacing), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, nnetar, location = "top") %>% update_model_description(1, "nnetar"), silent = TRUE)
-      
-      #Neural Net Auto Regressive - NNETAR with external regressors
-      #nnetar_xregs <- nnetar_xregs(train_data = train_data_recipe_1, frequency = frequency_number, horizon = forecast_horizon, parallel = run_model_parallel, tscv_initial = hist_periods_80, date_rm_regex = date_regex, fiscal_year_start = fiscal_year_start, models_to_run = models_to_run, models_not_to_run = models_not_to_run, back_test_spacing = back_test_spacing)
-      try(nnetar_xregs <- nnetar_xregs(train_data = train_data_recipe_1, frequency = frequency_number, horizon = forecast_horizon, parallel = run_model_parallel, tscv_initial = hist_periods_80, date_rm_regex = date_regex, fiscal_year_start = fiscal_year_start, models_to_run = models_to_run, models_not_to_run = models_not_to_run, back_test_spacing = back_test_spacing), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, nnetar_xregs, location = "top") %>% update_model_description(1, "nnetar-xregs"), silent = TRUE)
-      
-      #Prophet
-      #prophet <- prophet(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, models_to_run = models_to_run, models_not_to_run = models_not_to_run)
-      try(prophet <- prophet(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, prophet, location = "top") %>% update_model_description(1, "prophet"), silent = TRUE)
-      
-      #Prophet with XGBoost applied to Prophet residuals
-      #prophet_boost <- prophet_boost(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex)
-      try(prophet_boost <- prophet_boost(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, 
-                                         back_test_spacing = back_test_spacing, fiscal_year_start = fiscal_year_start, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, prophet_boost, location = "top") %>% update_model_description(1, "prophet-boost"), silent = TRUE)
-      
-      #Prophet with external regressors
-      #prophet_xregs <- prophet_xregs(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, models_to_run = models_to_run, models_not_to_run = models_not_to_run)
-      try(prophet_xregs <- prophet_xregs(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, prophet_xregs, location = "top") %>% update_model_description(1, "prophet-xregs"), silent = TRUE)
-      
-      #Seasonal Naive
-      #snaive <- snaive(train_data = train_data, frequency = frequency_number)
-      #snaive <- snaive(train_data = train_data_recipe_1, frequency = ifelse(date_type == "week", 52, ifelse(date_type == "day", 365, frequency_number)))
-      try(snaive <- snaive(train_data = train_data_recipe_1, frequency = ifelse(date_type == "week", 52, ifelse(date_type == "day", 365, frequency_number)), models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, snaive, location = "top") %>% modeltime::update_model_description(1, "snaive"), silent = TRUE)
-      
-      #STLM ARIMA
-      try(stlm_arima <- stlm_arima(train_data = train_data_recipe_1, seasonal_period = seasonal_periods, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, stlm_arima, location = "top") %>% update_model_description(1, "stlm-arima"), silent = TRUE)
-      
-      #STLM ETS
-      try(stlm_ets <- stlm_ets(train_data = train_data_recipe_1, seasonal_period = seasonal_periods, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, stlm_ets, location = "top") %>% update_model_description(1, "stlm-ets"), silent = TRUE)
-      
-      #TBATS
-      try(tbats <- tbats(train_data = train_data_recipe_1, seasonal_period = seasonal_periods, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, tbats, location = "top") %>% update_model_description(1, "tbats"), silent = TRUE)
-      
-      #Theta
-      #theta <- theta(train_data = train_data_recipe_1, frequency = frequency_number)
-      try(theta <- theta(train_data = train_data_recipe_1, frequency = frequency_number, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-      try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, theta, location = "top") %>% update_model_description(1, "theta"), silent = TRUE)
+                                     fiscal_year_start = fiscal_year_start,
+                                     tscv_inital = hist_periods_80,
+                                     date_rm_regex = date_regex,
+                                     model_type = "single"))
+        
+        try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
+                                                                       mdl_called, 
+                                                                       location = "top") %>% 
+              update_model_description(1, model_name),
+            silent = TRUE)
+        
+      }else{
+        
+        
+        freq_val <- frequency
+
+        if((model_name %in% r1_models) | (model_name %in% r2_models)){
+          
+          add_name <- paste0(model_name,"-R1",model_name_suffix)
+          if(model_name %in% deep_nn_models){
+            freq_val <- gluon_ts_frequency
+            add_name <- paste0(model_name,model_name_suffix)
+          }
+          
+          
+            try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                       train_data = train_data_recipe_1,
+                                                       frequency = freq_val,
+                                                       parallel = run_model_parallel,
+                                                       horizon = forecast_horizon,
+                                                       seasonal_period =seasonal_periods,
+                                                       back_test_spacing = back_test_spacing,
+                                                       fiscal_year_start = fiscal_year_start,
+                                                       tscv_inital = hist_periods_80,
+                                                       date_rm_regex = date_regex,
+                                                       model_type = "single"))
+            
+            try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
+                                                                           mdl_called, 
+                                                                           location = "top") %>% 
+                  update_model_description(1, add_name),
+                silent = TRUE)
+        }
+        
+        if(model_name %in% r2_models){
+          
+          add_name <- paste0(model_name,"-R2",model_name_suffix)
+          try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                     train_data = train_data_recipe_2,
+                                                     frequency = freq_val,
+                                                     parallel = run_model_parallel,
+                                                     horizon = forecast_horizon,
+                                                     seasonal_period =seasonal_periods,
+                                                     back_test_spacing = back_test_spacing,
+                                                     fiscal_year_start = fiscal_year_start,
+                                                     tscv_inital = hist_periods_80,
+                                                     date_rm_regex = date_regex,
+                                                     model_type = "single"))
+          
+          try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, 
+                                                                         mdl_called, 
+                                                                         location = "top") %>% 
+                update_model_description(1, add_name),
+              silent = TRUE)
+        }
+        
+      }
     }
-    
-    #DeepAR Gluon TS 
-    try(deepar <- deepar(train_data = train_data_recipe_1, horizon = forecast_horizon, frequency = gluon_ts_frequency, model_name = paste0("deepar", model_name_suffix), run_deep_learning = run_deep_learning, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent=TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, deepar, location = "top") %>% update_model_description(1, paste0("deepar", model_name_suffix)), silent=TRUE)
-    
-    #N-Beats Gluon TS 
-    try(nbeats <- nbeats(train_data = train_data_recipe_1, horizon = forecast_horizon, frequency = gluon_ts_frequency, model_name = paste0("nbeats", model_name_suffix), run_deep_learning = run_deep_learning, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent=TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, nbeats, location = "top") %>% update_model_description(1, paste0("nbeats", model_name_suffix)), silent=TRUE)
-    
-    #Cubist Rules
-    #cubist_r1 <- cubist(train_data = train_data_recipe_1, parallel = FALSE, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex)
-    try(cubist_r1 <- cubist(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("cubist-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, cubist_r1, location = "top") %>% update_model_description(1, paste0("cubist-R1", model_name_suffix)), silent = TRUE)
-    
-    try(cubist_r2 <- cubist(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("cubist-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, cubist_r2, location = "top") %>% update_model_description(1, paste0("cubist-R2", model_name_suffix)), silent = TRUE)
-    
-    #GLMNET
-    try(glmnet_r1 <- glmnet(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("glmnet-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, glmnet_r1, location = "top") %>% update_model_description(1, paste0("glmnet-R1", model_name_suffix)), silent = TRUE)
-    
-    try(glmnet_r2 <- glmnet(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("glmnet-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, glmnet_r2, location = "top") %>% update_model_description(1, paste0("glmnet-R2", model_name_suffix)), silent = TRUE)
-    
-    #MARS
-    #mars_r1 <- mars(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("mars-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run)
-    try(mars_r1 <- mars(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("mars-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, mars_r1, location = "top") %>% update_model_description(1, paste0("mars-R1", model_name_suffix)), silent = TRUE)
-    
-    #Support Vector Machine - Polynomial
-    try(svm_poly_r1 <- svm_poly(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("svm-poly-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, svm_poly_r1, location = "top") %>% update_model_description(1, paste0("svm-poly-R1", model_name_suffix)), silent = TRUE)
-    
-    try(svm_poly_r2 <- svm_poly(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("svm-poly-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, svm_poly_r2, location = "top") %>% update_model_description(1, paste0("svm-poly-R2", model_name_suffix)), silent = TRUE)
-    
-    #Support Vector Machine - Radial Basis Function
-    try(svm_rbf_r1 <- svm_rbf(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("svm-rbf-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, svm_rbf_r1, location = "top") %>% update_model_description(1, paste0("svm-rbf-R1", model_name_suffix)), silent = TRUE)
-    
-    try(svm_rbf_r2 <- svm_rbf(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("svm-rbf-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, svm_rbf_r2, location = "top") %>% update_model_description(1, paste0("svm-rbf-R2", model_name_suffix)), silent = TRUE)
-    
-    #XGBoost
-    #xgboost_r1 <- xgboost(train_data = train_data_recipe_1, parallel = FALSE, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex)
-    try(xgboost_r1 <- xgboost(train_data = train_data_recipe_1, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("xgboost-R1", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, xgboost_r1, location = "top") %>% update_model_description(1, paste0("xgboost-R1", model_name_suffix)), silent = TRUE)
-    
-    #xgboost_r2 <- xgboost(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex)
-    try(xgboost_r2 <- xgboost(train_data = train_data_recipe_2, parallel = run_model_parallel, horizon = forecast_horizon, tscv_initial = hist_periods_80, date_rm_regex = date_regex, model_name = paste0("xgboost-R2", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, xgboost_r2, location = "top") %>% update_model_description(1, paste0("xgboost-R2", model_name_suffix)), silent = TRUE)
     
     print(combined_models_recipe_1)
     print(combined_models_recipe_2)
@@ -492,30 +443,33 @@ construct_forecast_models <- function(full_data_tbl,
       test <- resamples_tscv_recipe_2 %>%
         dplyr::filter(.id == slice, 
                       .key == "testing", 
-                      Origin == max(train %>% dplyr::filter(Horizon == 1) %>% dplyr::select(Origin))+1)
+                      Origin == max(train %>% 
+                                      dplyr::filter(Horizon == 1) %>% 
+                                      dplyr::select(Origin))+1)
       
       slice_tbl <- train %>%
         rbind(test) %>%
         dplyr::select(-.id, -.key)
       
       rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)), assessment = nrow(train) + seq(nrow(test))), class = "ts_cv_split")
+        rsample::make_splits(ind = list(analysis = seq(nrow(train)), 
+                                        assessment = nrow(train) + seq(nrow(test))), 
+                             class = "ts_cv_split")
       
       return(rsplit_obj)
     }
     
     split_objs <- purrr::map(unique(resamples_tscv_recipe_2$.id), .f=rsplit_function)
     
-    resamples_tscv_recipe_2_final <- rsample::new_rset(splits = split_objs, ids = unique(resamples_tscv_recipe_2$.id), subclass = c("time_series_cv", "rset"))
+    resamples_tscv_recipe_2_final <- rsample::new_rset(splits = split_objs, 
+                                                       ids = unique(resamples_tscv_recipe_2$.id), 
+                                                       subclass = c("time_series_cv", "rset"))
     
-    #refit models on resamples
-    submodels_resample_tscv_recipe_1 <- tibble::tibble()
-    submodels_resample_tscv_recipe_2 <- tibble::tibble()
-    
-    if(length(unique(combined_models_recipe_1$.model_desc)) > 0) {
-      submodels_resample_tscv_recipe_1 <- combined_models_recipe_1 %>%
+    get_model_time_resample_fit<- function(combined_models_recipe,
+                                           resamples_tscv_recipe){
+      combined_models_recipe %>%
         modeltime.resample::modeltime_fit_resamples(
-          resamples = resamples_tscv_recipe_1,
+          resamples = resamples_tscv_recipe,
           control = tune::control_resamples(
             verbose = TRUE, 
             allow_par = run_model_parallel)) %>%
@@ -525,11 +479,20 @@ construct_forecast_models <- function(full_data_tbl,
                       FCST = .pred) %>%
         dplyr::select(.id, Model, FCST, .row) %>%
         dplyr::left_join(
-          resamples_tscv_recipe_1 %>%
+          resamples_tscv_recipe %>%
             timetk::tk_time_series_cv_plan() %>%
             dplyr::group_by(.id) %>%
             dplyr::mutate(.row = dplyr::row_number()) %>%
-            dplyr::ungroup()) %>%
+            dplyr::ungroup()) 
+    }
+    
+    #refit models on resamples
+    submodels_resample_tscv_recipe_1 <- tibble::tibble()
+    submodels_resample_tscv_recipe_2 <- tibble::tibble()
+    
+    if(length(unique(combined_models_recipe_1$.model_desc)) > 0) {
+      submodels_resample_tscv_recipe_1 <- combined_models_recipe_1 %>%
+        get_model_time_resample_fit(resamples_tscv_recipe_1)%>%
         dplyr::select(.id, Combo, Model, FCST, Target, Date) %>%
         dplyr::group_by(.id, Combo, Model) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
@@ -538,30 +501,18 @@ construct_forecast_models <- function(full_data_tbl,
     
     if(length(unique(combined_models_recipe_2$.model_desc)) > 0) {
       submodels_resample_tscv_recipe_2 <- combined_models_recipe_2 %>%
-        modeltime.resample::modeltime_fit_resamples(
-          resamples = resamples_tscv_recipe_2_final,
-          control = tune::control_resamples(
-            verbose = TRUE, 
-            allow_par = run_model_parallel)) %>%
-        modeltime.resample::unnest_modeltime_resamples() %>%
-        dplyr::mutate(.id = .resample_id, 
-                      Model = .model_desc, 
-                      FCST = .pred) %>%
-        dplyr::select(.id, Model, FCST, .row) %>%
-        dplyr::left_join(
-          resamples_tscv_recipe_2_final %>%
-            timetk::tk_time_series_cv_plan() %>%
-            dplyr::group_by(.id) %>%
-            dplyr::mutate(.row = dplyr::row_number()) %>%
-            dplyr::ungroup()) %>%
+        get_model_time_resample_fit(resamples_tscv_recipe_2_final) %>%
         dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
     }
     
-    submodels_resample_tscv_tbl <- rbind(submodels_resample_tscv_recipe_1, submodels_resample_tscv_recipe_2)
+    submodels_resample_tscv_tbl <- rbind(submodels_resample_tscv_recipe_1,
+                                         submodels_resample_tscv_recipe_2)
     
     #Replace NaN/Inf with NA, then replace with zero
-    is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl, is.infinite)
-    is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl, is.nan)
+    is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl,
+                                                 is.infinite)
+    is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl,
+                                                 is.nan)
     submodels_resample_tscv_tbl[is.na(submodels_resample_tscv_tbl)] = 0.01
     
     ensemble_train_data_initial <- submodels_resample_tscv_tbl %>% 
@@ -571,8 +522,10 @@ construct_forecast_models <- function(full_data_tbl,
       dplyr::mutate(Horizon_char = as.character(Horizon))
     
     #Replace NaN/Inf with NA, then replace with zero
-    is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial, is.infinite)
-    is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial, is.nan)
+    is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial,
+                                                 is.infinite)
+    is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial,
+                                                 is.nan)
     ensemble_train_data_initial[is.na(ensemble_train_data_initial)] = 0.01
     
     print('prep_ensemble')
@@ -580,28 +533,32 @@ construct_forecast_models <- function(full_data_tbl,
     #create modeltime table to add ensembled trained models to
     combined_ensemble_models <- modeltime::modeltime_table()
     
-    #Cubist ensemble
-    #cubist_ensemble <- cubist(train_data = submodels_resample_tscv_tbl %>% dplyr::filter(Date <= hist_end_date), parallel = run_model_parallel)
-    try(cubist_ensemble <- cubist(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("cubist-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, cubist_ensemble, location = "top") %>% update_model_description(1, paste0("cubist-ensemble", model_name_suffix)), silent = TRUE)
+    ensemble_models <- get_r2_data_models()
     
-    #glmnet ensemble
-    #glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = FALSE, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex)
-    try(glmnet_ensemble <- glmnet(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("glmnet-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, glmnet_ensemble, location = "top") %>% update_model_description(1, paste0("glmnet-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #svm ensemble - polynomial
-    try(svm_poly_ensemble <- svm_poly(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-poly-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_poly_ensemble, location = "top") %>% update_model_description(1, paste0("svm-poly-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #svm ensemble - radial basis function
-    try(svm_rbf_ensemble <- svm_rbf(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("svm-rbf-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, svm_rbf_ensemble, location = "top") %>% update_model_description(1, paste0("svm-rbf-ensemble", model_name_suffix)), silent = TRUE)
-    
-    #xgboost ensemble
-    #xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year")
-    try(xgboost_ensemble <- xgboost(train_data = ensemble_train_data_initial, parallel = run_model_parallel, model_type = 'ensemble', horizon = forecast_horizon, tscv_initial = "1 year", date_rm_regex = date_regex, model_name = paste0("xgboost-ensemble", model_name_suffix), fiscal_year_start = fiscal_year_start, back_test_spacing = back_test_spacing, models_to_run = models_to_run, models_not_to_run = models_not_to_run), silent = TRUE)
-    try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, xgboost_ensemble, location = "top") %>% update_model_description(1, paste0("xgboost-ensemble", model_name_suffix)), silent = TRUE)
+    models_to_go_over <- names(ensemble_models)
+    for(model_name in models_to_go_over){
+      
+      model_fn <- get(ensemble_models[model_name],mode = "function")
+      add_name <- paste0(model_name,"-ensemble",model_name_suffix)
+      
+      try(mdl_ensemble <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                 train_data = ensemble_train_data_initial,
+                                                 frequency = frequency_number,
+                                                 parallel = run_model_parallel,
+                                                 horizon = forecast_horizon,
+                                                 seasonal_period =seasonal_periods,
+                                                 back_test_spacing = back_test_spacing,
+                                                 fiscal_year_start = fiscal_year_start,
+                                                 tscv_inital = "1 year",
+                                                 date_rm_regex = date_regex,
+                                                 model_type = "ensemble"))
+      
+      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, 
+                                                                     mdl_ensemble, 
+                                                                     location = "top") %>% 
+            update_model_description(1, add_name),
+          silent = TRUE)
+    }
     
     print(combined_ensemble_models)
     
@@ -660,14 +617,19 @@ construct_forecast_models <- function(full_data_tbl,
         dplyr::select(-.id, -.key)
       
       rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)), assessment = nrow(train) + seq(nrow(test))), class = "ts_cv_split")
+        rsample::make_splits(ind = list(analysis = seq(nrow(train)), 
+                                        assessment = nrow(train) + seq(nrow(test))), 
+                             class = "ts_cv_split")
       
       return(rsplit_obj)
     }
     
     ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), .f=rsplit_ensemble_function)
     
-    ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, ids = unique(ensemble_tscv$.id), subclass = c("time_series_cv", "rset"))
+    ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, 
+                                             ids = unique(ensemble_tscv$.id), 
+                                             subclass = c("time_series_cv",
+                                                          "rset"))
     
     fcst_tbl <- tibble::tibble()
     
@@ -702,7 +664,8 @@ construct_forecast_models <- function(full_data_tbl,
             dplyr::filter(Date <= hist_end_date) %>%
             tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
             dplyr::mutate(Number = as.numeric(Number) - 1) %>%
-            dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
+            dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), 
+                                               paste0("", Number)), 
                           .id = paste0("Back_Test_", Number_Char)) %>%
             dplyr::select(-Slice, -Number, -Number_Char))
     }
