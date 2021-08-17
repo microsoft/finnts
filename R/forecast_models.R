@@ -625,7 +625,8 @@ construct_forecast_models <- function(full_data_tbl,
       return(rsplit_obj)
     }
     
-    ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), .f=rsplit_ensemble_function)
+    ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), 
+                                      .f=rsplit_ensemble_function)
     
     ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, 
                                              ids = unique(ensemble_tscv$.id), 
@@ -634,41 +635,39 @@ construct_forecast_models <- function(full_data_tbl,
     
     fcst_tbl <- tibble::tibble()
     
-    if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
-      ensemble_fcst <- combined_ensemble_models %>%
-        modeltime.resample::modeltime_fit_resamples(
-          resamples = ensemble_tscv_final,
-          control = tune::control_resamples(
-            verbose = TRUE,
-            allow_par = run_model_parallel)) %>%
-        modeltime.resample::unnest_modeltime_resamples() %>%
-        dplyr::mutate(.id = .resample_id, 
-                      Model = .model_desc, 
-                      FCST = .pred) %>%
-        dplyr::select(.id, Model, FCST, .row) %>%
-        dplyr::left_join(
-          ensemble_tscv_final %>%
-            timetk::tk_time_series_cv_plan() %>%
-            dplyr::group_by(.id) %>%
-            dplyr::mutate(.row = dplyr::row_number()) %>%
-            dplyr::ungroup()) %>%
-        dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
-      
-      fcst_tbl <- ensemble_fcst %>%
+    get_final_fcst_slice <- function(df){
+        df %>%
         tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
         dplyr::mutate(Number = as.numeric(Number)) %>%
         dplyr::filter(Number == 1) %>%
         dplyr::select(-Slice, -Number) %>%
-        dplyr::mutate(.id = "Final_FCST") %>%
+        dplyr::mutate(.id = "Final_FCST")
+    }
+    
+    get_final_fcst_back_test <- function(df){
+      df %>%
+        dplyr::filter(Date <= hist_end_date) %>%
+        tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
+        dplyr::mutate(Number = as.numeric(Number) - 1) %>%
+        dplyr::mutate(Number_Char = ifelse(Number < 10, 
+                                           paste0("0", Number), 
+                                           paste0("", Number)), 
+                      .id = paste0("Back_Test_", Number_Char)) %>%
+        dplyr::select(-Slice, -Number, -Number_Char)
+    }
+      
+      
+    
+    if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
+      ensemble_fcst <- combined_ensemble_models %>%
+        get_model_time_resample_fit(ensemble_tscv_final) %>%
+        dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+      
+      fcst_tbl <- ensemble_fcst  %>%
+        get_final_fcst_slice() %>%
         rbind(
           ensemble_fcst %>%
-            dplyr::filter(Date <= hist_end_date) %>%
-            tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
-            dplyr::mutate(Number = as.numeric(Number) - 1) %>%
-            dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), 
-                                               paste0("", Number)), 
-                          .id = paste0("Back_Test_", Number_Char)) %>%
-            dplyr::select(-Slice, -Number, -Number_Char))
+            get_final_fcst_back_test())
     }
     
     #stop parallel processing
@@ -676,25 +675,15 @@ construct_forecast_models <- function(full_data_tbl,
       parallel_exit_func(parallel_args)
     }
     
+    
     #Create forecast output
     fcst_tbl <- fcst_tbl %>%
+      rbind( 
+        submodels_resample_tscv_tbl %>% 
+          get_final_fcst_slice()) %>%
       rbind(
         submodels_resample_tscv_tbl %>%
-          tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
-          dplyr::mutate(Number = as.numeric(Number)) %>%
-          dplyr::filter(Number == 1) %>%
-          dplyr::select(-Slice, -Number) %>%
-          dplyr::mutate(.id = "Final_FCST")) %>%
-      rbind(
-        submodels_resample_tscv_tbl %>%
-          dplyr::filter(Date <= hist_end_date) %>%
-          tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
-          dplyr::mutate(Number = as.numeric(Number) - 1) %>%
-          dplyr::filter(Number < back_test_scenarios) %>%
-          dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), 
-                                             paste0("", Number)), 
-                        .id = paste0("Back_Test_", Number_Char)) %>%
-          dplyr::select(-Slice, -Number, -Number_Char))
+          get_final_fcst_back_test())
     
     return(fcst_tbl)
   }

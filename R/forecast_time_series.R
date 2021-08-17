@@ -275,44 +275,25 @@ forecast_time_series <- function(input_data,
   # parallel run on local machine
   if(parallel_processing=="local_machine") {
     
-    cl <- parallel::makeCluster(detectCores())
-    doParallel::registerDoParallel(cl)
-    
-    fcst <- foreach(i = combo_list, .combine = 'rbind',
-                    .packages = get_export_packages(), 
-                    .export = get_transfer_functions()) %dopar% {forecast_models(i)}
-    
-    parallel::stopCluster(cl)
+   fcst <- get_fcast_parallel(combo_list,
+                              forecast_models)
     
   }
   
   # parallel run within azure batch
   if(parallel_processing=="azure_batch") {
     
-    doAzureParallel::setCredentials(azure_batch_credentials)
-    cluster <- doAzureParallel::makeCluster(azure_batch_clusterConfig)
-    doAzureParallel::registerDoAzureParallel(cluster)
-    
-    
-    fcst <- foreach(i = combo_list, .combine = 'rbind',
-                    .packages = get_export_packages(), 
-                    .export = get_transfer_functions(),
-                    .options.azure = list(maxTaskRetryCount = 0, 
-                                          autoDeleteJob = TRUE, 
-                                          job = substr(paste0('finn-fcst-', 
-                                                              strftime(Sys.time(),format="%H%M%S"), '-', 
-                                                              tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
-                    .errorhandling = "remove") %dopar% {forecast_models(i)}
+    fcst <- get_fcast_parallel_azure(combo_list,
+                                    forecast_models,
+                                    azure_batch_credentials,
+                                    azure_batch_clusterConfig,
+                                    run_name)
     
   }
   
-  #Replace NaN/Inf with NA, then replace with zero
-  is.na(fcst) <- sapply(fcst, is.infinite)
-  is.na(fcst) <- sapply(fcst, is.nan)
-  fcst[is.na(fcst)] = 0
-  
-  # convert negative forecasts to zero
-  if(negative_fcst == FALSE) {fcst$FCST <- replace(fcst$FCST, which(fcst$FCST < 0), 0)}
+  # Adjust for NaNs and Negative Forecasts
+  fcst <- fcst %>%
+    get_forecast_negative_adjusted(negative_fcst)
   
   # * Create Average Ensembles ----
   
@@ -321,11 +302,12 @@ forecast_time_series <- function(input_data,
   #model average combinations
   model_list <- unique(fcst$Model)
   
-  if(length(model_list) > 1 & average_models) {
+  if(length(model_list) > 1 & average_models){
     
     fcst_prep <- fcst %>%
       tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
-      tidyr::pivot_longer(!c(".id", "Combo", "Target", "Date", "Horizon"), names_to='Model', values_to = "FCST") %>%
+      tidyr::pivot_longer(!c(".id", "Combo", "Target", "Date", "Horizon"), 
+                          names_to='Model', values_to = "FCST") %>%
       dplyr::mutate(FCST = ifelse(is.na(FCST), 0, FCST), 
                     Target = ifelse(is.na(Target), 0, Target))
     
