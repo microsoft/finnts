@@ -275,8 +275,6 @@ get_tune_grid <- function(train_data,
           tgCall)
 }
 
-
-
 #' Get tuning grid with resample
 #' 
 #' @param train_data Training Data
@@ -362,7 +360,7 @@ arima <- function(train_data,
     get_recipie_simple()
   
   model_spec_arima <- modeltime::arima_reg(
-    seasonal_period = frequency_arima
+    seasonal_period = frequency
   ) %>%
     parsnip::set_engine("auto_arima")
   
@@ -485,9 +483,6 @@ cubist <- function(train_data,
                                step_nzv = "nzv",
                                one_hot = FALSE)
   }
-  
-  
-
   
   model_spec_cubist <- rules::cubist_rules(
     mode = "regression", 

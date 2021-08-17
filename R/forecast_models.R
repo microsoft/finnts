@@ -323,8 +323,9 @@ construct_forecast_models <- function(full_data_tbl,
     
     for(model_name in models_to_go_over){
       
-      print(paste("Invoking",model_name,"using",model_list[model_name]))
-      model_fn <- get(model_list[model_name],mode = "function")
+      model_fn <- as.character(model_list[model_name])
+      
+      print(paste("Function being called:",model_fn))
       
       if(model_name %in% not_all_data_models & combo_value != "All-Data"){
         if(model_name %in% freq_models){
@@ -538,7 +539,7 @@ construct_forecast_models <- function(full_data_tbl,
     models_to_go_over <- names(ensemble_models)
     for(model_name in models_to_go_over){
       
-      model_fn <- get(ensemble_models[model_name],mode = "function")
+      model_fn <- as.character(ensemble_models[model_name])
       add_name <- paste0(model_name,"-ensemble",model_name_suffix)
       
       try(mdl_ensemble <- invoke_forecast_function(fn_to_invoke =  model_fn,
@@ -690,7 +691,8 @@ construct_forecast_models <- function(full_data_tbl,
           tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
           dplyr::mutate(Number = as.numeric(Number) - 1) %>%
           dplyr::filter(Number < back_test_scenarios) %>%
-          dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), paste0("", Number)), 
+          dplyr::mutate(Number_Char = ifelse(Number < 10, paste0("0", Number), 
+                                             paste0("", Number)), 
                         .id = paste0("Back_Test_", Number_Char)) %>%
           dplyr::select(-Slice, -Number, -Number_Char))
     
