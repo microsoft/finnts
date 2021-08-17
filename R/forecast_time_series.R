@@ -80,8 +80,7 @@
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
 #'   
 #' @export
-forecast_time_series <- function(
-  input_data,
+forecast_time_series <- function(input_data,
   combo_variables,
   target_variable,
   date_type,
@@ -280,15 +279,8 @@ forecast_time_series <- function(
     doParallel::registerDoParallel(cl)
     
     fcst <- foreach(i = combo_list, .combine = 'rbind',
-                    .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                  'timetk', 'hts', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                  'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                  "doParallel", "parallel"), 
-                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
-                                "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
-                                "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
-                                "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
-                                "init_azure_batch_parallel_within","exit_azure_batch_parallel_within")) %dopar% {forecast_models(i)}
+                    .packages = get_export_packages(), 
+                    .export = get_transfer_functions()) %dopar% {forecast_models(i)}
     
     parallel::stopCluster(cl)
     
@@ -303,17 +295,12 @@ forecast_time_series <- function(
     
     
     fcst <- foreach(i = combo_list, .combine = 'rbind',
-                    .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                  'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                  'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                  "doParallel", "parallel"), 
-                    .export = c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
-                                "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
-                                "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
-                                "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
-                                "init_azure_batch_parallel_within","exit_azure_batch_parallel_within"),
-                    .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
-                                          job = substr(paste0('finn-fcst-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                    .packages = get_export_packages(), 
+                    .export = get_transfer_functions(),
+                    .options.azure = list(maxTaskRetryCount = 0, 
+                                          autoDeleteJob = TRUE, 
+                                          job = substr(paste0('finn-fcst-', 
+                                                              strftime(Sys.time(),format="%H%M%S"), '-', 
                                                               tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
                     .errorhandling = "remove") %dopar% {forecast_models(i)}
     
@@ -416,10 +403,7 @@ forecast_time_series <- function(
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                                      'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                                      'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                                      "doParallel", "parallel"), 
+                                        .packages = get_export_packages(), 
                                         .export = c("fcst_prep")) %dopar% {create_model_averages(i)}
       
       parallel::stopCluster(cl)
@@ -431,10 +415,7 @@ forecast_time_series <- function(
       
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-                                                      'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
-                                                      'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-                                                      "doParallel", "parallel"), 
+                                        .packages = get_export_packages(), 
                                         .export = c("fcst_prep"),
                                         .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
                                                               job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
@@ -470,43 +451,6 @@ forecast_time_series <- function(
     dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm=TRUE)) %>%
     dplyr::arrange(Rolling_MAPE) %>%
     dplyr::ungroup()
-  
-  #return(accuracy1)
-  
-  #new MASE approach
-  # accuracy2 <- back_test_initial %>%
-  #   dplyr::group_by(Combo, .id) %>%
-  #   dplyr::group_split() %>%
-  #   purrr::map(.f = function(df) {
-  #     
-  #     training_length <- full_data_tbl %>%
-  #       timetk::tk_augment_lags(Target) %>%
-  #       dplyr::filter(Date < min(df$Date), 
-  #                     Combo == unique(df$Combo)[1]) %>%
-  #       tidyr::drop_na(Target_lag1) %>%
-  #       dplyr::mutate(Hist_Target = abs(Target - Target_lag1)) %>%
-  #       dplyr::group_by(Combo) %>%
-  #       dplyr::summarise(MASE_Denominator = mean(Hist_Target, na.rm=TRUE)) %>%
-  #       dplyr::ungroup() %>%
-  #       dplyr::mutate(.id = unique(df$.id)[1])
-  #     
-  #     return(training_length)
-  #   }) %>%
-  #   dplyr::bind_rows() %>%
-  #   dplyr::right_join(
-  #     back_test_initial %>%
-  #       dplyr::mutate(MASE_Numerator = abs(Target - FCST)) %>%
-  #       dplyr::group_by(.id, Combo, Model) %>%
-  #       dplyr::summarise(MASE_Numerator = mean(MASE_Numerator, na.rm=TRUE)) %>%
-  #       dplyr::ungroup()) %>%
-  #   dplyr::mutate(MASE = MASE_Numerator/MASE_Denominator) %>%
-  #   dplyr::group_by(Combo, Model) %>%
-  #   dplyr::summarise(MASE = mean(MASE, na.rm=TRUE)) %>%
-  #   dplyr::arrange(MASE) %>%
-  #   dplyr::ungroup()
-  # 
-  # print(accuracy2)
-  
   
   accuracy_final <- accuracy1 %>% 
     dplyr::group_by(Combo) %>% 
@@ -551,7 +495,6 @@ forecast_time_series <- function(
   } else {
     
     fcst_final <- fcst_combination_final 
-    
     back_test_initial_final <- back_test_initial 
   }
   

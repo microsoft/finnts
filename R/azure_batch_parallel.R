@@ -20,4 +20,3 @@ init_azure_parallel_within <-function(){
 exit_azure_parallel_within <-function(cl){
   parallel::stopCluster(cl)
 }
-

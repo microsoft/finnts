@@ -235,9 +235,20 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 #' 
 #' @return Simple list of packages
 get_export_packages <- function(){
-  return(c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
+  c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
     'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
     'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-    "doParallel", "parallel"))
+    "doParallel", "parallel")
+}
+
+#' Fetches a list of parallel transfer functions
+#' 
+#' @return List of parallel transfer functions
+get_transfer_functions <- function(){
+  c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
+    "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
+    "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
+    "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
+    "init_azure_batch_parallel_within","exit_azure_batch_parallel_within")
 }
 
