@@ -1,6 +1,5 @@
 ---
 title: "Models Used in finnts"
-date: "Last compiled on `r format(Sys.time(), '%d %B, %Y')`"
 output: rmarkdown::html_vignette
 vignette: >
   %\VignetteIndexEntry{models-used-in-finnts}
@@ -85,7 +84,3 @@ The package contains multiple deep learning models that initially come from a py
 ## Leveraging the Tidymodels Framework
 
 Most of the models within the package are built on a fantastic time series library called [modeltime](https://business-science.github.io/modeltime/), which was built on top [tidymodels](https://www.tidymodels.org/). Tidymodels is a fantastic series of packages that help in feature engineering (recipes), hyperparameter tuning (tune), model training (parsnip), and backtesting (resample). Big shout out to the modeltime and tidymodels teams for being the shoulders this package stands on!
-
-## Using Your Own Models
-
-To-do

@@ -35,7 +35,7 @@ Below is an example of how you can set up your input_data to leverage future val
 
 - monthly date type
 - forecast horizon of 3
-- historical end date of "2021-12-01"
+- historical end date of "2020-12-01"
 - external regressors: Holiday, GDP, Sales_Pipeline
 
 ```{r, echo = FALSE, message = FALSE}

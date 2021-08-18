@@ -16,7 +16,7 @@ knitr::opts_chunk$set(
 
 ## Default Hyperparameter Tuning
 
-Most models automatically included in finnts, including all multivariate models, have various hyperparameters with values that need to be chosen before a model is trained. finnts solves this by leveraging the [tune](https://tune.tidymodels.org/reference/tune.html) package within the tidymodels ecosystem. 
+Most models automatically included in finnts, including all multivariate models, have various hyperparameters with values that need to be chosen before a model is trained. Finn solves this by leveraging the [tune](https://tune.tidymodels.org/reference/tune.html) package within the tidymodels ecosystem. 
 
 For each model that contains hyperparameters that need to be chosen before training,the entire historical data set is used to create various time series cross-validation splits using the [timetk](https://business-science.github.io/timetk/reference/time_series_cv.html) package. Refer to the code below for an example. 
 
@@ -32,7 +32,7 @@ timetk::time_series_cv(
     assess = 6, # forecast horizon to hold out as testing data
     skip = 6, # how many periods to move forward for each subsequent split, 
               # equal to back_test_spacing input in forecast_time_series() finnts function
-    cumulative = TRUE, # should the testing data expand in each subsequent split
+    cumulative = TRUE, # should the training data expand more than initial periods in each subsequent split
     slice_limit = 3 # max number of splits to run
     ) %>%
   timetk::plot_time_series_cv_plan(.date_var = date, 
@@ -57,5 +57,5 @@ The tscv process tries to go back as far as possible, where the "initial" argume
 - For each back test scenario, take the training data and create a time series cross validation process to find the optimal hyperparameters within the training data, then take the final fitted model to forecast on the hold out test data. This ensures that hyperparameters are only selected using data that only lives in the training data and not in the hold out test data. 
 - Take the oldest back test scenario, the one with testing data the most far back into the past, and follow the hyperparmeter selection process described in the previous bullet point. After finding the optimal hyperparmeters, then refit on all other back test scenarios training data and produce testing data forecasts. This also ensures hyperperamters are chosen only on training data, and speeds up refitting process. 
 
-The above approaches are the more textbook way of doing things, but run into scale issues. Doing this exhaustive hyperparmeter tuning process multiplies the model run time by at least 10X. This can even go to 100X if you follow the first approach in the list when selecting hyperparameters to use for a machine learning ensemble model. Following the second approach in the list could speed up run time but takes the assumption that the hyperparmeters chosen on data far into the past still hold for the most recent data we will use to forecast. This is often not the case when forecasting business revenue. Our process fixes these issues at the tradeoff of look ahead bias, but we believe this is a trade off worth making. Taking the back testing results with a grain of salt is important when using finnts. Previous results should only be a best case proxy of how these models will perform in the future, nothing more. 
+The above approaches are the more textbook way of doing things, but run into scale issues. Doing this exhaustive hyperparmeter tuning process multiplies the model run time by at least 10X. This can even go to 100X if you follow the first approach in the list when selecting hyperparameters to use for a machine learning ensemble model. Following the second approach in the list could speed up run time but takes the assumption that the hyperparmeters chosen on data far into the past still hold for the most recent data we will use to forecast. This is often not the case when forecasting a companies revenue. Our process fixes these issues at the tradeoff of look ahead bias, but we believe this is a trade off worth making. Taking the back testing results with a grain of salt is important when using finnts. Previous results should only be a best case proxy of how these models will perform in the future, nothing more. 
 

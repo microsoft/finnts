@@ -42,7 +42,7 @@ In the above example, "City" was the lowest level of the hierarchy, which feeds 
 
 ### Grouped Hierarchy
 
-Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package "grouped". A good example is a data set that contains historical time series by geography, customer segment, and product. 
+Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls "grouped". A good example is a data set that contains historical time series by geography, customer segment, and product. 
 
 ```{r, echo = FALSE, message = TRUE}
 suppressMessages(library(dplyr))

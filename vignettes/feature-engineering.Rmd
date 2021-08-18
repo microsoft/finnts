@@ -36,11 +36,11 @@ m4_monthly %>%
 
 ## Missing Data and Outliers
 
-Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padding using NA. Then the same process is ran again, this time padding data from the "hist_start_date" input from the "forecast_time_series" finnts function, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step. 
+Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padded using NA. Then the same process is ran again, this time padding data from the "hist_start_date" input from the "forecast_time_series" finnts function, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step. 
 
 After missing data is padded, the [ts_impute_vec](https://business-science.github.io/timetk/reference/ts_impute_vec.html) function from the timetk package is called to impute any NA values. This only happens if the "clean_missing_values" input from the "forecast_time_series" finnts function is set to TRUE, otherwise NA values are replaced with zero. 
 
-Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. OUtliers are replaced after the missing data process, and only runs if the "clean_outliers" input from the "forecast_time_series" finnts function is set to TRUE. 
+Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. Outliers are replaced after the missing data process, and only runs if the "clean_outliers" input from the "forecast_time_series" finnts function is set to TRUE. 
 
 **Important Note: ** Missing values and outliers are replaced for the target variable and any numeric external regressors.  
 
@@ -88,7 +88,7 @@ tibble(
 ```
 
 
-The second recipe is referred to as "R2" in default finnts models. It takes a very different approach than the "R1" recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created by depend on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, "Origin" and "Horizon" features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in "R1". 
+The second recipe is referred to as "R2" in default finnts models. It takes a very different approach than the "R1" recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created by depend on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, "Origin" and "Horizon" features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in "R1". NA values created by generating lag features are filled "up", but we left that out in the below example to better understand how the horizon specific features are created.
 
 ```{r, echo = FALSE, message = FALSE}
 

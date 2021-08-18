@@ -36,7 +36,7 @@ Data used in Finn needs to follow a few requirements, called out below.
 - Contains at least one unique label to identify one time series from another. These are sometimes referred to as "data combos" or "combo variables" in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series. 
 - No duplicate rows at the intersection of data combos and date. 
 - Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors. 
-- External regressors are optional, not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors. 
+- External regressors are optional, they're not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors. 
 
 A good example to use when producing your first Finn forecast is to leverage existing data examples from the [timetk](https://business-science.github.io/timetk/) package. Let's take a monthly example and trim it down to speed up the run time of your first Finn forecast. 
 
@@ -62,19 +62,22 @@ Calling for "forecast_time_series" function is the easiest part. In this example
 
 ```{r, message = FALSE, eval = hist_data}
 library(finnts)
-library(tibble)
 
-finn_output <- forecast_time_series(
-  input_data = hist_data %>% tibble(),
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 12,
-  models_to_run = c("arima", "ets")
-)
+# finn_output <- forecast_time_series(
+#   input_data = hist_data %>% tibble(),
+#   combo_variables = c("id"),
+#   target_variable = "value",
+#   date_type = "month",
+#   forecast_horizon = 12,
+#   models_to_run = c("arima", "ets")
+# )
 
 ```
 
-
+TO-DO
 
 ## 3. Use Forecast Outputs
+
+TO-DO
+
+finish after Aadharsh pushes latest refactored code to main

@@ -16,8 +16,8 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       column_names_final <- c(column)
       
       if((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
-        numeric_xregs <- c(numeric_xregs, str_c(column, c("", "_squared", "_cubed", "_log")))
-        column_names_final <- str_c(column, c("", "_squared", "_cubed", "_log"))
+        numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
+        column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
       }
       
       if(column %in% external_regressors) {
@@ -52,10 +52,10 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
         
         df_lag <- df %>%
           timetk::tk_augment_lags(column, .lags = lag_periods) %>%
-          tidyr::fill(str_c(column, "_lag", lag_periods), .direction = "up") %>%
-          dplyr::select(str_c(column, "_lag", lag_periods))
+          tidyr::fill(stringr::str_c(column, "_lag", lag_periods), .direction = "up") %>%
+          dplyr::select(stringr::str_c(column, "_lag", lag_periods))
         
-        colnames(df_lag) <- str_c(column, "_lag", lag_periods)
+        colnames(df_lag) <- stringr::str_c(column, "_lag", lag_periods)
         
         df_lag_final <- cbind(df_lag_final, df_lag)
       }
@@ -79,7 +79,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
             .period = rolling_window_periods,
             .partial = TRUE, 
             .align = "right",
-            .names = str_c(column, "_roll", rolling_window_periods, "_Avg")
+            .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Avg")
           ) %>%
           timetk::tk_augment_slidify(
             column,
@@ -87,7 +87,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
             .period = rolling_window_periods,
             .partial = TRUE,
             .align = "right",
-            .names = str_c(column, "_roll", rolling_window_periods, "_Sum")
+            .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Sum")
           ) %>%
           timetk::tk_augment_slidify(
             column,
@@ -95,10 +95,10 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
             .period = rolling_window_periods,
             .partial = TRUE,
             .align = "right",
-            .names = str_c(column, "_roll", rolling_window_periods, "_StdDev")
+            .names = stringr::str_c(column, "_roll", rolling_window_periods, "_StdDev")
           )
         
-        df_window_final <- cbind(df_window_final, df_roll %>% dplyr::select(c(str_c(column, "_roll", rolling_window_periods, "_Avg"), str_c(column, "_roll", rolling_window_periods, "_Sum"), str_c(column, "_roll", rolling_window_periods, "_StdDev"))))
+        df_window_final <- cbind(df_window_final, df_roll %>% dplyr::select(c(stringr::str_c(column, "_roll", rolling_window_periods, "_Avg"), stringr::str_c(column, "_roll", rolling_window_periods, "_Sum"), stringr::str_c(column, "_roll", rolling_window_periods, "_StdDev"))))
       }
       
       df_window_final[is.na(df_window_final)] = 0.00
@@ -136,8 +136,8 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
       column_names_final <- c(column)
       
       if((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
-        numeric_xregs <- c(numeric_xregs, str_c(column, c("", "_squared", "_cubed", "_log")))
-        column_names_final <- str_c(column, c("", "_squared", "_cubed", "_log"))
+        numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
+        column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
       }
       
       if(column %in% external_regressors) {
@@ -185,10 +185,10 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
           
           df_lag <- df %>%
             timetk::tk_augment_lags(column, .lags = unique(c(lag_periods_r2, lag_periods))+(period-1)) %>%
-            tidyr::fill(str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1)), .direction = "up") %>%
-            dplyr::select(str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1))) 
+            tidyr::fill(stringr::str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1)), .direction = "up") %>%
+            dplyr::select(stringr::str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1))) 
           
-          colnames(df_lag) <- str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods)))
+          colnames(df_lag) <- stringr::str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods)))
           
           df_lag_final <- cbind(df_lag_final, df_lag)
         }
@@ -209,7 +209,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
               .period = rolling_window_periods,
               .partial = TRUE,
               .align = "right",
-              .names = str_c(column, "_roll", rolling_window_periods, "_Avg")
+              .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Avg")
             ) %>%
             timetk::tk_augment_slidify(
               column,
@@ -217,7 +217,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
               .period = rolling_window_periods,
               .partial = TRUE,
               .align = "right",
-              .names = str_c(column, "_roll", rolling_window_periods, "_Sum")
+              .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Sum")
             ) %>%
             timetk::tk_augment_slidify(
               column,
@@ -225,7 +225,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
               .period = rolling_window_periods,
               .partial = TRUE,
               .align = "right",
-              .names = str_c(column, "_roll", rolling_window_periods, "_StdDev")
+              .names = stringr::str_c(column, "_roll", rolling_window_periods, "_StdDev")
             )
           
           is.na(df_roll) <- sapply(df_roll, is.nan)
@@ -233,7 +233,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
           df_roll <- df_roll %>%
             tidyr::fill(contains("_roll"), .direction = "down")
           
-          df_window_final <- cbind(df_window_final, df_roll %>% dplyr::select(c(str_c(column, "_roll", rolling_window_periods, "_Avg"), str_c(column, "_roll", rolling_window_periods, "_Sum"), str_c(column, "_roll", rolling_window_periods, "_StdDev"))))
+          df_window_final <- cbind(df_window_final, df_roll %>% dplyr::select(c(stringr::str_c(column, "_roll", rolling_window_periods, "_Avg"), stringr::str_c(column, "_roll", rolling_window_periods, "_Sum"), stringr::str_c(column, "_roll", rolling_window_periods, "_StdDev"))))
         }
         
         df_window_final[is.na(df_window_final)] = 0.00
