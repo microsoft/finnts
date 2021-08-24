@@ -1,8 +1,9 @@
 # * Multivariate data prep function----
+
 multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_values_list, fourier_periods, 
                                        lag_periods, rolling_window_periods) {
   
-  data_trans <- tibble()
+  data_trans <- tibble::tibble()
   
   #apply polynomial transformations
   numeric_xregs <- c()
@@ -122,7 +123,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
                                        fourier_periods, lag_periods, rolling_window_periods, 
                                        date_type, forecast_horizon) {
   
-  data_trans <- tibble()
+  data_trans <- tibble::tibble()
   
   #apply polynomial transformations
   numeric_xregs <- c()
