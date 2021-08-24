@@ -1,0 +1,55 @@
+---
+title: "External Regressors"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{external-regressors}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+External regressors in finnts can be entered two separate ways. 
+
+- historical values only
+- historical and future values
+
+### Historical Values Only
+
+If you have an external regressor, with just their historical values, finnts will only use lags of those values when creating features to use in a model. That fixes the need to know or predict what these values should be in the future. Forecasting these values into the future, either by simple methods like arima/ets or even using finnts to daisy chain forecasting regressors to then forecast the final target variable, only adds additional layers of uncertainty with the final future forecast. Using forecasts as inputs to another forecast can get out of hand quick, and is something we try to avoid within finnts. 
+
+**Note: ** This only works for continuous (numeric) external regressors. 
+
+### Historical and Future Values
+
+If you have an external regressor, with both their historical and future values, finnts will then use both current (t-0) and lag (t-n) values when creating features to use in a model. This is required for categorical regressors, but optional for continuous (numeric) regressors. 
+
+**Note: ** Future values of external regressors need to be provided for the entire forecast horizon. Current (t-0) values of these regressors will also be used as features during the back testing process. 
+
+Below is an example of how you can set up your input_data to leverage future values of external regressors
+
+- monthly date type
+- forecast horizon of 3
+- historical end date of "2020-12-01"
+- external regressors: Holiday, GDP, Sales_Pipeline
+
+```{r, echo = FALSE, message = FALSE}
+library(dplyr)
+
+tibble(
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-06-01", "2020-07-01", "2020-08-01", "2020-09-01", "2020-10-01", "2020-11-01", "2020-12-01", "2021-01-01", "2021-02-01", "2021-03-01"), 
+  Target = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, NA, NA, NA), 
+  Holiday = c("New Years", "Valentines Day", "None", "Easter", "None", "None", "4th of July", "None", "Labor Day", "Halloween", "Thanksgiving", "Christmas", "New Years", "Valentines Day", "None"), 
+  GDP = c(5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, NA, NA, NA), 
+  Sales_Pipeline = c(100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200, 210, 220, 230, 240)
+) %>%
+  dplyr::mutate(Date = as.Date(Date))
+```
+
+Current and future values of "Holiday" and "Sales_Pipeline" will be used in creating the 3 month future forecast from "2021-01-01" to "2021-03-01", while only the historical lags of "GDP" will be used to create the future forecast.

@@ -229,7 +229,6 @@ forecast_time_series <- function(input_data,
   back_test_scenarios <- bt_conf$back_test_scenarios
   hist_periods_80 <- bt_conf$hist_periods_80
   
-  
   # 5. Modeling ----
   
   # * Create and Run Modeling Function ----
@@ -297,7 +296,7 @@ forecast_time_series <- function(input_data,
   
   # * Create Average Ensembles ----
   
-  fcst_combination <- tibble(fcst)
+  fcst_combination <- tibble::tibble(fcst)
   
   #model average combinations
   model_list <- unique(fcst$Model)
@@ -442,7 +441,7 @@ forecast_time_series <- function(input_data,
     dplyr::select(Combo, Model, Best_Model)
   
   #filter results on individual models and best model
-  fcst_combination_final <- tibble()
+  fcst_combination_final <- tibble::tibble()
   
   for(combo in unique(fcst_combination$Combo)) {
     
@@ -484,7 +483,7 @@ forecast_time_series <- function(input_data,
   if(forecast_approach != "bottoms_up") {
     
     #create tibble to append reconciled fcsts to
-    reconciled_fcst <- tibble()
+    reconciled_fcst <- tibble::tibble()
     
     #extract best model and append to dataset
     fcst_unreconciled <- fcst_final %>%

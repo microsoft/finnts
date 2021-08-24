@@ -48,9 +48,12 @@ Remotes:
     Azure/rAzureBatch,
     Azure/doAzureParallel
 Suggests: 
+    rmarkdown,
+    knitr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 
     lubridate,
     foreach,
     modeltime
+VignetteBuilder: knitr

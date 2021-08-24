@@ -1,0 +1,113 @@
+---
+title: "Feature Engineering"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{feature-engineering}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Automated feature engineering is a cornerstone of the package. Below are some of the techniques we use in multivariate machine learning models, and the outside packages that make it possible. 
+
+## Date Features
+
+The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the timestamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed. 
+
+Fourier series are also added using the [tk_augment_fourier](https://business-science.github.io/timetk/reference/tk_augment_fourier.html) function from timetk. 
+
+```{r, message = FALSE}
+library(dplyr)
+library(timetk)
+
+m4_monthly %>%
+  timetk::tk_augment_timeseries_signature(date) %>%
+  dplyr::group_by(id) %>%
+  timetk::tk_augment_fourier(date, .periods = c(3, 6, 12), .K = 1) %>%
+  dplyr::ungroup()
+```
+
+
+## Missing Data and Outliers
+
+Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padded using NA. Then the same process is ran again, this time padding data from the "hist_start_date" input from the "forecast_time_series" finnts function, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step. 
+
+After missing data is padded, the [ts_impute_vec](https://business-science.github.io/timetk/reference/ts_impute_vec.html) function from the timetk package is called to impute any NA values. This only happens if the "clean_missing_values" input from the "forecast_time_series" finnts function is set to TRUE, otherwise NA values are replaced with zero. 
+
+Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. Outliers are replaced after the missing data process, and only runs if the "clean_outliers" input from the "forecast_time_series" finnts function is set to TRUE. 
+
+**Important Note: ** Missing values and outliers are replaced for the target variable and any numeric external regressors.  
+
+## Lags, Rolling Windows, and Polynomial Transformations
+
+Lags of the target variable and external regressors are created using the [tk_augment_lags](https://business-science.github.io/timetk/reference/tk_augment_lags.html) function from timetk. 
+
+Rolling window calculations of the target variable are created using the [tk_augment_slidify](https://business-science.github.io/timetk/reference/tk_augment_slidify.html) function from timetk. The below calculations are created over various window values. 
+
+- sum
+- mean
+- standard deviation
+
+Polynomial transformations are created for the target variable, and lags are then created on top of them. The below transformations are created. 
+
+- squared
+- cubed
+- log
+
+## Custom Approaches
+
+In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model. 
+
+In the first recipe, referred to as "R1" in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled "up". This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough. 
+
+```{r, echo = FALSE, message = FALSE}
+# Simplified Example
+tibble(
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-06-01", "2020-07-01", "2020-08-01", "2020-09-01", "2020-10-01"), 
+  Target = c(10, 20, 30, 40, 50, 60, 70, 80, 90, 100)
+) %>%
+  dplyr::mutate(Date = as.Date(Date)) %>%
+  timetk::tk_augment_lags(.value = "Target", .lags = c(3,6), .names = "auto") %>%
+  tidyr::fill(contains("lag"), .direction = "up") %>%
+  tk_augment_slidify(contains("lag"), .f = sum, .period = c(3, 6), .align = "right") %>%
+  tidyr::fill(contains("lag"), .direction = "up") %>%
+  dplyr::rename(
+    Target_lag3_roll3_sum = Target_lag3_roll_3, 
+    Target_lag6_roll3_sum = Target_lag6_roll_3, 
+    Target_lag3_roll6_sum = Target_lag3_roll_6, 
+    Target_lag6_roll6_sum = Target_lag6_roll_6
+  )
+
+```
+
+
+The second recipe is referred to as "R2" in default finnts models. It takes a very different approach than the "R1" recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created by depend on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, "Origin" and "Horizon" features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in "R1". NA values created by generating lag features are filled "up", but we left that out in the below example to better understand how the horizon specific features are created.
+
+```{r, echo = FALSE, message = FALSE}
+
+tibble(
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
+  Date = c("2020-01-01", "2020-01-01", "2020-01-01", "2020-02-01", "2020-02-01", "2020-02-01", "2020-03-01", "2020-03-01", "2020-03-01", "2021-04-01", "2021-04-01", "2021-04-01", "2020-05-01", "2020-05-01", "2020-05-01", "2021-06-01", "2021-06-01", "2021-06-01"), 
+  Origin = c(0,-1, -2, 1, 0, -1, 2, 1, 0, 3, 2, 1, 4, 3, 2, 5, 4, 3), 
+  Horizon = c(1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1, 2, 3), 
+  Target = c(10, 10, 10, 20, 20, 20, 30, 30, 30, 40, 40, 40, 50, 50, 50, 60, 60, 60), 
+  Target_Lag1 = c(NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10, 40, 30, 20, 50, 40, 30), 
+  Target_Lag2 = c(NA, NA, NA, NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10, 40, 30, 20), 
+  Target_Lag3 = c(NA, NA, NA, NA, NA, NA, NA, NA, NA, 10, NA, NA, 20, 10, NA, 30, 20, 10)
+) %>%
+  dplyr::mutate(Date = as.Date(Date)) %>%
+  print(n=20)
+
+```
+
+
+## Model Specific Feature Engineering
+
+In addition to everything called out above, some models have their own specific transformations that need to be applied before training a model. For example, the "glmnet" model needs to transform categorical variables into continuous variables and center/scale the data before training. Each default model in finnts has their own preprocessing steps that ensure the data fed into the model has the best chance of producing a high quality forecast. The [recipes](https://recipes.tidymodels.org/) package is used to easily apply various preprocessing transformations needed before training a model. 
