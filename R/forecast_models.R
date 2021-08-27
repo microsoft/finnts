@@ -30,7 +30,7 @@ combo_specific_filter <-function(full_data_tbl,
 get_not_all_data_models <- function(){
   c('arima','arima-boost','croston','ets','meanf','nnetar','nnetar-xregs',
     'prophet','prophet-xregs','snaive','stlm-ets','stlm-arima',
-    'tbats','tabnet','theta')
+    'tbats','theta')
 }
 
 #' Get list of r1 only models
@@ -51,7 +51,7 @@ get_r2_data_models <- function(){
 #' 
 #' @return List of deep learning models
 get_deep_learning_models <- function(){
-  c('deepar','nbeats')
+  c('deepar','nbeats', 'tabnet')
 }
 
 #' Get list of seasonal correction
@@ -158,13 +158,13 @@ invoke_forecast_function <- function(fn_to_invoke,
                                      model_type){
   
   exp_arg_list <- formalArgs(fn_to_invoke)
-  
+
   avail_arg_list <- list('train_data' = train_data,
                          'frequency' = frequency,
                          'horizon' = horizon,
                          'parallel' = parallel,
                          'seasonal_period' = seasonal_period,
-                         'tscv_inital' = tscv_inital,
+                         'tscv_initial' = tscv_inital,
                          'date_rm_regex' = date_rm_regex,
                          'back_test_spacing' = back_test_spacing,
                          'fiscal_year_start' = fiscal_year_start,
@@ -180,9 +180,8 @@ invoke_forecast_function <- function(fn_to_invoke,
       inp_arg_list[x] <- avail_arg_list[x]
     }
   }
-  
-  
-  do.call(fn_to_invoke,inp_arg_list)
+
+  do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
 }
 
 
@@ -245,6 +244,8 @@ construct_forecast_models <- function(full_data_tbl,
   forecast_models <- function(combo_value) {
     
     print(combo_value)
+    print(ls(globalenv()))
+    print(getparentenv)
     
     #filter on specific combo or all data
     model_name_suffix <-  ifelse(combo_value=="All-Data","-all","") 
@@ -302,7 +303,7 @@ construct_forecast_models <- function(full_data_tbl,
     # parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
       
-      parallel_args <- parallel_init_func()
+      parallel_args <- parallel_init_func
     }
     
     print("data_prepped")
@@ -322,7 +323,7 @@ construct_forecast_models <- function(full_data_tbl,
     
     
     for(model_name in models_to_go_over){
-      
+      print(model_name)
       model_fn <- as.character(model_list[model_name])
       
       print(paste("Function being called:",model_fn))
@@ -334,7 +335,7 @@ construct_forecast_models <- function(full_data_tbl,
         else{
           freq_val <- frequency_number
         }
-        
+        print("test1")
         try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                      train_data = train_data_recipe_1,
                                      frequency = freq_val,
@@ -347,6 +348,18 @@ construct_forecast_models <- function(full_data_tbl,
                                      date_rm_regex = date_regex,
                                      model_type = "single"))
         
+        # mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+        #                                            train_data = train_data_recipe_1,
+        #                                            frequency = freq_val,
+        #                                            parallel = run_model_parallel,
+        #                                            horizon = forecast_horizon,
+        #                                            seasonal_period =seasonal_periods,
+        #                                            back_test_spacing = back_test_spacing,
+        #                                            fiscal_year_start = fiscal_year_start,
+        #                                            tscv_inital = hist_periods_80,
+        #                                            date_rm_regex = date_regex,
+        #                                            model_type = "single")
+        print("test4")
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
                                                                        mdl_called, 
                                                                        location = "top") %>% 
@@ -535,13 +548,15 @@ construct_forecast_models <- function(full_data_tbl,
     combined_ensemble_models <- modeltime::modeltime_table()
     
     ensemble_models <- get_r2_data_models()
-    
-    models_to_go_over <- names(ensemble_models)
+
+    models_to_go_over <- ensemble_models[ensemble_models %in% names(model_list)]
+
     for(model_name in models_to_go_over){
       
-      model_fn <- as.character(ensemble_models[model_name])
+      #model_fn <- as.character(ensemble_models[model_name])
+      model_fn <- model_name
       add_name <- paste0(model_name,"-ensemble",model_name_suffix)
-      
+
       try(mdl_ensemble <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                                  train_data = ensemble_train_data_initial,
                                                  frequency = frequency_number,
@@ -649,6 +664,7 @@ construct_forecast_models <- function(full_data_tbl,
         dplyr::filter(Date <= hist_end_date) %>%
         tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
         dplyr::mutate(Number = as.numeric(Number) - 1) %>%
+        dplyr::filter(Number < back_test_scenarios) %>%
         dplyr::mutate(Number_Char = ifelse(Number < 10, 
                                            paste0("0", Number), 
                                            paste0("", Number)), 

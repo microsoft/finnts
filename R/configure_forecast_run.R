@@ -245,10 +245,15 @@ get_export_packages <- function(){
 #' 
 #' @return List of parallel transfer functions
 get_transfer_functions <- function(){
-  c("models", "arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "lightgbm", "mars",
-    "meanf", "nbeats", "nnetar", "prophet", "prophet_boost", "snaive", "stlm_arima", "stlm_ets", 
-    "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
+  c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "mars",
+    "meanf", "nbeats", "nnetar", "nnetar_xregs", "prophet", "prophet_boost", "prophet_xregs", 
+    "snaive", "stlm_arima", "stlm_ets", "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
     "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
-    "init_azure_batch_parallel_within","exit_azure_batch_parallel_within")
+    "construct_forecast_models", "get_model_functions", "get_not_all_data_models", 
+    "get_r1_data_models", "get_r2_data_models", "get_deep_learning_models", "get_frequency_adjustment_models", 
+    "invoke_forecast_function", "get_recipie_simple", "get_workflow_simple", "get_fit_simple", "get_freq_adjustment",
+    "get_recipie_configurable", "get_fit_wkflw_nocombo", "get_latin_hypercube_grid", "get_resample_tune_grid", 
+    "get_resample_tscv", "get_tune_grid", 
+    "init_parallel_within","exit_parallel_within")
 }
 

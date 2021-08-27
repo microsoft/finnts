@@ -232,7 +232,7 @@ forecast_time_series <- function(input_data,
   # 5. Modeling ----
   
   # * Create and Run Modeling Function ----
-  forecast_models <- construct_forecast_models(full_data_tbl,
+  forecast_models_fn <- construct_forecast_models(full_data_tbl,
                                                external_regressors,
                                                xregs_future_values_list,
                                                fourier_periods,
@@ -245,8 +245,8 @@ forecast_time_series <- function(input_data,
                                                run_model_parallel,
                                                parallel_processing,
                                                run_deep_learning,
-                                               init_azure_batch_parallel_within,
-                                               exit_azure_batch_parallel_within,
+                                               parallel_init_func = init_parallel_within(parallel_processing),
+                                               exit_parallel_within,
                                                frequency_number,
                                                models_to_run,
                                                models_not_to_run,
@@ -267,7 +267,7 @@ forecast_time_series <- function(input_data,
   # no parallel processing
   if(parallel_processing == "none") {
     
-    fcst <- lapply(combo_list, forecast_models)
+    fcst <- lapply(combo_list, forecast_models_fn)
     fcst <- do.call(rbind, fcst)
   }
   
@@ -275,7 +275,7 @@ forecast_time_series <- function(input_data,
   if(parallel_processing=="local_machine") {
     
    fcst <- get_fcast_parallel(combo_list,
-                              forecast_models)
+                              forecast_models_fn)
     
   }
   
@@ -283,13 +283,13 @@ forecast_time_series <- function(input_data,
   if(parallel_processing=="azure_batch") {
     
     fcst <- get_fcast_parallel_azure(combo_list,
-                                    forecast_models,
+                                    forecast_models_fn,
                                     azure_batch_credentials,
                                     azure_batch_clusterConfig,
                                     run_name)
     
   }
-  
+
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
     get_forecast_negative_adjusted(negative_fcst)
@@ -380,7 +380,7 @@ forecast_time_series <- function(input_data,
     # parallel run on local machine
     if(parallel_processing=="local_machine") {
       
-      cl <- parallel::makeCluster(detectCores())
+      cl <- parallel::makeCluster(parallel::detectCores())
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
