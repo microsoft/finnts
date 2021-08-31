@@ -4,12 +4,16 @@
 \alias{tabnet}
 \title{TabNet}
 \usage{
-tabnet(train_data, parallel)
+tabnet(train_data, parallel, fiscal_year_start, date_rm_regex)
 }
 \arguments{
 \item{train_data}{Training Data}
 
 \item{parallel}{Parallel}
+
+\item{fiscal_year_start}{Fiscal Year Start}
+
+\item{date_rm_regex}{Date RM Regex}
 }
 \value{
 Get Tab Net

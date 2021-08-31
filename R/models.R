@@ -272,8 +272,7 @@ get_tune_grid <- function(train_data,
     tgCall$metrics <- modeltime::default_forecast_accuracy_metric_set()
   }
   
-  do.call(tune::tune_grid,
-          tgCall)
+  do.call(tune::tune_grid, tgCall, envir = globalenv())
 }
 
 #' Get tuning grid with resample
@@ -312,8 +311,8 @@ get_resample_tune_grid<- function(train_data,
 #' Get tuning grid k fold CV
 #' 
 #' @param train_data Training Data
-#' @param wkflw Workflow Objet from previous stage
-#' @param parallel Allow Parallal (Default False) 
+#' @param wkflw Workflow Object from previous stage
+#' @param parallel Allow Parallel (Default False) 
 #' 
 #' @return gives the model fit
 get_kfold_tune_grid<- function(train_data,

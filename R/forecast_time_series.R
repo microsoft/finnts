@@ -57,8 +57,10 @@
 #'   any model. 
 #' @param run_deep_learning Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
 #'  models_not_to_run. 
-#' @param run_all_data Run multivariate models on the entire data set (across all time series). Can be override by 
-#'  models_to_run and models_not_to_run.
+#' @param run_global_models Run multivariate models on the entire data set (across all time series) as a global model. 
+#'   Can be override by models_not_to_run. 
+#' @param run_local_models Run models by individual time series as local models.
+#' @param run_ensemble_models Run ensemble models 
 #' @param average_models Create simple averages of individual models. 
 #' @param max_model_average Max number of models to average together. Will create model averages for 2 models up until input value 
 #'   or max number of models ran.
@@ -111,7 +113,9 @@ forecast_time_series <- function(input_data,
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE, 
-  run_all_data = TRUE,
+  run_global_models = TRUE,
+  run_local_models = TRUE,
+  run_ensemble_models = TRUE,
   average_models = TRUE,
   max_model_average = 4,
   weekly_to_daily = TRUE
@@ -182,6 +186,8 @@ forecast_time_series <- function(input_data,
   
   #' 4. Prep Data:
   
+  cli::cli_h1("Prepping Data")
+  
   #Get initial data table 
   data_tbl <- get_data_tbl(input_data,
                            combo_variables,
@@ -231,6 +237,8 @@ forecast_time_series <- function(input_data,
   
   # 5. Modeling ----
   
+  cli::cli_h1("Kicking off Finn Modeling Process")
+  
   # * Create and Run Modeling Function ----
   forecast_models_fn <- construct_forecast_models(full_data_tbl,
                                                external_regressors,
@@ -250,6 +258,7 @@ forecast_time_series <- function(input_data,
                                                frequency_number,
                                                models_to_run,
                                                models_not_to_run,
+                                               run_ensemble_models,
                                                hist_periods_80,
                                                back_test_spacing,
                                                back_test_scenarios,
@@ -258,9 +267,16 @@ forecast_time_series <- function(input_data,
                                                seasonal_periods)
   
   # * Run Forecast ----
-  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_all_data) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
+    
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
+    
+  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models == TRUE & run_local_models == FALSE) {
+    
+    combo_list <- c('All-Data')
+    
   } else{
+    
     combo_list <- unique(full_data_tbl$Combo)
   }
   
@@ -281,12 +297,12 @@ forecast_time_series <- function(input_data,
   
   # parallel run within azure batch
   if(parallel_processing=="azure_batch") {
-    
+
     fcst <- get_fcast_parallel_azure(combo_list,
-                                    forecast_models_fn,
-                                    azure_batch_credentials,
-                                    azure_batch_clusterConfig,
-                                    run_name)
+                                     forecast_models_fn,
+                                     azure_batch_credentials,
+                                     azure_batch_cluster_config,
+                                     run_name)
     
   }
 
@@ -302,6 +318,8 @@ forecast_time_series <- function(input_data,
   model_list <- unique(fcst$Model)
   
   if(length(model_list) > 1 & average_models){
+    
+    cli::cli_h1("Creating Simple Model Averages")
     
     fcst_prep <- fcst %>%
       tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
@@ -415,6 +433,10 @@ forecast_time_series <- function(input_data,
   
   # 6. Final Finn Outputs ----
   
+  cli::cli_h1("Final Finn Outputs")
+  
+  cli::cli_h3("Selecting Best Model")
+  
   #get back test results and replace missing model/back test scenario combos with zero
   back_test_initial <- fcst_combination %>%
     dplyr::filter(.id != "Final_FCST") %>%
@@ -448,8 +470,6 @@ forecast_time_series <- function(input_data,
     temp_best_model <- accuracy_final %>%
       dplyr::filter(Combo == combo)
     
-    print(combo)
-    
     temp <- fcst_combination %>%
       dplyr::filter(Combo == combo) %>%
       dplyr::filter(Model %in% unique(c(unique(fcst$Model), unique(temp_best_model$Model)[[1]])))
@@ -481,6 +501,8 @@ forecast_time_series <- function(input_data,
   
   # reconcile a hierarchical forecast
   if(forecast_approach != "bottoms_up") {
+    
+    cli::cli_h3("Reconciling Hierarchical Forecast")
     
     #create tibble to append reconciled fcsts to
     reconciled_fcst <- tibble::tibble()
@@ -721,7 +743,7 @@ forecast_time_series <- function(input_data,
   
   colnames(future_fcst_final)[colnames(future_fcst_final)== 'Target'] <- target_variable
   
-  return(list(final_fcst = future_fcst_final, back_test_data = back_test_final, back_test_best_MAPE = accuracy_final))
+  return(list(final_fcst = tibble::tibble(future_fcst_final), back_test_data = back_test_final, back_test_best_MAPE = accuracy_final))
   
   # End ----
 }

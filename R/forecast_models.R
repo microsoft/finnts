@@ -233,6 +233,7 @@ construct_forecast_models <- function(full_data_tbl,
                                       frequency_number,
                                       models_to_run,
                                       models_not_to_run,
+                                      run_ensemble_models, 
                                       hist_periods_80,
                                       back_test_spacing,
                                       back_test_scenarios,
@@ -240,94 +241,98 @@ construct_forecast_models <- function(full_data_tbl,
                                       fiscal_year_start,
                                       seasonal_periods
                                       ){
-  
+
   forecast_models <- function(combo_value) {
     
-    print(combo_value)
-    print(ls(globalenv()))
-    print(getparentenv)
+    cli::cli_h2("Running Combo: {combo_value}")
+    
+    # Copy functions into global environment for azure batch
+    if(parallel_processing == "azure_batch") {
+      
+      global_env <- .GlobalEnv
+      
+      for(n in ls(global_env$azbatchenv$exportenv, all.names=TRUE)) assign(n, get(n, global_env$azbatchenv$exportenv), global_env)
+    }
     
     #filter on specific combo or all data
-    model_name_suffix <-  ifelse(combo_value=="All-Data","-all","") 
-    
+    model_name_suffix <-  ifelse(combo_value=="All-Data","-all","")
+
     run_data_full_tbl <- full_data_tbl %>%
       combo_specific_filter(combo_value,
                             combo_variables)
     
-    
+    cli::cli_h3("Initial Feature Engineering")
+
     # recipe 1: standard feature engineering
     run_data_full_recipe_1 <- run_data_full_tbl %>%
-      multivariate_prep_recipe_1(external_regressors = external_regressors, 
-                                 xregs_future_values_list = xregs_future_values_list, 
-                                 fourier_periods = fourier_periods, 
-                                 lag_periods = lag_periods, 
+      multivariate_prep_recipe_1(external_regressors = external_regressors,
+                                 xregs_future_values_list = xregs_future_values_list,
+                                 fourier_periods = fourier_periods,
+                                 lag_periods = lag_periods,
                                  rolling_window_periods = rolling_window_periods)
-    
+
     train_data_recipe_1 <- run_data_full_recipe_1 %>%
       dplyr::filter(Date <= hist_end_date)
-    
-    # return(train_data_recipe_1)
-    
+
+
     test_data_recipe_1 <- run_data_full_recipe_1 %>%
       dplyr::filter(Date > hist_end_date)
-    
-    
+
+
     # recipe 2: custom horizon specific feature engineering
     run_data_full_recipe_2 <- run_data_full_tbl %>%
-      multivariate_prep_recipe_2(external_regressors = external_regressors, 
-                                 xregs_future_values_list = xregs_future_values_list, 
-                                 fourier_periods = fourier_periods, 
-                                 lag_periods = lag_periods, 
-                                 rolling_window_periods = rolling_window_periods, 
-                                 date_type = date_type, 
+      multivariate_prep_recipe_2(external_regressors = external_regressors,
+                                 xregs_future_values_list = xregs_future_values_list,
+                                 fourier_periods = fourier_periods,
+                                 lag_periods = lag_periods,
+                                 rolling_window_periods = rolling_window_periods,
+                                 date_type = date_type,
                                  forecast_horizon = forecast_horizon) %>%
       dplyr::mutate(Horizon_char = as.character(Horizon))
-    
+
     train_data_recipe_2 <- run_data_full_recipe_2 %>%
       dplyr::filter(Date <= hist_end_date)
-    
+
     train_origins <- train_data_recipe_2 %>%
       dplyr::filter(Horizon == 1)
-    
+
     train_origin_max <- max(train_origins$Origin)
-    
+
     test_data_recipe_2 <- run_data_full_recipe_2 %>%
       dplyr::filter(Date > hist_end_date,
                     Origin == train_origin_max+1)
-    
-    
+
+
     # create modeltime table to add single trained models to
     combined_models_recipe_1 <- modeltime::modeltime_table()
     combined_models_recipe_2 <- modeltime::modeltime_table()
-    
+
     # parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
-      
       parallel_args <- parallel_init_func
     }
-    
-    print("data_prepped")
-    
-    
+
+    cli::cli_h3("Individual Model Training")
+
     model_list <- get_model_functions(models_to_run,
                                       models_not_to_run,
                                       run_deep_learning)
-    
+
     not_all_data_models <- get_not_all_data_models()
     r1_models <- get_r1_data_models()
     r2_models <- get_r2_data_models()
     freq_models <- get_frequency_adjustment_models()
     deep_nn_models <- get_deep_learning_models()
-    
+
     models_to_go_over <- names(model_list)
-    
-    
+
+
     for(model_name in models_to_go_over){
-      print(model_name)
+
       model_fn <- as.character(model_list[model_name])
-      
-      print(paste("Function being called:",model_fn))
-      
+
+      cli::cli_alert_info("Function being called: {model_fn}")
+
       if(model_name %in% not_all_data_models & combo_value != "All-Data"){
         if(model_name %in% freq_models){
           freq_val <- get_freq_adjustment(date_type,frequency_number)
@@ -335,7 +340,7 @@ construct_forecast_models <- function(full_data_tbl,
         else{
           freq_val <- frequency_number
         }
-        print("test1")
+
         try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                      train_data = train_data_recipe_1,
                                      frequency = freq_val,
@@ -347,39 +352,27 @@ construct_forecast_models <- function(full_data_tbl,
                                      tscv_inital = hist_periods_80,
                                      date_rm_regex = date_regex,
                                      model_type = "single"))
-        
-        # mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
-        #                                            train_data = train_data_recipe_1,
-        #                                            frequency = freq_val,
-        #                                            parallel = run_model_parallel,
-        #                                            horizon = forecast_horizon,
-        #                                            seasonal_period =seasonal_periods,
-        #                                            back_test_spacing = back_test_spacing,
-        #                                            fiscal_year_start = fiscal_year_start,
-        #                                            tscv_inital = hist_periods_80,
-        #                                            date_rm_regex = date_regex,
-        #                                            model_type = "single")
-        print("test4")
-        try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
-                                                                       mdl_called, 
-                                                                       location = "top") %>% 
+
+        try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
+                                                                       mdl_called,
+                                                                       location = "top") %>%
               update_model_description(1, model_name),
             silent = TRUE)
-        
+
       }else{
-        
-        
+
+
         freq_val <- frequency
 
         if((model_name %in% r1_models) | (model_name %in% r2_models)){
-          
+
           add_name <- paste0(model_name,"-R1",model_name_suffix)
           if(model_name %in% deep_nn_models){
             freq_val <- gluon_ts_frequency
             add_name <- paste0(model_name,model_name_suffix)
           }
-          
-          
+
+
             try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                                        train_data = train_data_recipe_1,
                                                        frequency = freq_val,
@@ -391,16 +384,16 @@ construct_forecast_models <- function(full_data_tbl,
                                                        tscv_inital = hist_periods_80,
                                                        date_rm_regex = date_regex,
                                                        model_type = "single"))
-            
-            try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1, 
-                                                                           mdl_called, 
-                                                                           location = "top") %>% 
+
+            try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
+                                                                           mdl_called,
+                                                                           location = "top") %>%
                   update_model_description(1, add_name),
                 silent = TRUE)
         }
-        
+
         if(model_name %in% r2_models){
-          
+
           add_name <- paste0(model_name,"-R2",model_name_suffix)
           try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                                      train_data = train_data_recipe_2,
@@ -413,21 +406,32 @@ construct_forecast_models <- function(full_data_tbl,
                                                      tscv_inital = hist_periods_80,
                                                      date_rm_regex = date_regex,
                                                      model_type = "single"))
-          
-          try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2, 
-                                                                         mdl_called, 
-                                                                         location = "top") %>% 
+
+          try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
+                                                                         mdl_called,
+                                                                         location = "top") %>%
                 update_model_description(1, add_name),
               silent = TRUE)
         }
-        
+
       }
     }
-    
+
     print(combined_models_recipe_1)
     print(combined_models_recipe_2)
     
+    cli::cli_h3("Refitting Individual Models")
+
     #create resamples for back testing forecasts and ensemble training data
+    
+    if(run_ensemble_models & (length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)))>1 & sum(grepl("-R", c(unique(combined_models_recipe_1$.model_desc), unique(combined_models_recipe_2$.model_desc)))) > 0) {
+      slice_limit_amount <- 100
+      run_ensemble_models <- TRUE
+    } else {
+      slice_limit_amount <- back_test_scenarios
+      run_ensemble_models <- FALSE
+    }
+    
     resamples_tscv_recipe_1 <- run_data_full_recipe_1 %>%
       timetk::time_series_cv(
         date_var = Date,
@@ -435,8 +439,8 @@ construct_forecast_models <- function(full_data_tbl,
         assess = forecast_horizon,
         skip = back_test_spacing,
         cumulative = TRUE,
-        slice_limit = 100)
-    
+        slice_limit = slice_limit_amount)
+
     resamples_tscv_recipe_2 <- run_data_full_recipe_2 %>%
       timetk::time_series_cv(
         date_var = Date,
@@ -444,48 +448,48 @@ construct_forecast_models <- function(full_data_tbl,
         assess = forecast_horizon,
         skip = back_test_spacing,
         cumulative = TRUE,
-        slice_limit = 100) %>%
+        slice_limit = slice_limit_amount) %>%
       timetk::tk_time_series_cv_plan()
-    
+
     #correctly filter test split to correct horizons per date
     rsplit_function <- function(slice) {
-      
+
       train <- resamples_tscv_recipe_2 %>%
-        dplyr::filter(.id == slice, 
+        dplyr::filter(.id == slice,
                       .key == "training")
-      
+
       test <- resamples_tscv_recipe_2 %>%
-        dplyr::filter(.id == slice, 
-                      .key == "testing", 
-                      Origin == max(train %>% 
-                                      dplyr::filter(Horizon == 1) %>% 
+        dplyr::filter(.id == slice,
+                      .key == "testing",
+                      Origin == max(train %>%
+                                      dplyr::filter(Horizon == 1) %>%
                                       dplyr::select(Origin))+1)
-      
+
       slice_tbl <- train %>%
         rbind(test) %>%
         dplyr::select(-.id, -.key)
-      
+
       rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)), 
-                                        assessment = nrow(train) + seq(nrow(test))), 
+        rsample::make_splits(ind = list(analysis = seq(nrow(train)),
+                                        assessment = nrow(train) + seq(nrow(test))),
                              class = "ts_cv_split")
-      
+
       return(rsplit_obj)
     }
-    
+
     split_objs <- purrr::map(unique(resamples_tscv_recipe_2$.id), .f=rsplit_function)
-    
-    resamples_tscv_recipe_2_final <- rsample::new_rset(splits = split_objs, 
-                                                       ids = unique(resamples_tscv_recipe_2$.id), 
+
+    resamples_tscv_recipe_2_final <- rsample::new_rset(splits = split_objs,
+                                                       ids = unique(resamples_tscv_recipe_2$.id),
                                                        subclass = c("time_series_cv", "rset"))
-    
+
     get_model_time_resample_fit<- function(combined_models_recipe,
                                            resamples_tscv_recipe){
       combined_models_recipe %>%
         modeltime.resample::modeltime_fit_resamples(
           resamples = resamples_tscv_recipe,
           control = tune::control_resamples(
-            verbose = TRUE, 
+            verbose = TRUE,
             allow_par = run_model_parallel)) %>%
         modeltime.resample::unnest_modeltime_resamples() %>%
         dplyr::mutate(.id = .resample_id,
@@ -497,13 +501,13 @@ construct_forecast_models <- function(full_data_tbl,
             timetk::tk_time_series_cv_plan() %>%
             dplyr::group_by(.id) %>%
             dplyr::mutate(.row = dplyr::row_number()) %>%
-            dplyr::ungroup()) 
+            dplyr::ungroup())
     }
-    
+
     #refit models on resamples
     submodels_resample_tscv_recipe_1 <- tibble::tibble()
     submodels_resample_tscv_recipe_2 <- tibble::tibble()
-    
+
     if(length(unique(combined_models_recipe_1$.model_desc)) > 0) {
       submodels_resample_tscv_recipe_1 <- combined_models_recipe_1 %>%
         get_model_time_resample_fit(resamples_tscv_recipe_1)%>%
@@ -512,29 +516,29 @@ construct_forecast_models <- function(full_data_tbl,
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
         dplyr::ungroup()
     }
-    
+
     if(length(unique(combined_models_recipe_2$.model_desc)) > 0) {
       submodels_resample_tscv_recipe_2 <- combined_models_recipe_2 %>%
         get_model_time_resample_fit(resamples_tscv_recipe_2_final) %>%
         dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
     }
-    
+
     submodels_resample_tscv_tbl <- rbind(submodels_resample_tscv_recipe_1,
                                          submodels_resample_tscv_recipe_2)
-    
+
     #Replace NaN/Inf with NA, then replace with zero
     is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl,
                                                  is.infinite)
     is.na(submodels_resample_tscv_tbl) <- sapply(submodels_resample_tscv_tbl,
                                                  is.nan)
     submodels_resample_tscv_tbl[is.na(submodels_resample_tscv_tbl)] = 0.01
-    
-    ensemble_train_data_initial <- submodels_resample_tscv_tbl %>% 
-      dplyr::filter(Date <= hist_end_date) %>% 
+
+    ensemble_train_data_initial <- submodels_resample_tscv_tbl %>%
+      dplyr::filter(Date <= hist_end_date) %>%
       dplyr::select(-.id) %>%
       tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
       dplyr::mutate(Horizon_char = as.character(Horizon))
-    
+
     #Replace NaN/Inf with NA, then replace with zero
     is.na(ensemble_train_data_initial) <- sapply(ensemble_train_data_initial,
                                                  is.infinite)
@@ -542,116 +546,10 @@ construct_forecast_models <- function(full_data_tbl,
                                                  is.nan)
     ensemble_train_data_initial[is.na(ensemble_train_data_initial)] = 0.01
     
-    print('prep_ensemble')
     
-    #create modeltime table to add ensembled trained models to
-    combined_ensemble_models <- modeltime::modeltime_table()
-    
-    ensemble_models <- get_r2_data_models()
-
-    models_to_go_over <- ensemble_models[ensemble_models %in% names(model_list)]
-
-    for(model_name in models_to_go_over){
-      
-      #model_fn <- as.character(ensemble_models[model_name])
-      model_fn <- model_name
-      add_name <- paste0(model_name,"-ensemble",model_name_suffix)
-
-      try(mdl_ensemble <- invoke_forecast_function(fn_to_invoke =  model_fn,
-                                                 train_data = ensemble_train_data_initial,
-                                                 frequency = frequency_number,
-                                                 parallel = run_model_parallel,
-                                                 horizon = forecast_horizon,
-                                                 seasonal_period =seasonal_periods,
-                                                 back_test_spacing = back_test_spacing,
-                                                 fiscal_year_start = fiscal_year_start,
-                                                 tscv_inital = "1 year",
-                                                 date_rm_regex = date_regex,
-                                                 model_type = "ensemble"))
-      
-      try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models, 
-                                                                     mdl_ensemble, 
-                                                                     location = "top") %>% 
-            update_model_description(1, add_name),
-          silent = TRUE)
-    }
-    
-    print(combined_ensemble_models)
-    
-    #create ensemble resamples to train future and back test folds
-    ensemble_tscv <- submodels_resample_tscv_tbl %>% 
-      dplyr::select(-.id) %>%
-      tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
-      timetk::time_series_cv(
-        date_var = Date,
-        initial = "1 year",
-        assess = forecast_horizon,
-        skip = back_test_spacing,
-        cumulative = TRUE,
-        slice_limit = back_test_scenarios) %>%
-      timetk::tk_time_series_cv_plan() %>%
-      dplyr::mutate(Horizon_char = as.character(Horizon))
-    
-    #return(ensemble_tscv)
-    
-    #Replace NaN/Inf with NA, then replace with zero
-    is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
-    is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.nan)
-    ensemble_tscv[is.na(ensemble_tscv)] = 0.01
-    
-    #correctly filter test split to correct horizons per date
-    rsplit_ensemble_function <- function(slice) {
-      
-      train <- ensemble_tscv %>%
-        dplyr::filter(.id == slice, 
-                      .key == "training")
-      
-      horizon <- 1
-      
-      test_dates <- ensemble_tscv %>%
-        dplyr::filter(.id == slice, 
-                      .key == "testing")
-      
-      test <- tibble::tibble()
-      
-      for(date in unique(test_dates$Date)) {
-        
-        date_horizon_tbl <- ensemble_tscv %>%
-          dplyr::filter(.id == slice, 
-                        .key == "testing", 
-                        Date == date, 
-                        Horizon == horizon)
-        
-        test <- rbind(test, date_horizon_tbl)
-        
-        horizon <- horizon+1
-        
-      }
-      
-      slice_tbl <- train %>%
-        rbind(test) %>%
-        dplyr::select(-.id, -.key)
-      
-      rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)), 
-                                        assessment = nrow(train) + seq(nrow(test))), 
-                             class = "ts_cv_split")
-      
-      return(rsplit_obj)
-    }
-    
-    ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id), 
-                                      .f=rsplit_ensemble_function)
-    
-    ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs, 
-                                             ids = unique(ensemble_tscv$.id), 
-                                             subclass = c("time_series_cv",
-                                                          "rset"))
-    
-    fcst_tbl <- tibble::tibble()
-    
+    # ensemble models
     get_final_fcst_slice <- function(df){
-        df %>%
+      df %>%
         tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
         dplyr::mutate(Number = as.numeric(Number)) %>%
         dplyr::filter(Number == 1) %>%
@@ -665,25 +563,139 @@ construct_forecast_models <- function(full_data_tbl,
         tidyr::separate(col=.id, sep="Slice", into=c("Slice", "Number")) %>%
         dplyr::mutate(Number = as.numeric(Number) - 1) %>%
         dplyr::filter(Number < back_test_scenarios) %>%
-        dplyr::mutate(Number_Char = ifelse(Number < 10, 
-                                           paste0("0", Number), 
-                                           paste0("", Number)), 
+        dplyr::mutate(Number_Char = ifelse(Number < 10,
+                                           paste0("0", Number),
+                                           paste0("", Number)),
                       .id = paste0("Back_Test_", Number_Char)) %>%
         dplyr::select(-Slice, -Number, -Number_Char)
     }
-      
-      
     
-    if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
-      ensemble_fcst <- combined_ensemble_models %>%
-        get_model_time_resample_fit(ensemble_tscv_final) %>%
-        dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+    fcst_tbl <- tibble::tibble()
+    
+    if(run_ensemble_models) {
+    
+      cli::cli_h3("Ensemble Model Training")
       
-      fcst_tbl <- ensemble_fcst  %>%
-        get_final_fcst_slice() %>%
-        rbind(
-          ensemble_fcst %>%
-            get_final_fcst_back_test())
+      #create modeltime table to add ensembled trained models to
+      combined_ensemble_models <- modeltime::modeltime_table()
+      
+      ensemble_models <- get_r2_data_models()
+      
+      models_to_go_over <- ensemble_models[ensemble_models %in% names(model_list)]
+      
+      for(model_name in models_to_go_over){
+        
+        #model_fn <- as.character(ensemble_models[model_name])
+        model_fn <- gsub("-", "_", model_name)
+        add_name <- paste0(model_name,"-ensemble",model_name_suffix)
+        
+        try(mdl_ensemble <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                     train_data = ensemble_train_data_initial,
+                                                     frequency = frequency_number,
+                                                     parallel = run_model_parallel,
+                                                     horizon = forecast_horizon,
+                                                     seasonal_period =seasonal_periods,
+                                                     back_test_spacing = back_test_spacing,
+                                                     fiscal_year_start = fiscal_year_start,
+                                                     tscv_inital = "1 year",
+                                                     date_rm_regex = date_regex,
+                                                     model_type = "ensemble"))
+        
+        try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models,
+                                                                       mdl_ensemble,
+                                                                       location = "top") %>%
+              update_model_description(1, add_name),
+            silent = TRUE)
+      }
+      
+      print(combined_ensemble_models)
+      
+      #create ensemble resamples to train future and back test folds
+      cli::cli_h3("Refitting Ensemble Models")
+      
+      ensemble_tscv <- submodels_resample_tscv_tbl %>%
+        dplyr::select(-.id) %>%
+        tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
+        timetk::time_series_cv(
+          date_var = Date,
+          initial = "1 year",
+          assess = forecast_horizon,
+          skip = back_test_spacing,
+          cumulative = TRUE,
+          slice_limit = back_test_scenarios) %>%
+        timetk::tk_time_series_cv_plan() %>%
+        dplyr::mutate(Horizon_char = as.character(Horizon))
+      
+      #return(ensemble_tscv)
+      
+      #Replace NaN/Inf with NA, then replace with zero
+      is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
+      is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.nan)
+      ensemble_tscv[is.na(ensemble_tscv)] = 0.01
+      
+      #correctly filter test split to correct horizons per date
+      rsplit_ensemble_function <- function(slice) {
+        
+        train <- ensemble_tscv %>%
+          dplyr::filter(.id == slice,
+                        .key == "training")
+        
+        horizon <- 1
+        
+        test_dates <- ensemble_tscv %>%
+          dplyr::filter(.id == slice,
+                        .key == "testing")
+        
+        test <- tibble::tibble()
+        
+        for(date in unique(test_dates$Date)) {
+          
+          date_horizon_tbl <- ensemble_tscv %>%
+            dplyr::filter(.id == slice,
+                          .key == "testing",
+                          Date == date,
+                          Horizon == horizon)
+          
+          test <- rbind(test, date_horizon_tbl)
+          
+          horizon <- horizon+1
+          
+        }
+        
+        slice_tbl <- train %>%
+          rbind(test) %>%
+          dplyr::select(-.id, -.key)
+        
+        rsplit_obj <- slice_tbl %>%
+          rsample::make_splits(ind = list(analysis = seq(nrow(train)),
+                                          assessment = nrow(train) + seq(nrow(test))),
+                               class = "ts_cv_split")
+        
+        return(rsplit_obj)
+      }
+      
+      ensemble_split_objs <- purrr::map(unique(ensemble_tscv$.id),
+                                        .f=rsplit_ensemble_function)
+      
+      ensemble_tscv_final <- rsample::new_rset(splits = ensemble_split_objs,
+                                               ids = unique(ensemble_tscv$.id),
+                                               subclass = c("time_series_cv",
+                                                            "rset"))
+      
+      fcst_tbl <- tibble::tibble()
+      
+      if(length(unique(combined_ensemble_models$.model_desc)) > 0) {
+        ensemble_fcst <- combined_ensemble_models %>%
+          get_model_time_resample_fit(ensemble_tscv_final) %>%
+          dplyr::select(.id, Combo, Model, FCST, Target, Date, Horizon)
+        
+        fcst_tbl <- ensemble_fcst  %>%
+          get_final_fcst_slice() %>%
+          rbind(
+            ensemble_fcst %>%
+              get_final_fcst_back_test())
+      }
+      
     }
     
     #stop parallel processing
@@ -691,19 +703,20 @@ construct_forecast_models <- function(full_data_tbl,
       parallel_exit_func(parallel_args)
     }
     
-    
+    cli::cli_h3("Forecast Output")
+
     #Create forecast output
     fcst_tbl <- fcst_tbl %>%
-      rbind( 
-        submodels_resample_tscv_tbl %>% 
+      rbind(
+        submodels_resample_tscv_tbl %>%
           get_final_fcst_slice()) %>%
       rbind(
         submodels_resample_tscv_tbl %>%
           get_final_fcst_back_test())
-    
+
     return(fcst_tbl)
   }
-  
+
   return (forecast_models)
 }
 

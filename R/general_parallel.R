@@ -5,14 +5,18 @@
 #' @param type Type of parallel processing being done 
 init_parallel_within <-function(type){
   
+  cli::cli_h3("Creating Parallel Processing")
+  
   cores <- parallel::detectCores()
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
   #point to the correct libraries within Azure Batch
   if(type == "azure_batch") {
-    clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))  
+    parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages")) 
   }
+  
+  cli::cli_alert_info("Running across {cores} cores")
   
   return(cl)
 }
@@ -39,11 +43,16 @@ exit_parallel_within <-function(cl){
 get_fcast_parallel<- function(combo_list,
                               call_back_fn){
   
-  cl <- parallel::makeCluster(parallel::detectCores(), outfile = "doParallel.txt")
+  cli::cli_h2("Creating Parallel Processing")
+  
+  cores <- parallel::detectCores()
+  
+  cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
   parallel::clusterExport(cl, get_transfer_functions())
-  #parallel::clusterExport(cl, "combo_specific_filter")
+  
+  cli::cli_alert_info("Running across {cores} cores")
   
   fcst <- foreach(i = combo_list, 
                   .combine = 'rbind',

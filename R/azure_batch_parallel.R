@@ -12,22 +12,18 @@
 get_fcast_parallel_azure <- function(combo_list,
                                      call_back_fn,
                                      azure_batch_credentials,
-                                     azure_batch_clusterConfig,
+                                     azure_batch_cluster_config,
                                      run_name){
   
   doAzureParallel::setCredentials(azure_batch_credentials)
-  cluster <- doAzureParallel::makeCluster(azure_batch_clusterConfig)
+  cluster <- doAzureParallel::makeCluster(azure_batch_cluster_config)
   doAzureParallel::registerDoAzureParallel(cluster)
   
-  #parallel::clusterExport(varlist = get_transfer_functions())
-  #assign("combo_specific_filter", combo_specific_filter, .GlobalEnv)
-  print(ls(globalenv()))
-  
-  #stop()
+  cli::cli_h2("Submitting Tasks to Azure Batch")
   
   fcst <- foreach(i = combo_list, .combine = 'rbind',
                   .packages = get_export_packages(), 
-                  .export = ls(globalenv()),
+                  .export = get_transfer_functions(),
                   .options.azure = list(maxTaskRetryCount = 0, 
                                         autoDeleteJob = TRUE, 
                                         job = substr(paste0('finn-fcst-', 

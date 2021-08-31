@@ -23,6 +23,7 @@ construct_forecast_models(
   frequency_number,
   models_to_run,
   models_not_to_run,
+  run_ensemble_models,
   hist_periods_80,
   back_test_spacing,
   back_test_scenarios,

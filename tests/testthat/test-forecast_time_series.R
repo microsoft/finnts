@@ -3,7 +3,7 @@ forecast_horizon <- 3
 target_variable <- "value"
 combo_variables <- c("id")
 models_to_run <- c("arima", "ets", "snaive")
-inp_data <- m750 %>% dplyr::rename(Date = date)
+inp_data <- m750 %>% dplyr::rename(Date = date) %>% dplyr::mutate(id = as.character(id))
 dt_type <- "month"
 
 finn_forecast <- forecast_time_series(
@@ -13,7 +13,8 @@ finn_forecast <- forecast_time_series(
   date_type = dt_type, 
   forecast_horizon = forecast_horizon, 
   run_model_parallel = FALSE,
-  models_to_run = models_to_run)
+  models_to_run = models_to_run, 
+  run_global_models = FALSE)
 
 final_fcst <- finn_forecast$final_fcst
 back_test_data <- finn_forecast$back_test_data

@@ -236,7 +236,7 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 #' @return Simple list of packages
 get_export_packages <- function(){
   c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-    'timetk', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'xgboost',
+    'timetk', 'rlist', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost',
     'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
     "doParallel", "parallel")
 }
@@ -253,7 +253,7 @@ get_transfer_functions <- function(){
     "get_r1_data_models", "get_r2_data_models", "get_deep_learning_models", "get_frequency_adjustment_models", 
     "invoke_forecast_function", "get_recipie_simple", "get_workflow_simple", "get_fit_simple", "get_freq_adjustment",
     "get_recipie_configurable", "get_fit_wkflw_nocombo", "get_latin_hypercube_grid", "get_resample_tune_grid", 
-    "get_resample_tscv", "get_tune_grid", 
-    "init_parallel_within","exit_parallel_within")
+    "get_resample_tscv", "get_tune_grid", "get_not_all_data_models", "get_export_packages", "get_fit_wkflw_best",
+    "get_kfold_tune_grid", "get_resample_kfold", "init_parallel_within","exit_parallel_within")
 }
 
