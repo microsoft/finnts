@@ -7,7 +7,7 @@ init_parallel_within <-function(type){
   
   cli::cli_h3("Creating Parallel Processing")
   
-  cores <- parallel::detectCores()
+  cores <- parallel::detectCores()-1
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
@@ -45,7 +45,7 @@ get_fcast_parallel<- function(combo_list,
   
   cli::cli_h2("Creating Parallel Processing")
   
-  cores <- parallel::detectCores()
+  cores <- parallel::detectCores()-1
   
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)

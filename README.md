@@ -27,10 +27,12 @@ devtools::install_github("microsoft/finnts")
 ``` r
 library(finnts)
 
+# prepare historical data
 hist_data <- timetk::m4_monthly %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
-  
+
+# call main finnts modeling function
 finn_output <- forecast_time_series(
   input_data = hist_data,
   combo_variables = c("id"),

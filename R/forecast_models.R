@@ -201,8 +201,6 @@ invoke_forecast_function <- function(fn_to_invoke,
 #' @param run_model_parallel Run Model in Parallel
 #' @param parallel_processing Which parallel processing to use
 #' @param run_deep_learning Run Deep Learning model
-#' @param parallel_init_func Init function for parallel module WITHIN
-#' @param parallel_exit_func Exit function for parallel module WITHIN
 #' @param frequency_number Frequency Number
 #' @param models_to_run Models to Run
 #' @param models_not_to_run Models not to run
@@ -228,8 +226,6 @@ construct_forecast_models <- function(full_data_tbl,
                                       run_model_parallel,
                                       parallel_processing,
                                       run_deep_learning,
-                                      parallel_init_func,
-                                      parallel_exit_func,
                                       frequency_number,
                                       models_to_run,
                                       models_not_to_run,
@@ -246,12 +242,14 @@ construct_forecast_models <- function(full_data_tbl,
     
     cli::cli_h2("Running Combo: {combo_value}")
     
-    # Copy functions into global environment for azure batch
+    # Copy functions into global environment within azure batch
     if(parallel_processing == "azure_batch") {
-      
       global_env <- .GlobalEnv
+      export_env <- global_env$azbatchenv$exportenv
       
-      for(n in ls(global_env$azbatchenv$exportenv, all.names=TRUE)) assign(n, get(n, global_env$azbatchenv$exportenv), global_env)
+      for(n in ls(export_env , all.names=TRUE)) {
+        assign(n, get(n, export_env), global_env)
+      }
     }
     
     #filter on specific combo or all data
@@ -309,7 +307,7 @@ construct_forecast_models <- function(full_data_tbl,
 
     # parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
-      parallel_args <- parallel_init_func
+      parallel_args <- init_parallel_within(parallel_processing)
     }
 
     cli::cli_h3("Individual Model Training")
@@ -424,6 +422,8 @@ construct_forecast_models <- function(full_data_tbl,
 
     #create resamples for back testing forecasts and ensemble training data
     
+    # if multivariate models are chosen to run, ensemble models are turned on, and more than one individual model has been run, 
+    # then create enough back test scenarios to train ensemble models, otherwise just run back test scenario input amount and turn ensembles off
     if(run_ensemble_models & (length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)))>1 & sum(grepl("-R", c(unique(combined_models_recipe_1$.model_desc), unique(combined_models_recipe_2$.model_desc)))) > 0) {
       slice_limit_amount <- 100
       run_ensemble_models <- TRUE
@@ -700,7 +700,7 @@ construct_forecast_models <- function(full_data_tbl,
     
     #stop parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine"){
-      parallel_exit_func(parallel_args)
+      exit_parallel_within(parallel_args)
     }
     
     cli::cli_h3("Forecast Output")
