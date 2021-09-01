@@ -1,0 +1,54 @@
+# Starter pipeline
+# Start with a minimal pipeline that you can customize to build and deploy your code.
+# Add steps that build, run tests, deploy, and more:
+# https://aka.ms/yaml
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+- script: echo Hello, world!
+  displayName: 'Run a one-line script'
+
+- script: |
+    echo Add other tasks to build, test, and deploy your project.
+    echo See https://aka.ms/yaml
+  displayName: 'Run a multi-line script'
+
+- task: CredScan@2
+  inputs:
+    toolMajorVersion: 'V2'
+- task: ESLint@1
+  inputs:
+    Configuration: 'recommended'
+    TargetType: 'eslint'
+    ErrorLevel: 'warn'
+
+- task: Semmle@0
+  env: 
+    SYSTEM_ACCESSTOKEN: $(PATToken)
+  inputs:
+    sourceCodeDirectory: '$(Build.SourcesDirectory)'
+    language: 'tsandjs'
+    includeNodeModules: true
+    querySuite: 'Recommended'
+    timeout: '1800'
+    ram: '16384'
+    addProjectDirToScanningExclusionList: true
+
+- task: ComponentGovernanceComponentDetection@0
+  inputs:
+    scanType: 'Register'
+    verbosity: 'Verbose'
+    alertWarningLevel: 'High'
+
+- task: PublishSecurityAnalysisLogs@2
+  inputs:
+    ArtifactName: 'CodeAnalysisLogs'
+    ArtifactType: 'Container'
+    AllTools: true
+    ToolLogsNotFoundAction: 'Standard'
+
