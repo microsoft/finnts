@@ -36,7 +36,9 @@ forecast_time_series(
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE,
-  run_all_data = TRUE,
+  run_global_models = TRUE,
+  run_local_models = TRUE,
+  run_ensemble_models = TRUE,
   average_models = TRUE,
   max_model_average = 4,
   weekly_to_daily = TRUE
@@ -129,8 +131,12 @@ any model.}
 \item{run_deep_learning}{Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
 models_not_to_run.}
 
-\item{run_all_data}{Run multivariate models on the entire data set (across all time series). Can be override by
-models_to_run and models_not_to_run.}
+\item{run_global_models}{Run multivariate models on the entire data set (across all time series) as a global model.
+Can be override by models_not_to_run.}
+
+\item{run_local_models}{Run models by individual time series as local models.}
+
+\item{run_ensemble_models}{Run ensemble models}
 
 \item{average_models}{Create simple averages of individual models.}
 

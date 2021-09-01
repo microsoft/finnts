@@ -24,7 +24,7 @@ Lastly, if "parallel_processing" is set to "none" and "run_model_parallel" is se
 
 ## Within Azure using Azure Batch
 
-To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set "parallel_processing" to "azure_batch" and set "run_model_parallel" to "TRUE" within the "forecast_time_series" function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine (or defined by the user). 
+To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set "parallel_processing" to "azure_batch" and set "run_model_parallel" to "TRUE" within the "forecast_time_series" function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine. 
 
 [Azure Batch](https://azure.microsoft.com/en-us/services/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [github site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
 
@@ -69,7 +69,7 @@ azure_batch_cluster_config <- list(
   ),
   "containerImage" = "mftokic/finn-azure-batch-dev", # docker image you can use that automatically downloads software needed for Finn to run in cloud
   "rPackages" = list(
-    "cran" = c('Rcpp', 'modeltime', 'modeltime.ensemble', 'modeltime.resample', 'tidymodels', 'lubridate', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'doParallel', 'tidyverse', 'lightgbm', 'torch', 'tabnet', 'prophet', 'gtools'), # finnts package dependencies
+    "cran" = c('Rcpp', 'modeltime', 'modeltime.ensemble', 'modeltime.resample', 'tidymodels', 'lubridate', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'doParallel', 'tidyverse', 'lightgbm', 'torch', 'tabnet', 'prophet', 'glmnet', 'gtools'), # finnts package dependencies
     "github" = list(),
     "bioconductor" = list()
   ),

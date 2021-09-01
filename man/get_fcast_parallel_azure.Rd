@@ -8,7 +8,7 @@ get_fcast_parallel_azure(
   combo_list,
   call_back_fn,
   azure_batch_credentials,
-  azure_batch_clusterConfig,
+  azure_batch_cluster_config,
   run_name
 )
 }
@@ -19,9 +19,9 @@ get_fcast_parallel_azure(
 
 \item{azure_batch_credentials}{Azure Batch Credentials}
 
-\item{azure_batch_clusterConfig}{Azure Batch Cluster Config}
-
 \item{run_name}{Run Name}
+
+\item{azure_batch_clusterConfig}{Azure Batch Cluster Config}
 }
 \value{
 Forecast Object

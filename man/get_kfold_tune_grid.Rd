@@ -9,9 +9,9 @@ get_kfold_tune_grid(train_data, wkflw, parallel = FALSE)
 \arguments{
 \item{train_data}{Training Data}
 
-\item{wkflw}{Workflow Objet from previous stage}
+\item{wkflw}{Workflow Object from previous stage}
 
-\item{parallel}{Allow Parallal (Default False)}
+\item{parallel}{Allow Parallel (Default False)}
 }
 \value{
 gives the model fit

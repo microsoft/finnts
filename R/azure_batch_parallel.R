@@ -1,26 +1,3 @@
-#' Call back function within forecast for init
-#' 
-#' Sets the right configuration during init
-init_azure_parallel_within <-function(){
-  cores <- parallel::detectCores()
-  cl <- parallel::makeCluster(cores)
-  doParallel::registerDoParallel(cl)
-  
-  #point to the correct libraries within Azure Batch
-  clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
-  
-  return(cl)
-}
-
-#' Call back function within forecast for exit
-#' 
-#' @param cl Cluster variable from init
-#' 
-#' Sets the right configuration during exit
-exit_azure_parallel_within <-function(cl){
-  parallel::stopCluster(cl)
-}
-
 #' Call parallel forecast model for azure
 #' 
 #' Azure Batch parallelization of forecast model
@@ -35,13 +12,14 @@ exit_azure_parallel_within <-function(cl){
 get_fcast_parallel_azure <- function(combo_list,
                                      call_back_fn,
                                      azure_batch_credentials,
-                                     azure_batch_clusterConfig,
+                                     azure_batch_cluster_config,
                                      run_name){
   
   doAzureParallel::setCredentials(azure_batch_credentials)
-  cluster <- doAzureParallel::makeCluster(azure_batch_clusterConfig)
+  cluster <- doAzureParallel::makeCluster(azure_batch_cluster_config)
   doAzureParallel::registerDoAzureParallel(cluster)
   
+  cli::cli_h2("Submitting Tasks to Azure Batch")
   
   fcst <- foreach(i = combo_list, .combine = 'rbind',
                   .packages = get_export_packages(), 

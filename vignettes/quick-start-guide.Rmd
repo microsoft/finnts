@@ -10,8 +10,11 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>"
+  comment = "#>", 
+  warning = FALSE, 
+  message = FALSE
 )
+library(finnts)
 ```
 
 The finnts package, commonly referred to as "Finn", is a standardized times series forecast framework developed by Microsoft Finance. It's a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.
@@ -60,24 +63,48 @@ The above data set contains 4 individual time series, identified using the "id" 
 
 Calling for "forecast_time_series" function is the easiest part. In this example we will be running just two models. 
 
-```{r, message = FALSE, eval = hist_data}
-library(finnts)
+```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, results='hide', eval = FALSE}
 
-# finn_output <- forecast_time_series(
-#   input_data = hist_data %>% tibble(),
-#   combo_variables = c("id"),
-#   target_variable = "value",
-#   date_type = "month",
-#   forecast_horizon = 12,
-#   models_to_run = c("arima", "ets")
-# )
+finn_output <- forecast_time_series(
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3,
+  back_test_scenarios = 6, 
+  models_to_run = c("arima", "ets"), 
+  run_global_models = FALSE, 
+  run_model_parallel = FALSE
+)
 
 ```
 
-TO-DO
+
 
 ## 3. Use Forecast Outputs
 
-TO-DO
+### Future Forecast
 
-finish after Aadharsh pushes latest refactored code to main
+```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE}
+finn_output$final_fcst %>%
+  head() %>%
+  print()
+
+finn_output$final_fcst %>%
+  tail() %>%
+  print()
+```
+
+### Back Test Results
+
+```{r, message = FALSE, eval = finn_output, eval = FALSE}
+print(finn_output$back_test_data)
+```
+
+### Back Test Best Model per Time Series
+
+```{r, message = FALSE, eval = finn_output, eval = FALSE}
+print(finn_output$back_test_best_MAPE)
+```
+
+Note: the best model for the "M1" combination is a simple average of "arima" and "ets" models. 

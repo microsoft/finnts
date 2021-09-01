@@ -42,7 +42,7 @@ get_recipie_configurable <- function(train_data,
                                      center_scale=FALSE,
                                      one_hot = FALSE){
   
-  mutate_adj_half <- function(df){
+  mutate_adj_half_fn <- function(df){
     if(mutate_adj_half){
       df %>%
         recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
@@ -121,7 +121,7 @@ get_recipie_configurable <- function(train_data,
     get_recipie_simple() %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
     timetk::step_timeseries_signature(Date_Adj) %>%
-    mutate_adj_half() %>%
+    mutate_adj_half_fn() %>%
     rm_date_fn() %>%
     step_nz_fn() %>%
     norm_date_adj_year_fn() %>%
@@ -167,6 +167,7 @@ get_fit_simple <- function(train_data,
 get_fit_wkflw_best <- function(train_data,
                                tune_results,
                                wflw_spec_tune){
+
   best_results <- tune_results %>%
     tune::show_best(metric = "rmse", n = 10)
   
@@ -271,8 +272,7 @@ get_tune_grid <- function(train_data,
     tgCall$metrics <- modeltime::default_forecast_accuracy_metric_set()
   }
   
-  do.call(tune::tune_grid,
-          tgCall)
+  do.call(tune::tune_grid, tgCall, envir = globalenv())
 }
 
 #' Get tuning grid with resample
@@ -311,8 +311,8 @@ get_resample_tune_grid<- function(train_data,
 #' Get tuning grid k fold CV
 #' 
 #' @param train_data Training Data
-#' @param wkflw Workflow Objet from previous stage
-#' @param parallel Allow Parallal (Default False) 
+#' @param wkflw Workflow Object from previous stage
+#' @param parallel Allow Parallel (Default False) 
 #' 
 #' @return gives the model fit
 get_kfold_tune_grid<- function(train_data,
@@ -355,7 +355,7 @@ get_latin_hypercube_grid<-function(model_spec){
 #' @return Get the ARIMA based model
 arima <- function(train_data, 
                   frequency) {
-  
+
   recipie_simple <- train_data %>%
     get_recipie_simple()
   
@@ -423,7 +423,6 @@ arima_boost <- function(train_data,
   wflw_spec_tune_arima_boost <- get_workflow_simple(model_spec_arima_boost_tune,
                                                     recipe_spec_arima_boost)
   
-  
   tune_results_arima_boost <- train_data%>%
     get_resample_tune_grid(tscv_initial,
                          horizon,
@@ -432,10 +431,10 @@ arima_boost <- function(train_data,
                          parallel,
                          TRUE)
   
-  
+
   wflw_fit_arima_boost<- train_data %>% 
-    get_fit_wkflw_best(wflw_spec_tune_arima_boost,
-                       tune_results_arima_boost)
+    get_fit_wkflw_best(tune_results_arima_boost,
+                       wflw_spec_tune_arima_boost)
   
   cli::cli_alert_success("arima-boost")
   
@@ -507,8 +506,8 @@ cubist <- function(train_data,
   
   
   wflw_fit_cubist<- train_data %>% 
-    get_fit_wkflw_best(wflw_spec_tune_cubist,
-                       tune_results_cubist)
+    get_fit_wkflw_best(tune_results_cubist, 
+                       wflw_spec_tune_cubist)
   
   
   cli::cli_alert_success("cubist")
@@ -1323,10 +1322,14 @@ svm_rbf <- function(train_data,
 #' 
 #' @param train_data Training Data
 #' @param parallel Parallel
+#' @param date_rm_regex Date RM Regex
+#' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get Tab Net
 tabnet <- function(train_data,
-                  parallel) {
+                   parallel, 
+                   fiscal_year_start, 
+                   date_rm_regex) {
   
   date_rm_regex_final <- "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(day)|(week)"
   #create model recipe
@@ -1490,7 +1493,7 @@ xgboost <-function(train_data,
   
   wflw_fit_xgboost <- train_data %>%
     get_fit_wkflw_best(tune_results_xgboost,
-                       wflw_fit_xgboost)
+                       wflw_spec_tune_xgboost)
 
   cli::cli_alert_success("xgboost")
   
