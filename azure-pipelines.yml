@@ -21,23 +21,11 @@ steps:
 - task: CredScan@2
   inputs:
     toolMajorVersion: 'V2'
-- task: ESLint@1
-  inputs:
-    Configuration: 'recommended'
-    TargetType: 'eslint'
-    ErrorLevel: 'warn'
-
-- task: Semmle@0
-  env: 
-    SYSTEM_ACCESSTOKEN: $(PATToken)
-  inputs:
-    sourceCodeDirectory: '$(Build.SourcesDirectory)'
-    language: 'tsandjs'
-    includeNodeModules: true
-    querySuite: 'Recommended'
-    timeout: '1800'
-    ram: '16384'
-    addProjectDirToScanningExclusionList: true
+# - task: ESLint@1
+#   inputs:
+#     Configuration: 'recommended'
+#     TargetType: 'eslint'
+#     ErrorLevel: 'warn'
 
 - task: ComponentGovernanceComponentDetection@0
   inputs:
