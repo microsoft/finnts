@@ -9,6 +9,7 @@
 #' @param run_name Run Name
 #' 
 #' @return Forecast Object
+#' @noRd
 get_fcast_parallel_azure <- function(combo_list,
                                      call_back_fn,
                                      azure_batch_credentials,

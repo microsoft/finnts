@@ -2,7 +2,8 @@
 #' 
 #' @param train_data Training Data 
 #' 
-#' @return simple recipie
+#' @return simple recipe
+#' @noRd
 get_recipie_simple <- function(train_data){
   recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
 }
@@ -11,7 +12,8 @@ get_recipie_simple <- function(train_data){
 #' 
 #' @param train_data Training Data 
 #' 
-#' @return combo recipie
+#' @return combo recipe
+#' @noRd
 get_recipie_combo <- function(train_data){
   recipes::recipe(Target ~  Date + Combo, data = train_data)
 }
@@ -30,6 +32,7 @@ get_recipie_combo <- function(train_data){
 #' @param center_scale Center and scale 
 #' @param one_hot True or False
 #' @return configurable recipie
+#' @noRd
 get_recipie_configurable <- function(train_data,
                                      fiscal_year_start,
                                      date_rm_regex_final,
@@ -137,6 +140,7 @@ get_recipie_configurable <- function(train_data,
 #' @param recipe_spec year, quarter, month, week, day
 #' 
 #' @return dplyr workflow spec
+#' @noRd
 get_workflow_simple <- function(model_spec,
                                 recipe_spec){
   workflows::workflow() %>%
@@ -149,7 +153,8 @@ get_workflow_simple <- function(model_spec,
 #' @param train_data Training Data
 #' @param wflw_spec Worflow Spec
 #' 
-#' @return simple recipie
+#' @return simple recipe
+#' @noRd
 get_fit_simple <- function(train_data,
                            wflw_spec){
   wflw_spec %>%
@@ -164,6 +169,7 @@ get_fit_simple <- function(train_data,
 #' @param wflw_spec_tune Worflow Spec after tuning
 #' 
 #' @return simple recipie
+#' @noRd
 get_fit_wkflw_best <- function(train_data,
                                tune_results,
                                wflw_spec_tune){
@@ -182,9 +188,10 @@ get_fit_wkflw_best <- function(train_data,
 #' 
 #' @param train_data Training Data 
 #' @param model_spec Model Spec
-#' @param recipie_spec Recipie Spec
+#' @param recipie_spec Recipe Spec
 #' 
-#' @return simple recipie
+#' @return simple recipe
+#' @noRd
 get_fit_wkflw_nocombo <- function(train_data,
                                   model_spec,
                                   recipie_spec){
@@ -200,6 +207,7 @@ get_fit_wkflw_nocombo <- function(train_data,
 #' @param back_test_spacing Back Testing Spacing
 #' 
 #' @return gives the resample TS CV object
+#' @noRd
 get_resample_tscv <- function(train_data,
                               tscv_initial,
                               horizon,
@@ -222,6 +230,7 @@ get_resample_tscv <- function(train_data,
 #' @param train_data Training Data
 #' 
 #' @return gives the resample kFold CV object
+#' @noRd
 get_resample_kfold <-function(train_data){
   set.seed(123)
   
@@ -237,6 +246,8 @@ get_resample_kfold <-function(train_data){
 #' @param resamples Resamples
 #' @param parallel Parallel
 #' @param isMetrics is metrics
+#' 
+#' @noRd
 get_tune_grid <- function(train_data,
                           wkflw,
                           isBoost,
@@ -287,6 +298,7 @@ get_tune_grid <- function(train_data,
 #' @param isMetrics Add Metrics
 #' 
 #' @return gives the model fit
+#' @noRd
 get_resample_tune_grid<- function(train_data,
                                   tscv_initial,
                                   horizon,
@@ -315,6 +327,7 @@ get_resample_tune_grid<- function(train_data,
 #' @param parallel Allow Parallel (Default False) 
 #' 
 #' @return gives the model fit
+#' @noRd
 get_kfold_tune_grid<- function(train_data,
                                wkflw,
                                parallel = FALSE){
@@ -336,6 +349,7 @@ get_kfold_tune_grid<- function(train_data,
 #' @param model_spec Model Spec Obj
 #' 
 #' @return gives the latin hypercube grid
+#' @noRd
 get_latin_hypercube_grid<-function(model_spec){
   set.seed(123)
   
@@ -353,6 +367,8 @@ get_latin_hypercube_grid<-function(model_spec){
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ARIMA based model
+#' @keywords internal
+#' @export
 arima <- function(train_data, 
                   frequency) {
 
@@ -387,6 +403,8 @@ arima <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the ARIMA based model
+#' @keywords internal
+#' @export
 arima_boost <- function(train_data,
                         frequency,
                         parallel,
@@ -453,6 +471,8 @@ arima_boost <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the cubist
+#' @keywords internal
+#' @export
 cubist <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -522,6 +542,8 @@ cubist <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Croston based model
+#' @keywords internal
+#' @export
 croston <- function(train_data, 
                    frequency) {
   
@@ -550,6 +572,8 @@ croston <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the DeepAR model
+#' @keywords internal
+#' @export
 deepar <- function(train_data, 
                   horizon, 
                   frequency){
@@ -581,6 +605,8 @@ deepar <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ETS model
+#' @keywords internal
+#' @export
 ets <- function(train_data, 
                frequency) {
   
@@ -618,6 +644,8 @@ ets <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the GLM Net
+#' @keywords internal
+#' @export
 glmnet <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -684,6 +712,8 @@ glmnet <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the GLM Net
+#' @keywords internal
+#' @export
 mars <- function(train_data, 
                 parallel, 
                 model_type = "single",
@@ -725,6 +755,8 @@ mars <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get Mean Forecast Model
+#' @keywords internal
+#' @export
 meanf <- function(train_data, 
                  frequency) {
   
@@ -757,6 +789,8 @@ meanf <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get nbeats Model
+#' @keywords internal
+#' @export
 nbeats <- function(train_data, 
                   horizon, 
                   frequency) {
@@ -793,6 +827,8 @@ nbeats <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
+#' @keywords internal
+#' @export
 nnetar <- function(train_data,
                    horizon,
                    frequency,
@@ -851,6 +887,8 @@ nnetar <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
+#' @keywords internal
+#' @export
 nnetar_xregs <- function(train_data, 
                         horizon, 
                         frequency,
@@ -916,6 +954,8 @@ nnetar_xregs <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet Model
+#' @keywords internal
+#' @export
 prophet <- function(train_data,
                    horizon,
                    parallel,
@@ -970,6 +1010,8 @@ prophet <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet boost Model
+#' @keywords internal
+#' @export
 prophet_boost <- function(train_data,
                          horizon,
                          parallel,
@@ -1033,6 +1075,8 @@ prophet_boost <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet xregs Model
+#' @keywords internal
+#' @export
 prophet_xregs <- function(train_data,
                          horizon,
                          parallel,
@@ -1087,6 +1131,8 @@ prophet_xregs <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get SNaive Forecast Model
+#' @keywords internal
+#' @export
 snaive <- function(train_data,
                   frequency) {
   
@@ -1115,6 +1161,8 @@ snaive <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM Arima Forecast Model
+#' @keywords internal
+#' @export
 stlm_arima <- function(train_data, 
                        seasonal_period){
   
@@ -1147,7 +1195,8 @@ stlm_arima <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM ETS Forecast Model
-
+#' @keywords internal
+#' @export
 stlm_ets <- function(train_data, seasonal_period) {
   
   seasonal_period_stlm_ets <- seasonal_period
@@ -1185,6 +1234,8 @@ stlm_ets <- function(train_data, seasonal_period) {
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM Poly
+#' @keywords internal
+#' @export
 svm_poly <- function(train_data,
                     horizon,
                     parallel,
@@ -1259,6 +1310,8 @@ svm_poly <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM RBF
+#' @keywords internal
+#' @export
 svm_rbf <- function(train_data,
                    horizon,
                    parallel,
@@ -1326,6 +1379,8 @@ svm_rbf <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get Tab Net
+#' @keywords internal
+#' @export
 tabnet <- function(train_data,
                    parallel, 
                    fiscal_year_start, 
@@ -1372,6 +1427,8 @@ tabnet <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get TBats
+#' @keywords internal
+#' @export
 tbats <- function(train_data,
                  seasonal_period) {
 
@@ -1404,6 +1461,8 @@ tbats <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Theta based model
+#' @keywords internal
+#' @export
 theta <- function(train_data,
                  frequency) {
   
@@ -1438,6 +1497,8 @@ theta <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get XGBoost
+#' @keywords internal
+#' @export
 xgboost <-function(train_data,
                    horizon,
                    parallel,

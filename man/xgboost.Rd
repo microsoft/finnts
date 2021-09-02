@@ -38,3 +38,4 @@ Get XGBoost
 \description{
 XGBoost
 }
+\keyword{internal}

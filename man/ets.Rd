@@ -17,3 +17,4 @@ Get the ETS model
 \description{
 ETS Model
 }
+\keyword{internal}

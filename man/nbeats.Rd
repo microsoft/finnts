@@ -19,3 +19,4 @@ Get nbeats Model
 \description{
 nbeats model
 }
+\keyword{internal}

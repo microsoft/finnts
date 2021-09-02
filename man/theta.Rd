@@ -17,3 +17,4 @@ Get the Theta based model
 \description{
 Theta Model
 }
+\keyword{internal}

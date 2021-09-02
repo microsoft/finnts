@@ -17,3 +17,4 @@ Get Mean Forecast Model
 \description{
 Mean Forecast
 }
+\keyword{internal}

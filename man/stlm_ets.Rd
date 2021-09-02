@@ -17,3 +17,4 @@ Get STLM ETS Forecast Model
 \description{
 STLM ETS
 }
+\keyword{internal}

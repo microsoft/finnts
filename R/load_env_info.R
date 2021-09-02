@@ -4,6 +4,7 @@
 #' 
 #' @param reticulate_environment Input python environment
 #'   ex. to connect to gluonts
+#' @noRd
 load_env_info <- function(reticulate_environment)
 {
   if(!is.null(reticulate_environment)) {

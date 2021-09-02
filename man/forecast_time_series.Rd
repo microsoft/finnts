@@ -162,6 +162,5 @@ finn_forecast <- forecast_time_series(
   forecast_horizon = 3, 
   run_model_parallel = FALSE,
   models_to_run = c("arima", "ets", "snaive"))
-} 
-  
+}
 }

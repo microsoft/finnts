@@ -17,3 +17,4 @@ Get TBats
 \description{
 Tbats
 }
+\keyword{internal}

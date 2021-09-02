@@ -19,3 +19,4 @@ Get the ARIMA based model
 There are modeling functions in this section
 ARIMA Model
 }
+\keyword{internal}

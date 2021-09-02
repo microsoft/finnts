@@ -66,7 +66,10 @@
 #'   or max number of models ran.
 #' @param weekly_to_daily Convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
 #'   up to higher temporal levels like month or quarter. 
-#'   
+#' 
+#' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
+#' 
+#' @export
 #' @examples
 #' \dontrun{
 #' finn_forecast <- forecast_time_series(
@@ -77,11 +80,7 @@
 #'   forecast_horizon = 3, 
 #'   run_model_parallel = FALSE,
 #'   models_to_run = c("arima", "ets", "snaive"))
-#' } 
-#'   
-#' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
-#'   
-#' @export
+#' }
 forecast_time_series <- function(input_data,
   combo_variables,
   target_variable,
@@ -121,12 +120,12 @@ forecast_time_series <- function(input_data,
   weekly_to_daily = TRUE
 ) {
 
-  #' 1. Load Evironment Info:
+  # 1. Load Evironment Info:
   
   load_env_info(reticulate_environment)
   
   
-  #' 2. Initial Unit Tests:
+  # 2. Initial Unit Tests:
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -151,7 +150,7 @@ forecast_time_series <- function(input_data,
   hist_end_date <- hist_dt$hist_end_date
   
   
-  #' 3. Update Input Values:
+  # 3. Update Input Values:
   
   #Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
@@ -184,7 +183,7 @@ forecast_time_series <- function(input_data,
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  #' 4. Prep Data:
+  # 4. Prep Data:
   
   cli::cli_h1("Prepping Data")
   

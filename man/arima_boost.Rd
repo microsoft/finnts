@@ -38,3 +38,4 @@ Get the ARIMA based model
 \description{
 ARIMA Boost
 }
+\keyword{internal}

@@ -6,6 +6,7 @@
 #' @param frequency_number frequency number 
 #' 
 #' @return data_tbl_final
+#' @noRd
 get_data_tbl_final <- function(data_tbl,
                           combo_variables,
                           forecast_approach,
@@ -153,6 +154,7 @@ get_data_tbl_final <- function(data_tbl,
 #' @param target_log_transformation variable to indicate log transformation
 #' 
 #' @return full_data_tbl with or without log transformation
+#' @noRd
 get_log_transformation <- function(df,
                                    target_log_transformation){
   if(target_log_transformation){
@@ -173,6 +175,7 @@ get_log_transformation <- function(df,
 #' @param external_regressors external regressors
 #' 
 #' @return cleaned_data 
+#' @noRd
 get_poly_trans_clean <- function(df,
                                  clean_outliers,
                                  clean_missing_values,
@@ -206,6 +209,7 @@ get_poly_trans_clean <- function(df,
 #' @param forecast_approach forecasting approach 
 #' 
 #' @return external_regressors
+#' @noRd
 get_external_regressors <- function(external_regressors,
                                forecast_approach){
   if(forecast_approach != 'bottoms_up'){
@@ -222,6 +226,7 @@ get_external_regressors <- function(external_regressors,
 #' @param forecast_approach forecasting approach 
 #' 
 #' @return xregs_future_values_tbl
+#' @noRd
 get_xregs_future_values_tbl <- function(xregs_future_values_tbl,
                                     forecast_approach){
   if(forecast_approach != 'bottoms_up'){
@@ -252,6 +257,7 @@ get_xregs_future_values_tbl <- function(xregs_future_values_tbl,
 #' @param xregs_future_values_tbl external regressor table
 #' 
 #' @return full_data_tbl
+#' @noRd
 get_full_data_tbl <- function(data_tbl,
                               combo_cleanup_date,
                               combo_variables,

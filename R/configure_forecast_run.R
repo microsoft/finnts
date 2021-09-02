@@ -7,6 +7,7 @@
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns fourier_periods
+#' @noRd
 get_fourier_periods <- function(fourier_periods,
                                 date_type){
   
@@ -35,6 +36,7 @@ get_fourier_periods <- function(fourier_periods,
 #' @param forecast_horizon horion input from user
 #' 
 #' @return Returns lag_periods
+#' @noRd
 get_lag_periods <- function(lag_periods, 
                             date_type,
                             forecast_horizon){
@@ -68,6 +70,7 @@ get_lag_periods <- function(lag_periods,
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns rolling_window_periods
+#' @noRd
 get_rolling_window_periods <- function(rolling_window_periods,
                                 date_type){
   
@@ -91,6 +94,7 @@ get_rolling_window_periods <- function(rolling_window_periods,
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns frequency_number
+#' @noRd
 get_frequency_number <- function(date_type){
   
   frequency_number <- switch(date_type,
@@ -108,6 +112,7 @@ get_frequency_number <- function(date_type){
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns gluon_ts_frequency
+#' @noRd
 get_gluon_ts_frequency <- function(date_type){
   
   gluon_ts_frequency <- switch(date_type,
@@ -125,6 +130,7 @@ get_gluon_ts_frequency <- function(date_type){
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns seasonal_periods
+#' @noRd
 get_seasonal_periods <- function(date_type){
   
   seasonal_periods <- switch(date_type,
@@ -145,6 +151,7 @@ get_seasonal_periods <- function(date_type){
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns date_regex
+#' @noRd
 get_date_regex <- function(date_type){
   
   date_regex <- switch(date_type,
@@ -166,6 +173,7 @@ get_date_regex <- function(date_type){
 #' @param date_type year, quarter, month, week, day
 #' 
 #' @return Returns back_test_spacing
+#' @noRd
 get_back_test_spacing <- function(back_test_spacing,
                                        date_type){
   
@@ -194,6 +202,7 @@ get_back_test_spacing <- function(back_test_spacing,
 #' @param back_test_spacing back test spacing
 #'  
 #' @return Returns back_test_scenarios and hist_periods_80
+#' @noRd
 get_back_test_scenario_hist_periods<- function(full_data_tbl,
                                               hist_end_date,
                                               back_test_scenarios,
@@ -234,6 +243,7 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 #' Code gets used in multiple places where we need the packages list
 #' 
 #' @return Simple list of packages
+#' @noRd
 get_export_packages <- function(){
   c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
     'timetk', 'rlist', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost',
@@ -244,6 +254,7 @@ get_export_packages <- function(){
 #' Fetches a list of parallel transfer functions
 #' 
 #' @return List of parallel transfer functions
+#' @noRd
 get_transfer_functions <- function(){
   c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "mars",
     "meanf", "nbeats", "nnetar", "nnetar_xregs", "prophet", "prophet_boost", "prophet_xregs", 

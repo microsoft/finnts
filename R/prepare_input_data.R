@@ -8,6 +8,7 @@
 #' @param target_variable Variable to forecast
 #' 
 #' @return Returns Standardized data_tbl (a data table a.k.a. tibble)
+#' @noRd
 get_data_tbl<- function(input_data,
                         combo_variables,
                         target_variable){
@@ -27,6 +28,7 @@ get_data_tbl<- function(input_data,
 #' @param hist_end_date historical end date of data
 #' 
 #' @return list of external regressors with future values
+#' @noRd
 get_xreg_future_values_list <- function(data_tbl,
                                         external_regressors,
                                         hist_end_date){
@@ -58,6 +60,7 @@ get_xreg_future_values_list <- function(data_tbl,
 #' @param combo_variables list of combo variables
 #' 
 #' @return list of external regressors with future values
+#' @noRd
 get_modelling_ready_tbl<-function(data_tbl,
                                   external_regressors,
                                   hist_end_date,

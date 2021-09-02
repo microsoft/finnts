@@ -38,3 +38,4 @@ Get SVM Poly
 \description{
 SVM Poly
 }
+\keyword{internal}

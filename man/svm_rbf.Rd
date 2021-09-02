@@ -38,3 +38,4 @@ Get SVM RBF
 \description{
 SVM RBF
 }
+\keyword{internal}

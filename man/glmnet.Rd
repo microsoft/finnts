@@ -38,3 +38,4 @@ Get the GLM Net
 \description{
 GLM Net Function
 }
+\keyword{internal}

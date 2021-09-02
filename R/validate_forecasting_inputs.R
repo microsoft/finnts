@@ -26,6 +26,7 @@
 #' @param max_model_average Maximum number of models to average
 #' 
 #' @return Returns hist_start_date and hist_end_date
+#' @noRd
 validate_forecasting_inputs<-function(input_data,
                                       combo_variables,
                                       target_variable,

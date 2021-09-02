@@ -35,3 +35,4 @@ Get prophet boost Model
 \description{
 prophet boost
 }
+\keyword{internal}

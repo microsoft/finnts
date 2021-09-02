@@ -23,3 +23,4 @@ Get prophet Model
 \description{
 prophet model
 }
+\keyword{internal}

@@ -17,3 +17,4 @@ Get SNaive Forecast Model
 \description{
 SNaive
 }
+\keyword{internal}
