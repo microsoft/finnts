@@ -367,7 +367,8 @@ get_latin_hypercube_grid<-function(model_spec){
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ARIMA based model
-#' @noRd
+#' @keywords internal
+#' @export
 arima <- function(train_data, 
                   frequency) {
 
