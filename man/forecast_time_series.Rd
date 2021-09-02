@@ -163,8 +163,4 @@ finn_forecast <- forecast_time_series(
   run_model_parallel = FALSE,
   models_to_run = c("arima", "ets", "snaive"))
 }
-1. Load Evironment Info:
-2. Initial Unit Tests:
-3. Update Input Values:
-4. Prep Data:
 }
