@@ -5,6 +5,7 @@
 #' @param combo_variables Combo Variables List
 #' 
 #' @return combo_specific_filter function
+#' @noRd
 combo_specific_filter <-function(full_data_tbl,
                                  combo_value,
                                  combo_variables){
@@ -27,6 +28,7 @@ combo_specific_filter <-function(full_data_tbl,
 #' Get list of all-data models
 #' 
 #' @return List of all data models
+#' @noRd
 get_not_all_data_models <- function(){
   c('arima','arima-boost','croston','ets','meanf','nnetar','nnetar-xregs',
     'prophet','prophet-xregs','snaive','stlm-ets','stlm-arima',
@@ -36,6 +38,7 @@ get_not_all_data_models <- function(){
 #' Get list of r1 only models
 #' 
 #' @return List of r1 only models
+#' @noRd
 get_r1_data_models <- function(){
   c('mars','deepar','nbeats')
 }
@@ -43,6 +46,7 @@ get_r1_data_models <- function(){
 #' Get list of r1 & r2 models
 #' 
 #' @return List of r1 & r2 models
+#' @noRd
 get_r2_data_models <- function(){
   c('cubist','glmnet','svm-poly','svm-rbf','xgboost')
 }
@@ -50,6 +54,7 @@ get_r2_data_models <- function(){
 #' Get list of deep learning models
 #' 
 #' @return List of deep learning models
+#' @noRd
 get_deep_learning_models <- function(){
   c('deepar','nbeats', 'tabnet')
 }
@@ -57,6 +62,7 @@ get_deep_learning_models <- function(){
 #' Get list of seasonal correction
 #' 
 #' @return List of models that need seasonal adjustment
+#' @noRd
 get_frequency_adjustment_models <- function(){
   c('meanf','snaive')
 }
@@ -67,6 +73,7 @@ get_frequency_adjustment_models <- function(){
 #' @param frequency_number Original Frequency Number
 #' 
 #' @return adjusted frequency
+#' @noRd
 get_freq_adjustment <- function(date_type,
                                 frequency_number){
   
@@ -83,6 +90,7 @@ get_freq_adjustment <- function(date_type,
 #' @param run_deep_learning Deep Learning Models
 #' 
 #' @return uses models_to_run and models_not_to_run and returns correct list
+#' @noRd
 get_model_functions <- function(models_to_run,
                                 model_not_to_run,
                                 run_deep_learning){
@@ -145,6 +153,7 @@ get_model_functions <- function(models_to_run,
 #' @param model_type Model Type
 #' 
 #' @return Forecast Object to be used down stream
+#' @noRd
 invoke_forecast_function <- function(fn_to_invoke,
                                      train_data,
                                      frequency,
@@ -213,6 +222,7 @@ invoke_forecast_function <- function(fn_to_invoke,
 #' We need to move these out using a scheduler
 #' 
 #' @return a forecast_models function
+#' @noRd
 construct_forecast_models <- function(full_data_tbl,
                                       external_regressors,
                                       xregs_future_values_list,

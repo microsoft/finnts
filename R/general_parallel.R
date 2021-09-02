@@ -2,7 +2,8 @@
 #' 
 #' Sets the right configuration during init
 #' 
-#' @param type Type of parallel processing being done 
+#' @param type Type of parallel processing being done
+#' @noRd 
 init_parallel_within <-function(type){
   
   cli::cli_h3("Creating Parallel Processing")
@@ -26,6 +27,7 @@ init_parallel_within <-function(type){
 #' @param cl Cluster variable from init
 #' 
 #' Sets the right configuration during exit
+#' @noRd
 exit_parallel_within <-function(cl){
   parallel::stopCluster(cl)
 }
@@ -40,6 +42,7 @@ exit_parallel_within <-function(cl){
 #' @param call_back_fn Call Back Function
 #' 
 #' @return Forecast Object
+#' @noRd
 get_fcast_parallel<- function(combo_list,
                               call_back_fn){
   

@@ -4,6 +4,7 @@
 #' 
 #' @param fcst Input Data Frame
 #' @param negative_fcst is negative forecast allowed
+#' @noRd
 get_forecast_negative_adjusted <- function(fcst,
                                            negative_fcst){
   
