@@ -403,7 +403,8 @@ arima <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the ARIMA based model
-#' @noRd
+#' @keywords internal
+#' @export
 arima_boost <- function(train_data,
                         frequency,
                         parallel,
@@ -470,7 +471,8 @@ arima_boost <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the cubist
-#' @noRd
+#' @keywords internal
+#' @export
 cubist <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -540,7 +542,8 @@ cubist <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Croston based model
-#' @noRd
+#' @keywords internal
+#' @export
 croston <- function(train_data, 
                    frequency) {
   
@@ -569,7 +572,8 @@ croston <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the DeepAR model
-#' @noRd
+#' @keywords internal
+#' @export
 deepar <- function(train_data, 
                   horizon, 
                   frequency){
@@ -601,7 +605,8 @@ deepar <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ETS model
-#' @noRd
+#' @keywords internal
+#' @export
 ets <- function(train_data, 
                frequency) {
   
@@ -639,7 +644,8 @@ ets <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the GLM Net
-#' @noRd
+#' @keywords internal
+#' @export
 glmnet <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -706,7 +712,8 @@ glmnet <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get the GLM Net
-#' @noRd
+#' @keywords internal
+#' @export
 mars <- function(train_data, 
                 parallel, 
                 model_type = "single",
@@ -748,7 +755,8 @@ mars <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get Mean Forecast Model
-#' @noRd
+#' @keywords internal
+#' @export
 meanf <- function(train_data, 
                  frequency) {
   
@@ -781,7 +789,8 @@ meanf <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get nbeats Model
-#' @noRd
+#' @keywords internal
+#' @export
 nbeats <- function(train_data, 
                   horizon, 
                   frequency) {
@@ -818,7 +827,8 @@ nbeats <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
-#' @noRd
+#' @keywords internal
+#' @export
 nnetar <- function(train_data,
                    horizon,
                    frequency,
@@ -877,7 +887,8 @@ nnetar <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
-#' @noRd
+#' @keywords internal
+#' @export
 nnetar_xregs <- function(train_data, 
                         horizon, 
                         frequency,
@@ -943,7 +954,8 @@ nnetar_xregs <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet Model
-#' @noRd
+#' @keywords internal
+#' @export
 prophet <- function(train_data,
                    horizon,
                    parallel,
@@ -998,7 +1010,8 @@ prophet <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet boost Model
-#' @noRd
+#' @keywords internal
+#' @export
 prophet_boost <- function(train_data,
                          horizon,
                          parallel,
@@ -1062,7 +1075,8 @@ prophet_boost <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet xregs Model
-#' @noRd
+#' @keywords internal
+#' @export
 prophet_xregs <- function(train_data,
                          horizon,
                          parallel,
@@ -1117,7 +1131,8 @@ prophet_xregs <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get SNaive Forecast Model
-#' @noRd
+#' @keywords internal
+#' @export
 snaive <- function(train_data,
                   frequency) {
   
@@ -1146,7 +1161,8 @@ snaive <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM Arima Forecast Model
-#' @noRd
+#' @keywords internal
+#' @export
 stlm_arima <- function(train_data, 
                        seasonal_period){
   
@@ -1179,7 +1195,8 @@ stlm_arima <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM ETS Forecast Model
-#' @noRd
+#' @keywords internal
+#' @export
 stlm_ets <- function(train_data, seasonal_period) {
   
   seasonal_period_stlm_ets <- seasonal_period
@@ -1217,7 +1234,8 @@ stlm_ets <- function(train_data, seasonal_period) {
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM Poly
-#' @noRd
+#' @keywords internal
+#' @export
 svm_poly <- function(train_data,
                     horizon,
                     parallel,
@@ -1292,7 +1310,8 @@ svm_poly <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get SVM RBF
-#' @noRd
+#' @keywords internal
+#' @export
 svm_rbf <- function(train_data,
                    horizon,
                    parallel,
@@ -1360,7 +1379,8 @@ svm_rbf <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' 
 #' @return Get Tab Net
-#' @noRd
+#' @keywords internal
+#' @export
 tabnet <- function(train_data,
                    parallel, 
                    fiscal_year_start, 
@@ -1407,7 +1427,8 @@ tabnet <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get TBats
-#' @noRd
+#' @keywords internal
+#' @export
 tbats <- function(train_data,
                  seasonal_period) {
 
@@ -1440,7 +1461,8 @@ tbats <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Theta based model
-#' @noRd
+#' @keywords internal
+#' @export
 theta <- function(train_data,
                  frequency) {
   
@@ -1475,7 +1497,8 @@ theta <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get XGBoost
-#' @noRd
+#' @keywords internal
+#' @export
 xgboost <-function(train_data,
                    horizon,
                    parallel,
