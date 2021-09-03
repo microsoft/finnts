@@ -73,11 +73,15 @@ test_that("final forecast data rows are meaningful", {
   check_exist(to_check,types)
   
   final_fc_dt <- final_fcst %>% 
-    filter(Type=="Historical") %>% 
-    filter(Date==max(Date))
+    dplyr::filter(Type=="Historical") %>% 
+    dplyr::filter(Date==max(Date)) %>%
+    dplyr::last()
   
-  future_frame <- final_fcst %>% dplyr::filter(Date>final_fc_dt,
-                                    Model=='Best Model')
+  print(paste("First Dt Val",final_fc_dt))
+  
+  future_frame <- final_fcst %>% 
+    dplyr::filter(Date>final_fc_dt,
+                  Model=='Best Model')
   
   expect_equal(nrow(future_frame),forecast_horizon)
   
