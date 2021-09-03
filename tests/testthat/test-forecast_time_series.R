@@ -17,7 +17,8 @@ finn_forecast <- forecast_time_series(
   models_to_run = models_to_run, 
   run_global_models = FALSE)
 
-final_fcst <- finn_forecast$final_fcst
+final_fcst <- finn_forecast$final_fcst %>%
+  mutate(Date=as.Date(Date))
 back_test_data <- finn_forecast$back_test_data
 back_test_best_MAPE <- finn_forecast$back_test_best_MAPE
 
@@ -71,7 +72,9 @@ test_that("final forecast data rows are meaningful", {
   to_check <- c("Historical","Forecast")
   check_exist(to_check,types)
   
-  final_fc_dt <- max(final_fcst[final_fcst$Type=="Historical",'Date'])
+  final_fc_dt <- final_fcst %>% 
+    filter(Type=="Historical") %>% 
+    filter(Date==max(Date))
   
   future_frame <- final_fcst %>% dplyr::filter(Date>final_fc_dt,
                                     Model=='Best Model')
