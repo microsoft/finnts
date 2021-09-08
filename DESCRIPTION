@@ -39,6 +39,7 @@ Imports:
     modeltime.ensemble,
     modeltime.gluonts,
     modeltime.resample,
+    parallel,
     plyr,
     purrr,
     rAzureBatch (>= 0.7.0),
