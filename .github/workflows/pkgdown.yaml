@@ -22,10 +22,8 @@ jobs:
 
       - name: Install pak and query dependencies
         run: |
-          install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/")
-          install.packages("tibble")
-          print(local::.)
-          #pak::pkg_install("microsoft/finnts")
+          #install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/")
+          install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/", type = "binary")
           saveRDS(pak::pkg_deps("local::.", dependencies = TRUE), ".github/r-depends.rds")
         shell: Rscript {0}
 
