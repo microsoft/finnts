@@ -1,5 +1,5 @@
 on:
-  commit:
+  push:
     branches:
       - users/mitokic/gh-action-update
 
