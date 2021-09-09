@@ -17,13 +17,15 @@ jobs:
 
       - uses: r-lib/actions/setup-r@v1
         id: install-r
+        with:
+          r-version: '4.1.1'
+        
 
       - uses: r-lib/actions/setup-pandoc@v1
 
       - name: Install pak and query dependencies
         run: |
           install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/")
-          pak::pkg_install("microsoft/finnts")
           saveRDS(pak::pkg_deps("local::.", dependencies = TRUE), ".github/r-depends.rds")
         shell: Rscript {0}
 
