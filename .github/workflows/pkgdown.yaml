@@ -30,12 +30,13 @@ jobs:
 
       - name: Install dependencies
         run: |
-          install.packages('pkgdown', repos = 'https://cloud.r-project.org/')
+          install.packages(c('remotes', 'pkgdown'), repos = 'https://cloud.r-project.org/')
+          devtools::install_github("https://github.com/microsoft/finnts")
           
         shell: Rscript {0}
 
-      - name: Install package
-        run: R CMD INSTALL .
+      # - name: Install package
+      #   run: R CMD INSTALL .
 
       - name: Build and deploy pkgdown site
         run: |
