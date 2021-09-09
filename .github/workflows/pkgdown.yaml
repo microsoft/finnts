@@ -30,9 +30,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          install.packages("pak", repos = "https://r-lib.github.io/p/pak/dev/")
-          pak::pkg_install("r-lib/pkgdown")
-          pak::pkg_install("microsoft/finnts")
+          install.packages(c('remotes', 'pkgdown'), repos = 'https://cloud.r-project.org/')
+          devtools::install_github("https://github.com/microsoft/finnts")
           
         shell: Rscript {0}
 
