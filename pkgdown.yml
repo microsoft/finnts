@@ -1,0 +1,17 @@
+pandoc: 2.7.3
+pkgdown: 1.6.1
+pkgdown_sha: ~
+articles:
+  back-testing-and-hyperparameter-tuning: back-testing-and-hyperparameter-tuning.html
+  best-model-selection: best-model-selection.html
+  external-regressors: external-regressors.html
+  feature-engineering: feature-engineering.html
+  finnts: finnts.html
+  hierarchical-forecasting: hierarchical-forecasting.html
+  models-used-in-finnts: models-used-in-finnts.html
+  parallel-processing: parallel-processing.html
+last_built: 2021-09-13T23:24Z
+urls:
+  reference: https://microsoft.github.io/finnts/reference
+  article: https://microsoft.github.io/finnts/articles
+
