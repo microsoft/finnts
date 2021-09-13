@@ -34,6 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           install.packages('remotes')
+          install.packages('stringi')
           remotes::install_github("https://github.com/microsoft/finnts")
           install.packages('pkgdown')
           
