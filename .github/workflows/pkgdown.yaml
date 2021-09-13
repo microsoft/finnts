@@ -21,6 +21,7 @@ jobs:
         id: install-r
         with:
           r-version: '4.1.1'
+          use-public-rspm: true
 
 
       # - name: Install system dependencies

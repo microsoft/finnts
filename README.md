@@ -1,9 +1,5 @@
 # Microsoft Finance Time Series Forecasting Framework
 
-<!-- badges: start -->
-[![R-CMD-check](https://github.com/microsoft/finnts/workflows/R-CMD-check/badge.svg)](https://github.com/microsoft/finnts/actions)
-<!-- badges: end -->
-
 The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is an automated forecasting framework for producing financial forecasts. While it was built for corporate finance activities, it can easily expand to any time series forecasting problem!
 
 - Automated feature engineering, back testing, and model selection. 
