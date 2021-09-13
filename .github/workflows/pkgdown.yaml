@@ -1,7 +1,7 @@
 on:
   push:
-    branches:
-      - users/mitokic/gh-action-update
+    branches: [main, master]
+    tags: ['*']
 
 name: pkgdown
 
@@ -35,4 +35,4 @@ jobs:
         run: |
           git config --local user.name "$GITHUB_ACTOR"
           git config --local user.email "$GITHUB_ACTOR@users.noreply.github.com"
-          Rscript -e 'pkgdown::deploy_to_branch(new_process = FALSE, branch = "gh-pages2", github_pages = TRUE)'
+          Rscript -e 'pkgdown::deploy_to_branch(new_process = FALSE, branch = "gh-pages", github_pages = TRUE)'
