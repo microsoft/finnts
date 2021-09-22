@@ -53,11 +53,6 @@ get_fcast_parallel<- function(combo_list,
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
-  #print(ls("package:finnts", all.names=TRUE))
-  #print(search())
-
-  #parallel::clusterExport(cl, get_transfer_functions())
-  
   cli::cli_alert_info("Running across {cores} cores")
   
   fcst <- foreach(i = combo_list, 
