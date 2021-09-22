@@ -53,6 +53,8 @@ get_fcast_parallel<- function(combo_list,
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
+  print(ls(all.names=TRUE))
+
   parallel::clusterExport(cl, get_transfer_functions())
   
   cli::cli_alert_info("Running across {cores} cores")
