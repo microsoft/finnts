@@ -53,7 +53,7 @@ get_fcast_parallel<- function(combo_list,
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
-  print(ls(all.names=TRUE))
+  print(ls(".GlobalEnv", all.names=TRUE))
   print(search())
 
   parallel::clusterExport(cl, get_transfer_functions())
