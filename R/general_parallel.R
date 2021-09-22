@@ -54,6 +54,7 @@ get_fcast_parallel<- function(combo_list,
   doParallel::registerDoParallel(cl)
   
   print(ls(all.names=TRUE))
+  print(search())
 
   parallel::clusterExport(cl, get_transfer_functions())
   
