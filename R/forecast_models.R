@@ -394,7 +394,7 @@ construct_forecast_models <- function(full_data_tbl,
             #                                            tscv_inital = hist_periods_80,
             #                                            date_rm_regex = date_regex,
             #                                            model_type = "single"))
-          stop(add_name)
+
           mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                                      train_data = train_data_recipe_1,
                                                      frequency = freq_val,
