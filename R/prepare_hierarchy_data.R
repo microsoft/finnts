@@ -66,10 +66,10 @@ get_data_tbl_final <- function(data_tbl,
         grouping_minus_1 <- hierarchy_combo_variables[num-1]
         
         grouping_values <- data_hts_gts_df %>%
-          dplyr::group_by(.dots = c(grouping_minus_1, grouping_current)) %>%
+          dplyr::group_by(dplyr::across(tidyselect::all_of(c(grouping_minus_1, grouping_current)))) %>%
           dplyr::summarise(Sum = sum(Sum, na.rm=TRUE)) %>%
           dplyr::mutate(Sum = 1) %>%
-          dplyr::group_by(.dots = grouping_minus_1) %>%
+          dplyr::group_by(dplyr::across(tidyselect::all_of(grouping_minus_1))) %>%
           dplyr::summarise(Count = sum(Sum)) %>%
           dplyr::select(Count) %>%
           unlist(use.names = FALSE)
@@ -116,7 +116,7 @@ get_data_tbl_final <- function(data_tbl,
       
       some_list <- df %>%
         dplyr::mutate(Target = tidyr::replace_na(Target, 0)) %>%
-        dplyr::group_by(.dots = combo_variables) %>%
+        dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables))) %>%
         dplyr::summarise(Sum=sum(Target, na.rm=TRUE)) %>%
         data.frame() %>% pick_right_list()
         
