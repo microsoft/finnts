@@ -686,7 +686,7 @@ glmnet <- function(train_data,
   
   wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
                                                recipe_spec_glmnet)
-
+  stop('error')
   tune_results_glmnet <- train_data %>%
     get_resample_tune_grid(tscv_initial,
                            horizon,
