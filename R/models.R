@@ -654,7 +654,7 @@ glmnet <- function(train_data,
                   date_rm_regex,
                   fiscal_year_start,
                   back_test_spacing){
-  
+
   date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
   
   if(model_type=="ensemble"){
@@ -676,14 +676,13 @@ glmnet <- function(train_data,
   }
   
   
-  
   model_spec_glmnet <- parsnip::linear_reg(
     mode = "regression", 
     penalty = tune::tune(), 
     mixture = tune::tune()
   ) %>%
     parsnip::set_engine("glmnet")
-  
+
   wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
                                                recipe_spec_glmnet)
 

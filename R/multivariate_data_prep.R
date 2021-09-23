@@ -1,5 +1,13 @@
-# * Multivariate data prep function----
-
+#' multivariate_prep_recipe_1
+#' 
+#' @param data input data
+#' @param external_regressors external regressors to build features with
+#' @param xregs_future_values_list external regressors that have future values
+#' @param fourier_periods list of periods when building fourier features 
+#' @param lag_periods list of periods when building lag features
+#' @param rolling_window_periods list of periods when building rolling window features
+#' 
+#' @return feature engineered data to input into models
 multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_values_list, fourier_periods, 
                                        lag_periods, rolling_window_periods) {
   
@@ -118,7 +126,18 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
   return(data_period)
 }
 
-
+#' multivariate prep recipe 2
+#' 
+#' @param data input data
+#' @param external_regressors external regressors to build features with
+#' @param xregs_future_values_list external regressors that have future values
+#' @param fourier_periods list of periods when building fourier features 
+#' @param lag_periods list of periods when building lag features
+#' @param rolling_window_periods list of periods when building rolling window features
+#' @param date_type date type
+#' @param forecast_horizon forecast horizon
+#' 
+#' @return feature engineered data to input into models
 multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_values_list, 
                                        fourier_periods, lag_periods, rolling_window_periods, 
                                        date_type, forecast_horizon) {

@@ -167,7 +167,7 @@ invoke_forecast_function <- function(fn_to_invoke,
                                      model_type){
   
   exp_arg_list <- formalArgs(fn_to_invoke)
-
+  
   avail_arg_list <- list('train_data' = train_data,
                          'frequency' = frequency,
                          'horizon' = horizon,
@@ -190,7 +190,7 @@ invoke_forecast_function <- function(fn_to_invoke,
     }
   }
 
-  do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
+  do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
 }
 
 
@@ -360,7 +360,7 @@ construct_forecast_models <- function(full_data_tbl,
                                      tscv_inital = hist_periods_80,
                                      date_rm_regex = date_regex,
                                      model_type = "single"))
-
+        
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
                                                                        location = "top") %>%
@@ -427,6 +427,10 @@ construct_forecast_models <- function(full_data_tbl,
 
     print(combined_models_recipe_1)
     print(combined_models_recipe_2)
+    
+    if(length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)) < 1) {
+      stop("all individual models failed during initial training")
+    }
     
     cli::cli_h3("Refitting Individual Models")
 
