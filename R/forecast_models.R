@@ -167,7 +167,7 @@ invoke_forecast_function <- function(fn_to_invoke,
                                      model_type){
   
   exp_arg_list <- formalArgs(fn_to_invoke)
-  stop(exp_arg_list)
+  
   avail_arg_list <- list('train_data' = train_data,
                          'frequency' = frequency,
                          'horizon' = horizon,
@@ -189,7 +189,7 @@ invoke_forecast_function <- function(fn_to_invoke,
       inp_arg_list[x] <- avail_arg_list[x]
     }
   }
-
+  stop(inp_arg_list)
   do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
 }
 
