@@ -10,7 +10,7 @@ articles:
   hierarchical-forecasting: hierarchical-forecasting.html
   models-used-in-finnts: models-used-in-finnts.html
   parallel-processing: parallel-processing.html
-last_built: 2021-09-13T23:24Z
+last_built: 2021-09-23T22:49Z
 urls:
   reference: https://microsoft.github.io/finnts/reference
   article: https://microsoft.github.io/finnts/articles
