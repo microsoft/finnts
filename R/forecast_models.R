@@ -300,7 +300,7 @@ construct_forecast_models <- function(full_data_tbl,
 
     train_data_recipe_2 <- run_data_full_recipe_2 %>%
       dplyr::filter(Date <= hist_end_date)
-    stop("stop")
+
     train_origins <- train_data_recipe_2 %>%
       dplyr::filter(Horizon == 1)
 
@@ -429,6 +429,10 @@ construct_forecast_models <- function(full_data_tbl,
 
     print(combined_models_recipe_1)
     print(combined_models_recipe_2)
+    
+    if(length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)) < 1) {
+      stop("all indivudual models failed")
+    }
     
     cli::cli_h3("Refitting Individual Models")
 
