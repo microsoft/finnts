@@ -190,8 +190,8 @@ invoke_forecast_function <- function(fn_to_invoke,
     }
   }
 
-  do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
-  stop('error1')
+  #do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
+  do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
 }
 
 
