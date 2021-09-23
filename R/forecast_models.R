@@ -189,7 +189,7 @@ invoke_forecast_function <- function(fn_to_invoke,
       inp_arg_list[x] <- avail_arg_list[x]
     }
   }
-  stop("error0")
+
   do.call(fn_to_invoke,inp_arg_list, quote=TRUE, envir = globalenv())
   stop('error1')
 }
