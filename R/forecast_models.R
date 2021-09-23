@@ -349,17 +349,29 @@ construct_forecast_models <- function(full_data_tbl,
           freq_val <- frequency_number
         }
 
-        try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
-                                     train_data = train_data_recipe_1,
-                                     frequency = freq_val,
-                                     parallel = run_model_parallel,
-                                     horizon = forecast_horizon,
-                                     seasonal_period =seasonal_periods,
-                                     back_test_spacing = back_test_spacing,
-                                     fiscal_year_start = fiscal_year_start,
-                                     tscv_inital = hist_periods_80,
-                                     date_rm_regex = date_regex,
-                                     model_type = "single"))
+        # try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+        #                              train_data = train_data_recipe_1,
+        #                              frequency = freq_val,
+        #                              parallel = run_model_parallel,
+        #                              horizon = forecast_horizon,
+        #                              seasonal_period =seasonal_periods,
+        #                              back_test_spacing = back_test_spacing,
+        #                              fiscal_year_start = fiscal_year_start,
+        #                              tscv_inital = hist_periods_80,
+        #                              date_rm_regex = date_regex,
+        #                              model_type = "single"))
+        
+        mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                   train_data = train_data_recipe_1,
+                                                   frequency = freq_val,
+                                                   parallel = run_model_parallel,
+                                                   horizon = forecast_horizon,
+                                                   seasonal_period =seasonal_periods,
+                                                   back_test_spacing = back_test_spacing,
+                                                   fiscal_year_start = fiscal_year_start,
+                                                   tscv_inital = hist_periods_80,
+                                                   date_rm_regex = date_regex,
+                                                   model_type = "single")
 
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
