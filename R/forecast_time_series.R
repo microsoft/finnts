@@ -564,7 +564,7 @@ forecast_time_series <- function(input_data,
     
     hts_gts_df <- hts_gts %>%
       hts::allts() %>%
-      data.frame() %>%
+      data.frame()
     
     #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
