@@ -568,7 +568,7 @@ forecast_time_series <- function(input_data,
     
     #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
-      
+      print(value)
       tryCatch(
         expr = {
           
