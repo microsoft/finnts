@@ -501,7 +501,7 @@ forecast_time_series <- function(input_data,
     
     #extract best model and append to dataset
     fcst_unreconciled <- fcst_final %>%
-      left_join(accuracy_final %>%
+      dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
       dplyr::mutate(Model = "Best_Model") %>%
@@ -608,7 +608,6 @@ forecast_time_series <- function(input_data,
                          dplyr::select(Combo, Date, Target)) %>%
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST),
                     Target = ifelse(is.na(Target) | is.nan(Target), 0, Target)) %>%
-      #dplyr::left_join(accuracy_final) %>%
       dplyr::mutate(MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::group_by(Combo, .id, Model) %>%
       dplyr::mutate(Horizon = dplyr::row_number()) %>%
