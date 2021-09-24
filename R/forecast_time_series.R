@@ -120,12 +120,12 @@ forecast_time_series <- function(input_data,
   weekly_to_daily = TRUE
 ) {
 
-  # 1. Load Evironment Info:
+  # 1. Load Evironment Info: ----
   
   load_env_info(reticulate_environment)
   
   
-  # 2. Initial Unit Tests:
+  # 2. Initial Unit Tests: ----
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -150,40 +150,46 @@ forecast_time_series <- function(input_data,
   hist_end_date <- hist_dt$hist_end_date
   
   
-  # 3. Update Input Values:
+  # 3. Update Input Values: ----
   
-  #Select fourier values ----
+  # * Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
                                          date_type)
-  #Select lag values ----
+  # * Select lag values ----
   lag_periods <- get_lag_periods(lag_periods, 
                                  date_type,
                                  forecast_horizon)
   
-  #Select rolling window values ----
+  # * Select rolling window values ----
   rolling_window_periods <- get_rolling_window_periods(rolling_window_periods,
                                                        date_type)
   
-  #Missing values ----
+  # * Missing values ----
   pad_value <- ifelse(clean_missing_values,NA,0)
   
-  #Frequency number (year, quarter, month, etc) ----
+  # * Frequency number (year, quarter, month, etc) ----
   frequency_number <- get_frequency_number(date_type)
   
-  #TS frequency (year, quarter, month, etc) ----
+  # * TS frequency (year, quarter, month, etc) ----
   gluon_ts_frequency <- get_gluon_ts_frequency(date_type)
   
-  #Seasonal_periods (year, quarter, month, etc) ----
+  # * Seasonal_periods (year, quarter, month, etc) ----
   seasonal_periods <- get_seasonal_periods(date_type)
   
-  #Frequency number (year, quarter, month, etc) ----
+  # * Frequency number (year, quarter, month, etc) ----
   date_regex <- get_date_regex(date_type)
   
-  # * back test spacing ----
+  # * Back Test Spacing ----
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  # 4. Prep Data:
+  # * Yearly Forecast Adjustment ----
+  if(date_type =="year") {
+    run_ensemble_models = FALSE
+    warning("ensemble models have been turned off for yearly forecasts")
+  }
+  
+  # 4. Prep Data ----
   
   cli::cli_h1("Prepping Data")
   
