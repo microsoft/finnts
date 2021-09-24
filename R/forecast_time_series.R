@@ -511,7 +511,7 @@ forecast_time_series <- function(input_data,
           dplyr::filter(Model %in% unique(fcst$Model)))
     
     back_test_unreconciled <- back_test_initial_final %>%
-      left_join(accuracy_final %>%
+      dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
       dplyr::mutate(Model = "Best_Model") %>%
