@@ -4,13 +4,15 @@
 #' @param combo_variables list of combo variables
 #' @param forecast_approach forecasting approach
 #' @param frequency_number frequency number 
+#' @param return return data or hierarchical ts object
 #' 
 #' @return data_tbl_final
 #' @noRd
 get_data_tbl_final <- function(data_tbl,
                           combo_variables,
                           forecast_approach,
-                          frequency_number){
+                          frequency_number, 
+                          return = "data"){
   
   # Group List for Grouped Hierarchy
   get_group_list <- function(data_hts_gts_df){
@@ -107,7 +109,7 @@ get_data_tbl_final <- function(data_tbl,
   }
   
   # main data table function to produce our table
-  data_tbl_func <- function(df){
+  data_tbl_func <- function(df, return="data"){
     
     if(forecast_approach == 'bottoms_up'){
       df
@@ -128,7 +130,7 @@ get_data_tbl_final <- function(data_tbl,
       
       Date = data_cast$Date
       
-      data_cast %>%
+      final_output <- data_cast %>%
         dplyr::select(-Date) %>%
         ts(frequency = frequency_number)%>% 
         get_hts(some_list)  %>%
@@ -140,11 +142,25 @@ get_data_tbl_final <- function(data_tbl,
                           names_to = "Combo", 
                           values_to = "Target") %>%
         tibble::tibble()
+      
+      hts_gts <- data_cast %>%
+        dplyr::select(-Date) %>%
+        ts(frequency = frequency_number)%>% 
+        get_hts(some_list)
+      
+      if(return == "data") {
+        
+        return(final_output)
+        
+      } else if(return == "hts_gts") {
+        return(hts_gts)
+      }
+      
     }
     
   }
   
-  data_tbl %>% data_tbl_func
+  data_tbl %>% data_tbl_func(return = return)
   
 }
 

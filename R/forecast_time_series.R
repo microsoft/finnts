@@ -548,6 +548,22 @@ forecast_time_series <- function(input_data,
       
     }
     
+    #get hierarchical ts info
+    hts_gts <- data_tbl %>% 
+      get_modelling_ready_tbl(external_regressors,
+                              hist_end_date,
+                              combo_cleanup_date,
+                              combo_variables) %>%  
+      get_data_tbl_final(combo_variables,
+                         forecast_approach,
+                         frequency_number, 
+                         return = "hts_gts")
+    
+    hts_gts_df <- hts_gts %>%
+      hts::allts() %>%
+      data.frame() %>%
+    
+    #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
       
       tryCatch(
