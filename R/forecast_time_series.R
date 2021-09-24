@@ -478,15 +478,10 @@ forecast_time_series <- function(input_data,
   if(target_log_transformation) {
     
     fcst_final <- fcst_combination_final %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
       dplyr::mutate(Target = expm1(Target), 
                     FCST = expm1(FCST))
     
-    # resamples_tscv_final <- resamples_tscv %>%
-    #   dplyr::mutate(Target = expm1(Target))
-    
     back_test_initial_final <- back_test_initial %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
       dplyr::mutate(Target = expm1(Target), 
                     FCST = expm1(FCST))
     

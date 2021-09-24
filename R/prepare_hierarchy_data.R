@@ -134,7 +134,7 @@ get_data_tbl_final <- function(data_tbl,
         get_hts(some_list)  %>%
         hts::allts() %>%
         data.frame() %>%
-        add_column(Date = Date,
+        tibble::add_column(Date = Date,
                    .before = 1)%>%
         tidyr::pivot_longer(!Date, 
                           names_to = "Combo", 
