@@ -130,30 +130,30 @@ get_data_tbl_final <- function(data_tbl,
       
       Date = data_cast$Date
       
-      final_output <- data_cast %>%
-        dplyr::select(-Date) %>%
-        ts(frequency = frequency_number)%>% 
-        get_hts(some_list)  %>%
-        hts::allts() %>%
-        data.frame() %>%
-        tibble::add_column(Date = Date,
-                   .before = 1)%>%
-        tidyr::pivot_longer(!Date, 
-                          names_to = "Combo", 
-                          values_to = "Target") %>%
-        tibble::tibble()
-      
-      hts_gts <- data_cast %>%
-        dplyr::select(-Date) %>%
-        ts(frequency = frequency_number)%>% 
-        get_hts(some_list)
-      
       if(return == "data") {
         
-        return(final_output)
+        data_cast %>%
+          dplyr::select(-Date) %>%
+          ts(frequency = frequency_number)%>% 
+          get_hts(some_list)  %>%
+          hts::allts() %>%
+          data.frame() %>%
+          tibble::add_column(Date = Date,
+                             .before = 1)%>%
+          tidyr::pivot_longer(!Date, 
+                              names_to = "Combo", 
+                              values_to = "Target") %>%
+          tibble::tibble()
         
       } else if(return == "hts_gts") {
-        return(hts_gts)
+        data_ts <- data_cast %>%
+          dplyr::select(-Date) %>%
+          ts(frequency = frequency_number)
+        
+        hts_gts <- data_ts %>%
+          get_hts(some_list)
+        
+        return(list(data_ts = data_ts, hts_gts = hts_gts))
       }
       
     }

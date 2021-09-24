@@ -549,7 +549,7 @@ forecast_time_series <- function(input_data,
     }
     
     #get hierarchical ts info
-    hts_gts <- data_tbl %>% 
+    hts_gts_list <- data_tbl %>% 
       get_modelling_ready_tbl(external_regressors,
                               hist_end_date,
                               combo_cleanup_date,
@@ -559,10 +559,7 @@ forecast_time_series <- function(input_data,
                          frequency_number, 
                          return = "hts_gts")
     
-    print(hts_gts)
-    print(unique(model_test_date$Model_Test_Date))
-    
-    hts_gts_df <- hts_gts %>%
+    hts_gts_df <- hts_gts_list$hts_gts %>%
       hts::allts() %>%
       data.frame()
     
@@ -598,13 +595,13 @@ forecast_time_series <- function(input_data,
             as.matrix()
           
           if(forecast_approach == "standard_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
-            colnames(ts_combined) <- colnames(data_ts)
+            colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           } else if(forecast_approach == "grouped_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
-            colnames(ts_combined) <- colnames(data_ts)
+            colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           }
           
           hts_final <- cbind(Date, ts_combined) %>%
