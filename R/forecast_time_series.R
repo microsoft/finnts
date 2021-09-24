@@ -597,6 +597,7 @@ forecast_time_series <- function(input_data,
           
         },
         error = function(e){ 
+          print(e)
           print('skipping')
         }
       )
