@@ -130,7 +130,8 @@ get_data_tbl_final <- function(data_tbl,
       
       Date = data_cast$Date
       
-      if(return == "data") {
+      
+      if(return == "data") { # return historical hierarchical data as tibble for modeling
         
         data_cast %>%
           dplyr::select(-Date) %>%
@@ -145,7 +146,7 @@ get_data_tbl_final <- function(data_tbl,
                               values_to = "Target") %>%
           tibble::tibble()
         
-      } else if(return == "hts_gts") {
+      } else if(return == "hts_gts") { # return a list of hierarchical info used when reconciling
         data_ts <- data_cast %>%
           dplyr::select(-Date) %>%
           ts(frequency = frequency_number)

@@ -504,7 +504,7 @@ forecast_time_series <- function(input_data,
       dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
-      dplyr::mutate(Model = "Best_Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(-Best_Model) %>%
       rbind(
         fcst_final %>%
@@ -514,7 +514,7 @@ forecast_time_series <- function(input_data,
       dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
-      dplyr::mutate(Model = "Best_Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(-Best_Model) %>%
       rbind(back_test_initial_final)
     
@@ -565,7 +565,7 @@ forecast_time_series <- function(input_data,
     
     #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
-      print(value)
+
       tryCatch(
         expr = {
           
@@ -692,7 +692,7 @@ forecast_time_series <- function(input_data,
                     lo.95 = FCST - (1.96*Residual_Std_Dev), 
                     hi.80 = FCST + (1.28*Residual_Std_Dev), 
                     hi.95 = FCST + (1.96*Residual_Std_Dev)) %>%
-      dplyr::mutate(Model = "Best Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(Combo, Date, Model, FCST, lo.95, lo.80, hi.80, hi.95)
     
     future_fcst_final <- fcst_final %>%
