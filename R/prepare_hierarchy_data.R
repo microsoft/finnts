@@ -184,12 +184,15 @@ get_poly_trans_clean <- function(df,
   
   
   correct_clean_func <- function(col){
-    if(clean_outliers){
+    if(clean_missing_values & sum(!is.na(col))<2){
+      col
+    }else if(clean_outliers){
       timetk::ts_clean_vec(col,period = frequency_number)
     }else if(clean_missing_values){
       timetk::ts_impute_vec(col,period = frequency_number)
+    }else {
+      col
     }
-    col
   }
   
   df %>% 
@@ -311,12 +314,9 @@ get_full_data_tbl <- function(data_tbl,
                                                         frequency_number,
                                                         external_regressors) }) %>%
     dplyr::bind_rows() %>%
-    dplyr::mutate(dplyr::across(where(is.numeric), 
-      list(~ifelse(is.infinite(.),NA, .)))) %>%
-    dplyr::mutate(dplyr::across(where(is.numeric),
-      list(~ifelse(is.nan(.),NA, .)))) %>%
-    dplyr::mutate(dplyr::across(where(is.numeric),
-      list(~ifelse(is.na(.),0,.)))) %>%
+    dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
+    dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
+    dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
     dplyr::mutate(Target = ifelse(Date > hist_end_date,
                                   NA,
                                   Target))
