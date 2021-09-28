@@ -149,7 +149,6 @@ forecast_time_series <- function(input_data,
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
   
-  
   # 3. Update Input Values:
   
   #Select fourier values ----
@@ -191,7 +190,7 @@ forecast_time_series <- function(input_data,
   data_tbl <- get_data_tbl(input_data,
                            combo_variables,
                            target_variable) 
-  
+
   #Determine which xregs have future values or not
   xregs_future_values_list <- data_tbl %>%
     get_xreg_future_values_list(external_regressors,
@@ -222,7 +221,7 @@ forecast_time_series <- function(input_data,
                                      pad_value,
                                      target_log_transformation,
                                      xregs_future_values_tbl)
-  
+
   bt_conf <- get_back_test_scenario_hist_periods(full_data_tbl,
                                                  hist_end_date,
                                                  back_test_scenarios,
@@ -646,14 +645,13 @@ forecast_time_series <- function(input_data,
                         lo.80 = Target, 
                         hi.80 = Target, 
                         hi.95 = Target) %>%
-          dplyr::select(Combo, combo_variables, Date, Model, Target, lo.95, lo.80, hi.80, hi.95)
+          dplyr::select(Combo, combo_variables, Date, Model, Target, lo.95, lo.80, hi.80, hi.95) %>%
+          dplyr::filter(Date <= hist_end_date)
       ) %>%
       dplyr::arrange(Date, Combo, Model) %>%
       dplyr::mutate(Type = ifelse(Model == "NA", "Historical", "Forecast")) %>%
       dplyr::select(Combo, dplyr::all_of(combo_variables), Date, Type, Model, Target, lo.95, lo.80, hi.80, hi.95)
-    
-    #colnames(future_fcst_final)[colnames(future_fcst_final)== 'Target'] <- target_variable
-    
+
   } else if(forecast_approach == "bottoms_up") {
     
     back_test_final <- fcst_combination_final %>%
@@ -702,22 +700,21 @@ forecast_time_series <- function(input_data,
           dplyr::mutate(lo.95 = Target, 
                         lo.80 = Target, 
                         hi.80 = Target, 
-                        hi.95 = Target)
+                        hi.95 = Target) %>%
+          dplyr::filter(Date <= hist_end_date)
       ) %>%
       dplyr::arrange(Date, Combo, Model) %>%
       dplyr::mutate(Type = ifelse(Model == "NA", "Historical", "Forecast")) %>%
       dplyr::select(Combo, dplyr::all_of(c(combo_variables, external_regressors)), Date, Type, Model, Target, 
                     lo.95, lo.80, hi.80, hi.95)
-    
-    #colnames(future_fcst_final)[colnames(future_fcst_final)== 'Target'] <- target_variable
   }
   
-  if(date_type == "week" & weekly_to_daily) {
+  if(date_type == "week" & weekly_to_daily) { # allocate from weekly to daily
     
     future_fcst_final <- future_fcst_final %>%
       dplyr::group_by(Combo, Model) %>%
       dplyr::group_split() %>%
-      purrr::map(.f = function(df) { #create polynomial transformations for numeric drivers, and rolling window calcs of Target, and create lags of each driver/target variable
+      purrr::map(.f = function(df) {
         
         daily_tbl <- df %>%
           dplyr::mutate(Date_Day = Date) %>%

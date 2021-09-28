@@ -120,8 +120,7 @@ get_recipie_configurable <- function(train_data,
     }
   }
   
-  train_data %>%
-    get_recipie_simple() %>%
+  recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
     timetk::step_timeseries_signature(Date_Adj) %>%
     mutate_adj_half_fn() %>%
@@ -674,7 +673,6 @@ glmnet <- function(train_data,
                                one_hot = FALSE,
                                center_scale = TRUE)
   }
-  
   
   model_spec_glmnet <- parsnip::linear_reg(
     mode = "regression", 
