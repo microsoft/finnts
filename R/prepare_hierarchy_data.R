@@ -162,7 +162,7 @@ get_data_tbl_final <- function(data_tbl,
                            values_from = Target)
       
       data_cast %>%
-        data_hts_return(return_obj = return_type)
+        data_hts_return(ret_obj = return_type)
       
     }
     
