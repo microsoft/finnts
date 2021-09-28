@@ -12,7 +12,7 @@ get_data_tbl_final <- function(data_tbl,
                           combo_variables,
                           forecast_approach,
                           frequency_number, 
-                          return = "data"){
+                          return_type = "data"){
   
   # Group List for Grouped Hierarchy
   get_group_list <- function(data_hts_gts_df){
@@ -108,8 +108,41 @@ get_data_tbl_final <- function(data_tbl,
     }
   }
   
+  # return correct hts info
+  data_hts_return <- function(df,ret_obj){
+    if(ret_obj == "data"){
+      
+      Date = df$Date
+      
+      df %>%
+        dplyr::select(-Date) %>%
+        ts(frequency = frequency_number)%>% 
+        get_hts(some_list)  %>%
+        hts::allts() %>%
+        data.frame() %>%
+        tibble::add_column(Date = Date,
+                           .before = 1)%>%
+        tidyr::pivot_longer(!Date, 
+                            names_to = "Combo", 
+                            values_to = "Target") %>%
+        tibble::tibble()
+    } else if(return == "hts_gts") {
+      data_ts <- data_cast %>%
+        dplyr::select(-Date) %>%
+        ts(frequency = frequency_number)
+      
+      hts_gts <- data_ts %>%
+        get_hts(some_list)
+      
+      return(list(data_ts = data_ts, hts_gts = hts_gts))
+    } else{
+      df
+    }
+  }
+  
+  
   # main data table function to produce our table
-  data_tbl_func <- function(df, return="data"){
+  data_tbl_func <- function(df, return_type = "data"){
     
     if(forecast_approach == 'bottoms_up'){
       df
@@ -128,40 +161,14 @@ get_data_tbl_final <- function(data_tbl,
         tidyr::pivot_wider(names_from = Combo, 
                            values_from = Target)
       
-      Date = data_cast$Date
-      
-      
-      if(return == "data") { # return historical hierarchical data as tibble for modeling
-        
-        data_cast %>%
-          dplyr::select(-Date) %>%
-          ts(frequency = frequency_number)%>% 
-          get_hts(some_list)  %>%
-          hts::allts() %>%
-          data.frame() %>%
-          tibble::add_column(Date = Date,
-                             .before = 1)%>%
-          tidyr::pivot_longer(!Date, 
-                              names_to = "Combo", 
-                              values_to = "Target") %>%
-          tibble::tibble()
-        
-      } else if(return == "hts_gts") { # return a list of hierarchical info used when reconciling
-        data_ts <- data_cast %>%
-          dplyr::select(-Date) %>%
-          ts(frequency = frequency_number)
-        
-        hts_gts <- data_ts %>%
-          get_hts(some_list)
-        
-        return(list(data_ts = data_ts, hts_gts = hts_gts))
-      }
+      data_cast %>%
+        data_hts_return(return_obj = return_type)
       
     }
     
   }
   
-  data_tbl %>% data_tbl_func(return = return)
+  data_tbl %>% data_tbl_func(return_type = return_type)
   
 }
 

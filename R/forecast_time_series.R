@@ -563,7 +563,7 @@ forecast_time_series <- function(input_data,
       get_data_tbl_final(combo_variables,
                          forecast_approach,
                          frequency_number, 
-                         return = "hts_gts")
+                         return_type = "hts_gts")
     
     hts_gts_df <- hts_gts_list$hts_gts %>%
       hts::allts() %>%
