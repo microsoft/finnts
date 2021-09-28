@@ -126,7 +126,7 @@ get_data_tbl_final <- function(data_tbl,
                             names_to = "Combo", 
                             values_to = "Target") %>%
         tibble::tibble()
-    } else if(return == "hts_gts") {
+    } else if(ret_obj == "hts_gts") {
       data_ts <- data_cast %>%
         dplyr::select(-Date) %>%
         ts(frequency = frequency_number)
