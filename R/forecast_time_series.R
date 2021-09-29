@@ -355,7 +355,7 @@ forecast_time_series <- function(input_data,
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind', 
                                               .packages = c('rlist', 'tidyverse', 'lubridate', 
                                                             "doParallel", "parallel", "gtools"), 
-                                              .export = c("fcst_prep")) %dopar% {
+                                              .export = c("fcst_prep", "get_cores")) %dopar% {
                                                 
                                                 fcst_combination_temp <- fcst_prep %>%
                                                   dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
@@ -409,7 +409,7 @@ forecast_time_series <- function(input_data,
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
                                         .packages = get_export_packages(), 
-                                        .export = c("fcst_prep")) %dopar% {create_model_averages(i)}
+                                        .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
       
       parallel::stopCluster(cl)
       
@@ -421,7 +421,7 @@ forecast_time_series <- function(input_data,
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
                                         .packages = get_export_packages(), 
-                                        .export = c("fcst_prep"),
+                                        .export = c("fcst_prep", "get_cores"),
                                         .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
                                                               job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
                                                                                   tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
