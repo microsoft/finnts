@@ -146,6 +146,7 @@
 <span class="co">#&gt;  9 M1    2010-09-01 10890</span>
 <span class="co">#&gt; 10 M1    2010-10-01  9500</span>
 <span class="co">#&gt; # … with 254 more rows</span>
+
 <span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
 <span class="co">#&gt; [1] "M1"    "M2"    "M750"  "M1000"</span></code></pre></div>
 <p>The above data set contains 4 individual time series, identified using the “id” column.</p>
@@ -155,7 +156,8 @@
 <a href="#create-finn-forecast" class="anchor"></a>2. Create Finn Forecast</h2>
 <p>Calling for “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="va">finn_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span>
+<code class="sourceCode R">
+<span class="va">finn_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span>
   input_data <span class="op">=</span> <span class="va">hist_data</span>,
   combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,
   target_variable <span class="op">=</span> <span class="st">"value"</span>,
