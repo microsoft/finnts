@@ -8,6 +8,7 @@
 #' @param rolling_window_periods list of periods when building rolling window features
 #' 
 #' @return feature engineered data to input into models
+#' @noRd
 multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_values_list, fourier_periods, 
                                        lag_periods, rolling_window_periods) {
   
@@ -135,6 +136,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
 #' @param forecast_horizon forecast horizon
 #' 
 #' @return feature engineered data to input into models
+#' @noRd
 multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_values_list, 
                                        fourier_periods, lag_periods, rolling_window_periods, 
                                        date_type, forecast_horizon) {

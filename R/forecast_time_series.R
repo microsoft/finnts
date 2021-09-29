@@ -120,12 +120,12 @@ forecast_time_series <- function(input_data,
   weekly_to_daily = TRUE
 ) {
 
-  # 1. Load Evironment Info:
+  # 1. Load Evironment Info: ----
   
   load_env_info(reticulate_environment)
   
   
-  # 2. Initial Unit Tests:
+  # 2. Initial Unit Tests: ----
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -149,40 +149,46 @@ forecast_time_series <- function(input_data,
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
   
-  # 3. Update Input Values:
+  # 3. Update Input Values: ----
   
-  #Select fourier values ----
+  # * Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
                                          date_type)
-  #Select lag values ----
+  # * Select lag values ----
   lag_periods <- get_lag_periods(lag_periods, 
                                  date_type,
                                  forecast_horizon)
   
-  #Select rolling window values ----
+  # * Select rolling window values ----
   rolling_window_periods <- get_rolling_window_periods(rolling_window_periods,
                                                        date_type)
   
-  #Missing values ----
+  # * Missing values ----
   pad_value <- ifelse(clean_missing_values,NA,0)
   
-  #Frequency number (year, quarter, month, etc) ----
+  # * Frequency number (year, quarter, month, etc) ----
   frequency_number <- get_frequency_number(date_type)
   
-  #TS frequency (year, quarter, month, etc) ----
+  # * TS frequency (year, quarter, month, etc) ----
   gluon_ts_frequency <- get_gluon_ts_frequency(date_type)
   
-  #Seasonal_periods (year, quarter, month, etc) ----
+  # * Seasonal_periods (year, quarter, month, etc) ----
   seasonal_periods <- get_seasonal_periods(date_type)
   
-  #Frequency number (year, quarter, month, etc) ----
+  # * Frequency number (year, quarter, month, etc) ----
   date_regex <- get_date_regex(date_type)
   
-  # * back test spacing ----
+  # * Back Test Spacing ----
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  # 4. Prep Data:
+  # * Yearly Forecast Adjustment ----
+  if(date_type =="year") {
+    run_ensemble_models = FALSE
+    warning("ensemble models have been turned off for yearly forecasts")
+  }
+  
+  # 4. Prep Data ----
   
   cli::cli_h1("Prepping Data")
   
@@ -477,15 +483,10 @@ forecast_time_series <- function(input_data,
   if(target_log_transformation) {
     
     fcst_final <- fcst_combination_final %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
       dplyr::mutate(Target = expm1(Target), 
                     FCST = expm1(FCST))
     
-    # resamples_tscv_final <- resamples_tscv %>%
-    #   dplyr::mutate(Target = expm1(Target))
-    
     back_test_initial_final <- back_test_initial %>%
-      #dplyr::filter(Model %in% unique(c(fcst$Model, accuracy_final$Model))) %>%
       dplyr::mutate(Target = expm1(Target), 
                     FCST = expm1(FCST))
     
@@ -505,20 +506,20 @@ forecast_time_series <- function(input_data,
     
     #extract best model and append to dataset
     fcst_unreconciled <- fcst_final %>%
-      left_join(accuracy_final %>%
+      dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
-      dplyr::mutate(Model = "Best_Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(-Best_Model) %>%
       rbind(
         fcst_final %>%
           dplyr::filter(Model %in% unique(fcst$Model)))
     
     back_test_unreconciled <- back_test_initial_final %>%
-      left_join(accuracy_final %>%
+      dplyr::left_join(accuracy_final %>%
                   dplyr::select(Combo, Model, Best_Model)) %>%
       dplyr::filter(Best_Model == "Yes") %>%
-      dplyr::mutate(Model = "Best_Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(-Best_Model) %>%
       rbind(back_test_initial_final)
     
@@ -552,8 +553,24 @@ forecast_time_series <- function(input_data,
       
     }
     
+    #get hierarchical ts info
+    hts_gts_list <- data_tbl %>% 
+      get_modelling_ready_tbl(external_regressors,
+                              hist_end_date,
+                              combo_cleanup_date,
+                              combo_variables) %>%  
+      get_data_tbl_final(combo_variables,
+                         forecast_approach,
+                         frequency_number, 
+                         return_type = "hts_gts")
+    
+    hts_gts_df <- hts_gts_list$hts_gts %>%
+      hts::allts() %>%
+      data.frame()
+    
+    #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
-      
+
       tryCatch(
         expr = {
           
@@ -583,13 +600,13 @@ forecast_time_series <- function(input_data,
             as.matrix()
           
           if(forecast_approach == "standard_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, nodes = get_nodes(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
-            colnames(ts_combined) <- colnames(data_ts)
+            colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           } else if(forecast_approach == "grouped_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts, groups = get_groups(hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
+            ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
                                                     keep ="bottom", nonnegative = !negative_fcst))
-            colnames(ts_combined) <- colnames(data_ts)
+            colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           }
           
           hts_final <- cbind(Date, ts_combined) %>%
@@ -601,6 +618,7 @@ forecast_time_series <- function(input_data,
           
         },
         error = function(e){ 
+          print(e)
           print('skipping')
         }
       )
@@ -612,7 +630,6 @@ forecast_time_series <- function(input_data,
                          dplyr::select(Combo, Date, Target)) %>%
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST),
                     Target = ifelse(is.na(Target) | is.nan(Target), 0, Target)) %>%
-      #dplyr::left_join(accuracy_final) %>%
       dplyr::mutate(MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::group_by(Combo, .id, Model) %>%
       dplyr::mutate(Horizon = dplyr::row_number()) %>%
@@ -679,7 +696,7 @@ forecast_time_series <- function(input_data,
                     lo.95 = FCST - (1.96*Residual_Std_Dev), 
                     hi.80 = FCST + (1.28*Residual_Std_Dev), 
                     hi.95 = FCST + (1.96*Residual_Std_Dev)) %>%
-      dplyr::mutate(Model = "Best Model") %>%
+      dplyr::mutate(Model = "Best-Model") %>%
       dplyr::select(Combo, Date, Model, FCST, lo.95, lo.80, hi.80, hi.95)
     
     future_fcst_final <- fcst_final %>%
