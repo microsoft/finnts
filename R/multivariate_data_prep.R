@@ -18,9 +18,9 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
   numeric_xregs <- c()
   
   df_poly <- data
-  
+
   for(column in c("Target", external_regressors)) {
-    
+
     if(is.numeric(dplyr::select(data, column)[[1]])) {
       
       column_names_final <- c(column)
@@ -31,7 +31,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       }
       
       if(column %in% external_regressors) {
-        
+
         df_poly_column <- data %>%
           dplyr::select(column)
         
@@ -47,7 +47,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       } 
     }
   }
-  
+
   #add lags and rolling window calcs
   data_period <- df_poly %>%
     dplyr::group_by(Combo) %>%
@@ -59,7 +59,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       
       #apply lags
       for(column in colnames(df %>% dplyr::select(contains(c("Target", external_regressors))))) {
-        
+
         df_lag <- df %>%
           timetk::tk_augment_lags(column, .lags = lag_periods) %>%
           tidyr::fill(stringr::str_c(column, "_lag", lag_periods), .direction = "up") %>%
@@ -69,9 +69,6 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
         
         df_lag_final <- cbind(df_lag_final, df_lag)
       }
-      
-      # final_tbl <- final_tbl %>% 
-      #   dplyr::select(-numeric_xregs)
       
       #apply rolling window calculations
       df_window_final <- df_lag_final
@@ -123,7 +120,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
   #drop xregs that do not contain future values
   data_period <- data_period %>%
     dplyr::select(-numeric_xregs)
-  
+
   return(data_period)
 }
 
