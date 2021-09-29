@@ -192,7 +192,7 @@ validate_forecasting_inputs<-function(input_data,
   }
   
   #number of cores formatting
-  if(!is.numeric(num_cores) | !is.null(num_cores)) {
+  if(!is.numeric(num_cores) & !is.null(num_cores)) {
     stop("num_cores should be NULL or a numeric value")
   }
   
