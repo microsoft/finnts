@@ -39,7 +39,8 @@
 #' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
-#'   on local machine or within Azure. Can't be greater than number of cores on machine.
+#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1.
 #' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_delete Delete the Azure Batch compute cluster after Finn finished running. 
