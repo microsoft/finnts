@@ -343,7 +343,7 @@ forecast_time_series <- function(input_data,
       #parallel processing
       if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
         
-        cores <- parallel::detectCores()
+        cores <- get_cores(num_cores)
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
@@ -402,11 +402,7 @@ forecast_time_series <- function(input_data,
     # parallel run on local machine
     if(parallel_processing=="local_machine") {
       
-      if(is.null(num_cores)) {
-        cores <- parallel::detectCores()-1
-      } else {
-        cores <- min(num_cores, parallel::detectCores()-1)
-      }
+      cores <- get_cores(num_cores)
       
       cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)

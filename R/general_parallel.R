@@ -1,3 +1,16 @@
+#' Get number of cores to use when registering parallel back end
+#' 
+#' @param num_cores number of cores for parallel processing
+#' @noRd 
+get_cores <-function(num_cores){
+
+  if(is.null(num_cores)) {
+    parallel::detectCores()-1
+  } else {
+    min(num_cores, parallel::detectCores()-1)
+  }
+}
+
 #' Call back function within forecast for init
 #' 
 #' Sets the right configuration during init
@@ -9,11 +22,7 @@ init_parallel_within <-function(type, num_cores){
   
   cli::cli_h3("Creating Parallel Processing")
   
-  if(is.null(num_cores)) {
-    cores <- parallel::detectCores()-1
-  } else {
-    cores <- min(num_cores, parallel::detectCores()-1)
-  }
+  cores <- get_cores(num_cores)
   
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
@@ -56,11 +65,7 @@ get_fcast_parallel<- function(combo_list,
   
   cli::cli_h2("Creating Parallel Processing")
   
-  if(is.null(num_cores)) {
-    cores <- parallel::detectCores()-1
-  } else {
-    cores <- min(num_cores, parallel::detectCores()-1)
-  }
+  cores <- get_cores(num_cores)
   
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
