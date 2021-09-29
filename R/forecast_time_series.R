@@ -402,7 +402,13 @@ forecast_time_series <- function(input_data,
     # parallel run on local machine
     if(parallel_processing=="local_machine") {
       
-      cl <- parallel::makeCluster(parallel::detectCores())
+      if(is.null(num_cores)) {
+        cores <- parallel::detectCores()-1
+      } else {
+        cores <- min(num_cores, parallel::detectCores()-1)
+      }
+      
+      cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',

@@ -10,7 +10,7 @@ init_parallel_within <-function(type, num_cores){
   cli::cli_h3("Creating Parallel Processing")
   
   if(is.null(num_cores)) {
-    cores <- cores <- parallel::detectCores()-1
+    cores <- parallel::detectCores()-1
   } else {
     cores <- min(num_cores, parallel::detectCores()-1)
   }
@@ -57,7 +57,7 @@ get_fcast_parallel<- function(combo_list,
   cli::cli_h2("Creating Parallel Processing")
   
   if(is.null(num_cores)) {
-    cores <- cores <- parallel::detectCores()-1
+    cores <- parallel::detectCores()-1
   } else {
     cores <- min(num_cores, parallel::detectCores()-1)
   }
