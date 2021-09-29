@@ -209,6 +209,7 @@ invoke_forecast_function <- function(fn_to_invoke,
 #' @param forecast_horizon Forecast Horizon
 #' @param run_model_parallel Run Model in Parallel
 #' @param parallel_processing Which parallel processing to use
+#' @param num_cores number of cores for parallel processing
 #' @param run_deep_learning Run Deep Learning model
 #' @param frequency_number Frequency Number
 #' @param models_to_run Models to Run
@@ -235,6 +236,7 @@ construct_forecast_models <- function(full_data_tbl,
                                       forecast_horizon,
                                       run_model_parallel,
                                       parallel_processing,
+                                      num_cores,
                                       run_deep_learning,
                                       frequency_number,
                                       models_to_run,
@@ -317,7 +319,7 @@ construct_forecast_models <- function(full_data_tbl,
 
     # parallel processing
     if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
-      parallel_args <- init_parallel_within(parallel_processing)
+      parallel_args <- init_parallel_within(parallel_processing, num_cores)
     }
 
     cli::cli_h3("Individual Model Training")

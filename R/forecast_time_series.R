@@ -38,6 +38,8 @@
 #'   runs time series in parallel on a remote compute cluster in Azure Batch. 
 #' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
+#' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
+#'   on local machine or within Azure. Can't be greater than number of cores on machine.
 #' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_delete Delete the Azure Batch compute cluster after Finn finished running. 
@@ -100,6 +102,7 @@ forecast_time_series <- function(input_data,
   forecast_approach = "bottoms_up",
   parallel_processing = 'none',
   run_model_parallel = TRUE,
+  num_cores = NULL,
   azure_batch_credentials = NULL, 
   azure_batch_cluster_config = NULL, 
   azure_batch_cluster_delete = FALSE, 
@@ -144,7 +147,9 @@ forecast_time_series <- function(input_data,
                                          forecast_approach,
                                          parallel_processing,
                                          run_model_parallel,
+                                         num_cores,
                                          azure_batch_credentials,
+                                         azure_batch_cluster_config,
                                          max_model_average)
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
@@ -250,6 +255,7 @@ forecast_time_series <- function(input_data,
                                                forecast_horizon,
                                                run_model_parallel,
                                                parallel_processing,
+                                               num_cores,
                                                run_deep_learning,
                                                frequency_number,
                                                models_to_run,
@@ -287,7 +293,8 @@ forecast_time_series <- function(input_data,
   if(parallel_processing=="local_machine") {
     
    fcst <- get_fcast_parallel(combo_list,
-                              forecast_models_fn)
+                              forecast_models_fn, 
+                              num_cores)
     
   }
   

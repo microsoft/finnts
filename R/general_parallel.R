@@ -3,12 +3,18 @@
 #' Sets the right configuration during init
 #' 
 #' @param type Type of parallel processing being done
+#' @param num_cores number of cores for parallel processing
 #' @noRd 
-init_parallel_within <-function(type){
+init_parallel_within <-function(type, num_cores){
   
   cli::cli_h3("Creating Parallel Processing")
   
-  cores <- parallel::detectCores()-1
+  if(is.null(num_cores)) {
+    cores <- cores <- parallel::detectCores()-1
+  } else {
+    cores <- min(num_cores, parallel::detectCores()-1)
+  }
+  
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
   
@@ -40,15 +46,21 @@ exit_parallel_within <-function(cl){
 #' 
 #' @param combo_list Combo List
 #' @param call_back_fn Call Back Function
+#' @param num_cores number of cores for parallel processing
 #' 
 #' @return Forecast Object
 #' @noRd
 get_fcast_parallel<- function(combo_list,
-                              call_back_fn){
+                              call_back_fn, 
+                              num_cores){
   
   cli::cli_h2("Creating Parallel Processing")
   
-  cores <- parallel::detectCores()-1
+  if(is.null(num_cores)) {
+    cores <- cores <- parallel::detectCores()-1
+  } else {
+    cores <- min(num_cores, parallel::detectCores()-1)
+  }
   
   cl <- parallel::makeCluster(cores)
   doParallel::registerDoParallel(cl)
