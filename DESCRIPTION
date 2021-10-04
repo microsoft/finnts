@@ -60,6 +60,7 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 
+    R (>= 3.6.0),
     lubridate,
     foreach,
     modeltime
