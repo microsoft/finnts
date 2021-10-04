@@ -52,8 +52,12 @@ jobs:
           
       - name: Install dependencies
         run: |
-          install.packages('rcmdcheck')
-          install.packages("knitr")
+          install.packages(c('rcmdcheck', 'knitr', ‘lubridate’, ‘foreach’, 
+          ‘modeltime’, ‘Cubist’, ‘doAzureParallel’, ‘doFuture’, ‘doParallel’, 
+          ‘dplyr’, ‘earth’, ‘glmnet’, ‘gtools’, ‘hts’, ‘kernlab’, ‘lightgbm’, 
+          ‘matrixcalc’, ‘modeltime.ensemble’, ‘modeltime.gluonts’, ‘modeltime.resample’, 
+          ‘plyr’, ‘purrr’, ‘rAzureBatch’, ‘rlist’, ‘rules’, ‘tabnet’, ‘tibble’, ‘tidyr’, 
+          ‘timetk’, ‘torch’))
             
         shell: Rscript {0}
 
