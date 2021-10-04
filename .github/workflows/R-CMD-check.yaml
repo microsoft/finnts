@@ -58,6 +58,8 @@ jobs:
         run: |
           install.packages('rcmdcheck')
           install.packages("local::.")
+            
+        shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@v1
 
