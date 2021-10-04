@@ -53,11 +53,13 @@ jobs:
       - name: Install dependencies
         run: |
           install.packages(c('rcmdcheck', 'knitr', ‘lubridate’, ‘foreach’, 
-          ‘modeltime’, ‘Cubist’, ‘doAzureParallel’, ‘doFuture’, ‘doParallel’, 
+          ‘modeltime’, ‘Cubist’, ‘doFuture’, ‘doParallel’, 'devtools',
           ‘dplyr’, ‘earth’, ‘glmnet’, ‘gtools’, ‘hts’, ‘kernlab’, ‘lightgbm’, 
           ‘matrixcalc’, ‘modeltime.ensemble’, ‘modeltime.gluonts’, ‘modeltime.resample’, 
-          ‘plyr’, ‘purrr’, ‘rAzureBatch’, ‘rlist’, ‘rules’, ‘tabnet’, ‘tibble’, ‘tidyr’, 
+          ‘plyr’, ‘purrr’, ‘rlist’, ‘rules’, ‘tabnet’, ‘tibble’, ‘tidyr’, 
           ‘timetk’, ‘torch’))
+          
+          devtools::install_github(c("Azure/rAzureBatch", "Azure/doAzureParallel"))
             
         shell: Rscript {0}
 
