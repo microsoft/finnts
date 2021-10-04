@@ -52,7 +52,7 @@ jobs:
           
       - name: Install dependencies
         run: |
-          install.packages(c('rcmdcheck', 'knitr', 'lubridate', 'foreach', 'modeltime', 
+          install.packages(c('rcmdcheck', 'knitr', 'rmarkdown', 'lubridate', 'foreach', 'modeltime', 
           'Cubist', 'doFuture', 'doParallel', 'devtools', 'dplyr', 'earth', 'glmnet', 
           'gtools', 'hts', 'kernlab', 'lightgbm', 'matrixcalc', 'modeltime.ensemble', 
           'modeltime.gluonts', 'modeltime.resample', 'plyr', 'purrr', 'rlist', 'rules', 
