@@ -265,6 +265,6 @@ get_transfer_functions <- function(){
     "invoke_forecast_function", "get_recipie_simple", "get_workflow_simple", "get_fit_simple", "get_freq_adjustment",
     "get_recipie_configurable", "get_fit_wkflw_nocombo", "get_latin_hypercube_grid", "get_resample_tune_grid", 
     "get_resample_tscv", "get_tune_grid", "get_not_all_data_models", "get_export_packages", "get_fit_wkflw_best",
-    "get_kfold_tune_grid", "get_resample_kfold", "init_parallel_within","exit_parallel_within")
+    "get_kfold_tune_grid", "get_resample_kfold", "init_parallel_within","exit_parallel_within", "get_cores")
 }
 

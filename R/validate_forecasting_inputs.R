@@ -21,8 +21,10 @@
 #' @param modeling_approach Currently only accuracy is supported
 #' @param forecast_approach Bottoms_up, grouped_hierarchy, standard_hierarchy
 #' @param parallel_processing azure_batch, local_machine, none
+#' @param num_cores number of cores for parallel processing
 #' @param run_model_parallel run hyperparameter search and model in parallel
 #' @param azure_batch_credentials Azure Batch Credentials 
+#' @param azure_batch_cluster_config Azure Batch Cluster Config
 #' @param max_model_average Maximum number of models to average
 #' 
 #' @return Returns hist_start_date and hist_end_date
@@ -45,7 +47,9 @@ validate_forecasting_inputs<-function(input_data,
                                       forecast_approach,
                                       parallel_processing,
                                       run_model_parallel,
+                                      num_cores,
                                       azure_batch_credentials,
+                                      azure_batch_cluster_config,
                                       max_model_average){
   
   retlist = list("hist_start_date" = hist_start_date,
@@ -187,9 +191,19 @@ validate_forecasting_inputs<-function(input_data,
     stop("parallel processing input must be one of these values: 'none', 'local_machine', 'azure_batch'")
   }
   
+  #number of cores formatting
+  if(!is.numeric(num_cores) & !is.null(num_cores)) {
+    stop("num_cores should be NULL or a numeric value")
+  }
+  
   #check if azure credentials are given in case of parallel_processing = azure_batch
   if(parallel_processing == "azure_batch" & is.null(azure_batch_credentials)){
     stop("cannot run parallel_processing on azure_batch without batch credentials")
+  }
+  
+  #check if azure batch cluster info is given in case of parallel_processing = azure_batch
+  if(parallel_processing == "azure_batch" & is.null(azure_batch_cluster_config)){
+    stop("cannot run parallel_processing on azure_batch without cluster config")
   }
   
   #max model average formatting

@@ -38,6 +38,9 @@
 #'   runs time series in parallel on a remote compute cluster in Azure Batch. 
 #' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
+#' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
+#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1.
 #' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_delete Delete the Azure Batch compute cluster after Finn finished running. 
@@ -100,6 +103,7 @@ forecast_time_series <- function(input_data,
   forecast_approach = "bottoms_up",
   parallel_processing = 'none',
   run_model_parallel = TRUE,
+  num_cores = NULL,
   azure_batch_credentials = NULL, 
   azure_batch_cluster_config = NULL, 
   azure_batch_cluster_delete = FALSE, 
@@ -144,7 +148,9 @@ forecast_time_series <- function(input_data,
                                          forecast_approach,
                                          parallel_processing,
                                          run_model_parallel,
+                                         num_cores,
                                          azure_batch_credentials,
+                                         azure_batch_cluster_config,
                                          max_model_average)
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
@@ -256,6 +262,7 @@ forecast_time_series <- function(input_data,
                                                forecast_horizon,
                                                run_model_parallel,
                                                parallel_processing,
+                                               num_cores,
                                                run_deep_learning,
                                                frequency_number,
                                                models_to_run,
@@ -293,7 +300,8 @@ forecast_time_series <- function(input_data,
   if(parallel_processing=="local_machine") {
     
    fcst <- get_fcast_parallel(combo_list,
-                              forecast_models_fn)
+                              forecast_models_fn, 
+                              num_cores)
     
   }
   
@@ -341,7 +349,7 @@ forecast_time_series <- function(input_data,
       #parallel processing
       if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
         
-        cores <- parallel::detectCores()
+        cores <- get_cores(num_cores)
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
@@ -353,7 +361,7 @@ forecast_time_series <- function(input_data,
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind', 
                                               .packages = c('rlist', 'tidyverse', 'lubridate', 
                                                             "doParallel", "parallel", "gtools"), 
-                                              .export = c("fcst_prep")) %dopar% {
+                                              .export = c("fcst_prep", "get_cores")) %dopar% {
                                                 
                                                 fcst_combination_temp <- fcst_prep %>%
                                                   dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
@@ -400,12 +408,14 @@ forecast_time_series <- function(input_data,
     # parallel run on local machine
     if(parallel_processing=="local_machine") {
       
-      cl <- parallel::makeCluster(parallel::detectCores())
+      cores <- get_cores(num_cores)
+      
+      cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
                                         .packages = get_export_packages(), 
-                                        .export = c("fcst_prep")) %dopar% {create_model_averages(i)}
+                                        .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
       
       parallel::stopCluster(cl)
       
@@ -417,7 +427,7 @@ forecast_time_series <- function(input_data,
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
                                         .packages = get_export_packages(), 
-                                        .export = c("fcst_prep"),
+                                        .export = c("fcst_prep", "get_cores"),
                                         .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
                                                               job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
                                                                                   tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
