@@ -655,6 +655,7 @@ forecast_time_series <- function(input_data,
                     hi.80 = Target + (1.28*Residual_Std_Dev), 
                     hi.95 = Target + (1.96*Residual_Std_Dev)) %>%
       dplyr::select(-Residual_Std_Dev) %>%
+      dplyr::filter(!grepl('_', Model)) %>% # filter out model averages
       rbind(
         data_tbl %>%
           dplyr::mutate(Model = "NA") %>%
@@ -708,6 +709,7 @@ forecast_time_series <- function(input_data,
                     hi.80 = FCST + (1.28*Residual_Std_Dev), 
                     hi.95 = FCST + (1.96*Residual_Std_Dev)) %>%
       dplyr::select(-Residual_Std_Dev) %>%
+      dplyr::filter(!grepl('_', Model)) %>% # filter out model averages
       rbind(future_fcst_best_model) %>%
       dplyr::rename(Target = FCST) %>%
       tidyr::separate(Combo, into = combo_variables, sep = "--", remove = FALSE) %>%
