@@ -24,33 +24,42 @@ LazyData: true
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.1.1
 Imports: 
+    cli,
     Cubist,
+    dials,
     doAzureParallel (>= 0.8.0),
     doFuture,
     doParallel,
     dplyr,
     earth,
-    glmnet, 
-    gtools,    
+    generics,
+    glmnet,
+    gtools,
     hts,
     kernlab,
     lightgbm,
-    matrixcalc,        
+    matrixcalc,
     modeltime.ensemble,
     modeltime.gluonts,
     modeltime.resample,
     parallel,
+    parsnip,
     plyr,
     purrr,
     rAzureBatch (>= 0.7.0),
+    recipes,
     rlist,
+    rsample,
     rules,
     stringr,
     tabnet,
     tibble,
     tidyr,
+    tidyselect,
     timetk,
-    torch
+    torch,
+    tune,
+    workflows
 Remotes: 
     Azure/rAzureBatch,
     Azure/doAzureParallel
@@ -60,6 +69,7 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 
+    R (>= 3.6.0),
     lubridate,
     foreach,
     modeltime

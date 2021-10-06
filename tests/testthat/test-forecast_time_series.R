@@ -81,7 +81,7 @@ test_that("final forecast data rows are meaningful", {
   
   future_frame <- final_fcst %>% 
     dplyr::filter(Date>final_fc_dt,
-                  Model=='Best Model')
+                  Model=='Best-Model')
   
   expect_equal(nrow(future_frame),forecast_horizon)
   
