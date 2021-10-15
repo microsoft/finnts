@@ -24,6 +24,7 @@ forecast_time_series(
   forecast_approach = "bottoms_up",
   parallel_processing = "none",
   run_model_parallel = TRUE,
+  num_cores = NULL,
   azure_batch_credentials = NULL,
   azure_batch_cluster_config = NULL,
   azure_batch_cluster_delete = FALSE,
@@ -99,6 +100,10 @@ runs time series in parallel on a remote compute cluster in Azure Batch.}
 
 \item{run_model_parallel}{Run model training in parallel, only works when parallel_processing is set to
 'local_machine' or 'azure_batch'.}
+
+\item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
+on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
+than number of cores on machine minus 1.}
 
 \item{azure_batch_credentials}{Credentials to run parallel_processing in Azure Batch.}
 
