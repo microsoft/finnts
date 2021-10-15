@@ -1,5 +1,8 @@
 url: https://microsoft.github.io/finnts
 
+repo:
+  branch: main
+
 authors:
     Aadharsh Kannan:
         href: https://aadharshkannan.com/
