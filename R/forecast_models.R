@@ -239,6 +239,7 @@ construct_forecast_models <- function(full_data_tbl,
                                       num_cores,
                                       run_deep_learning,
                                       frequency_number,
+                                      recipes_to_run,
                                       models_to_run,
                                       models_not_to_run,
                                       run_ensemble_models, 
@@ -274,45 +275,51 @@ construct_forecast_models <- function(full_data_tbl,
     cli::cli_h3("Initial Feature Engineering")
 
     # recipe 1: standard feature engineering
-    run_data_full_recipe_1 <- run_data_full_tbl %>%
-      multivariate_prep_recipe_1(external_regressors = external_regressors,
-                                 xregs_future_values_list = xregs_future_values_list,
-                                 fourier_periods = fourier_periods,
-                                 lag_periods = lag_periods,
-                                 rolling_window_periods = rolling_window_periods)
-
-    train_data_recipe_1 <- run_data_full_recipe_1 %>%
-      dplyr::filter(Date <= hist_end_date)
-
-
-    test_data_recipe_1 <- run_data_full_recipe_1 %>%
-      dplyr::filter(Date > hist_end_date)
-
+    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run) {
+      
+      run_data_full_recipe_1 <- run_data_full_tbl %>%
+        multivariate_prep_recipe_1(external_regressors = external_regressors,
+                                   xregs_future_values_list = xregs_future_values_list,
+                                   fourier_periods = fourier_periods,
+                                   lag_periods = lag_periods,
+                                   rolling_window_periods = rolling_window_periods)
+      
+      train_data_recipe_1 <- run_data_full_recipe_1 %>%
+        dplyr::filter(Date <= hist_end_date)
+      
+      
+      test_data_recipe_1 <- run_data_full_recipe_1 %>%
+        dplyr::filter(Date > hist_end_date)
+      
+    }
 
     # recipe 2: custom horizon specific feature engineering
-    run_data_full_recipe_2 <- run_data_full_tbl %>%
-      multivariate_prep_recipe_2(external_regressors = external_regressors,
-                                 xregs_future_values_list = xregs_future_values_list,
-                                 fourier_periods = fourier_periods,
-                                 lag_periods = lag_periods,
-                                 rolling_window_periods = rolling_window_periods,
-                                 date_type = date_type,
-                                 forecast_horizon = forecast_horizon) %>%
-      dplyr::mutate(Horizon_char = as.character(Horizon))
-
-    train_data_recipe_2 <- run_data_full_recipe_2 %>%
-      dplyr::filter(Date <= hist_end_date)
-
-    train_origins <- train_data_recipe_2 %>%
-      dplyr::filter(Horizon == 1)
-
-    train_origin_max <- max(train_origins$Origin)
-
-    test_data_recipe_2 <- run_data_full_recipe_2 %>%
-      dplyr::filter(Date > hist_end_date,
-                    Origin == train_origin_max+1)
-
-
+    if(is.null(recipes_to_run) | "R2" %in% recipes_to_run) {
+      
+      run_data_full_recipe_2 <- run_data_full_tbl %>%
+        multivariate_prep_recipe_2(external_regressors = external_regressors,
+                                   xregs_future_values_list = xregs_future_values_list,
+                                   fourier_periods = fourier_periods,
+                                   lag_periods = lag_periods,
+                                   rolling_window_periods = rolling_window_periods,
+                                   date_type = date_type,
+                                   forecast_horizon = forecast_horizon) %>%
+        dplyr::mutate(Horizon_char = as.character(Horizon))
+      
+      train_data_recipe_2 <- run_data_full_recipe_2 %>%
+        dplyr::filter(Date <= hist_end_date)
+      
+      train_origins <- train_data_recipe_2 %>%
+        dplyr::filter(Horizon == 1)
+      
+      train_origin_max <- max(train_origins$Origin)
+      
+      test_data_recipe_2 <- run_data_full_recipe_2 %>%
+        dplyr::filter(Date > hist_end_date,
+                      Origin == train_origin_max+1)
+      
+    }
+    
     # create modeltime table to add single trained models to
     combined_models_recipe_1 <- modeltime::modeltime_table()
     combined_models_recipe_2 <- modeltime::modeltime_table()

@@ -51,7 +51,9 @@
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
 #'   based on date_type. 
 #' @param rolling_window_periods List of values to use in creating rolling window features. Default of NULL automatically 
-#'   chooses these values based on date_type. 
+#'   chooses these values based on date_type.
+#' @param recipes_to_run List of recipes to run on multivariate models. A value of NULL runs all recipes, but only runs the R1
+#'   recipe for weekly and daily date types. A list like c("R1") pr c("R2") would only run models with the R1 or R2 recipe.  
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
 #'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
 #'   that has python environment already installed. 
@@ -111,7 +113,8 @@ forecast_time_series <- function(input_data,
   negative_fcst = FALSE,
   fourier_periods = NULL, 
   lag_periods = NULL, 
-  rolling_window_periods = NULL, 
+  rolling_window_periods = NULL,
+  recipes_to_run = NULL,
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
@@ -120,11 +123,11 @@ forecast_time_series <- function(input_data,
   run_local_models = TRUE,
   run_ensemble_models = TRUE,
   average_models = TRUE,
-  max_model_average = 4,
+  max_model_average = 3,
   weekly_to_daily = TRUE
 ) {
 
-  # 1. Load Evironment Info: ----
+  # 1. Load Environment Info: ----
   
   load_env_info(reticulate_environment)
   
@@ -265,6 +268,7 @@ forecast_time_series <- function(input_data,
                                                num_cores,
                                                run_deep_learning,
                                                frequency_number,
+                                               recipes_to_run, 
                                                models_to_run,
                                                models_not_to_run,
                                                run_ensemble_models,
