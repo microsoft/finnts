@@ -179,7 +179,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
   
   #add horizon specific features
   if(date_type == 'day') {
-    lag_periods_r2 <- unique(c(1, 2, 3, 4, 5, 6, 7, 14, 21, 28, 28*2, 28*3, 28*6, 28*9, 28*12, 365, forecast_horizon))
+    lag_periods_r2 <- unique(c(7, 14, 21, 30, 90, 180, 365, forecast_horizon))
   } else {
     lag_periods_r2 <- 1:forecast_horizon
   }

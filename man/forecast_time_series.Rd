@@ -33,6 +33,7 @@ forecast_time_series(
   fourier_periods = NULL,
   lag_periods = NULL,
   rolling_window_periods = NULL,
+  pca = FALSE,
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
@@ -123,6 +124,8 @@ based on date_type.}
 
 \item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
 chooses these values based on date_type.}
+
+\item{pca}{Run principle component analysis on any lagged features to speed up model run time.}
 
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image

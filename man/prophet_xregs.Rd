@@ -11,7 +11,8 @@ prophet_xregs(
   tscv_initial,
   date_rm_regex,
   fiscal_year_start,
-  back_test_spacing
+  back_test_spacing,
+  pca
 )
 }
 \arguments{

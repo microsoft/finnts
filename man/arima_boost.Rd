@@ -12,7 +12,8 @@ arima_boost(
   tscv_initial,
   date_rm_regex,
   back_test_spacing,
-  fiscal_year_start
+  fiscal_year_start,
+  pca
 )
 }
 \arguments{

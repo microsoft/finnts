@@ -164,7 +164,8 @@ invoke_forecast_function <- function(fn_to_invoke,
                                      date_rm_regex,
                                      back_test_spacing,
                                      fiscal_year_start,
-                                     model_type){
+                                     model_type,
+                                     pca){
   
   exp_arg_list <- formalArgs(fn_to_invoke)
   
@@ -177,7 +178,8 @@ invoke_forecast_function <- function(fn_to_invoke,
                          'date_rm_regex' = date_rm_regex,
                          'back_test_spacing' = back_test_spacing,
                          'fiscal_year_start' = fiscal_year_start,
-                         'model_type' = model_type)
+                         'model_type' = model_type, 
+                         "pca" = pca)
   
   avail_names <- names(avail_arg_list)
   
@@ -247,7 +249,8 @@ construct_forecast_models <- function(full_data_tbl,
                                       back_test_scenarios,
                                       date_regex,
                                       fiscal_year_start,
-                                      seasonal_periods
+                                      seasonal_periods, 
+                                      pca
                                       ){
 
   forecast_models <- function(combo_value) {
@@ -284,7 +287,6 @@ construct_forecast_models <- function(full_data_tbl,
     train_data_recipe_1 <- run_data_full_recipe_1 %>%
       dplyr::filter(Date <= hist_end_date)
 
-
     test_data_recipe_1 <- run_data_full_recipe_1 %>%
       dplyr::filter(Date > hist_end_date)
 
@@ -312,7 +314,9 @@ construct_forecast_models <- function(full_data_tbl,
       dplyr::filter(Date > hist_end_date,
                     Origin == train_origin_max+1)
 
-
+    # write.csv(train_data_recipe_2, "daily_data_R2.csv", row.names = FALSE)
+    # stop()
+    
     # create modeltime table to add single trained models to
     combined_models_recipe_1 <- modeltime::modeltime_table()
     combined_models_recipe_2 <- modeltime::modeltime_table()
@@ -361,7 +365,8 @@ construct_forecast_models <- function(full_data_tbl,
                                      fiscal_year_start = fiscal_year_start,
                                      tscv_inital = hist_periods_80,
                                      date_rm_regex = date_regex,
-                                     model_type = "single"))
+                                     model_type = "single", 
+                                     pca = pca))
         
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
@@ -393,7 +398,8 @@ construct_forecast_models <- function(full_data_tbl,
                                                        fiscal_year_start = fiscal_year_start,
                                                        tscv_inital = hist_periods_80,
                                                        date_rm_regex = date_regex,
-                                                       model_type = "single"))
+                                                       model_type = "single", 
+                                                       pca = pca))
 
             try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                            mdl_called,
@@ -415,7 +421,8 @@ construct_forecast_models <- function(full_data_tbl,
                                                      fiscal_year_start = fiscal_year_start,
                                                      tscv_inital = hist_periods_80,
                                                      date_rm_regex = date_regex,
-                                                     model_type = "single"))
+                                                     model_type = "single", 
+                                                     pca = pca))
 
           try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
                                                                          mdl_called,
@@ -615,7 +622,8 @@ construct_forecast_models <- function(full_data_tbl,
                                                      fiscal_year_start = fiscal_year_start,
                                                      tscv_inital = "1 year",
                                                      date_rm_regex = date_regex,
-                                                     model_type = "ensemble"))
+                                                     model_type = "ensemble", 
+                                                     pca = FALSE))
         
         try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models,
                                                                        mdl_ensemble,

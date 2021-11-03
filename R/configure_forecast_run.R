@@ -33,7 +33,7 @@ get_fourier_periods <- function(fourier_periods,
 #' 
 #' @param lag_periods lag_periods override
 #' @param date_type year, quarter, month, week, day
-#' @param forecast_horizon horion input from user
+#' @param forecast_horizon horizon input from user
 #' 
 #' @return Returns lag_periods
 #' @noRd
@@ -49,9 +49,7 @@ get_lag_periods <- function(lag_periods,
                     "quarter" = c(1,2,3,4),
                     "month" =  c(1, 2, 3, 6, 9, 12),
                     "week" = c(1, 2, 3, 4, 8, 12, 24, 48, 52),
-                    "day" = c(1, 2, 3, 4, 5, 6, 7, 14, 
-                              21, 28, 28*2, 28*3, 28*6, 
-                              28*9, 28*12, 365)
+                    "day" = c(7, 14, 21, 28, 60, 90, 180, 365)
                     )
   
   oplist <- c(oplist,forecast_horizon)
