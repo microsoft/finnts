@@ -179,15 +179,16 @@
   fourier_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   lag_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   rolling_window_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
+  recipes_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
   reticulate_environment <span class='op'>=</span> <span class='cn'>NULL</span>,
   models_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
   models_not_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
   run_deep_learning <span class='op'>=</span> <span class='cn'>FALSE</span>,
-  run_global_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
+  run_global_models <span class='op'>=</span> <span class='cn'>NULL</span>,
   run_local_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
   run_ensemble_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
   average_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
-  max_model_average <span class='op'>=</span> <span class='fl'>4</span>,
+  max_model_average <span class='op'>=</span> <span class='fl'>3</span>,
   weekly_to_daily <span class='op'>=</span> <span class='cn'>TRUE</span>
 <span class='op'>)</span></pre>
 
@@ -257,7 +258,7 @@ values.</p></td>
     <tr>
       <th>back_test_scenarios</th>
       <td><p>Number of specific back test folds to run when determining the best model.
-Default of 'auto' will automatially choose the number of back tests to run based on historical data size,
+Default of 'auto' will automatically choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80% of the data when training a model.</p></td>
     </tr>
     <tr>
@@ -329,6 +330,12 @@ based on date_type.</p></td>
 chooses these values based on date_type.</p></td>
     </tr>
     <tr>
+      <th>recipes_to_run</th>
+      <td><p>List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
+all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
+of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.</p></td>
+    </tr>
+    <tr>
       <th>reticulate_environment</th>
       <td><p>File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
@@ -351,7 +358,7 @@ models_not_to_run.</p></td>
     <tr>
       <th>run_global_models</th>
       <td><p>Run multivariate models on the entire data set (across all time series) as a global model.
-Can be override by models_not_to_run.</p></td>
+Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.</p></td>
     </tr>
     <tr>
       <th>run_local_models</th>
