@@ -52,7 +52,8 @@
 #'   based on date_type. 
 #' @param rolling_window_periods List of values to use in creating rolling window features. Default of NULL automatically 
 #'   chooses these values based on date_type. 
-#' @param pca Run principle component analysis on any lagged features to speed up model run time. 
+#' @param pca Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+#'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
 #'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
 #'   that has python environment already installed. 
@@ -113,7 +114,7 @@ forecast_time_series <- function(input_data,
   fourier_periods = NULL, 
   lag_periods = NULL, 
   rolling_window_periods = NULL, 
-  pca = FALSE, 
+  pca = NULL, 
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,

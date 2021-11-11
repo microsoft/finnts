@@ -313,9 +313,6 @@ construct_forecast_models <- function(full_data_tbl,
     test_data_recipe_2 <- run_data_full_recipe_2 %>%
       dplyr::filter(Date > hist_end_date,
                     Origin == train_origin_max+1)
-
-    # write.csv(train_data_recipe_2, "daily_data_R2.csv", row.names = FALSE)
-    # stop()
     
     # create modeltime table to add single trained models to
     combined_models_recipe_1 <- modeltime::modeltime_table()
@@ -327,7 +324,8 @@ construct_forecast_models <- function(full_data_tbl,
     }
 
     cli::cli_h3("Individual Model Training")
-
+    
+    # models to run
     model_list <- get_model_functions(models_to_run,
                                       models_not_to_run,
                                       run_deep_learning)
@@ -339,7 +337,13 @@ construct_forecast_models <- function(full_data_tbl,
     deep_nn_models <- get_deep_learning_models()
 
     models_to_go_over <- names(model_list)
-
+    
+    # PCA
+    if(sum(pca == TRUE) == 1 | (combo_value == "All-Data" & is.null(pca)) | (is.null(pca) & date_type %in% c("day", "week"))) {
+      run_pca <- TRUE
+    } else {
+      run_pca <- FALSE
+    }
 
     for(model_name in models_to_go_over){
 
@@ -366,7 +370,7 @@ construct_forecast_models <- function(full_data_tbl,
                                      tscv_inital = hist_periods_80,
                                      date_rm_regex = date_regex,
                                      model_type = "single", 
-                                     pca = pca))
+                                     pca = run_pca))
         
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
@@ -399,7 +403,7 @@ construct_forecast_models <- function(full_data_tbl,
                                                        tscv_inital = hist_periods_80,
                                                        date_rm_regex = date_regex,
                                                        model_type = "single", 
-                                                       pca = pca))
+                                                       pca = run_pca))
 
             try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                            mdl_called,
@@ -422,7 +426,7 @@ construct_forecast_models <- function(full_data_tbl,
                                                      tscv_inital = hist_periods_80,
                                                      date_rm_regex = date_regex,
                                                      model_type = "single", 
-                                                     pca = pca))
+                                                     pca = run_pca))
 
           try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
                                                                          mdl_called,
@@ -493,7 +497,7 @@ construct_forecast_models <- function(full_data_tbl,
         dplyr::select(-.id, -.key)
 
       rsplit_obj <- slice_tbl %>%
-        rsample::make_splits(ind = list(analysis = seq(nrow(train)),
+        rsample::make_splits(x = list(analysis = seq(nrow(train)),
                                         assessment = nrow(train) + seq(nrow(test))),
                              class = "ts_cv_split")
 
@@ -691,7 +695,7 @@ construct_forecast_models <- function(full_data_tbl,
           dplyr::select(-.id, -.key)
         
         rsplit_obj <- slice_tbl %>%
-          rsample::make_splits(ind = list(analysis = seq(nrow(train)),
+          rsample::make_splits(x = list(analysis = seq(nrow(train)),
                                           assessment = nrow(train) + seq(nrow(test))),
                                class = "ts_cv_split")
         
