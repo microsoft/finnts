@@ -33,15 +33,16 @@ forecast_time_series(
   fourier_periods = NULL,
   lag_periods = NULL,
   rolling_window_periods = NULL,
+  recipes_to_run = NULL,
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE,
-  run_global_models = TRUE,
+  run_global_models = NULL,
   run_local_models = TRUE,
   run_ensemble_models = TRUE,
   average_models = TRUE,
-  max_model_average = 4,
+  max_model_average = 3,
   weekly_to_daily = TRUE
 )
 }
@@ -81,7 +82,7 @@ values.}
 \item{clean_outliers}{Should outliers be cleaned and inputted with values more in line with historical data?}
 
 \item{back_test_scenarios}{Number of specific back test folds to run when determining the best model.
-Default of 'auto' will automatially choose the number of back tests to run based on historical data size,
+Default of 'auto' will automatically choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80\% of the data when training a model.}
 
 \item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
@@ -124,6 +125,10 @@ based on date_type.}
 \item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
 chooses these values based on date_type.}
 
+\item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
+all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
+of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
+
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
 that has python environment already installed.}
@@ -137,7 +142,7 @@ any model.}
 models_not_to_run.}
 
 \item{run_global_models}{Run multivariate models on the entire data set (across all time series) as a global model.
-Can be override by models_not_to_run.}
+Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.}
 
 \item{run_local_models}{Run models by individual time series as local models.}
 
