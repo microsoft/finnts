@@ -500,8 +500,8 @@ construct_forecast_models <- function(full_data_tbl,
           dplyr::select(-.id, -.key)
         
         rsplit_obj <- slice_tbl %>%
-          rsample::make_splits(ind = list(analysis = seq(nrow(train)),
-                                          assessment = nrow(train) + seq(nrow(test))),
+          rsample::make_splits(x = list(analysis = seq(nrow(train)),
+                                        assessment = nrow(train) + seq(nrow(test))),
                                class = "ts_cv_split")
         
         return(rsplit_obj)
@@ -698,8 +698,8 @@ construct_forecast_models <- function(full_data_tbl,
           dplyr::select(-.id, -.key)
         
         rsplit_obj <- slice_tbl %>%
-          rsample::make_splits(ind = list(analysis = seq(nrow(train)),
-                                          assessment = nrow(train) + seq(nrow(test))),
+          rsample::make_splits(x = list(analysis = seq(nrow(train)),
+                                        assessment = nrow(train) + seq(nrow(test))),
                                class = "ts_cv_split")
         
         return(rsplit_obj)
