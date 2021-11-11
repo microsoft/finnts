@@ -49,12 +49,12 @@
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
 #'   these values based on the date_type. 
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
-#'   based on date_type. 
+#'   based on date_type.
 #' @param rolling_window_periods List of values to use in creating rolling window features. Default of NULL automatically 
 #'   chooses these values based on date_type.
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs 
-#'   all recipes, but only runs the R1 recipe for weekly and daily date types. A list like c("R1") or c("R2") would only 
-#'   run models with the R1 or R2 recipe.  
+#'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless 
+#'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.  
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
 #'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
 #'   that has python environment already installed. 

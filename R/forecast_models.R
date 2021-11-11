@@ -277,7 +277,7 @@ construct_forecast_models <- function(full_data_tbl,
     # recipe 1: standard feature engineering
     run_data_full_recipe_1 <- NULL
     
-    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run) {
+    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | sum(recipes_to_run == "all") == 1) {
       
       run_data_full_recipe_1 <- run_data_full_tbl %>%
         multivariate_prep_recipe_1(external_regressors = external_regressors,
@@ -297,8 +297,8 @@ construct_forecast_models <- function(full_data_tbl,
     
     # recipe 2: custom horizon specific feature engineering
     run_data_full_recipe_2 <- NULL
-    
-    if((is.null(recipes_to_run) | "R2" %in% recipes_to_run) & date_type %in% c("month", "quarter", "year")) {
+
+    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | sum(recipes_to_run == "all") == 1) {
       
       run_data_full_recipe_2 <- run_data_full_tbl %>%
         multivariate_prep_recipe_2(external_regressors = external_regressors,
@@ -385,7 +385,7 @@ construct_forecast_models <- function(full_data_tbl,
         
         freq_val <- frequency
         
-        if((model_name %in% r1_models) | (model_name %in% r2_models)){
+        if(((model_name %in% r1_models) | (model_name %in% r2_models)) & (is.null(recipes_to_run) | sum(recipes_to_run == "all") == 1 | "R1" %in% recipes_to_run)){
           
           add_name <- paste0(model_name,"-R1",model_name_suffix)
           if(model_name %in% deep_nn_models){
@@ -413,7 +413,7 @@ construct_forecast_models <- function(full_data_tbl,
               silent = TRUE)
         }
         
-        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
+        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | sum(recipes_to_run == "all") == 1 | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
 
           add_name <- paste0(model_name,"-R2",model_name_suffix)
           try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
