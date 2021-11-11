@@ -122,14 +122,14 @@
 
 <span class="co"># monthly data example</span>
 <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/timetk/man/time_series_cv.html">time_series_cv</a></span><span class="op">(</span>
-    data <span class="op">=</span> <span class="fu">modeltime</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/modeltime/man/m750.html">m750</a></span> <span class="op">%&gt;%</span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;</span> <span class="st">"2010-12-01"</span><span class="op">)</span>, <span class="co"># entire historical data set</span>
+    data <span class="op">=</span> <span class="fu">modeltime</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/modeltime/man/m750.html">m750</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;</span> <span class="st">"2010-12-01"</span><span class="op">)</span>, <span class="co"># entire historical data set</span>
     initial <span class="op">=</span> <span class="fl">24</span>, <span class="co"># initial periods to use as training data</span>
     assess <span class="op">=</span> <span class="fl">6</span>, <span class="co"># forecast horizon to hold out as testing data</span>
     skip <span class="op">=</span> <span class="fl">6</span>, <span class="co"># how many periods to move forward for each subsequent split, </span>
               <span class="co"># equal to back_test_spacing input in forecast_time_series() finnts function</span>
     cumulative <span class="op">=</span> <span class="cn">TRUE</span>, <span class="co"># should the training data expand more than initial periods in each subsequent split</span>
     slice_limit <span class="op">=</span> <span class="fl">3</span> <span class="co"># max number of splits to run</span>
-    <span class="op">)</span> <span class="op">%&gt;%</span>
+    <span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html">%&gt;%</a></span>
   <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/timetk/man/plot_time_series_cv_plan.html">plot_time_series_cv_plan</a></span><span class="op">(</span>.date_var <span class="op">=</span> <span class="va">date</span>, 
                                    .value <span class="op">=</span> <span class="va">value</span>, 
                                    <span class="co"># Additional arguments passed to plot_time_series(),</span>
