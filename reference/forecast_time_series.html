@@ -180,6 +180,7 @@
   lag_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   rolling_window_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   recipes_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
+  pca <span class='op'>=</span> <span class='cn'>NULL</span>,
   reticulate_environment <span class='op'>=</span> <span class='cn'>NULL</span>,
   models_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
   models_not_to_run <span class='op'>=</span> <span class='cn'>NULL</span>,
@@ -334,6 +335,11 @@ chooses these values based on date_type.</p></td>
       <td><p>List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.</p></td>
+    </tr>
+    <tr>
+      <th>pca</th>
+      <td><p>Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+PCA on day and week date types across all local multivariate models, and also for global models across all date types.</p></td>
     </tr>
     <tr>
       <th>reticulate_environment</th>
