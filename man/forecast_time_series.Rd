@@ -34,6 +34,7 @@ forecast_time_series(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
+  pca = NULL,
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
@@ -129,6 +130,9 @@ chooses these values based on date_type.}
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
 
+\item{pca}{Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
+  
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
 that has python environment already installed.}

@@ -43,7 +43,8 @@ get_recipie_configurable <- function(train_data,
                                      dummy_one_hot = TRUE,
                                      character_factor = FALSE,
                                      center_scale=FALSE,
-                                     one_hot = FALSE){
+                                     one_hot = FALSE, 
+                                     pca = TRUE){
   
   mutate_adj_half_fn <- function(df){
     if(mutate_adj_half){
@@ -120,6 +121,16 @@ get_recipie_configurable <- function(train_data,
     }
   }
   
+  pca_fn <-function(df){
+    if(pca){
+      df %>%
+        recipes::step_pca(tidyselect::contains("lag"), threshold = .99, options = list(center = !center_scale, scale. = !center_scale))
+    }
+    else{
+      df
+    }
+  }
+  
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
     timetk::step_timeseries_signature(Date_Adj) %>%
@@ -129,7 +140,8 @@ get_recipie_configurable <- function(train_data,
     norm_date_adj_year_fn() %>%
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
-    center_scale_fn()
+    center_scale_fn() %>%
+    pca_fn()
 }
 
 
@@ -275,7 +287,7 @@ get_tune_grid <- function(train_data,
   tgCall$grid <- 10
   tgCall$control <- tune::control_grid(verbose = FALSE, 
                                        allow_par = parallel, 
-                                       parallel_over = "everything", 
+                                       parallel_over = NULL, 
                                        pkgs = get_export_packages())
   
   if(isMetrics){
@@ -411,7 +423,8 @@ arima_boost <- function(train_data,
                         tscv_initial,
                         date_rm_regex,
                         back_test_spacing,
-                        fiscal_year_start) {
+                        fiscal_year_start, 
+                        pca) {
   
   #create model recipe
   date_rm_regex_final <- paste0(date_rm_regex)
@@ -421,7 +434,8 @@ arima_boost <- function(train_data,
                              date_rm_regex_final,
                              step_nzv = "zv",
                              norm_date_adj_year = TRUE,
-                             one_hot = TRUE)
+                             one_hot = TRUE, 
+                             pca = pca)
   
   #create model spec
   model_spec_arima_boost_tune = modeltime::arima_boost(
@@ -479,7 +493,8 @@ cubist <- function(train_data,
                   tscv_initial,
                   date_rm_regex,
                   back_test_spacing,
-                  fiscal_year_start) {
+                  fiscal_year_start, 
+                  pca) {
   
 
   date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
@@ -492,14 +507,16 @@ cubist <- function(train_data,
                                date_rm_regex_final,
                                rm_date = "with_adj_index",
                                step_nzv = "nzv",
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
   }else{
     recipe_spec_cubist <-train_data %>% 
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
                                rm_date = "with_adj",
                                step_nzv = "nzv",
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
   }
   
   model_spec_cubist <- rules::cubist_rules(
@@ -652,7 +669,8 @@ glmnet <- function(train_data,
                   tscv_initial,
                   date_rm_regex,
                   fiscal_year_start,
-                  back_test_spacing){
+                  back_test_spacing, 
+                  pca){
 
   date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
   
@@ -663,7 +681,8 @@ glmnet <- function(train_data,
                                rm_date = "with_adj_index",
                                step_nzv = "nzv",
                                one_hot = FALSE,
-                               center_scale = TRUE)
+                               center_scale = TRUE, 
+                               pca = pca)
   }else{
     recipe_spec_glmnet <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
@@ -671,7 +690,8 @@ glmnet <- function(train_data,
                                rm_date = "with_adj",
                                step_nzv = "nzv",
                                one_hot = FALSE,
-                               center_scale = TRUE)
+                               center_scale = TRUE, 
+                               pca = pca)
   }
   
   model_spec_glmnet <- parsnip::linear_reg(
@@ -715,12 +735,14 @@ mars <- function(train_data,
                 parallel, 
                 model_type = "single",
                 date_rm_regex,
-                fiscal_year_start) {
+                fiscal_year_start, 
+                pca) {
   
   recipe_spec_mars <- train_data %>%
     get_recipie_configurable(fiscal_year_start,
                              date_rm_regex,
-                             rm_date = "with_adj")
+                             rm_date = "with_adj", 
+                             pca = pca)
 
   model_spec_mars <- parsnip::mars(
     mode = "regression", 
@@ -893,18 +915,17 @@ nnetar_xregs <- function(train_data,
                         tscv_initial,
                         date_rm_regex,
                         fiscal_year_start,
-                        back_test_spacing) {
-  
-
+                        back_test_spacing, 
+                        pca) {
   
   date_rm_regex_final = paste0(date_rm_regex)
-  
   
   recipe_spec_nnetar <- train_data %>%
     get_recipie_configurable(fiscal_year_start,
                              date_rm_regex_final,
                              norm_date_adj_year = TRUE,
-                             one_hot = TRUE)
+                             one_hot = TRUE, 
+                             pca = pca)
   
   model_spec_nnetar = modeltime::nnetar_reg(
     seasonal_period = frequency, 
@@ -1015,7 +1036,8 @@ prophet_boost <- function(train_data,
                          tscv_initial,
                          date_rm_regex,
                          fiscal_year_start,
-                         back_test_spacing) {
+                         back_test_spacing, 
+                         pca) {
   
   #create model recipe
   date_rm_regex_final = paste0(date_rm_regex)
@@ -1025,7 +1047,8 @@ prophet_boost <- function(train_data,
                              date_rm_regex_final,
                              step_nzv = "zv",
                              norm_date_adj_year = TRUE,
-                             one_hot = TRUE)
+                             one_hot = TRUE, 
+                             pca = pca)
   
   #create model spec
   model_spec_prophet_boost_tune <- modeltime::prophet_boost(
@@ -1080,7 +1103,8 @@ prophet_xregs <- function(train_data,
                          tscv_initial,
                          date_rm_regex,
                          fiscal_year_start,
-                         back_test_spacing) {
+                         back_test_spacing, 
+                         pca) {
   
   date_rm_regex_final <- paste0(date_rm_regex)
   
@@ -1089,7 +1113,8 @@ prophet_xregs <- function(train_data,
                              date_rm_regex_final,
                              step_nzv = "zv",
                              dummy_one_hot = FALSE,
-                             character_factor = TRUE)
+                             character_factor = TRUE, 
+                             pca = pca)
   
   model_spec_prophet_xregs <- modeltime::prophet_reg(
     growth = tune::tune(), 
@@ -1240,7 +1265,8 @@ svm_poly <- function(train_data,
                     tscv_initial,
                     date_rm_regex,
                     fiscal_year_start,
-                    back_test_spacing) {
+                    back_test_spacing, 
+                    pca) {
   
   if(model_type == 'ensemble') {
     
@@ -1250,7 +1276,8 @@ svm_poly <- function(train_data,
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
                                rm_date = "with_adj_index",
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
     
   } else {
     
@@ -1261,7 +1288,8 @@ svm_poly <- function(train_data,
                                date_rm_regex_final,
                                rm_date = "with_adj",
                                norm_date_adj_year = TRUE,
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
   }
   
   model_spec_svm <- parsnip::svm_poly(
@@ -1316,7 +1344,8 @@ svm_rbf <- function(train_data,
                    tscv_initial,
                    date_rm_regex,
                    fiscal_year_start,
-                   back_test_spacing) {
+                   back_test_spacing, 
+                   pca) {
   
   if(model_type == 'ensemble') {
     
@@ -1326,7 +1355,8 @@ svm_rbf <- function(train_data,
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
                                rm_date = "with_adj_index",
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
   }else{
     
     date_rm_regex_final = date_rm_regex
@@ -1336,7 +1366,8 @@ svm_rbf <- function(train_data,
                                date_rm_regex_final,
                                norm_date_adj_year = TRUE,
                                rm_date = "with_adj",
-                               one_hot = FALSE)
+                               one_hot = FALSE, 
+                               pca = pca)
   }
   
   model_spec_svm = parsnip::svm_rbf(
@@ -1381,7 +1412,8 @@ svm_rbf <- function(train_data,
 tabnet <- function(train_data,
                    parallel, 
                    fiscal_year_start, 
-                   date_rm_regex) {
+                   date_rm_regex, 
+                   pca) {
   
   date_rm_regex_final <- "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(day)|(week)"
   #create model recipe
@@ -1391,7 +1423,8 @@ tabnet <- function(train_data,
                              date_rm_regex_final,
                              mutate_adj_half = FALSE,
                              step_nzv = "none",
-                             one_hot = TRUE)
+                             one_hot = TRUE, 
+                             pca = pca)
   
   model_spec_tabnet <- tabnet::tabnet(
     mode = "regression",
@@ -1503,7 +1536,8 @@ xgboost <-function(train_data,
                    tscv_initial,
                    date_rm_regex,
                    fiscal_year_start,
-                   back_test_spacing) {
+                   back_test_spacing, 
+                   pca) {
   
   #create model recipe
   if(model_type == 'ensemble') {
@@ -1515,7 +1549,8 @@ xgboost <-function(train_data,
                                date_rm_regex_final,
                                rm_date = "with_adj_index",
                                step_nzv = "zv",
-                               one_hot = TRUE)
+                               one_hot = TRUE, 
+                               pca = pca)
     
   } else {
     
@@ -1526,7 +1561,8 @@ xgboost <-function(train_data,
                                date_rm_regex_final,
                                rm_date = "with_adj",
                                step_nzv = "zv",
-                               one_hot = TRUE)
+                               one_hot = TRUE, 
+                               pca = pca)
   }
   
   model_spec_xgboost <- parsnip::boost_tree(

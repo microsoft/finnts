@@ -164,7 +164,8 @@ invoke_forecast_function <- function(fn_to_invoke,
                                      date_rm_regex,
                                      back_test_spacing,
                                      fiscal_year_start,
-                                     model_type){
+                                     model_type,
+                                     pca){
   
   exp_arg_list <- formalArgs(fn_to_invoke)
   
@@ -177,7 +178,8 @@ invoke_forecast_function <- function(fn_to_invoke,
                          'date_rm_regex' = date_rm_regex,
                          'back_test_spacing' = back_test_spacing,
                          'fiscal_year_start' = fiscal_year_start,
-                         'model_type' = model_type)
+                         'model_type' = model_type, 
+                         "pca" = pca)
   
   avail_names <- names(avail_arg_list)
   
@@ -248,9 +250,10 @@ construct_forecast_models <- function(full_data_tbl,
                                       back_test_scenarios,
                                       date_regex,
                                       fiscal_year_start,
-                                      seasonal_periods
-){
-  
+                                      seasonal_periods, 
+                                      pca
+                                      ){
+
   forecast_models <- function(combo_value) {
     
     cli::cli_h2("Running Combo: {combo_value}")
@@ -335,6 +338,8 @@ construct_forecast_models <- function(full_data_tbl,
     
     cli::cli_h3("Individual Model Training")
     
+
+    # models to run
     model_list <- get_model_functions(models_to_run,
                                       models_not_to_run,
                                       run_deep_learning)
@@ -347,7 +352,13 @@ construct_forecast_models <- function(full_data_tbl,
     
     models_to_go_over <- names(model_list)
     
-    
+    # PCA
+    if(sum(pca == TRUE) == 1 | (combo_value == "All-Data" & is.null(pca)) | (is.null(pca) & date_type %in% c("day", "week"))) {
+      run_pca <- TRUE
+    } else {
+      run_pca <- FALSE
+    }
+
     for(model_name in models_to_go_over){
       
       model_fn <- as.character(model_list[model_name])
@@ -372,7 +383,9 @@ construct_forecast_models <- function(full_data_tbl,
                                                    fiscal_year_start = fiscal_year_start,
                                                    tscv_inital = hist_periods_80,
                                                    date_rm_regex = date_regex,
-                                                   model_type = "single"))
+                                                   model_type = "single", 
+                                                   pca = run_pca))
+
         
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
@@ -392,25 +405,26 @@ construct_forecast_models <- function(full_data_tbl,
             freq_val <- gluon_ts_frequency
             add_name <- paste0(model_name,model_name_suffix)
           }
-          
-          
-          try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
-                                                     train_data = train_data_recipe_1,
-                                                     frequency = freq_val,
-                                                     parallel = run_model_parallel,
-                                                     horizon = forecast_horizon,
-                                                     seasonal_period =seasonal_periods,
-                                                     back_test_spacing = back_test_spacing,
-                                                     fiscal_year_start = fiscal_year_start,
-                                                     tscv_inital = hist_periods_80,
-                                                     date_rm_regex = date_regex,
-                                                     model_type = "single"))
-          
-          try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
-                                                                         mdl_called,
-                                                                         location = "top") %>%
-                update_model_description(1, add_name),
-              silent = TRUE)
+
+            try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
+                                                       train_data = train_data_recipe_1,
+                                                       frequency = freq_val,
+                                                       parallel = run_model_parallel,
+                                                       horizon = forecast_horizon,
+                                                       seasonal_period =seasonal_periods,
+                                                       back_test_spacing = back_test_spacing,
+                                                       fiscal_year_start = fiscal_year_start,
+                                                       tscv_inital = hist_periods_80,
+                                                       date_rm_regex = date_regex,
+                                                       model_type = "single", 
+                                                       pca = run_pca))
+
+            try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
+                                                                           mdl_called,
+                                                                           location = "top") %>%
+                  update_model_description(1, add_name),
+                silent = TRUE)
+
         }
         
         if(model_name %in% r2_models & ("R2" %in% recipes_to_run | sum(recipes_to_run == "all") == 1 | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
@@ -426,8 +440,9 @@ construct_forecast_models <- function(full_data_tbl,
                                                      fiscal_year_start = fiscal_year_start,
                                                      tscv_inital = hist_periods_80,
                                                      date_rm_regex = date_regex,
-                                                     model_type = "single"))
-          
+                                                     model_type = "single", 
+                                                     pca = run_pca))
+
           try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
                                                                          mdl_called,
                                                                          location = "top") %>%
@@ -630,7 +645,8 @@ construct_forecast_models <- function(full_data_tbl,
                                                      fiscal_year_start = fiscal_year_start,
                                                      tscv_inital = "1 year",
                                                      date_rm_regex = date_regex,
-                                                     model_type = "ensemble"))
+                                                     model_type = "ensemble", 
+                                                     pca = FALSE))
         
         try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models,
                                                                        mdl_ensemble,

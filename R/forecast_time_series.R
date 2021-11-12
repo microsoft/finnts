@@ -51,10 +51,12 @@
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
 #'   based on date_type.
 #' @param rolling_window_periods List of values to use in creating rolling window features. Default of NULL automatically 
-#'   chooses these values based on date_type.
+#'   chooses these values based on date type.
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs 
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless 
 #'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.  
+#' @param pca Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+#'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
 #'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
 #'   that has python environment already installed. 
@@ -116,6 +118,7 @@ forecast_time_series <- function(input_data,
   lag_periods = NULL, 
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
+  pca = NULL, 
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
@@ -278,7 +281,8 @@ forecast_time_series <- function(input_data,
                                                back_test_scenarios,
                                                date_regex,
                                                fiscal_year_start,
-                                               seasonal_periods)
+                                               seasonal_periods, 
+                                               pca)
   
   # * Run Forecast ----
   if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models) {

@@ -9,7 +9,8 @@ mars(
   parallel,
   model_type = "single",
   date_rm_regex,
-  fiscal_year_start
+  fiscal_year_start,
+  pca
 )
 }
 \arguments{
