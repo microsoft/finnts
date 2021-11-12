@@ -24,7 +24,7 @@
 #'   values. 
 #' @param clean_outliers Should outliers be cleaned and inputted with values more in line with historical data?
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
-#'   Default of 'auto' will automatially choose the number of back tests to run based on historical data size, 
+#'   Default of 'auto' will automatically choose the number of back tests to run based on historical data size, 
 #'   which tries to always use a minimum of 80% of the data when training a model. 
 #' @param back_test_spacing Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
 #'   period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data. 
@@ -49,9 +49,12 @@
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
 #'   these values based on the date_type. 
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
-#'   based on date_type. 
+#'   based on date_type.
 #' @param rolling_window_periods List of values to use in creating rolling window features. Default of NULL automatically 
-#'   chooses these values based on date_type. 
+#'   chooses these values based on date type.
+#' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs 
+#'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless 
+#'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.  
 #' @param pca Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
@@ -63,7 +66,7 @@
 #' @param run_deep_learning Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
 #'  models_not_to_run. 
 #' @param run_global_models Run multivariate models on the entire data set (across all time series) as a global model. 
-#'   Can be override by models_not_to_run. 
+#'   Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day. 
 #' @param run_local_models Run models by individual time series as local models.
 #' @param run_ensemble_models Run ensemble models 
 #' @param average_models Create simple averages of individual models. 
@@ -113,21 +116,22 @@ forecast_time_series <- function(input_data,
   negative_fcst = FALSE,
   fourier_periods = NULL, 
   lag_periods = NULL, 
-  rolling_window_periods = NULL, 
+  rolling_window_periods = NULL,
+  recipes_to_run = NULL,
   pca = NULL, 
   reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE, 
-  run_global_models = TRUE,
+  run_global_models = NULL,
   run_local_models = TRUE,
   run_ensemble_models = TRUE,
   average_models = TRUE,
-  max_model_average = 4,
+  max_model_average = 3,
   weekly_to_daily = TRUE
 ) {
 
-  # 1. Load Evironment Info: ----
+  # 1. Load Environment Info: ----
   
   load_env_info(reticulate_environment)
   
@@ -268,6 +272,7 @@ forecast_time_series <- function(input_data,
                                                num_cores,
                                                run_deep_learning,
                                                frequency_number,
+                                               recipes_to_run, 
                                                models_to_run,
                                                models_not_to_run,
                                                run_ensemble_models,
@@ -280,11 +285,11 @@ forecast_time_series <- function(input_data,
                                                pca)
   
   # * Run Forecast ----
-  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models) {
     
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
     
-  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models == TRUE & run_local_models == FALSE) {
+  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models == FALSE) {
     
     combo_list <- c('All-Data')
     
