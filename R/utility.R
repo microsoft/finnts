@@ -1,3 +1,13 @@
+#' @importFrom magrittr %>%
+#' @export
+magrittr::`%>%`
+
+#' @importFrom methods formalArgs
+NULL
+
+#' @importFrom stats sd
+NULL
+
 # * cbind.fill custom function ----
 #create function to cbind dataframes that contain different amounts of rows
 #https://github.com/cvarrichio/rowr/blob/master/R/rowr.R

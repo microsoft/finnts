@@ -11,18 +11,18 @@ forecast_time_series(
   date_type,
   forecast_horizon,
   external_regressors = NULL,
-  run_name = "time_series_forecast",
+  run_name = "finnts_forecast",
   hist_start_date = NULL,
   hist_end_date = NULL,
   combo_cleanup_date = NULL,
   fiscal_year_start = 1,
   clean_missing_values = TRUE,
   clean_outliers = FALSE,
-  back_test_scenarios = "auto",
-  back_test_spacing = "auto",
+  back_test_scenarios = NULL,
+  back_test_spacing = NULL,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
-  parallel_processing = "none",
+  parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
   azure_batch_credentials = NULL,
@@ -83,10 +83,10 @@ values.}
 \item{clean_outliers}{Should outliers be cleaned and inputted with values more in line with historical data?}
 
 \item{back_test_scenarios}{Number of specific back test folds to run when determining the best model.
-Default of 'auto' will automatically choose the number of back tests to run based on historical data size,
+Default of NULL will automatically choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80\% of the data when training a model.}
 
-\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of NULL moves back 1
 period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data.}
 
 \item{modeling_approach}{How Finn should approach your data. Current default and only option is 'accuracy'. In the
@@ -96,7 +96,7 @@ future this could evolve to other areas like optimizing for interpretability ove
 time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 a more traditional hierarchical time series to forecast, both based on the hts package.}
 
-\item{parallel_processing}{Default of 'none' runs no parallel processing and forecasts each individual time series
+\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
 runs time series in parallel on a remote compute cluster in Azure Batch.}
 
@@ -124,7 +124,7 @@ these values based on the date_type.}
 based on date_type.}
 
 \item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
-chooses these values based on date_type.}
+chooses these values based on date type.}
 
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
@@ -132,7 +132,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
 
 \item{pca}{Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
-  
+
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
 that has python environment already installed.}

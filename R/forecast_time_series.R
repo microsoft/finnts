@@ -24,16 +24,16 @@
 #'   values. 
 #' @param clean_outliers Should outliers be cleaned and inputted with values more in line with historical data?
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
-#'   Default of 'auto' will automatically choose the number of back tests to run based on historical data size, 
+#'   Default of NULL will automatically choose the number of back tests to run based on historical data size, 
 #'   which tries to always use a minimum of 80% of the data when training a model. 
-#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of NULL moves back 1
 #'   period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data. 
 #' @param modeling_approach How Finn should approach your data. Current default and only option is 'accuracy'. In the 
 #'   future this could evolve to other areas like optimizing for interpretability over accuracy. 
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual 
 #'   time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates 
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.   
-#' @param parallel_processing Default of 'none' runs no parallel processing and forecasts each individual time series
+#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
 #'   runs time series in parallel on a remote compute cluster in Azure Batch. 
 #' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
@@ -95,18 +95,18 @@ forecast_time_series <- function(input_data,
   date_type,
   forecast_horizon,
   external_regressors = NULL,
-  run_name = "time_series_forecast",
+  run_name = "finnts_forecast",
   hist_start_date = NULL,
   hist_end_date = NULL,
   combo_cleanup_date = NULL,
   fiscal_year_start = 1,
   clean_missing_values = TRUE, 
   clean_outliers = FALSE, 
-  back_test_scenarios = "auto",
-  back_test_spacing = "auto",
+  back_test_scenarios = NULL,
+  back_test_spacing = NULL,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
-  parallel_processing = 'none',
+  parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
   azure_batch_credentials = NULL, 
@@ -299,14 +299,14 @@ forecast_time_series <- function(input_data,
   }
   
   # no parallel processing
-  if(parallel_processing == "none") {
+  if(is.null(parallel_processing)) {
     
     fcst <- lapply(combo_list, forecast_models_fn)
     fcst <- do.call(rbind, fcst)
   }
   
   # parallel run on local machine
-  if(parallel_processing=="local_machine") {
+  if(sum(parallel_processing=="local_machine") == 1) {
     
    fcst <- get_fcast_parallel(combo_list,
                               forecast_models_fn, 
@@ -315,7 +315,7 @@ forecast_time_series <- function(input_data,
   }
   
   # parallel run within azure batch
-  if(parallel_processing=="azure_batch") {
+  if(sum(parallel_processing=="azure_batch") == 1) {
 
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
@@ -356,14 +356,14 @@ forecast_time_series <- function(input_data,
       
       
       #parallel processing
-      if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
+      if(run_model_parallel==TRUE & sum(parallel_processing == "local_machine") == 0) {
         
         cores <- get_cores(num_cores)
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
         #point to the correct libraries within Azure Batch
-        if(parallel_processing=="azure_batch") {
+        if(sum(parallel_processing=="azure_batch") == 1) {
           clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
         }
         
@@ -385,7 +385,7 @@ forecast_time_series <- function(input_data,
                                               }
         
         #stop parallel processing
-        if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
+        if(run_model_parallel==TRUE & sum(parallel_processing=="local_machine") == 0) {parallel::stopCluster(cl)}
         
       } else {
         
@@ -408,14 +408,14 @@ forecast_time_series <- function(input_data,
     }
     
     # no parallel processing
-    if(parallel_processing == "none") {
+    if(is.null(parallel_processing)) {
       
       combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
       combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
     }
     
     # parallel run on local machine
-    if(parallel_processing=="local_machine") {
+    if(sum(parallel_processing=="local_machine") == 1) {
       
       cores <- get_cores(num_cores)
       
@@ -431,7 +431,7 @@ forecast_time_series <- function(input_data,
     }
     
     # parallel run within azure batch
-    if(parallel_processing=="azure_batch") {
+    if(sum(parallel_processing=="azure_batch") == 1) {
       
       
       combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
@@ -444,7 +444,7 @@ forecast_time_series <- function(input_data,
       
     }
     
-    if(parallel_processing == 'azure_batch' & azure_batch_cluster_delete == TRUE) {
+    if(sum(parallel_processing == 'azure_batch') == 1 & azure_batch_cluster_delete == TRUE) {
       stopCluster(cluster)
     }
     

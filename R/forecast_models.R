@@ -259,7 +259,7 @@ construct_forecast_models <- function(full_data_tbl,
     cli::cli_h2("Running Combo: {combo_value}")
     
     # Copy functions into global environment within azure batch
-    if(parallel_processing == "azure_batch") {
+    if(sum(parallel_processing == "azure_batch") == 1) {
       global_env <- .GlobalEnv
       export_env <- global_env$azbatchenv$exportenv
       
@@ -332,7 +332,7 @@ construct_forecast_models <- function(full_data_tbl,
     combined_models_recipe_2 <- modeltime::modeltime_table()
     
     # parallel processing
-    if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
+    if(run_model_parallel==TRUE & sum(parallel_processing!="local_machine") == 1) {
       parallel_args <- init_parallel_within(parallel_processing, num_cores)
     }
     
@@ -746,7 +746,7 @@ construct_forecast_models <- function(full_data_tbl,
     }
     
     #stop parallel processing
-    if(run_model_parallel==TRUE & parallel_processing!="local_machine"){
+    if(run_model_parallel==TRUE & sum(parallel_processing == "local_machine") == 0){
       exit_parallel_within(parallel_args)
     }
     

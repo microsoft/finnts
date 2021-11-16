@@ -40,7 +40,9 @@ Imports:
     hts,
     kernlab,
     lightgbm,
+    magrittr,
     matrixcalc,
+    methods, 
     modeltime.ensemble,
     modeltime.gluonts,
     modeltime.resample,
@@ -68,6 +70,7 @@ Remotes:
 Suggests: 
     rmarkdown,
     knitr,
+    reactable,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 

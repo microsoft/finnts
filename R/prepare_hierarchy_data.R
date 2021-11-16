@@ -116,7 +116,7 @@ get_data_tbl_final <- function(data_tbl,
       
       df %>%
         dplyr::select(-Date) %>%
-        ts(frequency = frequency_number)%>% 
+        stats::ts(frequency = frequency_number)%>% 
         get_hts(hts_list)  %>%
         hts::allts() %>%
         data.frame() %>%
@@ -129,7 +129,7 @@ get_data_tbl_final <- function(data_tbl,
     } else if(ret_obj == "hts_gts") {
       data_ts <- df %>%
         dplyr::select(-Date) %>%
-        ts(frequency = frequency_number)
+        stats::ts(frequency = frequency_number)
       
       hts_gts <- data_ts %>%
         get_hts(hts_list)

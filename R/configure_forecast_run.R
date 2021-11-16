@@ -164,7 +164,7 @@ get_date_regex <- function(date_type){
 
 #' Gets the back testing spacing
 #' 
-#' Checks if back_test_spacing is set to auto and gets the right one
+#' Checks if back_test_spacing is set to NULL and gets the right one
 #' 
 #' 
 #' @param back_test_spacing back_test_spacing override
@@ -175,7 +175,7 @@ get_date_regex <- function(date_type){
 get_back_test_spacing <- function(back_test_spacing,
                                        date_type){
   
-  if(back_test_spacing != "auto") {
+  if(!is.null(back_test_spacing)) {
     return(back_test_spacing)
   }
   
@@ -218,7 +218,7 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
   
   hist_periods_80 <- floor(historical_periods*0.7) #used with time series CV in multivariate models
   
-  if(back_test_scenarios == "auto") {
+  if(is.null(back_test_scenarios)) {
     
     historical_periods_20 <- floor(historical_periods*0.2)
     

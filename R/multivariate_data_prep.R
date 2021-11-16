@@ -58,7 +58,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       df_lag_final <- df
       
       #apply lags
-      for(column in colnames(df %>% dplyr::select(contains(c("Target", external_regressors))))) {
+      for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))))) {
 
         df_lag <- df %>%
           timetk::tk_augment_lags(column, .lags = lag_periods) %>%
@@ -115,7 +115,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
     }) %>%
     dplyr::bind_rows() %>%
     timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% #add fourier series
-    tidyr::fill(contains("_roll"), .direction = "down")
+    tidyr::fill(tidyselect::contains("_roll"), .direction = "down")
   
   #drop xregs that do not contain future values
   data_period <- data_period %>%
@@ -200,7 +200,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
         #apply lags
         df_lag_final <- df
         
-        for(column in colnames(df %>% dplyr::select(contains(c("Target", external_regressors))))) {
+        for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))))) {
           
           df_lag <- df %>%
             timetk::tk_augment_lags(column, .lags = unique(c(lag_periods_r2, lag_periods))+(period-1)) %>%
@@ -250,7 +250,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
           is.na(df_roll) <- sapply(df_roll, is.nan)
           
           df_roll <- df_roll %>%
-            tidyr::fill(contains("_roll"), .direction = "down")
+            tidyr::fill(tidyselect::contains("_roll"), .direction = "down")
           
           df_window_final <- cbind(df_window_final, df_roll %>% dplyr::select(c(stringr::str_c(column, "_roll", rolling_window_periods, "_Avg"), stringr::str_c(column, "_roll", rolling_window_periods, "_Sum"), stringr::str_c(column, "_roll", rolling_window_periods, "_StdDev"))))
         }
