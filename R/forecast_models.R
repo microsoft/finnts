@@ -332,7 +332,7 @@ construct_forecast_models <- function(full_data_tbl,
     combined_models_recipe_2 <- modeltime::modeltime_table()
     
     # parallel processing
-    if(run_model_parallel==TRUE & sum(parallel_processing!="local_machine") == 1) {
+    if(run_model_parallel == TRUE & sum(parallel_processing == "local_machine") == 0) {
       parallel_args <- init_parallel_within(parallel_processing, num_cores)
     }
     
@@ -390,7 +390,7 @@ construct_forecast_models <- function(full_data_tbl,
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
                                                                        location = "top") %>%
-              update_model_description(1, model_name),
+              modeltime::update_model_description(1, model_name),
             silent = TRUE)
         
       }else{
@@ -422,7 +422,7 @@ construct_forecast_models <- function(full_data_tbl,
             try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                            mdl_called,
                                                                            location = "top") %>%
-                  update_model_description(1, add_name),
+                  modeltime::update_model_description(1, add_name),
                 silent = TRUE)
 
         }
@@ -446,7 +446,7 @@ construct_forecast_models <- function(full_data_tbl,
           try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
                                                                          mdl_called,
                                                                          location = "top") %>%
-                update_model_description(1, add_name),
+                modeltime::update_model_description(1, add_name),
               silent = TRUE)
         }
         
@@ -651,7 +651,7 @@ construct_forecast_models <- function(full_data_tbl,
         try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models,
                                                                        mdl_ensemble,
                                                                        location = "top") %>%
-              update_model_description(1, add_name),
+              modeltime::update_model_description(1, add_name),
             silent = TRUE)
       }
       

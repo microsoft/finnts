@@ -1,11 +1,28 @@
+# define global variables to prevent notes in R CMD Check
+utils::globalVariables(c(".id", ".key", ".model_desc", ".pred", ".resample_id", "All", "Best_Model", "Combo",
+                  "Combo_Test_Date", "Combo_Total", "Count", "Date", "Date_Adj", "Date_Adj_half",
+                  "Date_Adj_index.num", "Date_Adj_quarter", "Date_Adj_year", "Date_Day", "FCST",
+                  "Horizon", "MAPE", "Model", "Number", "Number_Char", "Origin", "Residual",
+                  "Residual_Std_Dev", "Rolling_MAPE", "Slice", "Sum", "Target", "Type", "Variable", 
+                  "cluster", "frequency", "gluon_ts_frequency", "hi.80", "hi.95", "i", "lo.80", "lo.95",
+                  "weighted_MAPE", "where", "as2"))
+
 #' @importFrom magrittr %>%
-#' @export
-magrittr::`%>%`
+NULL
 
 #' @importFrom methods formalArgs
 NULL
 
 #' @importFrom stats sd
+NULL
+
+#' @importFrom foreach %do% %dopar%
+NULL
+
+#' @importFrom lubridate %m+%
+NULL
+
+#' @import modeltime
 NULL
 
 # * cbind.fill custom function ----

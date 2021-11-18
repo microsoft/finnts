@@ -28,7 +28,7 @@ init_parallel_within <-function(type, num_cores){
   doParallel::registerDoParallel(cl)
   
   #point to the correct libraries within Azure Batch
-  if(type == "azure_batch") {
+  if(sum(type == "azure_batch") == 1) {
     parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages")) 
   }
   
@@ -72,7 +72,7 @@ get_fcast_parallel<- function(combo_list,
   
   cli::cli_alert_info("Running across {cores} cores")
   
-  fcst <- foreach(i = combo_list, 
+  fcst <- foreach::foreach(i = combo_list, 
                   .combine = 'rbind',
                   .packages = get_export_packages(),
                   .export = get_transfer_functions()

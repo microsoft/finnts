@@ -14,7 +14,7 @@ forecast_horizon <- 3
 target_variable <- "value"
 combo_variables <- c("id")
 models_to_run <- c("arima", "ets")
-inp_data <- m750 %>% dplyr::rename(Date = date) %>% dplyr::mutate(id = as.character(id))
+inp_data <- modeltime::m750 %>% dplyr::rename(Date = date) %>% dplyr::mutate(id = as.character(id))
 dt_type <- "month"
 
 finn_forecast <- forecast_time_series(

@@ -5,3 +5,8 @@
 ^docs$
 ^pkgdown$
 ^\.github$
+CODE_OF_CONDUCT.md
+SECURITY.md
+SUPPORT.md
+cran-comments.md
+NEWS.md

@@ -1,11 +1,11 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
            role = c("aut", "cre"),
-           email = "mitokic@microsoft.com", 
+           email = "mftokic@gmail.com", 
            comment = c(ORCID = "0000-0002-7630-7055")), 
       person(given = "Aadharsh",
            family = "Kannan",
@@ -34,15 +34,17 @@ Imports:
     doParallel,
     dplyr,
     earth,
+    foreach,
     generics,
     glmnet,
     gtools,
     hts,
     kernlab,
     lightgbm,
+    lubridate,
     magrittr,
     matrixcalc,
-    methods, 
+    methods,
     modeltime.ensemble,
     modeltime.gluonts,
     modeltime.resample,
@@ -74,8 +76,6 @@ Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 
-    R (>= 3.6.0),
-    lubridate,
-    foreach,
+    R (>= 3.6.0), 
     modeltime
 VignetteBuilder: knitr
