@@ -313,16 +313,20 @@ get_full_data_tbl <- function(data_tbl,
                   Target, 
                   external_regressors) %>%
     dplyr::group_by(Combo) %>%
-    timetk::pad_by_time(Date, 
-                        .by = date_type, 
-                        .pad_value = pad_value, 
-                        .end_date = hist_end_date) %>% #fill in missing values in between existing data points
-    timetk::pad_by_time(Date, 
-                        .by = date_type, 
-                        .pad_value = 0, 
-                        .start_date = hist_start_date, 
-                        .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
-    dplyr::ungroup()%>%
+    dplyr::group_split() %>%
+    purrr::map(.f = function(df) { # latest update to timetk as of 11.18.21 doesn't allow for non NA pad value within dplyr groups. Filed bug and will update once fixed
+      df %>%
+        timetk::pad_by_time(Date, 
+                            .by = date_type, 
+                            .pad_value = pad_value, 
+                            .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+        timetk::pad_by_time(Date, 
+                            .by = date_type, 
+                            .pad_value = 0, 
+                            .start_date = hist_start_date, 
+                            .end_date = hist_end_date) #fill in missing values at beginning of time series with zero
+    }) %>%
+    dplyr::bind_rows() %>%
     get_log_transformation(target_log_transformation) %>%
     dplyr::group_by(Combo) %>%
     timetk::future_frame(Date, 
