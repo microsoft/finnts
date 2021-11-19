@@ -657,6 +657,7 @@ forecast_time_series <- function(input_data,
                          dplyr::select(Combo, Date, Target)) %>%
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST),
                     Target = ifelse(is.na(Target) | is.nan(Target), 0, Target)) %>%
+      dplyr::mutate(Target = ifelse(Target == 0, 0.1, Target)) %>% 
       dplyr::mutate(MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::group_by(Combo, .id, Model) %>%
       dplyr::mutate(Horizon = dplyr::row_number()) %>%
@@ -705,6 +706,7 @@ forecast_time_series <- function(input_data,
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST)) %>%
       dplyr::left_join(accuracy_final) %>%
       dplyr::mutate(Best_Model = ifelse(is.na(Best_Model), "No", "Yes"), 
+                    Target = ifelse(Target == 0, 0.1, Target), 
                     MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::select(Combo, .id, Date, Model, Horizon, FCST, Target, MAPE, Best_Model) %>%
       tidyr::separate(Combo, into = combo_variables, sep = '--', remove = FALSE) %>%
