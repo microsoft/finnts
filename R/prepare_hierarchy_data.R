@@ -315,7 +315,11 @@ get_full_data_tbl <- function(data_tbl,
     dplyr::group_by(Combo) %>%
     dplyr::group_split() %>%
     purrr::map(.f = function(df) { # latest update to timetk as of 11.18.21 doesn't allow for non NA pad value within dplyr groups. Filed bug and will update once fixed
-      df %>%
+      
+      combo <- unique(df$Combo)
+      
+      pad_data <- df %>%
+        dplyr::select(-Combo) %>%
         timetk::pad_by_time(Date, 
                             .by = date_type, 
                             .pad_value = pad_value, 
@@ -324,7 +328,11 @@ get_full_data_tbl <- function(data_tbl,
                             .by = date_type, 
                             .pad_value = 0, 
                             .start_date = hist_start_date, 
-                            .end_date = hist_end_date) #fill in missing values at beginning of time series with zero
+                            .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+        dplyr::mutate(Combo = combo) %>%
+        dplyr::select(Combo, Date, Target, external_regressors)
+      
+      return(pad_data)
     }) %>%
     dplyr::bind_rows() %>%
     get_log_transformation(target_log_transformation) %>%

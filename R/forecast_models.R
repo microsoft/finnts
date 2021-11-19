@@ -274,7 +274,7 @@ construct_forecast_models <- function(full_data_tbl,
     run_data_full_tbl <- full_data_tbl %>%
       combo_specific_filter(combo_value,
                             combo_variables)
-    
+
     cli::cli_h3("Initial Feature Engineering")
     
     # recipe 1: standard feature engineering
