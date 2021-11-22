@@ -45,7 +45,7 @@
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_delete If TRUE, deletes the Azure Batch compute cluster after Finn finished running. 
 #' @param target_log_transformation If TRUE, log transform target variable before training models. 
-#' @param negative_fcst If TRUE, allow forecasts to dip below zero. 
+#' @param negative_forecast If TRUE, allow forecasts to dip below zero. 
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
 #'   these values based on the date_type. 
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
@@ -114,7 +114,7 @@ forecast_time_series <- function(input_data,
   azure_batch_cluster_config = NULL, 
   azure_batch_cluster_delete = FALSE, 
   target_log_transformation = FALSE,
-  negative_fcst = FALSE,
+  negative_forecast = FALSE,
   fourier_periods = NULL, 
   lag_periods = NULL, 
   rolling_window_periods = NULL,
@@ -336,7 +336,7 @@ forecast_time_series <- function(input_data,
 
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
-    get_forecast_negative_adjusted(negative_fcst)
+    get_forecast_negative_adjusted(negative_forecast)
   
   # * Create Average Ensembles ----
   
@@ -628,11 +628,11 @@ forecast_time_series <- function(input_data,
           
           if(forecast_approach == "standard_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
-                                                    keep ="bottom", nonnegative = !negative_fcst))
+                                                    keep ="bottom", nonnegative = !negative_forecast))
             colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           } else if(forecast_approach == "grouped_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
-                                                    keep ="bottom", nonnegative = !negative_fcst))
+                                                    keep ="bottom", nonnegative = !negative_forecast))
             colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           }
           

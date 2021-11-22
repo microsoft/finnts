@@ -29,7 +29,7 @@ forecast_time_series(
   azure_batch_cluster_config = NULL,
   azure_batch_cluster_delete = FALSE,
   target_log_transformation = FALSE,
-  negative_fcst = FALSE,
+  negative_forecast = FALSE,
   fourier_periods = NULL,
   lag_periods = NULL,
   rolling_window_periods = NULL,
@@ -115,7 +115,7 @@ than number of cores on machine minus 1.}
 
 \item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 
-\item{negative_fcst}{If TRUE, allow forecasts to dip below zero.}
+\item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
 \item{fourier_periods}{List of values to use in creating fourier series as features. Default of NULL automatically chooses
 these values based on the date_type.}
