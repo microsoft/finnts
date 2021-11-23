@@ -137,7 +137,9 @@ validate_forecasting_inputs<-function(input_data,
   }
   
   #back test scenarios formatting
-  if((!is.numeric(back_test_scenarios) & !is.null(back_test_scenarios)) | sum(back_test_scenarios < 1) == 1) {
+  if(!is.numeric(back_test_scenarios) & !is.null(back_test_scenarios)) {
+    stop("back test scenarios input value must be either a number greater than 0 or set to NULL")
+  } else if(back_test_scenarios < 1) {
     stop("back test scenarios input value must be either a number greater than 0 or set to NULL")
   }
   
