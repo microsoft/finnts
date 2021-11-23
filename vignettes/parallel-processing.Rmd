@@ -25,9 +25,9 @@ If "parallel_processing" is set to NULL and "run_model_parallel" is set to TRUE 
 
 To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set "parallel_processing" to "azure_batch" and set "run_model_parallel" to TRUE within the "forecast_time_series" function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine. 
 
-[Azure Batch](https://azure.microsoft.com/en-us/services/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [github site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
+[Azure Batch](https://azure.microsoft.com/en-us/services/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [GitHub site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
 
-Finn makes it easy to connect to Azure Batch by providing the "azure_batch_credentials" and "azure_batch_cluster_config" inputs within the "forecast_time_series" function. This allows you to easily input the Azure account/compute information needed to either build and deploy a new compute cluster or connect to an existing one. Please refer to their github to learn more about the specifics. 
+Finn makes it easy to connect to Azure Batch by providing the "azure_batch_credentials" and "azure_batch_cluster_config" inputs within the "forecast_time_series" function. This allows you to easily input the Azure account/compute information needed to either build and deploy a new compute cluster or connect to an existing one. Please refer to their GitHub to learn more about the specifics. 
 
 At a high level, all you have to do is pass something similar to what you see below, while making sure to input your specific azure account information.
 
@@ -80,6 +80,6 @@ azure_batch_cluster_config <- list(
 
 Passing these values into "forecast_time_series" will ensure that finnts correctly runs within Azure Batch. The best part of Azure Batch is how it can easily scare to more compute as needed. In the above example, the lowest amount of VM's running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!
 
-To keep your Azure resource keys secure without hardcoding them into a R script, check out the [Azure Key Vault](https://github.com/Azure/AzureKeyVault) package to safely retrieve and leverage keys/secrets when using Finn. 
+To keep your Azure resource keys secure without hard coding them into a R script, check out the [Azure Key Vault](https://github.com/Azure/AzureKeyVault) package to safely retrieve and leverage keys/secrets when using Finn. 
 
 

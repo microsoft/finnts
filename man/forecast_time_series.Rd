@@ -76,7 +76,7 @@ that specified date. Default of NULL is to not remove any time series and attemp
 \item{fiscal_year_start}{Month number of start of fiscal year of input data, aids in building out date features.
 Formatted as a numeric value. Default of 1 assumes fiscal year starts in January.}
 
-\item{clean_missing_values}{If TRUE, cleans missing values. Only inputes values for missing data within an
+\item{clean_missing_values}{If TRUE, cleans missing values. Only impute values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 values.}
 

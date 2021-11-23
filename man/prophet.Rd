@@ -13,7 +13,7 @@ prophet(train_data, horizon, parallel, tscv_initial, back_test_spacing)
 
 \item{parallel}{Parallel}
 
-\item{tscv_initial}{TS CV Initalization}
+\item{tscv_initial}{TS CV Initialization}
 
 \item{back_test_spacing}{Back Test Spacing}
 }

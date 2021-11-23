@@ -75,7 +75,7 @@ reactable::reactable(
 
 ### Ensemble Models
 
-Ensemble models are trained on predictions made by individual models. For example, a "glmmet-ensemble" model takes forecasts made by each individual model and feeds them as training data into a glmnet model. They also contain features related to date and forecasting horizon.
+Ensemble models are trained on predictions made by individual models. For example, a "glmnet-ensemble" model takes forecasts made by each individual model and feeds them as training data into a glmnet model. They also contain features related to date and forecasting horizon.
 
 ### Deep Learning Models
 
@@ -83,4 +83,4 @@ The package contains multiple deep learning models that initially come from a py
 
 ## Leveraging the Tidymodels Framework
 
-Most of the models within the package are built on a fantastic time series library called [modeltime](https://business-science.github.io/modeltime/), which was built on top [tidymodels](https://www.tidymodels.org/). Tidymodels is a fantastic series of packages that help in feature engineering (recipes), hyperparameter tuning (tune), model training (parsnip), and backtesting (resample). Big shout out to the modeltime and tidymodels teams for being the shoulders this package stands on!
+Most of the models within the package are built on a fantastic time series library called [modeltime](https://business-science.github.io/modeltime/), which was built on top [tidymodels](https://www.tidymodels.org/). Tidymodels is a fantastic series of packages that help in feature engineering (recipes), hyperparameter tuning (tune), model training (parsnip), and back testing (resample). Big shout out to the modeltime and tidymodels teams for being the shoulders this package stands on!

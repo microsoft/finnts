@@ -18,7 +18,7 @@ Automated feature engineering is a cornerstone of the package. Below are some of
 
 ## Date Features
 
-The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the timestamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed. 
+The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the time stamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed. 
 
 Fourier series are also added using the [tk_augment_fourier](https://business-science.github.io/timetk/reference/tk_augment_fourier.html) function from timetk. 
 
