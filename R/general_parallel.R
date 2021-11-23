@@ -1,6 +1,7 @@
 #' Get number of cores to use when registering parallel back end
 #' 
 #' @param num_cores number of cores for parallel processing
+#' 
 #' @noRd 
 get_cores <-function(num_cores){
 
@@ -28,8 +29,10 @@ init_parallel_within <-function(type, num_cores){
   doParallel::registerDoParallel(cl)
   
   #point to the correct libraries within Azure Batch
-  if(sum(type == "azure_batch") == 1) {
-    parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages")) 
+  if(!is.null(type)) {
+    if(type == "azure_batch") {
+      parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))   
+    }
   }
   
   cli::cli_alert_info("Running across {cores} cores")

@@ -196,20 +196,31 @@ forecast_time_series <- function(input_data,
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  # * Ensemble Models Adjustment ----
+  # * NULL Argument Adjustment ----
+  
+  # run ensemble models
   if(is.null(run_ensemble_models) & date_type %in% c("quarter", "month")) {
     run_ensemble_models <- TRUE
-  } else if(is.null(run_ensemble_models) & date_type %in% c("week", "day")) {
+  } else if(is.null(run_ensemble_models) & date_type %in% c("year", "week", "day")) {
     run_ensemble_models <- FALSE
-  } else if(sum(run_ensemble_models == TRUE) == 1 & date_type %in% c("quarter", "month", "week", "day")) {
+  } else if(run_ensemble_models == TRUE & date_type %in% c("quarter", "month", "week", "day")) {
     run_ensemble_models <- TRUE
-  } else if(sum(run_ensemble_models == TRUE) == 1 & date_type =="year") {
-    run_ensemble_models = FALSE
+  } else if(run_ensemble_models == TRUE & date_type == "year") {
+    run_ensemble_models <- FALSE
     warning("ensemble models have been turned off for yearly forecasts")
   } else {
-    run_ensemble_models = FALSE
+    run_ensemble_models <- FALSE
   }
-
+  
+  # run global models
+  if(is.null(run_global_models) & date_type %in% c("month", "quarter", "year")) {
+    run_global_models <- TRUE
+  } else if(is.null(run_global_models) & date_type %in% c("day", "week")) {
+    run_global_models <- FALSE
+  } else {
+    # keep existing value of run_global_models
+  }
+  
   # 4. Prep Data ----
   
   cli::cli_h1("Prepping Data")
@@ -294,11 +305,11 @@ forecast_time_series <- function(input_data,
                                                pca)
   
   # * Run Forecast ----
-  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
     
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
     
-  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models == FALSE) {
+  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models == FALSE) {
     
     combo_list <- c('All-Data')
     
@@ -307,31 +318,29 @@ forecast_time_series <- function(input_data,
     combo_list <- unique(full_data_tbl$Combo)
   }
   
-  # no parallel processing
-  if(is.null(parallel_processing)) {
+  # call run function
+  if(is.null(parallel_processing)) { # no parallel processing
     
     fcst <- lapply(combo_list, forecast_models_fn)
     fcst <- do.call(rbind, fcst)
-  }
-  
-  # parallel run on local machine
-  if(sum(parallel_processing=="local_machine") == 1) {
     
-   fcst <- get_fcast_parallel(combo_list,
-                              forecast_models_fn, 
-                              num_cores)
+  } else if(parallel_processing=="local_machine") { # parallel run on local machine
     
-  }
-  
-  # parallel run within azure batch
-  if(sum(parallel_processing=="azure_batch") == 1) {
-
+    fcst <- get_fcast_parallel(combo_list,
+                               forecast_models_fn, 
+                               num_cores)
+    
+  } else if(parallel_processing=="azure_batch") { # parallel run within azure batch
+    
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
                                      azure_batch_credentials,
                                      azure_batch_cluster_config,
                                      run_name)
+  } else {
     
+    stop("error during forecast run function call")
+  
   }
 
   # Adjust for NaNs and Negative Forecasts
@@ -364,66 +373,66 @@ forecast_time_series <- function(input_data,
       model_combinations <- model_combinations$All
       
       #parallel processing
-      if(run_model_parallel==TRUE & sum(parallel_processing == "local_machine") == 0) {
+      if(run_model_parallel==TRUE) {
 
         cores <- get_cores(num_cores)
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
         #point to the correct libraries within Azure Batch
-        if(sum(parallel_processing=="azure_batch") == 1) {
-          parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
+        if(!is.null(parallel_processing)) {
+          if(parallel_processing == "azure_batch") {
+            parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))   
+          }
         }
-        
-        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind', 
-                                              .packages = c('rlist', 'tidyverse', 'lubridate', 
-                                                            "doParallel", "parallel", "gtools"), 
-                                              .export = c("fcst_prep", "get_cores")) %dopar% {
-                                                
+
+        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind',
+                                              .packages = c('rlist', 'tidyverse', 'lubridate',
+                                                            "doParallel", "parallel", "gtools"),
+                                              .export = c("fcst_prep")) %dopar% {
+
                                                 fcst_combination_temp <- fcst_prep %>%
                                                   dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
                                                   dplyr::group_by(.id, Combo, Date, Horizon) %>%
-                                                  dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+                                                  dplyr::summarise(FCST = mean(FCST, na.rm=TRUE),
                                                                    Target = mean(Target, nam.rm=FALSE)) %>%
                                                   dplyr::ungroup() %>%
                                                   dplyr::mutate(Model = i)
-                                                
+
                                                 return(fcst_combination_temp)
-                                                
+
                                               }
-        
+
         #stop parallel processing
-        if(run_model_parallel==TRUE & sum(parallel_processing=="local_machine") == 0) {parallel::stopCluster(cl)}
-        
+        parallel::stopCluster(cl)
+
       } else {
-        
+
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind') %do% {
-          
+
           fcst_combination_temp <- fcst_prep %>%
             dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
             dplyr::group_by(.id, Combo, Date, Horizon) %>%
-            dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+            dplyr::summarise(FCST = mean(FCST, na.rm=TRUE),
                              Target = mean(Target, nam.rm=FALSE)) %>%
             dplyr::ungroup() %>%
             dplyr::mutate(Model = i)
-          
+
           return(fcst_combination_temp)
-          
+
         }
       }
       
       return(combinations_tbl)
     }
     
-    # no parallel processing
-    if(is.null(parallel_processing)) {
+    # kick off model average run
+    if(is.null(parallel_processing)) { # no parallel processing
       
       combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
       combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
-    }
-    
-    # parallel run on local machine
-    if(sum(parallel_processing=="local_machine") == 1) {
+      
+    } else if(parallel_processing == "local_machine") { # run on local machine
       
       cores <- get_cores(num_cores)
       
@@ -431,33 +440,31 @@ forecast_time_series <- function(input_data,
       doParallel::registerDoParallel(cl)
       
       combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = get_export_packages(), 
-                                        .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
+                                                 .packages = get_export_packages(), 
+                                                 .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
       
       parallel::stopCluster(cl)
       
-    }
-    
-    # parallel run within azure batch
-    if(sum(parallel_processing=="azure_batch") == 1) {
-      
+    } else if(parallel_processing == "azure_batch") { # run on azure batch
       
       combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = get_export_packages(), 
-                                        .export = c("fcst_prep", "get_cores"),
-                                        .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
-                                                              job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
-                                                                                  tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
-                                        .errorhandling = "remove") %dopar% {create_model_averages(i)}
-      
-    }
-    
-    if(sum(parallel_processing == 'azure_batch') == 1 & azure_batch_cluster_delete == TRUE) {
-      parallel::stopCluster(cluster)
+                                                 .packages = get_export_packages(), 
+                                                 .export = c("fcst_prep", "get_cores"),
+                                                 .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                                       job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                                                           tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
     }
     
     # combine with individual model data
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
+  }
+  
+  # delete azure batch cluster
+  if(!is.null(parallel_processing)) {
+    if(parallel_processing == "azure_btach" & azure_batch_cluster_delete == TRUE) {
+      parallel::stopCluster(cluster)
+    }
   }
   
   # 6. Final Finn Outputs ----

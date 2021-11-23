@@ -181,14 +181,27 @@ validate_forecasting_inputs<-function(input_data,
     
   }
   
-  #parallel processing within data combos and each model
-  if(sum(parallel_processing == "local_machine") == 1 & run_model_parallel) {
-    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
-  }
+  # parallel processing formatting
+  if(is.null(parallel_processing)) {
+    
+    # no further checks needed
   
-  #parallel processing formatting
-  if(!is.null(parallel_processing) & sum(parallel_processing %in% c("local_machine", "azure_batch")) == 0) {
+  } else if(parallel_processing %in% c("local_machine", "azure_batch") == FALSE) {
+    
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch'")
+    
+  } else if(parallel_processing == "local_machine" & run_model_parallel) {
+    
+    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
+    
+  } else if(parallel_processing == "azure_batch" & (is.null(azure_batch_credentials) | is.null(azure_batch_cluster_config))) {
+    
+    stop("cannot run parallel_processing on azure_batch without batch credentials and cluster configuration")
+    
+  } else {
+    
+    # no further checks needed
+    
   }
   
   #number of cores formatting
@@ -196,15 +209,6 @@ validate_forecasting_inputs<-function(input_data,
     stop("num_cores should be NULL or a numeric value")
   }
   
-  #check if azure credentials are given in case of parallel_processing = azure_batch
-  if(sum(parallel_processing == "azure_batch") == 1 & is.null(azure_batch_credentials)){
-    stop("cannot run parallel_processing on azure_batch without batch credentials")
-  }
-  
-  #check if azure batch cluster info is given in case of parallel_processing = azure_batch
-  if(sum(parallel_processing == "azure_batch") == 1 & is.null(azure_batch_cluster_config)){
-    stop("cannot run parallel_processing on azure_batch without cluster config")
-  }
   
   #max model average formatting
   if(!is.numeric(max_model_average)) {
