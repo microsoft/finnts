@@ -19,7 +19,7 @@
 #'   that specified date. Default of NULL is to not remove any time series and attempt to forecast all of them. 
 #' @param fiscal_year_start Month number of start of fiscal year of input data, aids in building out date features. 
 #'   Formatted as a numeric value. Default of 1 assumes fiscal year starts in January. 
-#' @param clean_missing_values If TRUE, cleans missing values. Only inputes values for missing data within an 
+#' @param clean_missing_values If TRUE, cleans missing values. Only impute values for missing data within an 
 #'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said 
 #'   values. 
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data

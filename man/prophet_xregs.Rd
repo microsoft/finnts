@@ -22,7 +22,7 @@ prophet_xregs(
 
 \item{parallel}{Parallel}
 
-\item{tscv_initial}{TS CV Initalization}
+\item{tscv_initial}{TS CV Initialization}
 
 \item{date_rm_regex}{Date RM Regex}
 

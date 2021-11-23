@@ -1,10 +1,10 @@
 ## R CMD check results
 There were no ERRORs or WARNINGs. 
 
-There was 1 NOTE:
+There was 2 NOTES:
 
 * checking dependencies in R code ... NOTE
-  Imports includes 38 non-default packages.
+  Imports includes 36 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
   use conditionally.
@@ -13,7 +13,12 @@ There was 1 NOTE:
   that it consolidates a lot of different models into one package to run them automatically. 
   So having many required packages is important to the package. 
   
-  Also this is my first cran submission. 
+* Suggests or Enhances not in mainstream repositories:
+  doAzureParallel, rAzureBatch
+  
+  These packages are only available via GitHub and are integral to the package working at scale in a cloud environment. By default they are optional and listed under Suggests. 
+
+* Also this is my first cran submission. 
 
 ## Downstream dependencies
 There are currently no downstream dependencies for this package

@@ -213,7 +213,7 @@ get_fit_wkflw_nocombo <- function(train_data,
 #' Get resample Time Series CV
 #' 
 #' @param train_data Training Data
-#' @param tscv_initial TS Cross Validation Initalization
+#' @param tscv_initial TS Cross Validation Initialization
 #' @param horizon Horizon
 #' @param back_test_spacing Back Testing Spacing
 #' 
@@ -300,7 +300,7 @@ get_tune_grid <- function(train_data,
 #' Get tuning grid with resample
 #' 
 #' @param train_data Training Data
-#' @param tscv_initial TS Cross Validation Initalization
+#' @param tscv_initial TS Cross Validation Initialization
 #' @param horizon Horizon
 #' @param back_test_spacing Back Testing Spacing
 #' @param wkflw Workflow Objet from previous stage
@@ -842,7 +842,7 @@ nbeats <- function(train_data,
 #' @param horizon Horizon
 #' @param frequency Frequency of Data
 #' @param parallel Parallel
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
@@ -900,7 +900,7 @@ nnetar <- function(train_data,
 #' @param horizon Horizon
 #' @param frequency Frequency of Data
 #' @param parallel Parallel
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
@@ -968,7 +968,7 @@ nnetar_xregs <- function(train_data,
 #' @param train_data Training Data
 #' @param horizon Horizon
 #' @param parallel Parallel
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet Model
@@ -1022,7 +1022,7 @@ prophet <- function(train_data,
 #' @param train_data Training Data
 #' @param horizon Horizon
 #' @param parallel Parallel
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
@@ -1089,7 +1089,7 @@ prophet_boost <- function(train_data,
 #' @param train_data Training Data
 #' @param horizon Horizon
 #' @param parallel Parallel
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
@@ -1250,7 +1250,7 @@ stlm_ets <- function(train_data, seasonal_period) {
 #' @param horizon Horizon
 #' @param parallel Parallel
 #' @param model_type Type of Model
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
@@ -1329,7 +1329,7 @@ svm_poly <- function(train_data,
 #' @param horizon Horizon
 #' @param parallel Parallel
 #' @param model_type Type of Model
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
@@ -1521,7 +1521,7 @@ theta <- function(train_data,
 #' @param horizon Horizon
 #' @param parallel Parallel
 #' @param model_type Type of Model
-#' @param tscv_initial TS CV Initalization
+#' @param tscv_initial TS CV Initialization
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year start
 #' @param back_test_spacing Back Test Spacing

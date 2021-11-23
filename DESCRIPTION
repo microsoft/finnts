@@ -29,7 +29,6 @@ Imports:
     cli,
     Cubist,
     dials,
-    doAzureParallel (>= 0.8.0),
     doFuture,
     doParallel,
     dplyr,
@@ -52,7 +51,6 @@ Imports:
     parsnip,
     plyr,
     purrr,
-    rAzureBatch (>= 0.7.0),
     recipes,
     rlist,
     rsample,
@@ -70,9 +68,11 @@ Remotes:
     Azure/rAzureBatch,
     Azure/doAzureParallel
 Suggests: 
-    rmarkdown,
+    doAzureParallel,
     knitr,
+    rAzureBatch,
     reactable,
+    rmarkdown,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Depends: 
