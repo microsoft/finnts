@@ -159,18 +159,18 @@
 #&gt; 10 Mexico        Enterprise    Tea     2020-01-01     50
 #&gt; 11 Mexico        Enterprise    Tea     2020-02-01     55
 #&gt; 12 Mexico        Enterprise    Tea     2020-03-01     60</code></pre>
-<p>It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hiearchy, but instead will create forecasts at the below levels.</p>
+<p>It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.</p>
 <ul>
-<li>Grand Total: model “Target” aross the sum of “Country”, “Segment”, and “Product”</li>
+<li>Grand Total: model “Target” across the sum of “Country”, “Segment”, and “Product”</li>
 <li>Country: model “Target” across the sum of “Country”. Creating forecasts for the grand total of “United States” and “Mexico”</li>
 <li>Segment: model “Target” across the sum of “Segment”. Creating forecasts for the grand total of “Enterprise” and “Public Sector”</li>
-<li>Product: model “Target” across the sume of “Product”. Creating forecasts for the grand total of “Coffee” and “Tea”.</li>
+<li>Product: model “Target” across the sum of “Product”. Creating forecasts for the grand total of “Coffee” and “Tea”.</li>
 </ul>
 </div>
 <div id="external-regressors" class="section level3">
 <h3 class="hasAnchor">
 <a href="#external-regressors" class="anchor"></a>External Regressors</h3>
-<p>Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hiearchical forecast method and include external regressor input values, Finn will ingnore the external regressors and will not use them in modeling.</p>
+<p>Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling.</p>
 </div>
   </div>
 
