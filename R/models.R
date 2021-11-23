@@ -61,11 +61,11 @@ get_recipie_configurable <- function(train_data,
     
     switch(rm_date,
            "plain" = df %>%
-             recipes::step_rm(matches(date_rm_regex_final), Date),
+             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date),
            "with_adj" = df %>%
-             recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj),
+             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj),
            "with_adj_index" = df %>%
-             recipes::step_rm(matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num),
+             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num),
            df)
 
   }
@@ -272,7 +272,7 @@ get_tune_grid <- function(train_data,
     params <- dials::parameters(wkflw)
     
     if(isBoost){
-      params %>% update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), 
+      params %>% stats::update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), 
                                                        trans = NULL))
     }else
     {

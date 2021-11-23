@@ -19,33 +19,33 @@
 #'   that specified date. Default of NULL is to not remove any time series and attempt to forecast all of them. 
 #' @param fiscal_year_start Month number of start of fiscal year of input data, aids in building out date features. 
 #'   Formatted as a numeric value. Default of 1 assumes fiscal year starts in January. 
-#' @param clean_missing_values Should missing values be inputted? Only inputes values for missing data within an 
+#' @param clean_missing_values If TRUE, cleans missing values. Only inputes values for missing data within an 
 #'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said 
 #'   values. 
-#' @param clean_outliers Should outliers be cleaned and inputted with values more in line with historical data?
+#' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
-#'   Default of 'auto' will automatically choose the number of back tests to run based on historical data size, 
+#'   Default of NULL will automatically choose the number of back tests to run based on historical data size, 
 #'   which tries to always use a minimum of 80% of the data when training a model. 
-#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of NULL moves back 1
 #'   period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data. 
 #' @param modeling_approach How Finn should approach your data. Current default and only option is 'accuracy'. In the 
 #'   future this could evolve to other areas like optimizing for interpretability over accuracy. 
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual 
 #'   time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates 
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.   
-#' @param parallel_processing Default of 'none' runs no parallel processing and forecasts each individual time series
+#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
 #'   runs time series in parallel on a remote compute cluster in Azure Batch. 
-#' @param run_model_parallel Run model training in parallel, only works when parallel_processing is set to 
+#' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
 #'   than number of cores on machine minus 1.
 #' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
 #' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
-#' @param azure_batch_cluster_delete Delete the Azure Batch compute cluster after Finn finished running. 
-#' @param target_log_transformation Log transform target variable before training models. 
-#' @param negative_fcst Allow forecasts to dip below zero. 
+#' @param azure_batch_cluster_delete If TRUE, deletes the Azure Batch compute cluster after Finn finished running. 
+#' @param target_log_transformation If TRUE, log transform target variable before training models. 
+#' @param negative_forecast If TRUE, allow forecasts to dip below zero. 
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
 #'   these values based on the date_type. 
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values 
@@ -55,7 +55,7 @@
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs 
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless 
 #'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.  
-#' @param pca Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+#' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
 #'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
@@ -63,16 +63,17 @@
 #' @param models_to_run List of models to run. Default of NULL runs all models. 
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 
 #'   any model. 
-#' @param run_deep_learning Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
+#' @param run_deep_learning If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
 #'  models_not_to_run. 
-#' @param run_global_models Run multivariate models on the entire data set (across all time series) as a global model. 
+#' @param run_global_models If TRUE, run multivariate models on the entire data set (across all time series) as a global model. 
 #'   Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day. 
-#' @param run_local_models Run models by individual time series as local models.
-#' @param run_ensemble_models Run ensemble models 
-#' @param average_models Create simple averages of individual models. 
+#' @param run_local_models If TRUE, run models by individual time series as local models.
+#' @param run_ensemble_models If TRUE, run ensemble models. Default of NULL runs ensemble models only for quarter and month
+#'   date types.  
+#' @param average_models If TRUE, create simple averages of individual models. 
 #' @param max_model_average Max number of models to average together. Will create model averages for 2 models up until input value 
 #'   or max number of models ran.
-#' @param weekly_to_daily Convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
+#' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
 #'   up to higher temporal levels like month or quarter. 
 #' 
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -95,25 +96,25 @@ forecast_time_series <- function(input_data,
   date_type,
   forecast_horizon,
   external_regressors = NULL,
-  run_name = "time_series_forecast",
+  run_name = "finnts_forecast",
   hist_start_date = NULL,
   hist_end_date = NULL,
   combo_cleanup_date = NULL,
   fiscal_year_start = 1,
   clean_missing_values = TRUE, 
   clean_outliers = FALSE, 
-  back_test_scenarios = "auto",
-  back_test_spacing = "auto",
+  back_test_scenarios = NULL,
+  back_test_spacing = NULL,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
-  parallel_processing = 'none',
+  parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
   azure_batch_credentials = NULL, 
   azure_batch_cluster_config = NULL, 
   azure_batch_cluster_delete = FALSE, 
   target_log_transformation = FALSE,
-  negative_fcst = FALSE,
+  negative_forecast = FALSE,
   fourier_periods = NULL, 
   lag_periods = NULL, 
   rolling_window_periods = NULL,
@@ -125,7 +126,7 @@ forecast_time_series <- function(input_data,
   run_deep_learning = FALSE, 
   run_global_models = NULL,
   run_local_models = TRUE,
-  run_ensemble_models = TRUE,
+  run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
   weekly_to_daily = TRUE
@@ -195,10 +196,29 @@ forecast_time_series <- function(input_data,
   back_test_spacing <- get_back_test_spacing(back_test_spacing,
                                              date_type)
   
-  # * Yearly Forecast Adjustment ----
-  if(date_type =="year") {
-    run_ensemble_models = FALSE
+  # * NULL Argument Adjustment ----
+  
+  # run ensemble models
+  if(is.null(run_ensemble_models) & date_type %in% c("quarter", "month")) {
+    run_ensemble_models <- TRUE
+  } else if(is.null(run_ensemble_models) & date_type %in% c("year", "week", "day")) {
+    run_ensemble_models <- FALSE
+  } else if(run_ensemble_models == TRUE & date_type %in% c("quarter", "month", "week", "day")) {
+    run_ensemble_models <- TRUE
+  } else if(run_ensemble_models == TRUE & date_type == "year") {
+    run_ensemble_models <- FALSE
     warning("ensemble models have been turned off for yearly forecasts")
+  } else {
+    run_ensemble_models <- FALSE
+  }
+  
+  # run global models
+  if(is.null(run_global_models) & date_type %in% c("month", "quarter", "year")) {
+    run_global_models <- TRUE
+  } else if(is.null(run_global_models) & date_type %in% c("day", "week")) {
+    run_global_models <- FALSE
+  } else {
+    # keep existing value of run_global_models
   }
   
   # 4. Prep Data ----
@@ -285,11 +305,11 @@ forecast_time_series <- function(input_data,
                                                pca)
   
   # * Run Forecast ----
-  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models) {
+  if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
     
     combo_list <- c('All-Data', unique(full_data_tbl$Combo))
     
-  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & (sum(run_global_models == TRUE) == 1 | (is.null(run_global_models) & date_type %in% c("month", "quarter", "year"))) & run_local_models == FALSE) {
+  } else if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models == FALSE) {
     
     combo_list <- c('All-Data')
     
@@ -298,36 +318,34 @@ forecast_time_series <- function(input_data,
     combo_list <- unique(full_data_tbl$Combo)
   }
   
-  # no parallel processing
-  if(parallel_processing == "none") {
+  # call run function
+  if(is.null(parallel_processing)) { # no parallel processing
     
     fcst <- lapply(combo_list, forecast_models_fn)
     fcst <- do.call(rbind, fcst)
-  }
-  
-  # parallel run on local machine
-  if(parallel_processing=="local_machine") {
     
-   fcst <- get_fcast_parallel(combo_list,
-                              forecast_models_fn, 
-                              num_cores)
+  } else if(parallel_processing=="local_machine") { # parallel run on local machine
     
-  }
-  
-  # parallel run within azure batch
-  if(parallel_processing=="azure_batch") {
-
+    fcst <- get_fcast_parallel(combo_list,
+                               forecast_models_fn, 
+                               num_cores)
+    
+  } else if(parallel_processing=="azure_batch") { # parallel run within azure batch
+    
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
                                      azure_batch_credentials,
                                      azure_batch_cluster_config,
                                      run_name)
+  } else {
     
+    stop("error during forecast run function call")
+  
   }
 
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
-    get_forecast_negative_adjusted(negative_fcst)
+    get_forecast_negative_adjusted(negative_forecast)
   
   # * Create Average Ensembles ----
   
@@ -354,102 +372,99 @@ forecast_time_series <- function(input_data,
       model_combinations$All <- model_combinations %>% tidyr::unite(All, colnames(model_combinations))
       model_combinations <- model_combinations$All
       
-      
       #parallel processing
-      if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
-        
+      if(run_model_parallel==TRUE) {
+
         cores <- get_cores(num_cores)
         cl <- parallel::makeCluster(cores)
         doParallel::registerDoParallel(cl)
         
         #point to the correct libraries within Azure Batch
-        if(parallel_processing=="azure_batch") {
-          clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))
+        if(!is.null(parallel_processing)) {
+          if(parallel_processing == "azure_batch") {
+            parallel::clusterEvalQ(cl, .libPaths("/mnt/batch/tasks/shared/R/packages"))   
+          }
         }
-        
-        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind', 
-                                              .packages = c('rlist', 'tidyverse', 'lubridate', 
-                                                            "doParallel", "parallel", "gtools"), 
-                                              .export = c("fcst_prep", "get_cores")) %dopar% {
-                                                
+
+        combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind',
+                                              .packages = c('rlist', 'tidyverse', 'lubridate',
+                                                            "doParallel", "parallel", "gtools"),
+                                              .export = c("fcst_prep")) %dopar% {
+
                                                 fcst_combination_temp <- fcst_prep %>%
                                                   dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
                                                   dplyr::group_by(.id, Combo, Date, Horizon) %>%
-                                                  dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+                                                  dplyr::summarise(FCST = mean(FCST, na.rm=TRUE),
                                                                    Target = mean(Target, nam.rm=FALSE)) %>%
                                                   dplyr::ungroup() %>%
                                                   dplyr::mutate(Model = i)
-                                                
+
                                                 return(fcst_combination_temp)
-                                                
+
                                               }
-        
+
         #stop parallel processing
-        if(run_model_parallel==TRUE & parallel_processing!="local_machine") {parallel::stopCluster(cl)}
-        
+        parallel::stopCluster(cl)
+
       } else {
-        
+
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind') %do% {
-          
+
           fcst_combination_temp <- fcst_prep %>%
             dplyr::filter(Model %in% strsplit(i, split = "_")[[1]]) %>%
             dplyr::group_by(.id, Combo, Date, Horizon) %>%
-            dplyr::summarise(FCST = mean(FCST, na.rm=TRUE), 
+            dplyr::summarise(FCST = mean(FCST, na.rm=TRUE),
                              Target = mean(Target, nam.rm=FALSE)) %>%
             dplyr::ungroup() %>%
             dplyr::mutate(Model = i)
-          
+
           return(fcst_combination_temp)
-          
+
         }
       }
       
       return(combinations_tbl)
     }
     
-    # no parallel processing
-    if(parallel_processing == "none") {
+    # kick off model average run
+    if(is.null(parallel_processing)) { # no parallel processing
       
       combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
       combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
-    }
-    
-    # parallel run on local machine
-    if(parallel_processing=="local_machine") {
+      
+    } else if(parallel_processing == "local_machine") { # run on local machine
       
       cores <- get_cores(num_cores)
       
       cl <- parallel::makeCluster(cores)
       doParallel::registerDoParallel(cl)
       
-      combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = get_export_packages(), 
-                                        .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
+      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                                 .packages = get_export_packages(), 
+                                                 .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
       
       parallel::stopCluster(cl)
       
-    }
-    
-    # parallel run within azure batch
-    if(parallel_processing=="azure_batch") {
+    } else if(parallel_processing == "azure_batch") { # run on azure batch
       
-      
-      combinations_tbl_final <- foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                        .packages = get_export_packages(), 
-                                        .export = c("fcst_prep", "get_cores"),
-                                        .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
-                                                              job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
-                                                                                  tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
-                                        .errorhandling = "remove") %dopar% {create_model_averages(i)}
-      
-    }
-    
-    if(parallel_processing == 'azure_batch' & azure_batch_cluster_delete == TRUE) {
-      stopCluster(cluster)
+      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                                 .packages = get_export_packages(), 
+                                                 .export = c("fcst_prep", "get_cores"),
+                                                 .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                                       job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                                                           tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
     }
     
     # combine with individual model data
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
+  }
+  
+  # delete azure batch cluster
+  if(!is.null(parallel_processing)) {
+    if(parallel_processing == "azure_btach" & azure_batch_cluster_delete == TRUE) {
+      parallel::stopCluster(cluster)
+    }
   }
   
   # 6. Final Finn Outputs ----
@@ -620,11 +635,11 @@ forecast_time_series <- function(input_data,
           
           if(forecast_approach == "standard_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, nodes = hts::get_nodes(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
-                                                    keep ="bottom", nonnegative = !negative_fcst))
+                                                    keep ="bottom", nonnegative = !negative_forecast))
             colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           } else if(forecast_approach == "grouped_hierarchy") {
             ts_combined <- data.frame(hts::combinef(ts, groups = hts::get_groups(hts_gts_list$hts_gts), weights = (1/colMeans(temp_residuals^2, na.rm = TRUE)), 
-                                                    keep ="bottom", nonnegative = !negative_fcst))
+                                                    keep ="bottom", nonnegative = !negative_forecast))
             colnames(ts_combined) <- colnames(hts_gts_list$data_ts)
           }
           
@@ -649,11 +664,13 @@ forecast_time_series <- function(input_data,
                          dplyr::select(Combo, Date, Target)) %>%
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST),
                     Target = ifelse(is.na(Target) | is.nan(Target), 0, Target)) %>%
+      dplyr::mutate(Target = ifelse(Target == 0, 0.1, Target)) %>% 
       dplyr::mutate(MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::group_by(Combo, .id, Model) %>%
       dplyr::mutate(Horizon = dplyr::row_number()) %>%
       dplyr::ungroup() %>%
-      dplyr::select(Combo, .id, Date, Model, Horizon, FCST, Target, MAPE) %>%
+      dplyr::mutate(Best_Model = ifelse(Model == "Best-Model", "Yes", "No")) %>%
+      dplyr::select(Combo, .id, Date, Model, Horizon, FCST, Target, MAPE, Best_Model) %>%
       tidyr::separate(Combo, into = combo_variables, sep = '--', remove = FALSE) %>%
       dplyr::rename(Back_Test_Scenario = .id)
     
@@ -696,6 +713,7 @@ forecast_time_series <- function(input_data,
       dplyr::mutate(FCST = ifelse(is.na(FCST) | is.nan(FCST), 0, FCST)) %>%
       dplyr::left_join(accuracy_final) %>%
       dplyr::mutate(Best_Model = ifelse(is.na(Best_Model), "No", "Yes"), 
+                    Target = ifelse(Target == 0, 0.1, Target), 
                     MAPE = abs((Target-FCST)/Target)) %>%
       dplyr::select(Combo, .id, Date, Model, Horizon, FCST, Target, MAPE, Best_Model) %>%
       tidyr::separate(Combo, into = combo_variables, sep = '--', remove = FALSE) %>%

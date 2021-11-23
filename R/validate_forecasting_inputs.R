@@ -16,11 +16,11 @@
 #' @param fiscal_year_start Month number of start of fiscal year
 #' @param clean_missing_values Cleaning missing values
 #' @param clean_outliers  Cleaning outliers in data
-#' @param back_test_scenarios Auto or 1,2,3, etc.
-#' @param back_test_spacing Auto or 1,2,3, etc.
+#' @param back_test_scenarios NULL or 1,2,3, etc.
+#' @param back_test_spacing NULL or 1,2,3, etc.
 #' @param modeling_approach Currently only accuracy is supported
-#' @param forecast_approach Bottoms_up, grouped_hierarchy, standard_hierarchy
-#' @param parallel_processing azure_batch, local_machine, none
+#' @param forecast_approach bottoms_up, grouped_hierarchy, standard_hierarchy
+#' @param parallel_processing azure_batch, local_machine, NULL
 #' @param num_cores number of cores for parallel processing
 #' @param run_model_parallel run hyperparameter search and model in parallel
 #' @param azure_batch_credentials Azure Batch Credentials 
@@ -137,13 +137,17 @@ validate_forecasting_inputs<-function(input_data,
   }
   
   #back test scenarios formatting
-  if((!is.numeric(back_test_scenarios) & back_test_scenarios != "auto") | back_test_scenarios < 1) {
-    stop("back test scenarios input value must be either a number greater than 0 or set to 'auto'")
+  if(!is.numeric(back_test_scenarios) & !is.null(back_test_scenarios)) {
+    stop("back test scenarios input value must be either a number greater than 0 or set to NULL")
+  } else if(is.null(back_test_scenarios)) {
+    # do nothing
+  } else if(back_test_scenarios < 1) {
+    stop("back test scenarios input value must be either a number greater than 0 or set to NULL")
   }
   
   #back test spacing
-  if((!is.numeric(back_test_spacing) & back_test_spacing != "auto") | back_test_spacing < 1) {
-    stop("back test spacing input value must be either a number greater than 0 or set to 'auto'")
+  if((!is.numeric(back_test_spacing) & !is.null(back_test_spacing)) | sum(back_test_spacing < 1) == 1) {
+    stop("back test spacing input value must be either a number greater than 0 or set to NULL")
   }
   
   #modeling approach formatting
@@ -181,14 +185,27 @@ validate_forecasting_inputs<-function(input_data,
     
   }
   
-  #parallel processing within data combos and each model
-  if(parallel_processing == "local_machine" & run_model_parallel) {
-    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
-  }
+  # parallel processing formatting
+  if(is.null(parallel_processing)) {
+    
+    # no further checks needed
   
-  #parallel processing formatting
-  if(!(parallel_processing %in% c("none", "local_machine", "azure_batch"))) {
-    stop("parallel processing input must be one of these values: 'none', 'local_machine', 'azure_batch'")
+  } else if(parallel_processing %in% c("local_machine", "azure_batch") == FALSE) {
+    
+    stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch'")
+    
+  } else if(parallel_processing == "local_machine" & run_model_parallel) {
+    
+    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
+    
+  } else if(parallel_processing == "azure_batch" & (is.null(azure_batch_credentials) | is.null(azure_batch_cluster_config))) {
+    
+    stop("cannot run parallel_processing on azure_batch without batch credentials and cluster configuration")
+    
+  } else {
+    
+    # no further checks needed
+    
   }
   
   #number of cores formatting
@@ -196,15 +213,6 @@ validate_forecasting_inputs<-function(input_data,
     stop("num_cores should be NULL or a numeric value")
   }
   
-  #check if azure credentials are given in case of parallel_processing = azure_batch
-  if(parallel_processing == "azure_batch" & is.null(azure_batch_credentials)){
-    stop("cannot run parallel_processing on azure_batch without batch credentials")
-  }
-  
-  #check if azure batch cluster info is given in case of parallel_processing = azure_batch
-  if(parallel_processing == "azure_batch" & is.null(azure_batch_cluster_config)){
-    stop("cannot run parallel_processing on azure_batch without cluster config")
-  }
   
   #max model average formatting
   if(!is.numeric(max_model_average)) {

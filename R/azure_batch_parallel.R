@@ -22,7 +22,7 @@ get_fcast_parallel_azure <- function(combo_list,
   
   cli::cli_h2("Submitting Tasks to Azure Batch")
   
-  fcst <- foreach(i = combo_list, .combine = 'rbind',
+  fcst <- foreach::foreach(i = combo_list, .combine = 'rbind',
                   .packages = get_export_packages(), 
                   .export = get_transfer_functions(),
                   .options.azure = list(maxTaskRetryCount = 0, 

@@ -259,12 +259,16 @@ construct_forecast_models <- function(full_data_tbl,
     cli::cli_h2("Running Combo: {combo_value}")
     
     # Copy functions into global environment within azure batch
-    if(parallel_processing == "azure_batch") {
-      global_env <- .GlobalEnv
-      export_env <- global_env$azbatchenv$exportenv
-      
-      for(n in ls(export_env , all.names=TRUE)) {
-        assign(n, get(n, export_env), global_env)
+    if(!is.null(parallel_processing)) {
+      if(parallel_processing == "azure_batch") {
+        
+        global_env <- .GlobalEnv
+        export_env <- global_env$azbatchenv$exportenv
+        
+        for(n in ls(export_env , all.names=TRUE)) {
+          assign(n, get(n, export_env), global_env)
+        }
+        
       }
     }
     
@@ -274,13 +278,22 @@ construct_forecast_models <- function(full_data_tbl,
     run_data_full_tbl <- full_data_tbl %>%
       combo_specific_filter(combo_value,
                             combo_variables)
-    
+
     cli::cli_h3("Initial Feature Engineering")
+    
+    # Run all recipes
+    if(is.null(recipes_to_run)) {
+      run_all_recipes_override <- FALSE
+    } else if(recipes_to_run == "all") {
+      run_all_recipes_override <- TRUE
+    } else {
+      run_all_recipes_override <- FALSE
+    }
     
     # recipe 1: standard feature engineering
     run_data_full_recipe_1 <- NULL
     
-    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | sum(recipes_to_run == "all") == 1) {
+    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
       
       run_data_full_recipe_1 <- run_data_full_tbl %>%
         multivariate_prep_recipe_1(external_regressors = external_regressors,
@@ -301,7 +314,7 @@ construct_forecast_models <- function(full_data_tbl,
     # recipe 2: custom horizon specific feature engineering
     run_data_full_recipe_2 <- NULL
 
-    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | sum(recipes_to_run == "all") == 1) {
+    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
       
       run_data_full_recipe_2 <- run_data_full_tbl %>%
         multivariate_prep_recipe_2(external_regressors = external_regressors,
@@ -332,7 +345,7 @@ construct_forecast_models <- function(full_data_tbl,
     combined_models_recipe_2 <- modeltime::modeltime_table()
     
     # parallel processing
-    if(run_model_parallel==TRUE & parallel_processing!="local_machine") {
+    if(run_model_parallel == TRUE) {
       parallel_args <- init_parallel_within(parallel_processing, num_cores)
     }
     
@@ -353,12 +366,17 @@ construct_forecast_models <- function(full_data_tbl,
     models_to_go_over <- names(model_list)
     
     # PCA
-    if(sum(pca == TRUE) == 1 | (combo_value == "All-Data" & is.null(pca)) | (is.null(pca) & date_type %in% c("day", "week"))) {
+    if((combo_value == "All-Data" & is.null(pca)) | (is.null(pca) & date_type %in% c("day", "week"))) {
+      run_pca <- TRUE
+    } else if(is.null(pca)) {
+      run_pca <- FALSE
+    } else if(pca == TRUE) {
       run_pca <- TRUE
     } else {
       run_pca <- FALSE
     }
-
+    
+    # train each model
     for(model_name in models_to_go_over){
       
       model_fn <- as.character(model_list[model_name])
@@ -390,7 +408,7 @@ construct_forecast_models <- function(full_data_tbl,
         try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                        mdl_called,
                                                                        location = "top") %>%
-              update_model_description(1, model_name),
+              modeltime::update_model_description(1, model_name),
             silent = TRUE)
         
       }else{
@@ -398,7 +416,7 @@ construct_forecast_models <- function(full_data_tbl,
         
         freq_val <- frequency
         
-        if(((model_name %in% r1_models) | (model_name %in% r2_models)) & (is.null(recipes_to_run) | sum(recipes_to_run == "all") == 1 | "R1" %in% recipes_to_run)){
+        if(((model_name %in% r1_models) | (model_name %in% r2_models)) & (is.null(recipes_to_run) | run_all_recipes_override | "R1" %in% recipes_to_run)){
           
           add_name <- paste0(model_name,"-R1",model_name_suffix)
           if(model_name %in% deep_nn_models){
@@ -422,12 +440,12 @@ construct_forecast_models <- function(full_data_tbl,
             try(combined_models_recipe_1 <- modeltime::add_modeltime_model(combined_models_recipe_1,
                                                                            mdl_called,
                                                                            location = "top") %>%
-                  update_model_description(1, add_name),
+                  modeltime::update_model_description(1, add_name),
                 silent = TRUE)
 
         }
         
-        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | sum(recipes_to_run == "all") == 1 | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
+        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | run_all_recipes_override | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
 
           add_name <- paste0(model_name,"-R2",model_name_suffix)
           try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
@@ -446,7 +464,7 @@ construct_forecast_models <- function(full_data_tbl,
           try(combined_models_recipe_2 <- modeltime::add_modeltime_model(combined_models_recipe_2,
                                                                          mdl_called,
                                                                          location = "top") %>%
-                update_model_description(1, add_name),
+                modeltime::update_model_description(1, add_name),
               silent = TRUE)
         }
         
@@ -651,7 +669,7 @@ construct_forecast_models <- function(full_data_tbl,
         try(combined_ensemble_models <- modeltime::add_modeltime_model(combined_ensemble_models,
                                                                        mdl_ensemble,
                                                                        location = "top") %>%
-              update_model_description(1, add_name),
+              modeltime::update_model_description(1, add_name),
             silent = TRUE)
       }
       
@@ -746,7 +764,7 @@ construct_forecast_models <- function(full_data_tbl,
     }
     
     #stop parallel processing
-    if(run_model_parallel==TRUE & parallel_processing!="local_machine"){
+    if(run_model_parallel==TRUE){
       exit_parallel_within(parallel_args)
     }
     

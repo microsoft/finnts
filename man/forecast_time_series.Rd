@@ -11,25 +11,25 @@ forecast_time_series(
   date_type,
   forecast_horizon,
   external_regressors = NULL,
-  run_name = "time_series_forecast",
+  run_name = "finnts_forecast",
   hist_start_date = NULL,
   hist_end_date = NULL,
   combo_cleanup_date = NULL,
   fiscal_year_start = 1,
   clean_missing_values = TRUE,
   clean_outliers = FALSE,
-  back_test_scenarios = "auto",
-  back_test_spacing = "auto",
+  back_test_scenarios = NULL,
+  back_test_spacing = NULL,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
-  parallel_processing = "none",
+  parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
   azure_batch_credentials = NULL,
   azure_batch_cluster_config = NULL,
   azure_batch_cluster_delete = FALSE,
   target_log_transformation = FALSE,
-  negative_fcst = FALSE,
+  negative_forecast = FALSE,
   fourier_periods = NULL,
   lag_periods = NULL,
   rolling_window_periods = NULL,
@@ -41,7 +41,7 @@ forecast_time_series(
   run_deep_learning = FALSE,
   run_global_models = NULL,
   run_local_models = TRUE,
-  run_ensemble_models = TRUE,
+  run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
   weekly_to_daily = TRUE
@@ -76,17 +76,17 @@ that specified date. Default of NULL is to not remove any time series and attemp
 \item{fiscal_year_start}{Month number of start of fiscal year of input data, aids in building out date features.
 Formatted as a numeric value. Default of 1 assumes fiscal year starts in January.}
 
-\item{clean_missing_values}{Should missing values be inputted? Only inputes values for missing data within an
+\item{clean_missing_values}{If TRUE, cleans missing values. Only inputes values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 values.}
 
-\item{clean_outliers}{Should outliers be cleaned and inputted with values more in line with historical data?}
+\item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data}
 
 \item{back_test_scenarios}{Number of specific back test folds to run when determining the best model.
-Default of 'auto' will automatically choose the number of back tests to run based on historical data size,
+Default of NULL will automatically choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80\% of the data when training a model.}
 
-\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of NULL moves back 1
 period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data.}
 
 \item{modeling_approach}{How Finn should approach your data. Current default and only option is 'accuracy'. In the
@@ -96,11 +96,11 @@ future this could evolve to other areas like optimizing for interpretability ove
 time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 a more traditional hierarchical time series to forecast, both based on the hts package.}
 
-\item{parallel_processing}{Default of 'none' runs no parallel processing and forecasts each individual time series
+\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
 runs time series in parallel on a remote compute cluster in Azure Batch.}
 
-\item{run_model_parallel}{Run model training in parallel, only works when parallel_processing is set to
+\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
 'local_machine' or 'azure_batch'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
@@ -111,11 +111,11 @@ than number of cores on machine minus 1.}
 
 \item{azure_batch_cluster_config}{Compute cluster specification to run parallel_processing in Azure Batch.}
 
-\item{azure_batch_cluster_delete}{Delete the Azure Batch compute cluster after Finn finished running.}
+\item{azure_batch_cluster_delete}{If TRUE, deletes the Azure Batch compute cluster after Finn finished running.}
 
-\item{target_log_transformation}{Log transform target variable before training models.}
+\item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 
-\item{negative_fcst}{Allow forecasts to dip below zero.}
+\item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
 \item{fourier_periods}{List of values to use in creating fourier series as features. Default of NULL automatically chooses
 these values based on the date_type.}
@@ -124,15 +124,15 @@ these values based on the date_type.}
 based on date_type.}
 
 \item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
-chooses these values based on date_type.}
+chooses these values based on date type.}
 
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
 
-\item{pca}{Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+\item{pca}{If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
-  
+
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
 Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
 that has python environment already installed.}
@@ -142,22 +142,23 @@ that has python environment already installed.}
 \item{models_not_to_run}{List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
 any model.}
 
-\item{run_deep_learning}{Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
+\item{run_deep_learning}{If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
 models_not_to_run.}
 
-\item{run_global_models}{Run multivariate models on the entire data set (across all time series) as a global model.
+\item{run_global_models}{If TRUE, run multivariate models on the entire data set (across all time series) as a global model.
 Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.}
 
-\item{run_local_models}{Run models by individual time series as local models.}
+\item{run_local_models}{If TRUE, run models by individual time series as local models.}
 
-\item{run_ensemble_models}{Run ensemble models}
+\item{run_ensemble_models}{If TRUE, run ensemble models. Default of NULL runs ensemble models only for quarter and month
+date types.}
 
-\item{average_models}{Create simple averages of individual models.}
+\item{average_models}{If TRUE, create simple averages of individual models.}
 
 \item{max_model_average}{Max number of models to average together. Will create model averages for 2 models up until input value
 or max number of models ran.}
 
-\item{weekly_to_daily}{Convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
+\item{weekly_to_daily}{If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}
 }
 \value{

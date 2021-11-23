@@ -75,9 +75,9 @@ tibble(
 ) %>%
   dplyr::mutate(Date = as.Date(Date)) %>%
   timetk::tk_augment_lags(.value = "Target", .lags = c(3,6), .names = "auto") %>%
-  tidyr::fill(contains("lag"), .direction = "up") %>%
-  tk_augment_slidify(contains("lag"), .f = sum, .period = c(3, 6), .align = "right") %>%
-  tidyr::fill(contains("lag"), .direction = "up") %>%
+  tidyr::fill(tidyselect::contains("lag"), .direction = "up") %>%
+  tk_augment_slidify(tidyselect::contains("lag"), .f = sum, .period = c(3, 6), .align = "right") %>%
+  tidyr::fill(tidyselect::contains("lag"), .direction = "up") %>%
   dplyr::rename(
     Target_lag3_roll3_sum = Target_lag3_roll_3, 
     Target_lag6_roll3_sum = Target_lag6_roll_3, 

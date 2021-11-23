@@ -91,8 +91,8 @@ get_modelling_ready_tbl<-function(data_tbl,
   
   data_tbl %>%
     dplyr::select(c("Combo", 
-                    all_of(combo_variables), 
-                    all_of(external_regressors), 
+                    tidyselect::all_of(combo_variables), 
+                    tidyselect::all_of(external_regressors), 
                     "Date", "Target")) %>%
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::arrange(Combo, Date) %>%
