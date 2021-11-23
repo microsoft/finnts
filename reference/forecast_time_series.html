@@ -55,6 +55,16 @@
 <![endif]-->
 
 
+<!-- Global site tag (gtag.js) - Google Analytics -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-6X0DS5856B"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-6X0DS5856B');
+</script>
+
 
   </head>
 
@@ -72,7 +82,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.0.0.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.1.0</span>
       </span>
     </div>
 
@@ -120,6 +130,9 @@
     </li>
   </ul>
 </li>
+<li>
+  <a href="../news/index.html">Changelog</a>
+</li>
       </ul>
       <ul class="nav navbar-nav navbar-right">
         <li>
@@ -157,25 +170,25 @@
   <span class='va'>date_type</span>,
   <span class='va'>forecast_horizon</span>,
   external_regressors <span class='op'>=</span> <span class='cn'>NULL</span>,
-  run_name <span class='op'>=</span> <span class='st'>"time_series_forecast"</span>,
+  run_name <span class='op'>=</span> <span class='st'>"finnts_forecast"</span>,
   hist_start_date <span class='op'>=</span> <span class='cn'>NULL</span>,
   hist_end_date <span class='op'>=</span> <span class='cn'>NULL</span>,
   combo_cleanup_date <span class='op'>=</span> <span class='cn'>NULL</span>,
   fiscal_year_start <span class='op'>=</span> <span class='fl'>1</span>,
   clean_missing_values <span class='op'>=</span> <span class='cn'>TRUE</span>,
   clean_outliers <span class='op'>=</span> <span class='cn'>FALSE</span>,
-  back_test_scenarios <span class='op'>=</span> <span class='st'>"auto"</span>,
-  back_test_spacing <span class='op'>=</span> <span class='st'>"auto"</span>,
+  back_test_scenarios <span class='op'>=</span> <span class='cn'>NULL</span>,
+  back_test_spacing <span class='op'>=</span> <span class='cn'>NULL</span>,
   modeling_approach <span class='op'>=</span> <span class='st'>"accuracy"</span>,
   forecast_approach <span class='op'>=</span> <span class='st'>"bottoms_up"</span>,
-  parallel_processing <span class='op'>=</span> <span class='st'>"none"</span>,
+  parallel_processing <span class='op'>=</span> <span class='cn'>NULL</span>,
   run_model_parallel <span class='op'>=</span> <span class='cn'>TRUE</span>,
   num_cores <span class='op'>=</span> <span class='cn'>NULL</span>,
   azure_batch_credentials <span class='op'>=</span> <span class='cn'>NULL</span>,
   azure_batch_cluster_config <span class='op'>=</span> <span class='cn'>NULL</span>,
   azure_batch_cluster_delete <span class='op'>=</span> <span class='cn'>FALSE</span>,
   target_log_transformation <span class='op'>=</span> <span class='cn'>FALSE</span>,
-  negative_fcst <span class='op'>=</span> <span class='cn'>FALSE</span>,
+  negative_forecast <span class='op'>=</span> <span class='cn'>FALSE</span>,
   fourier_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   lag_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
   rolling_window_periods <span class='op'>=</span> <span class='cn'>NULL</span>,
@@ -187,7 +200,7 @@
   run_deep_learning <span class='op'>=</span> <span class='cn'>FALSE</span>,
   run_global_models <span class='op'>=</span> <span class='cn'>NULL</span>,
   run_local_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
-  run_ensemble_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
+  run_ensemble_models <span class='op'>=</span> <span class='cn'>NULL</span>,
   average_models <span class='op'>=</span> <span class='cn'>TRUE</span>,
   max_model_average <span class='op'>=</span> <span class='fl'>3</span>,
   weekly_to_daily <span class='op'>=</span> <span class='cn'>TRUE</span>
@@ -248,23 +261,23 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
     </tr>
     <tr>
       <th>clean_missing_values</th>
-      <td><p>Should missing values be inputted? Only inputes values for missing data within an
+      <td><p>If TRUE, cleans missing values. Only inputes values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 values.</p></td>
     </tr>
     <tr>
       <th>clean_outliers</th>
-      <td><p>Should outliers be cleaned and inputted with values more in line with historical data?</p></td>
+      <td><p>If TRUE, outliers are cleaned and inputted with values more in line with historical data</p></td>
     </tr>
     <tr>
       <th>back_test_scenarios</th>
       <td><p>Number of specific back test folds to run when determining the best model.
-Default of 'auto' will automatically choose the number of back tests to run based on historical data size,
+Default of NULL will automatically choose the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80% of the data when training a model.</p></td>
     </tr>
     <tr>
       <th>back_test_spacing</th>
-      <td><p>Number of periods to move back for each back test scenario. Default of 'auto' moves back 1
+      <td><p>Number of periods to move back for each back test scenario. Default of NULL moves back 1
 period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data.</p></td>
     </tr>
     <tr>
@@ -280,13 +293,13 @@ a more traditional hierarchical time series to forecast, both based on the hts p
     </tr>
     <tr>
       <th>parallel_processing</th>
-      <td><p>Default of 'none' runs no parallel processing and forecasts each individual time series
+      <td><p>Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
 runs time series in parallel on a remote compute cluster in Azure Batch.</p></td>
     </tr>
     <tr>
       <th>run_model_parallel</th>
-      <td><p>Run model training in parallel, only works when parallel_processing is set to
+      <td><p>If TRUE, runs model training in parallel, only works when parallel_processing is set to
 'local_machine' or 'azure_batch'.</p></td>
     </tr>
     <tr>
@@ -305,15 +318,15 @@ than number of cores on machine minus 1.</p></td>
     </tr>
     <tr>
       <th>azure_batch_cluster_delete</th>
-      <td><p>Delete the Azure Batch compute cluster after Finn finished running.</p></td>
+      <td><p>If TRUE, deletes the Azure Batch compute cluster after Finn finished running.</p></td>
     </tr>
     <tr>
       <th>target_log_transformation</th>
-      <td><p>Log transform target variable before training models.</p></td>
+      <td><p>If TRUE, log transform target variable before training models.</p></td>
     </tr>
     <tr>
-      <th>negative_fcst</th>
-      <td><p>Allow forecasts to dip below zero.</p></td>
+      <th>negative_forecast</th>
+      <td><p>If TRUE, allow forecasts to dip below zero.</p></td>
     </tr>
     <tr>
       <th>fourier_periods</th>
@@ -328,7 +341,7 @@ based on date_type.</p></td>
     <tr>
       <th>rolling_window_periods</th>
       <td><p>List of values to use in creating rolling window features. Default of NULL automatically
-chooses these values based on date_type.</p></td>
+chooses these values based on date type.</p></td>
     </tr>
     <tr>
       <th>recipes_to_run</th>
@@ -338,7 +351,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
     </tr>
     <tr>
       <th>pca</th>
-      <td><p>Run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+      <td><p>If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.</p></td>
     </tr>
     <tr>
@@ -358,25 +371,26 @@ any model.</p></td>
     </tr>
     <tr>
       <th>run_deep_learning</th>
-      <td><p>Run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
+      <td><p>If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
 models_not_to_run.</p></td>
     </tr>
     <tr>
       <th>run_global_models</th>
-      <td><p>Run multivariate models on the entire data set (across all time series) as a global model.
+      <td><p>If TRUE, run multivariate models on the entire data set (across all time series) as a global model.
 Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.</p></td>
     </tr>
     <tr>
       <th>run_local_models</th>
-      <td><p>Run models by individual time series as local models.</p></td>
+      <td><p>If TRUE, run models by individual time series as local models.</p></td>
     </tr>
     <tr>
       <th>run_ensemble_models</th>
-      <td><p>Run ensemble models</p></td>
+      <td><p>If TRUE, run ensemble models. Default of NULL runs ensemble models only for quarter and month
+date types.</p></td>
     </tr>
     <tr>
       <th>average_models</th>
-      <td><p>Create simple averages of individual models.</p></td>
+      <td><p>If TRUE, create simple averages of individual models.</p></td>
     </tr>
     <tr>
       <th>max_model_average</th>
@@ -385,7 +399,7 @@ or max number of models ran.</p></td>
     </tr>
     <tr>
       <th>weekly_to_daily</th>
-      <td><p>Convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
+      <td><p>If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.</p></td>
     </tr>
     </table>

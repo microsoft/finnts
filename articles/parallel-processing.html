@@ -16,7 +16,13 @@
 <!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
 <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
 <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
-<![endif]-->
+<![endif]--><!-- Global site tag (gtag.js) - Google Analytics --><script async src="https://www.googletagmanager.com/gtag/js?id=G-6X0DS5856B"></script><script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-6X0DS5856B');
+</script>
 </head>
 <body data-spy="scroll" data-target="#toc">
     <div class="container template-article">
@@ -31,7 +37,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.0.0.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.1.0</span>
       </span>
     </div>
 
@@ -79,6 +85,9 @@
     </li>
   </ul>
 </li>
+<li>
+  <a href="../news/index.html">Changelog</a>
+</li>
       </ul>
 <ul class="nav navbar-nav navbar-right">
 <li>
@@ -114,13 +123,12 @@
 <h2 class="hasAnchor">
 <a href="#local-machine" class="anchor"></a>Local Machine</h2>
 <p>When the “parallel_processing” input within “forecast_time_series” is set to “local_machine”, each time series (including training models on the entire data set) is ran in parallel on the users local machine. Each time series will run on a separate core of the machine. Hyperparameter tuning, model refitting, and model averaging will be ran sequentially, which cannot be done in parallel since a parallel process is already running on the machine for each time series. This works well for data that contains many time series where you might only want to run a few simpler models, and in scenarios where cloud computing is not available.</p>
-<p>If “parallel_processing” is set to “none” and “run_model_parallel” is set to “TRUE” within the “forecast_time_series” function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.</p>
-<p>Lastly, if “parallel_processing” is set to “none” and “run_model_parallel” is set to “FALSE”, then everything will run sequentially. This is definitely the slowest way to build forecasts with Finn, but could be the best choice if no cloud options are available and your local machine may not have many cores or large RAM.</p>
+<p>If “parallel_processing” is set to NULL and “run_model_parallel” is set to TRUE within the “forecast_time_series” function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.</p>
 </div>
 <div id="within-azure-using-azure-batch" class="section level2">
 <h2 class="hasAnchor">
 <a href="#within-azure-using-azure-batch" class="anchor"></a>Within Azure using Azure Batch</h2>
-<p>To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set “parallel_processing” to “azure_batch” and set “run_model_parallel” to “TRUE” within the “forecast_time_series” function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine.</p>
+<p>To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set “parallel_processing” to “azure_batch” and set “run_model_parallel” to TRUE within the “forecast_time_series” function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine.</p>
 <p><a href="https://azure.microsoft.com/en-us/services/batch/#overview">Azure Batch</a> is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the <a href="https://github.com/Azure/doAzureParallel">doAzureParallel</a> and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their <a href="https://github.com/Azure/doAzureParallel">github site</a> for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn.</p>
 <p>Finn makes it easy to connect to Azure Batch by providing the “azure_batch_credentials” and “azure_batch_cluster_config” inputs within the “forecast_time_series” function. This allows you to easily input the Azure account/compute information needed to either build and deploy a new compute cluster or connect to an existing one. Please refer to their github to learn more about the specifics.</p>
 <p>At a high level, all you have to do is pass something similar to what you see below, while making sure to input your specific azure account information.</p>
