@@ -12,13 +12,7 @@
 #' @noRd
 get_fcast_parallel_azure <- function(combo_list,
                                      call_back_fn,
-                                     azure_batch_credentials,
-                                     azure_batch_cluster_config,
                                      run_name){
-  
-  doAzureParallel::setCredentials(azure_batch_credentials)
-  cluster <- doAzureParallel::makeCluster(azure_batch_cluster_config)
-  doAzureParallel::registerDoAzureParallel(cluster)
   
   cli::cli_h2("Submitting Tasks to Azure Batch")
   

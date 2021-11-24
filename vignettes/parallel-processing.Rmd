@@ -27,11 +27,23 @@ To leverage the full power of Finn, running within Azure is the best choice in b
 
 [Azure Batch](https://azure.microsoft.com/en-us/services/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [GitHub site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
 
-Finn makes it easy to connect to Azure Batch by providing the "azure_batch_credentials" and "azure_batch_cluster_config" inputs within the "forecast_time_series" function. This allows you to easily input the Azure account/compute information needed to either build and deploy a new compute cluster or connect to an existing one. Please refer to their GitHub to learn more about the specifics. 
+In order to have Finn live on CRAN, it cannot contain any package dependencies that live outside of CRAN. The doAzureParallel and rAzureBatch packages are only on GitHub, so they will have to be installed and called outside of Finn. 
 
-At a high level, all you have to do is pass something similar to what you see below, while making sure to input your specific azure account information.
+Reference the example below to understand how to connect to an Azure Batch compute cluster and submit forecasts to run in the cloud. Make sure to enter your specific Azure account information. 
 
-```{r}
+```{r, message = FALSE, eval = FALSE}
+# load CRAN libraries
+library(finnts)
+library(devtools)
+
+# load GitHub libraries
+devtools::install_github("Azure/rAzureBatch")
+devtools::install_github("Azure/doAzureParallel")
+
+library(rAzureBatch)
+library(doAzureParallel)
+
+# create azure batch cluster info
 azure_batch_credentials <- list(
   "sharedKey" = list(
     "batchAccount" = list(
@@ -45,7 +57,7 @@ azure_batch_credentials <- list(
       "endpointSuffix" = "core.windows.net"
     )
   ),
-  "githubAuthenticationToken" = "<insert github PAT>",
+  "githubAuthenticationToken" = "",
   "dockerAuthentication" = list("username" = "",
                                 "password" = "",
                                 "registry" = "")
@@ -75,11 +87,33 @@ azure_batch_cluster_config <- list(
   "commandLine" = list()
 )
 
+# create or connect to existing Azure Batch cluster
+doAzureParallel::setCredentials(azure_batch_credentials)
+cluster <- doAzureParallel::makeCluster(azure_batch_cluster_config)
+doAzureParallel::registerDoAzureParallel(cluster)
+
+# call Finn with Azure Batch parallel processing
+hist_data <- timetk::m4_monthly %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+finn_output <- finnts::forecast_time_series(
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3, 
+  parallel_processing = "azure_batch", 
+  run_name = "azure_batch_forecast_test"
+)
+
+# optional code to delete compute cluster
+parallel::stopCluster(cluster)
 
 ```
 
-Passing these values into "forecast_time_series" will ensure that finnts correctly runs within Azure Batch. The best part of Azure Batch is how it can easily scare to more compute as needed. In the above example, the lowest amount of VM's running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!
+The best part of Azure Batch is how it can easily scare to more compute as needed. In the above example, the lowest amount of VM's running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!
 
 To keep your Azure resource keys secure without hard coding them into a R script, check out the [Azure Key Vault](https://github.com/Azure/AzureKeyVault) package to safely retrieve and leverage keys/secrets when using Finn. 
 
-
+Important Note: The Finn team is working on new parallel compute options in Azure since Azure Batch in R is deprecated and will eventually stop being supported. New options we are exploring include Spark on Azure Synapse and Azure Functions. Stay tuned!

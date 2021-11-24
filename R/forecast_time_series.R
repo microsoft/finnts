@@ -41,9 +41,6 @@
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
 #'   than number of cores on machine minus 1.
-#' @param azure_batch_credentials Credentials to run parallel_processing in Azure Batch.
-#' @param azure_batch_cluster_config Compute cluster specification to run parallel_processing in Azure Batch.
-#' @param azure_batch_cluster_delete If TRUE, deletes the Azure Batch compute cluster after Finn finished running. 
 #' @param target_log_transformation If TRUE, log transform target variable before training models. 
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero. 
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
@@ -110,9 +107,6 @@ forecast_time_series <- function(input_data,
   parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
-  azure_batch_credentials = NULL, 
-  azure_batch_cluster_config = NULL, 
-  azure_batch_cluster_delete = FALSE, 
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
   fourier_periods = NULL, 
@@ -157,8 +151,6 @@ forecast_time_series <- function(input_data,
                                          parallel_processing,
                                          run_model_parallel,
                                          num_cores,
-                                         azure_batch_credentials,
-                                         azure_batch_cluster_config,
                                          max_model_average)
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
@@ -334,8 +326,6 @@ forecast_time_series <- function(input_data,
     
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
-                                     azure_batch_credentials,
-                                     azure_batch_cluster_config,
                                      run_name)
   } else {
     
@@ -458,13 +448,6 @@ forecast_time_series <- function(input_data,
     
     # combine with individual model data
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
-  }
-  
-  # delete azure batch cluster
-  if(!is.null(parallel_processing)) {
-    if(parallel_processing == "azure_btach" & azure_batch_cluster_delete == TRUE) {
-      parallel::stopCluster(cluster)
-    }
   }
   
   # 6. Final Finn Outputs ----
