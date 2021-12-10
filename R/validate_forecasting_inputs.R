@@ -23,8 +23,6 @@
 #' @param parallel_processing azure_batch, local_machine, NULL
 #' @param num_cores number of cores for parallel processing
 #' @param run_model_parallel run hyperparameter search and model in parallel
-#' @param azure_batch_credentials Azure Batch Credentials 
-#' @param azure_batch_cluster_config Azure Batch Cluster Config
 #' @param max_model_average Maximum number of models to average
 #' 
 #' @return Returns hist_start_date and hist_end_date
@@ -48,8 +46,6 @@ validate_forecasting_inputs<-function(input_data,
                                       parallel_processing,
                                       run_model_parallel,
                                       num_cores,
-                                      azure_batch_credentials,
-                                      azure_batch_cluster_config,
                                       max_model_average){
   
   retlist = list("hist_start_date" = hist_start_date,
@@ -198,9 +194,9 @@ validate_forecasting_inputs<-function(input_data,
     
     stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
     
-  } else if(parallel_processing == "azure_batch" & (is.null(azure_batch_credentials) | is.null(azure_batch_cluster_config))) {
+  } else if(parallel_processing == "azure_batch") {
     
-    stop("cannot run parallel_processing on azure_batch without batch credentials and cluster configuration")
+    message("NOTE: Ensure that Azure Batch parallel back-end has been registered before calling 'forecast_time_series' function")
     
   } else {
     

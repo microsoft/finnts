@@ -25,9 +25,6 @@ forecast_time_series(
   parallel_processing = NULL,
   run_model_parallel = TRUE,
   num_cores = NULL,
-  azure_batch_credentials = NULL,
-  azure_batch_cluster_config = NULL,
-  azure_batch_cluster_delete = FALSE,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
   fourier_periods = NULL,
@@ -106,12 +103,6 @@ runs time series in parallel on a remote compute cluster in Azure Batch.}
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 than number of cores on machine minus 1.}
-
-\item{azure_batch_credentials}{Credentials to run parallel_processing in Azure Batch.}
-
-\item{azure_batch_cluster_config}{Compute cluster specification to run parallel_processing in Azure Batch.}
-
-\item{azure_batch_cluster_delete}{If TRUE, deletes the Azure Batch compute cluster after Finn finished running.}
 
 \item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 

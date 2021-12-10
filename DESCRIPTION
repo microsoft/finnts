@@ -64,13 +64,8 @@ Imports:
     torch,
     tune,
     workflows
-Remotes: 
-    Azure/rAzureBatch,
-    Azure/doAzureParallel
 Suggests: 
-    doAzureParallel,
     knitr,
-    rAzureBatch,
     reactable,
     rmarkdown,
     testthat (>= 3.0.0)
