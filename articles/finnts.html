@@ -25,6 +25,8 @@
 </script>
 </head>
 <body data-spy="scroll" data-target="#toc">
+    
+
     <div class="container template-article">
       <header><div class="navbar navbar-default navbar-fixed-top" role="navigation">
   <div class="container">
@@ -37,18 +39,12 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.1.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.0</span>
       </span>
     </div>
 
     <div id="navbar" class="navbar-collapse collapse">
       <ul class="nav navbar-nav">
-<li>
-  <a href="../index.html">
-    <span class="fas fa-home fa-lg"></span>
-     
-  </a>
-</li>
 <li>
   <a href="../articles/finnts.html">Get started</a>
 </li>
@@ -91,7 +87,7 @@
       </ul>
 <ul class="nav navbar-nav navbar-right">
 <li>
-  <a href="https://github.com/microsoft/finnts/">
+  <a href="https://github.com/microsoft/finnts/" class="external-link">
     <span class="fab fa-github fa-lg"></span>
      
   </a>
@@ -112,7 +108,7 @@
       <h1 data-toc-skip>Quick Start Guide</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/finnts.Rmd"><code>vignettes/finnts.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/finnts.Rmd" class="external-link"><code>vignettes/finnts.Rmd</code></a></small>
       <div class="hidden name"><code>finnts.Rmd</code></div>
 
     </div>
@@ -122,13 +118,13 @@
 <p>The finnts package, commonly referred to as “Finn”, is a standardized times series forecast framework developed by Microsoft Finance. It’s a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.</p>
 <p>Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, “forecast_time_series”, takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="kw"><a href="https://rdrr.io/r/base/library.html">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span>
+<code class="sourceCode R"><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span>
 
-<span class="fu"><a href="https://rdrr.io/r/utils/browseVignettes.html">browseVignettes</a></span><span class="op">(</span><span class="st">"finnts"</span><span class="op">)</span></code></pre></div>
+<span class="fu"><a href="https://rdrr.io/r/utils/browseVignettes.html" class="external-link">browseVignettes</a></span><span class="op">(</span><span class="st">"finnts"</span><span class="op">)</span></code></pre></div>
 <p>Getting started with Finn is as simple as 1..2..3</p>
-<div id="bring-data" class="section level2">
-<h2 class="hasAnchor">
-<a href="#bring-data" class="anchor"></a>1. Bring Data</h2>
+<div class="section level2">
+<h2 id="bring-data">1. Bring Data<a class="anchor" aria-label="anchor" href="#bring-data"></a>
+</h2>
 <p>Data used in Finn needs to follow a few requirements, called out below.</p>
 <ul>
 <li>Data is tabular, formatted as data frame or tibble.</li>
@@ -138,79 +134,79 @@
 <li>Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors.</li>
 <li>External regressors are optional, they’re not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors.</li>
 </ul>
-<p>A good example to use when producing your first Finn forecast is to leverage existing data examples from the <a href="https://business-science.github.io/timetk/">timetk</a> package. Let’s take a monthly example and trim it down to speed up the run time of your first Finn forecast.</p>
+<p>A good example to use when producing your first Finn forecast is to leverage existing data examples from the <a href="https://business-science.github.io/timetk/" class="external-link">timetk</a> package. Let’s take a monthly example and trim it down to speed up the run time of your first Finn forecast.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="kw"><a href="https://rdrr.io/r/base/library.html">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span>
+<code class="sourceCode R"><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span>
 
-<span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html">m4_monthly</a></span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2010-01-01"</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
+<span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2010-01-01"</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
 
-<span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">)</span>
-<span class="co">#&gt; # A tibble: 264 × 3</span>
+<span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">)</span>
+<span class="co">#&gt; <span style="color: #949494;"># A tibble: 264 × 3</span></span>
 <span class="co">#&gt;    id    Date       value</span>
-<span class="co">#&gt;    &lt;chr&gt; &lt;date&gt;     &lt;dbl&gt;</span>
-<span class="co">#&gt;  1 M1    2010-01-01  9480</span>
-<span class="co">#&gt;  2 M1    2010-02-01  8800</span>
-<span class="co">#&gt;  3 M1    2010-03-01  8810</span>
-<span class="co">#&gt;  4 M1    2010-04-01  7690</span>
-<span class="co">#&gt;  5 M1    2010-05-01  7710</span>
-<span class="co">#&gt;  6 M1    2010-06-01  9660</span>
-<span class="co">#&gt;  7 M1    2010-07-01 11870</span>
-<span class="co">#&gt;  8 M1    2010-08-01 12920</span>
-<span class="co">#&gt;  9 M1    2010-09-01 10890</span>
-<span class="co">#&gt; 10 M1    2010-10-01  9500</span>
-<span class="co">#&gt; # … with 254 more rows</span>
+<span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    2010-01-01  <span style="text-decoration: underline;">9</span>480</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    2010-02-01  <span style="text-decoration: underline;">8</span>800</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    2010-03-01  <span style="text-decoration: underline;">8</span>810</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    2010-04-01  <span style="text-decoration: underline;">7</span>690</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    2010-05-01  <span style="text-decoration: underline;">7</span>710</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    2010-06-01  <span style="text-decoration: underline;">9</span>660</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    2010-07-01 <span style="text-decoration: underline;">11</span>870</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    2010-08-01 <span style="text-decoration: underline;">12</span>920</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    2010-09-01 <span style="text-decoration: underline;">10</span>890</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    2010-10-01  <span style="text-decoration: underline;">9</span>500</span>
+<span class="co">#&gt; <span style="color: #949494;"># … with 254 more rows</span></span>
 
-<span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
+<span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
 <span class="co">#&gt; [1] "M1"    "M2"    "M750"  "M1000"</span></code></pre></div>
 <p>The above data set contains 4 individual time series, identified using the “id” column.</p>
 </div>
-<div id="create-finn-forecast" class="section level2">
-<h2 class="hasAnchor">
-<a href="#create-finn-forecast" class="anchor"></a>2. Create Finn Forecast</h2>
+<div class="section level2">
+<h2 id="create-finn-forecast">2. Create Finn Forecast<a class="anchor" aria-label="anchor" href="#create-finn-forecast"></a>
+</h2>
 <p>Calling for “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R">
 <span class="va">finn_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span>
   input_data <span class="op">=</span> <span class="va">hist_data</span>,
-  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,
+  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,
   target_variable <span class="op">=</span> <span class="st">"value"</span>,
   date_type <span class="op">=</span> <span class="st">"month"</span>,
   forecast_horizon <span class="op">=</span> <span class="fl">3</span>,
   back_test_scenarios <span class="op">=</span> <span class="fl">6</span>, 
-  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span>, 
+  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span>, 
   run_global_models <span class="op">=</span> <span class="cn">FALSE</span>, 
   run_model_parallel <span class="op">=</span> <span class="cn">FALSE</span>
 <span class="op">)</span></code></pre></div>
 </div>
-<div id="use-forecast-outputs" class="section level2">
-<h2 class="hasAnchor">
-<a href="#use-forecast-outputs" class="anchor"></a>3. Use Forecast Outputs</h2>
-<div id="future-forecast" class="section level3">
-<h3 class="hasAnchor">
-<a href="#future-forecast" class="anchor"></a>Future Forecast</h3>
+<div class="section level2">
+<h2 id="use-forecast-outputs">3. Use Forecast Outputs<a class="anchor" aria-label="anchor" href="#use-forecast-outputs"></a>
+</h2>
+<div class="section level3">
+<h3 id="future-forecast">Future Forecast<a class="anchor" aria-label="anchor" href="#future-forecast"></a>
+</h3>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu"><a href="https://rdrr.io/r/utils/head.html">head</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="op">)</span>
+<code class="sourceCode R"><span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="op">)</span>
 
-<span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu"><a href="https://rdrr.io/r/utils/head.html">tail</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html">%&gt;%</a></span>
-  <span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="op">)</span></code></pre></div>
+<span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="op">)</span></code></pre></div>
 </div>
-<div id="back-test-results" class="section level3">
-<h3 class="hasAnchor">
-<a href="#back-test-results" class="anchor"></a>Back Test Results</h3>
+<div class="section level3">
+<h3 id="back-test-results">Back Test Results<a class="anchor" aria-label="anchor" href="#back-test-results"></a>
+</h3>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_data</span><span class="op">)</span></code></pre></div>
+<code class="sourceCode R"><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_data</span><span class="op">)</span></code></pre></div>
 </div>
-<div id="back-test-best-model-per-time-series" class="section level3">
-<h3 class="hasAnchor">
-<a href="#back-test-best-model-per-time-series" class="anchor"></a>Back Test Best Model per Time Series</h3>
+<div class="section level3">
+<h3 id="back-test-best-model-per-time-series">Back Test Best Model per Time Series<a class="anchor" aria-label="anchor" href="#back-test-best-model-per-time-series"></a>
+</h3>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="fu"><a href="https://rdrr.io/r/base/print.html">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_best_MAPE</span><span class="op">)</span></code></pre></div>
+<code class="sourceCode R"><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_best_MAPE</span><span class="op">)</span></code></pre></div>
 <p>Note: the best model for the “M1” combination is a simple average of “arima” and “ets” models.</p>
 </div>
 </div>
@@ -227,11 +223,13 @@
 
 
       <footer><div class="copyright">
-  <p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/">Mike Tokic</a>, <a href="https://aadharshkannan.com/">Aadharsh Kannan</a>.</p>
+  <p></p>
+<p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/" class="external-link">Mike Tokic</a>, <a href="https://aadharshkannan.com/" class="external-link">Aadharsh Kannan</a>.</p>
 </div>
 
 <div class="pkgdown">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/">pkgdown</a> 1.6.1.</p>
+  <p></p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.1.</p>
 </div>
 
       </footer>
@@ -239,6 +237,8 @@
 
   
 
+
+  
 
   </body>
 </html>

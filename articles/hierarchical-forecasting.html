@@ -25,6 +25,8 @@
 </script>
 </head>
 <body data-spy="scroll" data-target="#toc">
+    
+
     <div class="container template-article">
       <header><div class="navbar navbar-default navbar-fixed-top" role="navigation">
   <div class="container">
@@ -37,18 +39,12 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.1.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.0</span>
       </span>
     </div>
 
     <div id="navbar" class="navbar-collapse collapse">
       <ul class="nav navbar-nav">
-<li>
-  <a href="../index.html">
-    <span class="fas fa-home fa-lg"></span>
-     
-  </a>
-</li>
 <li>
   <a href="../articles/finnts.html">Get started</a>
 </li>
@@ -91,7 +87,7 @@
       </ul>
 <ul class="nav navbar-nav navbar-right">
 <li>
-  <a href="https://github.com/microsoft/finnts/">
+  <a href="https://github.com/microsoft/finnts/" class="external-link">
     <span class="fab fa-github fa-lg"></span>
      
   </a>
@@ -112,53 +108,53 @@
       <h1 data-toc-skip>Hierarchical Forecasting</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/hierarchical-forecasting.Rmd"><code>vignettes/hierarchical-forecasting.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/hierarchical-forecasting.Rmd" class="external-link"><code>vignettes/hierarchical-forecasting.Rmd</code></a></small>
       <div class="hidden name"><code>hierarchical-forecasting.Rmd</code></div>
 
     </div>
 
     
     
-<p>The finnts package leverages the great work of the <a href="https://pkg.earo.me/hts/">hts</a> package. It’s currently retired but we think old dogs can still learn new tricks! It’s still of great use to finnts and allows for both standard and grouped hierarchical forecasting.</p>
-<div id="standard-hierarchy" class="section level3">
-<h3 class="hasAnchor">
-<a href="#standard-hierarchy" class="anchor"></a>Standard Hierarchy</h3>
+<p>The finnts package leverages the great work of the <a href="https://pkg.earo.me/hts/" class="external-link">hts</a> package. It’s currently retired but we think old dogs can still learn new tricks! It’s still of great use to finnts and allows for both standard and grouped hierarchical forecasting.</p>
+<div class="section level3">
+<h3 id="standard-hierarchy">Standard Hierarchy<a class="anchor" aria-label="anchor" href="#standard-hierarchy"></a>
+</h3>
 <p>A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.</p>
-<pre><code>#&gt; Standard Hierarchical Time Series Data
-#&gt; # A tibble: 9 × 5
-#&gt;   Continent     Country       City        Date       Target
-#&gt;   &lt;chr&gt;         &lt;chr&gt;         &lt;chr&gt;       &lt;date&gt;      &lt;dbl&gt;
-#&gt; 1 North America United States Kansas City 2020-01-01    100
-#&gt; 2 North America United States Kansas City 2020-02-01    250
-#&gt; 3 North America United States Kansas City 2020-03-01    320
-#&gt; 4 North America United States Seattle     2020-01-01     80
-#&gt; 5 North America United States Seattle     2020-02-01    200
-#&gt; 6 North America United States Seattle     2020-03-01    270
-#&gt; 7 North America Mexico        Mexico City 2020-01-01     50
-#&gt; 8 North America Mexico        Mexico City 2020-02-01     80
-#&gt; 9 North America Mexico        Mexico City 2020-03-01    120</code></pre>
+<pre><code><span class="co">#&gt; Standard Hierarchical Time Series Data</span>
+<span class="co">#&gt; <span style="color: #949494;"># A tibble: 9 × 5</span></span>
+<span class="co">#&gt;   Continent     Country       City        Date       Target</span>
+<span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">1</span> North America United States Kansas City 2020-01-01    100</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">2</span> North America United States Kansas City 2020-02-01    250</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">3</span> North America United States Kansas City 2020-03-01    320</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">4</span> North America United States Seattle     2020-01-01     80</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">5</span> North America United States Seattle     2020-02-01    200</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">6</span> North America United States Seattle     2020-03-01    270</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">7</span> North America Mexico        Mexico City 2020-01-01     50</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">8</span> North America Mexico        Mexico City 2020-02-01     80</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">9</span> North America Mexico        Mexico City 2020-03-01    120</span></code></pre>
 <p>In the above example, “City” was the lowest level of the hierarchy, which feeds into “Country”, which then feeds into “Continent”. Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the “Best Model” and every other model is reconciled back down to the lowest level.</p>
 </div>
-<div id="grouped-hierarchy" class="section level3">
-<h3 class="hasAnchor">
-<a href="#grouped-hierarchy" class="anchor"></a>Grouped Hierarchy</h3>
+<div class="section level3">
+<h3 id="grouped-hierarchy">Grouped Hierarchy<a class="anchor" aria-label="anchor" href="#grouped-hierarchy"></a>
+</h3>
 <p>Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls “grouped”. A good example is a data set that contains historical time series by geography, customer segment, and product.</p>
-<pre><code>#&gt; Grouped Hierarchical Time Series Data
-#&gt; # A tibble: 12 × 5
-#&gt;    Country       Segment       Product Date       Target
-#&gt;    &lt;chr&gt;         &lt;chr&gt;         &lt;chr&gt;   &lt;date&gt;      &lt;dbl&gt;
-#&gt;  1 United States Enterprise    Coffee  2020-01-01     10
-#&gt;  2 United States Enterprise    Coffee  2020-02-01     20
-#&gt;  3 United States Enterprise    Coffee  2020-03-01     30
-#&gt;  4 United States Public Sector Coffee  2020-01-01      5
-#&gt;  5 United States Public Sector Coffee  2020-02-01      8
-#&gt;  6 United States Public Sector Coffee  2020-03-01     11
-#&gt;  7 Mexico        Enterprise    Coffee  2020-01-01     20
-#&gt;  8 Mexico        Enterprise    Coffee  2020-02-01     23
-#&gt;  9 Mexico        Enterprise    Coffee  2020-03-01     27
-#&gt; 10 Mexico        Enterprise    Tea     2020-01-01     50
-#&gt; 11 Mexico        Enterprise    Tea     2020-02-01     55
-#&gt; 12 Mexico        Enterprise    Tea     2020-03-01     60</code></pre>
+<pre><code><span class="co">#&gt; Grouped Hierarchical Time Series Data</span>
+<span class="co">#&gt; <span style="color: #949494;"># A tibble: 12 × 5</span></span>
+<span class="co">#&gt;    Country       Segment       Product Date       Target</span>
+<span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> United States Enterprise    Coffee  2020-01-01     10</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> United States Enterprise    Coffee  2020-02-01     20</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> United States Enterprise    Coffee  2020-03-01     30</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> United States Public Sector Coffee  2020-01-01      5</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> United States Public Sector Coffee  2020-02-01      8</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> United States Public Sector Coffee  2020-03-01     11</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Mexico        Enterprise    Coffee  2020-01-01     20</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Mexico        Enterprise    Coffee  2020-02-01     23</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Mexico        Enterprise    Coffee  2020-03-01     27</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Mexico        Enterprise    Tea     2020-01-01     50</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Mexico        Enterprise    Tea     2020-02-01     55</span>
+<span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Mexico        Enterprise    Tea     2020-03-01     60</span></code></pre>
 <p>It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.</p>
 <ul>
 <li>Grand Total: model “Target” across the sum of “Country”, “Segment”, and “Product”</li>
@@ -167,9 +163,9 @@
 <li>Product: model “Target” across the sum of “Product”. Creating forecasts for the grand total of “Coffee” and “Tea”.</li>
 </ul>
 </div>
-<div id="external-regressors" class="section level3">
-<h3 class="hasAnchor">
-<a href="#external-regressors" class="anchor"></a>External Regressors</h3>
+<div class="section level3">
+<h3 id="external-regressors">External Regressors<a class="anchor" aria-label="anchor" href="#external-regressors"></a>
+</h3>
 <p>Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling.</p>
 </div>
   </div>
@@ -183,11 +179,13 @@
 
 
       <footer><div class="copyright">
-  <p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/">Mike Tokic</a>, <a href="https://aadharshkannan.com/">Aadharsh Kannan</a>.</p>
+  <p></p>
+<p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/" class="external-link">Mike Tokic</a>, <a href="https://aadharshkannan.com/" class="external-link">Aadharsh Kannan</a>.</p>
 </div>
 
 <div class="pkgdown">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/">pkgdown</a> 1.6.1.</p>
+  <p></p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.1.</p>
 </div>
 
       </footer>
@@ -195,6 +193,8 @@
 
   
 
+
+  
 
   </body>
 </html>

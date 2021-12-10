@@ -25,6 +25,8 @@
 </script>
 </head>
 <body data-spy="scroll" data-target="#toc">
+    
+
     <div class="container template-article">
       <header><div class="navbar navbar-default navbar-fixed-top" role="navigation">
   <div class="container">
@@ -37,18 +39,12 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="Released version">0.1.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.0</span>
       </span>
     </div>
 
     <div id="navbar" class="navbar-collapse collapse">
       <ul class="nav navbar-nav">
-<li>
-  <a href="../index.html">
-    <span class="fas fa-home fa-lg"></span>
-     
-  </a>
-</li>
 <li>
   <a href="../articles/finnts.html">Get started</a>
 </li>
@@ -91,7 +87,7 @@
       </ul>
 <ul class="nav navbar-nav navbar-right">
 <li>
-  <a href="https://github.com/microsoft/finnts/">
+  <a href="https://github.com/microsoft/finnts/" class="external-link">
     <span class="fab fa-github fa-lg"></span>
      
   </a>
@@ -112,71 +108,107 @@
       <h1 data-toc-skip>Parallel Processing</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/parallel-processing.Rmd"><code>vignettes/parallel-processing.Rmd</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/parallel-processing.Rmd" class="external-link"><code>vignettes/parallel-processing.Rmd</code></a></small>
       <div class="hidden name"><code>parallel-processing.Rmd</code></div>
 
     </div>
 
     
     
-<div id="local-machine" class="section level2">
-<h2 class="hasAnchor">
-<a href="#local-machine" class="anchor"></a>Local Machine</h2>
+<div class="section level2">
+<h2 id="local-machine">Local Machine<a class="anchor" aria-label="anchor" href="#local-machine"></a>
+</h2>
 <p>When the “parallel_processing” input within “forecast_time_series” is set to “local_machine”, each time series (including training models on the entire data set) is ran in parallel on the users local machine. Each time series will run on a separate core of the machine. Hyperparameter tuning, model refitting, and model averaging will be ran sequentially, which cannot be done in parallel since a parallel process is already running on the machine for each time series. This works well for data that contains many time series where you might only want to run a few simpler models, and in scenarios where cloud computing is not available.</p>
 <p>If “parallel_processing” is set to NULL and “run_model_parallel” is set to TRUE within the “forecast_time_series” function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.</p>
 </div>
-<div id="within-azure-using-azure-batch" class="section level2">
-<h2 class="hasAnchor">
-<a href="#within-azure-using-azure-batch" class="anchor"></a>Within Azure using Azure Batch</h2>
+<div class="section level2">
+<h2 id="within-azure-using-azure-batch">Within Azure using Azure Batch<a class="anchor" aria-label="anchor" href="#within-azure-using-azure-batch"></a>
+</h2>
 <p>To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set “parallel_processing” to “azure_batch” and set “run_model_parallel” to TRUE within the “forecast_time_series” function. This will run each time series in separate virtual machines (VM) in Azure. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine.</p>
-<p><a href="https://azure.microsoft.com/en-us/services/batch/#overview">Azure Batch</a> is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the <a href="https://github.com/Azure/doAzureParallel">doAzureParallel</a> and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their <a href="https://github.com/Azure/doAzureParallel">GitHub site</a> for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn.</p>
-<p>Finn makes it easy to connect to Azure Batch by providing the “azure_batch_credentials” and “azure_batch_cluster_config” inputs within the “forecast_time_series” function. This allows you to easily input the Azure account/compute information needed to either build and deploy a new compute cluster or connect to an existing one. Please refer to their GitHub to learn more about the specifics.</p>
-<p>At a high level, all you have to do is pass something similar to what you see below, while making sure to input your specific azure account information.</p>
+<p><a href="https://azure.microsoft.com/en-us/services/batch/#overview" class="external-link">Azure Batch</a> is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the <a href="https://github.com/Azure/doAzureParallel" class="external-link">doAzureParallel</a> and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their <a href="https://github.com/Azure/doAzureParallel" class="external-link">GitHub site</a> for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn.</p>
+<p>In order to have Finn live on CRAN, it cannot contain any package dependencies that live outside of CRAN. The doAzureParallel and rAzureBatch packages are only on GitHub, so they will have to be installed and called outside of Finn.</p>
+<p>Reference the example below to understand how to connect to an Azure Batch compute cluster and submit forecasts to run in the cloud. Make sure to enter your specific Azure account information.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span class="va">azure_batch_credentials</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
-  <span class="st">"sharedKey"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
-    <span class="st">"batchAccount"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
+<code class="sourceCode R"><span class="co"># load CRAN libraries</span>
+<span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span>
+<span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://devtools.r-lib.org/" class="external-link">devtools</a></span><span class="op">)</span>
+
+<span class="co"># load GitHub libraries</span>
+<span class="fu">devtools</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"Azure/rAzureBatch"</span><span class="op">)</span>
+<span class="fu">devtools</span><span class="fu">::</span><span class="fu">install_github</span><span class="op">(</span><span class="st">"Azure/doAzureParallel"</span><span class="op">)</span>
+
+<span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va">rAzureBatch</span><span class="op">)</span>
+<span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va">doAzureParallel</span><span class="op">)</span>
+
+<span class="co"># create azure batch cluster info</span>
+<span class="va">azure_batch_credentials</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
+  <span class="st">"sharedKey"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
+    <span class="st">"batchAccount"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
       <span class="st">"name"</span> <span class="op">=</span> <span class="st">"&lt;insert resource name&gt;"</span>,
       <span class="st">"key"</span> <span class="op">=</span> <span class="st">"&lt;insert compute key&gt;"</span>,
       <span class="st">"url"</span> <span class="op">=</span> <span class="st">"&lt;insert resource URL&gt;"</span>
     <span class="op">)</span>,
-    <span class="st">"storageAccount"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
+    <span class="st">"storageAccount"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
       <span class="st">"name"</span> <span class="op">=</span> <span class="st">"&lt;insert resource name&gt;"</span>,
       <span class="st">"key"</span> <span class="op">=</span> <span class="st">"&lt;insert compute key&gt;"</span>,
       <span class="st">"endpointSuffix"</span> <span class="op">=</span> <span class="st">"core.windows.net"</span>
     <span class="op">)</span>
   <span class="op">)</span>,
-  <span class="st">"githubAuthenticationToken"</span> <span class="op">=</span> <span class="st">"&lt;insert github PAT&gt;"</span>,
-  <span class="st">"dockerAuthentication"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span><span class="st">"username"</span> <span class="op">=</span> <span class="st">""</span>,
+  <span class="st">"githubAuthenticationToken"</span> <span class="op">=</span> <span class="st">""</span>,
+  <span class="st">"dockerAuthentication"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="st">"username"</span> <span class="op">=</span> <span class="st">""</span>,
                                 <span class="st">"password"</span> <span class="op">=</span> <span class="st">""</span>,
                                 <span class="st">"registry"</span> <span class="op">=</span> <span class="st">""</span><span class="op">)</span>
 <span class="op">)</span>
 
-<span class="va">azure_batch_cluster_config</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
+<span class="va">azure_batch_cluster_config</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
   <span class="st">"name"</span> <span class="op">=</span> <span class="st">"&lt;insert compute cluster name&gt;"</span>,
   <span class="st">"vmSize"</span> <span class="op">=</span> <span class="st">"Standard_D5_v2"</span>, <span class="co"># solid VM size that has worked well in the past with Finn forecasts</span>
   <span class="st">"maxTasksPerNode"</span> <span class="op">=</span> <span class="fl">1</span>, <span class="co"># tells the cluster to only run one unique time series for each VM. That enables us to then run another layer of parallel processing within the VM</span>
-  <span class="st">"poolSize"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
-    <span class="st">"dedicatedNodes"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
+  <span class="st">"poolSize"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
+    <span class="st">"dedicatedNodes"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
       <span class="st">"min"</span> <span class="op">=</span> <span class="fl">1</span>,
       <span class="st">"max"</span> <span class="op">=</span> <span class="fl">200</span>
     <span class="op">)</span>,
-    <span class="st">"lowPriorityNodes"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
+    <span class="st">"lowPriorityNodes"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
       <span class="st">"min"</span> <span class="op">=</span> <span class="fl">1</span>,
       <span class="st">"max"</span> <span class="op">=</span> <span class="fl">100</span>
     <span class="op">)</span>,
     <span class="st">"autoscaleFormula"</span> <span class="op">=</span> <span class="st">"QUEUE"</span> <span class="co"># automatically scales up VM's as more jobs get sent to the cluster. </span>
   <span class="op">)</span>,
   <span class="st">"containerImage"</span> <span class="op">=</span> <span class="st">"mftokic/finn-azure-batch-dev"</span>, <span class="co"># docker image you can use that automatically downloads software needed for Finn to run in cloud</span>
-  <span class="st">"rPackages"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span>
-    <span class="st">"cran"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html">c</a></span><span class="op">(</span><span class="st">'Rcpp'</span>, <span class="st">'modeltime'</span>, <span class="st">'modeltime.ensemble'</span>, <span class="st">'modeltime.resample'</span>, <span class="st">'tidymodels'</span>, <span class="st">'lubridate'</span>, <span class="st">'rlist'</span>, <span class="st">'rules'</span>, <span class="st">'Cubist'</span>, <span class="st">'earth'</span>, <span class="st">'kernlab'</span>, <span class="st">'doParallel'</span>, <span class="st">'tidyverse'</span>, <span class="st">'lightgbm'</span>, <span class="st">'torch'</span>, <span class="st">'tabnet'</span>, <span class="st">'prophet'</span>, <span class="st">'glmnet'</span>, <span class="st">'gtools'</span><span class="op">)</span>, <span class="co"># finnts package dependencies</span>
-    <span class="st">"github"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span><span class="op">)</span>,
-    <span class="st">"bioconductor"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span><span class="op">)</span>
+  <span class="st">"rPackages"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>
+    <span class="st">"cran"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">'Rcpp'</span>, <span class="st">'modeltime'</span>, <span class="st">'modeltime.ensemble'</span>, <span class="st">'modeltime.resample'</span>, <span class="st">'tidymodels'</span>, <span class="st">'lubridate'</span>, <span class="st">'rlist'</span>, <span class="st">'rules'</span>, <span class="st">'Cubist'</span>, <span class="st">'earth'</span>, <span class="st">'kernlab'</span>, <span class="st">'doParallel'</span>, <span class="st">'tidyverse'</span>, <span class="st">'lightgbm'</span>, <span class="st">'torch'</span>, <span class="st">'tabnet'</span>, <span class="st">'prophet'</span>, <span class="st">'glmnet'</span>, <span class="st">'gtools'</span><span class="op">)</span>, <span class="co"># finnts package dependencies</span>
+    <span class="st">"github"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span>,
+    <span class="st">"bioconductor"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span>
   <span class="op">)</span>,
-  <span class="st">"commandLine"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html">list</a></span><span class="op">(</span><span class="op">)</span>
-<span class="op">)</span></code></pre></div>
-<p>Passing these values into “forecast_time_series” will ensure that finnts correctly runs within Azure Batch. The best part of Azure Batch is how it can easily scare to more compute as needed. In the above example, the lowest amount of VM’s running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!</p>
-<p>To keep your Azure resource keys secure without hard coding them into a R script, check out the <a href="https://github.com/Azure/AzureKeyVault">Azure Key Vault</a> package to safely retrieve and leverage keys/secrets when using Finn.</p>
+  <span class="st">"commandLine"</span> <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span><span class="op">)</span>
+<span class="op">)</span>
+
+<span class="co"># create or connect to existing Azure Batch cluster</span>
+<span class="fu">doAzureParallel</span><span class="fu">::</span><span class="fu">setCredentials</span><span class="op">(</span><span class="va">azure_batch_credentials</span><span class="op">)</span>
+<span class="va">cluster</span> <span class="op">&lt;-</span> <span class="fu">doAzureParallel</span><span class="fu">::</span><span class="fu">makeCluster</span><span class="op">(</span><span class="va">azure_batch_cluster_config</span><span class="op">)</span>
+<span class="fu">doAzureParallel</span><span class="fu">::</span><span class="fu">registerDoAzureParallel</span><span class="op">(</span><span class="va">cluster</span><span class="op">)</span>
+
+<span class="co"># call Finn with Azure Batch parallel processing</span>
+<span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://rdrr.io/pkg/modeltime/man/pipe.html" class="external-link">%&gt;%</a></span>
+  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span>
+
+<span class="va">finn_output</span> <span class="op">&lt;-</span> <span class="fu">finnts</span><span class="fu">::</span><span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span>
+  input_data <span class="op">=</span> <span class="va">hist_data</span>,
+  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,
+  target_variable <span class="op">=</span> <span class="st">"value"</span>,
+  date_type <span class="op">=</span> <span class="st">"month"</span>,
+  forecast_horizon <span class="op">=</span> <span class="fl">3</span>, 
+  parallel_processing <span class="op">=</span> <span class="st">"azure_batch"</span>, 
+  run_name <span class="op">=</span> <span class="st">"azure_batch_forecast_test"</span>
+<span class="op">)</span>
+
+<span class="co"># optional code to delete compute cluster</span>
+<span class="fu">parallel</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/r/parallel/makeCluster.html" class="external-link">stopCluster</a></span><span class="op">(</span><span class="va">cluster</span><span class="op">)</span></code></pre></div>
+<p>The best part of Azure Batch is how it can easily scare to more compute as needed. In the above example, the lowest amount of VM’s running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!</p>
+<p>To keep your Azure resource keys secure without hard coding them into a R script, check out the <a href="https://github.com/Azure/AzureKeyVault" class="external-link">Azure Key Vault</a> package to safely retrieve and leverage keys/secrets when using Finn.</p>
+<p>Important Note: The Finn team is working on new parallel compute options in Azure since Azure Batch in R is deprecated and will eventually stop being supported. New options we are exploring include Spark on Azure Synapse and Azure Functions. Stay tuned!</p>
 </div>
   </div>
 
@@ -191,11 +223,13 @@
 
 
       <footer><div class="copyright">
-  <p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/">Mike Tokic</a>, <a href="https://aadharshkannan.com/">Aadharsh Kannan</a>.</p>
+  <p></p>
+<p>Developed by <a href="https://www.linkedin.com/in/michaeltokic/" class="external-link">Mike Tokic</a>, <a href="https://aadharshkannan.com/" class="external-link">Aadharsh Kannan</a>.</p>
 </div>
 
 <div class="pkgdown">
-  <p>Site built with <a href="https://pkgdown.r-lib.org/">pkgdown</a> 1.6.1.</p>
+  <p></p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.1.</p>
 </div>
 
       </footer>
@@ -203,6 +237,8 @@
 
   
 
+
+  
 
   </body>
 </html>

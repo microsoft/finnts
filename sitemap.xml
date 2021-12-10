@@ -1,7 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
+    <loc>https://microsoft.github.io/finnts/404.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/CODE_OF_CONDUCT.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/LICENSE-text.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/SECURITY.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/SUPPORT.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/back-testing-and-hyperparameter-tuning.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/best-model-selection.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/external-regressors.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/feature-engineering.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/finnts.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/hierarchical-forecasting.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/index.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/models-used-in-finnts.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/articles/parallel-processing.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/authors.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/index.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/news/index.html</loc>
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/arima.html</loc>
@@ -26,6 +74,9 @@
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/glmnet.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/index.html</loc>
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/mars.html</loc>
@@ -77,29 +128,5 @@
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/xgboost.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/back-testing-and-hyperparameter-tuning.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/best-model-selection.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/external-regressors.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/feature-engineering.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/finnts.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/hierarchical-forecasting.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/models-used-in-finnts.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/articles/parallel-processing.html</loc>
   </url>
 </urlset>
