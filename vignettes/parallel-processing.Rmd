@@ -80,7 +80,7 @@ azure_batch_cluster_config <- list(
   ),
   "containerImage" = "mftokic/finn-azure-batch-dev", # docker image you can use that automatically downloads software needed for Finn to run in cloud
   "rPackages" = list(
-    "cran" = c('Rcpp', 'modeltime', 'modeltime.ensemble', 'modeltime.resample', 'tidymodels', 'lubridate', 'rlist', 'rules', 'Cubist', 'earth', 'kernlab', 'doParallel', 'tidyverse', 'lightgbm', 'torch', 'tabnet', 'prophet', 'glmnet', 'gtools'), # finnts package dependencies
+    "cran" = c('Rcpp', 'modeltime', 'modeltime.resample', 'tidymodels', 'lubridate', 'rules', 'Cubist', 'earth', 'kernlab', 'doParallel', 'tidyverse', 'torch', 'tabnet', 'prophet', 'glmnet', 'gtools'), # finnts package dependencies
     "github" = list(),
     "bioconductor" = list()
   ),

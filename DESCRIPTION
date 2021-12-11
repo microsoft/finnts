@@ -29,7 +29,6 @@ Imports:
     cli,
     Cubist,
     dials,
-    doFuture,
     doParallel,
     dplyr,
     earth,
@@ -39,12 +38,9 @@ Imports:
     gtools,
     hts,
     kernlab,
-    lightgbm,
     lubridate,
     magrittr,
-    matrixcalc,
     methods,
-    modeltime.ensemble,
     modeltime.gluonts,
     modeltime.resample,
     parallel,
@@ -52,7 +48,6 @@ Imports:
     plyr,
     purrr,
     recipes,
-    rlist,
     rsample,
     rules,
     stringr,
@@ -61,7 +56,6 @@ Imports:
     tidyr,
     tidyselect,
     timetk,
-    torch,
     tune,
     workflows
 Suggests: 
@@ -72,5 +66,6 @@ Suggests:
 Config/testthat/edition: 3
 Depends: 
     R (>= 3.6.0), 
-    modeltime
+    modeltime,
+    torch
 VignetteBuilder: knitr

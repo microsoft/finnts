@@ -243,9 +243,9 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 #' @return Simple list of packages
 #' @noRd
 get_export_packages <- function(){
-  c('modeltime', 'modeltime.ensemble', 'modeltime.gluonts', 'modeltime.resample',
-    'timetk', 'rlist', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost',
-    'lightgbm', 'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
+  c('modeltime', 'modeltime.gluonts', 'modeltime.resample',
+    'timetk', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost', 
+    'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
     "doParallel", "parallel")
 }
 

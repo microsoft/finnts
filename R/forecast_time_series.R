@@ -377,7 +377,7 @@ forecast_time_series <- function(input_data,
         }
 
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind',
-                                              .packages = c('rlist', 'tidyverse', 'lubridate',
+                                              .packages = c('tidyverse', 'lubridate',
                                                             "doParallel", "parallel", "gtools"),
                                               .export = c("fcst_prep")) %dopar% {
 
