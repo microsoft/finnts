@@ -245,8 +245,8 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 get_export_packages <- function(){
   c('modeltime', 'modeltime.gluonts', 'modeltime.resample',
     'timetk', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost', 
-    'tidyverse', 'lubridate', 'prophet', 'torch', 'tabnet', 
-    "doParallel", "parallel")
+    'dplyr', 'tibble', 'tidyr', 'purrr', 'stringr', 'lubridate', 'prophet', 
+    'doParallel', 'parallel')
 }
 
 #' Fetches a list of parallel transfer functions
@@ -256,7 +256,7 @@ get_export_packages <- function(){
 get_transfer_functions <- function(){
   c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "mars",
     "meanf", "nbeats", "nnetar", "nnetar_xregs", "prophet", "prophet_boost", "prophet_xregs", 
-    "snaive", "stlm_arima", "stlm_ets", "svm_poly", "svm_rbf", "tbats", "tabnet", "theta", "xgboost", 
+    "snaive", "stlm_arima", "stlm_ets", "svm_poly", "svm_rbf", "tbats", "theta", "xgboost", 
     "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
     "construct_forecast_models", "get_model_functions", "get_not_all_data_models", 
     "get_r1_data_models", "get_r2_data_models", "get_deep_learning_models", "get_frequency_adjustment_models", 

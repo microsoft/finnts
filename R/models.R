@@ -1399,58 +1399,6 @@ svm_rbf <- function(train_data,
   
 }
 
-#' TabNet
-#' 
-#' @param train_data Training Data
-#' @param parallel Parallel
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' 
-#' @return Get Tab Net
-#' @keywords internal
-#' @export
-tabnet <- function(train_data,
-                   parallel, 
-                   fiscal_year_start, 
-                   date_rm_regex, 
-                   pca) {
-  
-  date_rm_regex_final <- "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(day)|(week)"
-  #create model recipe
-  
-  recipe_spec_tabnet <- train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex_final,
-                             mutate_adj_half = FALSE,
-                             step_nzv = "none",
-                             one_hot = TRUE, 
-                             pca = pca)
-  
-  model_spec_tabnet <- tabnet::tabnet(
-    mode = "regression",
-    batch_size = tune::tune(),
-    virtual_batch_size = tune::tune(),
-    epochs = tune::tune()
-  ) %>%
-    parsnip::set_engine("torch")
-  
-  wflw_spec_tune_tabnet <- get_workflow_simple(model_spec_tabnet,
-                                               recipe_spec_tabnet)
-  
-  tune_results_tabnet <- train_data %>%
-    get_kfold_tune_grid(wkflw = wflw_spec_tune_tabnet,
-                        parallel = parallel)
-  
-  wflw_fit_tabnet <- train_data %>%
-    get_fit_wkflw_best(tune_results_tabnet,
-                       wflw_spec_tune_tabnet)
-  
-  cli::cli_alert_success("tabnet")
-  
-  return(wflw_fit_tabnet)
-  
-}
-
 #' Tbats
 #' 
 #' @param train_data Training Data

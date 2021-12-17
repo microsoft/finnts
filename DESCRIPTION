@@ -51,7 +51,6 @@ Imports:
     rsample,
     rules,
     stringr,
-    tabnet,
     tibble,
     tidyr,
     tidyselect,
@@ -66,6 +65,5 @@ Suggests:
 Config/testthat/edition: 3
 Depends: 
     R (>= 3.6.0), 
-    modeltime,
-    torch
+    modeltime
 VignetteBuilder: knitr

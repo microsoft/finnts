@@ -53,9 +53,8 @@ jobs:
         run: |
           install.packages(c('rcmdcheck', 'knitr', 'rmarkdown', 'lubridate', 'foreach', 'modeltime', 
           'Cubist', 'doParallel', 'devtools', 'dplyr', 'earth', 'glmnet', 
-          'gtools', 'hts', 'kernlab', 
-          'modeltime.gluonts', 'modeltime.resample', 'plyr', 'purrr', 'rules', 
-          'tabnet', 'tibble', 'tidyr', 'timetk', 'torch'))
+          'gtools', 'hts', 'kernlab', 'modeltime.gluonts', 'modeltime.resample', 'plyr', 'purrr', 
+          'rules', 'tibble', 'tidyr', 'timetk'))
           
           devtools::install_github(c("Azure/rAzureBatch", "Azure/doAzureParallel"))
             

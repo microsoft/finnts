@@ -377,8 +377,9 @@ forecast_time_series <- function(input_data,
         }
 
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind',
-                                              .packages = c('tidyverse', 'lubridate',
-                                                            "doParallel", "parallel", "gtools"),
+                                              .packages = c('dplyr', 'tibble', 'tidyr', 'purrr', 
+                                                            'stringr', 'lubridate',
+                                                            'doParallel', 'parallel', "gtools"),
                                               .export = c("fcst_prep")) %dopar% {
 
                                                 fcst_combination_temp <- fcst_prep %>%
@@ -468,8 +469,8 @@ forecast_time_series <- function(input_data,
     dplyr::mutate(Target = ifelse(Target == 0, 0.1, Target)) %>%
     dplyr::mutate(MAPE = round(abs((FCST - Target) / Target), digits = 4)) %>%
     dplyr::group_by(Model, Combo) %>%
-    dplyr::mutate(Combo_Total = sum(Target, na.rm = TRUE), 
-                  weighted_MAPE = (Target/Combo_Total)*MAPE) %>%
+    dplyr::mutate(Combo_Total = sum(abs(Target), na.rm = TRUE), 
+                  weighted_MAPE = (abs(Target)/Combo_Total)*MAPE) %>%
     dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm=TRUE)) %>%
     dplyr::arrange(Rolling_MAPE) %>%
     dplyr::ungroup()
