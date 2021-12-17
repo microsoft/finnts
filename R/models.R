@@ -132,11 +132,12 @@ get_recipie_configurable <- function(train_data,
   }
   
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1)) %>%
+    step_nz_fn() %>%
+    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1), 
+                         Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
     timetk::step_timeseries_signature(Date_Adj) %>%
     mutate_adj_half_fn() %>%
     rm_date_fn() %>%
-    step_nz_fn() %>%
     norm_date_adj_year_fn() %>%
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
