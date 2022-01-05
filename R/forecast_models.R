@@ -264,7 +264,7 @@ construct_forecast_models <- function(full_data_tbl,
         
         global_env <- .GlobalEnv
         export_env <- global_env$azbatchenv$exportenv
-        
+
         for(n in ls(export_env , all.names=TRUE)) {
           assign(n, get(n, export_env), global_env)
         }

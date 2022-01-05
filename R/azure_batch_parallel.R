@@ -12,9 +12,22 @@
 #' @noRd
 get_fcast_parallel_azure <- function(combo_list,
                                      call_back_fn,
-                                     run_name){
+                                     run_name, 
+                                     models_to_run,
+                                     models_not_to_run,
+                                     recipes_to_run, 
+                                     pca, 
+                                     run_deep_learning){
   
   cli::cli_h2("Submitting Tasks to Azure Batch")
+  
+  # add specific forecast_time_series function arguments to local env before submitting to Azure
+  # Helps prevent errors when function arguments are referenced in another variable
+  models_to_run <- models_to_run
+  models_not_to_run <- models_not_to_run
+  recipes_to_run <- recipes_to_run
+  pca <- pca
+  run_deep_learning <- run_deep_learning
   
   fcst <- foreach::foreach(i = combo_list, .combine = 'rbind',
                   .packages = get_export_packages(), 

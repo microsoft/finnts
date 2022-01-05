@@ -326,7 +326,12 @@ forecast_time_series <- function(input_data,
     
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
-                                     run_name)
+                                     run_name, 
+                                     models_to_run, 
+                                     models_not_to_run,
+                                     recipes_to_run, 
+                                     pca, 
+                                     run_deep_learning)
   } else {
     
     stop("error during forecast run function call")
