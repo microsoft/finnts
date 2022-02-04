@@ -77,7 +77,7 @@
 #' 
 #' @export
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' finn_forecast <- forecast_time_series(
 #'   input_data = m750 %>% dplyr::rename(Date = date), 
 #'   combo_variables = c("id"), 

@@ -159,7 +159,7 @@ A list of three separate data sets: the future forecast, the back test results, 
 Calls the Finn forecast framework to automatically forecast any historical time series.
 }
 \examples{
-\dontrun{
+\donttest{
 finn_forecast <- forecast_time_series(
   input_data = m750 \%>\% dplyr::rename(Date = date), 
   combo_variables = c("id"), 

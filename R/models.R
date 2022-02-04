@@ -31,7 +31,7 @@ get_recipie_combo <- function(train_data){
 #' @param character_factor is character factor 
 #' @param center_scale Center and scale 
 #' @param one_hot True or False
-#' @return configurable recipie
+#' @return configurable recipe
 #' @noRd
 get_recipie_configurable <- function(train_data,
                                      fiscal_year_start,
@@ -379,8 +379,17 @@ get_latin_hypercube_grid<-function(model_spec){
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ARIMA based model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' arima_model <- arima(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 arima <- function(train_data, 
                   frequency) {
 
@@ -413,10 +422,28 @@ arima <- function(train_data,
 #' @param date_rm_regex Date removal Regex
 #' @param back_test_spacing Back Testing Spacing
 #' @param fiscal_year_start Fiscal Year Start
+#' @param pca Run PCA
 #' 
 #' @return Get the ARIMA based model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' arima_boost_model <- arima_boost(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01") %>%
+#'                  timetk::tk_augment_lags(.value = Target, .lags = c(3, 6, 12)), 
+#'   frequency = 12, 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 24, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 3, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 arima_boost <- function(train_data,
                         frequency,
                         parallel,
@@ -483,10 +510,26 @@ arima_boost <- function(train_data,
 #' @param date_rm_regex Date removal Regex
 #' @param back_test_spacing Back Testing Spacing
 #' @param fiscal_year_start Fiscal Year Start
+#' @param pca Run PCA
 #' 
 #' @return Get the cubist
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' cubist_model <- cubist(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Date >= "2012-01-01")%>%
+#'                  timetk::tk_augment_lags(.value = Target, .lags = c(3, 6, 12)), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 24, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 3, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 cubist <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -519,7 +562,7 @@ cubist <- function(train_data,
                                one_hot = FALSE, 
                                pca = pca)
   }
-  
+
   model_spec_cubist <- rules::cubist_rules(
     mode = "regression", 
     committees = tune::tune(), 
@@ -541,7 +584,6 @@ cubist <- function(train_data,
                            FALSE,
                            TRUE)
   
-  
   wflw_fit_cubist<- train_data %>% 
     get_fit_wkflw_best(tune_results_cubist, 
                        wflw_spec_tune_cubist)
@@ -559,8 +601,17 @@ cubist <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Croston based model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' croston_model <- croston(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 croston <- function(train_data, 
                    frequency) {
   
@@ -589,8 +640,7 @@ croston <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the DeepAR model
-#' @keywords internal
-#' @export
+#' @noRd
 deepar <- function(train_data, 
                   horizon, 
                   frequency){
@@ -622,8 +672,17 @@ deepar <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ETS model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' ets_model <- ets(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 ets <- function(train_data, 
                frequency) {
   
@@ -659,10 +718,26 @@ ets <- function(train_data,
 #' @param date_rm_regex Date removal Regex
 #' @param back_test_spacing Back Testing Spacing
 #' @param fiscal_year_start Fiscal Year Start
+#' @param pca Run PCA
 #' 
 #' @return Get the GLM Net
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' glmnet_model <- glmnet(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 glmnet <- function(train_data,
                   parallel,
                   model_type = "single",
@@ -728,10 +803,23 @@ glmnet <- function(train_data,
 #' @param model_type "single" "ensemble" etc.
 #' @param date_rm_regex Date removal Regex
 #' @param fiscal_year_start Fiscal Year Start
+#' @param pca Run PCA
 #' 
-#' @return Get the GLM Net
-#' @keywords internal
-#' @export
+#' @return Get the Mars model
+#' @noRd
+#' @examples
+#' \donttest{
+#' mars_model <- mars(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 mars <- function(train_data, 
                 parallel, 
                 model_type = "single",
@@ -775,8 +863,17 @@ mars <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get Mean Forecast Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' meanf_model <- meanf(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 meanf <- function(train_data, 
                  frequency) {
   
@@ -809,8 +906,7 @@ meanf <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get nbeats Model
-#' @keywords internal
-#' @export
+#' @noRd
 nbeats <- function(train_data, 
                   horizon, 
                   frequency) {
@@ -847,8 +943,21 @@ nbeats <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get nnetar Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' nnetar_model <- nnetar(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 1, 
+#'   tscv_initial = 12, 
+#'   back_test_spacing = 1, 
+#'   frequency = 12)
+#' }
 nnetar <- function(train_data,
                    horizon,
                    frequency,
@@ -905,10 +1014,27 @@ nnetar <- function(train_data,
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get nnetar Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' nnetar_xregs_model <- nnetar_xregs(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   frequency = 12,
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 nnetar_xregs <- function(train_data, 
                         horizon, 
                         frequency,
@@ -973,8 +1099,20 @@ nnetar_xregs <- function(train_data,
 #' @param back_test_spacing Back Test Spacing
 #' 
 #' @return Get prophet Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' prophet_model <- prophet(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 1, 
+#'   tscv_initial = 12, 
+#'   back_test_spacing = 1)
+#' }
 prophet <- function(train_data,
                    horizon,
                    parallel,
@@ -1027,10 +1165,26 @@ prophet <- function(train_data,
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get prophet boost Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' prophet_boost_model <- prophet_boost(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 prophet_boost <- function(train_data,
                          horizon,
                          parallel,
@@ -1094,10 +1248,26 @@ prophet_boost <- function(train_data,
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get prophet xregs Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' prophet_xregs_model <- prophet_xregs(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 prophet_xregs <- function(train_data,
                          horizon,
                          parallel,
@@ -1154,8 +1324,17 @@ prophet_xregs <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get SNaive Forecast Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' snaive_model <- snaive(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 snaive <- function(train_data,
                   frequency) {
   
@@ -1184,8 +1363,17 @@ snaive <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM Arima Forecast Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' stlm_arima_model <- stlm_arima(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   seasonal_period = c(3, 6, 12))
+#' }
 stlm_arima <- function(train_data, 
                        seasonal_period){
   
@@ -1218,8 +1406,17 @@ stlm_arima <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM ETS Forecast Model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' stlm_ets_model <- stlm_ets(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   seasonal_period = c(3,6,12))
+#' }
 stlm_ets <- function(train_data, seasonal_period) {
   
   seasonal_period_stlm_ets <- seasonal_period
@@ -1255,10 +1452,26 @@ stlm_ets <- function(train_data, seasonal_period) {
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get SVM Poly
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' svm_poly_model <- svm_poly(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 svm_poly <- function(train_data,
                     horizon,
                     parallel,
@@ -1334,10 +1547,26 @@ svm_poly <- function(train_data,
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get SVM RBF
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' svm_rbf_model <- svm_rbf(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 svm_rbf <- function(train_data,
                    horizon,
                    parallel,
@@ -1406,8 +1635,17 @@ svm_rbf <- function(train_data,
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get TBats
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' tbats_model <- tbats(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   seasonal_period = c(3,6,12))
+#' }
 tbats <- function(train_data,
                  seasonal_period) {
 
@@ -1440,8 +1678,17 @@ tbats <- function(train_data,
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Theta based model
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' theta_model <- theta(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   frequency = 12)
+#' }
 theta <- function(train_data,
                  frequency) {
   
@@ -1474,10 +1721,26 @@ theta <- function(train_data,
 #' @param date_rm_regex Date RM Regex
 #' @param fiscal_year_start Fiscal Year start
 #' @param back_test_spacing Back Test Spacing
+#' @param pca Run PCA
 #' 
 #' @return Get XGBoost
-#' @keywords internal
-#' @export
+#' @noRd
+#' @examples
+#' \donttest{
+#' xgboost_model <- xgboost(
+#'   train_data = modeltime::m750 %>% 
+#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
+#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
+#'                  dplyr::filter(Combo == "M750", 
+#'                                Date >= "2012-01-01"), 
+#'   parallel = FALSE, 
+#'   horizon = 3, 
+#'   tscv_initial = 12, 
+#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
+#'   back_test_spacing = 1, 
+#'   fiscal_year_start = 7, 
+#'   pca = FALSE)
+#' }
 xgboost <-function(train_data,
                    horizon,
                    parallel,
