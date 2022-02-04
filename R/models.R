@@ -223,10 +223,8 @@ get_fit_wkflw_nocombo <- function(train_data,
 get_resample_tscv <- function(train_data,
                               tscv_initial,
                               horizon,
-                              back_test_spacing)
-{
-  set.seed(123)
-  
+                              back_test_spacing){
+
   timetk::time_series_cv(
     data = train_data,
     initial = tscv_initial,
@@ -244,8 +242,7 @@ get_resample_tscv <- function(train_data,
 #' @return gives the resample kFold CV object
 #' @noRd
 get_resample_kfold <-function(train_data){
-  set.seed(123)
-  
+
   train_data %>% 
     rsample::vfold_cv(v = 5)
 }
@@ -363,8 +360,7 @@ get_kfold_tune_grid<- function(train_data,
 #' @return gives the latin hypercube grid
 #' @noRd
 get_latin_hypercube_grid<-function(model_spec){
-  set.seed(123)
-  
+
   dials::grid_latin_hypercube(
     dials::parameters(model_spec), 
     size = 10
@@ -984,8 +980,7 @@ nnetar <- function(train_data,
   
   wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
                                           recipe_spec_nnetar)
-  
-  set.seed(123)
+
   tune_results_nnetar <-  train_data%>%
     get_resample_tune_grid(tscv_initial,
                            horizon,
@@ -1071,7 +1066,6 @@ nnetar_xregs <- function(train_data,
   wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
                                           recipe_spec_nnetar)
   
-  set.seed(123)
   tune_results_nnetar <-  train_data%>%
     get_resample_tune_grid(tscv_initial,
                            horizon,

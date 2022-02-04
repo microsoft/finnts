@@ -41,7 +41,8 @@ forecast_time_series(
   run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
-  weekly_to_daily = TRUE
+  weekly_to_daily = TRUE,
+  seed = 123
 )
 }
 \arguments{
@@ -151,6 +152,8 @@ or max number of models ran.}
 
 \item{weekly_to_daily}{If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}
+
+\item{seed}{Set seed for random number generator. Numeric value.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.

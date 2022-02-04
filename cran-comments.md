@@ -28,7 +28,7 @@ Parallel processing is turned off in all example and vignettes. So the code will
 
 > Please do not set a seed to a specific number within a function.
 
-
+Created an argument in "forecast_time_series" function to allow a user to set their own seed number. 
 
 ## R CMD check results
 There were no ERRORs or WARNINGs. 

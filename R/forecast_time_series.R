@@ -72,6 +72,7 @@
 #'   or max number of models ran.
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
 #'   up to higher temporal levels like month or quarter. 
+#' @param seed Set seed for random number generator. Numeric value. 
 #' 
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
 #' 
@@ -123,7 +124,8 @@ forecast_time_series <- function(input_data,
   run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
-  weekly_to_daily = TRUE
+  weekly_to_daily = TRUE, 
+  seed = 123
 ) {
 
   # 1. Load Environment Info: ----
@@ -212,6 +214,9 @@ forecast_time_series <- function(input_data,
   } else {
     # keep existing value of run_global_models
   }
+  
+  # * Set Seed ----
+  set.seed(seed)
   
   # 4. Prep Data ----
   
