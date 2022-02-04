@@ -24,11 +24,11 @@ Added examples to all exported functions. Wrapped them inside \dontrun{} because
 > Please ensure that you do not use more than 2 cores in your examples, 
 vignettes, etc.
 
-Parallel processing is turned off in all example and vignettes. So the code will execute on one core. 
+Parallel processing is turned off in all examples and vignettes. So the code will execute on one core. 
 
 > Please do not set a seed to a specific number within a function.
 
-Created an argument in "forecast_time_series" function to allow a user to set their own seed number. 
+Created an argument in "forecast_time_series" function called "seed" to allow a user to set their own seed number. 
 
 ## R CMD check results
 There were no ERRORs or WARNINGs. 
