@@ -10,6 +10,9 @@
     <loc>https://microsoft.github.io/finnts/LICENSE-text.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/LICENSE.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/SECURITY.html</loc>
   </url>
   <url>
@@ -52,81 +55,9 @@
     <loc>https://microsoft.github.io/finnts/news/index.html</loc>
   </url>
   <url>
-    <loc>https://microsoft.github.io/finnts/reference/arima.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/arima_boost.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/croston.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/cubist.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/deepar.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/ets.html</loc>
-  </url>
-  <url>
     <loc>https://microsoft.github.io/finnts/reference/forecast_time_series.html</loc>
   </url>
   <url>
-    <loc>https://microsoft.github.io/finnts/reference/glmnet.html</loc>
-  </url>
-  <url>
     <loc>https://microsoft.github.io/finnts/reference/index.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/mars.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/meanf.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/nbeats.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/nnetar.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/nnetar_xregs.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/prophet.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/prophet_boost.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/prophet_xregs.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/snaive.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/stlm_arima.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/stlm_ets.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/svm_poly.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/svm_rbf.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/tabnet.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/tbats.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/theta.html</loc>
-  </url>
-  <url>
-    <loc>https://microsoft.github.io/finnts/reference/xgboost.html</loc>
   </url>
 </urlset>
