@@ -13,8 +13,11 @@ check_exist <-function(to_check,ret){
 forecast_horizon <- 3
 target_variable <- "value"
 combo_variables <- c("id")
-models_to_run <- c("arima", "ets")
-inp_data <- modeltime::m750 %>% dplyr::rename(Date = date) %>% dplyr::mutate(id = as.character(id))
+models_to_run <- c("meanf", "snaive")
+inp_data <- modeltime::m750 %>% 
+  dplyr::rename(Date = date) %>% 
+  dplyr::mutate(id = as.character(id)) %>%
+  dplyr::filter(Date >= "2012-01-01")
 dt_type <- "month"
 
 finn_forecast <- forecast_time_series(
@@ -26,7 +29,8 @@ finn_forecast <- forecast_time_series(
   run_model_parallel = FALSE,
   back_test_scenarios = 6,
   models_to_run = models_to_run, 
-  run_global_models = FALSE)
+  run_global_models = FALSE, 
+  run_ensemble_models = FALSE)
 
 final_fcst <- finn_forecast$final_fcst %>%
   mutate(Date=as.Date(Date))
@@ -67,7 +71,7 @@ test_that("back test data rows are meaningful", {
   best_model_res <- back_test_data %>% dplyr::filter(Horizon==1,
                                               Best_Model=='Yes')
   
-  testthat::expect_lt(mean(best_model_res$MAPE)*100,1.5)
+  testthat::expect_lt(mean(best_model_res$MAPE)*100,3)
   
 })
 
@@ -105,7 +109,7 @@ rm(finn_forecast)
 forecast_horizon <- 3
 target_variable <- "value"
 combo_variables <- c("ID1", "id")
-models_to_run <- c("arima", "ets")
+models_to_run <- c("meanf", "snaive")
 
 inp_data <- hts::allts(hts::htseg1) %>%
   timetk::tk_tbl() %>%
@@ -129,7 +133,7 @@ finn_forecast <- forecast_time_series(
   forecast_horizon = forecast_horizon, 
   forecast_approach = "standard_hierarchy", 
   run_model_parallel = FALSE,
-  back_test_scenarios = 6,
+  back_test_scenarios = 3,
   models_to_run = models_to_run, 
   run_global_models = FALSE)
 
@@ -205,7 +209,7 @@ rm(finn_forecast)
 forecast_horizon <- 3
 target_variable <- "value"
 combo_variables <- c("State", "Sex")
-models_to_run <- c("arima", "ets")
+models_to_run <- c("meanf", "snaive")
 
 inp_data <- hts::infantgts %>%
     hts::allts() %>%
@@ -228,7 +232,7 @@ finn_forecast <- forecast_time_series(
   forecast_horizon = forecast_horizon, 
   forecast_approach = "grouped_hierarchy", 
   run_model_parallel = FALSE,
-  back_test_scenarios = 6,
+  back_test_scenarios = 3,
   models_to_run = models_to_run, 
   run_global_models = FALSE)
 

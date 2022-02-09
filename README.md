@@ -1,5 +1,9 @@
 # Microsoft Finance Time Series Forecasting Framework
 
+<!-- badges: start -->
+[![CRAN\_Status\_Badge](http://www.r-pkg.org/badges/version/finnts)](https://cran.r-project.org/package=finnts)
+<!-- badges: end -->
+
 The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is an automated forecasting framework for producing financial forecasts. While it was built for corporate finance activities, it can easily expand to any time series forecasting problem!
 
 - Automated feature engineering, back testing, and model selection. 
@@ -10,7 +14,11 @@ The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is 
 
 ## Installation
 
-Will be on CRAN soon, stay tuned!
+### CRAN version
+
+``` r
+install.packages("finnts")
+```
 
 ### Development version
 

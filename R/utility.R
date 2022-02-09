@@ -8,22 +8,24 @@ utils::globalVariables(c(".id", ".key", ".model_desc", ".pred", ".resample_id", 
                   "weighted_MAPE", "where", "as2"))
 
 #' @importFrom magrittr %>%
-NULL
 
 #' @importFrom methods formalArgs
-NULL
 
 #' @importFrom stats sd
-NULL
 
 #' @importFrom foreach %do% %dopar%
-NULL
 
 #' @importFrom lubridate %m+%
-NULL
+
+#' @importFrom kernlab ksvm
 
 #' @import modeltime
-NULL
+
+#' @importFrom Cubist cubist cubistControl
+
+#' @importFrom earth earth
+
+#' @importFrom glmnet glmnet
 
 # * cbind.fill custom function ----
 #create function to cbind dataframes that contain different amounts of rows

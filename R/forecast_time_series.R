@@ -72,12 +72,13 @@
 #'   or max number of models ran.
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
 #'   up to higher temporal levels like month or quarter. 
+#' @param seed Set seed for random number generator. Numeric value. 
 #' 
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
 #' 
 #' @export
 #' @examples
-#' \dontrun{
+#' \donttest{
 #' finn_forecast <- forecast_time_series(
 #'   input_data = m750 %>% dplyr::rename(Date = date), 
 #'   combo_variables = c("id"), 
@@ -123,7 +124,8 @@ forecast_time_series <- function(input_data,
   run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
-  weekly_to_daily = TRUE
+  weekly_to_daily = TRUE, 
+  seed = 123
 ) {
 
   # 1. Load Environment Info: ----
@@ -212,6 +214,9 @@ forecast_time_series <- function(input_data,
   } else {
     # keep existing value of run_global_models
   }
+  
+  # * Set Seed ----
+  set.seed(seed)
   
   # 4. Prep Data ----
   
@@ -326,7 +331,12 @@ forecast_time_series <- function(input_data,
     
     fcst <- get_fcast_parallel_azure(combo_list,
                                      forecast_models_fn,
-                                     run_name)
+                                     run_name, 
+                                     models_to_run, 
+                                     models_not_to_run,
+                                     recipes_to_run, 
+                                     pca, 
+                                     run_deep_learning)
   } else {
     
     stop("error during forecast run function call")
@@ -377,8 +387,9 @@ forecast_time_series <- function(input_data,
         }
 
         combinations_tbl <-  foreach::foreach(i = model_combinations[[1]], .combine = 'rbind',
-                                              .packages = c('rlist', 'tidyverse', 'lubridate',
-                                                            "doParallel", "parallel", "gtools"),
+                                              .packages = c('dplyr', 'tibble', 'tidyr', 'purrr', 
+                                                            'stringr', 'lubridate',
+                                                            'doParallel', 'parallel', "gtools"),
                                               .export = c("fcst_prep")) %dopar% {
 
                                                 fcst_combination_temp <- fcst_prep %>%
@@ -468,8 +479,8 @@ forecast_time_series <- function(input_data,
     dplyr::mutate(Target = ifelse(Target == 0, 0.1, Target)) %>%
     dplyr::mutate(MAPE = round(abs((FCST - Target) / Target), digits = 4)) %>%
     dplyr::group_by(Model, Combo) %>%
-    dplyr::mutate(Combo_Total = sum(Target, na.rm = TRUE), 
-                  weighted_MAPE = (Target/Combo_Total)*MAPE) %>%
+    dplyr::mutate(Combo_Total = sum(abs(Target), na.rm = TRUE), 
+                  weighted_MAPE = (abs(Target)/Combo_Total)*MAPE) %>%
     dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm=TRUE)) %>%
     dplyr::arrange(Rolling_MAPE) %>%
     dplyr::ungroup()

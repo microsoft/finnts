@@ -1,10 +1,42 @@
+
+## Previous Submission Feedback
+
+> Please do not start the description with "This package", package name, 
+title or similar.
+
+Updated the description file to reflect the feedback. 
+
+> \dontrun{} should only be used if the example really cannot be executed 
+(e.g. because of missing additional software, missing API keys, ...) by 
+the user. That's why wrapping examples in \dontrun{} adds the comment 
+("# Not run:") as a warning for the user.
+Does not seem necessary.
+Please unwrap the examples if they are executable in < 5 sec, or replace 
+\dontrun{} with \donttest{}.
+
+Changed the example in "forecast_time_series" function from a \dontrun{} wrapper to a \donttest{} one. 
+
+> Please add small executable examples in your Rd-files to illustrate the 
+use of the exported function but also enable automatic testing.
+
+Added examples to all exported functions. Wrapped them inside \dontrun{} because they are functions that run machine learning models that take more than 5 seconds to run. 
+
+> Please ensure that you do not use more than 2 cores in your examples, 
+vignettes, etc.
+
+Parallel processing is turned off in all examples and vignettes. So the code will execute on one core. 
+
+> Please do not set a seed to a specific number within a function.
+
+Created an argument in "forecast_time_series" function called "seed" to allow a user to set their own seed number. 
+
 ## R CMD check results
 There were no ERRORs or WARNINGs. 
 
-There was 2 NOTES:
+There were 2 NOTES:
 
 * checking dependencies in R code ... NOTE
-  Imports includes 36 non-default packages.
+  Imports includes 29 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
   use conditionally.
@@ -17,33 +49,6 @@ There was 2 NOTES:
   Maintainer: ‘Mike Tokic <mftokic@gmail.com>’
 
   New submission
-
-  License components with restrictions and base license permitting such:
-    MIT + file LICENSE
-  File 'LICENSE':
-      MIT License
-  
-      Copyright (c) Microsoft Corporation.
-  
-      Permission is hereby granted, free of charge, to any person obtaining a copy
-      of this software and associated documentation files (the "Software"), to deal
-      in the Software without restriction, including without limitation the rights
-      to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-      copies of the Software, and to permit persons to whom the Software is
-      furnished to do so, subject to the following conditions:
-  
-      The above copyright notice and this permission notice shall be included in all
-      copies or substantial portions of the Software.
-  
-      THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-      IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-      FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-      AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-      LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-      OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-      SOFTWARE
-  
-  The above changes to the MIT license are enforced by my company, Microsoft. 
   
   Also this is my first cran submission. 
 
