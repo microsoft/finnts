@@ -1,4 +1,11 @@
 
+# finnts 0.1.0.9 (Development Version)
+
+## Bug Fixes
+
+* Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models often results in RAM issues when running in Azure Batch. 
+* Fixed error when converting infinite values to NA values after model forecasts are created. 
+
 # finnts 0.1.0
 
 * Initial CRAN Release
