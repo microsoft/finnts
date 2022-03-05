@@ -49,8 +49,8 @@ get_recipie_configurable <- function(train_data,
   mutate_adj_half_fn <- function(df){
     if(mutate_adj_half){
       df %>%
-        recipes::step_mutate(Date_Adj_half_factor = as.factor(Date_Adj_half), 
-                             Date_Adj_quarter_factor = as.factor(Date_Adj_quarter))
+        recipes::step_mutate(Date_half_factor = as.factor(Date_half), 
+                             Date_quarter_factor = as.factor(Date_quarter))
     }
     else{
       df
@@ -133,9 +133,6 @@ get_recipie_configurable <- function(train_data,
   
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     step_nz_fn() %>%
-    recipes::step_mutate(Date_Adj = Date %m+% months(fiscal_year_start-1), 
-                         Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
-    timetk::step_timeseries_signature(Date_Adj) %>%
     mutate_adj_half_fn() %>%
     rm_date_fn() %>%
     norm_date_adj_year_fn() %>%
@@ -367,102 +364,31 @@ get_latin_hypercube_grid<-function(model_spec){
   )
 }
 
-#' There are modeling functions in this section
 
-#' ARIMA Model 
+#' ARIMA Model Spec
 #' 
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
-#' @return Get the ARIMA based model
+#' @return Get the ARIMA based model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' arima_model <- arima(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
-arima <- function(train_data, 
-                  frequency) {
+arima <- function(frequency) {
 
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_arima <- modeltime::arima_reg(
-    seasonal_period = frequency
-  ) %>%
+  modeltime::arima_reg(seasonal_period = frequency) %>%
     parsnip::set_engine("auto_arima")
-  
-  wflw_spec <- get_workflow_simple(model_spec_arima,
-                                   recipie_simple)
-  
-  model_fit_auto_arima <- train_data %>%
-    get_fit_simple(wflw_spec)
-  
-  cli::cli_alert_success("arima")
-  
-  return(model_fit_auto_arima)
 }
 
-#' ARIMA Boost 
+#' ARIMA Boost Model Spec
 #' 
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
-#' @param parallel Parallel Version or not
-#' @param horizon Horizon of model
-#' @param tscv_initial tscv initialization
-#' @param date_rm_regex Date removal Regex
-#' @param back_test_spacing Back Testing Spacing
-#' @param fiscal_year_start Fiscal Year Start
-#' @param pca Run PCA
 #' 
-#' @return Get the ARIMA based model
+#' @return Get the ARIMA based model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' arima_boost_model <- arima_boost(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01") %>%
-#'                  timetk::tk_augment_lags(.value = Target, .lags = c(3, 6, 12)), 
-#'   frequency = 12, 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 24, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 3, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
 arima_boost <- function(train_data,
-                        frequency,
-                        parallel,
-                        horizon,
-                        tscv_initial,
-                        date_rm_regex,
-                        back_test_spacing,
-                        fiscal_year_start, 
-                        pca) {
+                        frequency) {
   
-  #create model recipe
-  date_rm_regex_final <- paste0(date_rm_regex)
-  
-  recipe_spec_arima_boost <-  train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex_final,
-                             step_nzv = "zv",
-                             norm_date_adj_year = TRUE,
-                             one_hot = TRUE, 
-                             pca = pca)
-  
-  #create model spec
-  model_spec_arima_boost_tune = modeltime::arima_boost(
+  modeltime::arima_boost(
     mode            = "regression",
     seasonal_period = frequency,
     mtry            = tune::tune(),
@@ -473,27 +399,6 @@ arima_boost <- function(train_data,
     loss_reduction  = tune::tune()
   ) %>%
     parsnip::set_engine("auto_arima_xgboost")
-  
-  
-  wflw_spec_tune_arima_boost <- get_workflow_simple(model_spec_arima_boost_tune,
-                                                    recipe_spec_arima_boost)
-  
-  tune_results_arima_boost <- train_data%>%
-    get_resample_tune_grid(tscv_initial,
-                         horizon,
-                         back_test_spacing,
-                         wflw_spec_tune_arima_boost,
-                         parallel,
-                         TRUE)
-  
-
-  wflw_fit_arima_boost<- train_data %>% 
-    get_fit_wkflw_best(tune_results_arima_boost,
-                       wflw_spec_tune_arima_boost)
-  
-  cli::cli_alert_success("arima-boost")
-  
-  return(wflw_fit_arima_boost)
 }
 
 #' Cubist Function 
@@ -536,59 +441,12 @@ cubist <- function(train_data,
                   fiscal_year_start, 
                   pca) {
   
-
-  date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-  
-  
-  if(model_type=="ensemble"){
-    #create recipe
-    recipe_spec_cubist <-train_data %>% 
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               step_nzv = "nzv",
-                               one_hot = FALSE, 
-                               pca = pca)
-  }else{
-    recipe_spec_cubist <-train_data %>% 
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj",
-                               step_nzv = "nzv",
-                               one_hot = FALSE, 
-                               pca = pca)
-  }
-
-  model_spec_cubist <- rules::cubist_rules(
+  rules::cubist_rules(
     mode = "regression", 
     committees = tune::tune(), 
     neighbors = tune::tune(), 
-    max_rules = tune::tune()
-  ) %>%
+    max_rules = tune::tune()) %>%
     parsnip::set_engine("Cubist")
-  
-  wflw_spec_tune_cubist <- get_workflow_simple(model_spec_cubist,
-                                               recipe_spec_cubist)
-  
-  
-  tune_results_cubist <- train_data%>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_cubist,
-                           parallel,
-                           FALSE,
-                           TRUE)
-  
-  wflw_fit_cubist<- train_data %>% 
-    get_fit_wkflw_best(tune_results_cubist, 
-                       wflw_spec_tune_cubist)
-  
-  
-  cli::cli_alert_success("cubist")
-  
-  return(wflw_fit_cubist)
-  
 }
 
 #' Croston Model 
@@ -611,40 +469,24 @@ cubist <- function(train_data,
 croston <- function(train_data, 
                    frequency) {
   
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_croston <- modeltime::exp_smoothing(
+  modeltime::exp_smoothing(
     seasonal_period = frequency) %>%
     parsnip::set_engine("croston")
-  
-  wflw_spec <- get_workflow_simple(model_spec_croston,
-                                   recipie_simple)
-  
-  model_fit_croston <- train_data %>%
-    get_fit_simple(wflw_spec)
-  
-  cli::cli_alert_success("croston")
-  
-  return(model_fit_croston)
 }
 
-#' Deep AR Model 
+#' Deep AR Model Spec
 #' 
 #' @param train_data Training Data
 #' @param horizon Horizon of forecast
 #' @param frequency Frequency of Data
 #' 
-#' @return Get the DeepAR model
+#' @return Get the DeepAR model spec
 #' @noRd
 deepar <- function(train_data, 
-                  horizon, 
-                  frequency){
+                   horizon, 
+                   frequency){
   
-  recipe_spec_gluon <- train_data %>%
-    get_recipie_combo()
-  
-  model_spec_1 <- modeltime.gluonts::deep_ar(
+  modeltime.gluonts::deep_ar(
     id = "Combo", 
     freq = frequency, 
     prediction_length = as.numeric(horizon), 
@@ -652,56 +494,24 @@ deepar <- function(train_data,
     num_batches_per_epoch = 5
   ) %>%
     parsnip::set_engine("gluonts_deepar")
-  
-  wflw_fit_deepar_1 <- train_data %>%
-    get_fit_wkflw_nocombo(model_spec_1,
-                          recipe_spec_gluon)
-  
-  cli::cli_alert_success("deepar")
-  
-  return(wflw_fit_deepar_1)
 }
 
-#' ETS Model 
+#' ETS Model Spec
 #' 
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
-#' @return Get the ETS model
+#' @return Get the ETS model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' ets_model <- ets(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
 ets <- function(train_data, 
                frequency) {
   
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_ets <-  modeltime::exp_smoothing(
+   modeltime::exp_smoothing(
     error = "auto",
     trend = "auto",
     season = "auto", 
     seasonal_period = frequency) %>%
     parsnip::set_engine("ets")
-  
-  wflw_fit_deepar_1 <- train_data %>%
-    get_fit_wkflw_nocombo(model_spec_ets,
-                          recipie_simple)
-  
-  model_fit_ets <- train_data %>%
-    get_fit_simple(wflw_fit_deepar_1)
-  
-  cli::cli_alert_success('ets')
-  
-  return(model_fit_ets)
 }
 
 #' GLM Net Function 
@@ -744,52 +554,11 @@ glmnet <- function(train_data,
                   back_test_spacing, 
                   pca){
 
-  date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-  
-  if(model_type=="ensemble"){
-    recipe_spec_glmnet <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               step_nzv = "nzv",
-                               one_hot = FALSE,
-                               center_scale = TRUE, 
-                               pca = pca)
-  }else{
-    recipe_spec_glmnet <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj",
-                               step_nzv = "nzv",
-                               one_hot = FALSE,
-                               center_scale = TRUE, 
-                               pca = pca)
-  }
-  
-  model_spec_glmnet <- parsnip::linear_reg(
+  parsnip::linear_reg(
     mode = "regression", 
     penalty = tune::tune(), 
-    mixture = tune::tune()
-  ) %>%
+    mixture = tune::tune()) %>%
     parsnip::set_engine("glmnet")
-
-  wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
-                                               recipe_spec_glmnet)
-
-  tune_results_glmnet <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_glmnet,
-                           parallel)
-  
-  wflw_fit_glmnet <- train_data %>%
-    get_fit_wkflw_best(tune_results_glmnet,
-                       wflw_spec_tune_glmnet)
-  
-  cli::cli_alert_success('glmnet')
-  
-  return(wflw_fit_glmnet)
 }
 
 #' MARS Model 
@@ -873,26 +642,11 @@ mars <- function(train_data,
 meanf <- function(train_data, 
                  frequency) {
   
-  recipe_spec_meanf <-train_data %>% 
-    get_recipie_simple()
-  
-  model_spec_meanf = modeltime::window_reg(
-    window_size = frequency
-  ) %>%
+  modeltime::window_reg(window_size = frequenc ) %>%
     parsnip::set_engine(
       engine = "window_function", 
       window_function = mean, 
       na.rm = TRUE)
-  
-  wflw_spec_meanf <-  get_workflow_simple(model_spec_meanf,
-                                          recipe_spec_meanf)
-  
-  model_fit_meanf <- train_data %>%
-    get_fit_simple(wflw_spec_meanf)
-  
-  cli::cli_alert_success('meanf')
-  
-  return(model_fit_meanf)
 }
 
 #' nbeats model
@@ -1332,23 +1086,8 @@ prophet_xregs <- function(train_data,
 snaive <- function(train_data,
                   frequency) {
   
-  recipe_spec_snaive <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_snaive <- modeltime::naive_reg(
-    seasonal_period = frequency
-  ) %>%
+  modeltime::naive_reg(seasonal_period = frequency) %>%
     parsnip::set_engine("snaive")
-  
-  wflw_spec_snaive <- get_workflow_simple(model_spec_snaive,
-                                          recipe_spec_snaive)
-    
-  model_fit_snaive <- train_data %>% 
-    get_fit_simple(wflw_spec_snaive) 
-  
-  cli::cli_alert_success('snaive')
-  
-  return(model_fit_snaive)
 }
 
 #' STLM Arima 
@@ -1358,82 +1097,32 @@ snaive <- function(train_data,
 #' 
 #' @return Get STLM Arima Forecast Model
 #' @noRd
-#' @examples
-#' \donttest{
-#' stlm_arima_model <- stlm_arima(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   seasonal_period = c(3, 6, 12))
-#' }
 stlm_arima <- function(train_data, 
                        seasonal_period){
   
-  seasonal_period_stlm_arima <- seasonal_period
-  
-  recipe_spec_stlm_arima <- train_data %>%
-    get_recipie_simple() 
-  
-  model_spec_stlm_arima = modeltime::seasonal_reg(
+  modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_arima[1],
     seasonal_period_2 = seasonal_period_stlm_arima[2],
     seasonal_period_3 = seasonal_period_stlm_arima[3]
   ) %>%
     parsnip::set_engine("stlm_arima")
-  
-  wflw_spec_stlm_arima <- get_workflow_simple(model_spec_stlm_arima,
-                                              recipe_spec_stlm_arima)
-  
-  model_fit_stlm_arima <- train_data %>% 
-    get_fit_simple(wflw_spec_stlm_arima)
-  
-  cli::cli_alert_success('stlm-arima')
-  
-  return(model_fit_stlm_arima)
 }
 
-#' STLM ETS 
+#' STLM ETS Model Spec
 #' 
 #' @param train_data Training Data
 #' @param seasonal_period Seasonal Period
 #' 
-#' @return Get STLM ETS Forecast Model
+#' @return Get STLM ETS Forecast Model Spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' stlm_ets_model <- stlm_ets(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   seasonal_period = c(3,6,12))
-#' }
 stlm_ets <- function(train_data, seasonal_period) {
   
-  seasonal_period_stlm_ets <- seasonal_period
-  
-  recipe_spec_stlm_ets <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_stlm_ets = modeltime::seasonal_reg(
+  modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_ets[1],
     seasonal_period_2 = seasonal_period_stlm_ets[2],
     seasonal_period_3 = seasonal_period_stlm_ets[3]
   ) %>%
     parsnip::set_engine("stlm_ets")
-  
-  wflw_spec_stlm_ets <- get_workflow_simple(model_spec_stlm_ets,
-                                            recipe_spec_stlm_ets)
-  
-  model_fit_stlm_ets <- train_data %>% 
-    get_fit_simple(wflw_spec_stlm_ets)
-  
-  cli::cli_alert_success('stlm-ets')
-  
-  return(model_fit_stlm_ets)
 }
 
 #' SVM Poly
@@ -1623,86 +1312,37 @@ svm_rbf <- function(train_data,
   
 }
 
-#' Tbats
+#' Tbats Model Spec
 #' 
 #' @param train_data Training Data
 #' @param seasonal_period Seasonal Period
 #' 
-#' @return Get TBats
+#' @return Get TBats Model Spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' tbats_model <- tbats(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   seasonal_period = c(3,6,12))
-#' }
 tbats <- function(train_data,
                  seasonal_period) {
 
-  seasonal_period_tbats <- seasonal_period
-  
-  recipe_spec_tbats <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_tbats <- modeltime::seasonal_reg(
+  modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_tbats[1],
     seasonal_period_2 = seasonal_period_tbats[2],
     seasonal_period_3 = seasonal_period_tbats[3]
   ) %>%
     parsnip::set_engine("tbats")
-  
-  wflw_spec_tbats <- get_workflow_simple(model_spec_tbats,
-                                         recipe_spec_tbats)
-  
-  model_fit_tbats <- train_data %>%
-    get_fit_simple(wflw_spec_tbats)
-  
-  cli::cli_alert_success('tbats')
-  
-  return(model_fit_tbats)
 }
 
-#' Theta Model 
+#' Theta Model Spec
 #' 
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
-#' @return Get the Theta based model
+#' @return Get the Theta model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' theta_model <- theta(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
 theta <- function(train_data,
                  frequency) {
   
-  recipe_spec_theta <- train_data %>%
-    get_recipie_simple()
-  
-  
-  model_spec_theta <- modeltime::exp_smoothing(
+  modeltime::exp_smoothing(
     seasonal_period = frequency) %>%
     parsnip::set_engine("theta")
-  
-  wflw_spec_theta <- get_workflow_simple(model_spec_theta,
-                                         recipe_spec_theta)
-  
-  model_fit_theta <- train_data %>%
-    get_fit_simple(wflw_spec_theta)
-  
-  cli::cli_alert_success("theta")
-  
-  return(model_fit_theta)
 }
 
 #' XGBoost

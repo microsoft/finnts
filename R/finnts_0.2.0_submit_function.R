@@ -66,7 +66,7 @@ submit_fn <- function(input_data,
     
   } else if(parallel_processing == "spark") {
     
-    cli::cli_h2("Submitting to Spark")
+    cli::cli_h2("Submitting Tasks to Spark")
     
     sparklyr::registerDoSpark(sc, parallelism = length(iterator))
     final_data <- foreach(i = iterator, .combine = 'rbind') %dopar% {fn(i)}

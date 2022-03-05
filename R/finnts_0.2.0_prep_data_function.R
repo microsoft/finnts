@@ -497,7 +497,7 @@ multivariate_prep_recipe_1 <- function(data,
       } 
     }
   }
-  #add lags and rolling window calcs
+  #add lags, rolling window calcs, and fourier periods
   data_lag_window <- df_poly %>%
     timetk::tk_augment_lags(tidyselect::contains(c("Target", external_regressors)), .lags = lag_periods) %>% # create lags
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
@@ -795,32 +795,70 @@ construct_prep_time_series <- function(input_data,
       dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
       dplyr::mutate(Target = ifelse(Date > hist_end_date,
                                     NA,
-                                    Target)) %>%
+                                    Target))
+    
+    date_features <- initial_tbl %>%
+      dplyr::select(Date) %>%
       dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1), 
                     Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
       timetk::tk_augment_timeseries_signature(Date_Adj) %>%
-      dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj)
+      dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj, -Date)
     
-    R1 <- initial_tbl %>%
-      multivariate_prep_recipe_1(external_regressors,
-                                 xregs_future_values_list = xregs_future_list,
-                                 get_fourier_periods(fourier_periods, date_type),
-                                 get_lag_periods(lag_periods, date_type,forecast_horizon),
-                                 get_rolling_window_periods(rolling_window_periods, date_type))
+    names(date_features) <- stringr::str_c("Date_", names(date_features))
     
-    R2 <- initial_tbl %>%
-      multivariate_prep_recipe_2(external_regressors,
-                                 xregs_future_values_list = xregs_future_list,
-                                 get_fourier_periods(fourier_periods, date_type),
-                                 get_lag_periods(lag_periods, date_type,forecast_horizon),
-                                 get_rolling_window_periods(rolling_window_periods, date_type),
-                                 date_type,
-                                 forecast_horizon)
+    initial_tbl <- initial_tbl %>%
+      cbind(date_features)
     
-    return(tibble::tibble(Combo = combo,
-                          R1 = list(R1),
-                          R2 = list(R2))
-    )
+    # Run Recipes
+    if(is.null(recipes_to_run)) {
+      run_all_recipes_override <- FALSE
+    } else if(recipes_to_run == "all") {
+      run_all_recipes_override <- TRUE
+    } else {
+      run_all_recipes_override <- FALSE
+    }
+    
+    output_tbl <- NULL
+    
+    if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+      
+      R1 <- initial_tbl %>%
+        multivariate_prep_recipe_1(external_regressors,
+                                   xregs_future_values_list = xregs_future_list,
+                                   get_fourier_periods(fourier_periods, date_type),
+                                   get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                   get_rolling_window_periods(rolling_window_periods, date_type))
+      
+      output_tbl <- output_tbl %>%
+        rbind(tibble::tibble(Combo = combo, 
+                            Recipe = "R1",
+                            Data = list(R1)))
+      
+    }
+    
+    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+      
+      R2 <- initial_tbl %>%
+        multivariate_prep_recipe_2(external_regressors,
+                                   xregs_future_values_list = xregs_future_list,
+                                   get_fourier_periods(fourier_periods, date_type),
+                                   get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                   get_rolling_window_periods(rolling_window_periods, date_type),
+                                   date_type,
+                                   forecast_horizon)
+      
+      output_tbl <- output_tbl %>%
+        rbind(tibble::tibble(Combo = combo, 
+                            Recipe = "R2",
+                            Data = list(R2)))
+      
+    }
+
+    if(is.null(output_tbl)) {
+      stop("Error in Running Feature Engineering Recipes")
+    }
+    
+    return(output_tbl)
   }
   
   return(prep_time_series)
@@ -919,7 +957,7 @@ prep_data <- function(
   if(is.null(hist_start_date)) {
     hist_start_date <- min(input_data$Date)
   }
-  
+
   initial_prep_tbl <- input_data %>%
     tibble::tibble() %>%
     tidyr::unite("Combo",
@@ -1007,11 +1045,11 @@ prep_data <- function(
 # test %>% dplyr::select(-Combo) %>% tidyr::unnest(R2)
 
 # Things to Do ----
-# [ ] add date features from timetk into function and away from model workflows with their own recipes
-# [ ] run specific recipes based on inputs
+# [x] add date features from timetk into function and away from model workflows with their own recipes
+# [x] run specific recipes based on inputs
 # [ ] all for custom recipes to be provided 
 # [ ] unit tests to check data validation, maybe make a separate file that has reproducible data validation functions
-# [ ] standard submission functions to run no parallel processing, on local machine, in spark, or azure batch.
+# [x] standard submission functions to run no parallel processing, on local machine, in spark, or azure batch.
 #       could benefit from a standard function that lives in another file that takes in processing type, 
 #       what function to call, and what list of iterators to run through it. 
 # [ ] Fix function export to parallel cluster
