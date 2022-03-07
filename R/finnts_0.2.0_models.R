@@ -21,8 +21,6 @@ get_recipie_combo <- function(train_data){
 #' Gets a recipe that adjusts based on parameters
 #' 
 #' @param train_data Training Data 
-#' @param fiscal_year_start Start of Fiscal Year
-#' @param date_rm_regex_final Date removal RegEx Final
 #' @param mutate_adj_half parameter to add date adjustment
 #' @param rm_date "plain", "with_adj", "with_adj_index"
 #' @param step_nzv (Zero or NearZero Variance) "zv", "nzv", or none
@@ -34,11 +32,9 @@ get_recipie_combo <- function(train_data){
 #' @return configurable recipe
 #' @noRd
 get_recipie_configurable <- function(train_data,
-                                     fiscal_year_start,
-                                     date_rm_regex_final,
-                                     mutate_adj_half = TRUE,
+                                     mutate_adj_half = FALSE, #todo Fix this. Should be true
                                      rm_date = "plain",
-                                     step_nzv = "nzv",
+                                     step_nzv = "zv",
                                      norm_date_adj_year = FALSE,
                                      dummy_one_hot = TRUE,
                                      character_factor = FALSE,
@@ -60,12 +56,10 @@ get_recipie_configurable <- function(train_data,
   rm_date_fn <- function(df){
     
     switch(rm_date,
-           "plain" = df %>%
-             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date),
            "with_adj" = df %>%
-             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj),
+             recipes::step_rm(Date),
            "with_adj_index" = df %>%
-             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num),
+             recipes::step_rm(Date, Date_index.num),
            df)
 
   }
@@ -132,8 +126,8 @@ get_recipie_configurable <- function(train_data,
   }
   
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
-    step_nz_fn() %>%
     mutate_adj_half_fn() %>%
+    step_nz_fn() %>%
     rm_date_fn() %>%
     norm_date_adj_year_fn() %>%
     dummy_one_hot_fn() %>%
@@ -561,7 +555,7 @@ glmnet <- function(train_data,
     parsnip::set_engine("glmnet")
 }
 
-#' MARS Model 
+#' MARS Model Spec
 #' 
 #' @param train_data Training Data
 #' @param parallel Parallel Version or not
@@ -570,56 +564,18 @@ glmnet <- function(train_data,
 #' @param fiscal_year_start Fiscal Year Start
 #' @param pca Run PCA
 #' 
-#' @return Get the Mars model
+#' @return Get the Mars model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' mars_model <- mars(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
 mars <- function(train_data, 
-                parallel, 
-                model_type = "single",
-                date_rm_regex,
-                fiscal_year_start, 
-                pca) {
+                 pca) {
   
-  recipe_spec_mars <- train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex,
-                             rm_date = "with_adj", 
-                             pca = pca)
-
-  model_spec_mars <- parsnip::mars(
+  parsnip::mars(
     mode = "regression", 
     num_terms = tune::tune(), 
     prod_degree = tune::tune(),
     prune_method = tune::tune()
   ) %>%
     parsnip::set_engine("earth")
-  
-  wflw_spec_tune_mars <- get_workflow_simple(model_spec_mars,
-                                             recipe_spec_mars)
-  
-  tune_results_mars <- train_data %>%
-    get_kfold_tune_grid(wflw_spec_tune_mars,
-                        parallel)
-  
-  wflw_fit_mars <- train_data %>%
-    get_fit_wkflw_best(tune_results_mars,
-                       wflw_spec_tune_mars)
-  
-  cli::cli_alert_success("mars")
-  
-  return(wflw_fit_mars)
 }
 
 #' Mean Forecast 
@@ -683,42 +639,15 @@ nbeats <- function(train_data,
   return(wflw_fit_nbeats)
 }
 
-#' nnetar model
+#' nnetar model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
 #' @param frequency Frequency of Data
-#' @param parallel Parallel
-#' @param tscv_initial TS CV Initialization
-#' @param back_test_spacing Back Test Spacing
 #' 
-#' @return Get nnetar Model
+#' @return Get nnetar Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' nnetar_model <- nnetar(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 1, 
-#'   tscv_initial = 12, 
-#'   back_test_spacing = 1, 
-#'   frequency = 12)
-#' }
-nnetar <- function(train_data,
-                   horizon,
-                   frequency,
-                   parallel,
-                   tscv_initial,
-                   back_test_spacing) {
+nnetar <- function(frequency) {
   
-  recipe_spec_nnetar <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_nnetar = modeltime::nnetar_reg(
+  modeltime::nnetar_reg(
     seasonal_period = frequency, 
     non_seasonal_ar = tune::tune(id = "non_seasoanl_ar"), 
     seasonal_ar = tune::tune(), 
@@ -728,82 +657,17 @@ nnetar <- function(train_data,
     epochs = tune::tune()
   ) %>%
     parsnip::set_engine('nnetar')
-  
-  
-  grid_spec_nnetar <- get_latin_hypercube_grid(model_spec_nnetar)
-  
-  wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
-                                          recipe_spec_nnetar)
-
-  tune_results_nnetar <-  train_data%>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_tune_nnetar,
-                           parallel,
-                           FALSE,
-                           TRUE)
-
-  wflw_fit_nnetar_tscv <- train_data %>%
-    get_fit_wkflw_best(tune_results_nnetar,
-                       wflw_tune_nnetar)
-  
-  cli::cli_alert_success('nnetar')
-  
-  return(wflw_fit_nnetar_tscv)
 } 
 
-#' nnetar model
+#' nnetar xregs model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
 #' @param frequency Frequency of Data
-#' @param parallel Parallel
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
 #' 
-#' @return Get nnetar Model
+#' @return Get nnetar xregs Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' nnetar_xregs_model <- nnetar_xregs(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   frequency = 12,
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-nnetar_xregs <- function(train_data, 
-                        horizon, 
-                        frequency,
-                        parallel, 
-                        tscv_initial,
-                        date_rm_regex,
-                        fiscal_year_start,
-                        back_test_spacing, 
-                        pca) {
+nnetar_xregs <- function(frequency) {
   
-  date_rm_regex_final = paste0(date_rm_regex)
-  
-  recipe_spec_nnetar <- train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex_final,
-                             norm_date_adj_year = TRUE,
-                             one_hot = TRUE, 
-                             pca = pca)
-  
-  model_spec_nnetar = modeltime::nnetar_reg(
+  modeltime::nnetar_reg(
     seasonal_period = frequency, 
     non_seasonal_ar = tune::tune(id = "non_seasoanl_ar"), 
     seasonal_ar = tune::tune(), 
@@ -813,64 +677,15 @@ nnetar_xregs <- function(train_data,
     epochs = tune::tune()
   ) %>%
     parsnip::set_engine('nnetar')
-  
-  grid_spec_nnetar <- get_latin_hypercube_grid(model_spec_nnetar)
-  
-  
-  wflw_tune_nnetar <- get_workflow_simple(model_spec_nnetar,
-                                          recipe_spec_nnetar)
-  
-  tune_results_nnetar <-  train_data%>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_tune_nnetar,
-                           parallel,
-                           FALSE,
-                           TRUE)
-  
-  wflw_fit_nnetar_tscv <- train_data %>%
-    get_fit_wkflw_best(tune_results_nnetar,
-                       wflw_tune_nnetar)
-  
-  cli::cli_alert_success('nnetar-xregs')
-  
-  return(wflw_fit_nnetar_tscv)
 }
 
-#' prophet model
+#' prophet model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param tscv_initial TS CV Initialization
-#' @param back_test_spacing Back Test Spacing
-#' 
-#' @return Get prophet Model
+#' @return Get prophet Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' prophet_model <- prophet(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 1, 
-#'   tscv_initial = 12, 
-#'   back_test_spacing = 1)
-#' }
-prophet <- function(train_data,
-                   horizon,
-                   parallel,
-                   tscv_initial,
-                   back_test_spacing) {
+prophet <- function() {
   
-  recipe_spec_prophet <- train_data %>%
-    get_recipie_simple()
-  
-  model_spec_prophet =modeltime::prophet_reg(
+  modeltime::prophet_reg(
     growth = tune::tune(), 
     changepoint_num = tune::tune(), 
     changepoint_range = tune::tune(), 
@@ -878,61 +693,14 @@ prophet <- function(train_data,
     seasonality_weekly = tune::tune(), 
     seasonality_daily = tune::tune(), 
     prior_scale_changepoints = tune::tune(), 
-    prior_scale_seasonality = tune::tune()
-  ) %>%
+    prior_scale_seasonality = tune::tune()) %>%
     parsnip::set_engine("prophet")
-  
-  wflw_spec_prophet<- get_workflow_simple(model_spec_prophet,
-                                          recipe_spec_prophet)
-  
-  
-  tune_results_prophet <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_prophet,
-                           parallel)
-  
-  
-  
-  wflw_fit_prophet <- train_data %>%
-    get_fit_wkflw_best(tune_results_prophet,
-                       wflw_spec_prophet)
-  
-  cli::cli_alert_success("prophet")
-  
-  return(wflw_fit_prophet)
 }
 
-#' prophet boost
+#' prophet boost model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
-#' 
-#' @return Get prophet boost Model
+#' @return Get prophet boost Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' prophet_boost_model <- prophet_boost(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
 prophet_boost <- function(train_data,
                          horizon,
                          parallel,
@@ -942,100 +710,24 @@ prophet_boost <- function(train_data,
                          back_test_spacing, 
                          pca) {
   
-  #create model recipe
-  date_rm_regex_final = paste0(date_rm_regex)
-  
-  recipe_spec_prophet_boost <- train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex_final,
-                             step_nzv = "zv",
-                             norm_date_adj_year = TRUE,
-                             one_hot = TRUE, 
-                             pca = pca)
-  
-  #create model spec
-  model_spec_prophet_boost_tune <- modeltime::prophet_boost(
+  modeltime::prophet_boost(
     mode            = "regression",
     mtry            = tune::tune(),
     trees           = tune::tune(),
     min_n           = tune::tune(),
     tree_depth      = tune::tune(),
     learn_rate      = tune::tune(),
-    loss_reduction  = tune::tune()
-  ) %>%
+    loss_reduction  = tune::tune()) %>%
     parsnip::set_engine("prophet_xgboost")
-  
-  
-  wflw_spec_tune_prophet_boost <- get_workflow_simple(model_spec_prophet_boost_tune,
-                                                      recipe_spec_prophet_boost)
-    
-  tune_results_prophet_boost <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                          horizon,
-                          back_test_spacing,
-                          wflw_spec_tune_prophet_boost,
-                          parallel,
-                          TRUE,
-                          FALSE)
-  
-  wflw_fit_prophet_boost <-train_data %>% 
-    get_fit_wkflw_best(tune_results_prophet_boost,
-                       wflw_spec_tune_prophet_boost)
-  
-  cli::cli_alert_success("prophet-boost")
-  
-  return(wflw_fit_prophet_boost)
 }
 
-#' prophet xregs
+#' prophet xregs model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
-#' 
-#' @return Get prophet xregs Model
+#' @return Get prophet xregs Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' prophet_xregs_model <- prophet_xregs(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-prophet_xregs <- function(train_data,
-                         horizon,
-                         parallel,
-                         tscv_initial,
-                         date_rm_regex,
-                         fiscal_year_start,
-                         back_test_spacing, 
-                         pca) {
+prophet_xregs <- function() {
   
-  date_rm_regex_final <- paste0(date_rm_regex)
-  
-  recipe_spec_prophet_xregs <- train_data %>%
-    get_recipie_configurable(fiscal_year_start,
-                             date_rm_regex_final,
-                             step_nzv = "zv",
-                             dummy_one_hot = FALSE,
-                             character_factor = TRUE, 
-                             pca = pca)
-  
-  model_spec_prophet_xregs <- modeltime::prophet_reg(
+  modeltime::prophet_reg(
     growth = tune::tune(), 
     changepoint_num = tune::tune(), 
     changepoint_range = tune::tune(), 
@@ -1043,62 +735,29 @@ prophet_xregs <- function(train_data,
     seasonality_weekly = tune::tune(), 
     seasonality_daily = tune::tune(), 
     prior_scale_changepoints = tune::tune(), 
-    prior_scale_seasonality = tune::tune()
-  ) %>%
+    prior_scale_seasonality = tune::tune()) %>%
     parsnip::set_engine("prophet")
-  
-  wflw_spec_prophet_xregs <- get_workflow_simple(model_spec_prophet_xregs,
-                                                 recipe_spec_prophet_xregs)
-  
-  tune_results_prophet_xregs <- train_data %>% 
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_prophet_xregs,
-                           parallel = parallel)
-  
-  wkflw__fit_prophet_xregs <- train_data %>% 
-    get_fit_wkflw_best(tune_results_prophet_xregs,
-                       wflw_spec_prophet_xregs)
-  
-  cli::cli_alert_success("prophet-xregs")
-  
-  return(wkflw__fit_prophet_xregs)
 }
 
-#' SNaive 
+#' SNaive model spec
 #' 
-#' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
-#' @return Get SNaive Forecast Model
+#' @return Get SNaive Forecast Model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' snaive_model <- snaive(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
-snaive <- function(train_data,
-                  frequency) {
+snaive <- function(frequency) {
   
   modeltime::naive_reg(seasonal_period = frequency) %>%
     parsnip::set_engine("snaive")
 }
 
-#' STLM Arima 
+#' STLM Arima model spec
 #' 
-#' @param train_data Training Data
 #' @param seasonal_period Seasonal Period
 #' 
-#' @return Get STLM Arima Forecast Model
+#' @return Get STLM Arima Forecast Model spec
 #' @noRd
-stlm_arima <- function(train_data, 
-                       seasonal_period){
+stlm_arima <- function(seasonal_period){
   
   modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_arima[1],
@@ -1110,12 +769,11 @@ stlm_arima <- function(train_data,
 
 #' STLM ETS Model Spec
 #' 
-#' @param train_data Training Data
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get STLM ETS Forecast Model Spec
 #' @noRd
-stlm_ets <- function(train_data, seasonal_period) {
+stlm_ets <- function(seasonal_period) {
   
   modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_ets[1],
@@ -1125,71 +783,13 @@ stlm_ets <- function(train_data, seasonal_period) {
     parsnip::set_engine("stlm_ets")
 }
 
-#' SVM Poly
+#' SVM Poly model spec
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param model_type Type of Model
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
-#' 
-#' @return Get SVM Poly
+#' @return Get SVM Poly model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' svm_poly_model <- svm_poly(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-svm_poly <- function(train_data,
-                    horizon,
-                    parallel,
-                    model_type = "single",
-                    tscv_initial,
-                    date_rm_regex,
-                    fiscal_year_start,
-                    back_test_spacing, 
-                    pca) {
+svm_poly <- function() {
   
-  if(model_type == 'ensemble') {
-    
-    date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               one_hot = FALSE, 
-                               pca = pca)
-    
-  } else {
-    
-    date_rm_regex_final <- date_rm_regex
-    
-    recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj",
-                               norm_date_adj_year = TRUE,
-                               one_hot = FALSE, 
-                               pca = pca)
-  }
-  
-  model_spec_svm <- parsnip::svm_poly(
+  parsnip::svm_poly(
     mode = "regression", 
     cost = tune::tune(), 
     degree = tune::tune(), 
@@ -1197,27 +797,6 @@ svm_poly <- function(train_data,
     scale_factor = tune::tune()
   ) %>%
     parsnip::set_engine("kernlab")
-  
-  wflw_spec_tune_svm <- get_workflow_simple(model_spec_svm,
-                                            recipe_spec_svm)
-  
-  
-  tune_results_svm <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_svm,
-                           parallel)
-  
-  wflw_fit_svm <- train_data %>%
-    get_fit_wkflw_best(tune_results_svm,
-                       wflw_spec_tune_svm)
-  
-  
-  cli::cli_alert_success("svm-poly")
-  
-  return(wflw_fit_svm)
-  
 }
 
 #' SVM RBF
@@ -1250,77 +829,23 @@ svm_poly <- function(train_data,
 #'   fiscal_year_start = 7, 
 #'   pca = FALSE)
 #' }
-svm_rbf <- function(train_data,
-                   horizon,
-                   parallel,
-                   model_type = "single",
-                   tscv_initial,
-                   date_rm_regex,
-                   fiscal_year_start,
-                   back_test_spacing, 
-                   pca) {
+svm_rbf <- function() {
   
-  if(model_type == 'ensemble') {
-    
-    date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               one_hot = FALSE, 
-                               pca = pca)
-  }else{
-    
-    date_rm_regex_final = date_rm_regex
-    
-    recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               norm_date_adj_year = TRUE,
-                               rm_date = "with_adj",
-                               one_hot = FALSE, 
-                               pca = pca)
-  }
-  
-  model_spec_svm = parsnip::svm_rbf(
+  parsnip::svm_rbf(
     mode = "regression", 
     cost = tune::tune(), 
     rbf_sigma = tune::tune(), 
-    margin = tune::tune()
-  ) %>%
+    margin = tune::tune()) %>%
     parsnip::set_engine("kernlab")
-  
-  wflw_spec_tune_svm <- get_workflow_simple(model_spec_svm,
-                                            recipe_spec_svm)
-  
-  
-  tune_results_svm <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_svm,
-                           parallel)
-  
-  wflw_fit_svm <- train_data %>%
-    get_fit_wkflw_best(tune_results_svm,
-                       wflw_spec_tune_svm)
-  
-  cli::cli_alert_success("svm-rbf")
-  
-  return(wflw_fit_svm)
-  
 }
 
 #' Tbats Model Spec
 #' 
-#' @param train_data Training Data
 #' @param seasonal_period Seasonal Period
 #' 
 #' @return Get TBats Model Spec
 #' @noRd
-tbats <- function(train_data,
-                 seasonal_period) {
+tbats <- function(seasonal_period) {
 
   modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_tbats[1],
@@ -1332,13 +857,11 @@ tbats <- function(train_data,
 
 #' Theta Model Spec
 #' 
-#' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Theta model spec
 #' @noRd
-theta <- function(train_data,
-                 frequency) {
+theta <- function(frequency) {
   
   modeltime::exp_smoothing(
     seasonal_period = frequency) %>%
@@ -1347,95 +870,15 @@ theta <- function(train_data,
 
 #' XGBoost
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param model_type Type of Model
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
-#' 
-#' @return Get XGBoost
+#' @return Get XGBoost model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' xgboost_model <- xgboost(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-xgboost <-function(train_data,
-                   horizon,
-                   parallel,
-                   model_type = "single",
-                   tscv_initial,
-                   date_rm_regex,
-                   fiscal_year_start,
-                   back_test_spacing, 
-                   pca) {
+xgboost <-function() {
   
-  #create model recipe
-  if(model_type == 'ensemble') {
-    
-    date_rm_regex_final <- paste0(date_rm_regex, '|(year)')
-    
-    recipe_spec_xgboost <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               step_nzv = "zv",
-                               one_hot = TRUE, 
-                               pca = pca)
-    
-  } else {
-    
-    date_rm_regex_final <- paste0(date_rm_regex)
-    
-    recipe_spec_xgboost <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj",
-                               step_nzv = "zv",
-                               one_hot = TRUE, 
-                               pca = pca)
-  }
-  
-  model_spec_xgboost <- parsnip::boost_tree(
+  parsnip::boost_tree(
     mode = "regression",
     trees = tune::tune(),
     tree_depth = tune::tune(),
     learn_rate = tune::tune(),
-    loss_reduction = tune::tune()
-  ) %>%
+    loss_reduction = tune::tune()) %>%
     parsnip::set_engine("xgboost")
-  
-  wflw_spec_tune_xgboost <- get_workflow_simple(model_spec_xgboost,
-                                                recipe_spec_xgboost)
-  
-  
-  tune_results_xgboost <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_xgboost,
-                           parallel)
-  
-  wflw_fit_xgboost <- train_data %>%
-    get_fit_wkflw_best(tune_results_xgboost,
-                       wflw_spec_tune_xgboost)
-
-  cli::cli_alert_success("xgboost")
-  
-  return(wflw_fit_xgboost)
 }

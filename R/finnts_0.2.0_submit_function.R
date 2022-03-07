@@ -34,8 +34,13 @@ submit_fn <- function(input_data,
   
   if(is.null(parallel_processing)) {
     
-    final_data <- lapply(iterator, fn)
-    final_data <- do.call(rbind, final_data)
+    # final_data <- lapply(iterator, fn)
+    # final_data <- do.call(rbind, final_data)
+    
+    final_data <- foreach::foreach(i = iterator, 
+                                   .combine = 'rbind',
+                                   .errorhandling = "stop"
+    ) %dopar% {fn(i)}
     
     return(final_data)
     
@@ -57,7 +62,9 @@ submit_fn <- function(input_data,
     final_data <- foreach::foreach(i = iterator, 
                                    .combine = 'rbind',
                                    .packages = package_exports,
-                                   .export = function_exports
+                                   .export = function_exports, 
+                                   .errorhandling = "stop", 
+                                   .verbose = FALSE
     ) %dopar% {fn(i)}
 
     parallel::stopCluster(cl)
@@ -69,7 +76,9 @@ submit_fn <- function(input_data,
     cli::cli_h2("Submitting Tasks to Spark")
     
     sparklyr::registerDoSpark(sc, parallelism = length(iterator))
-    final_data <- foreach(i = iterator, .combine = 'rbind') %dopar% {fn(i)}
+    final_data <- foreach(i = iterator, 
+                          .combine = 'rbind', 
+                          .errorhandling = "stop") %dopar% {fn(i)}
     
     return(final_data)
     
