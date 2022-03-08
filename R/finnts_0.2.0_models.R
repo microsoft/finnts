@@ -77,7 +77,7 @@ get_recipie_configurable <- function(train_data,
   norm_date_adj_year_fn <- function(df){
     if(norm_date_adj_year){
       df %>%
-        recipes::step_normalize(Date_Adj_index.num, Date_Adj_year)
+        recipes::step_normalize(Date_index.num, Date_year)
     }
     else{
       df
@@ -397,43 +397,9 @@ arima_boost <- function(train_data,
 
 #' Cubist Function 
 #' 
-#' @param train_data Training Data
-#' @param parallel Parallel Version or not
-#' @param model_type "single" "ensemble" etc.
-#' @param horizon Horizon of model
-#' @param tscv_initial tscv initialization
-#' @param date_rm_regex Date removal Regex
-#' @param back_test_spacing Back Testing Spacing
-#' @param fiscal_year_start Fiscal Year Start
-#' @param pca Run PCA
-#' 
-#' @return Get the cubist
+#' @return Get the cubist model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' cubist_model <- cubist(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Date >= "2012-01-01")%>%
-#'                  timetk::tk_augment_lags(.value = Target, .lags = c(3, 6, 12)), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 24, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 3, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-cubist <- function(train_data,
-                  parallel,
-                  model_type = "single",
-                  horizon,
-                  tscv_initial,
-                  date_rm_regex,
-                  back_test_spacing,
-                  fiscal_year_start, 
-                  pca) {
+cubist <- function() {
   
   rules::cubist_rules(
     mode = "regression", 
@@ -445,23 +411,11 @@ cubist <- function(train_data,
 
 #' Croston Model 
 #' 
-#' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the Croston based model
 #' @noRd
-#' @examples
-#' \donttest{
-#' croston_model <- croston(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
-croston <- function(train_data, 
-                   frequency) {
+croston <- function(frequency) {
   
   modeltime::exp_smoothing(
     seasonal_period = frequency) %>%
@@ -492,13 +446,11 @@ deepar <- function(train_data,
 
 #' ETS Model Spec
 #' 
-#' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
 #' @return Get the ETS model spec
 #' @noRd
-ets <- function(train_data, 
-               frequency) {
+ets <- function(frequency) {
   
    modeltime::exp_smoothing(
     error = "auto",
@@ -510,43 +462,9 @@ ets <- function(train_data,
 
 #' GLM Net Function 
 #' 
-#' @param train_data Training Data
-#' @param parallel Parallel Version or not
-#' @param model_type "single" "ensemble" etc.
-#' @param horizon Horizon of model
-#' @param tscv_initial tscv initialization
-#' @param date_rm_regex Date removal Regex
-#' @param back_test_spacing Back Testing Spacing
-#' @param fiscal_year_start Fiscal Year Start
-#' @param pca Run PCA
-#' 
 #' @return Get the GLM Net
 #' @noRd
-#' @examples
-#' \donttest{
-#' glmnet_model <- glmnet(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
-glmnet <- function(train_data,
-                  parallel,
-                  model_type = "single",
-                  horizon,
-                  tscv_initial,
-                  date_rm_regex,
-                  fiscal_year_start,
-                  back_test_spacing, 
-                  pca){
+glmnet <- function(){
 
   parsnip::linear_reg(
     mode = "regression", 
@@ -557,17 +475,9 @@ glmnet <- function(train_data,
 
 #' MARS Model Spec
 #' 
-#' @param train_data Training Data
-#' @param parallel Parallel Version or not
-#' @param model_type "single" "ensemble" etc.
-#' @param date_rm_regex Date removal Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param pca Run PCA
-#' 
 #' @return Get the Mars model spec
 #' @noRd
-mars <- function(train_data, 
-                 pca) {
+mars <- function() {
   
   parsnip::mars(
     mode = "regression", 
@@ -580,25 +490,13 @@ mars <- function(train_data,
 
 #' Mean Forecast 
 #' 
-#' @param train_data Training Data
 #' @param frequency Frequency of Data
 #' 
 #' @return Get Mean Forecast Model
 #' @noRd
-#' @examples
-#' \donttest{
-#' meanf_model <- meanf(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   frequency = 12)
-#' }
-meanf <- function(train_data, 
-                 frequency) {
+meanf <- function(frequency) {
   
-  modeltime::window_reg(window_size = frequenc ) %>%
+  modeltime::window_reg(window_size = frequency) %>%
     parsnip::set_engine(
       engine = "window_function", 
       window_function = mean, 
@@ -801,34 +699,8 @@ svm_poly <- function() {
 
 #' SVM RBF
 #' 
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param parallel Parallel
-#' @param model_type Type of Model
-#' @param tscv_initial TS CV Initialization
-#' @param date_rm_regex Date RM Regex
-#' @param fiscal_year_start Fiscal Year Start
-#' @param back_test_spacing Back Test Spacing
-#' @param pca Run PCA
-#' 
-#' @return Get SVM RBF
+#' @return Get SVM RBF model spec
 #' @noRd
-#' @examples
-#' \donttest{
-#' svm_rbf_model <- svm_rbf(
-#'   train_data = modeltime::m750 %>% 
-#'                  dplyr::rename(Date = date, Combo = id, Target = value) %>% 
-#'                  dplyr::mutate(Combo = as.character(Combo)) %>%
-#'                  dplyr::filter(Combo == "M750", 
-#'                                Date >= "2012-01-01"), 
-#'   parallel = FALSE, 
-#'   horizon = 3, 
-#'   tscv_initial = 12, 
-#'   date_rm_regex = "(.xts$)|(.iso$)|(hour)|(minute)|(second)|(am.pm)|(week)|(day)", 
-#'   back_test_spacing = 1, 
-#'   fiscal_year_start = 7, 
-#'   pca = FALSE)
-#' }
 svm_rbf <- function() {
   
   parsnip::svm_rbf(

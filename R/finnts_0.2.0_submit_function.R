@@ -34,13 +34,13 @@ submit_fn <- function(input_data,
   
   if(is.null(parallel_processing)) {
     
-    # final_data <- lapply(iterator, fn)
-    # final_data <- do.call(rbind, final_data)
+    final_data <- lapply(iterator, fn)
+    final_data <- do.call(rbind, final_data)
     
-    final_data <- foreach::foreach(i = iterator, 
-                                   .combine = 'rbind',
-                                   .errorhandling = "stop"
-    ) %dopar% {fn(i)}
+    # final_data <- foreach::foreach(i = iterator, 
+    #                                .combine = 'rbind',
+    #                                .errorhandling = "stop"
+    # ) %dopar% {fn(i)}
     
     return(final_data)
     
