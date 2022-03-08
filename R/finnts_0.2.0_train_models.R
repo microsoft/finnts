@@ -679,3 +679,9 @@ tune_hyperparameters <- function(model_recipe_tbl,
 # [ ] should the recipe column be removed from the output of model_hyperparameters? 
 #     this would be important to have if the same models with two recipes had diff hyperparameters
 #     but models with params that change based on predictor column number are only R1 recipes (boost and mars models)
+# [ ] allow user to select accuracy metric for hyperparameter selection
+# [ ] allow users to turn models on/off in workflow function
+# [ ] fix long running parallel process for 2nd function call in parameter tuning
+# [ ] filter test data for R2 recipes
+# [ ] adjust tuning process if only models with no hyperparameters are selected
+# [ ] ensure tuning function can work in spark
