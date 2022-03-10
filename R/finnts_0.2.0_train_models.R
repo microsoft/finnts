@@ -201,22 +201,14 @@ model_workflows <- function(model_recipe_tbl,
   input_tbl <- model_recipe_tbl %>%
     dplyr::filter(Combo == combos[[1]])
   
-  # get args to feel into model spec functions
-  avail_arg_list <- list('train_data' = tibble::tibble(),
-                         'frequency' = 12,
-                         'horizon' = 12,
-                         'seasonal_period' = c(1,2,3),
-                         "pca" = TRUE)
-  
   # tibble to add model workflows to
   model_workflow_tbl <- tibble::tibble()
   
   # all models
-  ml_models <- c("arima", "ets", "croston", "meanf", "snaive", "stlm-arima", "stlm-ets", "tbats",
-                 "theta", "arima-boost", "cubist", "glmnet", "mars", "nnetar", "nnetar-xregs", "prophet",
-                 "prophet-boost", "prophet-xregs", "svm-poly", "svm-rbf", "xgboost")
+  ml_models <- c("arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf", 
+                 "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive", 
+                 "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost")
   
-  ml_models <- c("arima", "glmnet", "cubist", "arima-boost")
   r2_models <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
   
   iter_tbl <- tibble::tibble()
@@ -240,65 +232,19 @@ model_workflows <- function(model_recipe_tbl,
       dplyr::select(Data) %>%
       tidyr::unnest(Data) 
     
+    # get args to feel into model spec functions
+    avail_arg_list <- list('train_data' = recipe_tbl,
+                           'frequency' = 12,
+                           'horizon' = 12,
+                           'seasonal_period' = c(3,6,12),
+                           'model_type' = "single",
+                           "pca" = TRUE)
+    
+    # don't create workflows for models that only use R1 recipe
     if(recipe == "R2" & !(model %in% r2_models)) {
       next
     }
     
-    if(model %in% c("arima-boost")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(step_nzv = "zv",
-                                 norm_date_adj_year = FALSE, #todo Fix this. Should be true
-                                 one_hot = TRUE, 
-                                 pca = pca)
-      
-    } else if(model %in% c("cubist")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(rm_date = "with_adj",
-                                 step_nzv = "zv",
-                                 one_hot = FALSE, 
-                                 pca = pca)
-      
-    } else if(model %in% c("glmnet")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(rm_date = "with_adj",
-                                 step_nzv = "nzv",
-                                 one_hot = FALSE,
-                                 center_scale = TRUE, 
-                                 pca = pca)
-    } else if(model %in% c("mars")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(pca = pca)
-    } else if(model %in% c("nnetar", "prophet")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_simple()
-    } else if(model %in% c("nnetar-xregs", "prophet-boost")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(norm_date_adj_year = FALSE, #todo Fix this. Should be true
-                                 one_hot = TRUE, 
-                                 pca = pca)
-    } else if(model %in% c("prophet-xregs")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(step_nzv = "nzv",
-                                 dummy_one_hot = FALSE,
-                                 character_factor = TRUE, 
-                                 pca = pca)
-    } else if(model %in% c("svm-poly", "svm-rbf")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(rm_date = "with_adj",
-                                 norm_date_adj_year = FALSE, #todo Fix this. Should be true
-                                 one_hot = FALSE, 
-                                 pca = pca)
-    } else if(model %in% c("xgboost")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_configurable(rm_date = "with_adj",
-                                 step_nzv = "zv",
-                                 one_hot = TRUE, 
-                                 pca = pca)
-    } else if(model %in% c("arima", "ets", "croston", "meanf", "snaive", "stlm-arima", "stlm-ets", "tbats", "theta")) {
-      model_recipe <- recipe_tbl %>%
-        get_recipie_simple()
-    }
-
     # get specific model spec
     fn_to_invoke <- get(gsub('-', '_', model))
     
@@ -315,11 +261,11 @@ model_workflows <- function(model_recipe_tbl,
       }
     }
     
-    model_spec <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
+    model_workflow <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
 
-    model_workflow <- workflows::workflow() %>%
-      workflows::add_model(model_spec) %>%
-      workflows::add_recipe(model_recipe)
+    # model_workflow <- workflows::workflow() %>%
+    #   workflows::add_model(model_spec) %>%
+    #   workflows::add_recipe(model_recipe)
     
     workflow_tbl <- tibble::tibble(Model_Name = model, 
                                    Model_Recipe = recipe, 
@@ -674,6 +620,140 @@ tune_hyperparameters <- function(model_recipe_tbl,
   
   return(final_tuning_tbl)
 }
+
+#' Refit Models
+#' 
+#' @param model_recipe_tbl model recipe table
+#' @param model_fit_tbl model fit table
+#' @param model_train_test_tbl model train test split table
+#' @param combo_variables combo variables
+#' @param parallel_processing
+#' @param num_cores
+#' @param seed seed number
+#'  
+#' @return table
+#' @noRd
+refit_models <- function(model_fit_tbl, 
+                         model_recipe_tbl, 
+                         model_train_test_tbl = NULL,
+                         combo_variables, 
+                         parallel_processing = NULL, 
+                         num_cores = NULL,
+                         seed = 123) {
+  
+  iter_list <- model_train_test_tbl %>%
+    dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
+    dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
+    purrr::map(.f = function(x) {
+      model_fit_tbl %>%
+        dplyr::mutate(Run_Type = x %>% dplyr::pull(Run_Type), 
+                      Run_ID = x %>% dplyr::pull(Run_ID), 
+                      Train_End = x %>% dplyr::pull(Train_End), 
+                      Test_End = x %>% dplyr::pull(Test_End)) %>%
+        dplyr::select(-Model_Fit, -Prediction)}) %>%
+    dplyr::bind_rows()
+  
+  fit_model <- function(x) {
+    print(x)
+    combo <- x %>%
+      dplyr::pull(Combo)
+    
+    model <- x %>%
+      dplyr::pull(Model)
+    
+    recipe <- x %>%
+      dplyr::pull(Recipe_ID)
+    
+    model_fit <- model_fit_tbl %>%
+      dplyr::filter(Combo == combo, 
+                    Model == model, 
+                    Recipe_ID == recipe)
+    
+    model_fit <- model_fit$Model_Fit[[1]]
+
+    run_type <- x %>%
+      dplyr::pull(Run_Type)
+    
+    run_id <- x %>%
+      dplyr::pull(Run_ID)
+    
+    train_end <- x %>%
+      dplyr::pull(Train_End)
+    
+    test_end <- x %>%
+      dplyr::pull(Test_End)
+    
+    if(combo != 'All-Data') {
+      
+      recipe_data <- model_recipe_tbl %>%
+        dplyr::filter(Recipe == recipe, 
+                      Combo == combo) %>%
+        dplyr::select(Data) %>%
+        tidyr::unnest(Data)
+      
+    } else {
+      
+      recipe_data <- model_recipe_tbl %>%
+        dplyr::filter(Recipe == recipe) %>%
+        tidyr::separate(col = Combo, 
+                        into = combo_variables, 
+                        sep = "---", 
+                        remove = FALSE) %>%
+        dplyr::select(Data) %>%
+        tidyr::unnest(Data)
+    }
+    
+    training <- recipe_data %>%
+      dplyr::filter(Date <= train_end)
+    
+    testing <- recipe_data %>%
+      dplyr::filter(Date > train_end, 
+                    Date <= test_end)
+    
+    # fit model
+    set.seed(seed)
+    
+    model_fit <- model_fit %>%
+      generics::fit(data = training)
+    
+    # create prediction
+    model_prediction <- testing %>%
+      dplyr::bind_cols(
+        predict(model_fit, new_data = testing)
+      ) %>%
+      dplyr::select(Combo, Date, Target, .pred) %>%
+      dplyr::rename(Forecast = .pred)
+    
+    # finalize output tbl
+    final_tbl <- tibble::tibble(
+      Combo = combo, 
+      Model = model, 
+      Recipe_ID = recipe,
+      Train_Test_ID = run_id, 
+      Model_Fit = list(model_fit), 
+      Prediction = list(model_prediction)
+    )
+    
+    return(final_tbl)
+  }
+  
+  model_recipe_tbl <- model_recipe_tbl # prevent error in exporting tbl to compute cluster
+  
+  model_refit_final_tbl <- submit_fn(model_fit_tbl,
+                                     parallel_processing,
+                                     iter_list %>%
+                                       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                     fit_model,
+                                     num_cores,
+                                     package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                         'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                         'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                         'recipes', 'rules', 'modeltime'),
+                                     function_exports = NULL)
+  
+  return(model_refit_final_tbl)
+}
+
 
 # To Do
 # [ ] should the recipe column be removed from the output of model_hyperparameters? 
