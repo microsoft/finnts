@@ -794,6 +794,30 @@ refit_models <- function(model_fit_tbl,
   return(model_refit_final_tbl)
 }
 
+#' Ensemble Models
+#' 
+#' @param model_recipe_tbl model recipe table
+#' @param model_fit_tbl model fit table
+#' @param model_train_test_tbl model train test split table
+#' @param combo_variables combo variables
+#' @param parallel_processing
+#' @param num_cores
+#' @param seed seed number
+#'  
+#' @return table
+#' @noRd
+ensemble_models <- function(model_fit_tbl, 
+                            model_recipe_tbl, 
+                            model_train_test_tbl,
+                            combo_variables, 
+                            parallel_processing = NULL, 
+                            num_cores = NULL,
+                            seed = 123) {
+  
+  # get ensemble training data
+  
+}
+
 
 # To Do
 # [ ] should the recipe column be removed from the output of model_hyperparameters? 
