@@ -448,7 +448,7 @@ cubist <- function(train_data,
                                pca = pca)
   }
   
-  model_spec_cubist <- rules::cubist_rules(
+  model_spec_cubist <- parsnip::cubist_rules(
     mode = "regression", 
     committees = tune::tune(), 
     neighbors = tune::tune(), 
