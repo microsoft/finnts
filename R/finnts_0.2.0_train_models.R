@@ -204,10 +204,32 @@ model_workflows <- function(model_recipe_tbl,
   # tibble to add model workflows to
   model_workflow_tbl <- tibble::tibble()
   
-  # all models
+  # models to run
   ml_models <- c("arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf", 
                  "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive", 
                  "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost")
+  
+  if(is.null(models_to_run) & is.null(models_not_to_run)) {
+    
+    # do nothing, using existing ml_models list
+    
+  } else if(is.null(models_to_run) & !is.null(models_not_to_run)) {
+    
+    ml_models <- setdiff(ml_models, models_not_to_run)
+    
+  } else {
+    
+    if(!is.null(models_not_to_run)) {
+      cli::cli_alert_warning("Note: 'models_to_run' argument overrides the 'models_not_to_run' argument")
+    }
+    
+    ml_models <- models_to_run
+    
+  }
+    
+  if(run_deep_learning) {
+    ml_models <- c(ml_models, "nnetar", "nbeats")
+  }
   
   r2_models <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
   
@@ -338,7 +360,7 @@ model_hyperparameters <- function(model_workflow_tbl,
 
       hyperparameters_temp <- grid %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-        purrr::map_df(tidyr::nest) %>%
+        purrr::map_df(tidyr::nest, data=tidyselect::everything()) %>%
         dplyr::rename(Hyperparameters = data) %>%
         tibble::rowid_to_column("Hyperparameter_Combo") %>%
         dplyr::mutate(Model = model, 
@@ -484,6 +506,15 @@ tune_hyperparameters <- function(model_recipe_tbl,
       dplyr::filter(Date > train_end_date, 
                     Date <= test_end_date)
     
+    if(data_prep_recipe == "R2") {
+      
+      train_origin_max <- training %>%
+        dplyr::filter(Horizon == 1) 
+      
+      testing <- testing %>%
+        dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
+    }
+
     # get workflow
     workflow <- model_workflow_tbl %>%
       dplyr::filter(Model_Name == model, 
@@ -607,7 +638,7 @@ tune_hyperparameters <- function(model_recipe_tbl,
   }
   
   final_tuning_tbl <- submit_fn(model_workflow_tbl,
-                                NULL,
+                                parallel_processing,
                                 iter_list2 %>%
                                   dplyr::group_split(dplyr::row_number(), .keep = FALSE),
                                 choose_hyperparameters_fn,
@@ -710,6 +741,15 @@ refit_models <- function(model_fit_tbl,
       dplyr::filter(Date > train_end, 
                     Date <= test_end)
     
+    if(recipe == "R2") {
+      
+      train_origin_max <- training %>%
+        dplyr::filter(Horizon == 1) 
+      
+      testing <- testing %>%
+        dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
+    }
+
     # fit model
     set.seed(seed)
     
@@ -760,8 +800,8 @@ refit_models <- function(model_fit_tbl,
 #     this would be important to have if the same models with two recipes had diff hyperparameters
 #     but models with params that change based on predictor column number are only R1 recipes (boost and mars models)
 # [ ] allow user to select accuracy metric for hyperparameter selection
-# [ ] allow users to turn models on/off in workflow function
+# [x] allow users to turn models on/off in workflow function
 # [ ] fix long running parallel process for 2nd function call in parameter tuning
-# [ ] filter test data for R2 recipes
+# [x] filter test data for R2 recipes
 # [ ] adjust tuning process if only models with no hyperparameters are selected
 # [ ] ensure tuning function can work in spark
