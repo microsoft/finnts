@@ -394,7 +394,7 @@ model_hyperparameters <- function(model_workflow_tbl,
 #' @param seed seed number
 #'  
 #' @return table
-#' @noRd
+#' @export
 tune_hyperparameters <- function(model_recipe_tbl, 
                                  model_workflow_tbl, 
                                  model_hyperparameter_tbl, 
