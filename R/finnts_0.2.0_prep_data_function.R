@@ -908,6 +908,7 @@ construct_prep_time_series <- function(input_data,
 #' 
 #' @return A dataframe with nested list values for feature engineering applied by recipe
 #' 
+#' @keywords internal
 #' @export
 #' @examples
 #' feature_engineering <- prep_data( 

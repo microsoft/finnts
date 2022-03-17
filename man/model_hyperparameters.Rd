@@ -23,3 +23,4 @@ table of model hyperparameters
 \description{
 Get model hyperparameters
 }
+\keyword{internal}

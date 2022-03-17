@@ -78,6 +78,7 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' @param back_test_spacing back test spacing
 #'  
 #' @return Returns back_test_scenarios and hist_periods_80
+#' @keywords internal
 #' @export
 train_test_split <- function(input_tbl, 
                              hist_end_date, 
@@ -188,6 +189,7 @@ train_test_split <- function(input_tbl,
 #' @param pca
 #'  
 #' @return Returns back_test_scenarios and hist_periods_80
+#' @keywords internal
 #' @export
 model_workflows <- function(model_recipe_tbl, 
                             models_to_run = NULL, 
@@ -306,6 +308,7 @@ model_workflows <- function(model_recipe_tbl,
 #' @param num_hyperparameters number of hyperparameter combinations
 #'  
 #' @return table of model hyperparameters
+#' @keywords internal
 #' @export
 model_hyperparameters <- function(model_workflow_tbl, 
                                   model_recipe_tbl,
@@ -394,6 +397,7 @@ model_hyperparameters <- function(model_workflow_tbl,
 #' @param seed seed number
 #'  
 #' @return table
+#' @keywords internal
 #' @export
 tune_hyperparameters <- function(model_recipe_tbl, 
                                  model_workflow_tbl, 
@@ -663,6 +667,7 @@ tune_hyperparameters <- function(model_recipe_tbl,
 #' @param seed seed number
 #'  
 #' @return table
+#' @keywords internal
 #' @export
 refit_models <- function(model_fit_tbl, 
                          model_recipe_tbl, 
@@ -805,7 +810,8 @@ refit_models <- function(model_fit_tbl,
 #' @param seed seed number
 #'  
 #' @return table
-#' @noRd
+#' @keywords internal
+#' @export
 ensemble_models <- function(tuning_tbl, 
                             refit_tbl, 
                             date_type, 
