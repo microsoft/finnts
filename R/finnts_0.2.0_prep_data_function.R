@@ -752,8 +752,6 @@ construct_prep_time_series <- function(input_data,
   
   prep_time_series <- function(combo) {
 
-    print(combo)
-
     xregs_future_tbl <- get_xregs_future_values_tbl(input_data,
                                                     external_regressors,
                                                     hist_end_date,

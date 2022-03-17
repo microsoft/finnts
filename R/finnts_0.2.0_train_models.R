@@ -78,7 +78,7 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' @param back_test_spacing back test spacing
 #'  
 #' @return Returns back_test_scenarios and hist_periods_80
-#' @noRd
+#' @export
 train_test_split <- function(input_tbl, 
                              hist_end_date, 
                              date_type, 
@@ -188,7 +188,7 @@ train_test_split <- function(input_tbl,
 #' @param pca
 #'  
 #' @return Returns back_test_scenarios and hist_periods_80
-#' @noRd
+#' @export
 model_workflows <- function(model_recipe_tbl, 
                             models_to_run = NULL, 
                             models_not_to_run = NULL, 
@@ -306,7 +306,7 @@ model_workflows <- function(model_recipe_tbl,
 #' @param num_hyperparameters number of hyperparameter combinations
 #'  
 #' @return table of model hyperparameters
-#' @noRd
+#' @export
 model_hyperparameters <- function(model_workflow_tbl, 
                                   model_recipe_tbl,
                                   num_hyperparameters = 5) {
@@ -663,7 +663,7 @@ tune_hyperparameters <- function(model_recipe_tbl,
 #' @param seed seed number
 #'  
 #' @return table
-#' @noRd
+#' @export
 refit_models <- function(model_fit_tbl, 
                          model_recipe_tbl, 
                          model_train_test_tbl = NULL,
@@ -806,16 +806,58 @@ refit_models <- function(model_fit_tbl,
 #'  
 #' @return table
 #' @noRd
-ensemble_models <- function(model_fit_tbl, 
-                            model_recipe_tbl, 
-                            model_train_test_tbl,
-                            combo_variables, 
+ensemble_models <- function(tuning_tbl, 
+                            refit_tbl, 
+                            date_type, 
                             parallel_processing = NULL, 
                             num_cores = NULL,
                             seed = 123) {
   
-  # get ensemble training data
+  # example data
+  #tuning_results %>% dplyr::select(Prediction) %>% tidyr::unnest(Prediction)
   
+  # ensemble models to run
+  refit_models <- unique(refit_tbl$Model)
+  
+  ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "sv-poly", "svm-rbf", "xgboost")]
+  
+  if(length(ensemble_model_list) < 1) {
+    stop("no ensemble models chosen to run")
+  }
+  
+  model_workflow_tbl <- tibble::tibble()
+  
+  for(model in ensemble_model_list) {
+    
+    avail_arg_list <- list('train_data' = tibble::tibble(Combo = 1, 
+                                                         Date = as),
+                           'model_type' = "ensemble", 
+                           'pca' = FALSE)
+    
+    # get specific model spec
+    fn_to_invoke <- get(gsub('-', '_', model))
+    
+    exp_arg_list <- formalArgs(fn_to_invoke)
+    
+    avail_names <- names(avail_arg_list)
+    
+    inp_arg_list <- list()
+    
+    for(x in avail_names){
+      
+      if(x %in% exp_arg_list){
+        inp_arg_list[x] <- avail_arg_list[x]
+      }
+    }
+    
+    model_workflow <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
+    
+    workflow_tbl <- tibble::tibble(Model_Name = model, 
+                                   Model_Workflow = list(model_workflow))
+    
+    model_workflow_tbl <- rbind(model_workflow_tbl, workflow_tbl)
+  }
+  return(model_workflow_tbl)
 }
 
 
