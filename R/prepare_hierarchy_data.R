@@ -159,7 +159,8 @@ get_data_tbl_final <- function(data_tbl,
         dplyr::arrange(Combo, Date) %>%
         dplyr::select(-combo_variables) %>%
         tidyr::pivot_wider(names_from = Combo, 
-                           values_from = Target)
+                           values_from = Target) %>%
+        dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0)))
       
       data_cast %>%
         data_hts_return(ret_obj = return_type, hts_list = some_list)

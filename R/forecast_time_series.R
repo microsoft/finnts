@@ -21,7 +21,7 @@
 #'   Formatted as a numeric value. Default of 1 assumes fiscal year starts in January. 
 #' @param clean_missing_values If TRUE, cleans missing values. Only impute values for missing data within an 
 #'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said 
-#'   values. 
+#'   values. Turned off when running hierarchical forecasts. 
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
 #'   Default of NULL will automatically choose the number of back tests to run based on historical data size, 
