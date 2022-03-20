@@ -13,12 +13,18 @@ model_workflows(
 )
 }
 \arguments{
-\item{model_recipe_tbl}{}
+\item{model_recipe_tbl}{model recipe table}
 
-\item{pca}{}
+\item{models_to_run}{models to run}
+
+\item{models_not_to_run}{models not to run}
+
+\item{run_deep_learning}{run deep learning models}
+
+\item{pca}{pca}
 }
 \value{
-Returns back_test_scenarios and hist_periods_80
+Returns table of model workflows
 }
 \description{
 Gets model workflows

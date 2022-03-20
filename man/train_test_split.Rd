@@ -18,6 +18,8 @@ train_test_split(
 
 \item{hist_end_date}{historical end date}
 
+\item{date_type}{date type}
+
 \item{forecast_horizon}{forecast horizon}
 
 \item{back_test_scenarios}{back test scenarios}
@@ -25,7 +27,7 @@ train_test_split(
 \item{back_test_spacing}{back test spacing}
 }
 \value{
-Returns back_test_scenarios and hist_periods_80
+Returns table of train test splits
 }
 \description{
 Gets the train test splits

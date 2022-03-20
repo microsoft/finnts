@@ -33,6 +33,10 @@ tune_hyperparameters(
 
 \item{combo_variables}{combo variables}
 
+\item{parallel_processing}{parallel processing}
+
+\item{num_cores}{number of cores}
+
 \item{seed}{seed number}
 
 \item{model_hyparameter_tbl}{model hyperparameter table}

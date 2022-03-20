@@ -7,25 +7,33 @@
 ensemble_models(
   tuning_tbl,
   refit_tbl,
+  model_train_test_tbl,
   date_type,
+  num_hyperparameters = 5,
   parallel_processing = NULL,
   num_cores = NULL,
   seed = 123
 )
 }
 \arguments{
-\item{seed}{seed number}
+\item{tuning_tbl}{hyperparameter tuning predictions}
 
-\item{model_recipe_tbl}{model recipe table}
-
-\item{model_fit_tbl}{model fit table}
+\item{refit_tbl}{individual model predictions}
 
 \item{model_train_test_tbl}{model train test split table}
 
-\item{combo_variables}{combo variables}
+\item{date_type}{date type}
+
+\item{num_hyperparameters}{number of hyperparameters}
+
+\item{parallel_processing}{parallel processing}
+
+\item{num_cores}{number of cores}
+
+\item{seed}{seed number}
 }
 \value{
-table
+list with ensemble predictions and fitted models
 }
 \description{
 Ensemble Models

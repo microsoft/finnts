@@ -23,10 +23,14 @@ refit_models(
 
 \item{combo_variables}{combo variables}
 
+\item{parallel_processing}{parallel processing}
+
+\item{num_cores}{number of cores}
+
 \item{seed}{seed number}
 }
 \value{
-table
+list of individual model predictions and fitted models
 }
 \description{
 Refit Models

@@ -60,7 +60,8 @@ get_recipie_configurable <- function(train_data,
              recipes::step_rm(Date),
            "with_adj_index" = df %>%
              recipes::step_rm(Date, Date_index.num),
-           df)
+           df, 
+           "none" = df)
 
   }
   
@@ -436,7 +437,7 @@ cubist <- function(train_data,
   
   if(model_type=="ensemble"){
     recipe_spec_cubist <- train_data %>% 
-      get_recipie_configurable(rm_date = "with_adj_index",
+      get_recipie_configurable(rm_date = "with_adj",
                                step_nzv = "nzv",
                                one_hot = FALSE, 
                                pca = pca)
