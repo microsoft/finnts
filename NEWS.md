@@ -1,11 +1,13 @@
 
 # finnts 0.1.0.9 (Development Version)
 
+## Default Function Behavior
+* Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models on large datasets often results in RAM issues when running in Azure Batch.
+
 ## Bug Fixes
 
-* Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models often results in RAM issues when running in Azure Batch.
 * Fixed error when converting infinite values to NA values after model forecasts are created. 
-* Changed the cubist model to reference the new cubist model definition moving from the rules package to parsnip. 
+* Changed the cubist model to reference the new cubist model definition in parsnip package.
 * Fixed bug in hierarchical forecasting. Missing values in the hierarchy are converted from NA to zero, which fixes how data is aggregated at various levels of hierarchy. 
 
 # finnts 0.1.0
