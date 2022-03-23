@@ -21,13 +21,11 @@ utils::globalVariables(c(".id", ".key", ".model_desc", ".pred", ".resample_id", 
 
 #' @import modeltime
 
-#' @importFrom Cubist cubist cubistControl
-
 #' @importFrom earth earth
 
 #' @importFrom glmnet glmnet
 
-#' @importFrom rules cubist_fit committees max_rules mtry_prop
+#' @importFrom rules cubist_fit
 
 # * cbind.fill custom function ----
 #create function to cbind dataframes that contain different amounts of rows
