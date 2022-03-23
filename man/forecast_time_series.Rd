@@ -76,7 +76,7 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
 
 \item{clean_missing_values}{If TRUE, cleans missing values. Only impute values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
-values.}
+values. Turned off when running hierarchical forecasts.}
 
 \item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data}
 
