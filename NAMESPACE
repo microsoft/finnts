@@ -2,6 +2,8 @@
 
 export(forecast_time_series)
 import(modeltime)
+importFrom(Cubist,cubist)
+importFrom(Cubist,cubistControl)
 importFrom(earth,earth)
 importFrom(foreach,"%do%")
 importFrom(foreach,"%dopar%")
