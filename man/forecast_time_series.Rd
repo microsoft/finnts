@@ -76,7 +76,7 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
 
 \item{clean_missing_values}{If TRUE, cleans missing values. Only impute values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
-values.}
+values. Turned off when running hierarchical forecasts.}
 
 \item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data}
 
@@ -119,8 +119,9 @@ based on date_type.}
 chooses these values based on date type.}
 
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
-all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
-of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
+all recipes, but only runs the R1 recipe for weekly and daily date types, and also for global models to prevent memory issues.
+A value of "all" runs all recipes, regardless of date type or if it's a local/global model. A list like c("R1") or c("R2")
+would only run models with the R1 or R2 recipe.}
 
 \item{pca}{If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
