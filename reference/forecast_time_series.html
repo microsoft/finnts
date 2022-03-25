@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.0.9000</span>
       </span>
     </div>
 
@@ -35,7 +35,7 @@
   <a href="../reference/index.html">Reference</a>
 </li>
 <li class="dropdown">
-  <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-expanded="false">
+  <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
     Articles
      
     <span class="caret"></span>
@@ -165,7 +165,7 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
 <dt>clean_missing_values</dt>
 <dd><p>If TRUE, cleans missing values. Only impute values for missing data within an
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
-values.</p></dd>
+values. Turned off when running hierarchical forecasts.</p></dd>
 <dt>clean_outliers</dt>
 <dd><p>If TRUE, outliers are cleaned and inputted with values more in line with historical data</p></dd>
 <dt>back_test_scenarios</dt>
@@ -208,8 +208,9 @@ based on date_type.</p></dd>
 chooses these values based on date type.</p></dd>
 <dt>recipes_to_run</dt>
 <dd><p>List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
-all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
-of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.</p></dd>
+all recipes, but only runs the R1 recipe for weekly and daily date types, and also for global models to prevent memory issues.
+A value of "all" runs all recipes, regardless of date type or if it's a local/global model. A list like c("R1") or c("R2")
+would only run models with the R1 or R2 recipe.</p></dd>
 <dt>pca</dt>
 <dd><p>If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.</p></dd>
@@ -262,9 +263,6 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-in">  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"snaive"</span><span class="op">)</span><span class="op">)</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Prepping Data</span> <span style="color: #00BBBB;">───────────────────────────────────────────────────────────────</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Registered S3 method overwritten by 'tune':</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   method                   from   </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   required_pkgs.model_spec parsnip</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Date")</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Registered S3 method overwritten by 'quantmod':</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   method            from</span>
@@ -1235,7 +1233,7 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">i</span> <span style="color: #000000;">Slice62: preprocessor 1/1, model 1/1</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✓</span> <span style="color: #000000;">Slice62: preprocessor 1/1, model 1/1</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #0000BB;">i</span> <span style="color: #000000;">Slice62: preprocessor 1/1, model 1/1 (predictions)</span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 178.727 sec elapsed</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 136.165 sec elapsed</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c(".id", ".row")</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
