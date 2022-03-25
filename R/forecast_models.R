@@ -314,7 +314,7 @@ construct_forecast_models <- function(full_data_tbl,
     # recipe 2: custom horizon specific feature engineering
     run_data_full_recipe_2 <- NULL
 
-    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+    if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year") & combo_value!="All-Data") | "R2" %in% recipes_to_run | run_all_recipes_override) {
       
       run_data_full_recipe_2 <- run_data_full_tbl %>%
         multivariate_prep_recipe_2(external_regressors = external_regressors,
@@ -445,7 +445,7 @@ construct_forecast_models <- function(full_data_tbl,
 
         }
         
-        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | run_all_recipes_override | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")))){
+        if(model_name %in% r2_models & ("R2" %in% recipes_to_run | run_all_recipes_override | (is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year") & combo_value!="All-Data"))){
 
           add_name <- paste0(model_name,"-R2",model_name_suffix)
           try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,

@@ -267,7 +267,7 @@ get_tune_grid <- function(train_data,
   
   dial_by_boost <- function(wkflw,isBoost){
     
-    params <- dials::parameters(wkflw)
+    params <- workflows::extract_parameter_set_dials(wkflw)
     
     if(isBoost){
       params %>% stats::update(learn_rate = dials::learn_rate(range = c(0.15, 0.5), 
@@ -559,7 +559,7 @@ cubist <- function(train_data,
                                pca = pca)
   }
 
-  model_spec_cubist <- rules::cubist_rules(
+  model_spec_cubist <- parsnip::cubist_rules(
     mode = "regression", 
     committees = tune::tune(), 
     neighbors = tune::tune(), 

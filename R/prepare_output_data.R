@@ -8,16 +8,18 @@
 get_forecast_negative_adjusted <- function(fcst,
                                            negative_forecast){
   
-  #TODO: Should re-write this as dplyr
   
-  #Replace NaN/Inf with NA, then replace with zero
-  is.na(fcst) <- sapply(fcst, is.infinite)
-  is.na(fcst) <- sapply(fcst, is.nan)
-  fcst[is.na(fcst)] = 0
+  fcst_final <- fcst %>%
+    dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
+    dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
+    dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) # replace NA values
   
   # convert negative forecasts to zero
-  if(negative_forecast == FALSE) {fcst$FCST <- replace(fcst$FCST, 
-                                                   which(fcst$FCST < 0), 0)}
+  if(negative_forecast == FALSE) {
+    fcst_final$FCST <- replace(fcst_final$FCST, 
+                               which(fcst_final$FCST < 0), 
+                               0)
+    }
   
-  return (fcst)
+  return(fcst_final)
 }
