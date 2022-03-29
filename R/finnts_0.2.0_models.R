@@ -559,7 +559,7 @@ glmnet <- function(train_data,
   
   if(model_type=="ensemble"){
     recipe_spec_glmnet <- train_data %>%
-      get_recipie_configurable(rm_date = "with_adj_index",
+      get_recipie_configurable(rm_date = "with_adj",
                                step_nzv = "zv",
                                one_hot = FALSE,
                                center_scale = TRUE, 
@@ -931,7 +931,7 @@ svm_poly <- function(train_data,
   if(model_type == 'ensemble') {
 
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(rm_date = "with_adj_index",
+      get_recipie_configurable(rm_date = "with_adj",
                                one_hot = FALSE, 
                                pca = pca)
     
@@ -974,7 +974,7 @@ svm_rbf <- function(train_data,
   if(model_type == 'ensemble') {
     
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(rm_date = "with_adj_index",
+      get_recipie_configurable(rm_date = "with_adj",
                                one_hot = FALSE, 
                                pca = pca)
   }else{
@@ -1069,7 +1069,7 @@ xgboost <-function(train_data,
     recipe_spec_xgboost <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
-                               rm_date = "with_adj_index",
+                               rm_date = "with_adj",
                                step_nzv = "zv",
                                one_hot = TRUE, 
                                pca = pca)

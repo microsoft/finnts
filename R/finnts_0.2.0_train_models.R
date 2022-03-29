@@ -348,14 +348,14 @@ model_hyperparameters <- function(model_workflow_tbl,
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
     
-    if(dials::parameters(model_spec) %>% nrow() > 0) {
+    if(workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
       
       if(model=="svm-rbf") {
         parameters <- model_spec %>%
-          dials::parameters()
+          workflows::extract_parameter_set_dials()
       } else {
         parameters <- model_spec %>%
-          dials::parameters() %>%
+          workflows::extract_parameter_set_dials() %>%
           dials::finalize(recipe_features, force = FALSE)
       }
 
@@ -932,10 +932,10 @@ ensemble_models <- function(tuning_tbl,
     
     if(model=="svm-rbf") {
       parameters <- model_spec %>%
-        dials::parameters()
+        workflows::extract_parameter_set_dials()
     } else {
       parameters <- model_spec %>%
-        dials::parameters() %>%
+        workflows::extract_parameter_set_dials() %>%
         dials::finalize(recipe_features, force = FALSE)
     }
     
