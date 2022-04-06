@@ -1,4 +1,8 @@
 
+# finnts 0.1.1.9000 (Development Version)
+
+* Expand Azure Batch task timeout from 1 day to 1 week. Prevents errors when running large forecasts that take over a day to run in Azure. 
+
 # finnts 0.1.1
 
 ## Default Function Behavior
