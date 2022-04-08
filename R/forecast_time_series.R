@@ -453,6 +453,7 @@ forecast_time_series <- function(input_data,
                                                  .packages = get_export_packages(), 
                                                  .export = c("fcst_prep", "get_cores"),
                                                  .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                                       timeout = 60 * 60 * 24 * 7, # timeout after a week
                                                                        job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
                                                                                            tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
                                                  .errorhandling = "remove") %dopar% {create_model_averages(i)}
