@@ -177,7 +177,6 @@ tune_models <- function(model_recipe_tbl,
       Recipe_ID = data_prep_recipe,
       Train_Test_ID = data_split, 
       Hyperparameter_ID = param_combo, 
-      Model_Fit = list(model_fit), 
       Prediction = list(model_prediction)
     )
     
@@ -216,23 +215,9 @@ tune_models <- function(model_recipe_tbl,
       dplyr::filter(Combo == combo, 
                     Recipe_ID == recipe, 
                     Model == model) %>%
-      dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
-    
-    # if(combo != "All-Data") {
-    #   test_tbl <- initial_tuning_tbl %>%
-    #     dplyr::filter(Combo == combo, 
-    #                   Recipe_ID == recipe, 
-    #                   Model == model) %>%
-    #     dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
-    # } else{
-    #   test_tbl <- initial_tuning_tbl %>%
-    #     dplyr::filter(Recipe_ID == recipe, 
-    #                   Model == model) %>%
-    #     dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
-    # }
+      dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction)
     
     best_param <- test_tbl %>%
-      dplyr::select(-Model_Fit) %>%
       tidyr::unnest(Prediction) %>%
       dplyr::mutate(Combo = combo) %>%
       dplyr::group_by(Combo, Model, Recipe_ID, Hyperparameter_ID) %>%
@@ -244,15 +229,8 @@ tune_models <- function(model_recipe_tbl,
       dplyr::slice(1) %>%
       dplyr::pull(Hyperparameter_ID)
     
-    best_model_fit <- test_tbl %>%
-      dplyr::filter(Hyperparameter_ID == best_param) %>%
-      dplyr::slice(1)
-    
-    best_model_fit <- best_model_fit$Model_Fit[[1]]
-    
     final_predictions <- test_tbl %>%
       dplyr::filter(Hyperparameter_ID == best_param) %>%
-      dplyr::select(-Model_Fit) %>%
       tidyr::unnest(Prediction) %>%
       dplyr::select(Combo, Date, Train_Test_ID, Target, Forecast)
     
@@ -260,7 +238,6 @@ tune_models <- function(model_recipe_tbl,
                           Model = model, 
                           Recipe_ID = recipe, 
                           Hyperparameter_ID = best_param, 
-                          Model_Fit = list(best_model_fit), 
                           Prediction = list(final_predictions)))
   }
   

@@ -1,7 +1,9 @@
 #' Refit Models
 #' 
 #' @param model_recipe_tbl model recipe table
-#' @param model_fit_tbl model fit table
+#' @param model_workflow_tbl model workflow table
+#' @param model_hyperparameter_tbl model hyperparameter table
+#' @param model_tune_tbl model tune table
 #' @param model_train_test_tbl model train test split table
 #' @param combo_variables combo variables
 #' @param parallel_processing parallel processing
@@ -11,9 +13,11 @@
 #' @return list of individual model predictions and fitted models
 #' @keywords internal
 #' @export
-refit_models <- function(model_fit_tbl, 
+refit_models <- function(model_tune_tbl, 
                          model_recipe_tbl, 
-                         model_train_test_tbl = NULL,
+                         model_workflow_tbl, 
+                         model_hyperparameter_tbl, 
+                         model_train_test_tbl,
                          combo_variables, 
                          parallel_processing = NULL, 
                          num_cores = NULL,
@@ -23,13 +27,16 @@ refit_models <- function(model_fit_tbl,
     dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Ensemble")) %>%
     dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
     purrr::map(.f = function(x) {
-      model_fit_tbl %>%
+      model_tune_tbl %>%
         dplyr::mutate(Run_Type = x %>% dplyr::pull(Run_Type), 
                       Run_ID = x %>% dplyr::pull(Run_ID), 
                       Train_End = x %>% dplyr::pull(Train_End), 
                       Test_End = x %>% dplyr::pull(Test_End)) %>%
-        dplyr::select(-Model_Fit, -Prediction)}) %>%
+        dplyr::select(-Prediction)}) %>%
     dplyr::bind_rows()
+  
+  model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
+  model_hyperparameter_tbl <- model_hyperparameter_tbl # prevent error in exporting tbl to compute cluster
   
   fit_model <- function(x) {
     
@@ -42,12 +49,8 @@ refit_models <- function(model_fit_tbl,
     recipe <- x %>%
       dplyr::pull(Recipe_ID)
     
-    model_fit <- model_fit_tbl %>%
-      dplyr::filter(Combo == combo, 
-                    Model == model, 
-                    Recipe_ID == recipe)
-    
-    model_fit <- model_fit$Model_Fit[[1]]
+    param <- x %>%
+      dplyr::pull(Hyperparameter_ID)
     
     run_type <- x %>%
       dplyr::pull(Run_Type)
@@ -97,11 +100,32 @@ refit_models <- function(model_fit_tbl,
         dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
     }
     
+    # get workflow
+    workflow <- model_workflow_tbl %>%
+      dplyr::filter(Model_Name == model, 
+                    Model_Recipe == recipe)
+    
+    workflow_final <- workflow$Model_Workflow[[1]]
+    
+    # get hyperparameters
+    hyperparameters <- model_hyperparameter_tbl %>%
+      dplyr::filter(Model == model,
+                    Recipe == recipe, 
+                    Hyperparameter_Combo == param) %>%
+      dplyr::select(Hyperparameters) %>%
+      tidyr::unnest(Hyperparameters)
+    
     # fit model
     set.seed(seed)
     
-    model_fit <- model_fit %>%
-      generics::fit(data = training)
+    if(nrow(hyperparameters) > 0) {
+      model_fit <- workflow_final %>%
+        tune::finalize_workflow(parameters = hyperparameters) %>%
+        generics::fit(data = training)
+    } else {
+      model_fit <- workflow_final %>%
+        generics::fit(data = training)
+    }
     
     # create prediction
     model_prediction <- testing %>%
@@ -112,6 +136,12 @@ refit_models <- function(model_fit_tbl,
       dplyr::rename(Forecast = .pred)
     
     # finalize output tbl
+    if(run_id == "01") {
+      model_fit <- model_fit
+    } else {
+      model_fit <- NULL
+    }
+    
     final_tbl <- tibble::tibble(
       Combo = combo, 
       Model = model, 
@@ -137,7 +167,7 @@ refit_models <- function(model_fit_tbl,
                                                          'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                          'recipes', 'rules', 'modeltime'),
                                      function_exports = NULL)
-  
+
   fitted_models <- model_refit_final_tbl %>%
     dplyr::filter(Train_Test_ID == "01") %>%
     dplyr::select(Combo, Model, Recipe_ID, Model_Fit)
