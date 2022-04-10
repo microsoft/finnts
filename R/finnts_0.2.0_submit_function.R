@@ -30,17 +30,13 @@ submit_fn <- function(input_data,
                       fn, 
                       num_cores = NULL, 
                       package_exports = NULL, 
-                      function_exports = NULL){
+                      function_exports = NULL, 
+                      error_handling = "stop"){
   
   if(is.null(parallel_processing)) {
     
     final_data <- lapply(iterator, fn)
     final_data <- do.call(rbind, final_data)
-    
-    # final_data <- foreach::foreach(i = iterator, 
-    #                                .combine = 'rbind',
-    #                                .errorhandling = "stop"
-    # ) %dopar% {fn(i)}
     
     return(final_data)
     
@@ -63,7 +59,7 @@ submit_fn <- function(input_data,
                                    .combine = 'rbind',
                                    .packages = package_exports,
                                    .export = function_exports, 
-                                   .errorhandling = "stop", 
+                                   .errorhandling = error_handling, 
                                    .verbose = FALSE
     ) %dopar% {fn(i)}
 
@@ -78,7 +74,7 @@ submit_fn <- function(input_data,
     sparklyr::registerDoSpark(sc, parallelism = length(iterator))
     final_data <- foreach(i = iterator, 
                           .combine = 'rbind', 
-                          .errorhandling = "stop") %dopar% {fn(i)}
+                          .errorhandling = error_handling) %dopar% {fn(i)}
     
     return(final_data)
     

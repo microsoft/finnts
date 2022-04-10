@@ -193,7 +193,8 @@ tune_models <- function(model_recipe_tbl,
                                                       'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                       'recipes', 'rules', 'modeltime'),
-                                  function_exports = NULL)
+                                  function_exports = NULL, 
+                                  error_handling = "remove")
   
   # select the best combination of hyperparameters
   iter_list2 <- iter_list %>%
