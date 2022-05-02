@@ -1,7 +1,7 @@
 #' Average Models
 #' 
-#' @param refit_predictions_tbl individual model predictions
-#' @param ensemble_predictions_tbl ensemble model predictions
+#' @param model_refit_tbl individual model predictions
+#' @param model_ensemble_tbl ensemble model predictions
 #' @param model_train_test_tbl train test splits
 #' @param max_model_average max number of models to average
 #' @param parallel_processing parallel processing
@@ -10,22 +10,22 @@
 #' @return list with average predictions and fitted models
 #' @keywords internal
 #' @export
-average_models <- function(refit_predictions_tbl,
-                           ensemble_predictions_tbl = NULL,
+average_models <- function(model_refit_tbl,
+                           model_ensemble_tbl = NULL,
                            model_train_test_tbl, 
                            max_model_average = 3, 
                            parallel_processing = NULL, 
                            num_cores = NULL) {
   
   # get model list
-  ind_model_list <- refit_predictions_tbl %>%
+  ind_model_list <- model_refit_tbl %>%
     dplyr::mutate(Combo = ifelse(Combo == "All-Data", "global", "local")) %>%
     tidyr::unite(col = "Model_Name", c("Model", "Recipe_ID", "Combo"), sep = "-") %>%
     dplyr::pull(Model_Name) %>%
     unique()
   
-  if(!is.null(ensemble_predictions_tbl)) {
-    ensemble_model_list <- ensemble_predictions_tbl %>%
+  if(!is.null(model_ensemble_tbl)) {
+    ensemble_model_list <- model_ensemble_tbl %>%
       dplyr::mutate(Recipe_ID = "Ensemble-local") %>%
       tidyr::unite(col = "Model_Name", c("Model", "Recipe_ID"), sep = "-") %>%
       dplyr::pull(Model_Name) %>%
@@ -57,7 +57,7 @@ average_models <- function(refit_predictions_tbl,
     dplyr::pull(Run_ID) %>%
     unique()
 
-  predictions_tbl <- refit_predictions_tbl %>%
+  predictions_tbl <- model_refit_tbl %>%
     dplyr::mutate(Model_Suffix = ifelse(Combo == "All-Data", "global", "local")) %>%
     dplyr::select(Model_Suffix, Model, Recipe_ID, Train_Test_ID, Prediction) %>%
     tidyr::unite(col = 'Model_Name', c("Model", "Recipe_ID", "Model_Suffix"), sep= "-", remove = FALSE) %>%
@@ -65,8 +65,8 @@ average_models <- function(refit_predictions_tbl,
     dplyr::filter(Train_Test_ID %in% train_test_id_list) %>%
     tidyr::unnest(Prediction) %>%
     rbind(
-      if(!is.null(ensemble_predictions_tbl)) {
-        ensemble_predictions_tbl %>%
+      if(!is.null(model_ensemble_tbl)) {
+        model_ensemble_tbl %>%
           dplyr::mutate(Model_Suffix = ifelse(Combo == "All-Data", "global", "local")) %>%
           dplyr::select(Model_Suffix, Model, Recipe_ID, Train_Test_ID, Prediction) %>%
           tidyr::unite(col = 'Model_Name', c("Model", "Recipe_ID", "Model_Suffix"), sep= "-", remove = FALSE) %>%

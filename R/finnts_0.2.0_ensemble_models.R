@@ -1,7 +1,7 @@
 #' Ensemble Models
 #' 
-#' @param tuning_tbl hyperparameter tuning predictions
-#' @param refit_tbl individual model predictions
+#' @param model_tune_tbl hyperparameter tuning predictions
+#' @param model_refit_tbl individual model predictions
 #' @param model_train_test_tbl model train test split table
 #' @param date_type date type
 #' @param num_hyperparameters number of hyperparameters
@@ -12,8 +12,8 @@
 #' @return list with ensemble predictions and fitted models
 #' @keywords internal
 #' @export
-ensemble_models <- function(tuning_tbl, 
-                            refit_tbl, 
+ensemble_models <- function(model_tune_tbl, 
+                            model_refit_tbl, 
                             model_train_test_tbl,
                             date_type, 
                             num_hyperparameters = 5, 
@@ -22,18 +22,18 @@ ensemble_models <- function(tuning_tbl,
                             seed = 123) {
   
   # get individual prediction data
-  initial_results_tbl <- tuning_tbl %>%
+  initial_results_tbl <- model_tune_tbl %>%
     dplyr::select(Combo, Model, Recipe_ID, Prediction) %>%
     dplyr::rename(Combo_Key = Combo) %>%
     tidyr::unnest(Prediction) %>%
     rbind(
-      refit_tbl %>%
+      model_refit_tbl %>%
         dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Prediction) %>%
         dplyr::rename(Combo_Key = Combo) %>%
         tidyr::unnest(Prediction)
     ) 
   
-  combo_iter_list <- unique(initial_results_tbl$Combo)
+  combo_list <- unique(initial_results_tbl$Combo)
   
   prep_ensemble_fn <- function(combo) {
     
@@ -48,9 +48,9 @@ ensemble_models <- function(tuning_tbl,
                          id_cols = c("Combo", "Date", "Train_Test_ID", "Target"), values_fill = 0)
   }
   
-  prep_ensemble_tbl <- submit_fn(tuning_tbl,
+  prep_ensemble_tbl <- submit_fn(model_tune_tbl,
                                  parallel_processing,
-                                 combo_iter_list,
+                                 combo_list,
                                  prep_ensemble_fn,
                                  num_cores,
                                  package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
@@ -60,7 +60,7 @@ ensemble_models <- function(tuning_tbl,
                                  function_exports = NULL)
   
   # ensemble models to run
-  refit_models <- unique(refit_tbl$Model)
+  refit_models <- unique(model_refit_tbl$Model)
   
   ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "sv-poly", "svm-rbf", "xgboost")]
   
@@ -140,7 +140,7 @@ ensemble_models <- function(tuning_tbl,
   }
   
   # fit models by hyperparameter
-  hyperparmaeter_iter_list <- purrr::map(combo_iter_list, .f = function(x) {
+  hyperparmaeter_iter_list <- purrr::map(combo_list, .f = function(x) {
     model_train_test_tbl %>%
       dplyr::mutate(Combo = x) %>%
       dplyr::rename(Train_Test_ID = Run_ID) %>%
@@ -237,6 +237,27 @@ ensemble_models <- function(tuning_tbl,
     return(final_tbl)
   }
   
+  submit_initial_tune_fn <- function(combo) {
+
+    combo_iter_list <- hyperparmaeter_iter_list %>%
+      dplyr::filter(Combo == combo)
+    
+    combo_initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+                                          NULL,
+                                          combo_iter_list %>%
+                                            dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                          initial_tune_fn,
+                                          num_cores,
+                                          package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                              'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                              'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                              'recipes', 'rules', 'modeltime'),
+                                          function_exports = NULL, 
+                                          error_handling = "stop")
+  }
+  
+  submit_fn <- submit_fn # fix later
+  
   initial_tuning_tbl <- submit_fn(model_workflow_tbl,
                                   parallel_processing,
                                   hyperparmaeter_iter_list %>%
@@ -247,14 +268,26 @@ ensemble_models <- function(tuning_tbl,
                                                       'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                       'recipes', 'rules', 'modeltime'),
-                                  function_exports = NULL)
+                                  function_exports = c("submit_fn"),
+                                  error_handling = "remove")
   
+  # initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+  #                                 parallel_processing,
+  #                                 combo_list,
+  #                                 submit_initial_tune_fn,
+  #                                 num_cores,
+  #                                 package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                     'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                     'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                     'recipes', 'rules', 'modeltime'),
+  #                                 function_exports = NULL)
+
   hyperparmaeter_iter_list2 <- hyperparmaeter_iter_list %>%
     dplyr::select(Combo, Model) %>%
     dplyr::distinct()
   
   choose_hyperparameters_fn <- function(x) {
-    
+
     combo <- x %>%
       dplyr::pull(Combo)
     
@@ -298,6 +331,24 @@ ensemble_models <- function(tuning_tbl,
                           Prediction = list(final_predictions)))
   }
   
+  submit_choose_hyperparameters_fn <- function(combo) {
+
+    combo_iter_list <- hyperparmaeter_iter_list2 %>%
+      dplyr::filter(Combo == combo)
+
+    combo_final_tuning_tbl <- submit_fn(model_workflow_tbl,
+                                        NULL,
+                                        combo_iter_list %>%
+                                          dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                        choose_hyperparameters_fn,
+                                        num_cores,
+                                        package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                            'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                            'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                            'recipes', 'rules', 'modeltime', 'yardstick'),
+                                        function_exports = NULL)
+  }
+  
   final_tuning_tbl <- submit_fn(model_workflow_tbl,
                                 parallel_processing,
                                 hyperparmaeter_iter_list2 %>%
@@ -310,6 +361,17 @@ ensemble_models <- function(tuning_tbl,
                                                     'recipes', 'rules', 'modeltime', 'yardstick'),
                                 function_exports = NULL)
   
+  # final_tuning_tbl <- submit_fn(model_workflow_tbl,
+  #                               parallel_processing,
+  #                               combo_list,
+  #                               submit_choose_hyperparameters_fn,
+  #                               num_cores,
+  #                               package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                   'recipes', 'rules', 'modeltime', 'yardstick'),
+  #                               function_exports = NULL)
+
   # refit ensemble models
   refit_iter_list <- model_train_test_tbl %>%
     dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
@@ -323,8 +385,8 @@ ensemble_models <- function(tuning_tbl,
         dplyr::select(-Model_Fit, -Prediction)}) %>%
     dplyr::bind_rows()
   
-  fit_model <- function(x) {
-    
+  fit_model_fn <- function(x) {
+
     combo <- x %>%
       dplyr::pull(Combo)
     
@@ -389,17 +451,46 @@ ensemble_models <- function(tuning_tbl,
     return(final_tbl)
   }
   
-  model_refit_final_tbl <- submit_fn(final_tuning_tbl,
+  submit_fit_model_fn <- function(combo) {
+    
+    combo_iter_list <- refit_iter_list %>%
+      dplyr::filter(Combo == combo)
+
+    combo_model_refit_final_tbl <- submit_fn(model_tune_tbl,
+                                             NULL,
+                                             combo_iter_list %>%
+                                               dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                             fit_model_fn,
+                                             num_cores,
+                                             package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                                 'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                                 'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                                 'recipes', 'rules', 'modeltime'),
+                                             function_exports = NULL)
+  }
+  
+  model_refit_final_tbl <- submit_fn(model_tune_tbl,
                                      parallel_processing,
                                      refit_iter_list %>%
                                        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-                                     fit_model,
+                                     fit_model_fn,
                                      num_cores,
                                      package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                                                          'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                          'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                          'recipes', 'rules', 'modeltime'),
                                      function_exports = NULL)
+  
+  # model_refit_final_tbl <- submit_fn(model_tune_tbl,
+  #                                    parallel_processing,
+  #                                    combo_list,
+  #                                    submit_fit_model_fn,
+  #                                    num_cores,
+  #                                    package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                        'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                        'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                        'recipes', 'rules', 'modeltime'),
+  #                                    function_exports = NULL)
   
   #get final combined results and return final fitted models
   final_model_fit_tbl <- model_refit_final_tbl %>%

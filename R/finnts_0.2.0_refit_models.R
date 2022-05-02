@@ -38,7 +38,7 @@ refit_models <- function(model_tune_tbl,
   model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
   model_hyperparameter_tbl <- model_hyperparameter_tbl # prevent error in exporting tbl to compute cluster
   
-  fit_model <- function(x) {
+  fit_model_fn <- function(x) {
     
     combo <- x %>%
       dplyr::pull(Combo)
@@ -154,13 +154,47 @@ refit_models <- function(model_tune_tbl,
     return(final_tbl)
   }
   
-  model_recipe_tbl <- model_recipe_tbl # prevent error in exporting tbl to compute cluster
+  submit_fit_model_fn <- function(combo) {
+    print(combo)
+    combo_iter_list <- iter_list %>%
+      dplyr::filter(Combo == combo)
+    
+    combo_model_refit_final_tbl <- submit_fn(model_tune_tbl,
+                                          NULL,
+                                          combo_iter_list %>%
+                                            dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                          fit_model_fn,
+                                          num_cores,
+                                          package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                              'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                              'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                              'recipes', 'rules', 'modeltime'),
+                                          function_exports = NULL, 
+                                          error_handling = "remove")
+  }
   
-  model_refit_final_tbl <- submit_fn(model_fit_tbl,
+  model_recipe_tbl <- model_recipe_tbl # prevent error in exporting tbl to compute cluster
+  submit_fn <- submit_fn # fix later
+  
+  # model_refit_final_tbl <- submit_fn(model_tune_tbl,
+  #                                    parallel_processing,
+  #                                    iter_list %>%
+  #                                      dplyr::select(Combo) %>%
+  #                                      dplyr::distinct() %>%
+  #                                      dplyr::pull(Combo),
+  #                                    submit_fit_model_fn,
+  #                                    num_cores,
+  #                                    package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                        'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                        'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                        'recipes', 'rules', 'modeltime'),
+  #                                    function_exports = NULL)
+  
+  model_refit_final_tbl <- submit_fn(model_tune_tbl,
                                      parallel_processing,
                                      iter_list %>%
                                        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-                                     fit_model,
+                                     fit_model_fn,
                                      num_cores,
                                      package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                                                          'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',

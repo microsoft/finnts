@@ -12,7 +12,6 @@ get_cores <-function(num_cores){
   }
 }
 
-
 #' Function to submit various functions in spark, azure batch, or parallel on local machine
 #' 
 #' @param parallel_processing type of parallel processing to run
@@ -31,13 +30,31 @@ submit_fn <- function(input_data,
                       num_cores = NULL, 
                       package_exports = NULL, 
                       function_exports = NULL, 
-                      error_handling = "stop"){
+                      error_handling = "stop", 
+                      batch_size = 10000){
+  
+  num_rounds <- ceiling(length(iterator)/batch_size)
+  final_data <- NULL
+  
+  cli::cli_alert_info("Running {length(iterator)} total tasks in {num_rounds} separate batches of {min(batch_size, length(iterator))} tasks")
   
   if(is.null(parallel_processing)) {
-    
-    final_data <- lapply(iterator, fn)
-    final_data <- do.call(rbind, final_data)
-    
+
+    for(round in 1:num_rounds) {
+
+      iterator_max <- min(round * batch_size, length(iterator))
+      iterator_min <- ((round-1) * batch_size) + 1
+
+      iterator_round <- iterator[iterator_min:iterator_max]
+      
+      temp <- lapply(iterator_round, fn)
+      temp <- do.call(rbind, temp)
+      
+      final_data <- rbind(final_data, temp)
+      
+      cli::cli_alert_success("Finished batch {round} out of {num_rounds} total")
+    }
+
     return(final_data)
     
   } else if(parallel_processing == "local_machine") {
@@ -48,20 +65,28 @@ submit_fn <- function(input_data,
     
     cl <- parallel::makeCluster(cores)
     doParallel::registerDoParallel(cl)
-    
-    # parallel::clusterExport(cl=cl, 
-    #                         function_exports,
-    #                         envir=environment())
 
     cli::cli_alert_info("Running across {cores} cores")
     
-    final_data <- foreach::foreach(i = iterator, 
+    for(round in 1:num_rounds) {
+      
+      iterator_max <- min(round * batch_size, length(iterator))
+      iterator_min <- ((round-1) * batch_size) + 1
+      
+      iterator_round <- iterator[iterator_min:iterator_max]
+      
+      temp <- foreach::foreach(i = iterator_round, 
                                    .combine = 'rbind',
                                    .packages = package_exports,
                                    .export = function_exports, 
                                    .errorhandling = error_handling, 
                                    .verbose = FALSE
-    ) %dopar% {fn(i)}
+      ) %dopar% {fn(i)}
+      
+      final_data <- rbind(final_data, temp)
+      
+      cli::cli_alert_success("Finished batch {round} out of {num_rounds} total")
+    }
 
     parallel::stopCluster(cl)
     
@@ -71,11 +96,24 @@ submit_fn <- function(input_data,
     
     cli::cli_h2("Submitting Tasks to Spark")
     
-    sparklyr::registerDoSpark(sc, parallelism = length(iterator))
-    final_data <- foreach(i = iterator, 
-                          .combine = 'rbind', 
-                          .errorhandling = error_handling) %dopar% {fn(i)}
-    
+    for(round in 1:num_rounds) {
+      
+      iterator_max <- min(round * batch_size, length(iterator))
+      iterator_min <- ((round-1) * batch_size) + 1
+      
+      iterator_round <- iterator[iterator_min:iterator_max]
+      
+      sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
+      
+      temp <- foreach(i = iterator_round, 
+                      .combine = 'rbind', 
+                      .errorhandling = error_handling) %dopar% {fn(i)}
+      
+      final_data <- rbind(final_data, temp)
+      
+      cli::cli_alert_success("Finished batch {round} out of {num_rounds} total")
+    }
+
     return(final_data)
     
   } else {

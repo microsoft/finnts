@@ -74,7 +74,7 @@ tune_models <- function(model_recipe_tbl,
   model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
   
   initial_tune_fn <- function(x) {
-    
+
     # run input values
     param_combo <- x %>%
       dplyr::pull(Hyperparameter_ID)
@@ -183,6 +183,25 @@ tune_models <- function(model_recipe_tbl,
     return(final_tbl)
   }
   
+  submit_initial_tune_fn <- function(combo) {
+    print(combo)
+    combo_iter_list <- iter_list %>%
+      dplyr::filter(Combo == combo)
+
+    combo_initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+                                    NULL,
+                                    combo_iter_list %>%
+                                      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                    initial_tune_fn,
+                                    num_cores,
+                                    package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                        'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                        'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                        'recipes', 'rules', 'modeltime'),
+                                    function_exports = NULL, 
+                                    error_handling = "remove")
+  }
+  
   initial_tuning_tbl <- submit_fn(model_workflow_tbl,
                                   parallel_processing,
                                   iter_list %>%
@@ -193,9 +212,23 @@ tune_models <- function(model_recipe_tbl,
                                                       'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                       'recipes', 'rules', 'modeltime'),
-                                  function_exports = NULL, 
+                                  function_exports = NULL,
                                   error_handling = "remove")
   
+  submit_fn <- submit_fn # fix later
+  
+  # initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+  #                                 parallel_processing,
+  #                                 combo_list,
+  #                                 submit_initial_tune_fn,
+  #                                 num_cores,
+  #                                 package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                     'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                     'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                     'recipes', 'rules', 'modeltime'),
+  #                                 function_exports = c("submit_fn"), 
+  #                                 error_handling = "remove")
+
   # select the best combination of hyperparameters
   iter_list2 <- iter_list %>%
     dplyr::select(Combo, Model, Recipe_ID) %>%
@@ -242,6 +275,24 @@ tune_models <- function(model_recipe_tbl,
                           Prediction = list(final_predictions)))
   }
   
+  submit_choose_hyperparameters_fn <- function(combo) {
+
+    combo_iter_list <- iter_list2 %>%
+      dplyr::filter(Combo == combo)
+    
+    combo_final_tuning_tbl <- submit_fn(model_workflow_tbl,
+                                        NULL,
+                                        combo_iter_list %>%
+                                          dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                        choose_hyperparameters_fn,
+                                        num_cores,
+                                        package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                            'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                            'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                            'recipes', 'rules', 'modeltime', 'yardstick'),
+                                        function_exports = NULL)
+  }
+  
   final_tuning_tbl <- submit_fn(model_workflow_tbl,
                                 parallel_processing,
                                 iter_list2 %>%
@@ -253,6 +304,17 @@ tune_models <- function(model_recipe_tbl,
                                                     'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                     'recipes', 'rules', 'modeltime', 'yardstick'),
                                 function_exports = NULL)
+  
+  # final_tuning_tbl <- submit_fn(model_workflow_tbl,
+  #                               parallel_processing,
+  #                               combo_list,
+  #                               submit_choose_hyperparameters_fn,
+  #                               num_cores,
+  #                               package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                   'recipes', 'rules', 'modeltime', 'yardstick'),
+  #                               function_exports = NULL)
   
   return(final_tuning_tbl)
 }
