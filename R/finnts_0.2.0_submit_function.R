@@ -33,7 +33,7 @@ submit_fn <- function(input_data,
                       error_handling = "stop", 
                       batch_size = 10000, 
                       env){
-  
+
   num_rounds <- ceiling(length(iterator)/batch_size)
   final_data <- NULL
   
@@ -47,12 +47,7 @@ submit_fn <- function(input_data,
       iterator_min <- ((round-1) * batch_size) + 1
 
       iterator_round <- iterator[iterator_min:iterator_max]
-      
-      # combos <- tibble::tibble(dplyr::bind_rows(iterator_round)) %>%
-      #   dplyr::select(Combo) %>%
-      #   dplyr::distinct() %>%
-      #   dplyr::pull(Combo)
-      
+
       combos <- iterator_round %>%
         dplyr::bind_rows() %>%
         dplyr::select(Combo) %>%
@@ -112,6 +107,8 @@ submit_fn <- function(input_data,
       }
       
       assign("large_tbl", large_tbl, envir = env)
+      rm("model_recipe_tbl", envir = env)
+      print(ls(env, all.names = TRUE))
       
       print(large_tbl)
       

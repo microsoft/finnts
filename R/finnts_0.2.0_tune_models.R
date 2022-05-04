@@ -74,7 +74,10 @@ tune_models <- function(model_recipe_tbl,
   model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
   
   initial_tune_fn <- function(x) {
-
+    # objs <- ls(parent.env(environment()), all.names = TRUE)
+    # objs <- ls(parent.frame())
+    # print(objs)
+    # return(ls(.GlobalEnv, all.names = TRUE))
     model_recipe_tbl_local <- large_tbl
     
     # run input values
@@ -220,7 +223,7 @@ tune_models <- function(model_recipe_tbl,
                                   function_exports = NULL,
                                   error_handling = "stop", 
                                   env = environment())
-
+  return(initial_tuning_tbl)
   #submit_fn <- submit_fn # fix later
   
   # initial_tuning_tbl <- submit_fn(model_workflow_tbl,
