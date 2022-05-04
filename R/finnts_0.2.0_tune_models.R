@@ -75,6 +75,8 @@ tune_models <- function(model_recipe_tbl,
   
   initial_tune_fn <- function(x) {
 
+    model_recipe_tbl_local <- large_tbl
+    
     # run input values
     param_combo <- x %>%
       dplyr::pull(Hyperparameter_ID)
@@ -100,7 +102,7 @@ tune_models <- function(model_recipe_tbl,
       dplyr::pull(Test_End)
     
     # get train/test data
-    full_data <- model_recipe_tbl %>%
+    full_data <- model_recipe_tbl_local %>%
       dplyr::filter(Recipe == data_prep_recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
@@ -182,9 +184,9 @@ tune_models <- function(model_recipe_tbl,
     
     return(final_tbl)
   }
-  
+
   submit_initial_tune_fn <- function(combo) {
-    print(combo)
+
     combo_iter_list <- iter_list %>%
       dplyr::filter(Combo == combo)
 
@@ -202,7 +204,10 @@ tune_models <- function(model_recipe_tbl,
                                     error_handling = "remove")
   }
   
-  initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+  # large_tbl <- model_recipe_tbl %>%
+  #   dplyr::filter(Combo == "M1")
+  
+  initial_tuning_tbl <- submit_fn(model_recipe_tbl,
                                   parallel_processing,
                                   iter_list %>%
                                     dplyr::group_split(dplyr::row_number(), .keep = FALSE),
@@ -213,9 +218,10 @@ tune_models <- function(model_recipe_tbl,
                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                       'recipes', 'rules', 'modeltime'),
                                   function_exports = NULL,
-                                  error_handling = "remove")
-  
-  submit_fn <- submit_fn # fix later
+                                  error_handling = "stop", 
+                                  env = environment())
+
+  #submit_fn <- submit_fn # fix later
   
   # initial_tuning_tbl <- submit_fn(model_workflow_tbl,
   #                                 parallel_processing,
@@ -236,6 +242,8 @@ tune_models <- function(model_recipe_tbl,
   
   choose_hyperparameters_fn <- function(x) {
     
+    initial_tuning_tbl_local <- large_tbl
+    
     combo <- x %>%
       dplyr::pull(Combo)
     
@@ -245,7 +253,7 @@ tune_models <- function(model_recipe_tbl,
     recipe <- x %>%
       dplyr::pull(Recipe_ID)
     
-    test_tbl <- initial_tuning_tbl %>%
+    test_tbl <- initial_tuning_tbl_local %>%
       dplyr::filter(Combo == combo, 
                     Recipe_ID == recipe, 
                     Model == model) %>%
@@ -293,7 +301,7 @@ tune_models <- function(model_recipe_tbl,
                                         function_exports = NULL)
   }
   
-  final_tuning_tbl <- submit_fn(model_workflow_tbl,
+  final_tuning_tbl <- submit_fn(initial_tuning_tbl,
                                 parallel_processing,
                                 iter_list2 %>%
                                   dplyr::group_split(dplyr::row_number(), .keep = FALSE),
@@ -303,7 +311,8 @@ tune_models <- function(model_recipe_tbl,
                                                     'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                     'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                     'recipes', 'rules', 'modeltime', 'yardstick'),
-                                function_exports = NULL)
+                                function_exports = NULL, 
+                                env = environment())
   
   # final_tuning_tbl <- submit_fn(model_workflow_tbl,
   #                               parallel_processing,

@@ -31,7 +31,8 @@ submit_fn <- function(input_data,
                       package_exports = NULL, 
                       function_exports = NULL, 
                       error_handling = "stop", 
-                      batch_size = 10000){
+                      batch_size = 10000, 
+                      env){
   
   num_rounds <- ceiling(length(iterator)/batch_size)
   final_data <- NULL
@@ -46,6 +47,28 @@ submit_fn <- function(input_data,
       iterator_min <- ((round-1) * batch_size) + 1
 
       iterator_round <- iterator[iterator_min:iterator_max]
+      
+      # combos <- tibble::tibble(dplyr::bind_rows(iterator_round)) %>%
+      #   dplyr::select(Combo) %>%
+      #   dplyr::distinct() %>%
+      #   dplyr::pull(Combo)
+      
+      combos <- iterator_round %>%
+        dplyr::bind_rows() %>%
+        dplyr::select(Combo) %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Combo)
+      
+      if('All-Data' %in% combos) {
+        large_tbl <- input_data
+      } else {
+        large_tbl <- input_data %>%
+          dplyr::filter(Combo %in% combos)
+      }
+      
+      assign("large_tbl", large_tbl, envir = env)
+      
+      print(large_tbl)
       
       temp <- lapply(iterator_round, fn)
       temp <- do.call(rbind, temp)
@@ -67,7 +90,7 @@ submit_fn <- function(input_data,
     doParallel::registerDoParallel(cl)
 
     cli::cli_alert_info("Running across {cores} cores")
-    
+
     for(round in 1:num_rounds) {
       
       iterator_max <- min(round * batch_size, length(iterator))
@@ -75,12 +98,32 @@ submit_fn <- function(input_data,
       
       iterator_round <- iterator[iterator_min:iterator_max]
       
+      combos <- iterator_round %>%
+        dplyr::bind_rows() %>%
+        dplyr::select(Combo) %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Combo)
+      
+      if('All-Data' %in% combos) {
+        large_tbl <- input_data
+      } else {
+        large_tbl <- input_data %>%
+          dplyr::filter(Combo %in% combos)
+      }
+      
+      assign("large_tbl", large_tbl, envir = env)
+      
+      print(large_tbl)
+      
       temp <- foreach::foreach(i = iterator_round, 
                                    .combine = 'rbind',
                                    .packages = package_exports,
-                                   .export = function_exports, 
+                                   .export = c(function_exports, "large_tbl"), 
                                    .errorhandling = error_handling, 
-                                   .verbose = FALSE
+                                   .verbose = FALSE, 
+                                   .inorder = FALSE, 
+                                   .multicombine = TRUE, 
+                                   .noexport = c("model_recipe_tbl")
       ) %dopar% {fn(i)}
       
       final_data <- rbind(final_data, temp)
@@ -102,6 +145,23 @@ submit_fn <- function(input_data,
       iterator_min <- ((round-1) * batch_size) + 1
       
       iterator_round <- iterator[iterator_min:iterator_max]
+      
+      combos <- iterator_round %>%
+        dplyr::bind_rows() %>%
+        dplyr::select(Combo) %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Combo)
+      
+      if('All-Data' %in% combos) {
+        large_tbl <- input_data
+      } else {
+        large_tbl <- input_data %>%
+          dplyr::filter(Combo %in% combos)
+      }
+      
+      assign("large_tbl", large_tbl, envir = env)
+      
+      print(large_tbl)
       
       sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
       

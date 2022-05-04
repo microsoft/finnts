@@ -751,8 +751,11 @@ construct_prep_time_series <- function(input_data,
   
   
   
-  prep_time_series <- function(combo) {
+  prep_time_series <- function(x) {
 
+    combo <- x %>%
+      dplyr::pull(Combo)
+    
     xregs_future_tbl <- get_xregs_future_values_tbl(input_data,
                                                     external_regressors,
                                                     hist_end_date,
@@ -1019,7 +1022,10 @@ prep_data <- function(
   
   final_data <- submit_fn(initial_prep_tbl,
                           parallel_processing,
-                          unique(initial_prep_tbl$Combo),
+                          initial_prep_tbl %>%
+                            dplyr::select(Combo) %>%
+                            dplyr::distinct() %>%
+                            dplyr::group_split(dplyr::row_number(), .keep = FALSE),
                           prep_time_series_fn,
                           num_cores,
                           package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach", 
@@ -1028,7 +1034,8 @@ prep_data <- function(
                                                "get_hts", "clean_outliers_missing_values", "get_xregs_future_values_tbl",
                                                "get_frequency_number", "get_fourier_periods", "get_lag_periods",
                                                "get_rolling_window_periods", "get_recipes_to_run",
-                                               "multivariate_prep_recipe_1", "multivariate_prep_recipe_2"))
+                                               "multivariate_prep_recipe_1", "multivariate_prep_recipe_2"), 
+                          env = environment())
   
   return(final_data)
 }
