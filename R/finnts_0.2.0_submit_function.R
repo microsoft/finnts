@@ -157,7 +157,7 @@ submit_fn <- function(input_data,
       }
       
       assign("large_tbl", large_tbl, envir = env)
-      
+      rm("model_recipe_tbl", envir = env)
       print(large_tbl)
       
       sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
