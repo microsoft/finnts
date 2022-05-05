@@ -74,10 +74,7 @@ tune_models <- function(model_recipe_tbl,
   model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
   
   initial_tune_fn <- function(x) {
-    # objs <- ls(parent.env(environment()), all.names = TRUE)
-    # objs <- ls(parent.frame())
-    # print(objs)
-    # return(ls(.GlobalEnv, all.names = TRUE))
+
     model_recipe_tbl_local <- large_tbl
     
     # run input values
@@ -106,9 +103,9 @@ tune_models <- function(model_recipe_tbl,
     
     # get train/test data
     full_data <- model_recipe_tbl_local %>%
-      dplyr::filter(Recipe == data_prep_recipe) %>%
-      dplyr::select(Data) %>%
-      tidyr::unnest(Data)
+      dplyr::filter(Recipe == data_prep_recipe) #%>%
+      #dplyr::select(Data) %>%
+      #tidyr::unnest(Data)
     
     if(combo != "All-Data") {
       
@@ -210,9 +207,15 @@ tune_models <- function(model_recipe_tbl,
   # large_tbl <- model_recipe_tbl %>%
   #   dplyr::filter(Combo == "M1")
   
-  initial_tuning_tbl <- submit_fn(model_recipe_tbl,
+  r1_tbl <- model_recipe_tbl %>%
+    dplyr::filter(Recipe == "R1") %>%
+    dplyr::select(Recipe, Data) %>%
+    tidyr::unnest(Data)
+  
+  initial_tuning_tbl <- submit_fn(r1_tbl,
                                   parallel_processing,
                                   iter_list %>%
+                                    dplyr::filter(Recipe_ID == "R1") %>%
                                     dplyr::group_split(dplyr::row_number(), .keep = FALSE),
                                   initial_tune_fn,
                                   num_cores,
