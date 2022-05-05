@@ -204,15 +204,17 @@ tune_models <- function(model_recipe_tbl,
                                     error_handling = "remove")
   }
   
-  # large_tbl <- model_recipe_tbl %>%
-  #   dplyr::filter(Combo == "M1")
-  
   r1_tbl <- model_recipe_tbl %>%
     dplyr::filter(Recipe == "R1") %>%
     dplyr::select(Recipe, Data) %>%
     tidyr::unnest(Data)
   
-  initial_tuning_tbl <- submit_fn(r1_tbl,
+  r2_tbl <- model_recipe_tbl %>%
+    dplyr::filter(Recipe == "R2") %>%
+    dplyr::select(Recipe, Data) %>%
+    tidyr::unnest(Data)
+  
+  initial_tuning_tbl_r1 <- submit_fn(r1_tbl,
                                   parallel_processing,
                                   iter_list %>%
                                     dplyr::filter(Recipe_ID == "R1") %>%
@@ -224,8 +226,32 @@ tune_models <- function(model_recipe_tbl,
                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                       'recipes', 'rules', 'modeltime'),
                                   function_exports = NULL,
-                                  error_handling = "stop", 
+                                  error_handling = "remove", 
                                   env = environment())
+  
+  rm("r1_tbl")
+  
+  initial_tuning_tbl_r2 <- submit_fn(r2_tbl,
+                                     parallel_processing,
+                                     iter_list %>%
+                                       dplyr::filter(Recipe_ID == "R2") %>%
+                                       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                     initial_tune_fn,
+                                     num_cores,
+                                     package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                         'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                         'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                         'recipes', 'rules', 'modeltime'),
+                                     function_exports = NULL,
+                                     error_handling = "remove", 
+                                     env = environment())
+  
+  initial_tuning_tbl <- rbind(initial_tuning_tbl_r1, initial_tuning_tbl_r2)
+  
+  rm("r2_tbl")
+  rm("initial_tuning_tbl_r1")
+  rm("initial_tuning_tbl_r2")
+  
   return(initial_tuning_tbl)
   #submit_fn <- submit_fn # fix later
   

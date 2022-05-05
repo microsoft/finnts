@@ -166,7 +166,12 @@ submit_fn <- function(input_data,
       
       temp <- foreach(i = iterator_round, 
                       .combine = 'rbind', 
-                      .errorhandling = error_handling) %dopar% {fn(i)}
+                      .export = c(function_exports, "large_tbl"), 
+                      .errorhandling = error_handling, 
+                      .verbose = FALSE, 
+                      .inorder = FALSE, 
+                      .multicombine = TRUE, 
+                      .noexport = c("model_recipe_tbl")) %dopar% {fn(i)}
       
       final_data <- rbind(final_data, temp)
       
