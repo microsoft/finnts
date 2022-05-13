@@ -30,7 +30,7 @@ submit_fn <- function(obj_list,
                       num_cores = NULL, 
                       package_exports, 
                       error_handling = "stop", 
-                      batch_size = 1000){
+                      batch_size = 10000){
 
   num_rounds <- ceiling(length(iterator)/batch_size)
   final_data <- NULL
@@ -60,8 +60,8 @@ submit_fn <- function(obj_list,
       }
       
       obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
-      obj_list_final[names(obj_list) != "input_data"]    
-      
+      obj_list_final <- obj_list_final[names(obj_list_final) != "input_data"]    
+
       run_fn <- fn(obj_list_final)
     
       # temp <- lapply(iterator_round, fn)
@@ -117,7 +117,7 @@ submit_fn <- function(obj_list,
       }
       
       obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
-      obj_list_final[names(obj_list) != "input_data"]    
+      obj_list_final <- obj_list_final[names(obj_list_final) != "input_data"] 
       
       run_fn <- fn(obj_list_final)
 
@@ -166,7 +166,7 @@ submit_fn <- function(obj_list,
       }
       
       obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
-      obj_list_final[names(obj_list) != "input_data"]    
+      obj_list_final <- obj_list_final[names(obj_list_final) != "input_data"]    
       
       run_fn <- fn(obj_list_final)
       
