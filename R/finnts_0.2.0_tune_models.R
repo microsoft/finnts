@@ -1,77 +1,7 @@
-#' Tune model hyperparameters
-#' 
-#' @param model_recipe_tbl model recipe table
-#' @param model_workflow_tbl model workflow table
-#' @param model_hyparameter_tbl model hyperparameter table
-#' @param model_train_test_tbl model train test split table
-#' @param run_global_models run global models
-#' @param run_local_models run local models
-#' @param global_model_recipes global model recipes
-#' @param combo_variables combo variables
-#' @param parallel_processing parallel processing
-#' @param num_cores number of cores
-#' @param seed seed number
-#'  
-#' @return table
-#' @keywords internal
-#' @export
-tune_models <- function(model_recipe_tbl, 
-                        model_workflow_tbl, 
-                        model_hyperparameter_tbl, 
-                        model_train_test_tbl, 
-                        run_global_models, 
-                        run_local_models, 
-                        global_model_recipes, 
-                        combo_variables, 
-                        parallel_processing, 
-                        num_cores,
-                        seed = 123) {
+
+construct_initial_tune_fn <- function(obj_list) {
   
-  # get list of tasks to run
-  combo_list <- c()
-  
-  global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
-  
-  if(run_local_models) {
-    combo_list <- c(combo_list, unique(model_recipe_tbl$Combo))
-  }
-  
-  if(run_global_models) {
-    combo_list <- c(combo_list, "All-Data")
-  }
-  
-  iter_list <- purrr::map(combo_list, .f = function(x) {
-    model_train_test_tbl %>%
-      dplyr::mutate(Combo = x) %>%
-      dplyr::rename(Train_Test_ID = Run_ID) %>%
-      dplyr::filter(Run_Type == "Validation") %>%
-      dplyr::select(Combo, Train_Test_ID)
-  }) %>%
-    dplyr::bind_rows() %>%
-    dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-    purrr::map(.f = function(x) {
-      temp <- model_hyperparameter_tbl %>%
-        dplyr::select(Hyperparameter_Combo, Model, Recipe) %>%
-        dplyr::rename(Hyperparameter_ID = Hyperparameter_Combo, 
-                      Recipe_ID = Recipe) %>%
-        dplyr::mutate(Combo = x$Combo, 
-                      Train_Test_ID = x$Train_Test_ID)
-      
-      if(x$Combo == 'All-Data') {
-        temp <- temp %>%
-          dplyr::filter(Model %in% global_model_list, 
-                        Recipe_ID %in% global_model_recipes)
-      }
-      
-      return(temp)
-    }) %>%
-    dplyr::bind_rows() %>%
-    dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID)
-  
-  #return(iter_list)
-  
-  # task run function 
-  model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
+  list2env(obj_list, envir = environment())
   
   initial_tune_fn <- function(x) {
 
@@ -104,8 +34,8 @@ tune_models <- function(model_recipe_tbl,
     # get train/test data
     full_data <- model_recipe_tbl_local %>%
       dplyr::filter(Recipe == data_prep_recipe) #%>%
-      #dplyr::select(Data) %>%
-      #tidyr::unnest(Data)
+    #dplyr::select(Data) %>%
+    #tidyr::unnest(Data)
     
     if(combo != "All-Data") {
       
@@ -184,67 +114,175 @@ tune_models <- function(model_recipe_tbl,
     
     return(final_tbl)
   }
+  
+  return(initial_tune_fn)
+}
 
-  submit_initial_tune_fn <- function(combo) {
-
-    combo_iter_list <- iter_list %>%
-      dplyr::filter(Combo == combo)
-
-    combo_initial_tuning_tbl <- submit_fn(model_workflow_tbl,
-                                    NULL,
-                                    combo_iter_list %>%
-                                      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-                                    initial_tune_fn,
-                                    num_cores,
-                                    package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                                                        'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                                                        'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                                                        'recipes', 'rules', 'modeltime'),
-                                    function_exports = NULL, 
-                                    error_handling = "remove")
+#' Tune model hyperparameters
+#' 
+#' @param model_recipe_tbl model recipe table
+#' @param model_workflow_tbl model workflow table
+#' @param model_hyparameter_tbl model hyperparameter table
+#' @param model_train_test_tbl model train test split table
+#' @param run_global_models run global models
+#' @param run_local_models run local models
+#' @param global_model_recipes global model recipes
+#' @param combo_variables combo variables
+#' @param parallel_processing parallel processing
+#' @param num_cores number of cores
+#' @param seed seed number
+#'  
+#' @return table
+#' @keywords internal
+#' @export
+tune_models <- function(model_recipe_tbl, 
+                        model_workflow_tbl, 
+                        model_hyperparameter_tbl, 
+                        model_train_test_tbl, 
+                        run_global_models, 
+                        run_local_models, 
+                        global_model_recipes, 
+                        combo_variables, 
+                        parallel_processing, 
+                        num_cores,
+                        seed = 123) {
+  
+  # get list of tasks to run
+  combo_list <- c()
+  
+  global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+  
+  if(run_local_models) {
+    combo_list <- c(combo_list, unique(model_recipe_tbl$Combo))
   }
+  
+  if(run_global_models) {
+    combo_list <- c(combo_list, "All-Data")
+  }
+  
+  iter_list <- purrr::map(combo_list, .f = function(x) {
+    model_train_test_tbl %>%
+      dplyr::mutate(Combo = x) %>%
+      dplyr::rename(Train_Test_ID = Run_ID) %>%
+      dplyr::filter(Run_Type == "Validation") %>%
+      dplyr::select(Combo, Train_Test_ID)
+  }) %>%
+    dplyr::bind_rows() %>%
+    dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
+    purrr::map(.f = function(x) {
+      temp <- model_hyperparameter_tbl %>%
+        dplyr::select(Hyperparameter_Combo, Model, Recipe) %>%
+        dplyr::rename(Hyperparameter_ID = Hyperparameter_Combo, 
+                      Recipe_ID = Recipe) %>%
+        dplyr::mutate(Combo = x$Combo, 
+                      Train_Test_ID = x$Train_Test_ID)
+      
+      if(x$Combo == 'All-Data') {
+        temp <- temp %>%
+          dplyr::filter(Model %in% global_model_list, 
+                        Recipe_ID %in% global_model_recipes)
+      }
+      
+      return(temp)
+    }) %>%
+    dplyr::bind_rows() %>%
+    dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID)
+  
+  #return(iter_list)
+  
+  # task run function 
+  #model_workflow_tbl <- model_workflow_tbl # prevent error in exporting tbl to compute cluster
+  
+  # submit_initial_tune_fn <- function(combo) {
+  # 
+  #   combo_iter_list <- iter_list %>%
+  #     dplyr::filter(Combo == combo)
+  # 
+  #   combo_initial_tuning_tbl <- submit_fn(model_workflow_tbl,
+  #                                   NULL,
+  #                                   combo_iter_list %>%
+  #                                     dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+  #                                   initial_tune_fn,
+  #                                   num_cores,
+  #                                   package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+  #                                                       'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+  #                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+  #                                                       'recipes', 'rules', 'modeltime'),
+  #                                   function_exports = NULL, 
+  #                                   error_handling = "remove")
+  # }
   
   r1_tbl <- model_recipe_tbl %>%
     dplyr::filter(Recipe == "R1") %>%
     dplyr::select(Recipe, Data) %>%
     tidyr::unnest(Data)
   
+  r1_obj_list <- list(
+    input_data = r1_tbl, 
+    model_recipe_tbl = model_recipe_tbl, 
+    model_workflow_tbl = model_workflow_tbl, 
+    model_hyperparameter_tbl = model_hyperparameter_tbl, 
+    model_train_test_tbl = model_train_test_tbl, 
+    run_global_models = run_global_models, 
+    run_local_models = run_local_models, 
+    global_model_recipes = global_model_recipes, 
+    combo_variables = combo_variables, 
+    parallel_processing = parallel_processing, 
+    num_cores = num_cores,
+    seed = seed
+  )
+  
   r2_tbl <- model_recipe_tbl %>%
     dplyr::filter(Recipe == "R2") %>%
     dplyr::select(Recipe, Data) %>%
     tidyr::unnest(Data)
   
-  initial_tuning_tbl_r1 <- submit_fn(r1_tbl,
-                                  parallel_processing,
-                                  iter_list %>%
-                                    dplyr::filter(Recipe_ID == "R1") %>%
-                                    dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-                                  initial_tune_fn,
-                                  num_cores,
-                                  package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                                                      'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                                                      'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                                                      'recipes', 'rules', 'modeltime'),
-                                  function_exports = NULL,
-                                  error_handling = "remove", 
-                                  env = environment())
+  r2_obj_list <- list(
+    input_data = r2_tbl, 
+    model_recipe_tbl = model_recipe_tbl, 
+    model_workflow_tbl = model_workflow_tbl, 
+    model_hyperparameter_tbl = model_hyperparameter_tbl, 
+    model_train_test_tbl = model_train_test_tbl, 
+    run_global_models = run_global_models, 
+    run_local_models = run_local_models, 
+    global_model_recipes = global_model_recipes, 
+    combo_variables = combo_variables, 
+    parallel_processing = parallel_processing, 
+    num_cores = num_cores,
+    seed = seed
+  )
+  
+  rm("model_recipe_tbl")
+  
+  initial_tuning_tbl_r1 <- submit_fn(r1_obj_list,
+                                     parallel_processing,
+                                     iter_list %>%
+                                       dplyr::filter(Recipe_ID == "R1") %>%
+                                       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+                                     construct_initial_tune_fn,
+                                     num_cores,
+                                     package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                                         'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                                         'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                                         'recipes', 'rules', 'modeltime', 'pryr'),
+                                     #function_exports = NULL,
+                                     error_handling = "stop")
   
   rm("r1_tbl")
-  
-  initial_tuning_tbl_r2 <- submit_fn(r2_tbl,
+
+  initial_tuning_tbl_r2 <- submit_fn(r2_obj_list,
                                      parallel_processing,
                                      iter_list %>%
                                        dplyr::filter(Recipe_ID == "R2") %>%
                                        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-                                     initial_tune_fn,
+                                     construct_initial_tune_fn,
                                      num_cores,
                                      package_exports = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                                                          'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                                                          'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                          'recipes', 'rules', 'modeltime'),
-                                     function_exports = NULL,
-                                     error_handling = "remove", 
-                                     env = environment())
+                                     #function_exports = NULL,
+                                     error_handling = "stop")
   
   initial_tuning_tbl <- rbind(initial_tuning_tbl_r1, initial_tuning_tbl_r2)
   

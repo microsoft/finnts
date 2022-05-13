@@ -23,16 +23,14 @@ get_cores <-function(num_cores){
 #' 
 #' @return tbl with function output
 #' @noRd
-submit_fn <- function(input_data,
+submit_fn <- function(obj_list,
                       parallel_processing, 
                       iterator, 
                       fn, 
                       num_cores = NULL, 
-                      package_exports = NULL, 
-                      function_exports = NULL, 
+                      package_exports, 
                       error_handling = "stop", 
-                      batch_size = 10000, 
-                      env){
+                      batch_size = 10000){
 
   num_rounds <- ceiling(length(iterator)/batch_size)
   final_data <- NULL
@@ -55,18 +53,30 @@ submit_fn <- function(input_data,
         dplyr::pull(Combo)
       
       if('All-Data' %in% combos) {
-        large_tbl <- input_data
+        large_tbl <- obj_list$input_data
       } else {
-        large_tbl <- input_data %>%
+        large_tbl <- obj_list$input_data %>%
           dplyr::filter(Combo %in% combos)
       }
       
-      assign("large_tbl", large_tbl, envir = env)
+      obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
+      obj_list_final[names(obj_list) != "input_data"]    
       
-      print(large_tbl)
+      run_fn <- fn(obj_list_final)
+    
+      # temp <- lapply(iterator_round, fn)
+      # temp <- do.call(rbind, temp)
       
-      temp <- lapply(iterator_round, fn)
-      temp <- do.call(rbind, temp)
+      temp <- foreach::foreach(i = iterator_round, 
+                               .combine = 'rbind',
+                               .packages = package_exports,
+                               #.export = c(function_exports, "large_tbl"), 
+                               .errorhandling = error_handling, 
+                               .verbose = FALSE, 
+                               .inorder = FALSE, 
+                               .multicombine = TRUE, 
+                               .noexport = NULL
+      ) %do% {run_fn(i)}
       
       final_data <- rbind(final_data, temp)
       
@@ -100,28 +110,27 @@ submit_fn <- function(input_data,
         dplyr::pull(Combo)
       
       if('All-Data' %in% combos) {
-        large_tbl <- input_data
+        large_tbl <- obj_list$input_data
       } else {
-        large_tbl <- input_data %>%
+        large_tbl <- obj_list$input_data %>%
           dplyr::filter(Combo %in% combos)
       }
       
-      assign("large_tbl", large_tbl, envir = env)
-      rm("model_recipe_tbl", envir = env)
-      print(ls(env, all.names = TRUE))
+      obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
+      obj_list_final[names(obj_list) != "input_data"]    
       
-      print(large_tbl)
-      
+      run_fn <- fn(obj_list_final)
+
       temp <- foreach::foreach(i = iterator_round, 
                                    .combine = 'rbind',
                                    .packages = package_exports,
-                                   .export = c(function_exports, "large_tbl"), 
+                                   #.export = c(function_exports, "large_tbl"), 
                                    .errorhandling = error_handling, 
                                    .verbose = FALSE, 
                                    .inorder = FALSE, 
                                    .multicombine = TRUE, 
-                                   .noexport = c("model_recipe_tbl")
-      ) %dopar% {fn(i)}
+                                   .noexport = NULL
+      ) %dopar% {run_fn(i)}
       
       final_data <- rbind(final_data, temp)
       
@@ -150,28 +159,27 @@ submit_fn <- function(input_data,
         dplyr::pull(Combo)
       
       if('All-Data' %in% combos) {
-        large_tbl <- input_data
+        large_tbl <- obj_list$input_data
       } else {
-        large_tbl <- input_data %>%
+        large_tbl <- obj_list$input_data %>%
           dplyr::filter(Combo %in% combos)
       }
       
-      assign("large_tbl", large_tbl, envir = env)
-      rm("model_recipe_tbl", envir = env)
-      print(ls(env, all.names = TRUE))
+      obj_list_final <- append(obj_list, list(large_tbl = large_tbl))
+      obj_list_final[names(obj_list) != "input_data"]    
       
-      print(large_tbl)
+      run_fn <- fn(obj_list_final)
       
       sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
       
       temp <- foreach(i = iterator_round, 
                       .combine = 'rbind', 
-                      .export = c(function_exports, "large_tbl"), 
+                      #.export = c(function_exports, "large_tbl"), 
                       .errorhandling = error_handling, 
                       .verbose = FALSE, 
                       .inorder = FALSE, 
                       .multicombine = TRUE, 
-                      .noexport = c("model_recipe_tbl")) %dopar% {fn(i)}
+                      .noexport = NULL) %dopar% {run_fn(i)}
       
       final_data <- rbind(final_data, temp)
       
