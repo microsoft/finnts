@@ -170,7 +170,8 @@ submit_fn <- function(obj_list,
       
       run_fn <- fn(obj_list_final)
       
-      sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
+      #sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
+      sparklyr::registerDoSpark(sc, parallelism = 100)
       
       temp <- foreach(i = iterator_round, 
                       .combine = 'rbind', 
