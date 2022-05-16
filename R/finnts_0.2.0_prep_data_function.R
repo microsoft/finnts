@@ -752,7 +752,8 @@ construct_prep_time_series <- function(obj_list
                                        ) {
 
   list2env(obj_list, envir = environment())
-
+  rm('obj_list')
+  
   prep_time_series <- function(x) {
 
     combo <- x %>%
