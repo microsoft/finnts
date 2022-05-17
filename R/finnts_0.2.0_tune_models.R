@@ -219,7 +219,7 @@ tune_models <- function(model_recipe_tbl,
   
   r1_obj_list <- list(
     input_data = r1_tbl, 
-    model_recipe_tbl = model_recipe_tbl, 
+    #model_recipe_tbl = model_recipe_tbl, 
     model_workflow_tbl = model_workflow_tbl, 
     model_hyperparameter_tbl = model_hyperparameter_tbl, 
     model_train_test_tbl = model_train_test_tbl, 
@@ -239,7 +239,7 @@ tune_models <- function(model_recipe_tbl,
   
   r2_obj_list <- list(
     input_data = r2_tbl, 
-    model_recipe_tbl = model_recipe_tbl, 
+    #model_recipe_tbl = model_recipe_tbl, 
     model_workflow_tbl = model_workflow_tbl, 
     model_hyperparameter_tbl = model_hyperparameter_tbl, 
     model_train_test_tbl = model_train_test_tbl, 
