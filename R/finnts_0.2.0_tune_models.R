@@ -131,6 +131,7 @@ construct_initial_tune_fn <- function(obj_list) {
 #' @param parallel_processing parallel processing
 #' @param num_cores number of cores
 #' @param seed seed number
+#' @param batch_size batch size
 #'  
 #' @return table
 #' @keywords internal
@@ -145,7 +146,8 @@ tune_models <- function(model_recipe_tbl,
                         combo_variables, 
                         parallel_processing, 
                         num_cores,
-                        seed = 123) {
+                        seed = 123, 
+                        batch_size = 10000) {
   
   # get list of tasks to run
   combo_list <- c()
@@ -266,7 +268,8 @@ tune_models <- function(model_recipe_tbl,
                                                          'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                          'recipes', 'rules', 'modeltime', 'pryr'),
                                      #function_exports = NULL,
-                                     error_handling = "stop")
+                                     error_handling = "stop", 
+                                     batch_size = batch_size)
   
   rm("r1_tbl")
 
@@ -282,7 +285,8 @@ tune_models <- function(model_recipe_tbl,
                                                          'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
                                                          'recipes', 'rules', 'modeltime'),
                                      #function_exports = NULL,
-                                     error_handling = "stop")
+                                     error_handling = "stop", 
+                                     batch_size = batch_size)
   
   initial_tuning_tbl <- rbind(initial_tuning_tbl_r1, initial_tuning_tbl_r2)
   

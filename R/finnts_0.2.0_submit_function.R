@@ -173,14 +173,14 @@ submit_fn <- function(obj_list,
       #sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
       sparklyr::registerDoSpark(sc, parallelism = 100)
       
-      temp <- foreach(i = iterator_round, 
-                      .combine = 'rbind', 
-                      #.export = c(function_exports, "large_tbl"), 
-                      .errorhandling = error_handling, 
-                      .verbose = FALSE, 
-                      .inorder = FALSE, 
-                      .multicombine = TRUE, 
-                      .noexport = NULL) %dopar% {run_fn(i)}
+      temp <- foreach::foreach(i = iterator_round, 
+                               .combine = 'rbind', 
+                               #.export = c(function_exports, "large_tbl"), 
+                               .errorhandling = error_handling, 
+                               .verbose = FALSE, 
+                               .inorder = FALSE, 
+                               .multicombine = TRUE, 
+                               .noexport = NULL) %dopar% {run_fn(i)}
       
       final_data <- rbind(final_data, temp)
       
