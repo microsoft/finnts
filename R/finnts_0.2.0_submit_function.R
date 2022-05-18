@@ -171,11 +171,12 @@ submit_fn <- function(obj_list,
       run_fn <- fn(obj_list_final)
       
       #sparklyr::registerDoSpark(sc, parallelism = length(iterator_round))
-      sparklyr::registerDoSpark(sc, parallelism = 100)
+      sparklyr::registerDoSpark(sc)
       
       temp <- foreach::foreach(i = iterator_round, 
                                .combine = 'rbind', 
                                #.export = c(function_exports, "large_tbl"), 
+                               .packages = package_exports,
                                .errorhandling = error_handling, 
                                .verbose = FALSE, 
                                .inorder = FALSE, 
