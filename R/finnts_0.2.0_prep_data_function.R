@@ -1024,6 +1024,165 @@ prep_data <- function(
   # assign("get_rolling_window_periods", get_rolling_window_periods)
   # assign("get_date_regex", get_date_regex)
   
+  
+  if(is.null(parallel_processing)) {
+    
+    `%op%` <- foreach::`%do%`
+    
+  } else if(parallel_processing == "spark") {
+    
+    cli::cli_h2("Submitting Tasks to Spark")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+    sparklyr::registerDoSpark(sc, parallelism = 100)
+    
+  } else if(parallel_processing == "local_machine") {
+    
+    cli::cli_h2("Creating Parallel Processing")
+    
+    cores <- get_cores(num_cores)
+    
+    cl <- parallel::makeCluster(cores)
+    doParallel::registerDoParallel(cl)
+    
+    cli::cli_alert_info("Running across {cores} cores")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+  } else {
+    stop("error")
+  }
+  
+  final_data <- foreach::foreach(x = initial_prep_tbl %>%
+                                   dplyr::select(Combo) %>%
+                                   dplyr::distinct() %>%
+                                   dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                 .combine = 'rbind', 
+                                 #.export = c(function_exports, "large_tbl"), 
+                                 .packages = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                                               'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                                               'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                                               'recipes', 'rules', 'modeltime'),
+                                 .errorhandling = "stop", 
+                                 .verbose = FALSE, 
+                                 .inorder = FALSE, 
+                                 .multicombine = TRUE, 
+                                 .noexport = NULL) %op% {
+                                   
+                                   combo <- x %>%
+                                     dplyr::pull(Combo)
+                                   
+                                   xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
+                                                                                   external_regressors,
+                                                                                   hist_end_date,
+                                                                                   forecast_approach)
+                                   
+                                   if(length(colnames(xregs_future_tbl)) > 2) {
+                                     xregs_future_list <- xregs_future_tbl %>% dplyr::select(-Date, -Combo) %>% colnames()
+                                   } else {
+                                     xregs_future_list <- NULL
+                                   }
+                                   
+                                   initial_tbl <- initial_prep_tbl %>%
+                                     dplyr::filter(Combo == combo) %>%
+                                     dplyr::select(Combo,
+                                                   Date,
+                                                   Target,
+                                                   tidyselect::all_of(external_regressors)) %>%
+                                     dplyr::group_by(Combo) %>%
+                                     timetk::pad_by_time(Date,
+                                                         .by = date_type,
+                                                         .pad_value = ifelse(clean_missing_values, NA, 0),
+                                                         .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+                                     timetk::pad_by_time(Date,
+                                                         .by = date_type,
+                                                         .pad_value = 0,
+                                                         .start_date = hist_start_date,
+                                                         .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+                                     timetk::future_frame(Date,
+                                                          .length_out = forecast_horizon,
+                                                          .bind_data = TRUE) %>% #add future data
+                                     dplyr::ungroup() %>%
+                                     dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
+                                     clean_outliers_missing_values(clean_outliers,
+                                                                   clean_missing_values,
+                                                                   get_frequency_number(date_type),
+                                                                   external_regressors) %>% # clean outliers and missing values
+                                     dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
+                                     dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
+                                     dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
+                                     dplyr::mutate(Target = ifelse(Date > hist_end_date,
+                                                                   NA,
+                                                                   Target))
+                                   
+                                   date_features <- initial_tbl %>%
+                                     dplyr::select(Date) %>%
+                                     dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1),
+                                                   Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
+                                     timetk::tk_augment_timeseries_signature(Date_Adj) %>%
+                                     dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj, -Date)
+                                   
+                                   names(date_features) <- stringr::str_c("Date_", names(date_features))
+                                   
+                                   initial_tbl <- initial_tbl %>%
+                                     cbind(date_features)
+                                   
+                                   # Run Recipes
+                                   if(is.null(recipes_to_run)) {
+                                     run_all_recipes_override <- FALSE
+                                   } else if(recipes_to_run == "all") {
+                                     run_all_recipes_override <- TRUE
+                                   } else {
+                                     run_all_recipes_override <- FALSE
+                                   }
+                                   
+                                   output_tbl <- NULL
+                                   
+                                   if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+                                     
+                                     R1 <- initial_tbl %>%
+                                       multivariate_prep_recipe_1(external_regressors,
+                                                                  xregs_future_values_list = xregs_future_list,
+                                                                  get_fourier_periods(fourier_periods, date_type),
+                                                                  get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                                                  get_rolling_window_periods(rolling_window_periods, date_type))
+                                     
+                                     output_tbl <- output_tbl %>%
+                                       rbind(tibble::tibble(Combo = combo,
+                                                            Recipe = "R1",
+                                                            Data = list(R1)))
+                                     
+                                   }
+                                   
+                                   if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+                                     
+                                     R2 <- initial_tbl %>%
+                                       multivariate_prep_recipe_2(external_regressors,
+                                                                  xregs_future_values_list = xregs_future_list,
+                                                                  get_fourier_periods(fourier_periods, date_type),
+                                                                  get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                                                  get_rolling_window_periods(rolling_window_periods, date_type),
+                                                                  date_type,
+                                                                  forecast_horizon)
+                                     
+                                     output_tbl <- output_tbl %>%
+                                       rbind(tibble::tibble(Combo = combo,
+                                                            Recipe = "R2",
+                                                            Data = list(R2)))
+                                     
+                                   }
+                                   
+                                   if(is.null(output_tbl)) {
+                                     stop("Error in Running Feature Engineering Recipes")
+                                   }
+                                   
+                                   return(output_tbl)
+                                 }
+  
+  return(final_data)
+  
+  
   obj_list <- list(
     input_data = initial_prep_tbl, 
     combo_variables = combo_variables,
