@@ -218,6 +218,11 @@ tune_models <- function(model_recipe_tbl,
     
     `%op%` <- foreach::`%do%`
     
+    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime')
+    
   } else if(parallel_processing == "spark") {
     
     cli::cli_h2("Submitting Tasks to Spark")
@@ -225,6 +230,8 @@ tune_models <- function(model_recipe_tbl,
     `%op%` <- foreach::`%dopar%`
       
     sparklyr::registerDoSpark(sc)
+    
+    packages <- NULL
     
   } else if(parallel_processing == "local_machine") {
     
@@ -239,6 +246,11 @@ tune_models <- function(model_recipe_tbl,
     
     `%op%` <- foreach::`%dopar%`
     
+    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime')
+    
   } else {
     stop("error")
   }
@@ -246,10 +258,7 @@ tune_models <- function(model_recipe_tbl,
   initial_tuning_tbl <- foreach::foreach(x = combo_list, 
                                          .combine = 'rbind', 
                                          #.export = c(function_exports, "large_tbl"), 
-                                         .packages = c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                                                       'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                                                       'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                                                       'recipes', 'rules', 'modeltime'),
+                                         .packages = packages,
                                          .errorhandling = "stop", 
                                          .verbose = FALSE, 
                                          .inorder = FALSE, 
