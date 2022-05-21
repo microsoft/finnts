@@ -264,6 +264,16 @@ tune_models <- function(model_recipe_tbl,
                                          .inorder = FALSE, 
                                          .multicombine = TRUE, 
                                          .noexport = NULL) %op% {
+
+                                           if(x != "All-Data") {
+                                             
+                                             model_recipe_tbl_local <- model_recipe_tbl %>%
+                                               dplyr::filter(Combo == x)
+                                             
+                                           } else {
+                                             
+                                             model_recipe_tbl_local <- model_recipe_tbl
+                                           }
     
                                            iter_list <- model_train_test_tbl %>%
                                              dplyr::mutate(Combo = x) %>%
@@ -324,7 +334,7 @@ tune_models <- function(model_recipe_tbl,
                                                               dplyr::pull(Test_End)
                                                             
                                                             # get train/test data
-                                                            full_data <- model_recipe_tbl %>%
+                                                            full_data <- model_recipe_tbl_local %>%
                                                               dplyr::filter(Recipe == data_prep_recipe) %>%
                                                               dplyr::select(Data) %>%
                                                               tidyr::unnest(Data)
