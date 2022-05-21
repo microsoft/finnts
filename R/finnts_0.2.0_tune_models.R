@@ -274,6 +274,8 @@ tune_models <- function(model_recipe_tbl,
                                              
                                              model_recipe_tbl_local <- model_recipe_tbl
                                            }
+                                           
+                                           rm("model_recipe_tbl")
     
                                            iter_list <- model_train_test_tbl %>%
                                              dplyr::mutate(Combo = x) %>%
