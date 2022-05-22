@@ -194,3 +194,70 @@ submit_fn <- function(obj_list,
     stop("error during function submission")
   }
 }
+
+
+#' Function to prep for tasks to be submitted either sequentially, in parallel on local machine, or spark
+#' 
+#' @param parallel_processing type of parallel processing to run
+#' @param num_cores number of cores to use on local machine
+#' @param package_exports packages to export
+#' 
+#' @return parallel run objects
+#' 
+#' @noRd
+run_start <- function(parallel_processing,
+                      num_cores, 
+                      package_exports){
+  
+  if(is.null(parallel_processing)) {
+    
+    `%op%` <- foreach::`%do%`
+    
+    packages <- package_exports
+    
+  } else if(parallel_processing == "spark") {
+    
+    cli::cli_h2("Submitting Tasks to Spark")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+    sparklyr::registerDoSpark(sc, parallelism = length(combo_list))
+    
+    packages <- NULL
+    
+  } else if(parallel_processing == "local_machine") {
+    
+    cli::cli_h2("Creating Parallel Processing")
+    
+    cores <- get_cores(num_cores)
+    
+    cl <- parallel::makeCluster(cores)
+    doParallel::registerDoParallel(cl)
+    
+    cli::cli_alert_info("Running across {cores} cores")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime')
+    
+  } else {
+    stop("error")
+  }
+  
+  
+}
+
+#' Function to clean up after submitting tasks sequentially, in parallel on local machine, or spark
+#' 
+#' @param parallel_processing type of parallel processing to run
+#' 
+#' @noRd
+run_start <- function(parallel_processing){
+  
+  
+  
+}
+

@@ -17,6 +17,47 @@ average_models <- function(model_refit_tbl,
                            parallel_processing = NULL, 
                            num_cores = NULL) {
   
+  if(is.null(parallel_processing)) {
+    
+    `%op%` <- foreach::`%do%`
+    
+    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime')
+    
+  } else if(parallel_processing == "spark") {
+    
+    cli::cli_h2("Submitting Tasks to Spark")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+    sparklyr::registerDoSpark(sc, parallelism = length(combo_list))
+    
+    packages <- NULL
+    
+  } else if(parallel_processing == "local_machine") {
+    
+    cli::cli_h2("Creating Parallel Processing")
+    
+    cores <- get_cores(num_cores)
+    
+    cl <- parallel::makeCluster(cores)
+    doParallel::registerDoParallel(cl)
+    
+    cli::cli_alert_info("Running across {cores} cores")
+    
+    `%op%` <- foreach::`%dopar%`
+    
+    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime')
+    
+  } else {
+    stop("error")
+  }
+  
   # get model list
   ind_model_list <- model_refit_tbl %>%
     dplyr::mutate(Combo = ifelse(Combo == "All-Data", "global", "local")) %>%
@@ -97,14 +138,59 @@ average_models <- function(model_refit_tbl,
     return(temp)
   }
   
-  model_avg_tbl <- submit_fn(predictions_tbl,
-                             parallel_processing,
-                             model_combinations %>%
-                               dplyr::pull(Model_Combo),
-                             model_average,
-                             num_cores,
-                             package_exports = c("tibble", "dplyr", "tidyselect", "stringr", "foreach",'doParallel', 'parallel'),
-                             function_exports = NULL)
+  # model_avg_tbl <- submit_fn(predictions_tbl,
+  #                            parallel_processing,
+  #                            model_combinations %>%
+  #                              dplyr::pull(Model_Combo),
+  #                            model_average,
+  #                            num_cores,
+  #                            package_exports = c("tibble", "dplyr", "tidyselect", "stringr", "foreach",'doParallel', 'parallel'),
+  #                            function_exports = NULL)
+  
+  model_avg_tbl <- foreach::foreach(x = unique(predictions_tbl$Combo), 
+                                            .combine = 'rbind', 
+                                            .packages = packages,
+                                            .errorhandling = "stop", 
+                                            .verbose = FALSE, 
+                                            .inorder = FALSE, 
+                                            .multicombine = TRUE, 
+                                            .noexport = NULL) %op% {
+                                              
+                                              combo <- x
+                                              
+                                              if(!is.null(parallel_processing)) {
+                                                
+                                                predictions_tbl <- predictions_tbl %>%
+                                                  dplyr::filter(Combo == combo)
+                                              }
+                                              
+                                              iter_list <- model_combinations %>%
+                                                dplyr::pull(Model_Combo)
+                                              
+                                              output_tbl <- iter_list %>%
+                                                purrr::map_dfr(.f = function(x) {
+                                                  
+                                                  print(x)
+                                                  
+                                                  # get list of models to average
+                                                  model_list <- strsplit(x, "_")[[1]]
+                                                  
+                                                  # create model average
+                                                  final_tbl <- predictions_tbl %>%
+                                                    dplyr::filter(Combo == combo) %>%
+                                                    dplyr::filter(Model_Name %in% model_list) %>%
+                                                    dplyr::group_by(Combo, Train_Test_ID, Date) %>%
+                                                    dplyr::summarise(Target = mean(Target, na.rm = TRUE), 
+                                                                     Forecast = mean(Forecast, na.rm = TRUE)) %>%
+                                                    dplyr::mutate(Model = x) %>%
+                                                    dplyr::select(Combo, Model, Train_Test_ID, Date, Target, Forecast) %>%
+                                                    dplyr::ungroup()
+                                                  
+                                                  return(final_tbl)
+                                                })
+                                              
+                                              return(output_tbl)
+                                            }
   
   return(model_avg_tbl)
 }
