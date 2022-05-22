@@ -797,7 +797,7 @@ prep_data <- function(
     
     `%op%` <- foreach::`%dopar%`
     
-    sparklyr::registerDoSpark(sc, parallelism = 100)
+    sparklyr::registerDoSpark(sc, parallelism = length(unique(initial_prep_tbl$Combo)))
     
     packages <- NULL
     

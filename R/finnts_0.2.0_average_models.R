@@ -32,7 +32,7 @@ average_models <- function(model_refit_tbl,
     
     `%op%` <- foreach::`%dopar%`
     
-    sparklyr::registerDoSpark(sc, parallelism = length(combo_list))
+    sparklyr::registerDoSpark(sc, parallelism = length(unique(model_refit_tbl$Combo)))
     
     packages <- NULL
     

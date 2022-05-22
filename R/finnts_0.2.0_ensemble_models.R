@@ -36,7 +36,7 @@ ensemble_models <- function(model_tune_tbl,
     
     `%op%` <- foreach::`%dopar%`
     
-    sparklyr::registerDoSpark(sc, parallelism = length(combo_list))
+    sparklyr::registerDoSpark(sc, parallelism = length(unique(model_tune_tbl$Combo)))
     
     packages <- NULL
     
