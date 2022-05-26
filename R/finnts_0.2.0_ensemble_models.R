@@ -21,48 +21,6 @@ ensemble_models <- function(model_tune_tbl,
                             num_cores = NULL,
                             seed = 123) {
   
-  if(is.null(parallel_processing)) {
-    
-    `%op%` <- foreach::`%do%`
-    
-    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime')
-    
-  } else if(parallel_processing == "spark") {
-    
-    cli::cli_h2("Submitting Tasks to Spark")
-    
-    `%op%` <- foreach::`%dopar%`
-    
-    sparklyr::registerDoSpark(sc, parallelism = length(unique(model_tune_tbl$Combo)))
-    
-    packages <- NULL
-    
-  } else if(parallel_processing == "local_machine") {
-    
-    cli::cli_h2("Creating Parallel Processing")
-    
-    cores <- get_cores(num_cores)
-    
-    cl <- parallel::makeCluster(cores)
-    doParallel::registerDoParallel(cl)
-    
-    cli::cli_alert_info("Running across {cores} cores")
-    
-    `%op%` <- foreach::`%dopar%`
-    
-    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime')
-    
-  } else {
-    stop("error")
-  }
-  
-  
   # get individual prediction data
   initial_results_tbl <- model_tune_tbl %>%
     dplyr::select(Combo, Model, Recipe_ID, Prediction) %>%
@@ -76,7 +34,17 @@ ensemble_models <- function(model_tune_tbl,
     ) 
   
   combo_list <- unique(initial_results_tbl$Combo)
+
+  # parallel run info
+  par_info <- par_start(parallel_processing = parallel_processing, 
+                        num_cores = num_cores, 
+                        task_length = length(combo_list))
   
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+  
+  # get ind model forecasts ready for ensemble models
   prep_ensemble_tbl <- foreach::foreach(x = combo_list, 
                                             .combine = 'rbind', 
                                             .packages = packages,
@@ -496,6 +464,9 @@ ensemble_models <- function(model_tune_tbl,
   
   final_ensemble_results_tbl <- model_refit_final_tbl %>%
     dplyr::select(-Model_Fit)
+  
+  # clean up any parallel run process
+  par_end(cl)
   
   return(list(Model_Predictions = final_ensemble_results_tbl, Model_Fit = final_model_fit_tbl))
 }

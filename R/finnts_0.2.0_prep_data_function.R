@@ -767,7 +767,8 @@ prep_data <- function(
   if(is.null(hist_start_date)) {
     hist_start_date <- min(input_data$Date)
   }
-
+  
+  # prep initial data before feature engineering
   initial_prep_tbl <- input_data %>%
     tibble::tibble() %>%
     tidyr::unite("Combo",
@@ -785,44 +786,16 @@ prep_data <- function(
             forecast_approach,
             frequency_number)
   
-  if(is.null(parallel_processing)) {
-    
-    `%op%` <- foreach::`%do%`
-    
-    packages <- NULL
-    
-  } else if(parallel_processing == "spark") {
-    
-    cli::cli_h2("Submitting Tasks to Spark")
-    
-    `%op%` <- foreach::`%dopar%`
-    
-    sparklyr::registerDoSpark(sc, parallelism = length(unique(initial_prep_tbl$Combo)))
-    
-    packages <- NULL
-    
-  } else if(parallel_processing == "local_machine") {
-    
-    cli::cli_h2("Creating Parallel Processing")
-    
-    cores <- get_cores(num_cores)
-    
-    cl <- parallel::makeCluster(cores)
-    doParallel::registerDoParallel(cl)
-    
-    cli::cli_alert_info("Running across {cores} cores")
-    
-    `%op%` <- foreach::`%dopar%`
-    
-    packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
-                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime')
-    
-  } else {
-    stop("error")
-  }
+  # parallel run info
+  par_info <- par_start(parallel_processing = parallel_processing, 
+                        num_cores = num_cores, 
+                        task_length = length(unique(initial_prep_tbl$Combo)))
   
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+
+  # submit tasks
   final_data <- foreach::foreach(x = initial_prep_tbl %>%
                                    dplyr::select(Combo) %>%
                                    dplyr::distinct() %>%
@@ -944,6 +917,9 @@ prep_data <- function(
                                    
                                    return(output_tbl)
                                  }
+  
+  # clean up any parallel run process
+  par_end(cl)
   
   return(final_data)
 }
