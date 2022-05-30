@@ -110,27 +110,33 @@ average_models <- function(model_refit_tbl,
                                               iter_list <- model_combinations %>%
                                                 dplyr::pull(Model_Combo)
                                               
-                                              output_tbl <- iter_list %>%
-                                                purrr::map_dfr(.f = function(x) {
-                                                  
-                                                  print(x)
-                                                  
-                                                  # get list of models to average
-                                                  model_list <- strsplit(x, "_")[[1]]
-                                                  
-                                                  # create model average
-                                                  final_tbl <- predictions_tbl %>%
-                                                    dplyr::filter(Combo == combo) %>%
-                                                    dplyr::filter(Model_Name %in% model_list) %>%
-                                                    dplyr::group_by(Combo, Train_Test_ID, Date) %>%
-                                                    dplyr::summarise(Target = mean(Target, na.rm = TRUE), 
-                                                                     Forecast = mean(Forecast, na.rm = TRUE)) %>%
-                                                    dplyr::mutate(Model = x) %>%
-                                                    dplyr::select(Combo, Model, Train_Test_ID, Date, Target, Forecast) %>%
-                                                    dplyr::ungroup()
-                                                  
-                                                  return(final_tbl)
-                                                })
+                                              output_tbl <- foreach::foreach(x = iter_list, 
+                                                                             .combine = 'rbind', 
+                                                                             .packages = NULL,
+                                                                             .errorhandling = "remove", 
+                                                                             .verbose = FALSE, 
+                                                                             .inorder = FALSE, 
+                                                                             .multicombine = TRUE, 
+                                                                             .noexport = NULL) %do% {
+                                                                               
+                                                                               print(x)
+                                                                               
+                                                                               # get list of models to average
+                                                                               model_list <- strsplit(x, "_")[[1]]
+                                                                               
+                                                                               # create model average
+                                                                               final_tbl <- predictions_tbl %>%
+                                                                                 dplyr::filter(Combo == combo) %>%
+                                                                                 dplyr::filter(Model_Name %in% model_list) %>%
+                                                                                 dplyr::group_by(Combo, Train_Test_ID, Date) %>%
+                                                                                 dplyr::summarise(Target = mean(Target, na.rm = TRUE), 
+                                                                                                  Forecast = mean(Forecast, na.rm = TRUE)) %>%
+                                                                                 dplyr::mutate(Model = x) %>%
+                                                                                 dplyr::select(Combo, Model, Train_Test_ID, Date, Target, Forecast) %>%
+                                                                                 dplyr::ungroup()
+                                                                               
+                                                                               return(final_tbl)
+                                                                             }
                                               
                                               return(output_tbl)
                                             }

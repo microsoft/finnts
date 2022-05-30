@@ -5,8 +5,8 @@
 \title{Ensemble Models}
 \usage{
 ensemble_models(
-  tuning_tbl,
-  refit_tbl,
+  model_tune_tbl,
+  model_refit_tbl,
   model_train_test_tbl,
   date_type,
   num_hyperparameters = 5,
@@ -16,9 +16,9 @@ ensemble_models(
 )
 }
 \arguments{
-\item{tuning_tbl}{hyperparameter tuning predictions}
+\item{model_tune_tbl}{hyperparameter tuning predictions}
 
-\item{refit_tbl}{individual model predictions}
+\item{model_refit_tbl}{individual model predictions}
 
 \item{model_train_test_tbl}{model train test split table}
 

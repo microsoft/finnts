@@ -1,4 +1,4 @@
-#' Select Best Models
+#' Select Best Models and Prep Final Outputs
 #' 
 #' @param refit_predictions_tbl individual model predictions
 #' @param ensemble_predictions_tbl ensemble model predictions
@@ -10,12 +10,12 @@
 #' @return tbl with best model flag
 #' @keywords internal
 #' @export
-best_models <- function(refit_predictions_tbl,
-                        ensemble_predictions_tbl = NULL,
-                        average_predictions_tbl = NULL, 
-                        model_train_test_tbl, 
-                        parallel_processing = NULL, 
-                        num_cores = NULL) {
+final_models <- function(refit_predictions_tbl,
+                         ensemble_predictions_tbl = NULL,
+                         average_predictions_tbl = NULL, 
+                         model_train_test_tbl, 
+                         parallel_processing = NULL, 
+                         num_cores = NULL) {
  
   # get model predictions
   train_test_id_list <- model_train_test_tbl %>%
@@ -51,10 +51,37 @@ best_models <- function(refit_predictions_tbl,
         tibble::tibble()
       }
     )
-  
+
   # calculate model accuracy
-  mape_tbl <- predictions_tbl %>%
-    dplyr::filter(Train_Test_ID != "01")
+  back_test_mape <- predictions_tbl %>%
+    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID), 
+                  Target = ifelse(Target == 0, 0.1, Target)) %>%
+    dplyr::filter(Train_Test_ID != 1) %>%
+    dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4)) 
+
+  best_model_tbl <- back_test_mape %>%
+    dplyr::group_by(Model_Name, Combo) %>%
+    dplyr::mutate(Combo_Total = sum(abs(Target), na.rm = TRUE), 
+                  weighted_MAPE = (abs(Target)/Combo_Total)*MAPE) %>%
+    dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm=TRUE)) %>%
+    dplyr::arrange(Rolling_MAPE) %>%
+    dplyr::ungroup() %>%
+    dplyr::group_by(Combo) %>% 
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(Best_Model = "Yes") %>%
+    dplyr::select(Combo, Model_Name, Best_Model)
   
-  return(predictions_tbl)
+  back_test_mape_final <- back_test_mape %>%
+    dplyr::left_join(best_model_tbl) %>%
+    dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"), 
+                  Train_Test_ID = Train_Test_ID -1) %>%
+    dplyr::rename(Back_Test_Scenario = Train_Test_ID, 
+                  Model = Model_Name) %>%
+    dplyr::group_by(Combo, Model, Back_Test_Scenario) %>%
+    dplyr::mutate(Horizon = dplyr::row_number()) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(Combo, Model, Back_Test_Scenario, Horizon, Date, Forecast, Target, MAPE, Best_Model)
+
+  return(back_test_mape_final)
 }

@@ -5,8 +5,8 @@
 \title{Average Models}
 \usage{
 average_models(
-  refit_predictions_tbl,
-  ensemble_predictions_tbl = NULL,
+  model_refit_tbl,
+  model_ensemble_tbl = NULL,
   model_train_test_tbl,
   max_model_average = 3,
   parallel_processing = NULL,
@@ -14,9 +14,9 @@ average_models(
 )
 }
 \arguments{
-\item{refit_predictions_tbl}{individual model predictions}
+\item{model_refit_tbl}{individual model predictions}
 
-\item{ensemble_predictions_tbl}{ensemble model predictions}
+\item{model_ensemble_tbl}{ensemble model predictions}
 
 \item{model_train_test_tbl}{train test splits}
 

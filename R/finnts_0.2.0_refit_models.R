@@ -71,126 +71,131 @@ refit_models <- function(model_tune_tbl,
                                                dplyr::select(-Prediction)}) %>%
                                            dplyr::bind_rows()
                                          
-                                         output_tbl <- iter_list %>%
-                                           dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-                                           purrr::map_dfr(.f = function(x) {
-                                             
-                                             print(x)
-                                             
-                                             combo <- x %>%
-                                               dplyr::pull(Combo)
-                                             
-                                             model <- x %>%
-                                               dplyr::pull(Model)
-                                             
-                                             recipe <- x %>%
-                                               dplyr::pull(Recipe_ID)
-                                             
-                                             param <- x %>%
-                                               dplyr::pull(Hyperparameter_ID)
-                                             
-                                             run_type <- x %>%
-                                               dplyr::pull(Run_Type)
-                                             
-                                             run_id <- x %>%
-                                               dplyr::pull(Run_ID)
-                                             
-                                             train_end <- x %>%
-                                               dplyr::pull(Train_End)
-                                             
-                                             test_end <- x %>%
-                                               dplyr::pull(Test_End)
-                                             
-                                             if(combo != 'All-Data') {
-                                               
-                                               recipe_data <- model_recipe_tbl %>%
-                                                 dplyr::filter(Recipe == recipe, 
-                                                               Combo == combo) %>%
-                                                 dplyr::select(Data) %>%
-                                                 tidyr::unnest(Data)
-                                               
-                                             } else {
-                                               
-                                               recipe_data <- model_recipe_tbl %>%
-                                                 dplyr::filter(Recipe == recipe) %>%
-                                                 tidyr::separate(col = Combo, 
-                                                                 into = combo_variables, 
-                                                                 sep = "---", 
-                                                                 remove = FALSE) %>%
-                                                 dplyr::select(Data) %>%
-                                                 tidyr::unnest(Data)
-                                             }
-                                             
-                                             training <- recipe_data %>%
-                                               dplyr::filter(Date <= train_end)
-                                             
-                                             testing <- recipe_data %>%
-                                               dplyr::filter(Date > train_end, 
-                                                             Date <= test_end)
-                                             
-                                             if(recipe == "R2") {
-                                               
-                                               train_origin_max <- training %>%
-                                                 dplyr::filter(Horizon == 1) 
-                                               
-                                               testing <- testing %>%
-                                                 dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
-                                             }
-                                             
-                                             # get workflow
-                                             workflow <- model_workflow_tbl %>%
-                                               dplyr::filter(Model_Name == model, 
-                                                             Model_Recipe == recipe)
-                                             
-                                             workflow_final <- workflow$Model_Workflow[[1]]
-                                             
-                                             # get hyperparameters
-                                             hyperparameters <- model_hyperparameter_tbl %>%
-                                               dplyr::filter(Model == model,
-                                                             Recipe == recipe, 
-                                                             Hyperparameter_Combo == param) %>%
-                                               dplyr::select(Hyperparameters) %>%
-                                               tidyr::unnest(Hyperparameters)
-                                             
-                                             # fit model
-                                             set.seed(seed)
-                                             
-                                             if(nrow(hyperparameters) > 0) {
-                                               model_fit <- workflow_final %>%
-                                                 tune::finalize_workflow(parameters = hyperparameters) %>%
-                                                 generics::fit(data = training)
-                                             } else {
-                                               model_fit <- workflow_final %>%
-                                                 generics::fit(data = training)
-                                             }
-                                             
-                                             # create prediction
-                                             model_prediction <- testing %>%
-                                               dplyr::bind_cols(
-                                                 predict(model_fit, new_data = testing)
-                                               ) %>%
-                                               dplyr::select(Combo, Date, Target, .pred) %>%
-                                               dplyr::rename(Forecast = .pred)
-                                             
-                                             # finalize output tbl
-                                             if(run_id == "01") {
-                                               model_fit <- model_fit
-                                             } else {
-                                               model_fit <- NULL
-                                             }
-                                             
-                                             final_tbl <- tibble::tibble(
-                                               Combo = combo, 
-                                               Model = model, 
-                                               Recipe_ID = recipe,
-                                               Train_Test_ID = run_id, 
-                                               Model_Fit = list(model_fit), 
-                                               Prediction = list(model_prediction)
-                                             )
-                                             
-                                             return(final_tbl)
-                                             
-                                           })
+                                         output_tbl <- foreach::foreach(x = iter_list %>%
+                                                                          dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                                                        .combine = 'rbind', 
+                                                                        .packages = NULL,
+                                                                        .errorhandling = "remove", 
+                                                                        .verbose = FALSE, 
+                                                                        .inorder = FALSE, 
+                                                                        .multicombine = TRUE, 
+                                                                        .noexport = NULL) %do% {
+                                                                          
+                                                                          print(x)
+                                                                          
+                                                                          combo <- x %>%
+                                                                            dplyr::pull(Combo)
+                                                                          
+                                                                          model <- x %>%
+                                                                            dplyr::pull(Model)
+                                                                          
+                                                                          recipe <- x %>%
+                                                                            dplyr::pull(Recipe_ID)
+                                                                          
+                                                                          param <- x %>%
+                                                                            dplyr::pull(Hyperparameter_ID)
+                                                                          
+                                                                          run_type <- x %>%
+                                                                            dplyr::pull(Run_Type)
+                                                                          
+                                                                          run_id <- x %>%
+                                                                            dplyr::pull(Run_ID)
+                                                                          
+                                                                          train_end <- x %>%
+                                                                            dplyr::pull(Train_End)
+                                                                          
+                                                                          test_end <- x %>%
+                                                                            dplyr::pull(Test_End)
+                                                                          
+                                                                          if(combo != 'All-Data') {
+                                                                            
+                                                                            recipe_data <- model_recipe_tbl %>%
+                                                                              dplyr::filter(Recipe == recipe, 
+                                                                                            Combo == combo) %>%
+                                                                              dplyr::select(Data) %>%
+                                                                              tidyr::unnest(Data)
+                                                                            
+                                                                          } else {
+                                                                            
+                                                                            recipe_data <- model_recipe_tbl %>%
+                                                                              dplyr::filter(Recipe == recipe) %>%
+                                                                              tidyr::separate(col = Combo, 
+                                                                                              into = combo_variables, 
+                                                                                              sep = "---", 
+                                                                                              remove = FALSE) %>%
+                                                                              dplyr::select(Data) %>%
+                                                                              tidyr::unnest(Data)
+                                                                          }
+                                                                          
+                                                                          training <- recipe_data %>%
+                                                                            dplyr::filter(Date <= train_end)
+                                                                          
+                                                                          testing <- recipe_data %>%
+                                                                            dplyr::filter(Date > train_end, 
+                                                                                          Date <= test_end)
+                                                                          
+                                                                          if(recipe == "R2") {
+                                                                            
+                                                                            train_origin_max <- training %>%
+                                                                              dplyr::filter(Horizon == 1) 
+                                                                            
+                                                                            testing <- testing %>%
+                                                                              dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
+                                                                          }
+                                                                          
+                                                                          # get workflow
+                                                                          workflow <- model_workflow_tbl %>%
+                                                                            dplyr::filter(Model_Name == model, 
+                                                                                          Model_Recipe == recipe)
+                                                                          
+                                                                          workflow_final <- workflow$Model_Workflow[[1]]
+                                                                          
+                                                                          # get hyperparameters
+                                                                          hyperparameters <- model_hyperparameter_tbl %>%
+                                                                            dplyr::filter(Model == model,
+                                                                                          Recipe == recipe, 
+                                                                                          Hyperparameter_Combo == param) %>%
+                                                                            dplyr::select(Hyperparameters) %>%
+                                                                            tidyr::unnest(Hyperparameters)
+                                                                          
+                                                                          # fit model
+                                                                          set.seed(seed)
+                                                                          
+                                                                          if(nrow(hyperparameters) > 0) {
+                                                                            model_fit <- workflow_final %>%
+                                                                              tune::finalize_workflow(parameters = hyperparameters) %>%
+                                                                              generics::fit(data = training)
+                                                                          } else {
+                                                                            model_fit <- workflow_final %>%
+                                                                              generics::fit(data = training)
+                                                                          }
+                                                                          
+                                                                          # create prediction
+                                                                          model_prediction <- testing %>%
+                                                                            dplyr::bind_cols(
+                                                                              predict(model_fit, new_data = testing)
+                                                                            ) %>%
+                                                                            dplyr::select(Combo, Date, Target, .pred) %>%
+                                                                            dplyr::rename(Forecast = .pred)
+                                                                          
+                                                                          # finalize output tbl
+                                                                          if(run_id == "01") {
+                                                                            model_fit <- model_fit
+                                                                          } else {
+                                                                            model_fit <- NULL
+                                                                          }
+                                                                          
+                                                                          final_tbl <- tibble::tibble(
+                                                                            Combo = combo, 
+                                                                            Model = model, 
+                                                                            Recipe_ID = recipe,
+                                                                            Train_Test_ID = run_id, 
+                                                                            Model_Fit = list(model_fit), 
+                                                                            Prediction = list(model_prediction)
+                                                                          )
+                                                                          
+                                                                          return(final_tbl)
+                                                                        }
                                          
                                          return(output_tbl)
                                        }

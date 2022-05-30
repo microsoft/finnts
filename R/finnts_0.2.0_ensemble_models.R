@@ -75,7 +75,7 @@ ensemble_models <- function(model_tune_tbl,
   # ensemble models to run
   refit_models <- unique(model_refit_tbl$Model)
   
-  ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "sv-poly", "svm-rbf", "xgboost")]
+  ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")]
   
   if(length(ensemble_model_list) < 1) {
     stop("no ensemble models chosen to run")
@@ -183,88 +183,94 @@ ensemble_models <- function(model_tune_tbl,
                                              }) %>%
                                              dplyr::bind_rows() %>%
                                              dplyr::select(Combo, Model, Train_Test_ID, Hyperparameter_ID)
-
-                                           output_tbl <- iter_list %>%
-                                             dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-                                             purrr::map_dfr(.f = function(x) {
-                                               
-                                               print(x)
-                                               
-                                               # run input values
-                                               param_combo <- x %>%
-                                                 dplyr::pull(Hyperparameter_ID)
-                                               
-                                               model <- x %>%
-                                                 dplyr::pull(Model)
-                                               
-                                               data_split <- x %>%
-                                                 dplyr::pull(Train_Test_ID)
-                                               
-                                               combo <- x %>%
-                                                 dplyr::pull(Combo)
-                                               
-                                               train_end_date <- model_train_test_tbl %>%
-                                                 dplyr::filter(Run_ID == data_split) %>%
-                                                 dplyr::pull(Train_End)
-                                               
-                                               test_end_date <- model_train_test_tbl %>%
-                                                 dplyr::filter(Run_ID == data_split) %>%
-                                                 dplyr::pull(Test_End)
-                                               
-                                               # get train/test data
-                                               full_data <- prep_ensemble_tbl %>%
-                                                 dplyr::filter(Combo == combo) %>%
-                                                 dplyr::mutate(Date_index.num = 0)
-                                               
-                                               training <- full_data %>% 
-                                                 dplyr::filter(Date <= train_end_date) %>%
-                                                 dplyr::select(-Train_Test_ID)
-                                               
-                                               testing <- full_data %>% 
-                                                 dplyr::filter(Date > train_end_date, 
-                                                               Date <= test_end_date, 
-                                                               Train_Test_ID == data_split)
-                                               
-                                               # get workflow
-                                               workflow <- model_workflow_tbl %>%
-                                                 dplyr::filter(Model_Name == model)
-                                               
-                                               workflow_final <- workflow$Model_Workflow[[1]]
-                                               
-                                               # get hyperparameters
-                                               hyperparameters <- hyperparameters_tbl %>%
-                                                 dplyr::filter(Model == model, 
-                                                               Hyperparameter_Combo == param_combo) %>%
-                                                 dplyr::select(Hyperparameters) %>%
-                                                 tidyr::unnest(Hyperparameters)
-                                               
-                                               # fit model
-                                               set.seed(seed)
-                                               
-                                               model_fit <- workflow_final %>%
-                                                 tune::finalize_workflow(parameters = hyperparameters) %>%
-                                                 generics::fit(data = training)
-
-                                               # create prediction
-                                               model_prediction <- testing %>%
-                                                 dplyr::bind_cols(
-                                                   predict(model_fit, new_data = testing)
-                                                 ) %>%
-                                                 dplyr::select(Combo, Date, Target, .pred) %>%
-                                                 dplyr::rename(Forecast = .pred)
-
-                                               # finalize output tbl
-                                               final_tbl <- tibble::tibble(
-                                                 Combo = combo, 
-                                                 Model = model, 
-                                                 Train_Test_ID = data_split, 
-                                                 Hyperparameter_ID = param_combo, 
-                                                 Model_Fit = list(model_fit), 
-                                                 Prediction = list(model_prediction)
-                                               )
-                                               
-                                               return(final_tbl)
-                                             })
+                                           
+                                           output_tbl <- foreach::foreach(x = iter_list %>%
+                                                                            dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                                                          .combine = 'rbind', 
+                                                                          .packages = NULL,
+                                                                          .errorhandling = "remove", 
+                                                                          .verbose = FALSE, 
+                                                                          .inorder = FALSE, 
+                                                                          .multicombine = TRUE, 
+                                                                          .noexport = NULL) %do% {
+                                                                            
+                                                                            print(x)
+                                                                            
+                                                                            # run input values
+                                                                            param_combo <- x %>%
+                                                                              dplyr::pull(Hyperparameter_ID)
+                                                                            
+                                                                            model <- x %>%
+                                                                              dplyr::pull(Model)
+                                                                            
+                                                                            data_split <- x %>%
+                                                                              dplyr::pull(Train_Test_ID)
+                                                                            
+                                                                            combo <- x %>%
+                                                                              dplyr::pull(Combo)
+                                                                            
+                                                                            train_end_date <- model_train_test_tbl %>%
+                                                                              dplyr::filter(Run_ID == data_split) %>%
+                                                                              dplyr::pull(Train_End)
+                                                                            
+                                                                            test_end_date <- model_train_test_tbl %>%
+                                                                              dplyr::filter(Run_ID == data_split) %>%
+                                                                              dplyr::pull(Test_End)
+                                                                            
+                                                                            # get train/test data
+                                                                            full_data <- prep_ensemble_tbl %>%
+                                                                              dplyr::filter(Combo == combo) %>%
+                                                                              dplyr::mutate(Date_index.num = 0)
+                                                                            
+                                                                            training <- full_data %>% 
+                                                                              dplyr::filter(Date <= train_end_date) %>%
+                                                                              dplyr::select(-Train_Test_ID)
+                                                                            
+                                                                            testing <- full_data %>% 
+                                                                              dplyr::filter(Date > train_end_date, 
+                                                                                            Date <= test_end_date, 
+                                                                                            Train_Test_ID == data_split)
+                                                                            
+                                                                            # get workflow
+                                                                            workflow <- model_workflow_tbl %>%
+                                                                              dplyr::filter(Model_Name == model)
+                                                                            
+                                                                            workflow_final <- workflow$Model_Workflow[[1]]
+                                                                            
+                                                                            # get hyperparameters
+                                                                            hyperparameters <- hyperparameters_tbl %>%
+                                                                              dplyr::filter(Model == model, 
+                                                                                            Hyperparameter_Combo == param_combo) %>%
+                                                                              dplyr::select(Hyperparameters) %>%
+                                                                              tidyr::unnest(Hyperparameters)
+                                                                            
+                                                                            # fit model
+                                                                            set.seed(seed)
+                                                                            
+                                                                            model_fit <- workflow_final %>%
+                                                                              tune::finalize_workflow(parameters = hyperparameters) %>%
+                                                                              generics::fit(data = training)
+                                                                            
+                                                                            # create prediction
+                                                                            model_prediction <- testing %>%
+                                                                              dplyr::bind_cols(
+                                                                                predict(model_fit, new_data = testing)
+                                                                              ) %>%
+                                                                              dplyr::select(Combo, Date, Target, .pred) %>%
+                                                                              dplyr::rename(Forecast = .pred)
+                                                                            
+                                                                            # finalize output tbl
+                                                                            final_tbl <- tibble::tibble(
+                                                                              Combo = combo, 
+                                                                              Model = model, 
+                                                                              Train_Test_ID = data_split, 
+                                                                              Hyperparameter_ID = param_combo, 
+                                                                              Model_Fit = list(model_fit), 
+                                                                              Prediction = list(model_prediction)
+                                                                            )
+                                                                            
+                                                                            return(final_tbl)
+                                                                          }
                                            
                                            return(output_tbl)
                                          }
@@ -301,54 +307,60 @@ ensemble_models <- function(model_tune_tbl,
                                              dplyr::select(Combo, Model) %>%
                                              dplyr::distinct()
                                            
-                                           output_tbl <- iter_list %>%
-                                             dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-                                             purrr::map_dfr(.f = function(x) {
-                                               
-                                               print(x)
-                                               
-                                               combo <- x %>%
-                                                 dplyr::pull(Combo)
-                                               
-                                               model <- x %>%
-                                                 dplyr::pull(Model)
-                                               
-                                               test_tbl <- initial_tuning_tbl %>%
-                                                 dplyr::filter(Combo == combo, 
-                                                               Model == model) %>%
-                                                 dplyr::select(Model, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
-                                               
-                                               best_param <- test_tbl %>%
-                                                 dplyr::select(-Model_Fit) %>%
-                                                 tidyr::unnest(Prediction) %>%
-                                                 dplyr::mutate(Combo = combo) %>%
-                                                 dplyr::group_by(Combo, Model, Hyperparameter_ID) %>%
-                                                 yardstick::rmse(truth = Target,
-                                                                 estimate = Forecast,
-                                                                 na_rm = TRUE) %>%
-                                                 dplyr::ungroup() %>%
-                                                 dplyr::arrange(.estimate) %>%
-                                                 dplyr::slice(1) %>%
-                                                 dplyr::pull(Hyperparameter_ID)
-                                               
-                                               best_model_fit <- test_tbl %>%
-                                                 dplyr::filter(Hyperparameter_ID == best_param) %>%
-                                                 dplyr::slice(1)
-                                               
-                                               best_model_fit <- best_model_fit$Model_Fit[[1]]
-                                               
-                                               final_predictions <- test_tbl %>%
-                                                 dplyr::filter(Hyperparameter_ID == best_param) %>%
-                                                 dplyr::select(-Model_Fit) %>%
-                                                 tidyr::unnest(Prediction) %>%
-                                                 dplyr::select(Combo, Date, Train_Test_ID, Target, Forecast)
-                                               
-                                               return(tibble::tibble(Combo = combo, 
-                                                                     Model = model, 
-                                                                     Hyperparameter_ID = best_param, 
-                                                                     Model_Fit = list(best_model_fit), 
-                                                                     Prediction = list(final_predictions)))
-                                             })
+                                           output_tbl <- foreach::foreach(x = iter_list %>%
+                                                                            dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                                                          .combine = 'rbind', 
+                                                                          .packages = NULL,
+                                                                          .errorhandling = "remove", 
+                                                                          .verbose = FALSE, 
+                                                                          .inorder = FALSE, 
+                                                                          .multicombine = TRUE, 
+                                                                          .noexport = NULL) %do% {
+                                                                            
+                                                                            print(x)
+                                                                            
+                                                                            combo <- x %>%
+                                                                              dplyr::pull(Combo)
+                                                                            
+                                                                            model <- x %>%
+                                                                              dplyr::pull(Model)
+                                                                            
+                                                                            test_tbl <- initial_tuning_tbl %>%
+                                                                              dplyr::filter(Combo == combo, 
+                                                                                            Model == model) %>%
+                                                                              dplyr::select(Model, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
+                                                                            
+                                                                            best_param <- test_tbl %>%
+                                                                              dplyr::select(-Model_Fit) %>%
+                                                                              tidyr::unnest(Prediction) %>%
+                                                                              dplyr::mutate(Combo = combo) %>%
+                                                                              dplyr::group_by(Combo, Model, Hyperparameter_ID) %>%
+                                                                              yardstick::rmse(truth = Target,
+                                                                                              estimate = Forecast,
+                                                                                              na_rm = TRUE) %>%
+                                                                              dplyr::ungroup() %>%
+                                                                              dplyr::arrange(.estimate) %>%
+                                                                              dplyr::slice(1) %>%
+                                                                              dplyr::pull(Hyperparameter_ID)
+                                                                            
+                                                                            best_model_fit <- test_tbl %>%
+                                                                              dplyr::filter(Hyperparameter_ID == best_param) %>%
+                                                                              dplyr::slice(1)
+                                                                            
+                                                                            best_model_fit <- best_model_fit$Model_Fit[[1]]
+                                                                            
+                                                                            final_predictions <- test_tbl %>%
+                                                                              dplyr::filter(Hyperparameter_ID == best_param) %>%
+                                                                              dplyr::select(-Model_Fit) %>%
+                                                                              tidyr::unnest(Prediction) %>%
+                                                                              dplyr::select(Combo, Date, Train_Test_ID, Target, Forecast)
+                                                                            
+                                                                            return(tibble::tibble(Combo = combo, 
+                                                                                                  Model = model, 
+                                                                                                  Hyperparameter_ID = best_param, 
+                                                                                                  Model_Fit = list(best_model_fit), 
+                                                                                                  Prediction = list(final_predictions)))
+                                                                          }
                                            
                                            return(output_tbl)
                                          }
@@ -383,83 +395,90 @@ ensemble_models <- function(model_tune_tbl,
                                                              Test_End = x %>% dplyr::pull(Test_End)) %>%
                                                dplyr::select(-Model_Fit, -Prediction)}) %>%
                                            dplyr::bind_rows()
-
-                                         output_tbl <- iter_list %>%
-                                           dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-                                           purrr::map_dfr(.f = function(x) {
-                                             
-                                             print(x)
-                                             
-                                             combo <- x %>%
-                                               dplyr::pull(Combo)
-                                             
-                                             model <- x %>%
-                                               dplyr::pull(Model)
-                                             
-                                             model_fit <- final_tuning_tbl %>%
-                                               dplyr::filter(Model == model, 
-                                                             Combo == combo)
-                                             
-                                             model_fit <- model_fit$Model_Fit[[1]]
-                                             
-                                             run_type <- x %>%
-                                               dplyr::pull(Run_Type)
-                                             
-                                             run_id <- x %>%
-                                               dplyr::pull(Run_ID)
-                                             
-                                             train_end <- x %>%
-                                               dplyr::pull(Train_End)
-                                             
-                                             test_end <- x %>%
-                                               dplyr::pull(Test_End)
-                                             
-                                             full_data <- prep_ensemble_tbl %>%
-                                               dplyr::filter(Combo == combo) %>%
-                                               dplyr::mutate(Date_index.num = 0)
-                                             
-                                             training <- full_data %>% 
-                                               dplyr::filter(Date <= train_end) %>%
-                                               dplyr::select(-Train_Test_ID)
-                                             
-                                             testing <- full_data %>% 
-                                               dplyr::filter(Date > train_end, 
-                                                             Date <= test_end, 
-                                                             Train_Test_ID == run_id)
-                                             
-                                             # fit model
-                                             set.seed(seed)
-                                             
-                                             model_fit <- model_fit %>%
-                                               generics::fit(data = training)
-                                             
-                                             # create prediction
-                                             model_prediction <- testing %>%
-                                               dplyr::bind_cols(
-                                                 predict(model_fit, new_data = testing)
-                                               ) %>%
-                                               dplyr::select(Combo, Date, Target, .pred) %>%
-                                               dplyr::rename(Forecast = .pred)
-                                             
-                                             # finalize output tbl
-                                             final_tbl <- tibble::tibble(
-                                               Combo = combo, 
-                                               Model = model, 
-                                               Recipe_ID = "Ensemble",
-                                               Train_Test_ID = run_id,
-                                               Model_Fit = list(model_fit), 
-                                               Prediction = list(model_prediction)
-                                             )
-                                             
-                                             return(final_tbl)
-                                           })
                                          
+                                         output_tbl <- foreach::foreach(x = iter_list %>%
+                                                                          dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                                                        .combine = 'rbind', 
+                                                                        .packages = NULL,
+                                                                        .errorhandling = "remove", 
+                                                                        .verbose = FALSE, 
+                                                                        .inorder = FALSE, 
+                                                                        .multicombine = TRUE, 
+                                                                        .noexport = NULL) %do% {
+                                                                          
+                                                                          print(x)
+                                                                          
+                                                                          combo <- x %>%
+                                                                            dplyr::pull(Combo)
+                                                                          
+                                                                          model <- x %>%
+                                                                            dplyr::pull(Model)
+                                                                          
+                                                                          model_fit <- final_tuning_tbl %>%
+                                                                            dplyr::filter(Model == model, 
+                                                                                          Combo == combo)
+                                                                          
+                                                                          model_fit <- model_fit$Model_Fit[[1]]
+                                                                          
+                                                                          run_type <- x %>%
+                                                                            dplyr::pull(Run_Type)
+                                                                          
+                                                                          run_id <- x %>%
+                                                                            dplyr::pull(Run_ID)
+                                                                          
+                                                                          train_end <- x %>%
+                                                                            dplyr::pull(Train_End)
+                                                                          
+                                                                          test_end <- x %>%
+                                                                            dplyr::pull(Test_End)
+                                                                          
+                                                                          full_data <- prep_ensemble_tbl %>%
+                                                                            dplyr::filter(Combo == combo) %>%
+                                                                            dplyr::mutate(Date_index.num = 0)
+                                                                          
+                                                                          training <- full_data %>% 
+                                                                            dplyr::filter(Date <= train_end) %>%
+                                                                            dplyr::select(-Train_Test_ID)
+                                                                          
+                                                                          testing <- full_data %>% 
+                                                                            dplyr::filter(Date > train_end, 
+                                                                                          Date <= test_end, 
+                                                                                          Train_Test_ID == run_id)
+                                                                          
+                                                                          # fit model
+                                                                          set.seed(seed)
+                                                                          
+                                                                          model_fit <- model_fit %>%
+                                                                            generics::fit(data = training)
+                                                                          
+                                                                          # create prediction
+                                                                          model_prediction <- testing %>%
+                                                                            dplyr::bind_cols(
+                                                                              predict(model_fit, new_data = testing)
+                                                                            ) %>%
+                                                                            dplyr::select(Combo, Date, Target, .pred) %>%
+                                                                            dplyr::rename(Forecast = .pred)
+                                                                          
+                                                                          # finalize output tbl
+                                                                          final_tbl <- tibble::tibble(
+                                                                            Combo = combo, 
+                                                                            Model = model, 
+                                                                            Recipe_ID = "Ensemble",
+                                                                            Train_Test_ID = run_id,
+                                                                            Model_Fit = list(model_fit), 
+                                                                            Prediction = list(model_prediction)
+                                                                          )
+                                                                          
+                                                                          return(final_tbl)
+                                                                        }
+
                                          return(output_tbl)
                                        }
   
   #get final combined results and return final fitted models
   final_model_fit_tbl <- model_refit_final_tbl %>%
-    dplyr::filter(Train_Test_ID == "01") %>%
+    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+    dplyr::filter(Train_Test_ID == 1) %>%
     dplyr::select(Combo, Model, Recipe_ID, Model_Fit)
   
   final_ensemble_results_tbl <- model_refit_final_tbl %>%

@@ -15,7 +15,8 @@ tune_models(
   combo_variables,
   parallel_processing,
   num_cores,
-  seed = 123
+  seed = 123,
+  batch_size = 10000
 )
 }
 \arguments{
@@ -38,6 +39,8 @@ tune_models(
 \item{num_cores}{number of cores}
 
 \item{seed}{seed number}
+
+\item{batch_size}{batch size}
 
 \item{model_hyparameter_tbl}{model hyperparameter table}
 }
