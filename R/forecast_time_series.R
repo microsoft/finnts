@@ -354,7 +354,7 @@ forecast_time_series <- function(input_data,
     stop("error during forecast run function call")
   
   }
-  return(fcst)
+
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
     get_forecast_negative_adjusted(negative_forecast)
@@ -467,6 +467,14 @@ forecast_time_series <- function(input_data,
                                                                        timeout = 60 * 60 * 24 * 7, # timeout after a week
                                                                        job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
                                                                                            tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
+    } else if(parallel_processing == "spark") { # run on spark in azure
+      
+      sparklyr::registerDoSpark(sc, parallelism = length(2:min(max_model_average, length(model_list))))
+      
+      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                                 #.packages = get_export_packages(), 
+                                                 #.export = c("fcst_prep", "get_cores"),
                                                  .errorhandling = "remove") %dopar% {create_model_averages(i)}
     }
     
