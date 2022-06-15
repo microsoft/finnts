@@ -330,20 +330,31 @@ forecast_time_series <- function(input_data,
     
   } else if(parallel_processing=="azure_batch") { # parallel run within azure batch
     
-    fcst <- get_fcast_parallel_azure(combo_list,
-                                     forecast_models_fn,
-                                     run_name, 
-                                     models_to_run, 
-                                     models_not_to_run,
-                                     recipes_to_run, 
-                                     pca, 
-                                     run_deep_learning)
+    fcst <- get_fcast_parallel_azure_batch(combo_list,
+                                           forecast_models_fn,
+                                           run_name, 
+                                           models_to_run, 
+                                           models_not_to_run,
+                                           recipes_to_run, 
+                                           pca, 
+                                           run_deep_learning)
+    
+  } else if(parallel_processing=="spark") { # parallel run within spark on azure
+    
+    fcst <- get_fcast_parallel_azure_spark(combo_list,
+                                           forecast_models_fn,
+                                           run_name, 
+                                           models_to_run, 
+                                           models_not_to_run,
+                                           recipes_to_run, 
+                                           pca, 
+                                           run_deep_learning)
   } else {
     
     stop("error during forecast run function call")
   
   }
-
+  return(fcst)
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
     get_forecast_negative_adjusted(negative_forecast)
