@@ -186,13 +186,13 @@ validate_forecasting_inputs<-function(input_data,
     
     # no further checks needed
   
-  } else if(parallel_processing %in% c("local_machine", "azure_batch") == FALSE) {
+  } else if(parallel_processing %in% c("local_machine", "azure_batch", "spark") == FALSE) {
     
-    stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch'")
+    stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
     
-  } else if(parallel_processing == "local_machine" & run_model_parallel) {
+  } else if((parallel_processing == "local_machine" & run_model_parallel) | (parallel_processing == "spark" & run_model_parallel)) {
     
-    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
+    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input). Please set run_model_parallel to FALSE")
     
   } else if(parallel_processing == "azure_batch") {
     
