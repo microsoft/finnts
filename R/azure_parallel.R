@@ -78,9 +78,7 @@ get_fcast_parallel_azure_spark <- function(combo_list,
   pca <- pca
   run_deep_learning <- run_deep_learning
   
-  fcst <- foreach::foreach(i = combo_list, 
+  fcst <- foreach::foreach(i = combo_list,
                            .combine = 'rbind',
-                           #.packages = get_export_packages(), 
-                           #.export = get_transfer_functions(),
                            .errorhandling = "remove") %dopar% {call_back_fn(i)}
 }
