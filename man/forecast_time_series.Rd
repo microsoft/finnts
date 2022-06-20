@@ -23,7 +23,7 @@ forecast_time_series(
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = TRUE,
+  run_model_parallel = FALSE,
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,

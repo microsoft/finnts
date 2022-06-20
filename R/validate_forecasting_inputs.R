@@ -204,6 +204,11 @@ validate_forecasting_inputs<-function(input_data,
     
   }
   
+  if(run_model_parallel) {
+    warning("run_model_parallel argument in forecast_time_series is deprecated as Finn transitions to other parallel compute options like spark", 
+            call. = FALSE)
+  }
+  
   #number of cores formatting
   if(!is.numeric(num_cores) & !is.null(num_cores)) {
     stop("num_cores should be NULL or a numeric value")

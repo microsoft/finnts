@@ -1,7 +1,9 @@
 
-# finnts 0.1.1.9000 (Development Version)
+# finnts 0.2.0
 
 * Expand Azure Batch task timeout from one day to one week. Prevents errors when running large forecasts that take over a day to run in Azure. 
+* Added spark support to run Finn in parallel on Azure Synapse. 
+* Deprecated run_model_parallel argument within forecast_time_series function as Finn transitions to other parallel compute options like spark.
 
 # finnts 0.1.1
 
