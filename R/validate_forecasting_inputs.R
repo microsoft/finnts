@@ -197,6 +197,8 @@ validate_forecasting_inputs<-function(input_data,
   } else if(parallel_processing == "azure_batch") {
     
     message("NOTE: Ensure that Azure Batch parallel back-end has been registered before calling 'forecast_time_series' function")
+    warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure", 
+            call. = FALSE)
     
   } else {
     
