@@ -379,7 +379,7 @@ forecast_time_series <- function(input_data,
     
     
     create_model_averages <- function(combination) {
-      
+
       model_combinations <- data.frame(gtools::combinations(v=model_list, n=length(model_list), r=combination))
       model_combinations$All <- model_combinations %>% tidyr::unite(All, colnames(model_combinations))
       model_combinations <- model_combinations$All
@@ -440,43 +440,57 @@ forecast_time_series <- function(input_data,
     }
     
     # kick off model average run
-    if(is.null(parallel_processing)) { # no parallel processing
+    combinations_tbl_final <- NULL
+    
+    tryCatch(
       
-      combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
-      combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
+      expr = {
+        
+        if(is.null(parallel_processing)) { # no parallel processing
+          
+          combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
+          combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
+          
+        } else if(parallel_processing == "local_machine") { # run on local machine
+          
+          cores <- get_cores(num_cores)
+          
+          cl <- parallel::makeCluster(cores)
+          doParallel::registerDoParallel(cl)
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                                     .packages = get_export_packages(), 
+                                                     .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
+          
+          parallel::stopCluster(cl)
+          
+        } else if(parallel_processing == "azure_batch") { # run on azure batch
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), 
+                                                     .combine = 'rbind',
+                                                     .packages = get_export_packages(), 
+                                                     .export = c("fcst_prep", "get_cores"),
+                                                     .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                                           timeout = 60 * 60 * 24 * 7, # timeout after a week
+                                                                           job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                                                               tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                                     .errorhandling = "remove") %dopar% {create_model_averages(i)}
+          
+        } else if(parallel_processing == "spark") { # run on spark in azure
+          
+          sparklyr::registerDoSpark(sc, parallelism = length(2:min(max_model_average, length(model_list))))
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), 
+                                                     .combine = 'rbind',
+                                                     .errorhandling = "remove") %dopar% {create_model_averages(i)}
+        }
+      },
       
-    } else if(parallel_processing == "local_machine") { # run on local machine
-      
-      cores <- get_cores(num_cores)
-      
-      cl <- parallel::makeCluster(cores)
-      doParallel::registerDoParallel(cl)
-      
-      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                                 .packages = get_export_packages(), 
-                                                 .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
-      
-      parallel::stopCluster(cl)
-      
-    } else if(parallel_processing == "azure_batch") { # run on azure batch
-      
-      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                                 .packages = get_export_packages(), 
-                                                 .export = c("fcst_prep", "get_cores"),
-                                                 .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
-                                                                       timeout = 60 * 60 * 24 * 7, # timeout after a week
-                                                                       job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
-                                                                                           tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
-                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
-    } else if(parallel_processing == "spark") { # run on spark in azure
-      
-      sparklyr::registerDoSpark(sc, parallelism = length(2:min(max_model_average, length(model_list))))
-      
-      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                                 #.packages = get_export_packages(), 
-                                                 #.export = c("fcst_prep", "get_cores"),
-                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
-    }
+      error = function(e){
+        warning("error in running simple model averaging, most likely due to memory issues", 
+                call. = FALSE)
+      }
+    )
     
     # combine with individual model data
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
