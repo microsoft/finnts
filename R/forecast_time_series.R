@@ -35,12 +35,14 @@
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.   
 #' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-#'   runs time series in parallel on a remote compute cluster in Azure Batch. 
+#'   runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel 
+#'   on a spark cluster in Azure Databricks/Synapse. 
 #' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to 
 #'   'local_machine' or 'azure_batch'.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
-#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
-#'   than number of cores on machine minus 1.
+#'   on local machine or within Azure Batch. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1. To manage cores with spark, use the cluster configuration options with sparklyr
+#'   or in Azure Databricks/Synapse compute settings. 
 #' @param target_log_transformation If TRUE, log transform target variable before training models. 
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero. 
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
@@ -56,7 +58,7 @@
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
-#'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
+#'   Only important when parallel_processing is not set to 'azure_batch' or 'spark'. Azure options should use their own docker image 
 #'   that has python environment already installed. 
 #' @param models_to_run List of models to run. Default of NULL runs all models. 
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 

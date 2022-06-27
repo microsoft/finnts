@@ -200,6 +200,13 @@ validate_forecasting_inputs<-function(input_data,
     warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure", 
             call. = FALSE)
     
+  } else if(parallel_processing == "spark") {
+    
+    if(!exists("sc")) {
+      stop("Ensure that you are connected to a spark cluster using an object called 'sc'", 
+           call. = FALSE)
+    }
+    
   } else {
     
     # no further checks needed

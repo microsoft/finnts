@@ -62,10 +62,6 @@ get_fcast_parallel_azure_spark <- function(combo_list,
                                            pca, 
                                            run_deep_learning){
   
-  if(!exists("sc")) {
-    stop("Ensure that you are connected to a spark cluster using an object called 'sc'")
-  }
-  
   cli::cli_h2("Submitting Tasks to Spark Cluster")
   
   sparklyr::registerDoSpark(sc, parallelism = length(combo_list))
