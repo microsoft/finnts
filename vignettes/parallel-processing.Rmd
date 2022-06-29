@@ -55,6 +55,8 @@ finn_output <- finnts::forecast_time_series(
 )
 ```
 
+The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage all of the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set the "run_model_parallel" argument to TRUE in the "forecast_time_series" function. Also make sure that you adjust the number of spark executor cores to 1, that ensures that only 1 time series runs on an executor at a time. Leverage the "spark.executor.cores" argument when configuring your spark connection. This can be done using [sparklyr](https://spark.rstudio.com/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below.) or within the cluster manager itself within the Azure resource. Use the "num_cores" argument in the "forecast_time_series" function to control how many cores should be used within an executor when running things like hyperparameter tuning. 
+
 Finn does not leverage spark data frames (yet!), so the input data to Finn still needs to be a standard data frame or tibble. The "forecast_time_series" function will be looking for a variable called "sc" to use when submitting tasks to the spark cluster, so make sure you use that as the variable name when connecting to spark.
 
 ## Within Azure using Azure Batch

@@ -190,8 +190,8 @@ validate_forecasting_inputs<-function(input_data,
     
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
     
-  } else if((parallel_processing == "local_machine" & run_model_parallel)) {
-    #| (parallel_processing == "spark" & run_model_parallel)
+  } else if(parallel_processing == "local_machine" & run_model_parallel) {
+
     stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input). Please set run_model_parallel to FALSE")
     
   } else if(parallel_processing == "azure_batch") {
@@ -213,16 +213,10 @@ validate_forecasting_inputs<-function(input_data,
     
   }
   
-  if(run_model_parallel) {
-    warning("run_model_parallel argument in forecast_time_series is deprecated as Finn transitions to other parallel compute options like spark", 
-            call. = FALSE)
-  }
-  
   #number of cores formatting
   if(!is.numeric(num_cores) & !is.null(num_cores)) {
     stop("num_cores should be NULL or a numeric value")
   }
-  
   
   #max model average formatting
   if(!is.numeric(max_model_average)) {

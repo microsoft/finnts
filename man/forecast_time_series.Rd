@@ -99,13 +99,12 @@ one after another. 'local_machine' leverages all cores on current machine Finn i
 runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel
 on a spark cluster in Azure Databricks/Synapse.}
 
-\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
-'local_machine' or 'azure_batch'.}
+\item{run_model_parallel}{If TRUE, runs specific components like hyperparameter tuning or model refitting in parallel,
+only works when parallel_processing is not set to 'local_machine'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
-on local machine or within Azure Batch. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-than number of cores on machine minus 1. To manage cores with spark, use the cluster configuration options with sparklyr
-or in Azure Databricks/Synapse compute settings.}
+on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
+than number of cores on machine minus 1.}
 
 \item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 

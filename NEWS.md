@@ -7,7 +7,6 @@
 * Expand Azure Batch task timeout from one day to one week. Prevents errors when running large forecasts that take over a day to run in Azure Batch. 
 
 ## Deprecated
-* Deprecated run_model_parallel argument within forecast_time_series function as Finn transitions to other parallel compute options like spark on Azure.
 * Deprecated azure_batch parallel compute option within forecast_time_series function since the Azure Batch R packages are deprecated. Please use the new integration with spark on Azure.  
 
 # finnts 0.1.1
