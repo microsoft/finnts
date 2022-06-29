@@ -3,7 +3,7 @@
 
 ## Improvements
 * Added spark support to run Finn in parallel on Azure Databricks or Azure Synapse. 
-* Added error handling when creating simple model averages. Should allow forecast to keep running even if there is memory issues when averaging individual forecast models, which helps on large data sets. 
+* Added error handling when creating simple model averages. Should allow forecast to keep running even if there are memory issues when averaging individual forecast models, which helps on large data sets. 
 * Expand Azure Batch task timeout from one day to one week. Prevents errors when running large forecasts that take over a day to run in Azure Batch. 
 
 ## Deprecated
