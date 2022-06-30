@@ -66,6 +66,11 @@ validate_forecasting_inputs<-function(input_data,
     stop("target variable does not match a column header in input data")
   }
   
+  #target variable is numeric
+  if(!input_data %>% dplyr::rename(Target = target_variable) %>% dplyr::pull(Target) %>% is.numeric()) {
+    stop("Target variable in input data needs to be numeric")
+  }
+  
   #external regressors match the input data
   if(!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
     stop("external regressors do not match column headers in input data")
