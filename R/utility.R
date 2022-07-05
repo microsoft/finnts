@@ -5,7 +5,7 @@ utils::globalVariables(c(".id", ".key", ".model_desc", ".pred", ".resample_id", 
                   "Horizon", "MAPE", "Model", "Number", "Number_Char", "Origin", "Residual",
                   "Residual_Std_Dev", "Rolling_MAPE", "Slice", "Sum", "Target", "Type", "Variable", 
                   "cluster", "frequency", "gluon_ts_frequency", "hi.80", "hi.95", "i", "lo.80", "lo.95",
-                  "weighted_MAPE", "where", "as2"))
+                  "weighted_MAPE", "where", "as2", "sc"))
 
 #' @importFrom magrittr %>%
 

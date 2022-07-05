@@ -8,7 +8,7 @@ The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is 
 
 - Automated feature engineering, back testing, and model selection. 
 - Access to 25+ models. Univariate, multivariate, and deep learning models all included. 
-- Azure Batch integration to run thousands of time series in parallel within the cloud. 
+- Azure integration to run thousands of time series in parallel within the cloud. 
 - Supports daily, weekly, monthly, quarterly, and yearly forecasts. 
 - Handles external regressors, either purely historical or historical+future values.
 

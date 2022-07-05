@@ -191,17 +191,26 @@ validate_forecasting_inputs<-function(input_data,
     
     # no further checks needed
   
-  } else if(parallel_processing %in% c("local_machine", "azure_batch") == FALSE) {
+  } else if(parallel_processing %in% c("local_machine", "azure_batch", "spark") == FALSE) {
     
-    stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch'")
+    stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
     
   } else if(parallel_processing == "local_machine" & run_model_parallel) {
-    
-    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input)")
+
+    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input). Please set run_model_parallel to FALSE")
     
   } else if(parallel_processing == "azure_batch") {
     
     message("NOTE: Ensure that Azure Batch parallel back-end has been registered before calling 'forecast_time_series' function")
+    warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure", 
+            call. = FALSE)
+    
+  } else if(parallel_processing == "spark") {
+    
+    if(!exists("sc")) {
+      stop("Ensure that you are connected to a spark cluster using an object called 'sc'", 
+           call. = FALSE)
+    }
     
   } else {
     
@@ -213,7 +222,6 @@ validate_forecasting_inputs<-function(input_data,
   if(!is.numeric(num_cores) & !is.null(num_cores)) {
     stop("num_cores should be NULL or a numeric value")
   }
-  
   
   #max model average formatting
   if(!is.numeric(max_model_average)) {

@@ -35,12 +35,13 @@
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.   
 #' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-#'   runs time series in parallel on a remote compute cluster in Azure Batch. 
-#' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to 
-#'   'local_machine' or 'azure_batch'.
+#'   runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel 
+#'   on a spark cluster in Azure Databricks/Synapse. 
+#' @param run_model_parallel If TRUE, runs specific components like hyperparameter tuning or model refitting in parallel, 
+#'    only works when parallel_processing is not set to 'local_machine'.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
-#'   than number of cores on machine minus 1.
+#'   than number of cores on machine minus 1. 
 #' @param target_log_transformation If TRUE, log transform target variable before training models. 
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero. 
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses 
@@ -56,7 +57,7 @@
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
-#'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image 
+#'   Only important when parallel_processing is not set to 'azure_batch' or 'spark'. Azure options should use their own docker image 
 #'   that has python environment already installed. 
 #' @param models_to_run List of models to run. Default of NULL runs all models. 
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 
@@ -107,7 +108,7 @@ forecast_time_series <- function(input_data,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = TRUE,
+  run_model_parallel = FALSE,
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
@@ -330,14 +331,25 @@ forecast_time_series <- function(input_data,
     
   } else if(parallel_processing=="azure_batch") { # parallel run within azure batch
     
-    fcst <- get_fcast_parallel_azure(combo_list,
-                                     forecast_models_fn,
-                                     run_name, 
-                                     models_to_run, 
-                                     models_not_to_run,
-                                     recipes_to_run, 
-                                     pca, 
-                                     run_deep_learning)
+    fcst <- get_fcast_parallel_azure_batch(combo_list,
+                                           forecast_models_fn,
+                                           run_name, 
+                                           models_to_run, 
+                                           models_not_to_run,
+                                           recipes_to_run, 
+                                           pca, 
+                                           run_deep_learning)
+    
+  } else if(parallel_processing=="spark") { # parallel run within spark on azure
+    
+    fcst <- get_fcast_parallel_azure_spark(combo_list,
+                                           forecast_models_fn,
+                                           run_name, 
+                                           models_to_run, 
+                                           models_not_to_run,
+                                           recipes_to_run, 
+                                           pca, 
+                                           run_deep_learning)
   } else {
     
     stop("error during forecast run function call")
@@ -368,7 +380,7 @@ forecast_time_series <- function(input_data,
     
     
     create_model_averages <- function(combination) {
-      
+
       model_combinations <- data.frame(gtools::combinations(v=model_list, n=length(model_list), r=combination))
       model_combinations$All <- model_combinations %>% tidyr::unite(All, colnames(model_combinations))
       model_combinations <- model_combinations$All
@@ -429,35 +441,57 @@ forecast_time_series <- function(input_data,
     }
     
     # kick off model average run
-    if(is.null(parallel_processing)) { # no parallel processing
+    combinations_tbl_final <- NULL
+    
+    tryCatch(
       
-      combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
-      combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
+      expr = {
+        
+        if(is.null(parallel_processing)) { # no parallel processing
+          
+          combinations_tbl_final <- lapply(2:min(max_model_average, length(model_list)), create_model_averages)
+          combinations_tbl_final <- do.call(rbind, combinations_tbl_final)
+          
+        } else if(parallel_processing == "local_machine") { # run on local machine
+          
+          cores <- get_cores(num_cores)
+          
+          cl <- parallel::makeCluster(cores)
+          doParallel::registerDoParallel(cl)
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
+                                                     .packages = get_export_packages(), 
+                                                     .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
+          
+          parallel::stopCluster(cl)
+          
+        } else if(parallel_processing == "azure_batch") { # run on azure batch
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), 
+                                                     .combine = 'rbind',
+                                                     .packages = get_export_packages(), 
+                                                     .export = c("fcst_prep", "get_cores"),
+                                                     .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
+                                                                           timeout = 60 * 60 * 24 * 7, # timeout after a week
+                                                                           job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
+                                                                                               tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
+                                                     .errorhandling = "remove") %dopar% {create_model_averages(i)}
+          
+        } else if(parallel_processing == "spark") { # run on spark in azure
+          
+          sparklyr::registerDoSpark(sc, parallelism = length(2:min(max_model_average, length(model_list))))
+          
+          combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), 
+                                                     .combine = 'rbind',
+                                                     .errorhandling = "remove") %dopar% {create_model_averages(i)}
+        }
+      },
       
-    } else if(parallel_processing == "local_machine") { # run on local machine
-      
-      cores <- get_cores(num_cores)
-      
-      cl <- parallel::makeCluster(cores)
-      doParallel::registerDoParallel(cl)
-      
-      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                                 .packages = get_export_packages(), 
-                                                 .export = c("fcst_prep", "get_cores")) %dopar% {create_model_averages(i)}
-      
-      parallel::stopCluster(cl)
-      
-    } else if(parallel_processing == "azure_batch") { # run on azure batch
-      
-      combinations_tbl_final <- foreach::foreach(i = 2:min(max_model_average, length(model_list)), .combine = 'rbind',
-                                                 .packages = get_export_packages(), 
-                                                 .export = c("fcst_prep", "get_cores"),
-                                                 .options.azure = list(maxTaskRetryCount = 0, autoDeleteJob = TRUE, 
-                                                                       timeout = 60 * 60 * 24 * 7, # timeout after a week
-                                                                       job = substr(paste0('finn-model-avg-combo-', strftime(Sys.time(), format="%H%M%S"), '-', 
-                                                                                           tolower(gsub(" ", "-", trimws(gsub("\\s+", " ", gsub("[[:punct:]]", '', run_name)))))), 1, 63)),
-                                                 .errorhandling = "remove") %dopar% {create_model_averages(i)}
-    }
+      error = function(e){
+        warning("error in running simple model averaging, most likely due to memory issues", 
+                call. = FALSE)
+      }
+    )
     
     # combine with individual model data
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)

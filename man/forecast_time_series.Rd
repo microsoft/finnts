@@ -23,7 +23,7 @@ forecast_time_series(
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = TRUE,
+  run_model_parallel = FALSE,
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
@@ -96,10 +96,11 @@ a more traditional hierarchical time series to forecast, both based on the hts p
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch.}
+runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel
+on a spark cluster in Azure Databricks/Synapse.}
 
-\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
-'local_machine' or 'azure_batch'.}
+\item{run_model_parallel}{If TRUE, runs specific components like hyperparameter tuning or model refitting in parallel,
+only works when parallel_processing is not set to 'local_machine'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
@@ -127,7 +128,7 @@ would only run models with the R1 or R2 recipe.}
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
 
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
-Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
+Only important when parallel_processing is not set to 'azure_batch' or 'spark'. Azure options should use their own docker image
 that has python environment already installed.}
 
 \item{models_to_run}{List of models to run. Default of NULL runs all models.}

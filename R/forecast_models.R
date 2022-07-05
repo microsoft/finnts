@@ -553,7 +553,7 @@ construct_forecast_models <- function(full_data_tbl,
         modeltime.resample::modeltime_fit_resamples(
           resamples = resamples_tscv_recipe,
           control = tune::control_resamples(
-            verbose = TRUE,
+            verbose = FALSE,
             allow_par = run_model_parallel)) %>%
         modeltime.resample::unnest_modeltime_resamples() %>%
         dplyr::mutate(.id = .resample_id,
