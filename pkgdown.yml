@@ -1,5 +1,5 @@
 pandoc: 2.7.3
-pkgdown: 2.0.2
+pkgdown: 2.0.5
 pkgdown_sha: ~
 articles:
   back-testing-and-hyperparameter-tuning: back-testing-and-hyperparameter-tuning.html
@@ -10,7 +10,7 @@ articles:
   hierarchical-forecasting: hierarchical-forecasting.html
   models-used-in-finnts: models-used-in-finnts.html
   parallel-processing: parallel-processing.html
-last_built: 2022-04-08T22:42Z
+last_built: 2022-07-05T22:47Z
 urls:
   reference: https://microsoft.github.io/finnts/reference
   article: https://microsoft.github.io/finnts/articles

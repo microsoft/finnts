@@ -120,41 +120,41 @@
 <h3 id="standard-hierarchy">Standard Hierarchy<a class="anchor" aria-label="anchor" href="#standard-hierarchy"></a>
 </h3>
 <p>A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.</p>
-<pre><code><span class="co">#&gt; Standard Hierarchical Time Series Data</span>
-<span class="co">#&gt; <span style="color: #949494;"># A tibble: 9 × 5</span></span>
-<span class="co">#&gt;   Continent     Country       City        Date       Target</span>
-<span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">1</span> North America United States Kansas City 2020-01-01    100</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">2</span> North America United States Kansas City 2020-02-01    250</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">3</span> North America United States Kansas City 2020-03-01    320</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">4</span> North America United States Seattle     2020-01-01     80</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">5</span> North America United States Seattle     2020-02-01    200</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">6</span> North America United States Seattle     2020-03-01    270</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">7</span> North America Mexico        Mexico City 2020-01-01     50</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">8</span> North America Mexico        Mexico City 2020-02-01     80</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">9</span> North America Mexico        Mexico City 2020-03-01    120</span></code></pre>
+<pre><code><span><span class="co">#&gt; Standard Hierarchical Time Series Data</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 9 × 5</span></span></span>
+<span><span class="co">#&gt;   Continent     Country       City        Date       Target</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> North America United States Kansas City 2020-01-01    100</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> North America United States Kansas City 2020-02-01    250</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> North America United States Kansas City 2020-03-01    320</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> North America United States Seattle     2020-01-01     80</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">5</span> North America United States Seattle     2020-02-01    200</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">6</span> North America United States Seattle     2020-03-01    270</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">7</span> North America Mexico        Mexico City 2020-01-01     50</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">8</span> North America Mexico        Mexico City 2020-02-01     80</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">9</span> North America Mexico        Mexico City 2020-03-01    120</span></span></code></pre>
 <p>In the above example, “City” was the lowest level of the hierarchy, which feeds into “Country”, which then feeds into “Continent”. Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the “Best Model” and every other model is reconciled back down to the lowest level.</p>
 </div>
 <div class="section level3">
 <h3 id="grouped-hierarchy">Grouped Hierarchy<a class="anchor" aria-label="anchor" href="#grouped-hierarchy"></a>
 </h3>
 <p>Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls “grouped”. A good example is a data set that contains historical time series by geography, customer segment, and product.</p>
-<pre><code><span class="co">#&gt; Grouped Hierarchical Time Series Data</span>
-<span class="co">#&gt; <span style="color: #949494;"># A tibble: 12 × 5</span></span>
-<span class="co">#&gt;    Country       Segment       Product Date       Target</span>
-<span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> United States Enterprise    Coffee  2020-01-01     10</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> United States Enterprise    Coffee  2020-02-01     20</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> United States Enterprise    Coffee  2020-03-01     30</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> United States Public Sector Coffee  2020-01-01      5</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> United States Public Sector Coffee  2020-02-01      8</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> United States Public Sector Coffee  2020-03-01     11</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Mexico        Enterprise    Coffee  2020-01-01     20</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Mexico        Enterprise    Coffee  2020-02-01     23</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Mexico        Enterprise    Coffee  2020-03-01     27</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Mexico        Enterprise    Tea     2020-01-01     50</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Mexico        Enterprise    Tea     2020-02-01     55</span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Mexico        Enterprise    Tea     2020-03-01     60</span></code></pre>
+<pre><code><span><span class="co">#&gt; Grouped Hierarchical Time Series Data</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 12 × 5</span></span></span>
+<span><span class="co">#&gt;    Country       Segment       Product Date       Target</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> United States Enterprise    Coffee  2020-01-01     10</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> United States Enterprise    Coffee  2020-02-01     20</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> United States Enterprise    Coffee  2020-03-01     30</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> United States Public Sector Coffee  2020-01-01      5</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> United States Public Sector Coffee  2020-02-01      8</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> United States Public Sector Coffee  2020-03-01     11</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Mexico        Enterprise    Coffee  2020-01-01     20</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Mexico        Enterprise    Coffee  2020-02-01     23</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Mexico        Enterprise    Coffee  2020-03-01     27</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Mexico        Enterprise    Tea     2020-01-01     50</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Mexico        Enterprise    Tea     2020-02-01     55</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Mexico        Enterprise    Tea     2020-03-01     60</span></span></code></pre>
 <p>It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.</p>
 <ul>
 <li>Grand Total: model “Target” across the sum of “Country”, “Segment”, and “Product”</li>
@@ -185,7 +185,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.2.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.5.</p>
 </div>
 
       </footer>

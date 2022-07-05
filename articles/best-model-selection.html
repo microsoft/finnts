@@ -117,27 +117,27 @@
     
 <p>The “Best Model” you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual, ensemble, and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied to each unique data combo and model combination.</p>
 <p>A standard MAPE calculation is produced first, then instead of a simple average to get the final MAPE a weighted MAPE is taken based on the size of the target variable value. Please see below for an example of the process.</p>
-<pre><code><span class="co">#&gt; Simple Back Test Results</span>
-<span class="co">#&gt; <span style="color: #949494;"># A tibble: 10 × 8</span></span>
-<span class="co">#&gt;    Combo     Date       Model  FCST Target   MAPE Target_Total Percent_Total</span>
-<span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01 arima     9     10 0.1             150        0.066<span style="text-decoration: underline;">7</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-02-01 arima    23     20 0.15            150        0.133 </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-03-01 arima    35     30 0.167           150        0.2   </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-04-01 arima    41     40 0.025           150        0.267 </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-05-01 arima    48     50 0.04            150        0.333 </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-01-01 ets       7     10 0.3             150        0.066<span style="text-decoration: underline;">7</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-02-01 ets      22     20 0.1             150        0.133 </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-03-01 ets      29     30 0.033<span style="text-decoration: underline;">3</span>          150        0.2   </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-04-01 ets      42     40 0.05            150        0.267 </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2020-05-01 ets      53     50 0.06            150        0.333</span>
-<span class="co">#&gt; </span>
-<span class="co">#&gt; Overall Model Accuracy by Combo</span>
-<span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 4</span></span>
-<span class="co">#&gt;   Combo     Model   MAPE Weighted_MAPE</span>
-<span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Country_1 arima 0.096<span style="text-decoration: underline;">3</span>        0.08  </span>
-<span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Country_1 ets   0.109         0.073<span style="text-decoration: underline;">3</span></span></code></pre>
+<pre><code><span><span class="co">#&gt; Simple Back Test Results</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 10 × 8</span></span></span>
+<span><span class="co">#&gt;    Combo     Date       Model  FCST Target   MAPE Target_Total Percent_Total</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01 arima     9     10 0.1             150        0.066<span style="text-decoration: underline;">7</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-02-01 arima    23     20 0.15            150        0.133 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-03-01 arima    35     30 0.167           150        0.2   </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-04-01 arima    41     40 0.025           150        0.267 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-05-01 arima    48     50 0.04            150        0.333 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-01-01 ets       7     10 0.3             150        0.066<span style="text-decoration: underline;">7</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-02-01 ets      22     20 0.1             150        0.133 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-03-01 ets      29     30 0.033<span style="text-decoration: underline;">3</span>          150        0.2   </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-04-01 ets      42     40 0.05            150        0.267 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2020-05-01 ets      53     50 0.06            150        0.333</span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; Overall Model Accuracy by Combo</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 4</span></span></span>
+<span><span class="co">#&gt;   Combo     Model   MAPE Weighted_MAPE</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Country_1 arima 0.096<span style="text-decoration: underline;">3</span>        0.08  </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Country_1 ets   0.109         0.073<span style="text-decoration: underline;">3</span></span></span></code></pre>
 <p>During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the quick start guide.</p>
 <p>Some might think why not just use root mean squared error (RMSE)? This would have similar results to weighted MAPE, but make it harder to non-technical users of the forecast understand accuracy. Only showing MAPE to users allows them to comprehend accuracy based on their current latticework of mental models with similar metrics like variance to forecast or budget they might already be using in financial reporting.</p>
   </div>
@@ -157,7 +157,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.2.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.5.</p>
 </div>
 
       </footer>
