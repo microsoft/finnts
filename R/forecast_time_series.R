@@ -363,7 +363,7 @@ forecast_time_series <- function(input_data,
   # * Create Average Ensembles ----
   
   fcst_combination <- tibble::tibble(fcst)
-  
+
   #model average combinations
   model_list <- unique(fcst$Model)
   
@@ -509,7 +509,7 @@ forecast_time_series <- function(input_data,
     tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
     tidyr::pivot_longer(!c(".id", "Combo", "Target", "Date", "Horizon"), names_to='Model', values_to = "FCST") %>%
     dplyr::mutate(FCST = ifelse(is.na(FCST), 0, FCST))
-  
+  #return(back_test_initial)
   #classic weighted MAPE approach
   accuracy1 <- back_test_initial %>%
     dplyr::mutate(Target = ifelse(Target == 0, 0.1, Target)) %>%
@@ -520,7 +520,7 @@ forecast_time_series <- function(input_data,
     dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm=TRUE)) %>%
     dplyr::arrange(Rolling_MAPE) %>%
     dplyr::ungroup()
-  
+  #return(accuracy1)
   accuracy_final <- accuracy1 %>% 
     dplyr::group_by(Combo) %>% 
     dplyr::slice(1) %>%

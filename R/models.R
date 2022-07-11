@@ -66,6 +66,9 @@ get_recipie_configurable <- function(train_data,
              recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj),
            "with_adj_index" = df %>%
              recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num),
+           "ensemble" = df %>%
+             recipes::step_rm(tidyselect::matches(date_rm_regex_final), Date, Date_Adj, Date_Adj_index.num, 
+                              tidyselect::contains("Date"), tidyselect::contains("Horizon")),
            df)
 
   }
@@ -750,11 +753,20 @@ glmnet <- function(train_data,
     recipe_spec_glmnet <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
                                date_rm_regex_final,
-                               rm_date = "with_adj_index",
-                               step_nzv = "nzv",
+                               rm_date = "ensemble",
+                               step_nzv = "none",
                                one_hot = FALSE,
-                               center_scale = TRUE, 
+                               center_scale = FALSE, 
                                pca = pca)
+    
+    model_spec_glmnet <- parsnip::linear_reg(
+      mode = "regression", 
+      penalty = tune::tune(), 
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet", 
+                          lower.limits = 0)
+    
   }else{
     recipe_spec_glmnet <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
@@ -764,14 +776,16 @@ glmnet <- function(train_data,
                                one_hot = FALSE,
                                center_scale = TRUE, 
                                pca = pca)
+    
+    model_spec_glmnet <- parsnip::linear_reg(
+      mode = "regression", 
+      penalty = tune::tune(), 
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
   }
   
-  model_spec_glmnet <- parsnip::linear_reg(
-    mode = "regression", 
-    penalty = tune::tune(), 
-    mixture = tune::tune()
-  ) %>%
-    parsnip::set_engine("glmnet")
+  #print(recipe_spec_glmnet %>% recipes::prep() %>% recipes::juice() %>% dplyr::glimpse())
 
   wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
                                                recipe_spec_glmnet)
@@ -1757,6 +1771,8 @@ xgboost <-function(train_data,
                                step_nzv = "zv",
                                one_hot = TRUE, 
                                pca = pca)
+    
+    print(recipe_spec_xgboost %>% recipes::prep() %>% recipes::juice() %>% dplyr::glimpse())
     
   } else {
     

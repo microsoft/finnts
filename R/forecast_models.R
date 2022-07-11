@@ -485,6 +485,7 @@ construct_forecast_models <- function(full_data_tbl,
     # if multivariate models are chosen to run, ensemble models are turned on, and more than one individual model has been run, 
     # then create enough back test scenarios to train ensemble models, otherwise just run back test scenario input amount and turn ensembles off
     if(run_ensemble_models & (length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)))>1 & sum(grepl("-R", c(unique(combined_models_recipe_1$.model_desc), unique(combined_models_recipe_2$.model_desc)))) > 0) {
+      #slice_limit_amount <- floor(back_test_scenarios*2)
       slice_limit_amount <- 100
       run_ensemble_models <- TRUE
     } else {
@@ -686,7 +687,7 @@ construct_forecast_models <- function(full_data_tbl,
           initial = "1 year",
           assess = forecast_horizon,
           skip = back_test_spacing,
-          cumulative = TRUE,
+          cumulative = FALSE,
           slice_limit = back_test_scenarios) %>%
         timetk::tk_time_series_cv_plan() %>%
         dplyr::mutate(Horizon_char = as.character(Horizon))
