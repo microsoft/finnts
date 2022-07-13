@@ -355,7 +355,7 @@ forecast_time_series <- function(input_data,
     stop("error during forecast run function call")
   
   }
-
+  return(fcst)
   # Adjust for NaNs and Negative Forecasts
   fcst <- fcst %>%
     get_forecast_negative_adjusted(negative_forecast)

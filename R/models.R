@@ -247,7 +247,7 @@ get_resample_tscv <- function(train_data,
 get_resample_kfold <-function(train_data){
 
   train_data %>% 
-    rsample::vfold_cv(v = 5)
+    rsample::vfold_cv(v = 10)
 }
 
 #' Get tuning grid with resample
@@ -767,6 +767,13 @@ glmnet <- function(train_data,
       parsnip::set_engine("glmnet", 
                           lower.limits = 0)
     
+    wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
+                                                 recipe_spec_glmnet)
+    
+    tune_results_glmnet <- train_data %>%
+      get_kfold_tune_grid(wflw_spec_tune_glmnet,
+                          parallel)
+    
   }else{
     recipe_spec_glmnet <- train_data %>%
       get_recipie_configurable(fiscal_year_start,
@@ -783,19 +790,17 @@ glmnet <- function(train_data,
       mixture = tune::tune()
     ) %>%
       parsnip::set_engine("glmnet")
+    
+    wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
+                                                 recipe_spec_glmnet)
+    
+    tune_results_glmnet <- train_data %>%
+      get_resample_tune_grid(tscv_initial,
+                             horizon,
+                             back_test_spacing,
+                             wflw_spec_tune_glmnet,
+                             parallel)
   }
-  
-  #print(recipe_spec_glmnet %>% recipes::prep() %>% recipes::juice() %>% dplyr::glimpse())
-
-  wflw_spec_tune_glmnet <- get_workflow_simple(model_spec_glmnet,
-                                               recipe_spec_glmnet)
-
-  tune_results_glmnet <- train_data %>%
-    get_resample_tune_grid(tscv_initial,
-                           horizon,
-                           back_test_spacing,
-                           wflw_spec_tune_glmnet,
-                           parallel)
   
   wflw_fit_glmnet <- train_data %>%
     get_fit_wkflw_best(tune_results_glmnet,

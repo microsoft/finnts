@@ -485,8 +485,9 @@ construct_forecast_models <- function(full_data_tbl,
     # if multivariate models are chosen to run, ensemble models are turned on, and more than one individual model has been run, 
     # then create enough back test scenarios to train ensemble models, otherwise just run back test scenario input amount and turn ensembles off
     if(run_ensemble_models & (length(unique(combined_models_recipe_1$.model_desc))+length(unique(combined_models_recipe_2$.model_desc)))>1 & sum(grepl("-R", c(unique(combined_models_recipe_1$.model_desc), unique(combined_models_recipe_2$.model_desc)))) > 0) {
-      #slice_limit_amount <- floor(back_test_scenarios*2)
-      slice_limit_amount <- 100
+      # slice_limit_amount <- floor(back_test_scenarios*2)
+      #slice_limit_amount <- 100
+      slice_limit_amount <- back_test_scenarios
       run_ensemble_models <- TRUE
     } else {
       slice_limit_amount <- back_test_scenarios
@@ -636,7 +637,7 @@ construct_forecast_models <- function(full_data_tbl,
     }
     
     fcst_tbl <- tibble::tibble()
-    
+    print(ensemble_train_data_initial)
     if(run_ensemble_models) {
       
       cli::cli_h3("Ensemble Model Training")
@@ -679,20 +680,45 @@ construct_forecast_models <- function(full_data_tbl,
       #create ensemble resamples to train future and back test folds
       cli::cli_h3("Refitting Ensemble Models")
       
-      ensemble_tscv <- submodels_resample_tscv_tbl %>%
+      ensemble_tscv_prep <- submodels_resample_tscv_tbl %>%
         dplyr::select(-.id) %>%
-        tidyr::pivot_wider(names_from = "Model", values_from = "FCST") %>%
-        timetk::time_series_cv(
-          date_var = Date,
-          initial = "1 year",
-          assess = forecast_horizon,
-          skip = back_test_spacing,
-          cumulative = FALSE,
-          slice_limit = back_test_scenarios) %>%
-        timetk::tk_time_series_cv_plan() %>%
+        tidyr::pivot_wider(names_from = "Model", values_from = "FCST") #%>%
+        # timetk::time_series_cv(
+        #   date_var = Date,
+        #   initial = "1 year",
+        #   assess = forecast_horizon,
+        #   skip = back_test_spacing,
+        #   cumulative = FALSE,
+        #   slice_limit = back_test_scenarios) %>%
+        # timetk::tk_time_series_cv_plan() %>%
+        # dplyr::mutate(Horizon_char = as.character(Horizon))
+      
+      # need to create a new function that creates ensemble splits that only uses back test
+      # fitted forecasts, but the test set in each kfold cv matches the hold out data in 
+      # standard tscv process, with all remaining data used for training (filtering out future data)
+      
+      ensemble_tscv <- ensemble_tscv_prep %>%
+        dplyr::filter(Date <= hist_end_date)
+        rsample::vfold_cv(v = 10) %>%
+        dplyr::rename(.splits = splits, .id = id) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(
+          training = purrr::map(.splits, ~ rsample::training(.x)),
+          testing  = purrr::map(.splits, ~ rsample::testing(.x))
+        ) %>%
+        dplyr::select(-.splits) %>%
+        tidyr::gather(-.id, key = ".key", value = ".value", factor_key = TRUE) %>%
+        tidyr::unnest(.value) %>%
+        tibble::as_tibble() %>%
+        rbind(
+          rbind(
+            ensemble_tscv_prep %>% 
+              dplyr::mutate(id)
+          )
+        )
         dplyr::mutate(Horizon_char = as.character(Horizon))
       
-      #return(ensemble_tscv)
+      return(ensemble_tscv)
       
       #Replace NaN/Inf with NA, then replace with zero
       is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
