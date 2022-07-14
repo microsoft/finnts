@@ -20,7 +20,7 @@ When the "parallel_processing" input within "forecast_time_series" is set to "lo
 
 If "parallel_processing" is set to NULL and "run_model_parallel" is set to TRUE within the "forecast_time_series" function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn. 
 
-## Within Azure Using Spark
+## Within Azure using Spark
 
 To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set "parallel_processing" to "spark" within the "forecast_time_series" function. This will run each time series in parallel across a spark compute cluster. 
 

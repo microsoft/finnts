@@ -1,5 +1,5 @@
 
-# finnts 0.1.1.9000 (Development Version)
+# finnts 0.2.0
 
 ## Improvements
 * Added spark support to run Finn in parallel on Azure Databricks or Azure Synapse. 
