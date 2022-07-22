@@ -935,8 +935,9 @@ prep_data <- function(
           assign(name, context[[name]], envir = .GlobalEnv)
         }
         
-        combo <- unique(df$id)
-        
+        combo <- unique(df$Combo)
+        print(combo)
+        print(df)
         xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
                                                         external_regressors,
                                                         hist_end_date,
@@ -1066,7 +1067,8 @@ prep_data <- function(
         get_lag_periods = get_lag_periods, 
         lag_periods = lag_periods,
         get_rolling_window_periods = get_rolling_window_periods, 
-        rolling_window_periods = rolling_window_periods
+        rolling_window_periods = rolling_window_periods, 
+        write_data = write_data
       ))
     
   }
