@@ -29,10 +29,12 @@ Imports:
     cli,
     Cubist,
     dials,
+    digest, 
     doParallel,
     dplyr,
     earth,
     foreach,
+    fs,
     generics,
     glmnet,
     gtools,
@@ -58,7 +60,10 @@ Imports:
     tune,
     workflows
 Suggests: 
+    arrow,
+    AzureStor,
     knitr,
+    Microsoft365R,
     reactable,
     rmarkdown,
     sparklyr,

@@ -1,0 +1,44 @@
+
+#' Set up finnts submission
+#' 
+#' @param run_name
+#' @param storage_object
+#' @param path
+#' @param data_output
+#' @param object_output
+#'  
+#' @return list with run info
+#' @export
+set_run_info <- function(run_name = 'finn_fcst', 
+                         storage_object = NULL, 
+                         path = NULL, 
+                         data_output = 'csv', 
+                         object_output = 'rds') {
+  
+  if(!inherits(run_name, c("NULL", "character"))) {
+    stop("`run_name` must either be a NULL or a string")
+  }
+  
+  if(!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
+    stop("`storage_object` must either be a NULL or a Azure Blob Storage, OneDrive, or SharePoint document library object")
+  }
+  
+  if(!inherits(path, c("NULL", "character"))) {
+    stop("`path` must either be a NULL or a string")
+  }
+  
+  if(inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
+    path <- ''
+  }
+  
+  run_name <- paste0(run_name, '-', format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"))
+  
+  return(list(
+    run_name = run_name, 
+    storage_object = storage_object, 
+    path = path, 
+    data_output = data_output, 
+    object_output = object_output
+  ))
+  
+}

@@ -677,6 +677,7 @@ multivariate_prep_recipe_2 <- function(data,
 #' 
 #' Preps data with various feature engineering reciepes to create features before training models
 #' 
+#' @param run_info
 #' @param input_data A data frame or tibble of historical time series data. Can also include external regressors for both 
 #'   historical and future data. 
 #' @param combo_variables List of column headers within input data to be used to separate individual time series. 
@@ -738,6 +739,7 @@ multivariate_prep_recipe_2 <- function(data,
 #'   tidyr::unnest(R2)
 #' 
 prep_data <- function(
+  run_info, 
   input_data,
   combo_variables,
   target_variable,
@@ -770,7 +772,7 @@ prep_data <- function(
   
   # prep initial data before feature engineering
   initial_prep_tbl <- input_data %>%
-    tibble::tibble() %>%
+    #tibble::tibble() %>%
     tidyr::unite("Combo",
                  combo_variables,
                  sep="--",
@@ -780,146 +782,293 @@ prep_data <- function(
                     tidyselect::all_of(combo_variables), 
                     tidyselect::all_of(external_regressors), 
                     "Date", "Target")) %>%
-    dplyr::arrange(Combo, Date) %>%
-    combo_cleanup_fn(combo_cleanup_date) %>%
-    get_hts(combo_variables,
-            forecast_approach,
-            frequency_number)
+    dplyr::arrange(Combo, Date) #%>%
+    #combo_cleanup_fn(combo_cleanup_date) %>%
+    # get_hts(combo_variables,
+    #         forecast_approach,
+    #         frequency_number)
   
   # parallel run info
-  par_info <- par_start(parallel_processing = parallel_processing, 
-                        num_cores = num_cores, 
-                        task_length = length(unique(initial_prep_tbl$Combo)))
-  
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
+  if(is.null(parallel_processing) || parallel_processing == "local_machine") {
+    
+    par_info <- par_start(parallel_processing = parallel_processing, 
+                          num_cores = num_cores, 
+                          task_length = length(unique(initial_prep_tbl$Combo)))
+    
+    cl <- par_info$cl
+    packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
+    
+    # submit tasks
+    final_data <- foreach::foreach(x = initial_prep_tbl %>%
+                                     dplyr::select(Combo) %>%
+                                     dplyr::distinct() %>%
+                                     dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
+                                   .combine = 'rbind', 
+                                   .packages = packages,
+                                   .errorhandling = "stop", 
+                                   .verbose = FALSE, 
+                                   .inorder = FALSE, 
+                                   .multicombine = TRUE, 
+                                   .noexport = NULL) %op% {
+                                     
+                                     combo <- x %>%
+                                       dplyr::pull(Combo)
+                                     
+                                     xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
+                                                                                     external_regressors,
+                                                                                     hist_end_date,
+                                                                                     forecast_approach)
+                                     
+                                     if(length(colnames(xregs_future_tbl)) > 2) {
+                                       xregs_future_list <- xregs_future_tbl %>% dplyr::select(-Date, -Combo) %>% colnames()
+                                     } else {
+                                       xregs_future_list <- NULL
+                                     }
+                                     
+                                     initial_tbl <- initial_prep_tbl %>%
+                                       dplyr::filter(Combo == combo) %>%
+                                       dplyr::select(Combo,
+                                                     Date,
+                                                     Target,
+                                                     tidyselect::all_of(external_regressors)) %>%
+                                       dplyr::group_by(Combo) %>%
+                                       timetk::pad_by_time(Date,
+                                                           .by = date_type,
+                                                           .pad_value = ifelse(clean_missing_values, NA, 0),
+                                                           .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+                                       timetk::pad_by_time(Date,
+                                                           .by = date_type,
+                                                           .pad_value = 0,
+                                                           .start_date = hist_start_date,
+                                                           .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+                                       timetk::future_frame(Date,
+                                                            .length_out = forecast_horizon,
+                                                            .bind_data = TRUE) %>% #add future data
+                                       dplyr::ungroup() %>%
+                                       dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
+                                       clean_outliers_missing_values(clean_outliers,
+                                                                     clean_missing_values,
+                                                                     get_frequency_number(date_type),
+                                                                     external_regressors) %>% # clean outliers and missing values
+                                       dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
+                                       dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
+                                       dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
+                                       dplyr::mutate(Target = ifelse(Date > hist_end_date,
+                                                                     NA,
+                                                                     Target))
+                                     
+                                     date_features <- initial_tbl %>%
+                                       dplyr::select(Date) %>%
+                                       dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1),
+                                                     Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
+                                       timetk::tk_augment_timeseries_signature(Date_Adj) %>%
+                                       dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj, -Date)
+                                     
+                                     names(date_features) <- stringr::str_c("Date_", names(date_features))
+                                     
+                                     initial_tbl <- initial_tbl %>%
+                                       cbind(date_features)
+                                     
+                                     # Run Recipes
+                                     if(is.null(recipes_to_run)) {
+                                       run_all_recipes_override <- FALSE
+                                     } else if(recipes_to_run == "all") {
+                                       run_all_recipes_override <- TRUE
+                                     } else {
+                                       run_all_recipes_override <- FALSE
+                                     }
+                                     
+                                     #output_tbl <- NULL
+                                     
+                                     if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+                                       
+                                       R1 <- initial_tbl %>%
+                                         multivariate_prep_recipe_1(external_regressors,
+                                                                    xregs_future_values_list = xregs_future_list,
+                                                                    get_fourier_periods(fourier_periods, date_type),
+                                                                    get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                                                    get_rolling_window_periods(rolling_window_periods, date_type))
+                                       
+                                       write_data(x = R1, 
+                                                  combo = combo,
+                                                  run_info = run_info, 
+                                                  output_type = 'data',
+                                                  folder = "prep_data",
+                                                  suffix = '-R1'
+                                       )
+                                     }
+                                     
+                                     if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+                                       
+                                       R2 <- initial_tbl %>%
+                                         multivariate_prep_recipe_2(external_regressors,
+                                                                    xregs_future_values_list = xregs_future_list,
+                                                                    get_fourier_periods(fourier_periods, date_type),
+                                                                    get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                                                    get_rolling_window_periods(rolling_window_periods, date_type),
+                                                                    date_type,
+                                                                    forecast_horizon)
+                                       
+                                       write_data(x = R2, 
+                                                  combo = combo, 
+                                                  run_info = run_info, 
+                                                  output_type = 'data',
+                                                  folder = "prep_data",
+                                                  suffix = '-R2'
+                                       )
+                                       
+                                     }
+                                     
+                                     return()
+                                   }
+    
+    # clean up any parallel run process
+    par_end(cl)
+    
+  } else if(parallel_processing == 'spark') {
+    
+    spark_sdf %>% 
+      sparklyr::spark_apply(function(df) {
+        
+        for (name in names(context)) assign(name, context[[name]], envir = .GlobalEnv)
+        
+        combo <- unique(df$id)
+        
+        xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
+                                                        external_regressors,
+                                                        hist_end_date,
+                                                        forecast_approach)
+        
+        if(length(colnames(xregs_future_tbl)) > 2) {
+          xregs_future_list <- xregs_future_tbl %>% dplyr::select(-Date, -Combo) %>% colnames()
+        } else {
+          xregs_future_list <- NULL
+        }
+        
+        initial_tbl <- df %>%
+          dplyr::filter(Combo == combo) %>%
+          dplyr::select(Combo,
+                        Date,
+                        Target,
+                        tidyselect::all_of(external_regressors)) %>%
+          dplyr::group_by(Combo) %>%
+          timetk::pad_by_time(Date,
+                              .by = date_type,
+                              .pad_value = ifelse(clean_missing_values, NA, 0),
+                              .end_date = hist_end_date) %>% #fill in missing values in between existing data points
+          timetk::pad_by_time(Date,
+                              .by = date_type,
+                              .pad_value = 0,
+                              .start_date = hist_start_date,
+                              .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
+          timetk::future_frame(Date,
+                               .length_out = forecast_horizon,
+                               .bind_data = TRUE) %>% #add future data
+          dplyr::ungroup() %>%
+          dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
+          clean_outliers_missing_values(clean_outliers,
+                                        clean_missing_values,
+                                        get_frequency_number(date_type),
+                                        external_regressors) %>% # clean outliers and missing values
+          dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
+          dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
+          dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
+          dplyr::mutate(Target = ifelse(Date > hist_end_date,
+                                        NA,
+                                        Target))
+        
+        date_features <- df %>%
+          dplyr::select(Date) %>%
+          dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1),
+                        Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
+          timetk::tk_augment_timeseries_signature(Date_Adj) %>%
+          dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj, -Date)
+        
+        names(date_features) <- stringr::str_c("Date_", names(date_features))
+        
+        initial_tbl <- initial_tbl %>%
+          cbind(date_features)
+        
+        # Run Recipes
+        if(is.null(recipes_to_run)) {
+          run_all_recipes_override <- FALSE
+        } else if(recipes_to_run == "all") {
+          run_all_recipes_override <- TRUE
+        } else {
+          run_all_recipes_override <- FALSE
+        }
+        
+        #output_tbl <- NULL
+        
+        if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+          
+          R1 <- initial_tbl %>%
+            multivariate_prep_recipe_1(external_regressors,
+                                       xregs_future_values_list = xregs_future_list,
+                                       get_fourier_periods(fourier_periods, date_type),
+                                       get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                       get_rolling_window_periods(rolling_window_periods, date_type))
+          
+          write_data(x = R1, 
+                     combo = combo,
+                     run_info = run_info, 
+                     output_type = 'data',
+                     folder = "prep_data",
+                     suffix = '-R1'
+          )
+        }
+        
+        if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+          
+          R2 <- initial_tbl %>%
+            multivariate_prep_recipe_2(external_regressors,
+                                       xregs_future_values_list = xregs_future_list,
+                                       get_fourier_periods(fourier_periods, date_type),
+                                       get_lag_periods(lag_periods, date_type,forecast_horizon),
+                                       get_rolling_window_periods(rolling_window_periods, date_type),
+                                       date_type,
+                                       forecast_horizon)
+          
+          write_data(x = R2, 
+                     combo = combo, 
+                     run_info = run_info, 
+                     output_type = 'data',
+                     folder = "prep_data",
+                     suffix = '-R2'
+          )
+          
+        }
+        
+        return()
+      }, 
+      group_by = "Combo",
+      context = list(
+        get_xregs_future_values_tbl = get_xregs_future_values_tbl,
+        external_regressors = external_regressors,
+        clean_missing_values = clean_missing_values, 
+        hist_end_date = hist_end_date, 
+        hist_start_date = hist_start_date, 
+        forecast_horizon = forecast_horizon, 
+        clean_outliers = clean_outliers, 
+        get_frequency_number = get_frequency_number, 
+        date_type = date_type, 
+        fiscal_year_start = fiscal_year_start, 
+        get_date_regex = get_date_regex, 
+        recipes_to_run = recipes_to_run, 
+        multivariate_prep_recipe_1 = multivariate_prep_recipe_1, 
+        multivariate_prep_recipe_2 = multivariate_prep_recipe_2, 
+        run_info = run_info, 
+        get_fourier_periods = get_fourier_periods, 
+        fourier_periods = fourier_periods, 
+        get_lag_periods = get_lag_periods, 
+        lag_periods = lag_periods,
+        get_rolling_window_periods = get_rolling_window_periods, 
+        rolling_window_periods = rolling_window_periods
+      ))
+    
+  }
 
-  # submit tasks
-  final_data <- foreach::foreach(x = initial_prep_tbl %>%
-                                   dplyr::select(Combo) %>%
-                                   dplyr::distinct() %>%
-                                   dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
-                                 .combine = 'rbind', 
-                                 .packages = packages,
-                                 .errorhandling = "stop", 
-                                 .verbose = FALSE, 
-                                 .inorder = FALSE, 
-                                 .multicombine = TRUE, 
-                                 .noexport = NULL) %op% {
-                                   
-                                   combo <- x %>%
-                                     dplyr::pull(Combo)
-                                   
-                                   xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
-                                                                                   external_regressors,
-                                                                                   hist_end_date,
-                                                                                   forecast_approach)
-                                   
-                                   if(length(colnames(xregs_future_tbl)) > 2) {
-                                     xregs_future_list <- xregs_future_tbl %>% dplyr::select(-Date, -Combo) %>% colnames()
-                                   } else {
-                                     xregs_future_list <- NULL
-                                   }
-                                   
-                                   initial_tbl <- initial_prep_tbl %>%
-                                     dplyr::filter(Combo == combo) %>%
-                                     dplyr::select(Combo,
-                                                   Date,
-                                                   Target,
-                                                   tidyselect::all_of(external_regressors)) %>%
-                                     dplyr::group_by(Combo) %>%
-                                     timetk::pad_by_time(Date,
-                                                         .by = date_type,
-                                                         .pad_value = ifelse(clean_missing_values, NA, 0),
-                                                         .end_date = hist_end_date) %>% #fill in missing values in between existing data points
-                                     timetk::pad_by_time(Date,
-                                                         .by = date_type,
-                                                         .pad_value = 0,
-                                                         .start_date = hist_start_date,
-                                                         .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
-                                     timetk::future_frame(Date,
-                                                          .length_out = forecast_horizon,
-                                                          .bind_data = TRUE) %>% #add future data
-                                     dplyr::ungroup() %>%
-                                     dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
-                                     clean_outliers_missing_values(clean_outliers,
-                                                                   clean_missing_values,
-                                                                   get_frequency_number(date_type),
-                                                                   external_regressors) %>% # clean outliers and missing values
-                                     dplyr::mutate_if(is.numeric, list(~replace(., is.infinite(.), NA))) %>% # replace infinite values
-                                     dplyr::mutate_if(is.numeric, list(~replace(., is.nan(.), NA))) %>% # replace NaN values
-                                     dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0))) %>% # replace NA values
-                                     dplyr::mutate(Target = ifelse(Date > hist_end_date,
-                                                                   NA,
-                                                                   Target))
-                                   
-                                   date_features <- initial_tbl %>%
-                                     dplyr::select(Date) %>%
-                                     dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1),
-                                                   Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
-                                     timetk::tk_augment_timeseries_signature(Date_Adj) %>%
-                                     dplyr::select(!tidyselect::matches(get_date_regex(date_type)), -Date_Adj, -Date)
-                                   
-                                   names(date_features) <- stringr::str_c("Date_", names(date_features))
-                                   
-                                   initial_tbl <- initial_tbl %>%
-                                     cbind(date_features)
-                                   
-                                   # Run Recipes
-                                   if(is.null(recipes_to_run)) {
-                                     run_all_recipes_override <- FALSE
-                                   } else if(recipes_to_run == "all") {
-                                     run_all_recipes_override <- TRUE
-                                   } else {
-                                     run_all_recipes_override <- FALSE
-                                   }
-                                   
-                                   output_tbl <- NULL
-                                   
-                                   if(is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
-                                     
-                                     R1 <- initial_tbl %>%
-                                       multivariate_prep_recipe_1(external_regressors,
-                                                                  xregs_future_values_list = xregs_future_list,
-                                                                  get_fourier_periods(fourier_periods, date_type),
-                                                                  get_lag_periods(lag_periods, date_type,forecast_horizon),
-                                                                  get_rolling_window_periods(rolling_window_periods, date_type))
-                                     
-                                     output_tbl <- output_tbl %>%
-                                       rbind(tibble::tibble(Combo = combo,
-                                                            Recipe = "R1",
-                                                            Data = list(R1)))
-                                     
-                                   }
-                                   
-                                   if((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
-                                     
-                                     R2 <- initial_tbl %>%
-                                       multivariate_prep_recipe_2(external_regressors,
-                                                                  xregs_future_values_list = xregs_future_list,
-                                                                  get_fourier_periods(fourier_periods, date_type),
-                                                                  get_lag_periods(lag_periods, date_type,forecast_horizon),
-                                                                  get_rolling_window_periods(rolling_window_periods, date_type),
-                                                                  date_type,
-                                                                  forecast_horizon)
-                                     
-                                     output_tbl <- output_tbl %>%
-                                       rbind(tibble::tibble(Combo = combo,
-                                                            Recipe = "R2",
-                                                            Data = list(R2)))
-                                     
-                                   }
-                                   
-                                   if(is.null(output_tbl)) {
-                                     stop("Error in Running Feature Engineering Recipes")
-                                   }
-                                   
-                                   return(output_tbl)
-                                 }
-  
-  # clean up any parallel run process
-  par_end(cl)
-  
-  return(final_data)
+  #return(final_data)
+  return()
 }
