@@ -928,7 +928,7 @@ prep_data <- function(
     
   } else if(parallel_processing == 'spark') {
     
-    spark_sdf %>% 
+    initial_prep_tbl %>% 
       sparklyr::spark_apply(function(df) {
         
         for (name in names(context)) assign(name, context[[name]], envir = .GlobalEnv)
