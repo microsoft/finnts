@@ -929,9 +929,11 @@ prep_data <- function(
   } else if(parallel_processing == 'spark') {
     
     initial_prep_tbl %>% 
-      sparklyr::spark_apply(function(df) {
+      sparklyr::spark_apply(function(df, context) {
         
-        for (name in names(context)) assign(name, context[[name]], envir = .GlobalEnv)
+        for(name in names(context)) {
+          assign(name, context[[name]], envir = .GlobalEnv)
+        }
         
         combo <- unique(df$id)
         
