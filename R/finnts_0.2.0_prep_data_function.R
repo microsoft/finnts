@@ -928,7 +928,7 @@ prep_data <- function(
     
   } else if(parallel_processing == 'spark') {
     
-    initial_prep_tbl %>% 
+    final_data <-initial_prep_tbl %>% 
       sparklyr::spark_apply(function(df, context) {
         
         for(name in names(context)) {
@@ -938,7 +938,7 @@ prep_data <- function(
         combo <- unique(df$Combo)
         print(combo)
         print(df)
-        xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
+        xregs_future_tbl <- get_xregs_future_values_tbl(df,
                                                         external_regressors,
                                                         hist_end_date,
                                                         forecast_approach)
@@ -1052,6 +1052,7 @@ prep_data <- function(
         clean_missing_values = clean_missing_values, 
         hist_end_date = hist_end_date, 
         hist_start_date = hist_start_date, 
+        forecast_approach = forecast_approach, 
         forecast_horizon = forecast_horizon, 
         clean_outliers = clean_outliers, 
         get_frequency_number = get_frequency_number, 
