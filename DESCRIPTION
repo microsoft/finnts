@@ -58,6 +58,7 @@ Imports:
     tidyselect,
     timetk,
     tune,
+    vroom,
     workflows
 Suggests: 
     arrow,

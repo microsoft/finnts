@@ -1,6 +1,7 @@
 
 #' Set up finnts submission
 #' 
+#' @param experiment_name
 #' @param run_name
 #' @param storage_object
 #' @param path
@@ -9,7 +10,8 @@
 #'  
 #' @return list with run info
 #' @export
-set_run_info <- function(run_name = 'finn_fcst', 
+set_run_info <- function(experiment_name = 'finn_fcst', 
+                         run_name = 'finn_fcst', 
                          storage_object = NULL, 
                          path = NULL, 
                          data_output = 'csv', 
@@ -33,12 +35,34 @@ set_run_info <- function(run_name = 'finn_fcst',
   
   run_name <- paste0(run_name, '-', format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"))
   
-  return(list(
+  created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"), format="%Y%m%dT%H%M%SZ", tz="UTC")
+  
+  output_list <- list(
+    experiment_name = experiment_name, 
     run_name = run_name, 
+    created = created,
     storage_object = storage_object, 
     path = path, 
     data_output = data_output, 
     object_output = object_output
-  ))
+  )
+  
+  output_tbl <- tibble::tibble(
+    experiment_name = experiment_name, 
+    run_name = run_name, 
+    created = created,
+    path = path, 
+    data_output = data_output, 
+    object_output = object_output
+  )
+  
+  write_data(x = output_tbl, 
+             combo = NULL, 
+             run_info = output_list, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  return(output_list)
   
 }

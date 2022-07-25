@@ -21,23 +21,33 @@ get_log_transformation <- function(df,
 #' 
 #' @param df data frame
 #' @param combo_cleanup_date date value to test for non-zero values after
+#' @param parallel_processing
 #' 
 #' @return tbl with or without specific time series removed
 #' @noRd
-combo_cleanup_fn <- function(df,combo_cleanup_date){
+combo_cleanup_fn <- function(df,combo_cleanup_date, parallel_processing){
   
   if(!is.null(combo_cleanup_date)) {
     
     combo_df <- df %>%
       dplyr::filter(Date >= combo_cleanup_date) %>%
-      tidyr::drop_na(Target) %>%
-      data.frame() %>%
+      #tidyr::drop_na(Target) %>%
+      #data.frame() %>%
       dplyr::group_by(Combo) %>%
       dplyr::summarise(Sum=sum(Target, na.rm = TRUE)) %>%
       data.frame() %>%
       dplyr::filter(Sum != 0)
     
-    combo_df <- unique(as.character(combo_df$Combo))
+    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
+      combo_df <- unique(as.character(combo_df$Combo))
+    } else {
+      combo_df <- combo_df %>%
+        dplyr::select(Combo) %>%
+        dplyr::distinct() %>%
+        sparklyr::collect() %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Combo)
+    }
     
     df %>% dplyr::filter(Combo %in% combo_df)
     
@@ -760,14 +770,36 @@ prep_data <- function(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL) {
-
+  
   # get hist data start and end date
   if(is.null(hist_end_date)) {
-    hist_end_date <- max(input_data$Date)
+    
+    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
+      hist_end_date <- max(input_data$Date)
+    } else {
+      hist_end_date <- input_data %>%
+        dplyr::select(Date) %>%
+        dplyr::filter(Date == max(Date)) %>%
+        dplyr::distinct() %>%
+        sparklyr::collect() %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Date)
+    }
   }
   
   if(is.null(hist_start_date)) {
-    hist_start_date <- min(input_data$Date)
+    
+    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
+      hist_start_date <- min(input_data$Date)
+    } else {
+      hist_start_date <- input_data %>%
+        dplyr::select(Date) %>%
+        dplyr::filter(Date == min(Date)) %>%
+        dplyr::distinct() %>%
+        sparklyr::collect() %>%
+        dplyr::distinct() %>%
+        dplyr::pull(Date)
+    }
   }
   
   # prep initial data before feature engineering
@@ -782,8 +814,8 @@ prep_data <- function(
                     tidyselect::all_of(combo_variables), 
                     tidyselect::all_of(external_regressors), 
                     "Date", "Target")) %>%
-    dplyr::arrange(Combo, Date) #%>%
-    #combo_cleanup_fn(combo_cleanup_date) %>%
+    dplyr::arrange(Combo, Date) %>%
+    combo_cleanup_fn(combo_cleanup_date, parallel_processing) #%>%
     # get_hts(combo_variables,
     #         forecast_approach,
     #         frequency_number)
@@ -981,7 +1013,7 @@ prep_data <- function(
                                         NA,
                                         Target))
         
-        date_features <- df %>%
+        date_features <- initial_tbl %>%
           dplyr::select(Date) %>%
           dplyr::mutate(Date_Adj = Date %m+% months(fiscal_year_start-1),
                         Date_day_month_end = ifelse(lubridate::day(Date_Adj) == lubridate::days_in_month(Date_Adj), 1, 0)) %>%
@@ -1043,13 +1075,15 @@ prep_data <- function(
           
         }
         
-        return()
+        return(data.frame(Combo = combo))
       }, 
       group_by = "Combo",
       context = list(
         get_xregs_future_values_tbl = get_xregs_future_values_tbl,
         external_regressors = external_regressors,
         clean_missing_values = clean_missing_values, 
+        clean_outliers_missing_values = clean_outliers_missing_values,
+        hash_data = hash_data, 
         hist_end_date = hist_end_date, 
         hist_start_date = hist_start_date, 
         forecast_approach = forecast_approach, 
@@ -1069,11 +1103,43 @@ prep_data <- function(
         lag_periods = lag_periods,
         get_rolling_window_periods = get_rolling_window_periods, 
         rolling_window_periods = rolling_window_periods, 
-        write_data = write_data
-      ))
+        write_data = write_data, 
+        write_data_folder = write_data_folder, 
+        write_data_type = write_data_type
+      )) 
     
   }
 
-  #return(final_data)
-  return()
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(combo_variables = combo_variables,
+                  target_variable = target_variable,
+                  date_type = date_type,
+                  forecast_horizon = forecast_horizon,
+                  external_regressors = ifelse(is.null(external_regressors), NA, external_regressors),
+                  hist_start_date = hist_start_date,
+                  hist_end_date = hist_end_date,
+                  combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, combo_cleanup_date),
+                  fiscal_year_start = fiscal_year_start,
+                  clean_missing_values = clean_missing_values,
+                  clean_outliers = clean_outliers,
+                  forecast_approach = forecast_approach,
+                  parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
+                  num_cores = ifelse(is.null(num_cores), NA, num_cores), 
+                  target_log_transformation = target_log_transformation, 
+                  fourier_periods = ifelse(is.null(fourier_periods), NA, fourier_periods),
+                  lag_periods = ifelse(is.null(lag_periods), NA, lag_periods),
+                  rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, rolling_window_periods),
+                  recipes_to_run = ifelse(is.null(recipes_to_run), NA, recipes_to_run))
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+
+  return(cli::cli_alert_success("Data Prepped"))
 }
