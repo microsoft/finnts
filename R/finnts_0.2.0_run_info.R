@@ -1,4 +1,3 @@
-
 #' Set up finnts submission
 #' 
 #' @param experiment_name
@@ -8,8 +7,15 @@
 #' @param data_output
 #' @param object_output
 #'  
-#' @return list with run info
+#' @return A list of run information
+#' @keywords internal
 #' @export
+#' @examples
+#' \donttest{
+#' run_info <- set_run_info(experiment_name = "finn forecast", 
+#'                          run_name = "test_run", 
+#'                          path = "test")
+#' }
 set_run_info <- function(experiment_name = 'finn_fcst', 
                          run_name = 'finn_fcst', 
                          storage_object = NULL, 

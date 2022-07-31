@@ -1,10 +1,7 @@
 
 #' Tune model hyperparameters
 #' 
-#' @param model_recipe_tbl model recipe table
-#' @param model_workflow_tbl model workflow table
-#' @param model_hyparameter_tbl model hyperparameter table
-#' @param model_train_test_tbl model train test split table
+#' @param run_info
 #' @param run_global_models run global models
 #' @param run_local_models run local models
 #' @param global_model_recipes global model recipes
@@ -12,23 +9,18 @@
 #' @param parallel_processing parallel processing
 #' @param num_cores number of cores
 #' @param seed seed number
-#' @param batch_size batch size
 #'  
 #' @return table
 #' @keywords internal
 #' @export
-tune_models <- function(model_recipe_tbl, 
-                        model_workflow_tbl, 
-                        model_hyperparameter_tbl, 
-                        model_train_test_tbl, 
+tune_models <- function(run_info, 
                         run_global_models, 
                         run_local_models, 
                         global_model_recipes, 
                         combo_variables, 
                         parallel_processing, 
                         num_cores,
-                        seed = 123, 
-                        batch_size = 10000) {
+                        seed = 123) {
   
   # get list of tasks to run
   combo_list <- c()
@@ -36,12 +28,43 @@ tune_models <- function(model_recipe_tbl,
   global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
   
   if(run_local_models) {
-    combo_list <- c(combo_list, unique(model_recipe_tbl$Combo))
+    combo_temp <- list_files(run_info$storage_object, 
+                             paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                    hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+      tibble::tibble(Path = .,
+                     File = fs::path_file(.)) %>%
+      tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+      dplyr::pull(Combo) %>%
+      unique()
+    
+    combo_list <- c(combo_list, combo_temp)
   }
   
-  if(run_global_models) {
+  if(run_global_models & (inherits(parallel_processing, "NULL") || parallel_processing == 'local_machine')) {
     combo_list <- c(combo_list, "All-Data")
   }
+  print(combo_list)
+  stop('stop')
+  # get model utility info
+  model_train_test_tbl <- read_file(run_info, 
+                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                  '-train_test_split.', run_info$data_output), 
+                                    return_type = 'df')
+
+  model_workflow_tbl <- read_file(run_info, 
+                                  path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                '-model_workflows.', run_info$object_output), 
+                                  return_type = 'df')
+  
+  model_hyperparameter_tbl <- read_file(run_info, 
+                                        path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                      '-model_hyperparameters.', run_info$object_output), 
+                                        return_type = 'df')
+  
+  # fix errors when submitting in parallel on local machine
+  list_files <- get('list_files')
+  get_recipe_data <- get('get_recipe_data')
+  run_info <- run_info
   
   # parallel run info
   par_info <- par_start(parallel_processing = parallel_processing, 
@@ -51,7 +74,7 @@ tune_models <- function(model_recipe_tbl,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
-  
+
   # submit tasks
   initial_tuning_tbl <- foreach::foreach(x = combo_list, 
                                          .combine = 'rbind', 
@@ -60,14 +83,12 @@ tune_models <- function(model_recipe_tbl,
                                          .verbose = FALSE, 
                                          .inorder = FALSE, 
                                          .multicombine = TRUE, 
+                                         .export = c("list_files"),
                                          .noexport = NULL) %op% {
 
-                                           if(x != "All-Data" & !is.null(parallel_processing)) {
-                                             
-                                             model_recipe_tbl <- model_recipe_tbl %>%
-                                               dplyr::filter(Combo == x)
-                                           }
-    
+                                           model_recipe_tbl <- get_recipe_data(run_info, 
+                                                                               combo = x)
+
                                            iter_list <- model_train_test_tbl %>%
                                              dplyr::mutate(Combo = x) %>%
                                              dplyr::rename(Train_Test_ID = Run_ID) %>%
@@ -92,18 +113,19 @@ tune_models <- function(model_recipe_tbl,
                                              }) %>%
                                              dplyr::bind_rows() %>%
                                              dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID)
-                                           
+
                                            output_tbl <- foreach::foreach(x = iter_list %>%
                                                                             dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
                                                                           .combine = 'rbind', 
                                                                           .packages = NULL,
-                                                                          .errorhandling = "remove", 
+                                                                          .errorhandling = "stop", 
                                                                           .verbose = FALSE, 
                                                                           .inorder = FALSE, 
                                                                           .multicombine = TRUE, 
+                                                                          #.export = c("get_recipe_data", "list_files"),
                                                                           .noexport = NULL) %do% {
                                                                             
-                                                                            print(x)
+                                                                            #print(x)
                                                                             
                                                                             # run input values
                                                                             param_combo <- x %>%
@@ -137,8 +159,8 @@ tune_models <- function(model_recipe_tbl,
                                                                             
                                                                             if(combo != "All-Data") {
                                                                               
-                                                                              full_data <- full_data %>%
-                                                                                dplyr::filter(Combo == combo)
+                                                                              # full_data <- full_data %>%
+                                                                              #   dplyr::filter(Combo == combo)
                                                                               
                                                                             } else {
                                                                               
@@ -213,105 +235,60 @@ tune_models <- function(model_recipe_tbl,
                                                                             return(final_tbl)
                                                                           }
                                            
-                                           return(output_tbl)
+                                           test_tbl <- output_tbl %>%
+                                             # dplyr::filter(Combo == combo,
+                                             #               Recipe_ID == recipe,
+                                             #               Model == model) %>%
+                                             dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction)
+
+                                           best_param <- output_tbl %>%
+                                             dplyr::rename(Combo_ID = Combo) %>%
+                                             tidyr::unnest(Prediction) %>%
+                                             #dplyr::mutate(Combo = combo) %>%
+                                             dplyr::mutate(SE = (Target-Forecast)^2) %>%
+                                             dplyr::group_by(Combo_ID, Model, Recipe_ID, Hyperparameter_ID) %>%
+                                             #dplyr::mutate(SE = (Target-Forecast)^2) %>%
+                                             dplyr::summarise(RMSE = sqrt(mean(SE, na.rm = TRUE))) %>%
+                                             dplyr::arrange(RMSE) %>%
+                                             dplyr::slice(1) %>%
+                                             dplyr::ungroup()
+
+                                           final_predictions <- test_tbl %>%
+                                             #dplyr::filter(Hyperparameter_ID == best_param) %>%
+                                             dplyr::right_join(best_param) %>%
+                                             tidyr::unnest(Prediction) %>%
+                                             dplyr::mutate(Combo_ID = ifelse(Combo_ID == "All-Data", "All-Data", Combo)) %>%
+                                             dplyr::select(Combo_ID, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
+                                           
+                                           # write outputs
+                                           write_data(x = final_predictions, 
+                                                      combo = unique(final_predictions$Combo_ID), 
+                                                      run_info = run_info, 
+                                                      output_type = 'data',
+                                                      folder = "forecasts",
+                                                      suffix = '-tune_models')
+                                           
+                                           return(final_predictions)
                                          }
 
-  final_tuning_tbl <- foreach::foreach(x = combo_list, 
-                                         .combine = 'rbind', 
-                                         .packages = packages,
-                                         .errorhandling = "stop", 
-                                         .verbose = FALSE, 
-                                         .inorder = FALSE, 
-                                         .multicombine = TRUE, 
-                                         .noexport = NULL) %op% {
-                                           
-                                           if(!is.null(parallel_processing)) {
-                                             initial_tuning_tbl <- initial_tuning_tbl %>%
-                                               dplyr::filter(Combo == x)
-                                           }
-                                           
-                                           iter_list <- model_train_test_tbl %>%
-                                             dplyr::mutate(Combo = x) %>%
-                                             dplyr::rename(Train_Test_ID = Run_ID) %>%
-                                             dplyr::filter(Run_Type == "Validation") %>%
-                                             dplyr::select(Combo, Train_Test_ID) %>%
-                                             dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-                                             purrr::map(.f = function(x) {
-                                               temp <- model_hyperparameter_tbl %>%
-                                                 dplyr::select(Hyperparameter_Combo, Model, Recipe) %>%
-                                                 dplyr::rename(Hyperparameter_ID = Hyperparameter_Combo, 
-                                                               Recipe_ID = Recipe) %>%
-                                                 dplyr::mutate(Combo = x$Combo, 
-                                                               Train_Test_ID = x$Train_Test_ID)
-                                               
-                                               if(x$Combo == 'All-Data') {
-                                                 temp <- temp %>%
-                                                   dplyr::filter(Model %in% global_model_list, 
-                                                                 Recipe_ID %in% global_model_recipes)
-                                               }
-                                               
-                                               return(temp)
-                                             }) %>%
-                                             dplyr::bind_rows() %>%
-                                             dplyr::select(Combo, Model, Recipe_ID) %>%
-                                             dplyr::distinct()
-                                           
-                                           output_tbl <- foreach::foreach(x = iter_list %>%
-                                                                            dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
-                                                                          .combine = 'rbind', 
-                                                                          .packages = NULL,
-                                                                          .errorhandling = "remove", 
-                                                                          .verbose = FALSE, 
-                                                                          .inorder = FALSE, 
-                                                                          .multicombine = TRUE, 
-                                                                          .noexport = NULL) %do% {
-                                                                            
-                                                                            print(x)
-                                                                            
-                                                                            combo <- x %>%
-                                                                              dplyr::pull(Combo)
-                                                                            
-                                                                            model <- x %>%
-                                                                              dplyr::pull(Model)
-                                                                            
-                                                                            recipe <- x %>%
-                                                                              dplyr::pull(Recipe_ID)
-                                                                            
-                                                                            test_tbl <- initial_tuning_tbl %>%
-                                                                              dplyr::filter(Combo == combo, 
-                                                                                            Recipe_ID == recipe, 
-                                                                                            Model == model) %>%
-                                                                              dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction)
-                                                                            
-                                                                            best_param <- test_tbl %>%
-                                                                              tidyr::unnest(Prediction) %>%
-                                                                              dplyr::mutate(Combo = combo) %>%
-                                                                              dplyr::group_by(Combo, Model, Recipe_ID, Hyperparameter_ID) %>%
-                                                                              yardstick::rmse(truth = Target,
-                                                                                              estimate = Forecast,
-                                                                                              na_rm = TRUE) %>%
-                                                                              dplyr::ungroup() %>%
-                                                                              dplyr::arrange(.estimate) %>%
-                                                                              dplyr::slice(1) %>%
-                                                                              dplyr::pull(Hyperparameter_ID)
-                                                                            
-                                                                            final_predictions <- test_tbl %>%
-                                                                              dplyr::filter(Hyperparameter_ID == best_param) %>%
-                                                                              tidyr::unnest(Prediction) %>%
-                                                                              dplyr::select(Combo, Date, Train_Test_ID, Target, Forecast)
-                                                                            
-                                                                            return(tibble::tibble(Combo = combo, 
-                                                                                                  Model = model, 
-                                                                                                  Recipe_ID = recipe, 
-                                                                                                  Hyperparameter_ID = best_param, 
-                                                                                                  Prediction = list(final_predictions)))
-                                                                          }
-                                           
-                                           return(output_tbl)
-                                         }
-  
   # clean up any parallel run process
   par_end(cl)
   
-  return(final_tuning_tbl)
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(run_global_models = run_global_models, 
+                  run_local_models = run_local_models, 
+                  global_model_recipes = global_model_recipes, 
+                  seed = seed)
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  return(cli::cli_alert_success("Models Tuned"))
 }

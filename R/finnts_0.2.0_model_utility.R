@@ -70,7 +70,7 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 
 #' Gets the train test splits
 #' 
-#' @param input_tbl full data table
+#' @param run_info
 #' @param hist_end_date historical end date
 #' @param date_type date type
 #' @param forecast_horizon forecast horizon
@@ -80,7 +80,7 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' @return Returns table of train test splits
 #' @keywords internal
 #' @export
-train_test_split <- function(input_tbl, 
+train_test_split <- function(run_info, 
                              hist_end_date, 
                              date_type, 
                              forecast_horizon,
@@ -91,11 +91,14 @@ train_test_split <- function(input_tbl,
                                                    date_type)
   
   # pull out first recipe data
-  temp_tbl <- input_tbl %>% 
-    dplyr::slice(1) %>%
-    dplyr::select(Data) %>%
-    tidyr::unnest(Data)
-  
+  file_name <- list_files(run_info$storage_object, 
+                          paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                 hash_data(run_info$run_name), "-*.", run_info$data_output))[1]
+
+  temp_tbl <- read_file(run_info, 
+                        path = gsub(fs::path(run_info$path), "", file_name), 
+                        return_type = 'df')
+
   # get back test info
   bt <- temp_tbl %>%
     get_back_test_scenario_hist_periods(hist_end_date,
@@ -177,12 +180,34 @@ train_test_split <- function(input_tbl,
     stop("No back testing data produced. Shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing")
   }
   
-  return(train_test_final)
+  # write train test info
+  write_data(x = train_test_final, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = 'data',
+             folder = "model_utility",
+             suffix = '-train_test_split')
+  
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios), 
+                  back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing))
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  return(cli::cli_alert_success("Train Test Splits"))
 }
 
 #' Gets model workflows
 #' 
-#' @param model_recipe_tbl model recipe table 
+#' @param run_info 
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
 #' @param run_deep_learning run deep learning models
@@ -191,17 +216,39 @@ train_test_split <- function(input_tbl,
 #' @return Returns table of model workflows
 #' @keywords internal
 #' @export
-model_workflows <- function(model_recipe_tbl, 
+model_workflows <- function(run_info, 
                             models_to_run = NULL, 
                             models_not_to_run = NULL, 
                             run_deep_learning = FALSE, 
                             pca = FALSE) {
   
-  # get recipe input data
-  combos <- unique(model_recipe_tbl$Combo)
+  # pull out recipe data for a single combo
+  input_tbl <- tibble::tibble()
   
-  input_tbl <- model_recipe_tbl %>%
-    dplyr::filter(Combo == combos[[1]])
+  file_name_tbl <- list_files(run_info$storage_object, 
+                             paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                    hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+    dplyr::filter(Combo == .$Combo[[1]]) %>%
+    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+
+  for(recipe in file_name_tbl$Recipe) {
+    
+    temp_path <- file_name_tbl %>%
+      dplyr::filter(Recipe == recipe) %>%
+      dplyr::pull(Path) 
+    
+    temp_file_tbl <- read_file(run_info, 
+                               path = gsub(fs::path(run_info$path), "", temp_path), 
+                               return_type = 'df')
+    
+    temp_final_tbl <- tibble::tibble(Recipe = recipe, 
+                                     Data = list(temp_file_tbl))
+    
+    input_tbl <- rbind(input_tbl, temp_final_tbl)
+  }
   
   # tibble to add model workflows to
   model_workflow_tbl <- tibble::tibble()
@@ -286,10 +333,6 @@ model_workflows <- function(model_recipe_tbl,
     }
     
     model_workflow <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
-
-    # model_workflow <- workflows::workflow() %>%
-    #   workflows::add_model(model_spec) %>%
-    #   workflows::add_recipe(model_recipe)
     
     workflow_tbl <- tibble::tibble(Model_Name = model, 
                                    Model_Recipe = recipe, 
@@ -298,31 +341,81 @@ model_workflows <- function(model_recipe_tbl,
     model_workflow_tbl <- rbind(model_workflow_tbl, workflow_tbl)
   }
   
-  return(model_workflow_tbl %>% dplyr::arrange(Model_Name))
+  # write model workflow info
+  write_data(x = model_workflow_tbl %>% dplyr::arrange(Model_Name), 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = 'object',
+             folder = "model_utility",
+             suffix = '-model_workflows')
+  
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(models_to_run = ifelse(is.null(models_to_run), NA, models_to_run), 
+                  models_not_to_run = ifelse(is.null(models_not_to_run), NA, models_not_to_run), 
+                  run_deep_learning = run_deep_learning, 
+                  pca = ifelse(is.null(pca), NA, pca))
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  return(cli::cli_alert_success("Model Workflows"))
 }
 
 #' Get model hyperparameters
 #' 
-#' @param model_workflow_tbl model workflow table
-#' @param model_recipe_tbl model recipe table
+#' @param run_info
 #' @param num_hyperparameters number of hyperparameter combinations
 #'  
 #' @return table of model hyperparameters
 #' @keywords internal
 #' @export
-model_hyperparameters <- function(model_workflow_tbl, 
-                                  model_recipe_tbl,
+model_hyperparameters <- function(run_info,
                                   num_hyperparameters = 5) {
   
   # get recipe input data
-  combos <- unique(model_recipe_tbl$Combo)
+  input_tbl <- tibble::tibble()
   
-  input_tbl <- model_recipe_tbl %>%
-    dplyr::filter(Combo == combos[[1]])
+  file_name_tbl <- list_files(run_info$storage_object, 
+                              paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                     hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+    dplyr::filter(Combo == .$Combo[[1]]) %>%
+    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+  
+  for(recipe in file_name_tbl$Recipe) {
+    
+    temp_path <- file_name_tbl %>%
+      dplyr::filter(Recipe == recipe) %>%
+      dplyr::pull(Path) 
+    
+    temp_file_tbl <- read_file(run_info, 
+                               path = gsub(fs::path(run_info$path), "", temp_path), 
+                               return_type = 'df')
+    
+    temp_final_tbl <- tibble::tibble(Recipe = recipe, 
+                                     Data = list(temp_file_tbl))
+    
+    input_tbl <- rbind(input_tbl, temp_final_tbl)
+  }
+  
+  # get model workflow info
+  model_workflow_tbl <- read_file(run_info, 
+                                  path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                '-model_workflows.', run_info$object_output), 
+                                  return_type = 'df')
   
   iter_tbl <- model_workflow_tbl %>%
     dplyr::select(Model_Name, Model_Recipe)
-  
+
   # get hyperparameters
   hyperparameters_tbl <- tibble::tibble()
   
@@ -379,7 +472,29 @@ model_hyperparameters <- function(model_workflow_tbl,
     
     hyperparameters_tbl <- rbind(hyperparameters_tbl, hyperparameters_temp)
   }
-  return(hyperparameters_tbl %>% dplyr::select(Model, Recipe, Hyperparameter_Combo, Hyperparameters))
+  
+  # write model hyperparameter info
+  write_data(x = hyperparameters_tbl %>% dplyr::select(Model, Recipe, Hyperparameter_Combo, Hyperparameters), 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = 'object',
+             folder = "model_utility",
+             suffix = '-model_hyperparameters')
+  
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(num_hyperparameters = num_hyperparameters)
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  return(cli::cli_alert_success("Model Hyperparameters"))
 }
 
 # To Do

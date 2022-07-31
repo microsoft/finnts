@@ -84,6 +84,11 @@ write_data_folder <- function(x,
   
 }
 
+#' test
+#'  
+#' @return table
+#' @keywords internal
+#' @export
 list_files <- function(storage_object, 
                        path) {
   
@@ -92,7 +97,8 @@ list_files <- function(storage_object,
   
   switch(class(storage_object)[[1]], 
          'NULL' = if(grepl("*", file, fixed = TRUE)) {fs::dir_ls(path = dir, glob = file)} else{path},
-         ms_drive = storage_object$list_files(dir) %>% dplyr::filter(grepl(file, name)) %>% dplyr::pull(name))
+         ms_drive = storage_object$list_files(dir) %>% dplyr::filter(grepl(file, name)) %>% dplyr::pull(name), 
+         ms_blob = AzureStor::list_storage_files(storage_object, dir) %>% dplyr::filter(grepl(file, name)) %>% dplyr::pull(name))
   
 }
 
@@ -151,7 +157,7 @@ read_file <- function(run_info,
 
   if(return_type == 'df') {
     switch(fs::path_ext(file), 
-           rds = readRDS(path), 
+           rds = readRDS(files), 
            parquet = files %>% purrr::map_dfr(function(path) {arrow::read_parquet(path)}),
            csv = tryCatch(
              vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ","),
@@ -161,6 +167,63 @@ read_file <- function(run_info,
   } else if(return_type == "sdf") {
     switch(fs::path_ext(file), 
            parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)), 
-           parquet = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path)))
+           csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path)))
   }
+}
+
+get_recipe_data <- function(run_info, 
+                            combo = 'single') {
+  
+  get_combo <- function(df, 
+                        combo) {
+    
+    if(combo == "single") {
+      df %>%
+        dplyr::filter(Combo == .$Combo[[1]])
+    } else if(combo == "All-Data") {
+      df
+    } else {
+      df %>%
+        dplyr::filter(Combo == combo)
+    }
+  }
+  
+  
+  recipe_tbl <- tibble::tibble()
+  
+  file_name_tbl <- list_files(run_info$storage_object, 
+                              paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                     hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+    get_combo(combo) %>%
+    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+
+  for(recipe in unique(file_name_tbl$Recipe)) {
+    
+    temp_path <- file_name_tbl %>%
+      dplyr::filter(Recipe == recipe)
+
+    if(nrow(temp_path) > 1) {
+      temp_path <- paste0("/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                          hash_data(run_info$run_name), "*", recipe, '.', run_info$data_output)
+    } else {
+      temp_path <- temp_path %>%
+        dplyr::pull(Path)
+      
+      temp_path <- gsub(fs::path(run_info$path), "", temp_path)
+    }
+
+    temp_file_tbl <- read_file(run_info, 
+                               path = temp_path, 
+                               return_type = 'df')
+    
+    temp_final_tbl <- tibble::tibble(Recipe = recipe, 
+                                     Data = list(temp_file_tbl))
+    
+    recipe_tbl <- rbind(recipe_tbl, temp_final_tbl)
+  }
+  
+  return(recipe_tbl)
 }

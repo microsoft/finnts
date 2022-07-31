@@ -267,10 +267,17 @@ par_start <- function(parallel_processing,
     
     `%op%` <- foreach::`%do%`
     
+    # packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+    #               'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+    #               'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+    #               'recipes', 'rules', 'modeltime', "fs", "digest", "AzureStor", "Microsoft365R", 
+    #               "arrow", "qs", "tidyr", "sparklyr", "vroom", "utils", "cli")
+    
     packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime')
+                  'recipes', 'rules', 'modeltime', "fs", "digest", "AzureStor", "Microsoft365R", 
+                  "arrow", "qs", "tidyr", "sparklyr", "vroom", "utils", "cli")
     
   } else if(parallel_processing == "spark") {
     
@@ -302,7 +309,10 @@ par_start <- function(parallel_processing,
     packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime')
+                  'recipes', 'rules', 'modeltime', "fs", "digest", "AzureStor", "Microsoft365R", 
+                  "arrow", "qs", "tidyr", "sparklyr", "vroom", "utils", "cli", "generics", 
+                  "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample", 
+                  "plyr", "rsample")
     
   } else {
     stop("error")
