@@ -43,8 +43,7 @@ tune_models <- function(run_info,
   if(run_global_models & (inherits(parallel_processing, "NULL") || parallel_processing == 'local_machine')) {
     combo_list <- c(combo_list, "All-Data")
   }
-  print(combo_list)
-  stop('stop')
+
   # get model utility info
   model_train_test_tbl <- read_file(run_info, 
                                     path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
