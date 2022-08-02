@@ -39,7 +39,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.1.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.0</span>
       </span>
     </div>
 
@@ -122,7 +122,7 @@
 <p>If “parallel_processing” is set to NULL and “run_model_parallel” is set to TRUE within the “forecast_time_series” function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.</p>
 </div>
 <div class="section level2">
-<h2 id="within-azure-using-spark">Within Azure Using Spark<a class="anchor" aria-label="anchor" href="#within-azure-using-spark"></a>
+<h2 id="within-azure-using-spark">Within Azure using Spark<a class="anchor" aria-label="anchor" href="#within-azure-using-spark"></a>
 </h2>
 <p>To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set “parallel_processing” to “spark” within the “forecast_time_series” function. This will run each time series in parallel across a spark compute cluster.</p>
 <p><a href="https://spark.rstudio.com/" class="external-link">Sparklyr</a> is a great R package that allows you to run R code across a spark cluster. A user simply has to connect to a spark cluster then run Finn. Below is an example on how you can run Finn using <a href="https://docs.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr" class="external-link">spark on Azure Databricks</a>.</p>
@@ -264,7 +264,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.5.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.6.</p>
 </div>
 
       </footer>

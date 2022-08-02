@@ -39,7 +39,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.1.1.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.0</span>
       </span>
     </div>
 
@@ -149,7 +149,8 @@
 <span><span class="co">#&gt; <span style="color: #949494;">#   mday &lt;int&gt;, qday &lt;int&gt;, yday &lt;int&gt;, mweek &lt;int&gt;, week &lt;int&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   week.iso &lt;int&gt;, week2 &lt;int&gt;, week3 &lt;int&gt;, week4 &lt;int&gt;, mday7 &lt;int&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   date_sin3_K1 &lt;dbl&gt;, date_cos3_K1 &lt;dbl&gt;, date_sin6_K1 &lt;dbl&gt;,</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;">#   date_cos6_K1 &lt;dbl&gt;, date_sin12_K1 &lt;dbl&gt;, date_cos12_K1 &lt;dbl&gt;</span></span></span></code></pre></div>
+<span><span class="co">#&gt; <span style="color: #949494;">#   date_cos6_K1 &lt;dbl&gt;, date_sin12_K1 &lt;dbl&gt;, date_cos12_K1 &lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ Use `print(n = ...)` to see more rows, and `colnames()` to see all variable names</span></span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="missing-data-and-outliers">Missing Data and Outliers<a class="anchor" aria-label="anchor" href="#missing-data-and-outliers"></a>
@@ -182,42 +183,44 @@
 <p>In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model.</p>
 <p>In the first recipe, referred to as “R1” in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled “up”. This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.</p>
 <pre><code><span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 10 × 9</span></span></span>
-<span><span class="co">#&gt;    Combo     Date       Target Target_lag3 Target_lag6 Target_lag3_roll3_sum</span></span>
-<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01     10          10          10                    30</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-02-01     20          10          10                    30</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-03-01     30          10          10                    30</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-04-01     40          10          10                    30</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-05-01     50          20          10                    40</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-06-01     60          30          10                    60</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-07-01     70          40          10                    90</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-08-01     80          50          20                   120</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-09-01     90          60          30                   150</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2020-10-01    100          70          40                   180</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># … with 3 more variables: Target_lag6_roll3_sum &lt;dbl&gt;,</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag3_roll6_sum &lt;dbl&gt;, Target_lag6_roll6_sum &lt;dbl&gt;</span></span></span></code></pre>
+<span><span class="co">#&gt;    Combo     Date       Target Target_…¹ Targe…² Targe…³ Targe…⁴ Targe…⁵ Targe…⁶</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01     10        10      10      30      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-02-01     20        10      10      30      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-03-01     30        10      10      30      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-04-01     40        10      10      30      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-05-01     50        20      10      40      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-06-01     60        30      10      60      30      90      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-07-01     70        40      10      90      30     120      60</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-08-01     80        50      20     120      40     160      70</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-09-01     90        60      30     150      60     210      90</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2020-10-01    100        70      40     180      90     270     120</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># … with abbreviated variable names ¹​Target_lag3, ²​Target_lag6,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   ³​Target_lag3_roll3_sum, ⁴​Target_lag6_roll3_sum, ⁵​Target_lag3_roll6_sum,</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   ⁶​Target_lag6_roll6_sum</span></span></span></code></pre>
 <p>The second recipe is referred to as “R2” in default finnts models. It takes a very different approach than the “R1” recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created by depend on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, “Origin” and “Horizon” features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in “R1”. NA values created by generating lag features are filled “up”, but we left that out in the below example to better understand how the horizon specific features are created.</p>
 <pre><code><span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 18 × 8</span></span></span>
-<span><span class="co">#&gt;    Combo    Date       Origin Horizon Target Target_Lag1 Target_Lag2 Target_Lag3</span></span>
-<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country… 2020-01-01      0       1     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country… 2020-01-01     -<span style="color: #BB0000;">1</span>       2     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country… 2020-01-01     -<span style="color: #BB0000;">2</span>       3     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country… 2020-02-01      1       1     20          10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country… 2020-02-01      0       2     20          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country… 2020-02-01     -<span style="color: #BB0000;">1</span>       3     20          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country… 2020-03-01      2       1     30          20          10          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country… 2020-03-01      1       2     30          10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country… 2020-03-01      0       3     30          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country… 2021-04-01      3       1     40          30          20          10</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Country… 2021-04-01      2       2     40          20          10          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Country… 2021-04-01      1       3     40          10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">13</span> Country… 2020-05-01      4       1     50          40          30          20</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">14</span> Country… 2020-05-01      3       2     50          30          20          10</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">15</span> Country… 2020-05-01      2       3     50          20          10          <span style="color: #BB0000;">NA</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">16</span> Country… 2021-06-01      5       1     60          50          40          30</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">17</span> Country… 2021-06-01      4       2     60          40          30          20</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">18</span> Country… 2021-06-01      3       3     60          30          20          10</span></span></code></pre>
+<span><span class="co">#&gt;    Combo     Date       Origin Horizon Target Target_Lag1 Target_Lag2 Target_L…¹</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01      0       1     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-01-01     -<span style="color: #BB0000;">1</span>       2     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-01-01     -<span style="color: #BB0000;">2</span>       3     10          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-02-01      1       1     20          10          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-02-01      0       2     20          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-02-01     -<span style="color: #BB0000;">1</span>       3     20          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-03-01      2       1     30          20          10         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-03-01      1       2     30          10          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-03-01      0       3     30          <span style="color: #BB0000;">NA</span>          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2021-04-01      3       1     40          30          20         10</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Country_1 2021-04-01      2       2     40          20          10         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Country_1 2021-04-01      1       3     40          10          <span style="color: #BB0000;">NA</span>         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">13</span> Country_1 2020-05-01      4       1     50          40          30         20</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">14</span> Country_1 2020-05-01      3       2     50          30          20         10</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">15</span> Country_1 2020-05-01      2       3     50          20          10         <span style="color: #BB0000;">NA</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">16</span> Country_1 2021-06-01      5       1     60          50          40         30</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">17</span> Country_1 2021-06-01      4       2     60          40          30         20</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">18</span> Country_1 2021-06-01      3       3     60          30          20         10</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># … with abbreviated variable name ¹​Target_Lag3</span></span></span></code></pre>
 </div>
 <div class="section level2">
 <h2 id="model-specific-feature-engineering">Model Specific Feature Engineering<a class="anchor" aria-label="anchor" href="#model-specific-feature-engineering"></a>
@@ -243,7 +246,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.5.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.0.6.</p>
 </div>
 
       </footer>
