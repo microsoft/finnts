@@ -70,7 +70,7 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 
 #' Gets the train test splits
 #' 
-#' @param run_info
+#' @param run_info run info
 #' @param hist_end_date historical end date
 #' @param date_type date type
 #' @param forecast_horizon forecast horizon
@@ -207,7 +207,7 @@ train_test_split <- function(run_info,
 
 #' Gets model workflows
 #' 
-#' @param run_info 
+#' @param run_info run info
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
 #' @param run_deep_learning run deep learning models
@@ -370,7 +370,7 @@ model_workflows <- function(run_info,
 
 #' Get model hyperparameters
 #' 
-#' @param run_info
+#' @param run_info run info
 #' @param num_hyperparameters number of hyperparameter combinations
 #'  
 #' @return table of model hyperparameters

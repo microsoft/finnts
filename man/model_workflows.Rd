@@ -5,7 +5,7 @@
 \title{Gets model workflows}
 \usage{
 model_workflows(
-  model_recipe_tbl,
+  run_info,
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_deep_learning = FALSE,
@@ -13,7 +13,7 @@ model_workflows(
 )
 }
 \arguments{
-\item{model_recipe_tbl}{model recipe table}
+\item{run_info}{run info}
 
 \item{models_to_run}{models to run}
 

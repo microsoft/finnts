@@ -5,11 +5,7 @@
 \title{Refit Models}
 \usage{
 refit_models(
-  model_tune_tbl,
-  model_recipe_tbl,
-  model_workflow_tbl,
-  model_hyperparameter_tbl,
-  model_train_test_tbl,
+  run_info,
   combo_variables,
   parallel_processing = NULL,
   num_cores = NULL,
@@ -17,15 +13,7 @@ refit_models(
 )
 }
 \arguments{
-\item{model_tune_tbl}{model tune table}
-
-\item{model_recipe_tbl}{model recipe table}
-
-\item{model_workflow_tbl}{model workflow table}
-
-\item{model_hyperparameter_tbl}{model hyperparameter table}
-
-\item{model_train_test_tbl}{model train test split table}
+\item{run_info}{run info}
 
 \item{combo_variables}{combo variables}
 

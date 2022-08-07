@@ -1,10 +1,6 @@
 #' Refit Models
 #' 
-#' @param model_recipe_tbl model recipe table
-#' @param model_workflow_tbl model workflow table
-#' @param model_hyperparameter_tbl model hyperparameter table
-#' @param model_tune_tbl model tune table
-#' @param model_train_test_tbl model train test split table
+#' @param run_info run info
 #' @param combo_variables combo variables
 #' @param parallel_processing parallel processing
 #' @param num_cores number of cores
@@ -13,17 +9,36 @@
 #' @return list of individual model predictions and fitted models
 #' @keywords internal
 #' @export
-refit_models <- function(model_tune_tbl, 
-                         model_recipe_tbl, 
-                         model_workflow_tbl, 
-                         model_hyperparameter_tbl, 
-                         model_train_test_tbl,
+refit_models <- function(run_info,
                          combo_variables, 
                          parallel_processing = NULL, 
                          num_cores = NULL,
                          seed = 123) {
   
-  combo_list <- unique(model_tune_tbl$Combo)
+  combo_list <- list_files(run_info$storage_object, 
+                           paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                                  hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Step"), sep = '-', remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique()
+  
+  # get model utility info
+  model_train_test_tbl <- read_file(run_info, 
+                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                  '-train_test_split.', run_info$data_output), 
+                                    return_type = 'df')
+  
+  model_workflow_tbl <- read_file(run_info, 
+                                  path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                '-model_workflows.', run_info$object_output), 
+                                  return_type = 'df')
+  
+  model_hyperparameter_tbl <- read_file(run_info, 
+                                        path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                      '-model_hyperparameters.', run_info$object_output), 
+                                        return_type = 'df')
   
   # parallel run info
   par_info <- par_start(parallel_processing = parallel_processing, 

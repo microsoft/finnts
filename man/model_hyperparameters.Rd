@@ -4,16 +4,10 @@
 \alias{model_hyperparameters}
 \title{Get model hyperparameters}
 \usage{
-model_hyperparameters(
-  model_workflow_tbl,
-  model_recipe_tbl,
-  num_hyperparameters = 5
-)
+model_hyperparameters(run_info, num_hyperparameters = 5)
 }
 \arguments{
-\item{model_workflow_tbl}{model workflow table}
-
-\item{model_recipe_tbl}{model recipe table}
+\item{run_info}{run info}
 
 \item{num_hyperparameters}{number of hyperparameter combinations}
 }

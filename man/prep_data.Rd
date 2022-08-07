@@ -5,6 +5,7 @@
 \title{Prep Data}
 \usage{
 prep_data(
+  run_info,
   input_data,
   combo_variables,
   target_variable,
@@ -28,6 +29,8 @@ prep_data(
 )
 }
 \arguments{
+\item{run_info}{run info}
+
 \item{input_data}{A data frame or tibble of historical time series data. Can also include external regressors for both
 historical and future data.}
 

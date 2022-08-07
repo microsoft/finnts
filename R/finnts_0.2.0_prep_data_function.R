@@ -21,7 +21,7 @@ get_log_transformation <- function(df,
 #' 
 #' @param df data frame
 #' @param combo_cleanup_date date value to test for non-zero values after
-#' @param parallel_processing
+#' @param parallel_processing parallel processing
 #' 
 #' @return tbl with or without specific time series removed
 #' @noRd
@@ -687,7 +687,7 @@ multivariate_prep_recipe_2 <- function(data,
 #' 
 #' Preps data with various feature engineering reciepes to create features before training models
 #' 
-#' @param run_info
+#' @param run_info run info
 #' @param input_data A data frame or tibble of historical time series data. Can also include external regressors for both 
 #'   historical and future data. 
 #' @param combo_variables List of column headers within input data to be used to separate individual time series. 

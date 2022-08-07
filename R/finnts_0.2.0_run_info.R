@@ -1,11 +1,11 @@
 #' Set up finnts submission
 #' 
-#' @param experiment_name
-#' @param run_name
-#' @param storage_object
-#' @param path
-#' @param data_output
-#' @param object_output
+#' @param experiment_name experiment name
+#' @param run_name run name
+#' @param storage_object storage object
+#' @param path path
+#' @param data_output data output
+#' @param object_output object output
 #'  
 #' @return A list of run information
 #' @keywords internal

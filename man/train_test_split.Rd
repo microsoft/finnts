@@ -5,7 +5,7 @@
 \title{Gets the train test splits}
 \usage{
 train_test_split(
-  input_tbl,
+  run_info,
   hist_end_date,
   date_type,
   forecast_horizon,
@@ -14,7 +14,7 @@ train_test_split(
 )
 }
 \arguments{
-\item{input_tbl}{full data table}
+\item{run_info}{run info}
 
 \item{hist_end_date}{historical end date}
 
