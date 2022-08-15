@@ -10,7 +10,7 @@
 #' @param num_cores number of cores
 #' @param seed seed number
 #'  
-#' @return table
+#' @return outputs are written to disk
 #' @keywords internal
 #' @export
 train_models <- function(run_info, 
@@ -274,7 +274,7 @@ train_models <- function(run_info,
                                                                             dplyr::group_split(dplyr::row_number(), .keep = FALSE), 
                                                                           .combine = 'rbind', 
                                                                           .packages = NULL,
-                                                                          .errorhandling = "stop", 
+                                                                          .errorhandling = "remove", 
                                                                           .verbose = FALSE, 
                                                                           .inorder = FALSE, 
                                                                           .multicombine = TRUE, 
@@ -446,5 +446,5 @@ train_models <- function(run_info,
              folder = "logs", 
              suffix = NULL)
   
-  return(cli::cli_alert_success("Models Trained"))
+  return(cli::cli_alert_success("Individual Models Trained"))
 }
