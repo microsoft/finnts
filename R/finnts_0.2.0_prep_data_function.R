@@ -21,11 +21,11 @@ get_log_transformation <- function(df,
 #' 
 #' @param df data frame
 #' @param combo_cleanup_date date value to test for non-zero values after
-#' @param parallel_processing parallel processing
 #' 
 #' @return tbl with or without specific time series removed
 #' @noRd
-combo_cleanup_fn <- function(df,combo_cleanup_date, parallel_processing){
+combo_cleanup_fn <- function(df,
+                             combo_cleanup_date){
   
   if(!is.null(combo_cleanup_date)) {
     
@@ -35,19 +35,14 @@ combo_cleanup_fn <- function(df,combo_cleanup_date, parallel_processing){
       #data.frame() %>%
       dplyr::group_by(Combo) %>%
       dplyr::summarise(Sum=sum(Target, na.rm = TRUE)) %>%
-      data.frame() %>%
-      dplyr::filter(Sum != 0)
-    
-    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
-      combo_df <- unique(as.character(combo_df$Combo))
-    } else {
-      combo_df <- combo_df %>%
-        dplyr::select(Combo) %>%
-        dplyr::distinct() %>%
-        sparklyr::collect() %>%
-        dplyr::distinct() %>%
-        dplyr::pull(Combo)
-    }
+      #data.frame() %>%
+      dplyr::filter(Sum != 0) %>%
+      combo_df %>%
+      dplyr::select(Combo) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::pull(Combo)
     
     df %>% dplyr::filter(Combo %in% combo_df)
     
@@ -494,11 +489,12 @@ multivariate_prep_recipe_1 <- function(data,
       if(column %in% external_regressors) {
         
         df_poly_column <- data %>%
-          dplyr::select(column)
+          dplyr::select(column) %>%
+          dplyr::rename(Col = column)
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
-        temp_log <- log1p(df_poly_column)
+        temp_log <- log1p(df_poly_column %>% dplyr::mutate(Col = ifelse(Col < 0, 0, Col)))
         
         temp_final <- cbind(temp_squared, temp_cubed, temp_log)
         colnames(temp_final) <- c(paste0(column, '_squared'), paste0(column, '_cubed'), paste0(column, '_log'))
@@ -552,6 +548,9 @@ multivariate_prep_recipe_1 <- function(data,
     tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
     dplyr::select(-numeric_xregs)
   
+  is.na(data_lag_window) <- sapply(data_lag_window,
+                                   is.infinite)
+  is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] = 0.00
   
   return(data_lag_window)
@@ -600,11 +599,12 @@ multivariate_prep_recipe_2 <- function(data,
       if(column %in% external_regressors) {
         
         df_poly_column <- data %>%
-          dplyr::select(column)
+          dplyr::select(column) %>%
+          dplyr::rename(Col = column)
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
-        temp_log <- log1p(df_poly_column)
+        temp_log <- log1p(df_poly_column %>% dplyr::mutate(Col = ifelse(Col < 0, 0, Col)))
         
         temp_final <- cbind(temp_squared, temp_cubed, temp_log)
         colnames(temp_final) <- c(paste0(column, '_squared'), paste0(column, '_cubed'), paste0(column, '_log'))
@@ -673,6 +673,8 @@ multivariate_prep_recipe_2 <- function(data,
       timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% #add fourier series
       dplyr::select(-numeric_xregs) #drop xregs that do not contain future values
     
+    is.na(data_lag_window) <- sapply(data_lag_window,
+                                     is.infinite)
     is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
     data_lag_window[is.na(data_lag_window)] = 0.00
 
@@ -774,32 +776,30 @@ prep_data <- function(
   # get hist data start and end date
   if(is.null(hist_end_date)) {
     
-    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
-      hist_end_date <- max(input_data$Date)
-    } else {
-      hist_end_date <- input_data %>%
-        dplyr::select(Date) %>%
-        dplyr::filter(Date == max(Date)) %>%
-        dplyr::distinct() %>%
-        sparklyr::collect() %>%
-        dplyr::distinct() %>%
-        dplyr::pull(Date)
-    }
+    hist_end_date <- input_data %>%
+      dplyr::select(Date) %>%
+      #dplyr::filter(Date == max(Date)) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::filter(Date == max(Date)) %>%
+      dplyr::pull(Date)
+    
+    print(hist_end_date)
   }
   
   if(is.null(hist_start_date)) {
     
-    if(is.null(parallel_processing) || parallel_processing == "local_machine") {
-      hist_start_date <- min(input_data$Date)
-    } else {
-      hist_start_date <- input_data %>%
-        dplyr::select(Date) %>%
-        dplyr::filter(Date == min(Date)) %>%
-        dplyr::distinct() %>%
-        sparklyr::collect() %>%
-        dplyr::distinct() %>%
-        dplyr::pull(Date)
-    }
+    hist_start_date <- input_data %>%
+      dplyr::select(Date) %>%
+      #dplyr::filter(Date == min(Date)) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::filter(Date == min(Date)) %>%
+      dplyr::pull(Date)
+    
+    print(hist_start_date)
   }
   
   # prep initial data before feature engineering
@@ -814,12 +814,12 @@ prep_data <- function(
                     tidyselect::all_of(combo_variables), 
                     tidyselect::all_of(external_regressors), 
                     "Date", "Target")) %>%
-    dplyr::arrange(Combo, Date) %>%
-    combo_cleanup_fn(combo_cleanup_date, parallel_processing) #%>%
+    dplyr::arrange(tidyselect::all_of(combo_variables), Date) %>%
+    combo_cleanup_fn(combo_cleanup_date) #%>%
     # get_hts(combo_variables,
     #         forecast_approach,
     #         frequency_number)
-  
+
   # parallel run info
   if(is.null(parallel_processing) || parallel_processing == "local_machine") {
     
@@ -847,7 +847,11 @@ prep_data <- function(
                                      combo <- x %>%
                                        dplyr::pull(Combo)
                                      
-                                     xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_tbl,
+                                     initial_prep_combo_tbl <- initial_prep_tbl %>%
+                                       dplyr::filter(Combo == combo) %>%
+                                       dplyr::collect()
+                                     
+                                     xregs_future_tbl <- get_xregs_future_values_tbl(initial_prep_combo_tbl,
                                                                                      external_regressors,
                                                                                      hist_end_date,
                                                                                      forecast_approach)
@@ -858,7 +862,7 @@ prep_data <- function(
                                        xregs_future_list <- NULL
                                      }
                                      
-                                     initial_tbl <- initial_prep_tbl %>%
+                                     initial_tbl <- initial_prep_combo_tbl %>%
                                        dplyr::filter(Combo == combo) %>%
                                        dplyr::select(Combo,
                                                      Date,
