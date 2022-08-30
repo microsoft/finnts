@@ -31,13 +31,14 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       }
       
       if(column %in% external_regressors) {
-
+        
         df_poly_column <- data %>%
-          dplyr::select(column)
+          dplyr::select(column) %>%
+          dplyr::rename(Col = column)
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
-        temp_log <- log1p(df_poly_column)
+        temp_log <- log1p(df_poly_column %>% dplyr::mutate(Col = ifelse(Col < 0, 0, Col)))
         
         temp_final <- cbind(temp_squared, temp_cubed, temp_log)
         colnames(temp_final) <- c(paste0(column, '_squared'), paste0(column, '_cubed'), paste0(column, '_log'))
@@ -162,11 +163,12 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
       if(column %in% external_regressors) {
         
         df_poly_column <- data %>%
-          dplyr::select(column)
+          dplyr::select(column) %>%
+          dplyr::rename(Col = column)
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
-        temp_log <- log1p(df_poly_column)
+        temp_log <- log1p(df_poly_column %>% dplyr::mutate(Col = ifelse(Col < 0, 0, Col)))
         
         temp_final <- cbind(temp_squared, temp_cubed, temp_log)
         colnames(temp_final) <- c(paste0(column, '_squared'), paste0(column, '_cubed'), paste0(column, '_log'))

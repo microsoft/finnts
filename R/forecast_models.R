@@ -305,7 +305,6 @@ construct_forecast_models <- function(full_data_tbl,
       train_data_recipe_1 <- run_data_full_recipe_1 %>%
         dplyr::filter(Date <= hist_end_date)
       
-      
       test_data_recipe_1 <- run_data_full_recipe_1 %>%
         dplyr::filter(Date > hist_end_date)
       
@@ -328,7 +327,7 @@ construct_forecast_models <- function(full_data_tbl,
       
       train_data_recipe_2 <- run_data_full_recipe_2 %>%
         dplyr::filter(Date <= hist_end_date)
-      
+
       train_origins <- train_data_recipe_2 %>%
         dplyr::filter(Horizon == 1)
       
@@ -339,7 +338,7 @@ construct_forecast_models <- function(full_data_tbl,
                       Origin == train_origin_max+1)
       
     }
-    
+
     # create modeltime table to add single trained models to
     combined_models_recipe_1 <- modeltime::modeltime_table()
     combined_models_recipe_2 <- modeltime::modeltime_table()
