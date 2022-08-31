@@ -784,8 +784,6 @@ prep_data <- function(
       dplyr::distinct() %>%
       dplyr::filter(Date == max(Date)) %>%
       dplyr::pull(Date)
-    
-    print(hist_end_date)
   }
   
   if(is.null(hist_start_date)) {
@@ -798,8 +796,6 @@ prep_data <- function(
       dplyr::distinct() %>%
       dplyr::filter(Date == min(Date)) %>%
       dplyr::pull(Date)
-    
-    print(hist_start_date)
   }
   
   # prep initial data before feature engineering
@@ -882,7 +878,8 @@ prep_data <- function(
                                                             .length_out = forecast_horizon,
                                                             .bind_data = TRUE) %>% #add future data
                                        dplyr::ungroup() %>%
-                                       dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
+                                       dplyr::left_join(xregs_future_tbl, 
+                                                        by = c("Combo", "Date")) %>% #join xregs that contain values given by user
                                        clean_outliers_missing_values(clean_outliers,
                                                                      clean_missing_values,
                                                                      get_frequency_number(date_type),
@@ -1005,7 +1002,8 @@ prep_data <- function(
                                .length_out = forecast_horizon,
                                .bind_data = TRUE) %>% #add future data
           dplyr::ungroup() %>%
-          dplyr::left_join(xregs_future_tbl) %>% #join xregs that contain values given by user
+          dplyr::left_join(xregs_future_tbl, 
+                           by = c("Combo", "Date")) %>% #join xregs that contain values given by user
           clean_outliers_missing_values(clean_outliers,
                                         clean_missing_values,
                                         get_frequency_number(date_type),

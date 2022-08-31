@@ -91,7 +91,7 @@ train_models <- function(run_info,
                                            # tune models
                                            tune_iter_list <- model_train_test_tbl %>%
                                              dplyr::mutate(Combo = x) %>%
-                                             dplyr::rename(Train_Test_ID = Run_ID) %>%
+                                             #dplyr::rename(Train_Test_ID = Run_ID) %>%
                                              dplyr::filter(Run_Type == "Validation") %>%
                                              dplyr::select(Combo, Train_Test_ID) %>%
                                              dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
@@ -142,11 +142,11 @@ train_models <- function(run_info,
                                                                                     dplyr::pull(Combo)
 
                                                                                   train_end_date <- model_train_test_tbl %>%
-                                                                                    dplyr::filter(Run_ID == data_split) %>%
+                                                                                    dplyr::filter(Train_Test_ID == data_split) %>%
                                                                                     dplyr::pull(Train_End)
                                                                                   
                                                                                   test_end_date <- model_train_test_tbl %>%
-                                                                                    dplyr::filter(Run_ID == data_split) %>%
+                                                                                    dplyr::filter(Train_Test_ID == data_split) %>%
                                                                                     dplyr::pull(Test_End)
                                                                                   
                                                                                   # get train/test data
@@ -222,8 +222,9 @@ train_models <- function(run_info,
                                                                                   
                                                                                   # finalize output tbl
                                                                                   final_tbl <- tibble::tibble(
-                                                                                    Combo = combo,
-                                                                                    Model = model,
+                                                                                    Combo_ID = combo,
+                                                                                    Model_Name = model,
+                                                                                    Model_Type = ifelse(combo == "All-Data", 'global', 'local'),
                                                                                     Recipe_ID = data_prep_recipe,
                                                                                     Train_Test_ID = data_split,
                                                                                     Hyperparameter_ID = param_combo,
@@ -235,11 +236,11 @@ train_models <- function(run_info,
 
                                            best_param <- initial_tune_tbl %>%
                                              #dplyr::select(Combo, Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction)
-                                             dplyr::rename(Combo_ID = Combo) %>%
+                                             #dplyr::rename(Combo_ID = Combo) %>%
                                              tidyr::unnest(Prediction) %>%
                                              #dplyr::mutate(Combo = combo) %>%
                                              dplyr::mutate(SE = (Target-Forecast)^2) %>%
-                                             dplyr::group_by(Combo_ID, Model, Recipe_ID, Hyperparameter_ID) %>%
+                                             dplyr::group_by(Combo_ID, Model_Name, Model_Type, Recipe_ID, Hyperparameter_ID) %>%
                                              #dplyr::mutate(SE = (Target-Forecast)^2) %>%
                                              dplyr::summarise(RMSE = sqrt(mean(SE, na.rm = TRUE))) %>%
                                              dplyr::arrange(RMSE) %>%
@@ -247,12 +248,12 @@ train_models <- function(run_info,
                                              dplyr::ungroup()
                                            
                                            model_tune_tbl <- initial_tune_tbl %>%
-                                             dplyr::select(Model, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction) %>%
-                                             dplyr::right_join(best_param, by = c("Model", "Recipe_ID", "Hyperparameter_ID")) %>%
+                                             dplyr::select(Model_Name, Model_Type, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction) %>%
+                                             dplyr::right_join(best_param, by = c("Model_Name", "Model_Type", "Recipe_ID", "Hyperparameter_ID")) %>%
                                              tidyr::unnest(Prediction) %>%
                                              dplyr::mutate(Combo_Hash = Combo_ID, 
                                                            Combo_ID = ifelse(Combo_ID == "All-Data", "All-Data", Combo)) %>%
-                                             dplyr::select(Combo_Hash, Combo_ID, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
+                                             dplyr::select(Combo_Hash, Combo_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
 
                                            # refit models
                                            refit_iter_list <- model_train_test_tbl %>%
@@ -262,11 +263,11 @@ train_models <- function(run_info,
                                                model_tune_tbl %>%
                                                  dplyr::filter(Combo_Hash == combo) %>%
                                                  dplyr::mutate(Run_Type = x %>% dplyr::pull(Run_Type), 
-                                                               Run_ID = x %>% dplyr::pull(Run_ID), 
+                                                               Train_Test_ID = x %>% dplyr::pull(Train_Test_ID), 
                                                                Train_End = x %>% dplyr::pull(Train_End), 
                                                                Test_End = x %>% dplyr::pull(Test_End)) %>%
-                                                 dplyr::select(Combo_ID, Run_Type, Run_ID, Recipe_ID, 
-                                                               Hyperparameter_ID, Train_End, Test_End, Model) %>%
+                                                 dplyr::select(Combo_ID, Run_Type, Train_Test_ID, Recipe_ID, 
+                                                               Hyperparameter_ID, Train_End, Test_End, Model_Name, Model_Type) %>%
                                                  dplyr::distinct()}) %>%
                                              dplyr::bind_rows()
                                            
@@ -284,7 +285,7 @@ train_models <- function(run_info,
                                                                               dplyr::pull(Combo_ID)
                                                                             
                                                                             model <- x %>%
-                                                                              dplyr::pull(Model)
+                                                                              dplyr::pull(Model_Name)
                                                                             
                                                                             recipe <- x %>%
                                                                               dplyr::pull(Recipe_ID)
@@ -296,7 +297,7 @@ train_models <- function(run_info,
                                                                               dplyr::pull(Run_Type)
                                                                             
                                                                             run_id <- x %>%
-                                                                              dplyr::pull(Run_ID)
+                                                                              dplyr::pull(Train_Test_ID)
                                                                             
                                                                             train_end <- x %>%
                                                                               dplyr::pull(Train_End)
@@ -384,8 +385,9 @@ train_models <- function(run_info,
                                                                             }
                                                                             
                                                                             final_tbl <- tibble::tibble(
-                                                                              Combo = combo, 
-                                                                              Model = model, 
+                                                                              Combo_ID = combo, 
+                                                                              Model_Name = model,
+                                                                              Model_Type = ifelse(combo == 'All-Data', 'global', 'local'),
                                                                               Recipe_ID = recipe,
                                                                               Train_Test_ID = run_id, 
                                                                               Hyperparameter_ID = param, 
@@ -400,25 +402,26 @@ train_models <- function(run_info,
                                            fitted_models <- refit_tbl %>%
                                              dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
                                              dplyr::filter(Train_Test_ID == 1) %>%
-                                             dplyr::select(Combo, Model, Recipe_ID, Model_Fit)
+                                             tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
+                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
 
                                            write_data(x = fitted_models,
-                                                      combo = unique(fitted_models$Combo),
+                                                      combo = unique(fitted_models$Combo_ID),
                                                       run_info = run_info,
                                                       output_type = 'object',
                                                       folder = "models",
                                                       suffix = '-single_models')
 
                                            final_forecast_tbl <- refit_tbl %>%
-                                             dplyr::rename(Combo_ID = Combo) %>%
                                              dplyr::select(-Model_Fit) %>%
                                              tidyr::unnest(Prediction) %>%
                                              rbind(model_tune_tbl %>%
                                                      dplyr::select(-Combo_Hash)) %>%
-                                             dplyr::arrange(Train_Test_ID)
+                                             dplyr::arrange(Train_Test_ID) %>%
+                                             tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE)
                                            
                                            write_data(x = final_forecast_tbl,
-                                                      combo = unique(fitted_models$Combo),
+                                                      combo = unique(fitted_models$Combo_ID),
                                                       run_info = run_info,
                                                       output_type = 'data',
                                                       folder = "forecasts",

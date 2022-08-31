@@ -112,6 +112,7 @@ train_test_split <- function(run_info,
   # create train/test split info
   train_test_initial <- temp_tbl %>%
     timetk::time_series_cv(
+      date_var = Date,
       initial = "1 year", 
       asses = forecast_horizon, 
       skip = back_test_spacing_final, 
@@ -165,7 +166,7 @@ train_test_split <- function(run_info,
     }
 
     train_test_tbl <- tibble::tibble(Run_Type = run_type, 
-                                     Run_ID = id, 
+                                     Train_Test_ID = id, 
                                      Train_End = max(train_tbl$Date), 
                                      Test_End = max(test_tbl$Date))
     

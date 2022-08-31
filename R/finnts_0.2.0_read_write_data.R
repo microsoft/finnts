@@ -227,3 +227,29 @@ get_recipe_data <- function(run_info,
   
   return(recipe_tbl)
 }
+
+get_forecast_data <- function(run_info, 
+                              return_type = "df") {
+  
+  model_train_test_tbl <- read_file(run_info, 
+                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                  '-train_test_split.', run_info$data_output), 
+                                    return_type = 'df') %>%
+    dplyr::select(Run_Type, Train_Test_ID) %>%
+    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+  
+  fcst_path <- paste0("/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                      hash_data(run_info$run_name), "*", '.', run_info$data_output)
+  
+  forecast_tbl <- read_file(run_info, 
+                             path = fcst_path, 
+                             return_type = return_type) %>%
+    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+    dplyr::left_join(model_train_test_tbl, 
+                     by = "Train_Test_ID") %>%
+    dplyr::relocate(Run_Type, .before = Train_Test_ID) %>%
+    dplyr::select(-Combo_ID, -Hyperparameter_ID) %>%
+    dplyr::relocate(Combo)
+  
+  return(forecast_tbl)
+}
