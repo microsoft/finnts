@@ -170,7 +170,8 @@ train_test_split <- function(run_info,
                                      Train_End = max(train_tbl$Date), 
                                      Test_End = max(test_tbl$Date))
     
-    train_test_final <- rbind(train_test_final, train_test_tbl)
+    train_test_final <- rbind(train_test_final, train_test_tbl) %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
   }
   
   # check for back test and validation data

@@ -19,7 +19,7 @@ ensemble_models <- function(run_info,
   
   combo_list <- list_files(run_info$storage_object, 
                            paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
-                                  hash_data(run_info$run_name), "*-single_models.", run_info$data_output)) %>%
+                                  hash_data(run_info$run_name), "*_models.", run_info$data_output)) %>%
     tibble::tibble(Path = .,
                    File = fs::path_file(.)) %>%
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Type"), sep = '-', remove = TRUE) %>%
@@ -51,20 +51,35 @@ ensemble_models <- function(run_info,
                                             .multicombine = TRUE, 
                                             .noexport = NULL) %op% {
                                               
-                                              # if(!is.null(parallel_processing)) {
-                                              #   initial_results_tbl <- initial_results_tbl %>%
-                                              #     dplyr::filter(Combo == x)
-                                              # }
-                                              
                                               combo <- x
                                               
-                                              initial_results_tbl <- read_file(run_info, 
-                                                                               path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
-                                                                                             '-', combo, '-single_models.', run_info$data_output), 
-                                                                               return_type = 'df')
+                                              # model forecasts
+                                              single_model_tbl <- NULL
+                                              suppressWarnings(try(single_model_tbl <- read_file(run_info, 
+                                                                                                 path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                                                                               '-', combo, '-single_models.', run_info$data_output), 
+                                                                                                 return_type = 'df'),
+                                                                   silent = TRUE))
                                               
-                                              prep_ensemble_tbl <- initial_results_tbl %>%
-                                                #dplyr::filter(Combo == x) %>%
+                                              global_model_tbl <- NULL
+                                              suppressWarnings(try(global_model_tbl <- read_file(run_info, 
+                                                                                                   path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                                                                                 '-', combo, '-global_models.', run_info$data_output), 
+                                                                                                   return_type = 'df'),
+                                                                   silent = TRUE))
+                                              
+                                              
+                                              # single_results_tbl <- read_file(run_info, 
+                                              #                                  path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                              #                                                '-', combo, '-single_models.', run_info$data_output), 
+                                              #                                  return_type = 'df')
+                                              
+                                              # combine model forecasts
+                                              initial_results_final_tbl <- single_model_tbl %>%
+                                                rbind(global_model_tbl)
+ 
+                                              # create training data for ensemble
+                                              prep_ensemble_tbl <- initial_results_final_tbl %>%
                                                 dplyr::mutate(Suffix = ifelse(Combo_ID == "All-Data", "Global", "Local")) %>%
                                                 tidyr::unite(col= "Model_Key", 
                                                              c("Model_Name", "Recipe_ID", "Suffix"),
@@ -72,9 +87,9 @@ ensemble_models <- function(run_info,
                                                              remove=F) %>%
                                                 tidyr::pivot_wider(names_from = Model_Key, values_from = Forecast, 
                                                                    id_cols = c("Combo", "Date", "Train_Test_ID", "Target"), values_fill = 0)
-                                              
+                   
                                               # ensemble models to run
-                                              refit_models <- unique(initial_results_tbl$Model_Name)
+                                              refit_models <- unique(initial_results_final_tbl$Model_Name)
                                               
                                               ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")]
                                               
@@ -429,7 +444,7 @@ ensemble_models <- function(run_info,
                                                 #dplyr::rename(Combo_ID = Combo) %>%
                                                 tidyr::unnest(Prediction) %>%
                                                 tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE)
-                                              
+
                                               # write outputs
                                               write_data(x = final_ensemble_results_tbl,
                                                          combo = unique(final_ensemble_results_tbl$Combo_ID),

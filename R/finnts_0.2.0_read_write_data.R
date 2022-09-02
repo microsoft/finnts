@@ -157,17 +157,23 @@ read_file <- function(run_info,
 
   if(return_type == 'df') {
     switch(fs::path_ext(file), 
-           rds = readRDS(files), 
+           rds = files %>% purrr::map_dfr(readRDS), 
            parquet = files %>% purrr::map_dfr(function(path) {arrow::read_parquet(path)}),
            csv = tryCatch(
              vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ","),
              error = function(e){
                files %>% purrr::map(function(path) {read.csv(path, stringsAsFactors = FALSE)}) %>% plyr::rbind.fill() %>% tibble()}),
            qs = qs::qread(path))
+    
   } else if(return_type == "sdf") {
     switch(fs::path_ext(file), 
            parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)), 
            csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path)))
+    
+  } else if(return_type == "arrow") {
+    switch(fs::path_ext(file), 
+           parquet = arrow::open_dataset(sources = files, format = "parquet"), 
+           csv = arrow::open_dataset(sources = files, format = "csv"))
   }
 }
 
@@ -228,6 +234,52 @@ get_recipe_data <- function(run_info,
   return(recipe_tbl)
 }
 
+get_global_data <- function(run_info,
+                            #type,
+                            combo) {
+  
+  temp_path <- paste0("/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                      hash_data(run_info$run_name), '-', hash_data('All-Data'), '-', 'single_models', '.', run_info$data_output)
+  
+  tryCatch(
+    
+    global_data_tbl <- read_file(run_info, 
+                                 path = temp_path, 
+                                 return_type = 'arrow'),
+    
+    error = function(e){
+      
+      global_data_tbl <- NULL
+      
+      })
+  
+  if(!is.null(global_data_tbl)) {
+    
+    combo_value <- global_data_tbl %>%
+      dplyr::select(Combo) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::group_by(Combo) %>%
+      dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
+      dplyr::filter(Combo_Hash == combo) %>%
+      dplyr::pull(Combo)
+    
+    global_data_tbl <- global_data_tbl %>%
+      dplyr::filter(Combo == combo_value) %>%
+      dplyr::collect()
+  }
+  
+  return(global_data_tbl)
+}
+
+#' Get Final Forecast Data
+#' 
+#' @param run_info run info
+#' @param return_type return type
+#'  
+#' @return table of final forecast results
+#' @export
 get_forecast_data <- function(run_info, 
                               return_type = "df") {
   
@@ -252,4 +304,22 @@ get_forecast_data <- function(run_info,
     dplyr::relocate(Combo)
   
   return(forecast_tbl)
+}
+
+#' Get Final Trained Models
+#' 
+#' @param run_info run info
+#'  
+#' @return table of final trained models
+#' @export
+get_trained_models <- function(run_info) {
+  
+  model_path <- paste0('/models/*', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                      '-*_models.', run_info$object_output)
+  
+  trained_model_tbl <- read_file(run_info, 
+                                 path = model_path, 
+                                 return_type = 'df')
+  
+  return(trained_model_tbl)
 }

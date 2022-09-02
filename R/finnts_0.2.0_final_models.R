@@ -18,14 +18,14 @@ final_models <- function(run_info,
   # get combos
   combo_list <- list_files(run_info$storage_object, 
                            paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
-                                  hash_data(run_info$run_name), "*-single_models.", run_info$data_output)) %>%
+                                  hash_data(run_info$run_name), "*_models.", run_info$data_output)) %>%
     tibble::tibble(Path = .,
                    File = fs::path_file(.)) %>%
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Type"), sep = '-', remove = TRUE) %>%
     dplyr::filter(Combo != hash_data("All-Data")) %>%
     dplyr::pull(Combo) %>%
     unique()
-  
+
   # get run splits
   model_train_test_tbl <- read_file(run_info, 
                                     path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
@@ -56,61 +56,59 @@ final_models <- function(run_info,
                                       # get individual and ensemble model predictions
                                       train_test_id_list <- model_train_test_tbl %>%
                                         dplyr::filter(Run_Type != "Ensemble") %>%
+                                        dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
                                         dplyr::pull(Train_Test_ID) %>%
                                         unique()
+
                                       
-                                      single_model_tbl <- read_file(run_info, 
-                                                                   path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
-                                                                                 '-', combo, '-single_models.', run_info$data_output), 
-                                                                   return_type = 'df')
+                                      single_model_tbl <- NULL
+                                      suppressWarnings(try(single_model_tbl <- read_file(run_info, 
+                                                                        path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                                                      '-', combo, '-single_models.', run_info$data_output), 
+                                                                        return_type = 'df'),
+                                          silent = TRUE))
                                       
                                       ensemble_model_tbl <- NULL
-                                      try(ensemble_model_tbl <- read_file(run_info, 
+                                      suppressWarnings(try(ensemble_model_tbl <- read_file(run_info, 
                                                                         path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                                                       '-', combo, '-ensemble_models.', run_info$data_output), 
-                                                                        return_type = 'df'), 
-                                          silent = TRUE)
+                                                                        return_type = 'df'),
+                                          silent = TRUE))
                                       
-                                      predictions_tbl <- single_model_tbl %>%
-                                        #dplyr::mutate(Model_Suffix = ifelse(Combo_ID == "All-Data", "global", "local")) %>%
+                                      global_model_tbl <- NULL
+                                      suppressWarnings(try(global_model_tbl <- read_file(run_info, 
+                                                                                         path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                                                                                       '-', combo, '-global_models.', run_info$data_output), 
+                                                                                         return_type = 'df'),
+                                                           silent = TRUE))
+
+                                      local_model_tbl <- single_model_tbl %>%
+                                        rbind(ensemble_model_tbl)
+
+                                      predictions_tbl <- local_model_tbl %>%
+                                        rbind(global_model_tbl) %>%
                                         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-                                        #tidyr::unite(col = 'Model_Name', c("Model", "Recipe_ID", "Model_Suffix"), sep= "--", remove = FALSE) %>%
-                                        #dplyr::select(-Model_Suffix) %>%
-                                        dplyr::filter(Train_Test_ID %in% train_test_id_list) %>%
-                                        #tidyr::unnest(Prediction) %>%
-                                        rbind(
-                                          if(!is.null(ensemble_model_tbl)) {
-                                            ensemble_model_tbl %>%
-                                              #dplyr::mutate(Model_Suffix = ifelse(Combo_ID == "All-Data", "global", "local")) %>%
-                                              dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-                                              #tidyr::unite(col = 'Model_Name', c("Model", "Recipe_ID", "Model_Suffix"), sep= "--", remove = FALSE) %>%
-                                              #dplyr::select(-Model_Suffix) %>%
-                                              dplyr::filter(Train_Test_ID %in% train_test_id_list) #%>%
-                                              #tidyr::unnest(Prediction)
-                                          } else {
-                                            tibble::tibble()
-                                          }
-                                        )
-                                      
+                                        dplyr::filter(Train_Test_ID %in% train_test_id_list) 
+                                      print(predictions_tbl)
                                       # get model list
-                                      single_model_list <- single_model_tbl %>%
-                                        dplyr::mutate(Combo = ifelse(Combo == "All-Data", "global", "local")) %>%
-                                        #tidyr::unite(col = "Model_Name", c("Model", "Recipe_ID", "Combo"), sep = "--") %>%
-                                        dplyr::pull(Model_ID) %>%
-                                        unique()
-                                      
-                                      if(!is.null(ensemble_model_tbl)) {
-                                        ensemble_model_list <- ensemble_model_tbl %>%
-                                          #dplyr::mutate(Recipe_ID = "ensemble-local") %>%
-                                          #tidyr::unite(col = "Model_Name", c("Model", "Recipe_ID"), sep = "--") %>%
+                                      if(!is.null(local_model_tbl)) {
+                                        local_model_list <- local_model_tbl %>%
                                           dplyr::pull(Model_ID) %>%
                                           unique()
                                       } else {
-                                        ensemble_model_list <- NULL
+                                        local_model_list <- NULL
                                       }
                                       
-                                      final_model_list <- c(single_model_list, ensemble_model_list)
+                                      if(!is.null(global_model_tbl)) {
+                                        global_model_list <- global_model_tbl %>%
+                                          dplyr::pull(Model_ID) %>%
+                                          unique()
+                                      } else {
+                                        global_model_list <- NULL
+                                      }
                                       
+                                      final_model_list <- c(local_model_list, global_model_list)
+                                      print(final_model_list)
                                       # simple model averaging
                                       if(average_models) {
 
@@ -165,7 +163,7 @@ final_models <- function(run_info,
                                       final_predictions_tbl <- predictions_tbl %>%
                                         dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
                                         rbind(averages_tbl)
-                                      
+
                                       back_test_mape <- final_predictions_tbl %>%
                                         dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID),
                                                       Target = ifelse(Target == 0, 0.1, Target)) %>%
@@ -200,7 +198,7 @@ final_models <- function(run_info,
                                         dplyr::mutate(Combo = best_model_tbl$Combo, 
                                                       Best_Model = "Yes") %>%
                                         tidyr::separate(col = "Model_ID", into = c("Model_Name", "Recipe_ID", "Model_Type"), sep = "--", remove = FALSE)
-
+                                      
                                       # if a simple model average is the most accurate store the results
                                       if(nrow(best_model_final_tbl) > 1) {
                                         
@@ -216,19 +214,6 @@ final_models <- function(run_info,
                                           dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
                                                         Best_Model, Combo, Date, Target, Forecast)
                                         
-                                        single_model_final_tbl <- single_model_tbl %>%
-                                          dplyr::mutate(Best_Model = "No") %>%
-                                          dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                        Best_Model, Combo, Date, Target, Forecast)
-                                        
-                                        if(!is.null(ensemble_model_tbl)) {
-                                          ensemble_model_final_tbl <- ensemble_model_tbl %>%
-                                            dplyr::mutate(Best_Model = "No") %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
-                                        }
-                                        
-                                        # write outputs
                                         write_data(x = model_avg_final_tbl,
                                                    combo = unique(model_avg_final_tbl$Combo_ID),
                                                    run_info = run_info,
@@ -236,21 +221,48 @@ final_models <- function(run_info,
                                                    folder = "forecasts",
                                                    suffix = '-average_models')
                                         
-                                        write_data(x = single_model_final_tbl,
-                                                   combo = unique(single_model_final_tbl$Combo_ID),
-                                                   run_info = run_info,
-                                                   output_type = 'data',
-                                                   folder = "forecasts",
-                                                   suffix = '-single_models')
+                                        if(!is.null(single_model_tbl)) {
+                                          single_model_final_tbl <- single_model_tbl %>%
+                                            dplyr::mutate(Best_Model = "No") %>%
+                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                                                          Best_Model, Combo, Date, Target, Forecast)
+                                          
+                                          write_data(x = single_model_final_tbl,
+                                                     combo = unique(single_model_final_tbl$Combo),
+                                                     run_info = run_info,
+                                                     output_type = 'data',
+                                                     folder = "forecasts",
+                                                     suffix = '-single_models')
+                                        }
                                         
                                         if(!is.null(ensemble_model_tbl)) {
+                                          ensemble_model_final_tbl <- ensemble_model_tbl %>%
+                                            dplyr::mutate(Best_Model = "No") %>%
+                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                                                          Best_Model, Combo, Date, Target, Forecast)
+                                          
                                           write_data(x = ensemble_model_final_tbl,
-                                                     combo = unique(ensemble_model_final_tbl$Combo_ID),
+                                                     combo = unique(ensemble_model_final_tbl$Combo),
                                                      run_info = run_info,
                                                      output_type = 'data',
                                                      folder = "forecasts",
                                                      suffix = '-ensemble_models')
-                                        } 
+                                        }
+                                        
+                                        if(!is.null(global_model_tbl)) {
+                                          global_model_final_tbl <- global_model_tbl %>%
+                                            dplyr::mutate(Best_Model = "No") %>%
+                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                                                          Best_Model, Combo, Date, Target, Forecast)
+                                          
+                                          write_data(x = global_model_final_tbl,
+                                                     combo = unique(global_model_final_tbl$Combo),
+                                                     run_info = run_info,
+                                                     output_type = 'data',
+                                                     folder = "forecasts",
+                                                     suffix = '-global_models')
+                                        }
+                                        
                                       } else { # choose the most accurate individual model and write outputs
                                         
                                         final_model_tbl <- tibble::tibble(Model_ID = final_model_list) %>%
@@ -260,12 +272,21 @@ final_models <- function(run_info,
                                             by = "Model_ID"
                                           ) %>%
                                           dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
-                                        
-                                        single_model_final_tbl <- single_model_tbl %>%
-                                          dplyr::left_join(final_model_tbl, 
-                                                           by = "Model_ID") %>%
-                                          dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                        Best_Model, Combo, Date, Target, Forecast)
+                                        print(final_model_tbl)
+                                        if(!is.null(single_model_tbl)) {
+                                          single_model_final_tbl <- single_model_tbl %>%
+                                            dplyr::left_join(final_model_tbl, 
+                                                             by = "Model_ID") %>%
+                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                                                          Best_Model, Combo, Date, Target, Forecast)
+   
+                                          write_data(x = single_model_final_tbl,
+                                                     combo = unique(single_model_final_tbl$Combo),
+                                                     run_info = run_info,
+                                                     output_type = 'data',
+                                                     folder = "forecasts",
+                                                     suffix = '-single_models')
+                                        }
                                         
                                         if(!is.null(ensemble_model_tbl)) {
                                           ensemble_model_final_tbl <- ensemble_model_tbl %>%
@@ -273,23 +294,28 @@ final_models <- function(run_info,
                                                              by = "Model_ID") %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
                                                           Best_Model, Combo, Date, Target, Forecast)
-                                        }
-                                        
-                                        # write outputs
-                                        write_data(x = single_model_final_tbl,
-                                                   combo = unique(single_model_final_tbl$Combo_ID),
-                                                   run_info = run_info,
-                                                   output_type = 'data',
-                                                   folder = "forecasts",
-                                                   suffix = '-single_models')
-                                        
-                                        if(!is.null(ensemble_model_tbl)) {
+                                          
                                           write_data(x = ensemble_model_final_tbl,
-                                                     combo = unique(ensemble_model_final_tbl$Combo_ID),
+                                                     combo = unique(ensemble_model_final_tbl$Combo),
                                                      run_info = run_info,
                                                      output_type = 'data',
                                                      folder = "forecasts",
                                                      suffix = '-ensemble_models')
+                                        }
+                                        
+                                        if(!is.null(global_model_tbl)) {
+                                          global_model_final_tbl <- global_model_tbl %>%
+                                            dplyr::left_join(final_model_tbl, 
+                                                             by = "Model_ID") %>%
+                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                                                          Best_Model, Combo, Date, Target, Forecast)
+                                          
+                                          write_data(x = global_model_final_tbl,
+                                                     combo = unique(global_model_final_tbl$Combo),
+                                                     run_info = run_info,
+                                                     output_type = 'data',
+                                                     folder = "forecasts",
+                                                     suffix = '-global_models')
                                         }
                                       }
                                       

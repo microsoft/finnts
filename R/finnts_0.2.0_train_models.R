@@ -378,7 +378,7 @@ train_models <- function(run_info,
                                                                               dplyr::rename(Forecast = .pred)
                                                                             
                                                                             # finalize output tbl
-                                                                            if(run_id == "01") {
+                                                                            if(run_id == 1) {
                                                                               model_fit <- model_fit
                                                                             } else {
                                                                               model_fit <- NULL
@@ -420,12 +420,25 @@ train_models <- function(run_info,
                                              dplyr::arrange(Train_Test_ID) %>%
                                              tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE)
                                            
-                                           write_data(x = final_forecast_tbl,
-                                                      combo = unique(fitted_models$Combo_ID),
-                                                      run_info = run_info,
-                                                      output_type = 'data',
-                                                      folder = "forecasts",
-                                                      suffix = '-single_models')
+                                           if(unique(final_forecast_tbl$Combo_ID) == "All-Data") {
+                                             
+                                             for(combo_name in unique(final_forecast_tbl$Combo)) {
+                                               write_data(x = final_forecast_tbl %>% dplyr::filter(Combo == combo_name),
+                                                          combo = combo_name,
+                                                          run_info = run_info,
+                                                          output_type = 'data',
+                                                          folder = "forecasts",
+                                                          suffix = '-global_models')
+                                             }
+                                           } else {
+                                             
+                                             write_data(x = final_forecast_tbl,
+                                                        combo = unique(fitted_models$Combo_ID),
+                                                        run_info = run_info,
+                                                        output_type = 'data',
+                                                        folder = "forecasts",
+                                                        suffix = '-single_models')
+                                           }
                                            
                                            return(tibble::tibble())
                                          }
@@ -439,7 +452,7 @@ train_models <- function(run_info,
                       return_type = 'df') %>%
     dplyr::mutate(run_global_models = run_global_models, 
                   run_local_models = run_local_models, 
-                  global_model_recipes = global_model_recipes, 
+                  global_model_recipes = paste(unlist(global_model_recipes),collapse="--"), 
                   seed = seed)
   
   write_data(x = log_df, 
