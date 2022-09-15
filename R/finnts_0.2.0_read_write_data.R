@@ -287,6 +287,7 @@ get_global_data <- function(run_info,
 #'  
 #' @return table of final forecast results
 #' @export
+#' 
 get_forecast_data <- function(run_info, 
                               return_type = "df") {
   
@@ -320,6 +321,7 @@ get_forecast_data <- function(run_info,
 #'  
 #' @return table of final trained models
 #' @export
+#' 
 get_trained_models <- function(run_info) {
   
   model_path <- paste0('/models/*', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 

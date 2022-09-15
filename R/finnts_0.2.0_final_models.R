@@ -350,7 +350,6 @@ final_models <- function(run_info,
              folder = "logs", 
              suffix = NULL)
   
-  print(best_model_tbl)
   return(cli::cli_alert_success("Forecast Finished"))
 }
 

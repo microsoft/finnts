@@ -84,6 +84,7 @@ set_run_info <- function(experiment_name = 'finn_fcst',
 #' @return table of run info
 #' @keywords internal
 #' @export
+#' 
 get_run_info <- function(experiment_name = 'finn_fcst', 
                          run_name = NULL, 
                          storage_object = NULL, 
