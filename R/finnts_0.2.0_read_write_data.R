@@ -169,7 +169,7 @@ read_file <- function(run_info,
            csv = tryCatch(
              vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ","),
              error = function(e){
-               files %>% purrr::map(function(path) {read.csv(path, stringsAsFactors = FALSE)}) %>% plyr::rbind.fill() %>% tibble()}),
+               files %>% purrr::map(function(path) {read.csv(path, stringsAsFactors = FALSE)}) %>% plyr::rbind.fill() %>% tibble::tibble()}),
            qs = qs::qread(path))
     
   } else if(return_type == "sdf") {
