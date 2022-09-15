@@ -55,12 +55,11 @@ final_models <- function(run_info,
 
                                       # get individual and ensemble model predictions
                                       train_test_id_list <- model_train_test_tbl %>%
-                                        dplyr::filter(Run_Type != "Ensemble") %>%
+                                        dplyr::filter(Run_Type %in% c("Back_Test", "Future_Forecast")) %>%
                                         dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
                                         dplyr::pull(Train_Test_ID) %>%
                                         unique()
 
-                                      
                                       single_model_tbl <- NULL
                                       suppressWarnings(try(single_model_tbl <- read_file(run_info, 
                                                                         path = paste0('/forecasts/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
@@ -89,7 +88,7 @@ final_models <- function(run_info,
                                         rbind(global_model_tbl) %>%
                                         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
                                         dplyr::filter(Train_Test_ID %in% train_test_id_list) 
-                                      print(predictions_tbl)
+
                                       # get model list
                                       if(!is.null(local_model_tbl)) {
                                         local_model_list <- local_model_tbl %>%
@@ -108,7 +107,7 @@ final_models <- function(run_info,
                                       }
                                       
                                       final_model_list <- c(local_model_list, global_model_list)
-                                      print(final_model_list)
+
                                       # simple model averaging
                                       if(average_models) {
 
@@ -170,7 +169,7 @@ final_models <- function(run_info,
                                         dplyr::filter(Train_Test_ID != 1) %>%
                                         dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
 
-                                      best_model_tbl <- back_test_mape %>%
+                                      best_model_mape <- back_test_mape %>%
                                         dplyr::group_by(Model_ID, Combo) %>%
                                         dplyr::mutate(Combo_Total = sum(abs(Target), na.rm = TRUE),
                                                       weighted_MAPE = (abs(Target)/Combo_Total)*MAPE) %>%
@@ -179,7 +178,9 @@ final_models <- function(run_info,
                                         dplyr::ungroup() %>%
                                         dplyr::group_by(Combo) %>%
                                         dplyr::slice(1) %>%
-                                        dplyr::ungroup() %>%
+                                        dplyr::ungroup()
+                                        
+                                        best_model_tbl <- best_model_mape %>%
                                         dplyr::mutate(Best_Model = "Yes") %>%
                                         dplyr::select(Combo, Model_ID, Best_Model)
 
@@ -211,8 +212,12 @@ final_models <- function(run_info,
                                                         Recipe_ID = "simple_average", 
                                                         Hyperparameter_ID = 'NA', 
                                                         Best_Model = "Yes") %>%
+                                          dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+                                          dplyr::mutate(Horizon = dplyr::row_number()) %>%
+                                          dplyr::ungroup() %>%
+                                          create_prediction_intervals(model_train_test_tbl) %>%
                                           dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                        Best_Model, Combo, Date, Target, Forecast)
+                                                        Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                         
                                         write_data(x = model_avg_final_tbl,
                                                    combo = unique(model_avg_final_tbl$Combo_ID),
@@ -224,8 +229,9 @@ final_models <- function(run_info,
                                         if(!is.null(single_model_tbl)) {
                                           single_model_final_tbl <- single_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                           
                                           write_data(x = single_model_final_tbl,
                                                      combo = unique(single_model_final_tbl$Combo),
@@ -238,8 +244,9 @@ final_models <- function(run_info,
                                         if(!is.null(ensemble_model_tbl)) {
                                           ensemble_model_final_tbl <- ensemble_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                           
                                           write_data(x = ensemble_model_final_tbl,
                                                      combo = unique(ensemble_model_final_tbl$Combo),
@@ -252,8 +259,9 @@ final_models <- function(run_info,
                                         if(!is.null(global_model_tbl)) {
                                           global_model_final_tbl <- global_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                           
                                           write_data(x = global_model_final_tbl,
                                                      combo = unique(global_model_final_tbl$Combo),
@@ -272,13 +280,14 @@ final_models <- function(run_info,
                                             by = "Model_ID"
                                           ) %>%
                                           dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
-                                        print(final_model_tbl)
+
                                         if(!is.null(single_model_tbl)) {
                                           single_model_final_tbl <- single_model_tbl %>%
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
    
                                           write_data(x = single_model_final_tbl,
                                                      combo = unique(single_model_final_tbl$Combo),
@@ -292,8 +301,9 @@ final_models <- function(run_info,
                                           ensemble_model_final_tbl <- ensemble_model_tbl %>%
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                           
                                           write_data(x = ensemble_model_final_tbl,
                                                      combo = unique(ensemble_model_final_tbl$Combo),
@@ -307,8 +317,9 @@ final_models <- function(run_info,
                                           global_model_final_tbl <- global_model_tbl %>%
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
+                                            create_prediction_intervals(model_train_test_tbl) %>%
                                             dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Date, Target, Forecast)
+                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
                                           
                                           write_data(x = global_model_final_tbl,
                                                      combo = unique(global_model_final_tbl$Combo),
@@ -319,11 +330,53 @@ final_models <- function(run_info,
                                         }
                                       }
                                       
+                                      return(best_model_mape)
                                       return(tibble::tibble())
                                     }
   
   # clean up any parallel run process
   par_end(cl)
   
+  # update logging file
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df') %>%
+    dplyr::mutate(weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE))
+  
+  write_data(x = log_df, 
+             combo = NULL, 
+             run_info = run_info, 
+             output_type = "log",
+             folder = "logs", 
+             suffix = NULL)
+  
+  print(best_model_tbl)
   return(cli::cli_alert_success("Forecast Finished"))
+}
+
+create_prediction_intervals <- function(fcst_tbl, 
+                                        train_test_split) {
+  
+  back_test_id <- train_test_split %>%
+    dplyr::filter(Run_Type == "Back_Test") %>%
+    dplyr::select(Train_Test_ID) %>%
+    dplyr::pull(Train_Test_ID)
+  
+  prediction_interval_tbl <- fcst_tbl %>%
+    dplyr::filter(Train_Test_ID %in% back_test_id) %>%
+    dplyr::mutate(Residual = Target - Forecast) %>%
+    dplyr::group_by(Combo, Model_ID) %>%
+    dplyr::summarise(Residual_Std_Dev = sd(Residual, na.rm=TRUE)) %>%
+    dplyr::ungroup()
+  
+  final_tbl <- fcst_tbl %>%
+    dplyr::left_join(prediction_interval_tbl, 
+                     by = c("Model_ID", "Combo")) %>%
+    dplyr::mutate(lo_80 = ifelse(Train_Test_ID == 1, Forecast - (1.28*Residual_Std_Dev), NA), 
+                  lo_95 = ifelse(Train_Test_ID == 1, Forecast - (1.96*Residual_Std_Dev), NA), 
+                  hi_80 = ifelse(Train_Test_ID == 1, Forecast + (1.28*Residual_Std_Dev), NA), 
+                  hi_95 = ifelse(Train_Test_ID == 1, Forecast + (1.96*Residual_Std_Dev), NA)) %>%
+    dplyr::select(-Residual_Std_Dev)
+
+  return(final_tbl)
 }

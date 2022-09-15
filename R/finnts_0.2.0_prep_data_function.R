@@ -460,6 +460,7 @@ get_date_regex <- function(date_type){
 #' @param fourier_periods list of fourier periods
 #' @param lag_periods list of lag periods
 #' @param rolling_window_periods list of rolling window periods
+#' @param hist_end_date hist end date
 #' 
 #' @return tbl with R1 feature engineering applied
 #' @noRd
@@ -468,7 +469,8 @@ multivariate_prep_recipe_1 <- function(data,
                                        xregs_future_values_list, 
                                        fourier_periods, 
                                        lag_periods, 
-                                       rolling_window_periods) {
+                                       rolling_window_periods, 
+                                       hist_end_date) {
   
   #apply polynomial transformations
   numeric_xregs <- c()
@@ -553,6 +555,9 @@ multivariate_prep_recipe_1 <- function(data,
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] = 0.00
   
+  data_lag_window <- data_lag_window %>%
+    dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
+  
   return(data_lag_window)
 }
 
@@ -565,7 +570,8 @@ multivariate_prep_recipe_1 <- function(data,
 #' @param lag_periods list of lag periods
 #' @param rolling_window_periods list of rolling window periods
 #' @param date_type date type
-#' @param forecast_horizon forecast horizon
+#' @param forecast_horizon forecast horizon 
+#' @param hist_end_date hist end date
 #' 
 #' @return tbl with R2 feature engineering applied
 #' @noRd
@@ -576,7 +582,8 @@ multivariate_prep_recipe_2 <- function(data,
                                        lag_periods, 
                                        rolling_window_periods, 
                                        date_type, 
-                                       forecast_horizon) {
+                                       forecast_horizon, 
+                                       hist_end_date) {
   
   data_trans <- tibble::tibble()
   
@@ -677,6 +684,9 @@ multivariate_prep_recipe_2 <- function(data,
                                      is.infinite)
     is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
     data_lag_window[is.na(data_lag_window)] = 0.00
+    
+    data_lag_window <- data_lag_window %>%
+      dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
 
     #combine transformed data
     data_trans <- rbind(data_trans, data_lag_window) 
@@ -772,6 +782,29 @@ prep_data <- function(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL) {
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame", "tbl_spark"))
+  check_input_type("combo_variables", combo_variables, "character")
+  check_input_type("target_variable", target_variable, "character")
+  check_input_type("date_type", date_type, "character", c("year", "quarter", "month", "week", "day"))
+  check_input_type("forecast_horizon", forecast_horizon, "numeric")
+  check_input_type("external_regressors", external_regressors, c("character", "NULL"))
+  check_input_type("hist_start_date", hist_start_date, c("Date", "NULL"))
+  check_input_type("hist_end_date", hist_end_date, c("Date", "NULL"))
+  check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
+  check_input_type("fiscal_year_start", fiscal_year_start, "numeric")
+  check_input_type("clean_missing_values", clean_missing_values, "logical")
+  check_input_type("clean_outliers", clean_outliers, "logical")
+  check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "traditional_hierarchy"))
+  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
+  check_input_type("num_cores", num_cores, c("character", "NULL"))
+  check_input_type("target_log_transformation", target_log_transformation, "logical")
+  check_input_type("fourier_periods", fourier_periods, c("character", "NULL"))
+  check_input_type("lag_periods", lag_periods, c("character", "NULL"))
+  check_input_type("rolling_window_periods", rolling_window_periods, c("character", "NULL"))
+  check_input_type("recipes_to_run", recipes_to_run, c("character", "NULL"), c("R1", "R2"))
   
   # get hist data start and end date
   if(is.null(hist_end_date)) {
@@ -921,7 +954,8 @@ prep_data <- function(
                                                                     xregs_future_values_list = xregs_future_list,
                                                                     get_fourier_periods(fourier_periods, date_type),
                                                                     get_lag_periods(lag_periods, date_type,forecast_horizon),
-                                                                    get_rolling_window_periods(rolling_window_periods, date_type))
+                                                                    get_rolling_window_periods(rolling_window_periods, date_type), 
+                                                                    hist_end_date)
                                        
                                        write_data(x = R1, 
                                                   combo = combo,
@@ -941,7 +975,8 @@ prep_data <- function(
                                                                     get_lag_periods(lag_periods, date_type,forecast_horizon),
                                                                     get_rolling_window_periods(rolling_window_periods, date_type),
                                                                     date_type,
-                                                                    forecast_horizon)
+                                                                    forecast_horizon, 
+                                                                    hist_end_date)
                                        
                                        write_data(x = R2, 
                                                   combo = combo, 

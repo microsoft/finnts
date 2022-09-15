@@ -71,9 +71,6 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' Gets the train test splits
 #' 
 #' @param run_info run info
-#' @param hist_end_date historical end date
-#' @param date_type date type
-#' @param forecast_horizon forecast horizon
 #' @param back_test_scenarios back test scenarios
 #' @param back_test_spacing back test spacing
 #'  
@@ -81,12 +78,22 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' @keywords internal
 #' @export
 train_test_split <- function(run_info, 
-                             hist_end_date, 
-                             date_type, 
-                             forecast_horizon,
+                             #hist_end_date, 
+                             #date_type, 
+                             #forecast_horizon,
                              back_test_scenarios = NULL, 
                              back_test_spacing = NULL){
 
+  # get inputs from previous functions
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df')
+  
+  hist_end_date <- as.Date(log_df$hist_end_date)
+  date_type <- log_df$date_type
+  forecast_horizon <- as.numeric(log_df$forecast_horizon)
+  
+  # get back test info
   back_test_spacing_final <- get_back_test_spacing(back_test_spacing, 
                                                    date_type)
   

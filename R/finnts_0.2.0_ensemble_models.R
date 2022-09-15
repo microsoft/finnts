@@ -1,8 +1,6 @@
 #' Ensemble Models
 #' 
 #' @param run_info run info
-#' @param date_type date type
-#' @param num_hyperparameters number of hyperparameters
 #' @param parallel_processing parallel processing
 #' @param num_cores number of cores
 #' @param seed seed number
@@ -11,11 +9,18 @@
 #' @keywords internal
 #' @export
 ensemble_models <- function(run_info,
-                            date_type, 
-                            num_hyperparameters = 5, 
+                            #date_type, 
+                            #num_hyperparameters = 5, 
                             parallel_processing = NULL, 
                             num_cores = NULL,
                             seed = 123) {
+  
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df')
+  
+  num_hyperparameters <- as.numeric(log_df$num_hyperparameters)
+  date_type <- log_df$date_type
   
   combo_list <- list_files(run_info$storage_object, 
                            paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
@@ -443,7 +448,10 @@ ensemble_models <- function(run_info,
                                                 dplyr::select(-Model_Fit) %>%
                                                 #dplyr::rename(Combo_ID = Combo) %>%
                                                 tidyr::unnest(Prediction) %>%
-                                                tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE)
+                                                tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
+                                                dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+                                                dplyr::mutate(Horizon = dplyr::row_number()) %>%
+                                                dplyr::ungroup()
 
                                               # write outputs
                                               write_data(x = final_ensemble_results_tbl,

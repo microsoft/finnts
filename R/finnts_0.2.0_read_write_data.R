@@ -154,9 +154,16 @@ read_file <- function(run_info,
     #path <- fs::path(path, folder)
     files <- list_files(storage_object, fs::path(initial_path, path))
   }
-
+  
+  if(fs::path_ext(file) == "*") {
+    file_temp <- files[[1]]
+    file_ext <- fs::path_ext(file_temp)
+  } else {
+    file_ext <- fs::path_ext(file)
+  }
+  
   if(return_type == 'df') {
-    switch(fs::path_ext(file), 
+    switch(file_ext, 
            rds = files %>% purrr::map_dfr(readRDS), 
            parquet = files %>% purrr::map_dfr(function(path) {arrow::read_parquet(path)}),
            csv = tryCatch(
@@ -166,12 +173,12 @@ read_file <- function(run_info,
            qs = qs::qread(path))
     
   } else if(return_type == "sdf") {
-    switch(fs::path_ext(file), 
+    switch(path_ext, 
            parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)), 
            csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path)))
     
   } else if(return_type == "arrow") {
-    switch(fs::path_ext(file), 
+    switch(path_ext, 
            parquet = arrow::open_dataset(sources = files, format = "parquet"), 
            csv = arrow::open_dataset(sources = files, format = "csv"))
   }
@@ -301,7 +308,8 @@ get_forecast_data <- function(run_info,
                      by = "Train_Test_ID") %>%
     dplyr::relocate(Run_Type, .before = Train_Test_ID) %>%
     dplyr::select(-Combo_ID, -Hyperparameter_ID) %>%
-    dplyr::relocate(Combo)
+    dplyr::relocate(Combo) %>%
+    dplyr::arrange(Combo, dplyr::desc(Best_Model), Model_ID, Train_Test_ID, Date)
   
   return(forecast_tbl)
 }

@@ -72,3 +72,41 @@ set_run_info <- function(experiment_name = 'finn_fcst',
   return(output_list)
   
 }
+
+#' Get run info
+#' 
+#' @param experiment_name experiment name
+#' @param run_name run name
+#' @param storage_object storage object
+#' @param path path
+#' @param return_type return type
+#'  
+#' @return table of run info
+#' @keywords internal
+#' @export
+get_run_info <- function(experiment_name = 'finn_fcst', 
+                         run_name = NULL, 
+                         storage_object = NULL, 
+                         path = NULL, 
+                         return_type = "df") {
+  
+  if(is.null(run_name)) {
+    run_name <- "*"
+  } else {
+    run_name <- hash_data(run_name)
+  }
+  
+  info_list <- list(
+    storage_object = storage_object, 
+    path = path
+  )
+  
+  file_path <- paste0("/logs/*", hash_data(experiment_name), '-', 
+                      run_name, ".*")
+  
+  run_tbl <- read_file(info_list, 
+                       path = file_path, 
+                       return_type = return_type)
+  
+  return(run_tbl)
+}
