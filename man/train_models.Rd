@@ -33,7 +33,7 @@ train_models(
 \item{seed}{seed number}
 }
 \value{
-table
+outputs are written to disk
 }
 \description{
 Train Individual Models

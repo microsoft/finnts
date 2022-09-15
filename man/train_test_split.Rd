@@ -6,21 +6,12 @@
 \usage{
 train_test_split(
   run_info,
-  hist_end_date,
-  date_type,
-  forecast_horizon,
   back_test_scenarios = NULL,
   back_test_spacing = NULL
 )
 }
 \arguments{
 \item{run_info}{run info}
-
-\item{hist_end_date}{historical end date}
-
-\item{date_type}{date type}
-
-\item{forecast_horizon}{forecast horizon}
 
 \item{back_test_scenarios}{back test scenarios}
 

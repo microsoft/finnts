@@ -5,26 +5,14 @@
 \title{Ensemble Models}
 \usage{
 ensemble_models(
-  model_tune_tbl,
-  model_refit_tbl,
-  model_train_test_tbl,
-  date_type,
-  num_hyperparameters = 5,
+  run_info,
   parallel_processing = NULL,
   num_cores = NULL,
   seed = 123
 )
 }
 \arguments{
-\item{model_tune_tbl}{hyperparameter tuning predictions}
-
-\item{model_refit_tbl}{individual model predictions}
-
-\item{model_train_test_tbl}{model train test split table}
-
-\item{date_type}{date type}
-
-\item{num_hyperparameters}{number of hyperparameters}
+\item{run_info}{run info}
 
 \item{parallel_processing}{parallel processing}
 
@@ -33,7 +21,7 @@ ensemble_models(
 \item{seed}{seed number}
 }
 \value{
-list with ensemble predictions and fitted models
+outputs are written to disk
 }
 \description{
 Ensemble Models

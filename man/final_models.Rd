@@ -5,29 +5,26 @@
 \title{Select Best Models and Prep Final Outputs}
 \usage{
 final_models(
-  refit_predictions_tbl,
-  ensemble_predictions_tbl = NULL,
-  average_predictions_tbl = NULL,
-  model_train_test_tbl,
+  run_info,
+  average_models = TRUE,
+  max_model_average = 3,
   parallel_processing = NULL,
   num_cores = NULL
 )
 }
 \arguments{
-\item{refit_predictions_tbl}{individual model predictions}
+\item{run_info}{run info}
 
-\item{ensemble_predictions_tbl}{ensemble model predictions}
+\item{average_models}{average models}
 
-\item{average_predictions_tbl}{model average predictions}
-
-\item{model_train_test_tbl}{train test splits}
+\item{max_model_average}{max model average}
 
 \item{parallel_processing}{parallel processing}
 
 \item{num_cores}{number of cores}
 }
 \value{
-tbl with best model flag
+
 }
 \description{
 Select Best Models and Prep Final Outputs
