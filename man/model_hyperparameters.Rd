@@ -4,7 +4,7 @@
 \alias{model_hyperparameters}
 \title{Get model hyperparameters}
 \usage{
-model_hyperparameters(run_info, num_hyperparameters = 5)
+model_hyperparameters(run_info, num_hyperparameters = 10)
 }
 \arguments{
 \item{run_info}{run info}
