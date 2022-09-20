@@ -806,6 +806,8 @@ prep_data <- function(
   check_input_type("rolling_window_periods", rolling_window_periods, c("character", "NULL"))
   check_input_type("recipes_to_run", recipes_to_run, c("character", "NULL"), c("R1", "R2"))
   
+  # todo checks to add: duplicate rows
+  
   # get hist data start and end date
   if(is.null(hist_end_date)) {
     
@@ -848,6 +850,64 @@ prep_data <- function(
     # get_hts(combo_variables,
     #         forecast_approach,
     #         frequency_number)
+  
+  # check if a previous run already has necessary outputs
+  prev_combo_list <- list_files(run_info$storage_object, 
+                           paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
+                                  hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique()
+  
+  current_combo_list <- initial_prep_tbl %>%
+    dplyr::select(Combo) %>%
+    dplyr::distinct(Combo) %>%
+    dplyr::collect(Combo) %>%
+    dplyr::group_by(1:dplyr::n()) %>%
+    dplyr::mutate(Combo = hash_data(Combo)) %>%
+    dplyr::ungroup() %>%
+    dplyr::pull(Combo) %>%
+    unique()
+  
+  if(length(setdiff(current_combo_list, prev_combo_list)) == 0 & length(prev_combo_list) > 0) {
+
+    # check if input values have changed
+    current_log_df <- tibble::tibble(
+      combo_variables = combo_variables,
+      target_variable = target_variable,
+      date_type = date_type,
+      forecast_horizon = forecast_horizon,
+      external_regressors = ifelse(is.null(external_regressors), NA, external_regressors),
+      hist_start_date = hist_start_date,
+      hist_end_date = hist_end_date,
+      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, combo_cleanup_date),
+      fiscal_year_start = fiscal_year_start,
+      clean_missing_values = clean_missing_values,
+      clean_outliers = clean_outliers,
+      forecast_approach = forecast_approach,
+      parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
+      num_cores = ifelse(is.null(num_cores), NA, num_cores), 
+      target_log_transformation = target_log_transformation, 
+      fourier_periods = ifelse(is.null(fourier_periods), NA, fourier_periods),
+      lag_periods = ifelse(is.null(lag_periods), NA, lag_periods),
+      rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, rolling_window_periods),
+      recipes_to_run = ifelse(is.null(recipes_to_run), NA, recipes_to_run)
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- read_file(run_info, 
+                        path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                        return_type = 'df') %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Data Prepped"))
+    }
+    
+  }
 
   # parallel run info
   if(is.null(parallel_processing) || parallel_processing == "local_machine") {
@@ -1148,9 +1208,16 @@ prep_data <- function(
   }
 
   # update logging file
+  inputs <- c('combo_variables', 'target_variable', 'date_type', 'forecast_horizon',
+              'external_regressors', 'hist_start_date', 'hist_end_date', 'combo_cleanup_date',
+              'fiscal_year_start', 'clean_missing_values', 'clean_outliers', 'forecast_approach',
+              'parallel_processing', 'num_cores', 'target_log_transformation',
+              'fourier_periods', 'lag_periods', 'rolling_window_periods', 'recipes_to_run')
+  
   log_df <- read_file(run_info, 
                       path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
                       return_type = 'df') %>%
+    #dplyr::mutate(dplyr::across(.cols = inputs, .fns = ~ NULL)) %>%
     dplyr::mutate(combo_variables = combo_variables,
                   target_variable = target_variable,
                   date_type = date_type,
@@ -1170,7 +1237,7 @@ prep_data <- function(
                   lag_periods = ifelse(is.null(lag_periods), NA, lag_periods),
                   rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, rolling_window_periods),
                   recipes_to_run = ifelse(is.null(recipes_to_run), NA, recipes_to_run))
-  
+
   write_data(x = log_df, 
              combo = NULL, 
              run_info = run_info, 

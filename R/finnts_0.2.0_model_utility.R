@@ -1,3 +1,43 @@
+
+#' Prep Models
+#' 
+#' Preps various aspects of run before training models. Things like train/test splits, creating hyperparameters, etc.
+#' 
+#' @param run_info run info
+#' @param back_test_scenarios back test scenarios
+#' @param back_test_spacing back test spacing
+#' @param models_to_run models to run
+#' @param models_not_to_run models not to run
+#' @param run_deep_learning run deep learning 
+#' @param pca pca
+#' @param num_hyperparameters num hyperparameter
+#' 
+#' @return 
+#' @export
+prep_models <- function(run_info, 
+                        back_test_scenarios = NULL, 
+                        back_test_spacing = NULL, 
+                        models_to_run = NULL, 
+                        models_not_to_run = NULL, 
+                        run_deep_learning = FALSE, 
+                        pca = FALSE, 
+                        num_hyperparameters = 10) {
+  
+  train_test_split(run_info,
+                   back_test_scenarios, 
+                   back_test_spacing) 
+  
+  model_workflows(run_info, 
+                  models_to_run, 
+                  models_not_to_run, 
+                  run_deep_learning, 
+                  pca)
+  
+  model_hyperparameters(run_info, 
+                        num_hyperparameters)
+}
+
+
 #' Gets the back testing spacing
 #' 
 #' Checks if back_test_spacing is set to NULL and gets the right one
@@ -78,9 +118,6 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #' @keywords internal
 #' @export
 train_test_split <- function(run_info, 
-                             #hist_end_date, 
-                             #date_type, 
-                             #forecast_horizon,
                              back_test_scenarios = NULL, 
                              back_test_spacing = NULL){
 
@@ -386,7 +423,7 @@ model_workflows <- function(run_info,
 #' @keywords internal
 #' @export
 model_hyperparameters <- function(run_info,
-                                  num_hyperparameters = 5) {
+                                  num_hyperparameters = 10) {
   
   # get recipe input data
   input_tbl <- tibble::tibble()
