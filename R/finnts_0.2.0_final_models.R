@@ -1,19 +1,62 @@
+#' Final Models
+#' 
 #' Select Best Models and Prep Final Outputs
 #' 
-#' @param run_info run info
-#' @param average_models average models
-#' @param max_model_average max model average
-#' @param parallel_processing parallel processing
-#' @param num_cores number of cores
+#' @param run_info run info using the 'set_run_info' function
+#' @param average_models If TRUE, create simple averages of individual models. 
+#' @param max_model_average Max number of models to average together. Will create model averages for 2 models up until input value 
+#'   or max number of models ran.
+#' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
+#'   up to higher temporal levels like month or quarter. 
+#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
+#'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+#'   runs time series in parallel on a remote compute cluster in Azure Batch.
+#' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
+#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1.
 #'  
-#' @return 
-#' @keywords internal
+#' @return Final model outputs are written to disk
 #' @export
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
+#' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3)
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets"))
+#'             
+#' train_models(run_info, 
+#'              run_global_models = FALSE, 
+#'              combo_variables = c("id"))
+#' 
+#' final_models(run_info)
+#'              
+#' }
 final_models <- function(run_info, 
                          average_models = TRUE, 
                          max_model_average = 3, 
+                         weekly_to_daily = TRUE, 
                          parallel_processing = NULL, 
                          num_cores = NULL) {
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("average_models", average_models, "logical")
+  check_input_type("max_model_average", max_model_average, "numeric")
+  check_input_type("num_cores", num_cores, c("NULL", "numeric"))
+  check_parallel_processing(parallel_processing)
   
   # get combos
   combo_list <- list_files(run_info$storage_object, 
@@ -32,17 +75,60 @@ final_models <- function(run_info,
                                                   '-train_test_split.', run_info$data_output), 
                                     return_type = 'df')
   
+  # check if a previous run already has necessary outputs
+  prev_combo_list <- list_files(run_info$storage_object, 
+                               paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                                      hash_data(run_info$run_name), "*average_models.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = '-', remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique()
+  
+  current_combo_list <- combo_list
+
+  current_combo_list_final <- setdiff(current_combo_list, 
+                                      prev_combo_list)
+  
+  prev_log_df <- read_file(run_info, 
+                           path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                           return_type = 'df')
+  
+  date_type <- prev_log_df$date_type
+
+  if((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
+    
+    # check if input values have changed
+    current_log_df <- tibble::tibble(
+      average_models = average_models, 
+      max_model_average = max_model_average, 
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- prev_log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Forecast Finished"))
+    } else {
+      stop("Inputs have recently changed in 'final_models', please revert back to original inputs or start a new run with 'set_run_info'", 
+           call. = FALSE)
+    }
+    
+  } 
+  
   # parallel run info
   par_info <- par_start(parallel_processing = parallel_processing, 
                         num_cores = num_cores, 
-                        task_length = length(combo_list))
+                        task_length = length(current_combo_list))
   
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
   
   # submit tasks
-  best_model_tbl <- foreach::foreach(x = combo_list, 
+  best_model_tbl <- foreach::foreach(x = current_combo_list, 
                                     .combine = 'rbind', 
                                     .packages = packages,
                                     .errorhandling = "stop", 
@@ -216,8 +302,7 @@ final_models <- function(run_info,
                                           dplyr::mutate(Horizon = dplyr::row_number()) %>%
                                           dplyr::ungroup() %>%
                                           create_prediction_intervals(model_train_test_tbl) %>%
-                                          dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                        Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                          convert_weekly_to_daily(date_type, weekly_to_daily)
                                         
                                         write_data(x = model_avg_final_tbl,
                                                    combo = unique(model_avg_final_tbl$Combo_ID),
@@ -230,8 +315,7 @@ final_models <- function(run_info,
                                           single_model_final_tbl <- single_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
                                           
                                           write_data(x = single_model_final_tbl,
                                                      combo = unique(single_model_final_tbl$Combo),
@@ -245,8 +329,7 @@ final_models <- function(run_info,
                                           ensemble_model_final_tbl <- ensemble_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
                                           
                                           write_data(x = ensemble_model_final_tbl,
                                                      combo = unique(ensemble_model_final_tbl$Combo),
@@ -260,8 +343,7 @@ final_models <- function(run_info,
                                           global_model_final_tbl <- global_model_tbl %>%
                                             dplyr::mutate(Best_Model = "No") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
                                           
                                           write_data(x = global_model_final_tbl,
                                                      combo = unique(global_model_final_tbl$Combo),
@@ -286,8 +368,7 @@ final_models <- function(run_info,
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
    
                                           write_data(x = single_model_final_tbl,
                                                      combo = unique(single_model_final_tbl$Combo),
@@ -302,8 +383,7 @@ final_models <- function(run_info,
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
                                           
                                           write_data(x = ensemble_model_final_tbl,
                                                      combo = unique(ensemble_model_final_tbl$Combo),
@@ -318,8 +398,7 @@ final_models <- function(run_info,
                                             dplyr::left_join(final_model_tbl, 
                                                              by = "Model_ID") %>%
                                             create_prediction_intervals(model_train_test_tbl) %>%
-                                            dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-                                                          Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+                                            convert_weekly_to_daily(date_type, weekly_to_daily)
                                           
                                           write_data(x = global_model_final_tbl,
                                                      combo = unique(global_model_final_tbl$Combo),
@@ -341,7 +420,9 @@ final_models <- function(run_info,
   log_df <- read_file(run_info, 
                       path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
                       return_type = 'df') %>%
-    dplyr::mutate(weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE))
+    dplyr::mutate(average_models = average_models, 
+                  max_model_average = max_model_average, 
+                  weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE))
   
   write_data(x = log_df, 
              combo = NULL, 
@@ -377,5 +458,43 @@ create_prediction_intervals <- function(fcst_tbl,
                   hi_95 = ifelse(Train_Test_ID == 1, Forecast + (1.96*Residual_Std_Dev), NA)) %>%
     dplyr::select(-Residual_Std_Dev)
 
+  return(final_tbl)
+}
+
+convert_weekly_to_daily <- function(fcst_tbl, 
+                                    date_type, 
+                                    weekly_to_daily) {
+  
+  if(date_type == "week" & weekly_to_daily) { # allocate from weekly to daily
+    
+    final_tbl <- fcst_tbl %>%
+      dplyr::group_by(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, 
+                      Train_Test_ID, Hyperparameter_ID, Best_Model, Combo, Horizon) %>%
+      dplyr::group_split() %>%
+      purrr::map(.f = function(df) {
+        
+        daily_tbl <- df %>%
+          dplyr::mutate(Date_Day = Date) %>%
+          timetk::pad_by_time(Date_Day, .by = "day", .pad_value = NA, .end_date = max(df$Date)+6) %>%
+          tidyr::fill(tidyr::everything(), .direction = "down") %>%
+          dplyr::mutate(Target = Target/7,
+                        Forecast = Forecast/7,
+                        lo_95 = lo_95/7,
+                        lo_80 = lo_80/7,
+                        hi_80 = hi_80/7,
+                        hi_95 = hi_95/7) %>%
+          dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                        Best_Model, Combo, Horizon, Date, Date_Day, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+        
+        return(daily_tbl)
+        
+      }) %>%
+      dplyr::bind_rows()
+  } else {
+    final_tbl <- fcst_tbl %>%
+      dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
+                    Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95)
+  }
+  
   return(final_tbl)
 }

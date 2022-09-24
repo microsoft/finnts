@@ -1,20 +1,57 @@
 #' Ensemble Models
 #' 
-#' @param run_info run info
-#' @param parallel_processing parallel processing
-#' @param num_cores number of cores
-#' @param seed seed number
+#' @param run_info run info using the 'set_run_info' function
+#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
+#'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+#'   runs time series in parallel on a remote compute cluster in Azure Batch.
+#' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
+#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1.
+#' @param seed Set seed for random number generator. Numeric value. 
 #'  
-#' @return outputs are written to disk
-#' @keywords internal
+#' @return Ensemble model outputs are written to disk
 #' @export
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
+#' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3)
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets", "glmnet"), 
+#'             num_hyperparameters = 2)
+#'             
+#' train_models(run_info, 
+#'              run_global_models = TRUE, 
+#'              run_local_models = TRUE, 
+#'              combo_variables = c("id"))
+#'              
+#' ensemble_models(run_info)
+#'              
+#' }
 ensemble_models <- function(run_info,
-                            #date_type, 
-                            #num_hyperparameters = 5, 
                             parallel_processing = NULL, 
                             num_cores = NULL,
                             seed = 123) {
   
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("num_cores", num_cores, c("NULL", "numeric"))
+  check_input_type("seed", seed, "numeric")
+  check_parallel_processing(parallel_processing)
+  
+  # get input and combo values
   log_df <- read_file(run_info, 
                       path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
                       return_type = 'df')
@@ -36,6 +73,25 @@ ensemble_models <- function(run_info,
                                     path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                   '-train_test_split.', run_info$data_output), 
                                     return_type = 'df')
+  
+  # check if a previous run already has necessary outputs
+  prev_combo_list <- list_files(run_info$storage_object, 
+                               paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                                      hash_data(run_info$run_name), "*ensemble_models.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = '-', remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique()
+  
+  current_combo_list <- combo_list
+  
+  current_combo_list_final <- setdiff(current_combo_list, 
+                                      prev_combo_list)
+  
+  if(length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) {
+    return(cli::cli_alert_success("Ensemble Models Trained"))
+  }
   
   # parallel run info
   par_info <- par_start(parallel_processing = parallel_processing, 
@@ -101,11 +157,11 @@ ensemble_models <- function(run_info,
                                               if(length(ensemble_model_list) < 1) {
                                                 stop("no ensemble models chosen to run")
                                               }
-                                              
+
                                               model_workflow_tbl <- tibble::tibble()
                                               
                                               for(model in ensemble_model_list) {
-                                                
+        
                                                 avail_arg_list <- list('train_data' = prep_ensemble_tbl %>% dplyr::select(-Train_Test_ID),
                                                                        'model_type' = "ensemble",
                                                                        'pca' = FALSE)
@@ -125,9 +181,9 @@ ensemble_models <- function(run_info,
                                                     inp_arg_list[x] <- avail_arg_list[x]
                                                   }
                                                 }
-                                                
+
                                                 model_workflow <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
-                                                
+
                                                 workflow_tbl <- tibble::tibble(Model_Name = model,
                                                                                Model_Workflow = list(model_workflow))
                                                 

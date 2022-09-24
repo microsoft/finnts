@@ -3,17 +3,44 @@
 #' 
 #' Preps various aspects of run before training models. Things like train/test splits, creating hyperparameters, etc.
 #' 
-#' @param run_info run info
-#' @param back_test_scenarios back test scenarios
-#' @param back_test_spacing back test spacing
-#' @param models_to_run models to run
-#' @param models_not_to_run models not to run
-#' @param run_deep_learning run deep learning 
-#' @param pca pca
-#' @param num_hyperparameters num hyperparameter
+#' @param run_info run info using the 'set_run_info' function
+#' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
+#'   Default of NULL will automatically choose the number of back tests to run based on historical data size, 
+#'   which tries to always use a minimum of 80% of the data when training a model. 
+#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of NULL moves back 1
+#'   period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data. 
+#' @param models_to_run List of models to run. Default of NULL runs all models. 
+#' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 
+#'   any model. 
+#' @param run_deep_learning If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
+#'  models_not_to_run. 
+#' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
+#'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
+#' @param num_hyperparameters number of hyperparameter combinations to test out on validation data for model tuning
 #' 
-#' @return 
+#' @return Writes outputs related to model prep to disk
 #' @export
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
+#' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3)
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets", "glmnet"), 
+#'             num_hyperparameters = 2)
+#' }
 prep_models <- function(run_info, 
                         back_test_scenarios = NULL, 
                         back_test_spacing = NULL, 
@@ -23,16 +50,29 @@ prep_models <- function(run_info,
                         pca = FALSE, 
                         num_hyperparameters = 10) {
   
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "list", "numeric"))
+  check_input_type("back_test_spacing", back_test_spacing, c("NULL", "numeric"))
+  check_input_type("models_to_run", models_to_run, c("NULL", "list", "character"))
+  check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
+  check_input_type("run_deep_learning", run_deep_learning, "logical")
+  check_input_type("pca", pca, "logical")
+  check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
+  
+  # create train test splits
   train_test_split(run_info,
                    back_test_scenarios, 
                    back_test_spacing) 
   
+  # create model workflows
   model_workflows(run_info, 
                   models_to_run, 
                   models_not_to_run, 
                   run_deep_learning, 
                   pca)
   
+  # create model hyperparameters
   model_hyperparameters(run_info, 
                         num_hyperparameters)
 }
@@ -129,6 +169,27 @@ train_test_split <- function(run_info,
   hist_end_date <- as.Date(log_df$hist_end_date)
   date_type <- log_df$date_type
   forecast_horizon <- as.numeric(log_df$forecast_horizon)
+  
+  # check if input values have changed
+  if(sum(colnames(log_df) %in% c("back_test_scenarios", "back_test_spacing")) == 2) {
+    
+    current_log_df <- tibble::tibble(
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios), 
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing)
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Train Test Splits"))
+    } else {
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
+           call. = FALSE)
+    }
+  }
   
   # get back test info
   back_test_spacing_final <- get_back_test_spacing(back_test_spacing, 
@@ -268,6 +329,32 @@ model_workflows <- function(run_info,
                             run_deep_learning = FALSE, 
                             pca = FALSE) {
   
+  # check if input values have changed
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df')
+  
+  if(sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "run_deep_learning", "pca")) == 4) {
+    
+    current_log_df <- tibble::tibble(
+      models_to_run = ifelse(is.null(models_to_run), NA, models_to_run), 
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, models_not_to_run), 
+      run_deep_learning = run_deep_learning
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Model Workflows"))
+    } else {
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
+           call. = FALSE)
+    }
+  }
+  
   # pull out recipe data for a single combo
   input_tbl <- tibble::tibble()
   
@@ -396,11 +483,9 @@ model_workflows <- function(run_info,
              suffix = '-model_workflows')
   
   # update logging file
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df') %>%
-    dplyr::mutate(models_to_run = ifelse(is.null(models_to_run), NA, models_to_run), 
-                  models_not_to_run = ifelse(is.null(models_not_to_run), NA, models_not_to_run), 
+  log_df <- log_df %>%
+    dplyr::mutate(models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")), 
+                  models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")), 
                   run_deep_learning = run_deep_learning, 
                   pca = ifelse(is.null(pca), NA, pca))
   
@@ -424,6 +509,30 @@ model_workflows <- function(run_info,
 #' @export
 model_hyperparameters <- function(run_info,
                                   num_hyperparameters = 10) {
+  
+  # check if input values have changed
+  log_df <- read_file(run_info, 
+                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                      return_type = 'df')
+  
+  if(sum(colnames(log_df) %in% c("num_hyperparameters")) == 1) {
+    
+    current_log_df <- tibble::tibble(
+      num_hyperparameters = num_hyperparameters
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Model Hyperparameters"))
+    } else {
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
+           call. = FALSE)
+    }
+  }
   
   # get recipe input data
   input_tbl <- tibble::tibble()
@@ -528,9 +637,7 @@ model_hyperparameters <- function(run_info,
              suffix = '-model_hyperparameters')
   
   # update logging file
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df') %>%
+  log_df <- log_df %>%
     dplyr::mutate(num_hyperparameters = num_hyperparameters)
   
   write_data(x = log_df, 

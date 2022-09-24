@@ -282,15 +282,53 @@ get_global_data <- function(run_info,
 
 #' Get Final Forecast Data
 #' 
-#' @param run_info run info
+#' @param run_info run info using the 'set_run_info' function
 #' @param return_type return type
 #'  
 #' @return table of final forecast results
 #' @export
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(id = "M2", 
+#'                 Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
 #' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3, 
+#'           recipes_to_run = "R1")
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets"), 
+#'             num_hyperparameters = 1)
+#'             
+#' train_models(run_info, 
+#'              run_global_models = FALSE, 
+#'              run_local_models = TRUE, 
+#'              combo_variables = c("id"))
+#' 
+#' final_models(run_info, 
+#'              average_models = FALSE)
+#' 
+#' fcst_tbl <- get_forecast_data(run_info)
+#'              
+#' }
 get_forecast_data <- function(run_info, 
                               return_type = "df") {
   
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("return_type", return_type, "character", c("df", "sdf"))
+  
+  # get forecast data
   model_train_test_tbl <- read_file(run_info, 
                                     path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                   '-train_test_split.', run_info$data_output), 
@@ -317,13 +355,50 @@ get_forecast_data <- function(run_info,
 
 #' Get Final Trained Models
 #' 
-#' @param run_info run info
+#' @param run_info run info using the 'set_run_info' function
 #'  
 #' @return table of final trained models
 #' @export
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(id = "M2", 
+#'                 Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
 #' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3, 
+#'           recipes_to_run = "R1")
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets"), 
+#'             num_hyperparameters = 1)
+#'             
+#' train_models(run_info, 
+#'              run_global_models = FALSE, 
+#'              run_local_models = TRUE, 
+#'              combo_variables = c("id"))
+#' 
+#' final_models(run_info, 
+#'              average_models = FALSE)
+#' 
+#' models_tbl <- get_trained_models(run_info)
+#'              
+#' }
 get_trained_models <- function(run_info) {
   
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  
+  # get trained files
   model_path <- paste0('/models/*', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                       '-*_models.', run_info$object_output)
   

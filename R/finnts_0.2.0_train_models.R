@@ -1,26 +1,72 @@
 
 #' Train Individual Models
 #' 
-#' @param run_info run info
-#' @param run_global_models run global models
-#' @param run_local_models run local models
-#' @param global_model_recipes global model recipes
-#' @param combo_variables combo variables
-#' @param parallel_processing parallel processing
-#' @param num_cores number of cores
-#' @param seed seed number
+#' @param run_info run info using the 'set_run_info' function
+#' @param run_global_models If TRUE, run multivariate models on the entire data set (across all time series) as a global model. 
+#'   Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day. 
+#' @param run_local_models If TRUE, run models by individual time series as local models.
+#' @param global_model_recipes Recipes to use in global models
+#' @param combo_variables List of column headers within input data to be used to separate individual time series.
+#' @param negative_forecast If TRUE, allow forecasts to dip below zero.  
+#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
+#'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+#'   runs time series in parallel on a remote compute cluster in Azure Batch.
+#' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
+#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
+#'   than number of cores on machine minus 1.
+#' @param seed Set seed for random number generator. Numeric value. 
 #'  
-#' @return outputs are written to disk
-#' @keywords internal
-#' @export
+#' @return trained model outputs are written to disk
+#' @export 
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>% 
+#'   dplyr::rename(Date = date) %>% 
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(Date >= "2012-01-01", 
+#'                 Date <= "2015-06-01")
+#'                 
+#' run_info <- set_run_info()
+#' 
+#' prep_data(run_info, 
+#'           input_data = data_tbl, 
+#'           combo_variables = c("id"), 
+#'           target_variable = "value", 
+#'           date_type = "month", 
+#'           forecast_horizon = 3)
+#'           
+#' prep_models(run_info, 
+#'             models_to_run = c("arima", "ets", "glmnet"), 
+#'             num_hyperparameters = 2)
+#'             
+#' train_models(run_info, 
+#'              run_global_models = TRUE, 
+#'              run_local_models = TRUE, 
+#'              global_model_recipes = c("R1"), 
+#'              combo_variables = c("id"), 
+#'              parallel_processing = 'local_machine', 
+#'              num_cores = NULL, 
+#'              seed = 123)
+#' }
 train_models <- function(run_info, 
-                         run_global_models, 
-                         run_local_models, 
-                         global_model_recipes, 
+                         run_global_models = FALSE, 
+                         run_local_models = TRUE, 
+                         global_model_recipes = c("R1"), 
                          combo_variables, 
-                         parallel_processing, 
-                         num_cores,
+                         #negative_forecast = FALSE,
+                         parallel_processing = NULL, 
+                         num_cores = NULL,
                          seed = 123) {
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("run_global_models", run_global_models, "logical")
+  check_input_type("run_local_models", run_local_models, "logical")
+  check_input_type("global_model_recipes", global_model_recipes, "character")
+  check_input_type("combo_variables", combo_variables, "character")
+  check_input_type("num_cores", num_cores, c("NULL", "numeric"))
+  check_input_type("seed", seed, "numeric")
+  check_parallel_processing(parallel_processing)
   
   # get list of tasks to run
   combo_list <- c()
@@ -41,6 +87,7 @@ train_models <- function(run_info,
   }
   
   if(run_global_models & (inherits(parallel_processing, "NULL") || parallel_processing == 'local_machine')) {
+    combo_test <- c(combo_list, hash_data("All-Data"))
     combo_list <- c(combo_list, "All-Data")
   }
 
@@ -61,21 +108,72 @@ train_models <- function(run_info,
                                         return_type = 'df')
   
   # fix errors when submitting in parallel on local machine
-  list_files <- get('list_files')
-  get_recipe_data <- get('get_recipe_data')
-  run_info <- run_info
+  # list_files <- get('list_files')
+  # get_recipe_data <- get('get_recipe_data')
+  # run_info <- run_info
+  
+  # check if a previous run already has necessary outputs
+  prev_combo_tbl <- list_files(run_info$storage_object, 
+                                paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
+                                       hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
+    tibble::tibble(Path = .,
+                   File = fs::path_file(.)) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = '-', remove = TRUE)
+
+  prev_combo_list <- prev_combo_tbl %>%
+    dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
+    dplyr::pull(Combo)
+
+  if(sum(unique(prev_combo_tbl$Run_Type) %in% paste0("global_models.", run_info$data_output) == 1)) {
+    prev_combo_list <- c(prev_combo_list, hash_data("All-Data")) 
+  }
+
+  current_combo_list <- combo_test
+
+  combo_diff <- setdiff(current_combo_list, 
+                        prev_combo_list)
+
+  current_combo_list_final <- combo_diff %>%
+    stringr::str_replace(hash_data("All-Data"), "All-Data")
+
+  if(length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+    
+    # check if input values have changed
+    current_log_df <- tibble::tibble(
+      run_global_models = run_global_models, 
+      run_local_models = run_local_models, 
+      global_model_recipes = global_model_recipes, 
+      combo_variables = combo_variables, 
+      seed = seed
+    ) %>%
+      data.frame()
+
+    prev_log_df <- read_file(run_info, 
+                             path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
+                             return_type = 'df') %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+
+    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+      return(cli::cli_alert_success("Models Trained"))
+    } else {
+      stop("Inputs have recently changed in 'train_models', please revert back to original inputs or start a new run with 'set_run_info'", 
+           call. = FALSE)
+    }
+    
+  }
   
   # parallel run info
   par_info <- par_start(parallel_processing = parallel_processing, 
                         num_cores = num_cores, 
-                        task_length = length(combo_list))
+                        task_length = length(current_combo_list_final))
   
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
   # submit tasks
-  train_models_tbl <- foreach::foreach(x = combo_list, 
+  train_models_tbl <- foreach::foreach(x = current_combo_list_final, 
                                          .combine = 'rbind', 
                                          .packages = packages,
                                          .errorhandling = "stop", 
@@ -455,7 +553,7 @@ train_models <- function(run_info,
                       return_type = 'df') %>%
     dplyr::mutate(run_global_models = run_global_models, 
                   run_local_models = run_local_models, 
-                  global_model_recipes = paste(unlist(global_model_recipes),collapse="--"), 
+                  global_model_recipes = paste(unlist(global_model_recipes),collapse="---"), 
                   seed = seed)
   
   write_data(x = log_df, 

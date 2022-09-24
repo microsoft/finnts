@@ -24,9 +24,18 @@ get_run_info(
 \item{return_type}{return type}
 }
 \value{
-table of run info
+table of run information
 }
 \description{
 Get run info
 }
-\keyword{internal}
+\examples{
+\donttest{
+run_info <- set_run_info(experiment_name = "finn_forecast", 
+                         run_name = "test_run", 
+                         path = NULL)
+                         
+run_info_tbl <- get_run_info(experiment_name = "finn_forecast", 
+                             run_name = "test_run")
+}
+}

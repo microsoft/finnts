@@ -1067,9 +1067,7 @@ xgboost <-function(train_data,
   if(model_type == 'ensemble') {
 
     recipe_spec_xgboost <- train_data %>%
-      get_recipie_configurable(fiscal_year_start,
-                               date_rm_regex_final,
-                               rm_date = "with_adj",
+      get_recipie_configurable(rm_date = "with_adj",
                                step_nzv = "zv",
                                one_hot = TRUE, 
                                pca = pca)

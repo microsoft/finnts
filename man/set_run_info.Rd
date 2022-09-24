@@ -39,4 +39,3 @@ run_info <- set_run_info(experiment_name = "finn forecast",
                          path = "test")
 }
 }
-\keyword{internal}

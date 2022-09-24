@@ -8,7 +8,6 @@
 #' @param object_output object output
 #'  
 #' @return A list of run information
-#' @keywords internal
 #' @export
 #' @examples
 #' \donttest{
@@ -81,15 +80,38 @@ set_run_info <- function(experiment_name = 'finn_fcst',
 #' @param path path
 #' @param return_type return type
 #'  
-#' @return table of run info
-#' @keywords internal
+#' @return table of run information
 #' @export
-#' 
+#' @examples
+#' \donttest{
+#' run_info <- set_run_info(experiment_name = "finn_forecast", 
+#'                          run_name = "test_run", 
+#'                          path = NULL)
+#'                          
+#' run_info_tbl <- get_run_info(experiment_name = "finn_forecast", 
+#'                              run_name = "test_run")
+#' }
 get_run_info <- function(experiment_name = 'finn_fcst', 
                          run_name = NULL, 
                          storage_object = NULL, 
                          path = NULL, 
                          return_type = "df") {
+  
+  if(!inherits(run_name, c("NULL", "character"))) {
+    stop("`run_name` must either be a NULL or a string")
+  }
+  
+  if(!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
+    stop("`storage_object` must either be a NULL or a Azure Blob Storage, OneDrive, or SharePoint document library object")
+  }
+  
+  if(!inherits(path, c("NULL", "character"))) {
+    stop("`path` must either be a NULL or a string")
+  }
+  
+  if(inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
+    path <- ''
+  }
   
   if(is.null(run_name)) {
     run_name <- "*"
