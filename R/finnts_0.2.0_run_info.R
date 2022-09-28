@@ -28,17 +28,18 @@
 #' @return A list of run information
 #' @examples
 #' \donttest{
-#' run_info <- set_run_info(experiment_name = "test_exp",
-#'                          run_name = "test_run_1")
+#' run_info <- set_run_info(
+#'   experiment_name = "test_exp",
+#'   run_name = "test_run_1"
+#' )
 #' }
 #' @export
 set_run_info <- function(experiment_name = "finn_fcst",
-                         run_name        = "finn_fcst",
-                         storage_object  = NULL,
-                         path            = NULL,
-                         data_output     = "csv",
-                         object_output   = "rds") {
-
+                         run_name = "finn_fcst",
+                         storage_object = NULL,
+                         path = NULL,
+                         data_output = "csv",
+                         object_output = "rds") {
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
   }
@@ -52,48 +53,55 @@ set_run_info <- function(experiment_name = "finn_fcst",
     stop("`path` must either be a NULL or a string")
   }
 
-  if (inherits(storage_object, c("blob_container", "ms_drive"))
-      & is.null(path)) {
-    path <- ''
+  if (inherits(storage_object, c("blob_container", "ms_drive")) &
+    is.null(path)) {
+    path <- ""
   }
 
-  run_name <- paste0(run_name, '-',
-                     format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"))
-  
+  run_name <- paste0(
+    run_name, "-",
+    format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
+  )
+
   created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
-                        format="%Y%m%dT%H%M%SZ", tz="UTC")
+    format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+  )
 
   output_list <- list(
-    experiment_name = experiment_name, 
-    run_name = run_name, 
+    experiment_name = experiment_name,
+    run_name = run_name,
     created = created,
-    storage_object = storage_object, 
-    path = path, 
-    data_output = data_output, 
+    storage_object = storage_object,
+    path = path,
+    data_output = data_output,
     object_output = object_output
   )
-  
+
   output_tbl <- tibble::tibble(
-    experiment_name = experiment_name, 
-    run_name = run_name, 
+    experiment_name = experiment_name,
+    run_name = run_name,
     created = created,
-    path = path, 
-    data_output = data_output, 
+    path = path,
+    data_output = data_output,
     object_output = object_output
   )
-  
-  write_data(x = output_tbl, 
-             combo = NULL, 
-             run_info = output_list, 
-             output_type = "log",
-             folder = "logs", 
-             suffix = NULL)
+
+  write_data(
+    x = output_tbl,
+    combo = NULL,
+    run_info = output_list,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
 
   return(output_list)
 }
 
 #' Get run info
-#' 
+#'
+#' Lets you get all of the logging associated with a specific experiment or run.
+#'
 #' @param experiment_name Name used to group similar runs under a
 #'   single experiment name.
 #' @param run_name Name to distinguish one run of Finn from another.
@@ -108,56 +116,60 @@ set_run_info <- function(experiment_name = "finn_fcst",
 #' @param path String showing what file path the outputs should be written to.
 #'   Default of NULL will write the outputs to a temporary directory within R,
 #'   which will delete itself after the R session closes.
-#'  
+#'
 #' @return Data frame of run log information
 #' @examples
 #' \donttest{
-#' run_info <- set_run_info(experiment_name = "finn_forecast", 
-#'                          run_name = "test_run", 
-#'                          path = NULL)
-#'                          
-#' run_info_tbl <- get_run_info(experiment_name = "finn_forecast", 
-#'                              run_name = "test_run")
+#' run_info <- set_run_info(
+#'   experiment_name = "finn_forecast",
+#'   run_name = "test_run",
+#'   path = NULL
+#' )
+#'
+#' run_info_tbl <- get_run_info(
+#'   experiment_name = "finn_forecast",
+#'   run_name = "test_run"
+#' )
 #' }
 #' @export
-get_run_info <- function(experiment_name = 'finn_fcst', 
-                         run_name        = NULL, 
-                         storage_object  = NULL, 
-                         path            = NULL) {
-  
-  if(!inherits(run_name, c("NULL", "character"))) {
+get_run_info <- function(experiment_name = "finn_fcst",
+                         run_name = NULL,
+                         storage_object = NULL,
+                         path = NULL) {
+  if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
   }
-  
-  if(!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
+
+  if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
     stop("`storage_object` must either be a NULL or a Azure Blob Storage, OneDrive, or SharePoint document library object")
   }
-  
-  if(!inherits(path, c("NULL", "character"))) {
+
+  if (!inherits(path, c("NULL", "character"))) {
     stop("`path` must either be a NULL or a string")
   }
-  
-  if(inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
-    path <- ''
+
+  if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
+    path <- ""
   }
-  
-  if(is.null(run_name)) {
+
+  if (is.null(run_name)) {
     run_name <- "*"
   } else {
     run_name <- hash_data(run_name)
   }
-  
+
   info_list <- list(
-    storage_object = storage_object, 
+    storage_object = storage_object,
     path = path
   )
-  
-  file_path <- paste0("/logs/*", hash_data(experiment_name), '-', 
-                      run_name, ".*")
-  
-  run_tbl <- read_file(info_list, 
-                       path = file_path, 
-                       return_type = "df")
-  
-  return(run_tbl)
+
+  file_path <- paste0(
+    "/logs/*", hash_data(experiment_name), "-",
+    run_name, ".*"
+  )
+
+  run_tbl <- read_file(info_list,
+    path = file_path,
+    return_type = "df"
+  )
 }
