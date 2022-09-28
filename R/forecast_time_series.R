@@ -217,9 +217,6 @@ forecast_time_series <- function(input_data,
     # keep existing value of run_global_models
   }
   
-  # * Set Seed ----
-  set.seed(seed)
-  
   # 4. Prep Data ----
   
   cli::cli_h1("Prepping Data")
@@ -301,7 +298,8 @@ forecast_time_series <- function(input_data,
                                                date_regex,
                                                fiscal_year_start,
                                                seasonal_periods, 
-                                               pca)
+                                               pca, 
+                                               seed)
   
   # * Run Forecast ----
   if(forecast_approach == "bottoms_up" & length(unique(full_data_tbl$Combo)) > 1 & run_global_models & run_local_models) {
@@ -634,6 +632,8 @@ forecast_time_series <- function(input_data,
     
     #reconcile forecasts
     for(value in unique(model_test_date$Model_Test_Date)) {
+
+      set.seed(seed)
 
       tryCatch(
         expr = {

@@ -222,7 +222,8 @@ invoke_forecast_function <- function(fn_to_invoke,
 #' @param date_regex Date Regex
 #' @param fiscal_year_start Fiscal Year Start
 #' @param seasonal_periods Seasonal Periods
-#' We need to move these out using a scheduler
+#' @param pca run pca
+#' @param seed set random seed for modeling
 #' 
 #' @return a forecast_models function
 #' @noRd
@@ -251,12 +252,16 @@ construct_forecast_models <- function(full_data_tbl,
                                       date_regex,
                                       fiscal_year_start,
                                       seasonal_periods, 
-                                      pca
+                                      pca, 
+                                      seed
                                       ){
 
   forecast_models <- function(combo_value) {
     
     cli::cli_h2("Running Combo: {combo_value}")
+    
+    # Set Seed
+    set.seed(seed)
     
     # Copy functions into global environment within azure batch
     if(!is.null(parallel_processing)) {
@@ -377,6 +382,8 @@ construct_forecast_models <- function(full_data_tbl,
     
     # train each model
     for(model_name in models_to_go_over){
+      
+      set.seed(seed)
       
       model_fn <- as.character(model_list[model_name])
       
@@ -647,8 +654,9 @@ construct_forecast_models <- function(full_data_tbl,
       models_to_go_over <- ensemble_models[ensemble_models %in% names(model_list)]
       
       for(model_name in models_to_go_over){
+
+        set.seed(seed)
         
-        #model_fn <- as.character(ensemble_models[model_name])
         model_fn <- gsub("-", "_", model_name)
         add_name <- paste0(model_name,"-ensemble",model_name_suffix)
         
