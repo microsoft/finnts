@@ -8,34 +8,45 @@ get_run_info(
   experiment_name = "finn_fcst",
   run_name = NULL,
   storage_object = NULL,
-  path = NULL,
-  return_type = "df"
+  path = NULL
 )
 }
 \arguments{
-\item{experiment_name}{experiment name}
+\item{experiment_name}{Name used to group similar runs under a
+single experiment name.}
 
-\item{run_name}{run name}
+\item{run_name}{Name to distinguish one run of Finn from another.
+The current time in UTC is appended to the run name to ensure
+a unique run name is created.}
 
-\item{storage_object}{storage object}
+\item{storage_object}{Used to store outputs during a run to other
+storage services in Azure. Could be a storage container object from
+the 'AzureStor' package to connect to ADLS blob storage or a
+OneDrive/SharePoint object from the 'Microsoft365R' package to connect
+to a OneDrive folder or SharePoint site. Default of NULL will save outputs
+to the local file system.}
 
-\item{path}{path}
-
-\item{return_type}{return type}
+\item{path}{String showing what file path the outputs should be written to.
+Default of NULL will write the outputs to a temporary directory within R,
+which will delete itself after the R session closes.}
 }
 \value{
-table of run information
+Data frame of run log information
 }
 \description{
-Get run info
+Lets you get all of the logging associated with a specific experiment or run.
 }
 \examples{
 \donttest{
-run_info <- set_run_info(experiment_name = "finn_forecast", 
-                         run_name = "test_run", 
-                         path = NULL)
-                         
-run_info_tbl <- get_run_info(experiment_name = "finn_forecast", 
-                             run_name = "test_run")
+run_info <- set_run_info(
+  experiment_name = "finn_forecast",
+  run_name = "test_run",
+  path = NULL
+)
+
+run_info_tbl <- get_run_info(
+  experiment_name = "finn_forecast",
+  run_name = "test_run"
+)
 }
 }

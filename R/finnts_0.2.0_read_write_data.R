@@ -330,7 +330,7 @@ get_forecast_data <- function(run_info,
   
   # get forecast data
   model_train_test_tbl <- read_file(run_info, 
-                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                    path = paste0('/prep_models/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                   '-train_test_split.', run_info$data_output), 
                                     return_type = 'df') %>%
     dplyr::select(Run_Type, Train_Test_ID) %>%

@@ -1,55 +1,67 @@
 
 #' Prep Models
-#' 
-#' Preps various aspects of run before training models. Things like train/test splits, creating hyperparameters, etc.
-#' 
-#' @param run_info run info using the 'set_run_info' function
-#' @param back_test_scenarios Number of specific back test folds to run when determining the best model. 
-#'   Default of NULL will automatically choose the number of back tests to run based on historical data size, 
-#'   which tries to always use a minimum of 80% of the data when training a model. 
-#' @param back_test_spacing Number of periods to move back for each back test scenario. Default of NULL moves back 1
-#'   period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data. 
-#' @param models_to_run List of models to run. Default of NULL runs all models. 
-#' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 
-#'   any model. 
-#' @param run_deep_learning If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
-#'  models_not_to_run. 
-#' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
-#'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
-#' @param num_hyperparameters number of hyperparameter combinations to test out on validation data for model tuning
-#' 
-#' @return Writes outputs related to model prep to disk
-#' @export
+#'
+#' Preps various aspects of run before training models. Things like train/test
+#'   splits, creating hyperparameters, etc.
+#'
+#' @param run_info run info using the 'set_run_info' function.
+#' @param back_test_scenarios Number of specific back test folds to run when
+#'   determining the best model. Default of NULL will automatically choose
+#'   the number of back tests to run based on historical data size,
+#'   which tries to always use a minimum of 80% of the data when training a model.
+#' @param back_test_spacing Number of periods to move back for each back
+#'   test scenario. Default of NULL moves back 1 period at a time for year,
+#'   quarter, and month data. Moves back 4 for week and 7 for day data.
+#' @param models_to_run List of models to run. Default of NULL runs all models.
+#' @param models_not_to_run List of models not to run, overrides values in
+#'   models_to_run. Default of NULL doesn't turn off any model.
+#' @param run_ensemble_models If TRUE, prep for ensemble models.
+#' @param run_deep_learning If TRUE, run deep learning models from gluonts.
+#'   (deepar and nbeats). Overrides models_to_run and models_not_to_run.
+#' @param pca If TRUE, run principle component analysis on any lagged features
+#'   to speed up model run time. Default of NULL runs PCA on day and week
+#'   date types across all local multivariate models, and also for global models
+#'   across all date types.
+#' @param num_hyperparameters number of hyperparameter combinations to test
+#'   out on validation data for model tuning.
+#'
+#' @return Writes outputs related to model prep to disk.
+#'
 #' @examples
 #' \donttest{
-#' data_tbl <- timetk::m4_monthly %>% 
-#'   dplyr::rename(Date = date) %>% 
+#' data_tbl <- timetk::m4_monthly %>%
+#'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
-#'   dplyr::filter(Date >= "2012-01-01", 
-#'                 Date <= "2015-06-01")
-#'                 
+#'   dplyr::filter(
+#'     Date >= "2012-01-01",
+#'     Date <= "2015-06-01"
+#'   )
+#'
 #' run_info <- set_run_info()
-#' 
-#' prep_data(run_info, 
-#'           input_data = data_tbl, 
-#'           combo_variables = c("id"), 
-#'           target_variable = "value", 
-#'           date_type = "month", 
-#'           forecast_horizon = 3)
-#'           
-#' prep_models(run_info, 
-#'             models_to_run = c("arima", "ets", "glmnet"), 
-#'             num_hyperparameters = 2)
+#'
+#' prep_data(run_info,
+#'   input_data = data_tbl,
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month",
+#'   forecast_horizon = 3
+#' )
+#'
+#' prep_models(run_info,
+#'   models_to_run = c("arima", "ets", "glmnet")
+#' )
 #' }
-prep_models <- function(run_info, 
-                        back_test_scenarios = NULL, 
-                        back_test_spacing = NULL, 
-                        models_to_run = NULL, 
-                        models_not_to_run = NULL, 
-                        run_deep_learning = FALSE, 
-                        pca = FALSE, 
+#' @export
+prep_models <- function(run_info,
+                        back_test_scenarios = NULL,
+                        back_test_spacing = NULL,
+                        models_to_run = NULL,
+                        models_not_to_run = NULL,
+                        run_ensemble_models = TRUE,
+                        run_deep_learning = FALSE,
+                        pca = FALSE,
                         num_hyperparameters = 10) {
-  
+
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "list", "numeric"))
@@ -59,68 +71,74 @@ prep_models <- function(run_info,
   check_input_type("run_deep_learning", run_deep_learning, "logical")
   check_input_type("pca", pca, "logical")
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
-  
-  # create train test splits
-  train_test_split(run_info,
-                   back_test_scenarios, 
-                   back_test_spacing) 
-  
+
   # create model workflows
-  model_workflows(run_info, 
-                  models_to_run, 
-                  models_not_to_run, 
-                  run_deep_learning, 
-                  pca)
-  
+  model_workflows(
+    run_info,
+    models_to_run,
+    models_not_to_run,
+    run_deep_learning,
+    pca
+  )
+
   # create model hyperparameters
-  model_hyperparameters(run_info, 
-                        num_hyperparameters)
+  model_hyperparameters(
+    run_info,
+    num_hyperparameters
+  )
+
+  # create train test splits
+  train_test_split(
+    run_info,
+    back_test_scenarios,
+    back_test_spacing,
+    run_ensemble_models
+  )
 }
 
 
 #' Gets the back testing spacing
-#' 
+#'
 #' Checks if back_test_spacing is set to NULL and gets the right one
-#' 
-#' 
+#'
+#'
 #' @param back_test_spacing back_test_spacing override
 #' @param date_type year, quarter, month, week, day
-#' 
+#'
 #' @return Returns back_test_spacing
 #' @noRd
 get_back_test_spacing <- function(back_test_spacing,
-                                  date_type){
-  
-  if(!is.null(back_test_spacing)) {
+                                  date_type) {
+  if (!is.null(back_test_spacing)) {
     return(back_test_spacing)
   }
-  
-  
-  back_test_spacing <- switch (date_type,
-                               "day" = 7,
-                               "week" = 4,
-                               1)
+
+
+  back_test_spacing <- switch(date_type,
+    "day" = 7,
+    "week" = 4,
+    1
+  )
   return(back_test_spacing)
 }
 
 #' Gets the back testing scenarios
-#' 
+#'
 #' Gets back testing scenarios accounting for splits
-#' 
+#'
 #' @param input_tbl full data table
 #' @param hist_end_date historical end date
 #' @param forecast_horizon forecast horizon
 #' @param back_test_scenarios back test scenarios
 #' @param back_test_spacing back test spacing
-#'  
+#'
 #' @return Returns back_test_scenarios and hist_periods_80
 #' @noRd
 get_back_test_scenario_hist_periods <- function(input_tbl,
                                                 hist_end_date,
-                                                forecast_horizon, 
+                                                forecast_horizon,
                                                 back_test_scenarios,
-                                                back_test_spacing){
-
+                                                back_test_spacing) {
   historical_periods <- input_tbl %>%
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::select(Date) %>%
@@ -128,477 +146,562 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
     nrow() %>%
     as.numeric()
 
-  hist_periods_80 <- floor(historical_periods*0.8) #used with time series CV in multivariate models
-  
-  if(is.null(back_test_scenarios)) {
-    
-    historical_periods_20 <- floor(historical_periods*0.2)
-    
-    #account for initial back tests that are smaller than the forecast horizon (1, 2, 3, etc up to fcst horizon)
-    if(historical_periods_20 > forecast_horizon) {
-      back_test_scenarios <- floor(historical_periods_20/back_test_spacing)
+  hist_periods_80 <- floor(historical_periods * 0.8) # used with time series CV in multivariate models
+
+  if (is.null(back_test_scenarios)) {
+    historical_periods_20 <- floor(historical_periods * 0.2)
+
+    # account for initial back tests that are smaller than the forecast horizon (1, 2, 3, etc up to fcst horizon)
+    if (historical_periods_20 > forecast_horizon) {
+      back_test_scenarios <- floor(historical_periods_20 / back_test_spacing)
     } else {
-      back_test_scenarios <- floor(forecast_horizon/back_test_spacing)
+      back_test_scenarios <- floor(forecast_horizon / back_test_spacing)
     }
   }
-  
+
   back_test_scenarios <- back_test_scenarios + 1
 
-  return (list(hist_periods_80=hist_periods_80,
-               back_test_scenarios = back_test_scenarios))
+  return(list(
+    hist_periods_80 = hist_periods_80,
+    back_test_scenarios = back_test_scenarios
+  ))
 }
 
 #' Gets the train test splits
-#' 
-#' @param run_info run info
-#' @param back_test_scenarios back test scenarios
-#' @param back_test_spacing back test spacing
-#'  
+#'
+#' @param run_info run info using the 'set_run_info' function.
+#' @param back_test_scenarios Number of specific back test folds to run when
+#'   determining the best model. Default of NULL will automatically choose
+#'   the number of back tests to run based on historical data size,
+#'   which tries to always use a minimum of 80% of the data when training a model.
+#' @param back_test_spacing Number of periods to move back for each back
+#'   test scenario. Default of NULL moves back 1 period at a time for year,
+#'   quarter, and month data. Moves back 4 for week and 7 for day data.
+#' @param run_ensemble_models If TRUE, prep for ensemble models.
+#'
 #' @return Returns table of train test splits
-#' @keywords internal
-#' @export
-train_test_split <- function(run_info, 
-                             back_test_scenarios = NULL, 
-                             back_test_spacing = NULL){
+#' @noRd
+train_test_split <- function(run_info,
+                             back_test_scenarios = NULL,
+                             back_test_spacing = NULL,
+                             run_ensemble_models = TRUE) {
 
   # get inputs from previous functions
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df')
-  
+  log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  )
+
   hist_end_date <- as.Date(log_df$hist_end_date)
   date_type <- log_df$date_type
   forecast_horizon <- as.numeric(log_df$forecast_horizon)
-  
+
   # check if input values have changed
-  if(sum(colnames(log_df) %in% c("back_test_scenarios", "back_test_spacing")) == 2) {
-    
+  if (sum(colnames(log_df) %in% c("back_test_scenarios", "back_test_spacing", "run_ensemble_models")) == 3) {
     current_log_df <- tibble::tibble(
-      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios), 
-      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing)
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing),
+      run_ensemble_models = run_ensemble_models
     ) %>%
       data.frame()
-    
+
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
-    
-    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+
+    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
       return(cli::cli_alert_success("Train Test Splits"))
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
-           call. = FALSE)
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+        call. = FALSE
+      )
     }
   }
-  
-  # get back test info
-  back_test_spacing_final <- get_back_test_spacing(back_test_spacing, 
-                                                   date_type)
-  
-  # pull out first recipe data
-  file_name <- list_files(run_info$storage_object, 
-                          paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
-                                 hash_data(run_info$run_name), "-*.", run_info$data_output))[1]
 
-  temp_tbl <- read_file(run_info, 
-                        path = gsub(fs::path(run_info$path), "", file_name), 
-                        return_type = 'df')
+  # get back test info
+  back_test_spacing_final <- get_back_test_spacing(
+    back_test_spacing,
+    date_type
+  )
+
+  # pull out first recipe data
+  file_name <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "-*.", run_info$data_output
+    )
+  )[1]
+
+  temp_tbl <- read_file(run_info,
+    path = gsub(fs::path(run_info$path), "", file_name),
+    return_type = "df"
+  )
 
   # get back test info
   bt <- temp_tbl %>%
-    get_back_test_scenario_hist_periods(hist_end_date,
-                                        forecast_horizon, 
-                                        back_test_scenarios,
-                                        back_test_spacing_final)
-  
+    get_back_test_scenario_hist_periods(
+      hist_end_date,
+      forecast_horizon,
+      back_test_scenarios,
+      back_test_spacing_final
+    )
+
   back_test_scenarios_final <- bt$back_test_scenarios
   back_test_initial <- bt$hist_periods_80
-  
+
   # create train/test split info
   train_test_initial <- temp_tbl %>%
     timetk::time_series_cv(
       date_var = Date,
-      initial = "1 year", 
-      asses = forecast_horizon, 
-      skip = back_test_spacing_final, 
-      cumulative = TRUE, 
-      slice_limit = 100) %>%
+      initial = "1 year",
+      asses = forecast_horizon,
+      skip = back_test_spacing_final,
+      cumulative = TRUE,
+      slice_limit = 1000
+    ) %>%
     timetk::tk_time_series_cv_plan() %>%
-    tidyr::separate(col = .id, into = c(NA, "Slice_ID"), sep = "Slice") 
-  
+    tidyr::separate(col = .id, into = c(NA, "Slice_ID"), sep = "Slice")
+
   train_test_final <- tibble::tibble()
 
-  for(id in unique(train_test_initial$Slice_ID)) {
-    
+  for (id in unique(train_test_initial$Slice_ID)) {
     temp_tbl <- train_test_initial %>%
       dplyr::filter(Slice_ID == id)
 
     train_tbl <- temp_tbl %>%
       dplyr::filter(.key == "training") %>%
-      dplyr::select(Date) 
-    
-    if(as.numeric(id) == 1) {
-      
+      dplyr::select(Date)
+
+    if (as.numeric(id) == 1) {
       run_type <- "Future_Forecast"
-      
+
       test_tbl <- temp_tbl %>%
         dplyr::filter(.key == "testing") %>%
-        dplyr::select(Date) 
-      
-    } else if(as.numeric(id) > 1 && as.numeric(id) <= back_test_scenarios_final){
-      
+        dplyr::select(Date)
+    } else if (as.numeric(id) > 1 && as.numeric(id) <= back_test_scenarios_final) {
       run_type <- "Back_Test"
-      
+
       test_tbl <- temp_tbl %>%
-        dplyr::filter(Date <= hist_end_date) 
-      
-    } else if (as.numeric(id) > back_test_scenarios_final & as.numeric(id) < max(back_test_scenarios_final + (forecast_horizon/back_test_spacing_final) + 1, back_test_scenarios_final*1.5)) {
-      
+        dplyr::filter(Date <= hist_end_date)
+    } else if (as.numeric(id) > back_test_scenarios_final & as.numeric(id) < max(back_test_scenarios_final + (forecast_horizon / back_test_spacing_final) + 1, back_test_scenarios_final * 1.5)) {
       run_type <- "Validation"
-      
+
       back_test_date <- train_test_final %>%
         dplyr::filter(Run_Type == "Back_Test")
 
       test_tbl <- temp_tbl %>%
         dplyr::filter(Date <= min(back_test_date$Train_End))
-      
     } else {
       run_type <- "Ensemble"
-      
+
       test_tbl <- temp_tbl %>%
         dplyr::filter(.key == "testing") %>%
-        dplyr::select(Date) 
+        dplyr::select(Date)
     }
 
-    train_test_tbl <- tibble::tibble(Run_Type = run_type, 
-                                     Train_Test_ID = id, 
-                                     Train_End = max(train_tbl$Date), 
-                                     Test_End = max(test_tbl$Date))
-    
+    train_test_tbl <- tibble::tibble(
+      Run_Type = run_type,
+      Train_Test_ID = id,
+      Train_End = max(train_tbl$Date),
+      Test_End = max(test_tbl$Date)
+    )
+
     train_test_final <- rbind(train_test_final, train_test_tbl) %>%
       dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
   }
-  
-  # check for back test and validation data
 
-  if(!("Validation" %in% unique(train_test_final$Run_Type))) {
+  # check for back test and validation data
+  if (!("Validation" %in% unique(train_test_final$Run_Type))) {
     stop("No validation data produced. Add more historical data, shorten the forecast horizon, or shorten the number of back test scenarios")
-  } else if(!("Back_Test" %in% unique(train_test_final$Run_Type))) {
+  } else if (!("Back_Test" %in% unique(train_test_final$Run_Type))) {
     stop("No back testing data produced. Shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing")
   }
-  
+
+  # adjust based on models planned to run
+  model_workflow_list <- read_file(run_info,
+    path = paste0(
+      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "-model_workflows.", run_info$object_output
+    ),
+    return_type = "df"
+  ) %>%
+    dplyr::pull(Model_Name) %>%
+    unique()
+
+  ml_models <- c(
+    "arima-boost", "cubist", "glmnet", "mars",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
+    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
+  )
+
+  if (sum(model_workflow_list %in% ml_models) == 0) {
+    run_ensemble_models <- FALSE
+
+    cli::cli_alert_warning("Turning ensemble models off since no multivariate models were chosen to run.")
+
+    train_test_final <- train_test_final %>%
+      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
+      rbind(
+        train_test_final %>%
+          dplyr::filter(Run_Type == "Validation") %>%
+          dplyr::slice(1)
+      )
+  } else if (sum(model_workflow_list %in% ml_models) > 0 & !run_ensemble_models) {
+    train_test_final <- train_test_final %>%
+      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Validation"))
+  } else {
+    # do nothing, keep the existing tbl
+  }
+
   # write train test info
-  write_data(x = train_test_final, 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = 'data',
-             folder = "model_utility",
-             suffix = '-train_test_split')
-  
+  write_data(
+    x = train_test_final,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "data",
+    folder = "prep_models",
+    suffix = "-train_test_split"
+  )
+
   # update logging file
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df') %>%
-    dplyr::mutate(back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios), 
-                  back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing))
-  
-  write_data(x = log_df, 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = "log",
-             folder = "logs", 
-             suffix = NULL)
-  
+  log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  ) %>%
+    dplyr::mutate(
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing),
+      run_ensemble_models = run_ensemble_models
+    )
+
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
   return(cli::cli_alert_success("Train Test Splits"))
 }
 
 #' Gets model workflows
-#' 
+#'
 #' @param run_info run info
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
 #' @param run_deep_learning run deep learning models
 #' @param pca pca
-#'  
+#'
 #' @return Returns table of model workflows
-#' @keywords internal
-#' @export
-model_workflows <- function(run_info, 
-                            models_to_run = NULL, 
-                            models_not_to_run = NULL, 
-                            run_deep_learning = FALSE, 
+#' @noRd
+model_workflows <- function(run_info,
+                            models_to_run = NULL,
+                            models_not_to_run = NULL,
+                            run_deep_learning = FALSE,
                             pca = FALSE) {
-  
+
   # check if input values have changed
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df')
-  
-  if(sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "run_deep_learning", "pca")) == 4) {
-    
+  log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  )
+
+  if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "run_deep_learning", "pca")) == 4) {
     current_log_df <- tibble::tibble(
-      models_to_run = ifelse(is.null(models_to_run), NA, models_to_run), 
-      models_not_to_run = ifelse(is.null(models_not_to_run), NA, models_not_to_run), 
+      models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
       run_deep_learning = run_deep_learning
     ) %>%
       data.frame()
-    
+
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
-    
-    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+
+    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
       return(cli::cli_alert_success("Model Workflows"))
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
-           call. = FALSE)
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+        call. = FALSE
+      )
     }
   }
-  
+
   # pull out recipe data for a single combo
   input_tbl <- tibble::tibble()
-  
-  file_name_tbl <- list_files(run_info$storage_object, 
-                             paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
-                                    hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
-    tibble::tibble(Path = .,
-                   File = fs::path_file(.)) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+
+  file_name_tbl <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .,
+      File = fs::path_file(.)
+    ) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
-  for(recipe in file_name_tbl$Recipe) {
-    
+  for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
-      dplyr::pull(Path) 
-    
-    temp_file_tbl <- read_file(run_info, 
-                               path = gsub(fs::path(run_info$path), "", temp_path), 
-                               return_type = 'df')
-    
-    temp_final_tbl <- tibble::tibble(Recipe = recipe, 
-                                     Data = list(temp_file_tbl))
-    
+      dplyr::pull(Path)
+
+    temp_file_tbl <- read_file(run_info,
+      path = gsub(fs::path(run_info$path), "", temp_path),
+      return_type = "df"
+    )
+
+    temp_final_tbl <- tibble::tibble(
+      Recipe = recipe,
+      Data = list(temp_file_tbl)
+    )
+
     input_tbl <- rbind(input_tbl, temp_final_tbl)
   }
-  
+
   # tibble to add model workflows to
   model_workflow_tbl <- tibble::tibble()
-  
+
   # models to run
-  ml_models <- c("arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf", 
-                 "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive", 
-                 "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost")
-  
-  if(is.null(models_to_run) & is.null(models_not_to_run)) {
-    
+  ml_models <- c(
+    "arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
+  )
+
+  if (is.null(models_to_run) & is.null(models_not_to_run)) {
+
     # do nothing, using existing ml_models list
-    
-  } else if(is.null(models_to_run) & !is.null(models_not_to_run)) {
-    
+  } else if (is.null(models_to_run) & !is.null(models_not_to_run)) {
     ml_models <- setdiff(ml_models, models_not_to_run)
-    
   } else {
-    
-    if(!is.null(models_not_to_run)) {
+    if (!is.null(models_not_to_run)) {
       cli::cli_alert_warning("Note: 'models_to_run' argument overrides the 'models_not_to_run' argument")
     }
-    
+
     ml_models <- models_to_run
-    
   }
-    
-  if(run_deep_learning) {
+
+  if (run_deep_learning) {
     ml_models <- c(ml_models, "nnetar", "nbeats")
   }
-  
+
   r2_models <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
-  
+
   iter_tbl <- tibble::tibble()
-  
-  for(recipe in unique(input_tbl$Recipe)) {
-    iter_tbl <- rbind(iter_tbl, 
-                      tibble::tibble(Model = ml_models, 
-                                     Recipe = recipe))
-  } 
 
-  for(x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
+  for (recipe in unique(input_tbl$Recipe)) {
+    iter_tbl <- rbind(
+      iter_tbl,
+      tibble::tibble(
+        Model = ml_models,
+        Recipe = recipe
+      )
+    )
+  }
 
+  for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
     model <- x %>%
       dplyr::pull(Model)
-    
+
     recipe <- x %>%
       dplyr::pull(Recipe)
-    
-    recipe_tbl <- input_tbl  %>%
+
+    recipe_tbl <- input_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
-      tidyr::unnest(Data) 
-    
+      tidyr::unnest(Data)
+
     # get args to feel into model spec functions
-    avail_arg_list <- list('train_data' = recipe_tbl,
-                           'frequency' = 12,
-                           'horizon' = 12,
-                           'seasonal_period' = c(3,6,12),
-                           'model_type' = "single",
-                           "pca" = TRUE)
-    
+    avail_arg_list <- list(
+      "train_data" = recipe_tbl,
+      "frequency" = 12,
+      "horizon" = 12,
+      "seasonal_period" = c(3, 6, 12),
+      "model_type" = "single",
+      "pca" = TRUE
+    )
+
     # don't create workflows for models that only use R1 recipe
-    if(recipe == "R2" & !(model %in% r2_models)) {
+    if (recipe == "R2" & !(model %in% r2_models)) {
       next
     }
-    
+
     # get specific model spec
-    fn_to_invoke <- get(gsub('-', '_', model))
-    
+    fn_to_invoke <- get(gsub("-", "_", model))
+
     exp_arg_list <- formalArgs(fn_to_invoke)
-    
+
     avail_names <- names(avail_arg_list)
-    
+
     inp_arg_list <- list()
-    
-    for(x in avail_names){
-      
-      if(x %in% exp_arg_list){
+
+    for (x in avail_names) {
+      if (x %in% exp_arg_list) {
         inp_arg_list[x] <- avail_arg_list[x]
       }
     }
-    
-    model_workflow <- do.call(fn_to_invoke,inp_arg_list, quote=TRUE)
-    
-    workflow_tbl <- tibble::tibble(Model_Name = model, 
-                                   Model_Recipe = recipe, 
-                                   Model_Workflow = list(model_workflow))
-    
+
+    model_workflow <- do.call(fn_to_invoke, inp_arg_list, quote = TRUE)
+
+    workflow_tbl <- tibble::tibble(
+      Model_Name = model,
+      Model_Recipe = recipe,
+      Model_Workflow = list(model_workflow)
+    )
+
     model_workflow_tbl <- rbind(model_workflow_tbl, workflow_tbl)
   }
-  
+
   # write model workflow info
-  write_data(x = model_workflow_tbl %>% dplyr::arrange(Model_Name), 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = 'object',
-             folder = "model_utility",
-             suffix = '-model_workflows')
-  
+  write_data(
+    x = model_workflow_tbl %>% dplyr::arrange(Model_Name),
+    combo = NULL,
+    run_info = run_info,
+    output_type = "object",
+    folder = "prep_models",
+    suffix = "-model_workflows"
+  )
+
   # update logging file
   log_df <- log_df %>%
-    dplyr::mutate(models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")), 
-                  models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")), 
-                  run_deep_learning = run_deep_learning, 
-                  pca = ifelse(is.null(pca), NA, pca))
-  
-  write_data(x = log_df, 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = "log",
-             folder = "logs", 
-             suffix = NULL)
-  
+    dplyr::mutate(
+      models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
+      run_deep_learning = run_deep_learning,
+      pca = ifelse(is.null(pca), NA, pca)
+    )
+
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
   return(cli::cli_alert_success("Model Workflows"))
 }
 
 #' Get model hyperparameters
-#' 
+#'
 #' @param run_info run info
 #' @param num_hyperparameters number of hyperparameter combinations
-#'  
+#'
 #' @return table of model hyperparameters
-#' @keywords internal
-#' @export
+#' @noRd
 model_hyperparameters <- function(run_info,
                                   num_hyperparameters = 10) {
-  
+
   # check if input values have changed
-  log_df <- read_file(run_info, 
-                      path = paste0("logs/", hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), ".csv"), 
-                      return_type = 'df')
-  
-  if(sum(colnames(log_df) %in% c("num_hyperparameters")) == 1) {
-    
+  log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  )
+
+  if (sum(colnames(log_df) %in% c("num_hyperparameters")) == 1) {
     current_log_df <- tibble::tibble(
       num_hyperparameters = num_hyperparameters
     ) %>%
       data.frame()
-    
+
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
-    
-    if(hash_data(current_log_df) == hash_data(prev_log_df)) {
+
+    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
       return(cli::cli_alert_success("Model Hyperparameters"))
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'", 
-           call. = FALSE)
+      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+        call. = FALSE
+      )
     }
   }
-  
+
   # get recipe input data
   input_tbl <- tibble::tibble()
-  
-  file_name_tbl <- list_files(run_info$storage_object, 
-                              paste0(run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), '-', 
-                                     hash_data(run_info$run_name), "*.", run_info$data_output)) %>%
-    tibble::tibble(Path = .,
-                   File = fs::path_file(.)) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = '-', remove = TRUE) %>%
+
+  file_name_tbl <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .,
+      File = fs::path_file(.)
+    ) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
-  
-  for(recipe in file_name_tbl$Recipe) {
-    
+
+  for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
-      dplyr::pull(Path) 
-    
-    temp_file_tbl <- read_file(run_info, 
-                               path = gsub(fs::path(run_info$path), "", temp_path), 
-                               return_type = 'df')
-    
-    temp_final_tbl <- tibble::tibble(Recipe = recipe, 
-                                     Data = list(temp_file_tbl))
-    
+      dplyr::pull(Path)
+
+    temp_file_tbl <- read_file(run_info,
+      path = gsub(fs::path(run_info$path), "", temp_path),
+      return_type = "df"
+    )
+
+    temp_final_tbl <- tibble::tibble(
+      Recipe = recipe,
+      Data = list(temp_file_tbl)
+    )
+
     input_tbl <- rbind(input_tbl, temp_final_tbl)
   }
-  
+
   # get model workflow info
-  model_workflow_tbl <- read_file(run_info, 
-                                  path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
-                                                '-model_workflows.', run_info$object_output), 
-                                  return_type = 'df')
-  
+  model_workflow_tbl <- read_file(run_info,
+    path = paste0(
+      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "-model_workflows.", run_info$object_output
+    ),
+    return_type = "df"
+  )
+
   iter_tbl <- model_workflow_tbl %>%
     dplyr::select(Model_Name, Model_Recipe)
 
   # get hyperparameters
   hyperparameters_tbl <- tibble::tibble()
-  
-  for(x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
 
+  for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
     model <- x %>%
       dplyr::pull(Model_Name)
-    
+
     recipe <- x %>%
       dplyr::pull(Model_Recipe)
-    
+
     temp_tbl <- model_workflow_tbl %>%
-      dplyr::filter(Model_Name == model, 
-                    Model_Recipe == recipe)
-    
+      dplyr::filter(
+        Model_Name == model,
+        Model_Recipe == recipe
+      )
+
     model_workflow <- temp_tbl$Model_Workflow[[1]]
-    
+
     model_spec <- model_workflow %>%
       workflows::extract_spec_parsnip()
-    
+
     recipe_features <- input_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
-    
-    if(workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
-      
-      if(model=="svm-rbf") {
+
+    if (workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
+      if (model == "svm-rbf") {
         parameters <- model_spec %>%
           workflows::extract_parameter_set_dials()
       } else {
@@ -611,47 +714,53 @@ model_hyperparameters <- function(run_info,
 
       hyperparameters_temp <- grid %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-        purrr::map_df(tidyr::nest, data=tidyselect::everything()) %>%
+        purrr::map_df(tidyr::nest, data = tidyselect::everything()) %>%
         dplyr::rename(Hyperparameters = data) %>%
         tibble::rowid_to_column("Hyperparameter_Combo") %>%
-        dplyr::mutate(Model = model, 
-                      Recipe = recipe)
-
-    } else{
-      
-      hyperparameters_temp <- tibble::tibble(Hyperparameter_Combo = 1, 
-                                             Hyperparameters = list(tibble::tibble()), 
-                                             Model = model, 
-                                             Recipe = recipe)
+        dplyr::mutate(
+          Model = model,
+          Recipe = recipe
+        )
+    } else {
+      hyperparameters_temp <- tibble::tibble(
+        Hyperparameter_Combo = 1,
+        Hyperparameters = list(tibble::tibble()),
+        Model = model,
+        Recipe = recipe
+      )
     }
-    
+
     hyperparameters_tbl <- rbind(hyperparameters_tbl, hyperparameters_temp)
   }
-  
+
   # write model hyperparameter info
-  write_data(x = hyperparameters_tbl %>% dplyr::select(Model, Recipe, Hyperparameter_Combo, Hyperparameters), 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = 'object',
-             folder = "model_utility",
-             suffix = '-model_hyperparameters')
-  
+  write_data(
+    x = hyperparameters_tbl %>% dplyr::select(Model, Recipe, Hyperparameter_Combo, Hyperparameters),
+    combo = NULL,
+    run_info = run_info,
+    output_type = "object",
+    folder = "prep_models",
+    suffix = "-model_hyperparameters"
+  )
+
   # update logging file
   log_df <- log_df %>%
     dplyr::mutate(num_hyperparameters = num_hyperparameters)
-  
-  write_data(x = log_df, 
-             combo = NULL, 
-             run_info = run_info, 
-             output_type = "log",
-             folder = "logs", 
-             suffix = NULL)
-  
+
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
   return(cli::cli_alert_success("Model Hyperparameters"))
 }
 
 # To Do
-# [ ] should the recipe column be removed from the output of model_hyperparameters? 
+# [ ] should the recipe column be removed from the output of model_hyperparameters?
 #     this would be important to have if the same models with two recipes had diff hyperparameters
 #     but models with params that change based on predictor column number are only R1 recipes (boost and mars models)
 # [ ] allow user to select accuracy metric for hyperparameter selection

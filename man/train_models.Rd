@@ -18,22 +18,28 @@ train_models(
 \arguments{
 \item{run_info}{run info using the 'set_run_info' function}
 
-\item{run_global_models}{If TRUE, run multivariate models on the entire data set (across all time series) as a global model.
-Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.}
+\item{run_global_models}{If TRUE, run multivariate models on the entire data
+set (across all time series) as a global model. Can be override by
+models_not_to_run. Default of NULL runs global models for all date types
+except week and day.}
 
-\item{run_local_models}{If TRUE, run models by individual time series as local models.}
+\item{run_local_models}{If TRUE, run models by individual time series as
+local models.}
 
 \item{global_model_recipes}{Recipes to use in global models}
 
-\item{combo_variables}{List of column headers within input data to be used to separate individual time series.}
+\item{combo_variables}{List of column headers within input data to be used
+to separate individual time series.}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'azure_batch'
 runs time series in parallel on a remote compute cluster in Azure Batch.}
 
-\item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
-on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-than number of cores on machine minus 1.}
+\item{num_cores}{Number of cores to run when parallel processing is set up.
+Used when running parallel computations on local machine or within Azure.
+Default of NULL uses total amount of cores on machine minus one. Can't be
+greater than number of cores on machine minus 1.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
 
@@ -63,7 +69,7 @@ prep_data(run_info,
           forecast_horizon = 3)
           
 prep_models(run_info, 
-            models_to_run = c("arima", "ets", "glmnet"), 
+            models_to_run = c("arima", "glmnet"), 
             num_hyperparameters = 2)
             
 train_models(run_info, 
@@ -71,7 +77,7 @@ train_models(run_info,
              run_local_models = TRUE, 
              global_model_recipes = c("R1"), 
              combo_variables = c("id"), 
-             parallel_processing = 'local_machine', 
+             parallel_processing = NULL, 
              num_cores = NULL, 
              seed = 123)
 }

@@ -10,59 +10,71 @@ prep_models(
   back_test_spacing = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
+  run_ensemble_models = TRUE,
   run_deep_learning = FALSE,
   pca = FALSE,
   num_hyperparameters = 10
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function}
+\item{run_info}{run info using the 'set_run_info' function.}
 
-\item{back_test_scenarios}{Number of specific back test folds to run when determining the best model.
-Default of NULL will automatically choose the number of back tests to run based on historical data size,
+\item{back_test_scenarios}{Number of specific back test folds to run when
+determining the best model. Default of NULL will automatically choose
+the number of back tests to run based on historical data size,
 which tries to always use a minimum of 80\% of the data when training a model.}
 
-\item{back_test_spacing}{Number of periods to move back for each back test scenario. Default of NULL moves back 1
-period at a time for year, quarter, and month data. Moves back 4 for week and 7 for day data.}
+\item{back_test_spacing}{Number of periods to move back for each back
+test scenario. Default of NULL moves back 1 period at a time for year,
+quarter, and month data. Moves back 4 for week and 7 for day data.}
 
 \item{models_to_run}{List of models to run. Default of NULL runs all models.}
 
-\item{models_not_to_run}{List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
-any model.}
+\item{models_not_to_run}{List of models not to run, overrides values in
+models_to_run. Default of NULL doesn't turn off any model.}
 
-\item{run_deep_learning}{If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
-models_not_to_run.}
+\item{run_ensemble_models}{If TRUE, prep for ensemble models.}
 
-\item{pca}{If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
-PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
+\item{run_deep_learning}{If TRUE, run deep learning models from gluonts.
+(deepar and nbeats). Overrides models_to_run and models_not_to_run.}
 
-\item{num_hyperparameters}{number of hyperparameter combinations to test out on validation data for model tuning}
+\item{pca}{If TRUE, run principle component analysis on any lagged features
+to speed up model run time. Default of NULL runs PCA on day and week
+date types across all local multivariate models, and also for global models
+across all date types.}
+
+\item{num_hyperparameters}{number of hyperparameter combinations to test
+out on validation data for model tuning.}
 }
 \value{
-Writes outputs related to model prep to disk
+Writes outputs related to model prep to disk.
 }
 \description{
-Preps various aspects of run before training models. Things like train/test splits, creating hyperparameters, etc.
+Preps various aspects of run before training models. Things like train/test
+splits, creating hyperparameters, etc.
 }
 \examples{
 \donttest{
-data_tbl <- timetk::m4_monthly \%>\% 
-  dplyr::rename(Date = date) \%>\% 
+data_tbl <- timetk::m4_monthly \%>\%
+  dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
-  dplyr::filter(Date >= "2012-01-01", 
-                Date <= "2015-06-01")
-                
+  dplyr::filter(
+    Date >= "2012-01-01",
+    Date <= "2015-06-01"
+  )
+
 run_info <- set_run_info()
 
-prep_data(run_info, 
-          input_data = data_tbl, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 3)
-          
-prep_models(run_info, 
-            models_to_run = c("arima", "ets", "glmnet"), 
-            num_hyperparameters = 2)
+prep_data(run_info,
+  input_data = data_tbl,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3
+)
+
+prep_models(run_info,
+  models_to_run = c("arima", "ets", "glmnet")
+)
 }
 }

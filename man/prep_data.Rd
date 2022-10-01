@@ -29,30 +29,30 @@ prep_data(
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function}
+\item{run_info}{Run info using \code{\link[=set_run_info]{set_run_info()}}}
 
-\item{input_data}{A standard data frame, tibble, or spark data frame using sparklyr of historical time series data. Can also include external regressors for both
-historical and future data.}
+\item{input_data}{A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
+Can also include external regressors for both historical and future data.}
 
 \item{combo_variables}{List of column headers within input data to be used to separate individual time series.}
 
 \item{target_variable}{The column header formatted as a character value within input data you want to forecast.}
 
-\item{date_type}{The date granularity of the input data. Finn accepts the following as a character string
+\item{date_type}{The date granularity of the input data. Finn accepts the following as a character string:
 day, week, month, quarter, year.}
 
 \item{forecast_horizon}{Number of periods to forecast into the future.}
 
 \item{external_regressors}{List of column headers within input data to be used as features in multivariate models.}
 
-\item{hist_start_date}{Date value of when your input_data starts. Default of NULL is to use earliest date value in
+\item{hist_start_date}{Date value of when your input_data starts. Default of NULL uses earliest date value in
 input_data.}
 
-\item{hist_end_date}{Date value of when your input_data ends.Default of NULL is to use the latest date value in
+\item{hist_end_date}{Date value of when your input_data ends. Default of NULL uses the latest date value in
 input_data.}
 
 \item{combo_cleanup_date}{Date value to remove individual time series that don't contain non-zero values after
-that specified date. Default of NULL is to not remove any time series and attempt to forecast all of them.}
+that specified date. Default of NULL is to not remove any time series and attempt to forecast all time series.}
 
 \item{fiscal_year_start}{Month number of start of fiscal year of input data, aids in building out date features.
 Formatted as a numeric value. Default of 1 assumes fiscal year starts in January.}
@@ -61,15 +61,16 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 values.}
 
-\item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data}
+\item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data.}
 
 \item{forecast_approach}{How the forecast is created. The default of 'bottoms_up' trains models for each individual
-time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
+time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 a more traditional hierarchical time series to forecast, both based on the hts package.}
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch.}
+one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
+Value of 'azure_batch' runs time series in parallel on a remote compute cluster in Azure Batch. Value of 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks/Synapse.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
@@ -84,33 +85,37 @@ these values based on the date_type.}
 based on date_type.}
 
 \item{rolling_window_periods}{List of values to use in creating rolling window features. Default of NULL automatically
-chooses these values based on date type.}
+chooses these values based on date_type.}
 
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
 }
 \value{
-feature engineered data written to disk
+No return object. Feature engineered data is written to disk based on the output locations provided in
+\code{\link[=set_run_info]{set_run_info()}}.
 }
 \description{
 Preps data with various feature engineering recipes to create features before training models
 }
 \examples{
 \donttest{
-data_tbl <- timetk::m4_monthly \%>\% 
-  dplyr::rename(Date = date) \%>\% 
+data_tbl <- timetk::m4_monthly \%>\%
+  dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
-  dplyr::filter(Date >= "2012-01-01", 
-                Date <= "2015-06-01")
-                
+  dplyr::filter(
+    Date >= "2012-01-01",
+    Date <= "2015-06-01"
+  )
+
 run_info <- set_run_info()
 
-prep_data(run_info, 
-          input_data = data_tbl, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 3)
+prep_data(run_info,
+  input_data = data_tbl,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3
+)
 }
 }

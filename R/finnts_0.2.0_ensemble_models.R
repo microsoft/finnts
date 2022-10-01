@@ -58,6 +58,10 @@ ensemble_models <- function(run_info,
   
   num_hyperparameters <- as.numeric(log_df$num_hyperparameters)
   date_type <- log_df$date_type
+
+  if(log_df$run_ensemble_models == FALSE) {
+    return(cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run."))
+  }
   
   combo_list <- list_files(run_info$storage_object, 
                            paste0(run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), '-', 
@@ -70,7 +74,7 @@ ensemble_models <- function(run_info,
     unique()
   
   model_train_test_tbl <- read_file(run_info, 
-                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                    path = paste0('/prep_models/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                   '-train_test_split.', run_info$data_output), 
                                     return_type = 'df')
   

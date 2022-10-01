@@ -71,7 +71,7 @@ final_models <- function(run_info,
 
   # get run splits
   model_train_test_tbl <- read_file(run_info, 
-                                    path = paste0('/model_utility/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
+                                    path = paste0('/prep_models/', hash_data(run_info$experiment_name), '-', hash_data(run_info$run_name), 
                                                   '-train_test_split.', run_info$data_output), 
                                     return_type = 'df')
   
@@ -195,7 +195,7 @@ final_models <- function(run_info,
                                       final_model_list <- c(local_model_list, global_model_list)
 
                                       # simple model averaging
-                                      if(average_models) {
+                                      if(average_models & length(final_model_list) > 1) {
 
                                         # create model combinations list
                                         model_combinations <- tibble::tibble()

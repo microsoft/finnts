@@ -14,28 +14,45 @@ set_run_info(
 )
 }
 \arguments{
-\item{experiment_name}{experiment name}
+\item{experiment_name}{Name used to group similar runs under a
+single experiment name.}
 
-\item{run_name}{run name}
+\item{run_name}{Name to distinguish one run of Finn from another.
+The current time in UTC is appended to the run name to ensure
+a unique run name is created.}
 
-\item{storage_object}{storage object}
+\item{storage_object}{Used to store outputs during a run to other
+storage services in Azure. Could be a storage container object from
+the 'AzureStor' package to connect to ADLS blob storage or a
+OneDrive/SharePoint object from the 'Microsoft365R' package to connect
+to a OneDrive folder or SharePoint site. Default of NULL will save outputs
+to the local file system.}
 
-\item{path}{path}
+\item{path}{String showing what file path the outputs should be written to.
+Default of NULL will write the outputs to a temporary directory within R,
+which will delete itself after the R session closes.}
 
-\item{data_output}{data output}
+\item{data_output}{String value describing the file type for data outputs.
+Default will write data frame outputs as csv files. The other option
+of 'parquet' will instead write parquet files.}
 
-\item{object_output}{object output}
+\item{object_output}{String value describing the file type for object
+outputs. Default will write object outputs like trained models as
+rds files. The other option of 'qs' will instead serialize R objects
+as qs files by using the 'qs' package.}
 }
 \value{
 A list of run information
 }
 \description{
-Set up finnts submission
+Creates list object of information helpful in logging information
+about your run.
 }
 \examples{
 \donttest{
-run_info <- set_run_info(experiment_name = "finn forecast", 
-                         run_name = "test_run", 
-                         path = "test")
+run_info <- set_run_info(
+  experiment_name = "test_exp",
+  run_name = "test_run_1"
+)
 }
 }
