@@ -9,14 +9,14 @@ train_models(
   run_global_models = FALSE,
   run_local_models = TRUE,
   global_model_recipes = c("R1"),
-  combo_variables,
+  negative_forecast = FALSE,
   parallel_processing = NULL,
   num_cores = NULL,
   seed = 123
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function}
+\item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function}
 
 \item{run_global_models}{If TRUE, run multivariate models on the entire data
 set (across all time series) as a global model. Can be override by
@@ -26,10 +26,9 @@ except week and day.}
 \item{run_local_models}{If TRUE, run models by individual time series as
 local models.}
 
-\item{global_model_recipes}{Recipes to use in global models}
+\item{global_model_recipes}{Recipes to use in global models.}
 
-\item{combo_variables}{List of column headers within input data to be used
-to separate individual time series.}
+\item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and
 forecasts each individual time series one after another. 'local_machine'
@@ -42,43 +41,39 @@ Default of NULL uses total amount of cores on machine minus one. Can't be
 greater than number of cores on machine minus 1.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
-
-\item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 }
 \value{
-trained model outputs are written to disk
+trained model outputs are written to disk.
 }
 \description{
 Train Individual Models
 }
 \examples{
 \donttest{
-data_tbl <- timetk::m4_monthly \%>\% 
-  dplyr::rename(Date = date) \%>\% 
+data_tbl <- timetk::m4_monthly \%>\%
+  dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
-  dplyr::filter(Date >= "2012-01-01", 
-                Date <= "2015-06-01")
-                
+  dplyr::filter(
+    Date >= "2012-01-01",
+    Date <= "2015-06-01"
+  )
+
 run_info <- set_run_info()
 
-prep_data(run_info, 
-          input_data = data_tbl, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 3)
-          
-prep_models(run_info, 
-            models_to_run = c("arima", "glmnet"), 
-            num_hyperparameters = 2)
-            
-train_models(run_info, 
-             run_global_models = TRUE, 
-             run_local_models = TRUE, 
-             global_model_recipes = c("R1"), 
-             combo_variables = c("id"), 
-             parallel_processing = NULL, 
-             num_cores = NULL, 
-             seed = 123)
+prep_data(run_info,
+  input_data = data_tbl,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3
+)
+
+prep_models(run_info,
+  models_to_run = c("arima", "glmnet"),
+  num_hyperparameters = 2,
+  run_ensemble_models = FALSE
+)
+
+train_models(run_info)
 }
 }

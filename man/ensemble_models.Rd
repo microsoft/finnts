@@ -12,15 +12,17 @@ ensemble_models(
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function}
+\item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'azure_batch'
 runs time series in parallel on a remote compute cluster in Azure Batch.}
 
-\item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
-on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-than number of cores on machine minus 1.}
+\item{num_cores}{Number of cores to run when parallel processing is set up.
+Used when running parallel computations on local machine or within Azure.
+Default of NULL uses total amount of cores on machine minus one. Can't
+be greater than number of cores on machine minus 1.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
 }
@@ -28,35 +30,38 @@ than number of cores on machine minus 1.}
 Ensemble model outputs are written to disk
 }
 \description{
-Ensemble Models
+Create ensemble model forecasts
 }
 \examples{
 \donttest{
-data_tbl <- timetk::m4_monthly \%>\% 
-  dplyr::rename(Date = date) \%>\% 
+data_tbl <- timetk::m4_monthly \%>\%
+  dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
-  dplyr::filter(Date >= "2012-01-01", 
-                Date <= "2015-06-01")
-                
+  dplyr::filter(
+    Date >= "2012-01-01",
+    Date <= "2015-06-01",
+    id == "M750"
+  )
+
 run_info <- set_run_info()
 
-prep_data(run_info, 
-          input_data = data_tbl, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 3)
-          
-prep_models(run_info, 
-            models_to_run = c("arima", "ets", "glmnet"), 
-            num_hyperparameters = 2)
-            
-train_models(run_info, 
-             run_global_models = TRUE, 
-             run_local_models = TRUE, 
-             combo_variables = c("id"))
-             
+prep_data(run_info,
+  input_data = data_tbl,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3
+)
+
+prep_models(run_info,
+  models_to_run = c("arima", "glmnet"),
+  num_hyperparameters = 2
+)
+
+train_models(run_info,
+  run_global_models = FALSE
+)
+
 ensemble_models(run_info)
-             
 }
 }

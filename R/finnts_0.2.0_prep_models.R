@@ -4,7 +4,7 @@
 #' Preps various aspects of run before training models. Things like train/test
 #'   splits, creating hyperparameters, etc.
 #'
-#' @param run_info run info using the 'set_run_info' function.
+#' @param run_info run info using the [set_run_info()] function.
 #' @param back_test_scenarios Number of specific back test folds to run when
 #'   determining the best model. Default of NULL will automatically choose
 #'   the number of back tests to run based on historical data size,
@@ -69,7 +69,7 @@ prep_models <- function(run_info,
   check_input_type("models_to_run", models_to_run, c("NULL", "list", "character"))
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
   check_input_type("run_deep_learning", run_deep_learning, "logical")
-  check_input_type("pca", pca, "logical")
+  check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
 
   # create model workflows
@@ -95,7 +95,6 @@ prep_models <- function(run_info,
     run_ensemble_models
   )
 }
-
 
 #' Gets the back testing spacing
 #'
@@ -195,6 +194,13 @@ train_test_split <- function(run_info,
   hist_end_date <- as.Date(log_df$hist_end_date)
   date_type <- log_df$date_type
   forecast_horizon <- as.numeric(log_df$forecast_horizon)
+  date_type <- log_df$date_type
+  
+  if(is.null(run_ensemble_models) & date_type %in% c("day", "week")) {
+    run_ensemble_models <- FALSE
+  } else {
+    run_ensemble_models <- TRUE
+  }
 
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("back_test_scenarios", "back_test_spacing", "run_ensemble_models")) == 3) {
@@ -234,7 +240,7 @@ train_test_split <- function(run_info,
   )[1]
 
   temp_tbl <- read_file(run_info,
-    path = gsub(fs::path(run_info$path), "", file_name),
+    path = gsub(ifelse(is.null(run_info$path), fs::path_dir(fs::path(tempdir(), "test")), fs::path(run_info$path)), "", file_name),
     return_type = "df"
   )
 
@@ -401,14 +407,23 @@ model_workflows <- function(run_info,
                             models_to_run = NULL,
                             models_not_to_run = NULL,
                             run_deep_learning = FALSE,
-                            pca = FALSE) {
+                            pca = NULL) {
 
-  # check if input values have changed
+  # get inputs
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  
+  date_type <- log_df$date_type
+  
+  if(is.null(pca) & date_type %in% c("day", "week")) {
+    pca <- TRUE
+  } else {
+    pca <- FALSE
+  }
 
+  # check if input values have changed
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "run_deep_learning", "pca")) == 4) {
     current_log_df <- tibble::tibble(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
@@ -454,7 +469,8 @@ model_workflows <- function(run_info,
       dplyr::pull(Path)
 
     temp_file_tbl <- read_file(run_info,
-      path = gsub(fs::path(run_info$path), "", temp_path),
+      #path = ifelse(is.null(run_info$path), temp_path, gsub(fs::path(run_info$path), "", temp_path)),
+      path = gsub(ifelse(is.null(run_info$path), fs::path_dir(fs::path(tempdir(), "test")), fs::path(run_info$path)), "", temp_path),
       return_type = "df"
     )
 
@@ -650,7 +666,7 @@ model_hyperparameters <- function(run_info,
       dplyr::pull(Path)
 
     temp_file_tbl <- read_file(run_info,
-      path = gsub(fs::path(run_info$path), "", temp_path),
+      path = gsub(ifelse(is.null(run_info$path), fs::path_dir(fs::path(tempdir(), "test")), fs::path(run_info$path)), "", temp_path),
       return_type = "df"
     )
 

@@ -17,7 +17,7 @@ prep_models(
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function.}
+\item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
 
 \item{back_test_scenarios}{Number of specific back test folds to run when
 determining the best model. Default of NULL will automatically choose

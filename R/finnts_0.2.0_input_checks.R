@@ -68,7 +68,7 @@ check_input_data <- function(input_data,
   # duplicate rows
   dup_col_check <- c(combo_variables, "Date")
   
-  duplicate_tbl <- data_tbl %>% 
+  duplicate_tbl <- input_data %>% 
     dplyr::group_by(dplyr::across(tidyselect::all_of(dup_col_check))) %>% 
     dplyr::filter(dplyr::n() > 1) %>%
     dplyr::ungroup() %>%

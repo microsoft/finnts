@@ -66,6 +66,16 @@ set_run_info <- function(experiment_name = "finn_fcst",
   created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
     format = "%Y%m%dT%H%M%SZ", tz = "UTC"
   )
+  
+  if(is.null(path)) {
+    path <- fs::path(tempdir())
+    
+    fs::dir_create(tempdir(), "prep_data")
+    fs::dir_create(tempdir(), "prep_models")
+    fs::dir_create(tempdir(), "models")
+    fs::dir_create(tempdir(), "forecasts")
+    fs::dir_create(tempdir(), "logs")
+  }
 
   output_list <- list(
     experiment_name = experiment_name,

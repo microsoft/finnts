@@ -14,55 +14,63 @@ final_models(
 )
 }
 \arguments{
-\item{run_info}{run info using the 'set_run_info' function}
+\item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
 
 \item{average_models}{If TRUE, create simple averages of individual models.}
 
-\item{max_model_average}{Max number of models to average together. Will create model averages for 2 models up until input value
-or max number of models ran.}
+\item{max_model_average}{Max number of models to average together. Will
+create model averages for 2 models up until input value or max number of
+models ran.}
 
-\item{weekly_to_daily}{If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
+\item{weekly_to_daily}{If TRUE, convert a week forecast down to day by
+evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch.}
+\item{parallel_processing}{Default of NULL runs no parallel processing
+and forecasts each individual time series one after another.
+'local_machine' leverages all cores on current machine Finn is running
+on. 'azure_batch' runs time series in parallel on a remote compute cluster
+in Azure Batch.}
 
-\item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
-on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-than number of cores on machine minus 1.}
+\item{num_cores}{Number of cores to run when parallel processing is set up.
+Used when running parallel computations on local machine or within Azure.
+Default of NULL uses total amount of cores on machine minus one. Can't be
+greater than number of cores on machine minus 1.}
 }
 \value{
-Final model outputs are written to disk
+Final model outputs are written to disk.
 }
 \description{
 Select Best Models and Prep Final Outputs
 }
 \examples{
 \donttest{
-data_tbl <- timetk::m4_monthly \%>\% 
-  dplyr::rename(Date = date) \%>\% 
+data_tbl <- timetk::m4_monthly \%>\%
+  dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
-  dplyr::filter(Date >= "2012-01-01", 
-                Date <= "2015-06-01")
-                
+  dplyr::filter(
+    Date >= "2012-01-01",
+    Date <= "2015-06-01"
+  )
+
 run_info <- set_run_info()
 
-prep_data(run_info, 
-          input_data = data_tbl, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 3)
-          
-prep_models(run_info, 
-            models_to_run = c("arima", "ets"))
-            
-train_models(run_info, 
-             run_global_models = FALSE, 
-             combo_variables = c("id"))
+prep_data(run_info,
+  input_data = data_tbl,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3
+)
+
+prep_models(run_info,
+  models_to_run = c("arima", "ets")
+)
+
+train_models(run_info,
+  run_global_models = FALSE
+)
 
 final_models(run_info)
-             
 }
 }
