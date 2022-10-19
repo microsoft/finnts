@@ -76,8 +76,11 @@ train_models <- function(run_info,
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   date_type <- log_df$date_type
+  forecast_approach <- log_df$forecast_approach
   
   if(is.null(run_global_models) & date_type %in% c("day", "week")) {
+    run_global_models <- FALSE
+  } else if(forecast_approach != "bottoms_up") {
     run_global_models <- FALSE
   } else {
     run_global_models <- TRUE

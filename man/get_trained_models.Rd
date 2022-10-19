@@ -21,7 +21,7 @@ data_tbl <- timetk::m4_monthly \%>\%
   dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
   dplyr::filter(
-    id = "M2",
+    id == "M2",
     Date >= "2012-01-01",
     Date <= "2015-06-01"
   )
@@ -44,8 +44,7 @@ prep_models(run_info,
 
 train_models(run_info,
   run_global_models = FALSE,
-  run_local_models = TRUE,
-  combo_variables = c("id")
+  run_local_models = TRUE
 )
 
 final_models(run_info,

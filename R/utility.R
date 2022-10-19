@@ -1,11 +1,15 @@
 # define global variables to prevent notes in R CMD Check
-utils::globalVariables(c(".id", ".key", ".model_desc", ".pred", ".resample_id", "All", "Best_Model", "Combo",
-                  "Combo_Test_Date", "Combo_Total", "Count", "Date", "Date_Adj", "Date_Adj_half",
-                  "Date_Adj_index.num", "Date_Adj_quarter", "Date_Adj_year", "Date_Day", "FCST",
-                  "Horizon", "MAPE", "Model", "Number", "Number_Char", "Origin", "Residual",
-                  "Residual_Std_Dev", "Rolling_MAPE", "Slice", "Sum", "Target", "Type", "Variable", 
-                  "cluster", "frequency", "gluon_ts_frequency", "hi.80", "hi.95", "i", "lo.80", "lo.95",
-                  "weighted_MAPE", "where", "as2"))
+utils::globalVariables(c('.' ,'.estimate', '.id', '.key', '.pred', 'Back_Test_Scenario', 'Best_Model', 'Col', 'Combo',
+                         'Combo_Hash', 'Combo_ID', 'Combo_Total', 'Count', 'Data', 'Date', 'Date_Adj', 'Date_Day',
+                         'Date_half', 'Date_index.num', 'Date_quarter', 'Date_year', 'File', 'Forecast', 'Horizon',
+                         'Hyperparameter_Combo', 'Hyperparameter_ID', 'Hyperparameters', 'MAPE', 'Model',
+                         'Model_Combo', 'Model_Fit', 'Model_ID', 'Model_Key', 'Model_Name', 'Model_Recipe',
+                         'Model_Type', 'Number', 'Number_Char', 'Origin', 'Path', 'Prediction', 'RMSE', 'Recipe',
+                         'Recipe_ID', 'Residual', 'Residual_Std_Dev', 'Rolling_MAPE', 'Run_Type', 'SE', 'Slice_ID',
+                         'Sum', 'Target', 'Test_End', 'Train_End', 'Train_Test_ID', 'Type', 'Variable', 'as2',
+                         'combo_list', 'data', 'get_export_packages', 'hi_80', 'hi_95', 'i', 'lo_80', 'lo_95',
+                         'model_spec_1', 'name', 'path_ext', 'predict', 'read.csv', 'sc', 'weighted_MAPE', 'where', 
+                         'x', 'num_cores', 'run_info'))
 
 #' @importFrom magrittr %>%
 

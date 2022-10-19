@@ -34,9 +34,7 @@
 #' )
 #'
 #' train_models(run_info,
-#'   run_global_models = FALSE,
-#'   run_local_models = TRUE,
-#'   combo_variables = c("id")
+#'   run_local_models = TRUE
 #' )
 #'
 #' final_models(run_info,
@@ -60,6 +58,7 @@ get_forecast_data <- function(run_info,
   )
   
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
+  forecast_approach <- log_df$forecast_approach
 
   # get forecast data
   model_train_test_tbl <- read_file(run_info,
@@ -71,11 +70,18 @@ get_forecast_data <- function(run_info,
   ) %>%
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
-
-  fcst_path <- paste0(
-    "/forecasts/*", hash_data(run_info$experiment_name), "-",
-    hash_data(run_info$run_name), "*", ".", run_info$data_output
-  )
+  
+  if(forecast_approach == "bottoms_up") {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*models", ".", run_info$data_output
+    )
+  } else {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
+    )
+  }
 
   forecast_tbl <- read_file(run_info,
     path = fcst_path,
@@ -108,7 +114,7 @@ get_forecast_data <- function(run_info,
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     id = "M2",
+#'     id == "M2",
 #'     Date >= "2012-01-01",
 #'     Date <= "2015-06-01"
 #'   )
@@ -131,8 +137,7 @@ get_forecast_data <- function(run_info,
 #'
 #' train_models(run_info,
 #'   run_global_models = FALSE,
-#'   run_local_models = TRUE,
-#'   combo_variables = c("id")
+#'   run_local_models = TRUE
 #' )
 #'
 #' final_models(run_info,
@@ -404,6 +409,8 @@ read_file <- function(run_info,
       parquet = arrow::open_dataset(sources = files, format = "parquet"),
       csv = arrow::open_dataset(sources = files, format = "csv")
     )
+  } else if(return_type == "object") {
+    readRDS(files)
   }
 }
 

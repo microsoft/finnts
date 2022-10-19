@@ -1,4 +1,13 @@
 
+#' Check input vales
+#'
+#' @param input_name input name
+#' @param input_value input value
+#' @param type type
+#' @param expected_value expected value
+#'
+#' @return nothing
+#' @noRd
 check_input_type <- function(input_name, 
                              input_value, 
                              type, 
@@ -22,6 +31,18 @@ check_input_type <- function(input_name,
   }
 }
 
+#' Check input data
+#'
+#' @param input_data input name
+#' @param combo_variables combo variables
+#' @param target_variable target variable
+#' @param external_regressors external regressors
+#' @param date_type date type
+#' @param fiscal_year_start fiscal year start
+#' @param max_model_average max model average
+#' 
+#' @return nothing
+#' @noRd
 check_input_data <- function(input_data, 
                              combo_variables, 
                              target_variable, 
@@ -81,6 +102,13 @@ check_input_data <- function(input_data,
   }
 }
 
+#' Check parallel processing set up
+#'
+#' @param parallel_processing parallel processing
+#' @param run_model_parallel run model parallel
+#' 
+#' @return nothing
+#' @noRd
 check_parallel_processing <- function(parallel_processing, 
                                       run_model_parallel = FALSE) {
   

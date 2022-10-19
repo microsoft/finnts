@@ -40,13 +40,11 @@ Lets you get all of the logging associated with a specific experiment or run.
 \donttest{
 run_info <- set_run_info(
   experiment_name = "finn_forecast",
-  run_name = "test_run",
-  path = NULL
+  run_name = "test_run"
 )
 
 run_info_tbl <- get_run_info(
-  experiment_name = "finn_forecast",
-  run_name = "test_run"
+  experiment_name = "finn_forecast"
 )
 }
 }

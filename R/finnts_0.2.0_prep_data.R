@@ -103,7 +103,7 @@ prep_data <- function(run_info,
   check_input_type("fiscal_year_start", fiscal_year_start, "numeric")
   check_input_type("clean_missing_values", clean_missing_values, "logical")
   check_input_type("clean_outliers", clean_outliers, "logical")
-  check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "traditional_hierarchy"))
+  check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "standard_hierarchy"))
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("character", "NULL"))
   check_input_type("target_log_transformation", target_log_transformation, "logical")
@@ -156,12 +156,12 @@ prep_data <- function(run_info,
       tidyselect::all_of(external_regressors),
       "Date", "Target"
     )) %>%
-    dplyr::arrange(tidyselect::all_of(combo_variables), Date) %>%
-    combo_cleanup_fn(combo_cleanup_date) # %>%
-  # get_hts(combo_variables,
-  #         forecast_approach,
-  #         frequency_number)
-
+    dplyr::arrange(Combo, Date) %>%
+    combo_cleanup_fn(combo_cleanup_date) %>%
+    prep_hierarchical_data(combo_variables,
+                           forecast_approach, 
+                           frequency_number = get_frequency_number(date_type))
+  
   # check if a previous run already has necessary outputs
   prev_combo_list <- list_files(
     run_info$storage_object,
@@ -205,11 +205,11 @@ prep_data <- function(run_info,
 
     # check if input values have changed
     current_log_df <- tibble::tibble(
-      combo_variables = combo_variables,
+      combo_variables = paste(combo_variables, collapse = "---"),
       target_variable = target_variable,
       date_type = date_type,
       forecast_horizon = forecast_horizon,
-      external_regressors = ifelse(is.null(external_regressors), NA, external_regressors),
+      external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = "---")),
       hist_start_date = hist_start_date,
       hist_end_date = hist_end_date,
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, combo_cleanup_date),
@@ -220,10 +220,10 @@ prep_data <- function(run_info,
       parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
       num_cores = ifelse(is.null(num_cores), NA, num_cores),
       target_log_transformation = target_log_transformation,
-      fourier_periods = ifelse(is.null(fourier_periods), NA, fourier_periods),
-      lag_periods = ifelse(is.null(lag_periods), NA, lag_periods),
-      rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, rolling_window_periods),
-      recipes_to_run = ifelse(is.null(recipes_to_run), NA, recipes_to_run)
+      fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
+      lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
+      rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
+      recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---"))
     ) %>%
       data.frame()
 
@@ -650,169 +650,6 @@ combo_cleanup_fn <- function(df,
   } else {
     df
   }
-}
-
-#' Function to create hierarchical time series
-#'
-#' @param data_tbl data frame
-#' @param combo_variables list of unique time series combinations
-#' @param forecast_approach indicates what type of hierarchy
-#' @param frequency_number number of time series frequency
-#' @param return_type whether to return a hts df or the hierarchy structure to use in forecast reconciliation
-#'
-#' @return tbl with or without a hierarchical structure
-#' @noRd
-get_hts <- function(data_tbl,
-                    combo_variables,
-                    forecast_approach,
-                    frequency_number,
-                    return_type = "data") {
-
-  # Group List for Grouped Hierarchy
-  get_group_list <- function(data_hts_gts_df) {
-    group_list <- vector()
-
-    for (variable in combo_variables) {
-      var <- data_hts_gts_df[[variable]]
-
-      group_list <- rbind(group_list, var)
-    }
-    rownames(group_list) <- combo_variables
-
-    return(group_list)
-  }
-
-  # Node List for Standard Hierarchy
-  get_node_list <- function(data_hts_gts_df) {
-    hierarchy_length_tbl <- tibble::tibble()
-
-    node_list <- list()
-
-    num <- 1
-
-    for (variable in combo_variables) {
-      hierarchy_length_tbl <- rbind(
-        hierarchy_length_tbl,
-        tibble::tibble(
-          Variable = variable,
-          Count = length(unique(data_tbl[[variable]]))
-        )
-      )
-    }
-
-    hierarchy_combo_variables <- hierarchy_length_tbl %>%
-      dplyr::arrange(Count) %>%
-      dplyr::select(Variable) %>%
-      unlist(use.names = FALSE)
-
-    for (variable in hierarchy_combo_variables) {
-      if (num == 1) {
-        node_list <- append(node_list, length(unique(data_tbl[[variable]])))
-
-        num <- num + 1
-      } else {
-        grouping_current <- variable
-
-        grouping_minus_1 <- hierarchy_combo_variables[num - 1]
-
-        grouping_values <- data_hts_gts_df %>%
-          dplyr::group_by(dplyr::across(tidyselect::all_of(c(grouping_minus_1, grouping_current)))) %>%
-          dplyr::summarise(Sum = sum(Sum, na.rm = TRUE)) %>%
-          dplyr::mutate(Sum = 1) %>%
-          dplyr::group_by(dplyr::across(tidyselect::all_of(grouping_minus_1))) %>%
-          dplyr::summarise(Count = sum(Sum)) %>%
-          dplyr::select(Count) %>%
-          unlist(use.names = FALSE)
-
-        node_list <- append(node_list, list(grouping_values))
-        num <- num + 1
-      }
-    }
-
-    return(node_list)
-  }
-
-  # Pick between group_list and node_list
-  pick_right_list <- function(data_hts_gts_df) {
-    if (forecast_approach == "grouped_hierarchy") {
-      data_hts_gts_df %>% get_group_list()
-    } else {
-      data_hts_gts_df %>% get_node_list()
-    }
-  }
-
-  # getting the right hts
-  get_hts <- function(data_ts, some_list) {
-    if (forecast_approach == "grouped_hierarchy") {
-      data_ts %>%
-        hts::gts(groups = some_list)
-    } else {
-      data_ts %>%
-        hts::hts(nodes = some_list)
-    }
-  }
-
-  # return correct hts info
-  data_hts_return <- function(df, ret_obj, hts_list) {
-    if (ret_obj == "data") {
-      Date <- df$Date
-
-      df %>%
-        dplyr::select(-Date) %>%
-        stats::ts(frequency = frequency_number) %>%
-        get_hts(hts_list) %>%
-        hts::allts() %>%
-        data.frame() %>%
-        tibble::add_column(
-          Date = Date,
-          .before = 1
-        ) %>%
-        tidyr::pivot_longer(!Date,
-          names_to = "Combo",
-          values_to = "Target"
-        ) %>%
-        tibble::tibble()
-    } else if (ret_obj == "hts_gts") {
-      data_ts <- df %>%
-        dplyr::select(-Date) %>%
-        stats::ts(frequency = frequency_number)
-
-      hts_gts <- data_ts %>%
-        get_hts(hts_list)
-
-      return(list(data_ts = data_ts, hts_gts = hts_gts))
-    } else {
-      df
-    }
-  }
-
-  # main data table function to produce our table
-  data_tbl_func <- function(df, return_type = "data") {
-    if (forecast_approach == "bottoms_up") {
-      df
-    } else {
-      some_list <- df %>%
-        dplyr::mutate(Target = tidyr::replace_na(Target, 0)) %>%
-        dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables))) %>%
-        dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
-        data.frame() %>%
-        pick_right_list()
-
-      data_cast <- df %>%
-        dplyr::arrange(Combo, Date) %>%
-        dplyr::select(-combo_variables) %>%
-        tidyr::pivot_wider(
-          names_from = Combo,
-          values_from = Target
-        ) %>%
-        dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) # replace NA values with zero for hts aggregations
-
-      data_cast %>%
-        data_hts_return(ret_obj = return_type, hts_list = some_list)
-    }
-  }
-
-  data_tbl %>% data_tbl_func(return_type = return_type)
 }
 
 #' Function to get external regressor features that contain future values after hist_end_date

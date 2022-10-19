@@ -122,6 +122,7 @@ final_models <- function(run_info,
   )
 
   date_type <- prev_log_df$date_type
+  forecast_approach <- prev_log_df$forecast_approach
 
   if ((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
 
@@ -481,11 +482,18 @@ final_models <- function(run_info,
     }
 
     return(best_model_mape)
-    return(tibble::tibble())
   }
 
   # clean up any parallel run process
   par_end(cl)
+  
+  # reconcile hierarchical forecasts
+  if(forecast_approach != "bottoms_up") {
+    reconcile_hierarchical_data(run_info, 
+                                parallel_processing, 
+                                forecast_approach,  
+                                negative_forecast = negative_forecast)
+  }
 
   # update logging file
   log_df <- read_file(run_info,
@@ -510,6 +518,13 @@ final_models <- function(run_info,
   return(cli::cli_alert_success("Forecast Finished"))
 }
 
+#' Create prediction intervals
+#'
+#' @param fcst_tbl forecast table to use to create prediction intervals
+#' @param train_test_split train test split
+#'
+#' @return data frame with prediction intervals
+#' @noRd
 create_prediction_intervals <- function(fcst_tbl,
                                         train_test_split) {
   back_test_id <- train_test_split %>%
@@ -539,6 +554,14 @@ create_prediction_intervals <- function(fcst_tbl,
   return(final_tbl)
 }
 
+#' Convert weekly forecast down to daily
+#'
+#' @param fcst_tbl forecast table to use to create prediction intervals
+#' @param date_type date type
+#' @param weekly_to_daily if weekly forecast should be converted to daily
+#'
+#' @return data frame with final forecasts
+#' @noRd
 convert_weekly_to_daily <- function(fcst_tbl,
                                     date_type,
                                     weekly_to_daily) {

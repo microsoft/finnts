@@ -45,9 +45,7 @@ prep_models(run_info,
 )
 
 train_models(run_info,
-  run_global_models = FALSE,
-  run_local_models = TRUE,
-  combo_variables = c("id")
+  run_local_models = TRUE
 )
 
 final_models(run_info,

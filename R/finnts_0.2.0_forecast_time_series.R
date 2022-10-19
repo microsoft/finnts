@@ -254,6 +254,8 @@ forecast_backwards_compatability <- function(run_info,
                       hi_80 = Target, 
                       hi_95 = Target)
     ) %>%
+    dplyr::mutate(Type = ifelse(is.na(Model_ID), "Historical", "Forecast")) %>%
+    dplyr::relocate(Type, .before = Date) %>%
     dplyr::rename(Model = Model_ID, 
                   lo.95 = lo_95, 
                   lo.80 = lo_80, 
