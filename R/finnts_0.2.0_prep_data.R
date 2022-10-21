@@ -977,7 +977,7 @@ multivariate_prep_recipe_1 <- function(data,
   )
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
-
+  print(data_lag_window)
   data_lag_window <- data_lag_window %>%
     dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
 
@@ -1109,7 +1109,7 @@ multivariate_prep_recipe_2 <- function(data,
     )
     is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
     data_lag_window[is.na(data_lag_window)] <- 0.00
-
+    print(data_lag_window)
     data_lag_window <- data_lag_window %>%
       dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
 
