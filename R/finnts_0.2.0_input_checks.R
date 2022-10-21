@@ -90,7 +90,8 @@ check_input_data <- function(input_data,
   dup_col_check <- c(combo_variables, "Date")
   
   duplicate_tbl <- input_data %>% 
-    dplyr::group_by(dplyr::across(tidyselect::all_of(dup_col_check))) %>% 
+    #dplyr::group_by(dplyr::across(tidyselect::all_of(dup_col_check))) %>%
+    dplyr::group_by(dplyr::across(tidyselect::all_of(c(combo_variables, "Date")))) %>%
     dplyr::filter(dplyr::n() > 1) %>%
     dplyr::ungroup() %>%
     dplyr::select(Date) %>%
