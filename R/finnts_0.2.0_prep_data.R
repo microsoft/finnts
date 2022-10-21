@@ -177,15 +177,15 @@ prep_data <- function(run_info,
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique()
-  print("test1")
+
   current_combo_list <- initial_prep_tbl %>%
     dplyr::select(Combo) %>%
     dplyr::distinct(Combo) %>%
-    dplyr::collect(Combo) %>%
+    dplyr::collect() %>%
     dplyr::group_by(1:dplyr::n()) %>%
     dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
     dplyr::ungroup()
-  print("test2")
+
   combo_diff <- setdiff(
     current_combo_list %>%
       dplyr::pull(Combo_Hash) %>%
