@@ -88,10 +88,16 @@ check_input_data <- function(input_data,
   
   # duplicate rows
   dup_col_check <- c(combo_variables, "Date")
-  print(dup_col_check)
+
   duplicate_tbl <- input_data %>% 
-    dplyr::group_by(dplyr::across(dup_col_check)) %>%
+    #dplyr::group_by(dplyr::across(dup_col_check)) %>%
     #dplyr::group_by(dplyr::across(tidyselect::all_of(c(combo_variables, "Date")))) %>%
+    tidyr::unite("Combo",
+                 combo_variables,
+                 sep = "--",
+                 remove = F
+    ) %>%
+    dplyr::group_by(Combo, Date) %>%
     dplyr::filter(dplyr::n() > 1) %>%
     dplyr::ungroup() %>%
     dplyr::select(Date) %>%
