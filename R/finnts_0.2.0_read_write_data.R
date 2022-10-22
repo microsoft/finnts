@@ -400,12 +400,12 @@ read_file <- function(run_info,
       qs = qs::qread(path)
     )
   } else if (return_type == "sdf") {
-    switch(path_ext,
+    switch(file_ext,
       parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)),
       csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
     )
   } else if (return_type == "arrow") {
-    switch(path_ext,
+    switch(file_ext,
       parquet = arrow::open_dataset(sources = files, format = "parquet"),
       csv = arrow::open_dataset(sources = files, format = "csv")
     )
