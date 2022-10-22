@@ -980,6 +980,7 @@ multivariate_prep_recipe_1 <- function(data,
   data_lag_window[is.na(data_lag_window)] <- 0.00
 
   data_lag_window <- data_lag_window %>%
+    dplyr::mutate(Date = as.Date(Date)) %>%
     dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
     dplyr::select(-Target) %>%
     dplyr::rename(Target = Target2)
@@ -1115,6 +1116,7 @@ multivariate_prep_recipe_2 <- function(data,
     data_lag_window[is.na(data_lag_window)] <- 0.00
 
     data_lag_window <- data_lag_window %>%
+      dplyr::mutate(Date = as.Date(Date)) %>%
       dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
       dplyr::select(-Target) %>%
       dplyr::rename(Target = Target2)
