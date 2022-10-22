@@ -386,7 +386,8 @@ prep_data <- function(run_info,
             date_type,
             forecast_horizon,
             hist_end_date
-          )
+          ) %>%
+          dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
 
         write_data(
           x = R2,
@@ -498,7 +499,8 @@ prep_data <- function(run_info,
               get_fourier_periods(fourier_periods, date_type),
               get_lag_periods(lag_periods, date_type, forecast_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type)
-            )
+            ) %>%
+            dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
 
           write_data(
             x = R1,
@@ -979,11 +981,11 @@ multivariate_prep_recipe_1 <- function(data,
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
 
-  data_lag_window <- data_lag_window %>%
-    dplyr::mutate(Date = as.Date(Date)) %>%
-    dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
-    dplyr::select(-Target) %>%
-    dplyr::rename(Target = Target2)
+  # data_lag_window <- data_lag_window %>%
+  #   dplyr::mutate(Date = as.Date(Date)) %>%
+  #   dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
+  #   dplyr::select(-Target) %>%
+  #   dplyr::rename(Target = Target2)
 
   return(data_lag_window)
 }
@@ -1115,11 +1117,11 @@ multivariate_prep_recipe_2 <- function(data,
     is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
     data_lag_window[is.na(data_lag_window)] <- 0.00
 
-    data_lag_window <- data_lag_window %>%
-      dplyr::mutate(Date = as.Date(Date)) %>%
-      dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
-      dplyr::select(-Target) %>%
-      dplyr::rename(Target = Target2)
+    # data_lag_window <- data_lag_window %>%
+    #   dplyr::mutate(Date = as.Date(Date)) %>%
+    #   dplyr::mutate(Target2 = base::ifelse(Date > hist_end_date, NA, Target)) %>%
+    #   dplyr::select(-Target) %>%
+    #   dplyr::rename(Target = Target2)
 
     # combine transformed data
     data_trans <- rbind(data_trans, data_lag_window)
