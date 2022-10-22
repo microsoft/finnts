@@ -402,7 +402,13 @@ read_file <- function(run_info,
   } else if (return_type == "sdf") {
     switch(file_ext,
       parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)),
-      csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
+      csv = tryCatch(
+        sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path) %>% stringr::str_replace("/dbfs", "")),
+        error = function(e) {
+          sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
+        }
+      )
+      #csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
     )
   } else if (return_type == "arrow") {
     switch(file_ext,
