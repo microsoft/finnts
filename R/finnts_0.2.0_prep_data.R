@@ -975,11 +975,14 @@ multivariate_prep_recipe_1 <- function(data,
     data_lag_window,
     is.infinite
   )
+  
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
-  # print(data_lag_window)
-  # data_lag_window <- data_lag_window %>%
-  #   dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
+
+  data_lag_window <- data_lag_window %>%
+    dplyr::mutate(Target2 = ifelse(Date > hist_end_date, NA, Target)) %>%
+    dplyr::select(-Target) %>%
+    dplyr::rename(Target = Target2)
 
   return(data_lag_window)
 }
@@ -1107,11 +1110,14 @@ multivariate_prep_recipe_2 <- function(data,
       data_lag_window,
       is.infinite
     )
+    
     is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
     data_lag_window[is.na(data_lag_window)] <- 0.00
-    # print(data_lag_window)
-    # data_lag_window <- data_lag_window %>%
-    #   dplyr::mutate(Target = ifelse(Date > hist_end_date, NA, Target))
+
+    data_lag_window <- data_lag_window %>%
+      dplyr::mutate(Target2 = ifelse(Date > hist_end_date, NA, Target)) %>%
+      dplyr::select(-Target) %>%
+      dplyr::rename(Target = Target2)
 
     # combine transformed data
     data_trans <- rbind(data_trans, data_lag_window)
