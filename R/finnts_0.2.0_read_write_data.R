@@ -66,7 +66,7 @@ get_forecast_data <- function(run_info,
       "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
-    return_type = "df"
+    return_type = return_type
   ) %>%
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
