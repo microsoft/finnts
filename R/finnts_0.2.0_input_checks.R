@@ -39,7 +39,7 @@ check_input_type <- function(input_name,
 #' @param external_regressors external regressors
 #' @param date_type date type
 #' @param fiscal_year_start fiscal year start
-#' @param max_model_average max model average
+#' @param parallel_processing parallel processing
 #' 
 #' @return nothing
 #' @noRd
@@ -49,7 +49,7 @@ check_input_data <- function(input_data,
                              external_regressors, 
                              date_type, 
                              fiscal_year_start, 
-                             max_model_average) {
+                             parallel_processing) {
   
   #data combo names match the input data
   if(sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
@@ -86,12 +86,26 @@ check_input_data <- function(input_data,
     stop("fiscal year start should be a number from 1 to 12")
   }
   
+  # input_data is correct type for parallel processing
+  if(inherits(input_data, c('data.frame', 'tbl')) & is.null(parallel_processing)) {
+    
+    # do nothing
+    
+  } else if(inherits(input_data, 'tbl_spark') & is.null(parallel_processing)) {
+    
+    stop("spark data frames should run with spark parallel processing", 
+         call. = FALSE)
+    
+  } else if(inherits(input_data, 'tbl_spark') & parallel_processing != "spark") {
+    
+    stop("spark data frames should run with spark parallel processing", 
+         call. = FALSE)
+  }
+  
   # duplicate rows
   dup_col_check <- c(combo_variables, "Date")
 
   duplicate_tbl <- input_data %>% 
-    #dplyr::group_by(dplyr::across(dup_col_check)) %>%
-    #dplyr::group_by(dplyr::across(tidyselect::all_of(c(combo_variables, "Date")))) %>%
     tidyr::unite("Combo",
                  combo_variables,
                  sep = "--",

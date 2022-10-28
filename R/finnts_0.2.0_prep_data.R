@@ -117,7 +117,8 @@ prep_data <- function(run_info,
     target_variable,
     external_regressors,
     date_type,
-    fiscal_year_start
+    fiscal_year_start, 
+    parallel_processing
   )
   check_parallel_processing(parallel_processing)
 
@@ -407,6 +408,7 @@ prep_data <- function(run_info,
     par_end(cl)
   } else if (parallel_processing == "spark") {
     final_data <- initial_prep_tbl %>%
+      adjust_df(return_type = 'sdf') %>%
       sparklyr::spark_apply(function(df, context) {
         for (name in names(context)) {
           assign(name, context[[name]], envir = .GlobalEnv)
