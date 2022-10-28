@@ -101,7 +101,7 @@ adjust_df <- function(input_data,
                       return_type = "df") {
   
   if(return_type == "sdf" & inherits(input_data, c("tbl", "tbl_df", "data.frame"))) {
-    sparklyr::copy_to(sc, input_data)
+    sparklyr::copy_to(sc, input_data, overwrite = TRUE)
   } else if(return_type == "sdf" & inherits(input_data, "tbl_spark")) {
     input_data
   } else {

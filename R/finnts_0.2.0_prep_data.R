@@ -157,7 +157,6 @@ prep_data <- function(run_info,
       tidyselect::all_of(external_regressors),
       "Date", "Target"
     )) %>%
-    dplyr::arrange(Combo, Date) %>%
     combo_cleanup_fn(combo_cleanup_date) %>%
     prep_hierarchical_data(run_info, 
                            combo_variables,
