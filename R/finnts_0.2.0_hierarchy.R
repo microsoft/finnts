@@ -446,7 +446,7 @@ reconcile_hierarchical_data <- function(run_info,
         unreconciled_tbl %>%
           dplyr::filter(Best_Model == "Yes") %>%
           dplyr::mutate(Model_ID == "Best-Model")
-      )
+      ) %>%
       sparklyr::spark_apply(function(df, context) {
         
         for (name in names(context)) {
