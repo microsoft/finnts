@@ -60,7 +60,8 @@ Imports:
     timetk,
     tune,
     vroom,
-    workflows
+    workflows, 
+    yardstick
 Suggests: 
     arrow,
     AzureStor,

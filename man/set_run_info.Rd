@@ -10,7 +10,8 @@ set_run_info(
   storage_object = NULL,
   path = NULL,
   data_output = "csv",
-  object_output = "rds"
+  object_output = "rds",
+  add_unique_id = TRUE
 )
 }
 \arguments{
@@ -40,6 +41,10 @@ of 'parquet' will instead write parquet files.}
 outputs. Default will write object outputs like trained models as
 rds files. The other option of 'qs' will instead serialize R objects
 as qs files by using the 'qs' package.}
+
+\item{add_unique_id}{Add a unique id to end of run_name based on submission time.
+Set to FALSE to supply your own unique run name, which is helpful in
+multistage ML pipelines.}
 }
 \value{
 A list of run information

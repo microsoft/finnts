@@ -98,7 +98,7 @@ test_that("final forecast data rows are meaningful", {
 
 test_that("back test best MAPE is as expected", {
   best_models <- unlist(strsplit(back_test_best_MAPE$Model, "_"))
-  check_exist(best_models,models_to_run)
+  testthat::expect_equal(best_models, "snaive--local--R1")
 })
 
 rm(finn_forecast)
@@ -133,7 +133,7 @@ finn_forecast <- forecast_time_series(
   forecast_horizon = forecast_horizon, 
   forecast_approach = "standard_hierarchy", 
   run_model_parallel = FALSE,
-  back_test_scenarios = 3,
+  back_test_scenarios = 6,
   models_to_run = models_to_run, 
   run_global_models = FALSE)
 
@@ -198,7 +198,7 @@ test_that("final forecast data rows are meaningful", {
 
 test_that("back test best MAPE is as expected", {
   best_models <- unlist(strsplit(back_test_best_MAPE$Model, "_"))
-  check_exist(best_models,models_to_run)
+  testthat::expect_equal(unique(best_models), "meanf--local--R1")
 })
 
 rm(finn_forecast)
@@ -297,6 +297,6 @@ test_that("final forecast data rows are meaningful", {
 
 test_that("back test best MAPE is as expected", {
   best_models <- unlist(strsplit(back_test_best_MAPE$Model, "_"))
-  check_exist(best_models,models_to_run)
+  testthat::expect_equal(unique(best_models), "meanf--local--R1")
 })
 

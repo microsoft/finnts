@@ -123,6 +123,7 @@ final_models <- function(run_info,
 
   date_type <- prev_log_df$date_type
   forecast_approach <- prev_log_df$forecast_approach
+  negative_forecast <- prev_log_df$negative_forecast
 
   if ((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
 
@@ -492,7 +493,7 @@ final_models <- function(run_info,
     reconcile_hierarchical_data(run_info, 
                                 parallel_processing, 
                                 forecast_approach,  
-                                negative_forecast = negative_forecast)
+                                negative_forecast)
   }
 
   # update logging file

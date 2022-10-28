@@ -233,6 +233,7 @@ forecast_backwards_compatability <- function(run_info,
   
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   target_variable <- log_df$target_variable
+  forecast_approach <- log_df$forecast_approach
   
   # future forecast results
   future_forecast_tbl <- initial_fcst_tbl %>%
@@ -282,10 +283,29 @@ forecast_backwards_compatability <- function(run_info,
     dplyr::select(-Number, -Number_Char)
   
   # best model
-  best_model_tbl <- back_test_tbl %>%
-    dplyr::filter(Best_Model == "Yes") %>%
-    dplyr::select(Combo, Model, Best_Model) %>%
-    dplyr::distinct()
+  if(forecast_approach == "bottoms_up") {
+    
+    best_model_tbl <- back_test_tbl %>%
+      dplyr::filter(Best_Model == "Yes") %>%
+      dplyr::select(Combo, Model, Best_Model) %>%
+      dplyr::distinct()
+    
+  } else {
+    
+    # read in unreconciled results
+    best_model_tbl <- read_file(run_info,
+                                  path = paste0(
+                                    "/forecasts/*", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                    "*models.", run_info$data_output
+                                  ),
+                                  return_type = "df"
+    ) %>%
+      dplyr::filter(Best_Model == "Yes") %>%
+      dplyr::select(Combo_ID, Model_ID, Best_Model) %>%
+      dplyr::rename(Combo = Combo_ID, 
+                    Model = Model_ID) %>%
+      dplyr::distinct()
+  }
     
   return(list(
     final_fcst = future_forecast_tbl, 

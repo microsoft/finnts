@@ -201,6 +201,29 @@ train_test_split <- function(run_info,
   } else {
     run_ensemble_models <- TRUE
   }
+  
+  # adjust based on models planned to run
+  model_workflow_list <- read_file(run_info,
+                                   path = paste0(
+                                     "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                     "-model_workflows.", run_info$object_output
+                                   ),
+                                   return_type = "df"
+  ) %>%
+    dplyr::pull(Model_Name) %>%
+    unique()
+  
+  ml_models <- c(
+    "arima-boost", "cubist", "glmnet", "mars",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
+    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
+  )
+  
+  if (sum(model_workflow_list %in% ml_models) == 0) {
+    run_ensemble_models <- FALSE
+    
+    cli::cli_alert_warning("Turning ensemble models off since no multivariate models were chosen to run.")
+  }
 
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("back_test_scenarios", "back_test_spacing", "run_ensemble_models")) == 3) {
@@ -325,26 +348,7 @@ train_test_split <- function(run_info,
   }
 
   # adjust based on models planned to run
-  model_workflow_list <- read_file(run_info,
-    path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-      "-model_workflows.", run_info$object_output
-    ),
-    return_type = "df"
-  ) %>%
-    dplyr::pull(Model_Name) %>%
-    unique()
-
-  ml_models <- c(
-    "arima-boost", "cubist", "glmnet", "mars",
-    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
-    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
-  )
-
   if (sum(model_workflow_list %in% ml_models) == 0) {
-    run_ensemble_models <- FALSE
-
-    cli::cli_alert_warning("Turning ensemble models off since no multivariate models were chosen to run.")
 
     train_test_final <- train_test_final %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%

@@ -1,6 +1,7 @@
 #' Prep hierarchical data
 #'
 #' @param input_data initial historical data
+#' @param run_info run info
 #' @param combo_variables combo variables
 #' @param forecast_approach whether it's a bottoms up or hierarchical forecast
 #' @param frequency_number frequency of time series
@@ -8,6 +9,7 @@
 #' @return data aggregated to the correct data hierarchies
 #' @noRd
 prep_hierarchical_data <- function(input_data, 
+                                   run_info, 
                                    combo_variables,
                                    forecast_approach, 
                                    frequency_number) {

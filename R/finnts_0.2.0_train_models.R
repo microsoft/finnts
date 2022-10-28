@@ -136,7 +136,7 @@ train_models <- function(run_info,
       run_info$storage_object,
       paste0(
         run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
-        hash_data(run_info$run_name), "*.", run_info$data_output
+        hash_data(run_info$run_name), "*R*.", run_info$data_output
       )
     ) %>%
       tibble::tibble(

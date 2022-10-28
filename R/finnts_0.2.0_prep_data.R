@@ -158,7 +158,8 @@ prep_data <- function(run_info,
     )) %>%
     dplyr::arrange(Combo, Date) %>%
     combo_cleanup_fn(combo_cleanup_date) %>%
-    prep_hierarchical_data(combo_variables,
+    prep_hierarchical_data(run_info, 
+                           combo_variables,
                            forecast_approach, 
                            frequency_number = get_frequency_number(date_type))
   

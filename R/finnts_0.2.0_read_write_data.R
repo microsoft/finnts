@@ -97,7 +97,8 @@ get_forecast_data <- function(run_info,
     dplyr::arrange(Combo, dplyr::desc(Best_Model), Model_ID, Train_Test_ID, Date) %>%
     tidyr::separate(col = Combo, 
                     into = combo_variables, 
-                    remove = FALSE)
+                    remove = FALSE) %>%
+    base::suppressWarnings()
 
   return(forecast_tbl)
 }
@@ -401,14 +402,18 @@ read_file <- function(run_info,
     )
   } else if (return_type == "sdf") {
     switch(file_ext,
-      parquet = sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path)),
+      parquet = tryCatch(
+        sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path) %>% stringr::str_replace("/dbfs", "")),
+        error = function(e) {
+          sparklyr::spark_read_parquet(sc, path = fs::path(initial_path, path) %>% stringr::str_replace("/synfs", "synfs:"))
+        }
+      ),
       csv = tryCatch(
         sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path) %>% stringr::str_replace("/dbfs", "")),
         error = function(e) {
-          sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
+          sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path) %>% stringr::str_replace("/synfs", "synfs:"))
         }
       )
-      #csv = sparklyr::spark_read_csv(sc, path = fs::path(initial_path, path))
     )
   } else if (return_type == "arrow") {
     switch(file_ext,

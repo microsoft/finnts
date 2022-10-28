@@ -24,6 +24,9 @@
 #'   outputs. Default will write object outputs like trained models as
 #'   rds files. The other option of 'qs' will instead serialize R objects
 #'   as qs files by using the 'qs' package.
+#' @param add_unique_id Add a unique id to end of run_name based on submission time. 
+#'   Set to FALSE to supply your own unique run name, which is helpful in 
+#'   multistage ML pipelines.
 #'
 #' @return A list of run information
 #' @examples
@@ -39,7 +42,10 @@ set_run_info <- function(experiment_name = "finn_fcst",
                          storage_object = NULL,
                          path = NULL,
                          data_output = "csv",
-                         object_output = "rds") {
+                         object_output = "rds", 
+                         add_unique_id = TRUE) {
+  
+  # initial input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
   }
@@ -57,16 +63,8 @@ set_run_info <- function(experiment_name = "finn_fcst",
     is.null(path)) {
     path <- ""
   }
-
-  run_name <- paste0(
-    run_name, "-",
-    format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
-  )
-
-  created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
-    format = "%Y%m%dT%H%M%SZ", tz = "UTC"
-  )
   
+  # create temp dir paths
   if(is.null(path)) {
     path <- fs::path(tempdir())
     
@@ -76,36 +74,105 @@ set_run_info <- function(experiment_name = "finn_fcst",
     fs::dir_create(tempdir(), "forecasts")
     fs::dir_create(tempdir(), "logs")
   }
-
-  output_list <- list(
+  
+  # see if there is an existing log file to leverage
+  temp_run_info <- list(
     experiment_name = experiment_name,
     run_name = run_name,
-    created = created,
     storage_object = storage_object,
     path = path,
     data_output = data_output,
     object_output = object_output
   )
-
-  output_tbl <- tibble::tibble(
-    experiment_name = experiment_name,
-    run_name = run_name,
-    created = created,
-    path = path,
-    data_output = data_output,
-    object_output = object_output
-  )
-
-  write_data(
-    x = output_tbl,
-    combo = NULL,
-    run_info = output_list,
-    output_type = "log",
-    folder = "logs",
-    suffix = NULL
-  )
-
-  return(output_list)
+  
+  log_df <- tryCatch(
+    read_file(temp_run_info,
+              path = paste0("logs/", hash_data(experiment_name), "-", hash_data(run_name), ".csv"),
+              return_type = "df"
+    ),
+    error = function(e) {
+        tibble::tibble()
+    }
+  ) %>%
+    base::suppressWarnings()
+  
+  if(nrow(log_df) > 0 & add_unique_id == FALSE) {
+    
+    # check if input values have changed
+    current_log_df <- tibble::tibble(
+      experiment_name = experiment_name,
+      run_name = run_name,
+      path = path,
+      data_output = data_output,
+      object_output = object_output
+    ) %>%
+      data.frame()
+    
+    prev_log_df <- log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+    
+    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
+      stop("Inputs have recently changed in 'set_run_info', please revert back to original inputs or start a new run with 'set_run_info'",
+           call. = FALSE
+      )
+    }
+    
+    output_list <- list(
+      experiment_name = experiment_name,
+      run_name = run_name,
+      created = log_df$created,
+      storage_object = storage_object,
+      path = path,
+      data_output = data_output,
+      object_output = object_output
+    )
+    
+    return(output_list)
+    
+  } else {
+    
+    if(add_unique_id) {
+      run_name <- paste0(
+        run_name, "-",
+        format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
+      )
+    }
+    
+    created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
+                          format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+    )
+    
+    output_list <- list(
+      experiment_name = experiment_name,
+      run_name = run_name,
+      created = created,
+      storage_object = storage_object,
+      path = path,
+      data_output = data_output,
+      object_output = object_output
+    )
+    
+    output_tbl <- tibble::tibble(
+      experiment_name = experiment_name,
+      run_name = run_name,
+      created = created,
+      path = path,
+      data_output = data_output,
+      object_output = object_output
+    )
+    
+    write_data(
+      x = output_tbl,
+      combo = NULL,
+      run_info = output_list,
+      output_type = "log",
+      folder = "logs",
+      suffix = NULL
+    )
+    
+    return(output_list)
+  }
 }
 
 #' Get run info

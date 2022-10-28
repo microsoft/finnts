@@ -9,7 +9,7 @@ utils::globalVariables(c('.' ,'.estimate', '.id', '.key', '.pred', 'Back_Test_Sc
                          'Sum', 'Target', 'Test_End', 'Train_End', 'Train_Test_ID', 'Type', 'Variable', 'as2',
                          'combo_list', 'data', 'get_export_packages', 'hi_80', 'hi_95', 'i', 'lo_80', 'lo_95',
                          'model_spec_1', 'name', 'path_ext', 'predict', 'read.csv', 'sc', 'weighted_MAPE', 'where', 
-                         'x', 'num_cores', 'run_info'))
+                         'x', 'num_cores', 'run_info', 'negative_forecast'))
 
 #' @importFrom magrittr %>%
 
