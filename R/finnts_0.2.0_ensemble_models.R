@@ -125,6 +125,7 @@ ensemble_models <- function(run_info,
 
   # parallel run info
   par_info <- par_start(
+    run_info = run_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
     task_length = length(combo_list)
@@ -377,7 +378,8 @@ ensemble_models <- function(run_info,
       )
 
       return(final_tbl)
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
 
     final_tune_iter_list <- model_train_test_tbl %>%
       dplyr::mutate(Combo = x) %>%
@@ -454,7 +456,9 @@ ensemble_models <- function(run_info,
         Model_Fit = list(best_model_fit),
         Prediction = list(final_predictions)
       ))
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
+    
     # refit models
     refit_iter_list <- model_train_test_tbl %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
@@ -553,7 +557,8 @@ ensemble_models <- function(run_info,
       )
 
       return(final_tbl)
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
 
     # get final combined results and final fitted models
     final_model_fit_tbl <- refit_tbl %>%
@@ -590,7 +595,8 @@ ensemble_models <- function(run_info,
     )
 
     return(tibble::tibble())
-  }
+  } %>%
+    base::suppressPackageStartupMessages()
 
   # clean up any parallel run process
   par_end(cl)

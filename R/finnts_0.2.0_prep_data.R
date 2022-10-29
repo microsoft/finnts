@@ -247,6 +247,7 @@ prep_data <- function(run_info,
   # parallel run info
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     par_info <- par_start(
+      run_info = run_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
       task_length = length(unique(initial_prep_tbl$Combo))
@@ -401,7 +402,8 @@ prep_data <- function(run_info,
         )
       }
       return()
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
 
     # clean up any parallel run process
     par_end(cl)

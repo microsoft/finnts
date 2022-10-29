@@ -214,6 +214,7 @@ train_models <- function(run_info,
 
   # parallel run info
   par_info <- par_start(
+    run_info = run_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
     task_length = length(current_combo_list_final)
@@ -391,7 +392,8 @@ train_models <- function(run_info,
       )
 
       return(final_tbl)
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
 
     best_param <- initial_tune_tbl %>%
       tidyr::unnest(Prediction) %>%
@@ -565,7 +567,8 @@ train_models <- function(run_info,
       )
 
       return(final_tbl)
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
 
     # write outputs
     fitted_models <- refit_tbl %>%
@@ -617,7 +620,8 @@ train_models <- function(run_info,
     }
 
     return(tibble::tibble())
-  }
+  } %>%
+    base::suppressPackageStartupMessages()
 
   # clean up any parallel run process
   par_end(cl)

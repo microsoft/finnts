@@ -14,16 +14,33 @@ get_cores <-function(num_cores){
 
 #' Function to submit tasks sequentially, in parallel on local machine, or in spark
 #' 
+#' @param run_info run info
 #' @param parallel_processing type of parallel processing to run
 #' @param num_cores number of cores
 #' @param task_length number of time series to submit to parallel cluster
 #' 
 #' @noRd
-par_start <- function(parallel_processing, 
+par_start <- function(run_info, 
+                      parallel_processing, 
                       num_cores, 
                       task_length){
   
   cl <- NULL
+  add_packages <- NULL
+  
+  if(inherits(run_info$storage_object, "blob_container")) {
+    add_packages <- c(add_packages, "AzureStor")
+  } else if(inherits(run_info$storage_object, "ms_drive")) {
+    add_packages <- c(add_packages, "Microsoft365R")
+  }
+  
+  if(run_info$data_output == "parquet") {
+    add_packages <- c(add_packages, "arrow")
+  }
+  
+  if(run_info$object_output == "qs") {
+    add_packages <- c(add_packages, "qs")
+  }
   
   if(is.null(parallel_processing)) {
     
@@ -32,8 +49,8 @@ par_start <- function(parallel_processing,
     packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime', "fs", "digest", "AzureStor", "Microsoft365R", 
-                  "arrow", "qs", "tidyr", "sparklyr", "vroom", "utils", "cli")
+                  'recipes', 'rules', 'modeltime', "fs", "digest", "tidyr", 
+                  "vroom", "utils", "cli", add_packages)
     
   } else if(parallel_processing == "spark") {
     
@@ -65,10 +82,10 @@ par_start <- function(parallel_processing,
     packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
                   'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
                   'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
-                  'recipes', 'rules', 'modeltime', "fs", "digest", "AzureStor", "Microsoft365R", 
-                  "arrow", "qs", "tidyr", "sparklyr", "vroom", "utils", "cli", "generics", 
+                  'recipes', 'rules', 'modeltime', "fs", "digest", "tidyr", 
+                  "vroom", "utils", "cli", "generics", 
                   "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample", 
-                  "plyr", "rsample")
+                  "plyr", "rsample", add_packages)
     
   } else {
     stop("error")
@@ -78,7 +95,7 @@ par_start <- function(parallel_processing,
   
 }
 
-#' Function to clean up after submiting tasks sequentially, in parallel on local machine, or in spark
+#' Function to clean up after submitting tasks sequentially, in parallel on local machine, or in spark
 #' 
 #' @param cl cluster object
 #' 

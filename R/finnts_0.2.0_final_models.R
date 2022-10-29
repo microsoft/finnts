@@ -149,6 +149,7 @@ final_models <- function(run_info,
 
   # parallel run info
   par_info <- par_start(
+    run_info = run_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
     task_length = length(current_combo_list)
@@ -285,7 +286,8 @@ final_models <- function(run_info,
           dplyr::ungroup()
 
         return(final_tbl)
-      }
+      } %>%
+        base::suppressPackageStartupMessages()
     } else {
       averages_tbl <- NULL
     }
@@ -483,7 +485,8 @@ final_models <- function(run_info,
     }
 
     return(best_model_mape)
-  }
+  } %>%
+    base::suppressPackageStartupMessages()
 
   # clean up any parallel run process
   par_end(cl)

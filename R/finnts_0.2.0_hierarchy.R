@@ -327,6 +327,7 @@ reconcile_hierarchical_data <- function(run_info,
     
     # parallel run info
     par_info <- par_start(
+      run_info = run_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
       task_length = length(model_list)
@@ -432,7 +433,8 @@ reconcile_hierarchical_data <- function(run_info,
       
       return(tibble::tibble())
       
-    }
+    } %>%
+      base::suppressPackageStartupMessages()
     
     # clean up any parallel run process
     par_end(cl)
