@@ -449,19 +449,21 @@ reconcile_hierarchical_data <- function(run_info,
                   "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample", 
                   "plyr", "rsample")
     
-    # submit tasks to spark
-    reconciled_tbl <- unreconciled_tbl %>%
+    final_unreconciled_tbl <- unreconciled_tbl %>%
       dplyr::filter(!is.na(Model_Name)) %>%
       sparklyr::sdf_bind_rows(
         unreconciled_tbl %>%
           dplyr::filter(Best_Model == "Yes") %>%
           dplyr::mutate(Model_ID == "Best-Model")
-      ) %>%
+      )
+    print(final_unreconciled_tbl)
+    # submit tasks to spark
+    reconciled_tbl <- final_unreconciled_tbl %>%
       sparklyr::spark_apply(function(df, context) {
         
-        # for (name in names(context)) {
-        #   assign(name, context[[name]], envir = .GlobalEnv)
-        # }
+        for (name in names(context)) {
+          assign(name, context[[name]], envir = .GlobalEnv)
+        }
         
         model <- unique(df$Model_ID)
         print(df)
