@@ -464,7 +464,7 @@ reconcile_hierarchical_data <- function(run_info,
         }
         
         model <- unique(df$Model_ID)
-        
+        print(df)
         # hist_tbl <- read_file(run_info, 
         #                       path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)) %>%
         #   dplyr::select(Combo, Date, Target)
