@@ -441,6 +441,14 @@ reconcile_hierarchical_data <- function(run_info,
     
   } else {
     
+    package_list <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+                  'doParallel', 'parallel', "lubridate", 'parsnip', 'tune', 'dials', 'workflows',
+                  'Cubist', 'earth', 'glmnet', 'kernlab', 'modeltime.gluonts', 'purrr',
+                  'recipes', 'rules', 'modeltime', "fs", "digest", "tidyr", 
+                  "vroom", "utils", "cli", "generics", 
+                  "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample", 
+                  "plyr", "rsample")
+    
     # submit tasks to spark
     reconciled_tbl <- unreconciled_tbl %>%
       dplyr::filter(!is.na(Model_Name)) %>%
@@ -540,7 +548,7 @@ reconcile_hierarchical_data <- function(run_info,
         return(data.frame(Model = model))
       },
       group_by = "Model_ID",
-      packages = TRUE,
+      packages = package_list,
       context = list(
         test = "test"
         #hash_data = hash_data,
