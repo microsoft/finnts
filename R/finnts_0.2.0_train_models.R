@@ -161,7 +161,7 @@ train_models <- function(run_info,
     run_info$storage_object,
     paste0(
       run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*.", run_info$data_output
+      hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
     tibble::tibble(
@@ -474,7 +474,6 @@ train_models <- function(run_info,
         recipe_data <- model_recipe_tbl %>%
           dplyr::filter(
             Recipe == recipe,
-            # Combo == combo
           ) %>%
           dplyr::select(Data) %>%
           tidyr::unnest(Data)
