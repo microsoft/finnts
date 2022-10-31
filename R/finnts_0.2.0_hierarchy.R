@@ -457,11 +457,12 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::filter(Best_Model == "Yes") %>%
           dplyr::mutate(Model_ID == "Best-Model")
       ) %>%
+      print() %>%
       sparklyr::spark_apply(function(df, context) {
         
-        for (name in names(context)) {
-          assign(name, context[[name]], envir = .GlobalEnv)
-        }
+        # for (name in names(context)) {
+        #   assign(name, context[[name]], envir = .GlobalEnv)
+        # }
         
         model <- unique(df$Model_ID)
         print(df)
