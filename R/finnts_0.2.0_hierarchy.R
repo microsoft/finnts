@@ -454,7 +454,7 @@ reconcile_hierarchical_data <- function(run_info,
       sparklyr::sdf_bind_rows(
         unreconciled_tbl %>%
           dplyr::filter(Best_Model == "Yes") %>%
-          dplyr::mutate(Model_ID == "Best-Model")
+          dplyr::mutate(Model_ID = "Best-Model")
       )
     print(final_unreconciled_tbl)
     # submit tasks to spark
