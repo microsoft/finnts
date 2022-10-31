@@ -541,19 +541,20 @@ reconcile_hierarchical_data <- function(run_info,
       },
       group_by = "Model_ID",
       context = list(
-        hash_data = hash_data,
-        forecast_approach = forecast_approach,
-        run_info = run_info,
-        write_data = write_data,
-        write_data_folder = write_data_folder,
-        write_data_type = write_data_type, 
-        hts_nodes = hts_nodes,
-        negative_forecast = negative_forecast,
-        original_combo_list = original_combo_list,
-        model_train_test_tbl = model_train_test_tbl, 
-        read_file = read_file, 
-        list_files = list_files, 
-        create_prediction_intervals = create_prediction_intervals
+        test = "test"
+        #hash_data = hash_data,
+        # forecast_approach = forecast_approach,
+        # run_info = run_info,
+        # write_data = write_data,
+        # write_data_folder = write_data_folder,
+        # write_data_type = write_data_type, 
+        # hts_nodes = hts_nodes,
+        # negative_forecast = negative_forecast,
+        # original_combo_list = original_combo_list,
+        # model_train_test_tbl = model_train_test_tbl, 
+        # read_file = read_file, 
+        # list_files = list_files, 
+        # create_prediction_intervals = create_prediction_intervals
       )
       )
   }
