@@ -452,12 +452,11 @@ reconcile_hierarchical_data <- function(run_info,
     # submit tasks to spark
     reconciled_tbl <- unreconciled_tbl %>%
       dplyr::filter(!is.na(Model_Name)) %>%
-      rbind(
+      sparklyr::sdf_bind_rows(
         unreconciled_tbl %>%
           dplyr::filter(Best_Model == "Yes") %>%
           dplyr::mutate(Model_ID == "Best-Model")
       ) %>%
-      print() %>%
       sparklyr::spark_apply(function(df, context) {
         
         # for (name in names(context)) {
