@@ -540,6 +540,7 @@ reconcile_hierarchical_data <- function(run_info,
         return(data.frame(Model = model))
       },
       group_by = "Model_ID",
+      packages = TRUE,
       context = list(
         test = "test"
         #hash_data = hash_data,
