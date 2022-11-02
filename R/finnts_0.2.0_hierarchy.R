@@ -479,9 +479,7 @@ reconcile_hierarchical_data <- function(run_info,
                         hi_95 = as.numeric(hi_95), 
                         Date = as.Date(Date))
         
-        print(local_unreconciled_tbl)
         print(model)
-        print(hist_tbl)
 
         if(model == "Best-Model") {
           model_tbl <- local_unreconciled_tbl %>%
@@ -490,21 +488,21 @@ reconcile_hierarchical_data <- function(run_info,
           model_tbl <- local_unreconciled_tbl %>%
             dplyr::filter(Model_ID == model)
         }
-        print(model_tbl)
+        
         forecast_tbl <- model_tbl %>%
           dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
-
-        forecast_tbl[base::is.na(forecast_tbl)] = 0
-
+        print(forecast_tbl)
+        forecast_tbl[base::is.na(forecast_tbl)] <- 0
+        print(forecast_tbl)
         date_tbl <- forecast_tbl %>%
           dplyr::select(Date, Train_Test_ID)
-
+        print(date_tbl)
         ts <- forecast_tbl %>%
           dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(hts_combo_list) %>%
           stats::ts()
-
+        print(ts)
         residuals_tbl <- model_tbl %>%
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(Residual = Target - Forecast) %>%
@@ -513,7 +511,7 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(hts_combo_list) %>%
           base::as.matrix()
-
+        print(residuals_tbl)
         # if(forecast_approach == "standard_hierarchy") {
         #   ts_combined <- data.frame(hts::combinef(ts, nodes = hts_nodes, weights = (1/colMeans(residuals_tbl^2, na.rm = TRUE)),
         #                                           keep ="bottom", nonnegative = !negative_forecast))
