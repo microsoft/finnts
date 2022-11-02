@@ -459,6 +459,7 @@ reconcile_hierarchical_data <- function(run_info,
     print(final_unreconciled_tbl)
     # submit tasks to spark
     reconciled_tbl <- final_unreconciled_tbl %>%
+      sparklyr::sdf_repartition(partition_by = "Model_ID") %>%
       sparklyr::spark_apply(function(df, context) {
         
         for (name in names(context)) {
