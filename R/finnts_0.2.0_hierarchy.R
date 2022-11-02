@@ -471,41 +471,49 @@ reconcile_hierarchical_data <- function(run_info,
                               path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)) %>%
           dplyr::select(Combo, Date, Target)
         
-        print(df)
+        local_unreconciled_tbl <- df %>%
+          dplyr::mutate(Target = as.numeric(Target), 
+                        lo_95 = as.numeric(lo_95), 
+                        lo_80 = as.numeric(lo_80), 
+                        hi_80 = as.numeric(hi_80), 
+                        hi_95 = as.numeric(hi_95), 
+                        Date = as.Date(Date))
+        
+        print(local_unreconciled_tbl)
         print(model)
         print(hist_tbl)
 
-        # if(model == "Best-Model") {
-        #   model_tbl <- df %>%
-        #     dplyr::filter(Best_Model == "Yes")
-        # } else {
-        #   model_tbl <- df %>%
-        #     dplyr::filter(Model_ID == model)
-        # }
-        # 
-        # forecast_tbl <- model_tbl %>%
-        #   dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
-        #   tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
-        # 
-        # forecast_tbl[is.na(forecast_tbl)] = 0
-        # 
-        # date_tbl <- forecast_tbl %>%
-        #   dplyr::select(Date, Train_Test_ID)
-        # 
-        # ts <- forecast_tbl %>%
-        #   dplyr::select(-Date, -Train_Test_ID) %>%
-        #   dplyr::select(hts_combo_list) %>%
-        #   stats::ts()
-        # 
-        # residuals_tbl <- model_tbl %>%
-        #   dplyr::filter(Train_Test_ID != 1) %>%
-        #   dplyr::mutate(Residual = Target - Forecast) %>%
-        #   dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
-        #   tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
-        #   dplyr::select(-Date, -Train_Test_ID) %>%
-        #   dplyr::select(hts_combo_list) %>%
-        #   as.matrix()
-        # 
+        if(model == "Best-Model") {
+          model_tbl <- local_unreconciled_tbl %>%
+            dplyr::filter(Best_Model == "Yes")
+        } else {
+          model_tbl <- local_unreconciled_tbl %>%
+            dplyr::filter(Model_ID == model)
+        }
+        print(model_tbl)
+        forecast_tbl <- model_tbl %>%
+          dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
+          tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
+
+        forecast_tbl[base::is.na(forecast_tbl)] = 0
+
+        date_tbl <- forecast_tbl %>%
+          dplyr::select(Date, Train_Test_ID)
+
+        ts <- forecast_tbl %>%
+          dplyr::select(-Date, -Train_Test_ID) %>%
+          dplyr::select(hts_combo_list) %>%
+          stats::ts()
+
+        residuals_tbl <- model_tbl %>%
+          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::mutate(Residual = Target - Forecast) %>%
+          dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+          tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
+          dplyr::select(-Date, -Train_Test_ID) %>%
+          dplyr::select(hts_combo_list) %>%
+          base::as.matrix()
+
         # if(forecast_approach == "standard_hierarchy") {
         #   ts_combined <- data.frame(hts::combinef(ts, nodes = hts_nodes, weights = (1/colMeans(residuals_tbl^2, na.rm = TRUE)),
         #                                           keep ="bottom", nonnegative = !negative_forecast))
@@ -557,15 +565,15 @@ reconcile_hierarchical_data <- function(run_info,
       #packages = package_list,
       context = list(
         hash_data = hash_data,
-        # forecast_approach = forecast_approach,
+        forecast_approach = forecast_approach,
         run_info = run_info,
         # write_data = write_data,
         # write_data_folder = write_data_folder,
         # write_data_type = write_data_type, 
-        # hts_nodes = hts_nodes,
-        # negative_forecast = negative_forecast,
-        # original_combo_list = original_combo_list,
-        # model_train_test_tbl = model_train_test_tbl, 
+        hts_nodes = hts_nodes,
+        negative_forecast = negative_forecast,
+        original_combo_list = original_combo_list,
+        model_train_test_tbl = model_train_test_tbl, 
         read_file = read_file, 
         list_files = list_files 
         # create_prediction_intervals = create_prediction_intervals
