@@ -477,9 +477,11 @@ reconcile_hierarchical_data <- function(run_info,
                         lo_80 = as.numeric(lo_80), 
                         hi_80 = as.numeric(hi_80), 
                         hi_95 = as.numeric(hi_95), 
-                        Date = as.Date(Date))
+                        Date = as.Date(Date)) %>%
+          base::suppressWarnings()
         
         print(model)
+        print(unique(local_unreconciled_tbl$Combo_ID))
 
         if(model == "Best-Model") {
           model_tbl <- local_unreconciled_tbl %>%
@@ -488,7 +490,7 @@ reconcile_hierarchical_data <- function(run_info,
           model_tbl <- local_unreconciled_tbl %>%
             dplyr::filter(Model_ID == model)
         }
-        
+        print(unique(model_tbl$Combo))
         forecast_tbl <- model_tbl %>%
           dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
