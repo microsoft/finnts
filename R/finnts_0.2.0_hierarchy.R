@@ -483,13 +483,17 @@ reconcile_hierarchical_data <- function(run_info,
         print(model)
         print(unique(local_unreconciled_tbl$Combo_ID))
 
-        if(model == "Best-Model") {
-          model_tbl <- local_unreconciled_tbl %>%
-            dplyr::filter(Best_Model == "Yes")
-        } else {
-          model_tbl <- local_unreconciled_tbl %>%
-            dplyr::filter(Model_ID == model)
-        }
+        # if(model == "Best-Model") {
+        #   model_tbl <- local_unreconciled_tbl %>%
+        #     dplyr::filter(Best_Model == "Yes")
+        # } else {
+        #   model_tbl <- local_unreconciled_tbl %>%
+        #     dplyr::filter(Model_ID == model)
+        # }
+        
+        model_tbl <- local_unreconciled_tbl %>%
+          dplyr::filter(Model_ID == model)
+        
         print(unique(model_tbl$Combo))
         forecast_tbl <- model_tbl %>%
           dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
