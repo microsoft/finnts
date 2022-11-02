@@ -312,7 +312,7 @@ reconcile_hierarchical_data <- function(run_info,
                             return_type = return_type
   ) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
-
+  print(unreconciled_tbl %>% dplyr::collect() %>% dplyr::pull(Combo_ID) %>% unique())
   # get models to reconcile down to lowest level
   model_list <- unreconciled_tbl %>%
     dplyr::filter(!is.na(Model_Name)) %>%
@@ -571,6 +571,7 @@ reconcile_hierarchical_data <- function(run_info,
         # write_data_folder = write_data_folder,
         # write_data_type = write_data_type, 
         hts_nodes = hts_nodes,
+        hts_combo_list = hts_combo_list,
         negative_forecast = negative_forecast,
         original_combo_list = original_combo_list,
         model_train_test_tbl = model_train_test_tbl, 
