@@ -227,8 +227,6 @@ train_models <- function(run_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
-
-  cli::cli_progress_update()
   
   # submit tasks
   train_models_tbl <- foreach::foreach(
@@ -419,8 +417,6 @@ train_models <- function(run_info,
         Combo_ID = ifelse(Combo_ID == "All-Data", "All-Data", Combo)
       ) %>%
       dplyr::select(Combo_Hash, Combo_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
-
-    cli::cli_progress_update()
     
     # refit models
     refit_iter_list <- model_train_test_tbl %>%
@@ -632,8 +628,6 @@ train_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
-  
-  cli::cli_progress_update()
 
   # update logging file
   log_df <- log_df %>%
