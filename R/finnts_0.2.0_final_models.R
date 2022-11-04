@@ -60,6 +60,8 @@ final_models <- function(run_info,
                          parallel_processing = NULL,
                          num_cores = NULL) {
 
+  cli::cli_progress_step("Selecting Best Models")
+  
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("average_models", average_models, "logical")
@@ -139,7 +141,8 @@ final_models <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Forecast Finished"))
+      cli::cli_alert_info("Best Models Already Selected")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'final_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -493,6 +496,9 @@ final_models <- function(run_info,
   
   # reconcile hierarchical forecasts
   if(forecast_approach != "bottoms_up") {
+    
+    cli::cli_progress_step("Reconciling Hierarchical Forecasts")
+    
     reconcile_hierarchical_data(run_info, 
                                 parallel_processing, 
                                 forecast_approach,  
@@ -518,8 +524,6 @@ final_models <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Forecast Finished"))
 }
 
 #' Create prediction intervals

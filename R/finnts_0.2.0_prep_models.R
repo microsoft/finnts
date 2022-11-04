@@ -185,6 +185,8 @@ train_test_split <- function(run_info,
                              back_test_spacing = NULL,
                              run_ensemble_models = TRUE) {
 
+  cli::cli_progress_step("Creating Train Test Splits")
+  
   # get inputs from previous functions
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -221,8 +223,8 @@ train_test_split <- function(run_info,
   
   if (sum(model_workflow_list %in% ml_models) == 0) {
     run_ensemble_models <- FALSE
-    
-    cli::cli_alert_warning("Turning ensemble models off since no multivariate models were chosen to run.")
+    cli::cli_alert_info("Turning ensemble models off since no multivariate models were chosen to run.")
+    cli::cli_progress_update()
   }
 
   # check if input values have changed
@@ -239,7 +241,8 @@ train_test_split <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Train Test Splits"))
+      cli::cli_alert_info("Train Test Splits Already Created")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -393,8 +396,6 @@ train_test_split <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Train Test Splits"))
 }
 
 #' Gets model workflows
@@ -412,7 +413,9 @@ model_workflows <- function(run_info,
                             models_not_to_run = NULL,
                             run_deep_learning = FALSE,
                             pca = NULL) {
-
+  
+  cli::cli_progress_step("Creating Model Workflows")
+  
   # get inputs
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -441,7 +444,8 @@ model_workflows <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Model Workflows"))
+      cli::cli_alert_info("Model Workflows Already Created")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -607,8 +611,6 @@ model_workflows <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Model Workflows"))
 }
 
 #' Get model hyperparameters
@@ -621,6 +623,8 @@ model_workflows <- function(run_info,
 model_hyperparameters <- function(run_info,
                                   num_hyperparameters = 10) {
 
+  cli::cli_progress_step("Creating Model Hyperparameters")
+  
   # check if input values have changed
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -638,7 +642,8 @@ model_hyperparameters <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Model Hyperparameters"))
+      cli::cli_alert_info("Model Hyperparameters Already Created")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -775,17 +780,4 @@ model_hyperparameters <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Model Hyperparameters"))
 }
-
-# To Do
-# [ ] should the recipe column be removed from the output of model_hyperparameters?
-#     this would be important to have if the same models with two recipes had diff hyperparameters
-#     but models with params that change based on predictor column number are only R1 recipes (boost and mars models)
-# [ ] allow user to select accuracy metric for hyperparameter selection
-# [x] allow users to turn models on/off in workflow function
-# [ ] fix long running parallel process for 2nd function call in parameter tuning
-# [x] filter test data for R2 recipes
-# [ ] adjust tuning process if only models with no hyperparameters are selected
-# [x] ensure tuning function can work in spark

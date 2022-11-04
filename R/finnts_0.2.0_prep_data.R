@@ -89,6 +89,8 @@ prep_data <- function(run_info,
                       rolling_window_periods = NULL,
                       recipes_to_run = NULL) {
 
+  cli::cli_progress_step("Prepping Data")
+  
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame", "tbl_spark"))
@@ -236,7 +238,8 @@ prep_data <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Data Prepped"))
+      cli::cli_alert_info("Data Already Prepped")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'prep_data', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -609,8 +612,6 @@ prep_data <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Data Prepped"))
 }
 
 #' Function to perform log transformation

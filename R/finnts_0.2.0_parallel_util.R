@@ -58,8 +58,6 @@ par_start <- function(run_info,
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'")
     }
     
-    cli::cli_h2("Connecting to Spark Cluster")
-    
     `%op%` <- foreach::`%dopar%`
     
     sparklyr::registerDoSpark(sc, parallelism = task_length)
@@ -67,16 +65,12 @@ par_start <- function(run_info,
     packages <- NULL
     
   } else if(parallel_processing == "local_machine") {
-    
-    cli::cli_h2("Connecting to Local Parallel Cluster")
-    
+
     cores <- get_cores(num_cores)
     
     cl <- parallel::makeCluster(min(cores, task_length))
     doParallel::registerDoParallel(cl)
-    
-    cli::cli_alert_info("Running across {cores} cores")
-    
+
     `%op%` <- foreach::`%dopar%`
     
     packages <- c("tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",

@@ -53,6 +53,8 @@ ensemble_models <- function(run_info,
                             num_cores = NULL,
                             seed = 123) {
 
+  cli::cli_progress_step("Training Ensemble Models")
+  
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
@@ -69,7 +71,8 @@ ensemble_models <- function(run_info,
   negative_forecast <- log_df$negative_forecast
 
   if (log_df$run_ensemble_models == FALSE) {
-    return(cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run."))
+    cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run.")
+    return(cli::cli_progress_done())
   }
 
   combo_list <- list_files(
@@ -120,7 +123,8 @@ ensemble_models <- function(run_info,
   )
 
   if (length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) {
-    return(cli::cli_alert_success("Ensemble Models Trained"))
+    #return(cli::cli_alert_success("Ensemble Models Trained"))
+    return(cli::cli_progress_done())
   }
 
   # parallel run info
@@ -600,6 +604,4 @@ ensemble_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
-
-  return(cli::cli_alert_success("Ensemble Models Trained"))
 }

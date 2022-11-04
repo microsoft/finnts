@@ -59,6 +59,8 @@ train_models <- function(run_info,
                          num_cores = NULL,
                          seed = 123) {
 
+  cli::cli_progress_step("Training Individual Models")
+  
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
@@ -123,7 +125,8 @@ train_models <- function(run_info,
 
   if (sum(model_workflow_list %in% ml_models) == 0) {
     run_global_models <- FALSE
-    cli::cli_alert_warning("Turning global models off since no multivariate models were chosen to run.")
+    cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
+    cli::cli_progress_update()
   }
 
   # get list of tasks to run
@@ -161,7 +164,7 @@ train_models <- function(run_info,
     run_info$storage_object,
     paste0(
       run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*R*.", run_info$data_output
+      hash_data(run_info$run_name), "*.", run_info$data_output
     )
   ) %>%
     tibble::tibble(
@@ -204,7 +207,8 @@ train_models <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      return(cli::cli_alert_success("Models Trained"))
+      cli::cli_alert_info("Individual Models Already Trained")
+      return(cli::cli_progress_done())
     } else {
       stop("Inputs have recently changed in 'train_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
@@ -224,6 +228,8 @@ train_models <- function(run_info,
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
+  cli::cli_progress_update()
+  
   # submit tasks
   train_models_tbl <- foreach::foreach(
     x = current_combo_list_final,
@@ -414,6 +420,8 @@ train_models <- function(run_info,
       ) %>%
       dplyr::select(Combo_Hash, Combo_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
 
+    cli::cli_progress_update()
+    
     # refit models
     refit_iter_list <- model_train_test_tbl %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Ensemble")) %>%
@@ -624,6 +632,8 @@ train_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
+  
+  cli::cli_progress_update()
 
   # update logging file
   log_df <- log_df %>%
@@ -643,8 +653,6 @@ train_models <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-
-  return(cli::cli_alert_success("Individual Models Trained"))
 }
 
 #' Function to convert negative forecasts to zero

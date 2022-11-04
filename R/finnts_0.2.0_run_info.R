@@ -171,6 +171,13 @@ set_run_info <- function(experiment_name = "finn_fcst",
       suffix = NULL
     )
     
+    cli::cli_bullets(c(
+      "Finn Submission Info",
+      "*" = paste0("Experiment Name: ", experiment_name),
+      "*" = paste0("Run Name: ", run_name), 
+      ""
+    ))
+    
     return(output_list)
   }
 }
