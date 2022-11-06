@@ -12,8 +12,12 @@
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
-#'   leverages all cores on current machine Finn is running on. 'azure_batch'
-#'   runs time series in parallel on a remote compute cluster in Azure Batch.
+#'   leverages all cores on current machine Finn is running on. 'spark'
+#'   runs time series in parallel on a spark cluster in Azure Databricks or
+#'   Azure Synapse.
+#' @param inner_parallel Run components of forecast process inside a specific
+#'   time series in parallel. Can only be used if parallel_processing is 
+#'   set to NULL or 'spark'. 
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
 #'   Default of NULL uses total amount of cores on machine minus one. Can't be
@@ -56,6 +60,7 @@ train_models <- function(run_info,
                          global_model_recipes = c("R1"),
                          negative_forecast = FALSE,
                          parallel_processing = NULL,
+                         inner_parallel = FALSE, 
                          num_cores = NULL,
                          seed = 123) {
 
@@ -68,7 +73,7 @@ train_models <- function(run_info,
   check_input_type("global_model_recipes", global_model_recipes, "character")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
-  check_parallel_processing(parallel_processing)
+  check_parallel_processing(parallel_processing, inner_parallel)
 
   # get input values
   log_df <- read_file(run_info,
@@ -85,7 +90,7 @@ train_models <- function(run_info,
   } else if(forecast_approach != "bottoms_up") {
     run_global_models <- FALSE
   } else {
-    run_global_models <- TRUE
+    # do nothing
   }
 
   # get model prep info
@@ -227,7 +232,7 @@ train_models <- function(run_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
-  
+
   # submit tasks
   train_models_tbl <- foreach::foreach(
     x = current_combo_list_final,
@@ -275,17 +280,28 @@ train_models <- function(run_info,
       dplyr::bind_rows() %>%
       dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID)
 
+    par_info <- par_start(
+      run_info = run_info,
+      parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
+      num_cores = num_cores,
+      task_length = nrow(tune_iter_list)
+    )
+    
+    inner_cl <- par_info$cl
+    inner_packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
+    
     initial_tune_tbl <- foreach::foreach(
       x = tune_iter_list %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
-      .packages = NULL,
+      .packages = inner_packages,
       .errorhandling = "remove",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
-    ) %do% {
+    ) %op% {
 
       # run input values
       param_combo <- x %>%
@@ -398,6 +414,8 @@ train_models <- function(run_info,
       return(final_tbl)
     } %>%
       base::suppressPackageStartupMessages()
+    
+    par_end(inner_cl)
 
     best_param <- initial_tune_tbl %>%
       tidyr::unnest(Prediction) %>%
@@ -417,14 +435,13 @@ train_models <- function(run_info,
         Combo_ID = ifelse(Combo_ID == "All-Data", "All-Data", Combo)
       ) %>%
       dplyr::select(Combo_Hash, Combo_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
-    
+
     # refit models
     refit_iter_list <- model_train_test_tbl %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Ensemble")) %>%
       dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
       purrr::map(.f = function(x) {
         model_tune_tbl %>%
-          dplyr::filter(Combo_Hash == combo) %>%
           dplyr::mutate(
             Run_Type = x %>% dplyr::pull(Run_Type),
             Train_Test_ID = x %>% dplyr::pull(Train_Test_ID),
@@ -438,18 +455,29 @@ train_models <- function(run_info,
           dplyr::distinct()
       }) %>%
       dplyr::bind_rows()
+    
+    par_info <- par_start(
+      run_info = run_info,
+      parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
+      num_cores = num_cores,
+      task_length = nrow(refit_iter_list)
+    )
+
+    inner_cl <- par_info$cl
+    inner_packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
 
     refit_tbl <- foreach::foreach(
       x = refit_iter_list %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
-      .packages = NULL,
+      .packages = inner_packages,
       .errorhandling = "remove",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
-    ) %do% {
+    ) %op% {
       combo <- x %>%
         dplyr::pull(Combo_ID)
 
@@ -572,6 +600,8 @@ train_models <- function(run_info,
       return(final_tbl)
     } %>%
       base::suppressPackageStartupMessages()
+    
+    par_end(inner_cl)
 
     # write outputs
     fitted_models <- refit_tbl %>%
@@ -636,7 +666,8 @@ train_models <- function(run_info,
       run_local_models = run_local_models,
       global_model_recipes = paste(unlist(global_model_recipes), collapse = "---"),
       seed = seed,
-      negative_forecast = negative_forecast
+      negative_forecast = negative_forecast, 
+      inner_parallel = inner_parallel
     )
 
   write_data(

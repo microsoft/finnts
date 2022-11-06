@@ -10,11 +10,14 @@
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by
 #'   evenly splitting across each day of week. Helps when aggregating
 #'   up to higher temporal levels like month or quarter.
-#' @param parallel_processing Default of NULL runs no parallel processing
-#'   and forecasts each individual time series one after another.
-#'   'local_machine' leverages all cores on current machine Finn is running
-#'   on. 'azure_batch' runs time series in parallel on a remote compute cluster
-#'   in Azure Batch.
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'   forecasts each individual time series one after another. 'local_machine'
+#'   leverages all cores on current machine Finn is running on. 'spark'
+#'   runs time series in parallel on a spark cluster in Azure Databricks or
+#'   Azure Synapse.
+#' @param inner_parallel Run components of forecast process inside a specific
+#'   time series in parallel. Can only be used if parallel_processing is 
+#'   set to NULL or 'spark'. 
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
 #'   Default of NULL uses total amount of cores on machine minus one. Can't be
@@ -58,6 +61,7 @@ final_models <- function(run_info,
                          max_model_average = 3,
                          weekly_to_daily = TRUE,
                          parallel_processing = NULL,
+                         inner_parallel = FALSE, 
                          num_cores = NULL) {
 
   cli::cli_progress_step("Selecting Best Models")
@@ -67,7 +71,7 @@ final_models <- function(run_info,
   check_input_type("average_models", average_models, "logical")
   check_input_type("max_model_average", max_model_average, "numeric")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
-  check_parallel_processing(parallel_processing)
+  check_parallel_processing(parallel_processing, inner_parallel)
 
   # get combos
   combo_list <- list_files(
@@ -261,17 +265,28 @@ final_models <- function(run_info,
 
       iter_list <- model_combinations %>%
         dplyr::pull(Model_Combo)
+      
+      par_info <- par_start(
+        run_info = run_info,
+        parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
+        num_cores = num_cores,
+        task_length = nrow(iter_list)
+      )
+      
+      inner_cl <- par_info$cl
+      inner_packages <- par_info$packages
+      `%op%` <- par_info$foreach_operator
 
       averages_tbl <- foreach::foreach(
         x = iter_list,
         .combine = "rbind",
-        .packages = NULL,
-        .errorhandling = "stop",
+        .packages = inner_packages,
+        .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
         .noexport = NULL
-      ) %do% {
+      ) %op% {
 
         # get list of models to average
         model_list <- strsplit(x, "_")[[1]]
@@ -291,6 +306,8 @@ final_models <- function(run_info,
         return(final_tbl)
       } %>%
         base::suppressPackageStartupMessages()
+      
+      par_end(inner_cl)
     } else {
       averages_tbl <- NULL
     }

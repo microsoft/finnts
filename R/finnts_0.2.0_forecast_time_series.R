@@ -34,11 +34,14 @@
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual 
 #'   time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates 
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.   
-#' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
-#'   one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-#'   runs time series in parallel on a remote compute cluster in Azure Batch. 
-#' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to 
-#'   'local_machine' or 'azure_batch'.
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'   forecasts each individual time series one after another. 'local_machine'
+#'   leverages all cores on current machine Finn is running on. 'spark'
+#'   runs time series in parallel on a spark cluster in Azure Databricks or
+#'   Azure Synapse.
+#' @param inner_parallel Run components of forecast process inside a specific
+#'   time series in parallel. Can only be used if parallel_processing is 
+#'   set to NULL or 'spark'. 
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations 
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater 
 #'   than number of cores on machine minus 1.
@@ -75,6 +78,9 @@
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating 
 #'   up to higher temporal levels like month or quarter. 
 #' @param seed Set seed for random number generator. Numeric value. 
+#' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to 
+#'   'local_machine' or 'spark'. Recommended to use a value of FALSE and leverage 
+#'   inner_parallel for new features.
 #' @param return_data If TRUE, return the forecast results. Used to be backwards compatible 
 #'   with previous finnts versions. Recommended to use a value of FALSE and leverage 
 #'   [get_forecast_data()] for new features.
@@ -120,7 +126,7 @@ forecast_time_series <- function(run_info = NULL,
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = TRUE,
+  inner_parallel = FALSE, 
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
@@ -140,12 +146,18 @@ forecast_time_series <- function(run_info = NULL,
   max_model_average = 3,
   weekly_to_daily = TRUE, 
   seed = 123, 
+  run_model_parallel = FALSE,
   return_data = TRUE, 
   run_name = "finnts_forecast"
 ) {
 
   if(is.null(run_info)) {
     run_info <- set_run_info()
+  }
+  
+  if(run_model_parallel) {
+    inner_parallel = TRUE
+    cli::cli_alert_warning("run_model_parallel is deprecated, please use inner_parallel argument instead")
   }
 
   prep_data(run_info,
@@ -186,11 +198,13 @@ forecast_time_series <- function(run_info = NULL,
                global_model_recipes = "R1",
                negative_forecast,
                parallel_processing,
+               inner_parallel, 
                num_cores,
                seed)
-  
+
   ensemble_models(run_info,
                   parallel_processing,
+                  inner_parallel,
                   num_cores,
                   seed)
   
@@ -199,6 +213,7 @@ forecast_time_series <- function(run_info = NULL,
                max_model_average,
                weekly_to_daily,
                parallel_processing,
+               inner_parallel,
                num_cores)
   
   if(return_data) {

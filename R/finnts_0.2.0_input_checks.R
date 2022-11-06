@@ -126,12 +126,12 @@ check_input_data <- function(input_data,
 #' Check parallel processing set up
 #'
 #' @param parallel_processing parallel processing
-#' @param run_model_parallel run model parallel
+#' @param inner_parallel inner parallel
 #' 
 #' @return nothing
 #' @noRd
 check_parallel_processing <- function(parallel_processing, 
-                                      run_model_parallel = FALSE) {
+                                      inner_parallel) {
   
   # parallel processing formatting
   if(is.null(parallel_processing)) {
@@ -142,9 +142,9 @@ check_parallel_processing <- function(parallel_processing,
     
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
     
-  } else if(parallel_processing == "local_machine" & run_model_parallel) {
+  } else if(parallel_processing == "local_machine" & inner_parallel) {
     
-    stop("cannot run parallel process (run model parallel input) within another parallel process (parallel processing input). Please set run_model_parallel to FALSE")
+    stop("cannot run parallel process (inner_parallel input) within another parallel process (parallel_processing input) on a local machine. Please set inner_parallel to FALSE or run in spark")
     
   } else if(parallel_processing == "azure_batch") {
     

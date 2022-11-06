@@ -10,6 +10,7 @@ final_models(
   max_model_average = 3,
   weekly_to_daily = TRUE,
   parallel_processing = NULL,
+  inner_parallel = FALSE,
   num_cores = NULL
 )
 }
@@ -26,11 +27,15 @@ models ran.}
 evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing
-and forecasts each individual time series one after another.
-'local_machine' leverages all cores on current machine Finn is running
-on. 'azure_batch' runs time series in parallel on a remote compute cluster
-in Azure Batch.}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.}
+
+\item{inner_parallel}{Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up.
 Used when running parallel computations on local machine or within Azure.

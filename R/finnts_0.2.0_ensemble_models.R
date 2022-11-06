@@ -5,8 +5,12 @@
 #' @param run_info run info using the [set_run_info()] function
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
-#'   leverages all cores on current machine Finn is running on. 'azure_batch'
-#'   runs time series in parallel on a remote compute cluster in Azure Batch.
+#'   leverages all cores on current machine Finn is running on. 'spark'
+#'   runs time series in parallel on a spark cluster in Azure Databricks or
+#'   Azure Synapse.
+#' @param inner_parallel Run components of forecast process inside a specific
+#'   time series in parallel. Can only be used if parallel_processing is 
+#'   set to NULL or 'spark'. 
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
 #'   Default of NULL uses total amount of cores on machine minus one. Can't
@@ -50,6 +54,7 @@
 #' @export
 ensemble_models <- function(run_info,
                             parallel_processing = NULL,
+                            inner_parallel = FALSE, 
                             num_cores = NULL,
                             seed = 123) {
 
@@ -59,7 +64,7 @@ ensemble_models <- function(run_info,
   check_input_type("run_info", run_info, "list")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
-  check_parallel_processing(parallel_processing)
+  check_parallel_processing(parallel_processing, inner_parallel)
 
   # get input and combo values
   log_df <- read_file(run_info,
@@ -123,7 +128,6 @@ ensemble_models <- function(run_info,
   )
 
   if (length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) {
-    #return(cli::cli_alert_success("Ensemble Models Trained"))
     return(cli::cli_progress_done())
   }
 
@@ -292,17 +296,28 @@ ensemble_models <- function(run_info,
       dplyr::bind_rows() %>%
       dplyr::select(Combo, Model, Train_Test_ID, Hyperparameter_ID)
 
+    par_info <- par_start(
+      run_info = run_info,
+      parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
+      num_cores = num_cores,
+      task_length = nrow(tune_iter_list)
+    )
+    
+    inner_cl <- par_info$cl
+    inner_packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
+    
     tune_output_tbl <- foreach::foreach(
       x = tune_iter_list %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
-      .packages = NULL,
-      .errorhandling = "stop",
+      .packages = inner_packages,
+      .errorhandling = "remove",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
-    ) %do% {
+    ) %op% {
 
       # run input values
       param_combo <- x %>%
@@ -384,6 +399,8 @@ ensemble_models <- function(run_info,
       return(final_tbl)
     } %>%
       base::suppressPackageStartupMessages()
+    
+    par_end(inner_cl)
 
     final_tune_iter_list <- model_train_test_tbl %>%
       dplyr::mutate(Combo = x) %>%
@@ -478,18 +495,29 @@ ensemble_models <- function(run_info,
           dplyr::select(-Model_Fit, -Prediction)
       }) %>%
       dplyr::bind_rows()
+    
+    par_info <- par_start(
+      run_info = run_info,
+      parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
+      num_cores = num_cores,
+      task_length = nrow(refit_iter_list)
+    )
+    
+    inner_cl <- par_info$cl
+    inner_packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
 
     refit_tbl <- foreach::foreach(
       x = refit_iter_list %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
-      .packages = NULL,
-      .errorhandling = "stop",
+      .packages = inner_packages,
+      .errorhandling = "remove",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
-    ) %do% {
+    ) %op% {
       combo <- x %>%
         dplyr::pull(Combo)
 
@@ -563,6 +591,8 @@ ensemble_models <- function(run_info,
       return(final_tbl)
     } %>%
       base::suppressPackageStartupMessages()
+    
+    par_end(inner_cl)
 
     # get final combined results and final fitted models
     final_model_fit_tbl <- refit_tbl %>%

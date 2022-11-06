@@ -23,7 +23,7 @@ forecast_time_series(
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = TRUE,
+  inner_parallel = FALSE,
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
@@ -43,6 +43,7 @@ forecast_time_series(
   max_model_average = 3,
   weekly_to_daily = TRUE,
   seed = 123,
+  run_model_parallel = FALSE,
   return_data = TRUE,
   run_name = "finnts_forecast"
 )
@@ -96,12 +97,15 @@ future this could evolve to other areas like optimizing for interpretability ove
 time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 a more traditional hierarchical time series to forecast, both based on the hts package.}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch.}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.}
 
-\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
-'local_machine' or 'azure_batch'.}
+\item{inner_parallel}{Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
@@ -157,6 +161,10 @@ or max number of models ran.}
 up to higher temporal levels like month or quarter.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
+
+\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
+'local_machine' or 'spark'. Recommended to use a value of FALSE and leverage
+inner_parallel for new features.}
 
 \item{return_data}{If TRUE, return the forecast results. Used to be backwards compatible
 with previous finnts versions. Recommended to use a value of FALSE and leverage

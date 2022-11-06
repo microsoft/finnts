@@ -167,6 +167,93 @@ get_trained_models <- function(run_info) {
   return(trained_model_tbl)
 }
 
+#' Get Prepped Data
+#'
+#' @param run_info run info using the [set_run_info()] function
+#' @param recipe recipe to return. Either a value of "R1" or "R2"
+#' @param return_type return type
+#'
+#' @return table of prepped data
+#'
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(
+#'     id == "M2",
+#'     Date >= "2012-01-01",
+#'     Date <= "2015-06-01"
+#'   )
+#'
+#' run_info <- set_run_info()
+#'
+#' prep_data(run_info,
+#'   input_data = data_tbl,
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month",
+#'   forecast_horizon = 3,
+#'   recipes_to_run = "R1"
+#' )
+#'
+#' prep_models(run_info,
+#'   models_to_run = c("arima", "ets"),
+#'   num_hyperparameters = 1
+#' )
+#'
+#' train_models(run_info,
+#'   run_global_models = FALSE,
+#'   run_local_models = TRUE
+#' )
+#'
+#' final_models(run_info,
+#'   average_models = FALSE
+#' )
+#'
+#' R1_prepped_data_tbl <- get_prepped_data(run_info, 
+#'                                         recipe = "R1")
+#' }
+#' @export
+get_prepped_data <- function(run_info, 
+                             recipe, 
+                             return_type = "df") {
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("return_type", return_type, "character", c("df", "sdf"))
+  
+  # get input values
+  log_df <- read_file(run_info,
+                      path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+                      return_type = "df"
+  )
+  
+  combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  check_input_type("recipe", recipe, "character", c("R1", "R2"))
+  check_input_type("return_type", return_type, "character", c("df", "sdf"))
+  
+  # get prepped data
+  data_path <- paste0(
+    "/prep_data/*", hash_data(run_info$experiment_name), "-",
+    hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
+  )
+  
+  prep_data_tbl <- read_file(run_info,
+                             path = data_path,
+                             return_type = return_type
+  ) %>%
+    tidyr::separate(col = Combo, 
+                    into = combo_variables, 
+                    remove = FALSE) %>%
+    base::suppressWarnings()
+  
+  return(prep_data_tbl)
+}
+
 #' Hash run info in file name
 #'
 #' @param x object to hash
