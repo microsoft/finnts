@@ -131,7 +131,7 @@ check_input_data <- function(input_data,
 #' @return nothing
 #' @noRd
 check_parallel_processing <- function(parallel_processing, 
-                                      inner_parallel) {
+                                      inner_parallel = FALSE) {
   
   # parallel processing formatting
   if(is.null(parallel_processing)) {
