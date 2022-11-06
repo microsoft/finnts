@@ -248,6 +248,13 @@ train_models <- function(run_info,
     model_recipe_tbl <- get_recipe_data(run_info,
       combo = x
     )
+    
+    if(inner_parallel) {
+      # ensure tables get exported
+      model_train_test_tbl <- model_train_test_tbl
+      model_workflow_tbl <- model_workflow_tbl
+      model_hyperparameter_tbl <- model_hyperparameter_tbl
+    }
 
     # tune models
     tune_iter_list <- model_train_test_tbl %>%
