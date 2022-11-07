@@ -282,12 +282,9 @@ ensemble_models <- function(run_info,
       # ensure variables get exported
       model_train_test_tbl <- model_train_test_tbl
       model_workflow_tbl <- model_workflow_tbl
-      model_hyperparameter_tbl <- model_hyperparameter_tbl
       seed <- seed
-      combo_variables <- combo_variables
       negative_fcst_adj <- negative_fcst_adj
       negative_forecast <- negative_forecast
-      prep_ensemble_tbl <- prep_ensemble_tbl
     }
 
     # tune hyperparameters

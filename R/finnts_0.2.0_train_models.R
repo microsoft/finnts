@@ -89,6 +89,8 @@ train_models <- function(run_info,
     run_global_models <- FALSE
   } else if(forecast_approach != "bottoms_up") {
     run_global_models <- FALSE
+  } else if(is.null(run_global_models)){
+    run_global_models <- TRUE
   } else {
     # do nothing
   }
