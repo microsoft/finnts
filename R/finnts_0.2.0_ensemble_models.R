@@ -277,6 +277,18 @@ ensemble_models <- function(run_info,
 
       hyperparameters_tbl <- rbind(hyperparameters_tbl, hyperparameters_temp)
     }
+    
+    if(inner_parallel) {
+      # ensure variables get exported
+      model_train_test_tbl <- model_train_test_tbl
+      model_workflow_tbl <- model_workflow_tbl
+      model_hyperparameter_tbl <- model_hyperparameter_tbl
+      seed <- seed
+      combo_variables <- combo_variables
+      negative_fcst_adj <- negative_fcst_adj
+      negative_forecast <- negative_forecast
+      prep_ensemble_tbl <- prep_ensemble_tbl
+    }
 
     # tune hyperparameters
     tune_iter_list <- model_train_test_tbl %>%
@@ -312,7 +324,7 @@ ensemble_models <- function(run_info,
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
       .packages = inner_packages,
-      .errorhandling = "remove",
+      .errorhandling = "stop",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
@@ -438,7 +450,7 @@ ensemble_models <- function(run_info,
         dplyr::pull(Model)
 
       test_tbl <- tune_output_tbl %>%
-        dplyr::filter( # Combo == combo,
+        dplyr::filter(
           Model == model
         ) %>%
         dplyr::select(Model, Hyperparameter_ID, Train_Test_ID, Prediction, Model_Fit)
@@ -512,7 +524,7 @@ ensemble_models <- function(run_info,
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
       .packages = inner_packages,
-      .errorhandling = "remove",
+      .errorhandling = "stop",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
