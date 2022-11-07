@@ -254,6 +254,8 @@ train_models <- function(run_info,
       model_train_test_tbl <- model_train_test_tbl
       model_workflow_tbl <- model_workflow_tbl
       model_hyperparameter_tbl <- model_hyperparameter_tbl
+      seed <- seed
+      combo_variables <- combo_variables
     }
 
     # tune models
