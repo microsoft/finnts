@@ -250,12 +250,13 @@ train_models <- function(run_info,
     )
     
     if(inner_parallel) {
-      # ensure tables get exported
+      # ensure variables get exported
       model_train_test_tbl <- model_train_test_tbl
       model_workflow_tbl <- model_workflow_tbl
       model_hyperparameter_tbl <- model_hyperparameter_tbl
       seed <- seed
       combo_variables <- combo_variables
+      negative_fcst_adj <- negative_fcst_adj
     }
 
     # tune models
