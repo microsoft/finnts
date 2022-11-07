@@ -257,6 +257,7 @@ train_models <- function(run_info,
       seed <- seed
       combo_variables <- combo_variables
       negative_fcst_adj <- negative_fcst_adj
+      negative_forecast <- negative_forecast
     }
 
     # tune models
