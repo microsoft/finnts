@@ -19,7 +19,7 @@ library(finnts)
 
 The finnts package, commonly referred to as "Finn", is a standardized times series forecast framework developed by Microsoft Finance. It's a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.
 
-Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, "forecast_time_series", takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package. 
+Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, "forecast_time_series", takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package.
 
 ```{r, message = FALSE, eval = FALSE}
 library(finnts)
@@ -27,21 +27,20 @@ library(finnts)
 browseVignettes("finnts")
 ```
 
-
 Getting started with Finn is as simple as 1..2..3
 
 ## 1. Bring Data
 
-Data used in Finn needs to follow a few requirements, called out below. 
+Data used in Finn needs to follow a few requirements, called out below.
 
-- Data is tabular, formatted as data frame or tibble.
-- Needs a time stamp or date column, which needs to be formatted as a date and labeled as "Date". The date values need to start at the beginning of the period. For example, a monthly data set needs to have each date period started on the first day of each month. For a quarterly forecast, the first day of the quarter, etc.
-- Contains at least one unique label to identify one time series from another. These are sometimes referred to as "data combos" or "combo variables" in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series. 
-- No duplicate rows at the intersection of data combos and date. 
-- Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors. 
-- External regressors are optional, they're not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors. 
+-   Data is tabular, formatted as data frame, tibble, or spark data frame.
+-   Needs a time stamp or date column, which needs to be formatted as a date and labeled as "Date". The date values need to start at the beginning of the period. For example, a monthly data set needs to have each date period started on the first day of each month. For a quarterly forecast, the first day of the quarter, etc.
+-   Contains at least one unique label to identify one time series from another. These are sometimes referred to as "data combos" or "combo variables" in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series.
+-   No duplicate rows at the intersection of data combos and date.
+-   Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors.
+-   External regressors are optional, they're not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors.
 
-A good example to use when producing your first Finn forecast is to leverage existing data examples from the [timetk](https://business-science.github.io/timetk/) package. Let's take a monthly example and trim it down to speed up the run time of your first Finn forecast. 
+A good example to use when producing your first Finn forecast is to leverage existing data examples from the [timetk](https://business-science.github.io/timetk/) package. Let's take a monthly example and trim it down to speed up the run time of your first Finn forecast.
 
 ```{r, message = FALSE}
 library(finnts)
@@ -56,55 +55,106 @@ print(hist_data)
 print(unique(hist_data$id))
 ```
 
-The above data set contains 4 individual time series, identified using the "id" column. 
-
+The above data set contains 4 individual time series, identified using the "id" column.
 
 ## 2. Create Finn Forecast
 
-Calling for "forecast_time_series" function is the easiest part. In this example we will be running just two models. 
+Before we call the Finn forecast function. Let's first set up some run information using `set_run_info()`, this helps log all components of our Finn forecast successfully.
 
-```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, results='hide', eval = FALSE}
+```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
 
-finn_output <- forecast_time_series(
+run_info <- set_run_info(
+  experiment_name = "finn_forecast", 
+  run_name = "test_run"
+)
+
+```
+
+Calling the "forecast_time_series" function is the easiest part. In this example we will be running just two models.
+
+```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
+
+# no need to assign it to a variable, since all of the outputs are written to disk :)
+forecast_time_series(
+  run_info = run_info,
   input_data = hist_data,
   combo_variables = c("id"),
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
-  back_test_scenarios = 6, 
-  models_to_run = c("arima", "ets"), 
-  run_global_models = FALSE, 
-  run_model_parallel = FALSE
+  models_to_run = c("arima", "ets")
 )
-
 ```
 
+## 3. Get Forecast Outputs
 
+### Initial Finn Outputs
 
-## 3. Use Forecast Outputs
+```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE}
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+
+print(finn_output_tbl)
+```
 
 ### Future Forecast
 
 ```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE}
-finn_output$final_fcst %>%
-  head() %>%
-  print()
 
-finn_output$final_fcst %>%
-  tail() %>%
-  print()
+future_forecast_tbl <- finn_output_tbl %>%
+  dplyr::filter(Run_Type == "Future_Forecast")
+
+print(future_forecast_tbl)
 ```
 
 ### Back Test Results
 
 ```{r, message = FALSE, eval = finn_output, eval = FALSE}
-print(finn_output$back_test_data)
+back_test_tbl <- finn_output_tbl %>%
+  dplyr::filter(Run_Type == "Back_Test")
+
+print(back_test_tbl)
 ```
 
 ### Back Test Best Model per Time Series
 
 ```{r, message = FALSE, eval = finn_output, eval = FALSE}
-print(finn_output$back_test_best_MAPE)
+best_model_tbl <- finn_output_tbl %>%
+  dplyr::filter(Best_Model == "Yes") %>%
+  dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID) %>%
+  dplyr::distinct()
+
+print(best_model_tbl)
 ```
 
-Note: the best model for the "M1" combination is a simple average of "arima" and "ets" models. 
+Note: the best model for the "M1" combination is a simple average of "arima" and "ets" models.
+
+### Trained Models
+
+```{r, message = FALSE, eval = finn_output, eval = FALSE}
+trained_model_tbl <- get_trained_models(run_info = run_info)
+
+print(trained_model_tbl)
+```
+
+### Initial Prepped Data
+
+```{r, message = FALSE, eval = finn_output, eval = FALSE}
+R1_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
+                                        recipe = "R1")
+
+print(R1_prepped_data_tbl)
+
+R2_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
+                                        recipe = "R2")
+
+print(R2_prepped_data_tbl)
+```
+
+### Run Info Metadata
+
+```{r, message = FALSE, eval = finn_output, eval = FALSE}
+run_info_tbl <- get_run_info(experiment_name = "finn_forecast")
+
+print(run_info_tbl)
+```
