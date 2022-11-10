@@ -197,20 +197,6 @@ get_trained_models <- function(run_info) {
 #'   recipes_to_run = "R1"
 #' )
 #'
-#' prep_models(run_info,
-#'   models_to_run = c("arima", "ets"),
-#'   num_hyperparameters = 1
-#' )
-#'
-#' train_models(run_info,
-#'   run_global_models = FALSE,
-#'   run_local_models = TRUE
-#' )
-#'
-#' final_models(run_info,
-#'   average_models = FALSE
-#' )
-#'
 #' R1_prepped_data_tbl <- get_prepped_data(run_info, 
 #'                                         recipe = "R1")
 #' }
@@ -221,6 +207,7 @@ get_prepped_data <- function(run_info,
   
   # check input values
   check_input_type("run_info", run_info, "list")
+  check_input_type("recipe", recipe, "character", c("R1", "R2"))
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
   
   # get input values
@@ -230,12 +217,7 @@ get_prepped_data <- function(run_info,
   )
   
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
-  
-  # check input values
-  check_input_type("run_info", run_info, "list")
-  check_input_type("recipe", recipe, "character", c("R1", "R2"))
-  check_input_type("return_type", return_type, "character", c("df", "sdf"))
-  
+
   # get prepped data
   data_path <- paste0(
     "/prep_data/*", hash_data(run_info$experiment_name), "-",
@@ -252,6 +234,73 @@ get_prepped_data <- function(run_info,
     base::suppressWarnings()
   
   return(prep_data_tbl)
+}
+
+#' Get Prepped Model Info
+#'
+#' @param run_info run info using the [set_run_info()] function
+#'
+#' @return table with data related to model workflows, hyperparameters, and back testing
+#'
+#' @examples
+#' \donttest{
+#' data_tbl <- timetk::m4_monthly %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id)) %>%
+#'   dplyr::filter(
+#'     id == "M2",
+#'     Date >= "2012-01-01",
+#'     Date <= "2015-06-01"
+#'   )
+#'
+#' run_info <- set_run_info()
+#'
+#' prep_data(run_info,
+#'   input_data = data_tbl,
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month",
+#'   forecast_horizon = 3,
+#'   recipes_to_run = "R1"
+#' )
+#'
+#' prep_models(run_info,
+#'   models_to_run = c("arima", "ets"),
+#'   num_hyperparameters = 1
+#' )
+#'
+#' prepped_models_tbl <- get_prepped_mdoels(run_info = run_info)
+#' }
+#' @export
+get_prepped_models <- function(run_info) {
+  
+  # check input values
+  check_input_type("run_info", run_info, "list")
+  
+  # get prepped model info
+  data_path <- paste0(
+    "/prep_models/*", hash_data(run_info$experiment_name), "-",
+    hash_data(run_info$run_name)
+  )
+  
+  train_test_tbl <- read_file(run_info,
+                             path = paste0(data_path, "-train_test_split.", run_info$data_output)
+  )
+  
+  model_hyperparameters_tbl <- read_file(run_info,
+                              path = paste0(data_path, "-model_hyperparameters.", run_info$object_output)
+  )
+  
+  model_workflows_tbl <- read_file(run_info,
+                                         path = paste0(data_path, "-model_workflows.", run_info$object_output)
+  )
+  
+  final_tbl <- tibble::tibble(
+    Type = c("Model_Workflows", "Model_Hyperparameters", "Train_Test_Splits"), 
+    Data = list(model_workflows_tbl, model_hyperparameters_tbl, train_test_tbl)
+  )
+  
+  return(final_tbl)
 }
 
 #' Hash run info in file name
