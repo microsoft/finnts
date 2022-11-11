@@ -42,6 +42,6 @@ prep_models(run_info,
   num_hyperparameters = 1
 )
 
-prepped_models_tbl <- get_prepped_mdoels(run_info = run_info)
+prepped_models_tbl <- get_prepped_models(run_info = run_info)
 }
 }
