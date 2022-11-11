@@ -65,7 +65,7 @@ Important Note: The Azure Batch R packages have been deprecated. Please leverage
 
 The second most efficient way to run Finn in Azure is to set "parallel_processing" to "azure_batch" and set "run_model_parallel" to "TRUE" within the "forecast_time_series" function. This will run each time series in separate virtual machines (VM) in Azure Batch. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine. 
 
-[Azure Batch](https://azure.microsoft.com/en-us/services/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [GitHub site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
+[Azure Batch](https://azure.microsoft.com/en-us/products/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [GitHub site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
 
 In order to have Finn live on CRAN, it cannot contain any package dependencies that live outside of CRAN. The doAzureParallel and rAzureBatch packages are only on GitHub, so they will have to be installed and called outside of Finn. 
 
