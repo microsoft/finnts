@@ -45,12 +45,14 @@ There were 2 NOTES:
   that it consolidates a lot of different models into one package to run them automatically. 
   So having many required packages is important to the package. 
   
-* checking CRAN incoming feasibility ... NOTE
-  Maintainer: ‘Mike Tokic <mftokic@gmail.com>’
-
-  New submission
+* checking R code for possible problems ... NOTE
+   Found the following assignments to the global environment:
+   File 'finnts/R/prep_data.R':
+     assign(name, context[[name]], envir = .GlobalEnv)
   
-  Also this is my first cran submission. 
+  This assignment is ran when submitting tasks to run in spark by using sparklyr::spark_apply(). 
+  You have to specify what variables get exported to the cluster then load them back into the 
+  environment within the cluster using assign(). 
 
 ## Downstream dependencies
 There are currently no downstream dependencies for this package
