@@ -258,6 +258,7 @@ forecast_backwards_compatability <- function(run_info,
     dplyr::rename(Target = Forecast) %>%
     rbind(
       hist_tbl %>%
+        dplyr::collect() %>%
         tidyr::unite(col = "Combo", 
                      combo_variables, 
                      sep = "---", 
