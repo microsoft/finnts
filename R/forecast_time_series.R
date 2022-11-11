@@ -262,13 +262,13 @@ forecast_backwards_compatability <- function(run_info,
                      combo_variables, 
                      sep = "---", 
                      remove = FALSE) %>%
-        dplyr::rename("Target" = target_variable) %>%
-        dplyr::select(Combo, combo_variables, Date, Target) %>%
+        dplyr::rename(Target = target_variable) %>%
         dplyr::mutate(Model_ID = NA, 
                       lo_95 = Target, 
                       lo_80 = Target, 
                       hi_80 = Target, 
-                      hi_95 = Target)
+                      hi_95 = Target) %>%
+        dplyr::select(Combo, combo_variables, Model_ID, Date, Target, lo_95, lo_80, hi_80, hi_95)
     ) %>%
     dplyr::mutate(Type = ifelse(is.na(Model_ID), "Historical", "Forecast")) %>%
     dplyr::relocate(Type, .before = Date) %>%
