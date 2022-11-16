@@ -1,9 +1,9 @@
-# Development Version
+# finnts 0.2.1
 
 ## Bug Fixes
 
--   Fixed feature engineering issue around NaN/Inf values when computing log values of negative external regressor values
--   Fixed issue of ensuring random seed is set corrently in parallel processing
+-   Fixed feature engineering issue around NaN/Inf values when computing log values of negative external regressor values.
+-   Fixed issue of ensuring random seed is set correctly in parallel processing.
 
 # finnts 0.2.0
 
