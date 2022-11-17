@@ -153,7 +153,7 @@ validate_forecasting_inputs<-function(input_data,
   
   #modeling approach formatting
   if(modeling_approach != "accuracy") {
-    stop("modeling approach input value needs to be set to 'accruacy'")
+    stop("modeling approach input value needs to be set to 'accuracy'")
   }
   
   #forecast approach formatting
