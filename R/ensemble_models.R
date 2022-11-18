@@ -74,6 +74,8 @@ ensemble_models <- function(run_info,
 
   num_hyperparameters <- as.numeric(log_df$num_hyperparameters)
   negative_forecast <- log_df$negative_forecast
+  run_global_models <- log_df$run_global_models
+  run_local_models <- log_df$run_local_models
 
   if (log_df$run_ensemble_models == FALSE) {
     cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run.")
@@ -128,6 +130,7 @@ ensemble_models <- function(run_info,
   )
 
   if (length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) {
+    cli::cli_alert_info("Ensemble Models Already Trained")
     return(cli::cli_progress_done())
   }
 
@@ -158,26 +161,30 @@ ensemble_models <- function(run_info,
 
     # model forecasts
     single_model_tbl <- NULL
-    suppressWarnings(try(single_model_tbl <- read_file(run_info,
-      path = paste0(
-        "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-        "-", combo, "-single_models.", run_info$data_output
+    if(run_local_models) {
+      suppressWarnings(try(single_model_tbl <- read_file(run_info,
+                                                         path = paste0(
+                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                                           "-", combo, "-single_models.", run_info$data_output
+                                                         ),
+                                                         return_type = "df"
       ),
-      return_type = "df"
-    ),
-    silent = TRUE
-    ))
+      silent = TRUE
+      ))
+    }
 
     global_model_tbl <- NULL
-    suppressWarnings(try(global_model_tbl <- read_file(run_info,
-      path = paste0(
-        "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-        "-", combo, "-global_models.", run_info$data_output
+    if(run_global_models) {
+      suppressWarnings(try(global_model_tbl <- read_file(run_info,
+                                                         path = paste0(
+                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                                           "-", combo, "-global_models.", run_info$data_output
+                                                         ),
+                                                         return_type = "df"
       ),
-      return_type = "df"
-    ),
-    silent = TRUE
-    ))
+      silent = TRUE
+      ))
+    }
 
     # combine model forecasts
     initial_results_final_tbl <- single_model_tbl %>%

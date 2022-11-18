@@ -160,6 +160,12 @@ train_models <- function(run_info,
     combo_list <- c(combo_list, combo_temp)
     combo_test <- combo_list
   }
+  
+  if (length(combo_list) == 1 & run_global_models) {
+    run_global_models <- FALSE
+    cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
+    cli::cli_progress_update()
+  }
 
   if (run_global_models & (inherits(parallel_processing, "NULL") || parallel_processing == "local_machine") & length(combo_list) > 1) {
     combo_test <- c(combo_list, hash_data("All-Data"))
@@ -176,9 +182,10 @@ train_models <- function(run_info,
   ) %>%
     tibble::tibble(
       Path = .,
-      File = fs::path_file(.)
+      File = ifelse(is.null(.), "NA", fs::path_file(.))
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE)
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    base::suppressWarnings()
 
   prev_combo_list <- prev_combo_tbl %>%
     dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%

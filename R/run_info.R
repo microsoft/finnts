@@ -64,7 +64,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     path <- ""
   }
   
-  # create temp dir paths
+  # create dir paths
   if(is.null(path)) {
     path <- fs::path(tempdir())
     
@@ -73,9 +73,40 @@ set_run_info <- function(experiment_name = "finn_fcst",
     fs::dir_create(tempdir(), "models")
     fs::dir_create(tempdir(), "forecasts")
     fs::dir_create(tempdir(), "logs")
+    
+  } else if(is.null(storage_object)) {
+    
+    fs::dir_create(path, "prep_data")
+    fs::dir_create(path, "prep_models")
+    fs::dir_create(path, "models")
+    fs::dir_create(path, "forecasts")
+    fs::dir_create(path, "logs")
+    
+  } else if(inherits(storage_object, "blob_container")) {
+    
+    AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_data"))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_models"))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, "models"))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, "forecasts"))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, "logs"))
+    
+  } else if(inherits(storage_object, "ms_drive")) {
+    
+    try(storage_object$create_folder(fs::path(path, "prep_data")), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, "prep_models")), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, "models")), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, "forecasts")), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, "logs")), silent = TRUE)
   }
   
   # see if there is an existing log file to leverage
+  if(add_unique_id) {
+    run_name <- paste0(
+      run_name, "-",
+      format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
+    )
+  }
+  
   temp_run_info <- list(
     experiment_name = experiment_name,
     run_name = run_name,
@@ -113,7 +144,9 @@ set_run_info <- function(experiment_name = "finn_fcst",
       data.frame()
     
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'set_run_info', please revert back to original inputs or start a new run with 'set_run_info'",
+      stop("Inputs have recently changed in 'set_run_info', 
+           please revert back to original inputs or start a 
+           new run with 'set_run_info'",
            call. = FALSE
       )
     }
@@ -131,13 +164,6 @@ set_run_info <- function(experiment_name = "finn_fcst",
     return(output_list)
     
   } else {
-    
-    if(add_unique_id) {
-      run_name <- paste0(
-        run_name, "-",
-        format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
-      )
-    }
     
     created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
                           format = "%Y%m%dT%H%M%SZ", tz = "UTC"

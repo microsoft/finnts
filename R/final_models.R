@@ -130,6 +130,9 @@ final_models <- function(run_info,
   date_type <- prev_log_df$date_type
   forecast_approach <- prev_log_df$forecast_approach
   negative_forecast <- prev_log_df$negative_forecast
+  run_global_models <- prev_log_df$run_global_models
+  run_local_models <- prev_log_df$run_local_models
+  run_ensemble_models <- prev_log_df$run_ensemble_models
 
   if ((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
 
@@ -187,37 +190,43 @@ final_models <- function(run_info,
       unique()
 
     single_model_tbl <- NULL
-    suppressWarnings(try(single_model_tbl <- read_file(run_info,
-      path = paste0(
-        "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-        "-", combo, "-single_models.", run_info$data_output
+    if(run_local_models) {
+      suppressWarnings(try(single_model_tbl <- read_file(run_info,
+                                                         path = paste0(
+                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                                           "-", combo, "-single_models.", run_info$data_output
+                                                         ),
+                                                         return_type = "df"
       ),
-      return_type = "df"
-    ),
-    silent = TRUE
-    ))
+      silent = TRUE
+      ))
+    }
 
     ensemble_model_tbl <- NULL
-    suppressWarnings(try(ensemble_model_tbl <- read_file(run_info,
-      path = paste0(
-        "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-        "-", combo, "-ensemble_models.", run_info$data_output
+    if(run_ensemble_models) {
+      suppressWarnings(try(ensemble_model_tbl <- read_file(run_info,
+                                                           path = paste0(
+                                                             "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                                             "-", combo, "-ensemble_models.", run_info$data_output
+                                                           ),
+                                                           return_type = "df"
       ),
-      return_type = "df"
-    ),
-    silent = TRUE
-    ))
+      silent = TRUE
+      ))
+    }
 
     global_model_tbl <- NULL
-    suppressWarnings(try(global_model_tbl <- read_file(run_info,
-      path = paste0(
-        "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-        "-", combo, "-global_models.", run_info$data_output
+    if(run_global_models) {
+      suppressWarnings(try(global_model_tbl <- read_file(run_info,
+                                                         path = paste0(
+                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                                           "-", combo, "-global_models.", run_info$data_output
+                                                         ),
+                                                         return_type = "df"
       ),
-      return_type = "df"
-    ),
-    silent = TRUE
-    ))
+      silent = TRUE
+      ))
+    }
 
     local_model_tbl <- single_model_tbl %>%
       rbind(ensemble_model_tbl)

@@ -175,11 +175,12 @@ prep_data <- function(run_info,
   ) %>%
     tibble::tibble(
       Path = .,
-      File = fs::path_file(.)
+      File = ifelse(is.null(.), "NA", fs::path_file(.))
     ) %>%
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
-    unique()
+    unique() %>%
+    base::suppressWarnings()
 
   current_combo_list <- initial_prep_tbl %>%
     dplyr::select(Combo) %>%

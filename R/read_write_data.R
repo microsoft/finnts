@@ -429,7 +429,7 @@ write_data_folder <- function(x,
 #' @noRd
 list_files <- function(storage_object,
                        path) {
-  
+
   if(fs::path_dir(path) %in% c("/prep_data", "/prep_models", "/models", "/logs", "/forecasts")) {
     fs::dir_create(tempdir(), fs::path_dir(path))
     dir <- fs::path_dir(paste0(tempdir(), path))
@@ -439,15 +439,22 @@ list_files <- function(storage_object,
     file <- fs::path_file(path)
   }
 
-  switch(class(storage_object)[[1]],
+  files <- switch(class(storage_object)[[1]],
     "NULL" = if (grepl("*", file, fixed = TRUE)) {
       fs::dir_ls(path = dir, glob = file)
     } else {
       path
     },
-    ms_drive = storage_object$list_files(dir) %>% dplyr::filter(grepl(file, name)) %>% dplyr::pull(name),
-    ms_blob = AzureStor::list_storage_files(storage_object, dir) %>% dplyr::filter(grepl(file, name)) %>% dplyr::pull(name)
+    ms_drive = storage_object$list_files(dir) %>% dplyr::filter(grepl(utils::glob2rx(file), name)) %>% dplyr::pull(name),
+    blob_container = tryCatch(
+      AzureStor::list_storage_files(storage_object, dir) %>% dplyr::filter(grepl(utils::glob2rx(path), name)) %>% dplyr::pull(name),
+      error = function(e) {
+        NULL
+      }
+    )
   )
+  
+  return(files)
 }
 
 #' Download file
@@ -613,8 +620,12 @@ get_recipe_data <- function(run_info,
       temp_path <- temp_path %>%
         dplyr::pull(Path)
 
-      #temp_path <- gsub(fs::path(run_info$path), "", temp_path)
-      temp_path <- gsub(ifelse(is.null(run_info$path), fs::path_dir(fs::path(tempdir(), "test")), fs::path(run_info$path)), "", temp_path)
+      temp_path <- switch(
+        class(run_info$storage_object)[[1]],
+        "NULL" = gsub(fs::path_dir(fs::path(tempdir(), "test")), "", temp_path), 
+        blob_container = gsub(fs::path(run_info$path), "", temp_path), 
+        ms_drive = fs::path("/prep_data/", temp_path)
+      )
     }
 
     temp_file_tbl <- read_file(run_info,
