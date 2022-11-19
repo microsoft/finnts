@@ -41,7 +41,8 @@ prep_data(run_info,
   recipes_to_run = "R1"
 )
 
-R1_prepped_data_tbl <- get_prepped_data(run_info, 
-                                        recipe = "R1")
+R1_prepped_data_tbl <- get_prepped_data(run_info,
+  recipe = "R1"
+)
 }
 }

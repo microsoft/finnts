@@ -185,17 +185,18 @@ run_info <- set_run_info()
 
 finn_forecast <- forecast_time_series(
   run_info = run_info,
-  input_data = m750 \%>\% dplyr::rename(Date = date), 
-  combo_variables = c("id"), 
-  target_variable = "value", 
-  date_type = "month", 
-  forecast_horizon = 3, 
+  input_data = m750 \%>\% dplyr::rename(Date = date),
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3,
   run_model_parallel = FALSE,
-  models_to_run = c("arima", "ets", "snaive"), 
-  return_data = FALSE)
-  
+  models_to_run = c("arima", "ets", "snaive"),
+  return_data = FALSE
+)
+
 fcst_tbl <- get_forecast_data(run_info)
-  
+
 models_tbl <- get_trained_models(run_info)
 }
 }

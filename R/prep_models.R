@@ -184,9 +184,8 @@ train_test_split <- function(run_info,
                              back_test_scenarios = NULL,
                              back_test_spacing = NULL,
                              run_ensemble_models = TRUE) {
-
   cli::cli_progress_step("Creating Train Test Splits")
-  
+
   # get inputs from previous functions
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -197,30 +196,30 @@ train_test_split <- function(run_info,
   date_type <- log_df$date_type
   forecast_horizon <- as.numeric(log_df$forecast_horizon)
   date_type <- log_df$date_type
-  
-  if(is.null(run_ensemble_models) & date_type %in% c("day", "week")) {
+
+  if (is.null(run_ensemble_models) & date_type %in% c("day", "week")) {
     run_ensemble_models <- FALSE
   } else {
     run_ensemble_models <- TRUE
   }
-  
+
   # adjust based on models planned to run
   model_workflow_list <- read_file(run_info,
-                                   path = paste0(
-                                     "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-                                     "-model_workflows.", run_info$object_output
-                                   ),
-                                   return_type = "df"
+    path = paste0(
+      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "-model_workflows.", run_info$object_output
+    ),
+    return_type = "df"
   ) %>%
     dplyr::pull(Model_Name) %>%
     unique()
-  
+
   ml_models <- c(
     "arima-boost", "cubist", "glmnet", "mars",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
     "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
   )
-  
+
   if (sum(model_workflow_list %in% ml_models) == 0) {
     run_ensemble_models <- FALSE
     cli::cli_alert_info("Turning ensemble models off since no multivariate models were chosen to run.")
@@ -265,13 +264,12 @@ train_test_split <- function(run_info,
     )
   )[1]
 
-  source_path <- switch(
-    class(run_info$storage_object)[[1]],
-    "NULL" = gsub(fs::path(run_info$path), "", file_name),  
-    blob_container = gsub(fs::path(run_info$path), "", file_name), 
+  source_path <- switch(class(run_info$storage_object)[[1]],
+    "NULL" = gsub(fs::path(run_info$path), "", file_name),
+    blob_container = gsub(fs::path(run_info$path), "", file_name),
     ms_drive = fs::path("/prep_data/", file_name)
   )
-  
+
   temp_tbl <- read_file(run_info,
     path = source_path,
     return_type = "df"
@@ -359,7 +357,6 @@ train_test_split <- function(run_info,
 
   # adjust based on models planned to run
   if (sum(model_workflow_list %in% ml_models) == 0) {
-
     train_test_final <- train_test_final %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
       rbind(
@@ -420,18 +417,17 @@ model_workflows <- function(run_info,
                             models_not_to_run = NULL,
                             run_deep_learning = FALSE,
                             pca = NULL) {
-  
   cli::cli_progress_step("Creating Model Workflows")
-  
+
   # get inputs
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
-  
+
   date_type <- log_df$date_type
-  
-  if(is.null(pca) & date_type %in% c("day", "week")) {
+
+  if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
   } else {
     pca <- FALSE
@@ -483,10 +479,9 @@ model_workflows <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::pull(Path)
 
-    source_path <- switch(
-      class(run_info$storage_object)[[1]],
-      "NULL" = gsub(fs::path(run_info$path), "", temp_path), 
-      blob_container = gsub(fs::path(run_info$path), "", temp_path), 
+    source_path <- switch(class(run_info$storage_object)[[1]],
+      "NULL" = gsub(fs::path(run_info$path), "", temp_path),
+      blob_container = gsub(fs::path(run_info$path), "", temp_path),
       ms_drive = fs::path("/prep_data/", temp_path)
     )
 
@@ -635,9 +630,8 @@ model_workflows <- function(run_info,
 #' @noRd
 model_hyperparameters <- function(run_info,
                                   num_hyperparameters = 10) {
-
   cli::cli_progress_step("Creating Model Hyperparameters")
-  
+
   # check if input values have changed
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -687,16 +681,15 @@ model_hyperparameters <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::pull(Path)
 
-    source_path <- switch(
-      class(run_info$storage_object)[[1]],
-      "NULL" = gsub(fs::path(run_info$path), "", temp_path),  
-      blob_container = gsub(fs::path(run_info$path), "", temp_path), 
+    source_path <- switch(class(run_info$storage_object)[[1]],
+      "NULL" = gsub(fs::path(run_info$path), "", temp_path),
+      blob_container = gsub(fs::path(run_info$path), "", temp_path),
       ms_drive = fs::path("/prep_data/", temp_path)
     )
-    
+
     temp_file_tbl <- read_file(run_info,
-                               path = source_path,
-                               return_type = "df"
+      path = source_path,
+      return_type = "df"
     )
 
     temp_final_tbl <- tibble::tibble(

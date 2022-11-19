@@ -16,8 +16,8 @@
 #'   runs time series in parallel on a spark cluster in Azure Databricks or
 #'   Azure Synapse.
 #' @param inner_parallel Run components of forecast process inside a specific
-#'   time series in parallel. Can only be used if parallel_processing is 
-#'   set to NULL or 'spark'. 
+#'   time series in parallel. Can only be used if parallel_processing is
+#'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
 #'   Default of NULL uses total amount of cores on machine minus one. Can't be
@@ -61,11 +61,10 @@ final_models <- function(run_info,
                          max_model_average = 3,
                          weekly_to_daily = TRUE,
                          parallel_processing = NULL,
-                         inner_parallel = FALSE, 
+                         inner_parallel = FALSE,
                          num_cores = NULL) {
-
   cli::cli_progress_step("Selecting Best Models")
-  
+
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("average_models", average_models, "logical")
@@ -179,356 +178,363 @@ final_models <- function(run_info,
     .inorder = FALSE,
     .multicombine = TRUE,
     .noexport = NULL
-  ) %op% {
-    combo <- x
+  ) %op%
+    {
+      combo <- x
 
-    # get individual and ensemble model predictions
-    train_test_id_list <- model_train_test_tbl %>%
-      dplyr::filter(Run_Type %in% c("Back_Test", "Future_Forecast")) %>%
-      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
-      dplyr::pull(Train_Test_ID) %>%
-      unique()
-
-    single_model_tbl <- NULL
-    if(run_local_models) {
-      suppressWarnings(try(single_model_tbl <- read_file(run_info,
-                                                         path = paste0(
-                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-                                                           "-", combo, "-single_models.", run_info$data_output
-                                                         ),
-                                                         return_type = "df"
-      ),
-      silent = TRUE
-      ))
-    }
-
-    ensemble_model_tbl <- NULL
-    if(run_ensemble_models) {
-      suppressWarnings(try(ensemble_model_tbl <- read_file(run_info,
-                                                           path = paste0(
-                                                             "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-                                                             "-", combo, "-ensemble_models.", run_info$data_output
-                                                           ),
-                                                           return_type = "df"
-      ),
-      silent = TRUE
-      ))
-    }
-
-    global_model_tbl <- NULL
-    if(run_global_models) {
-      suppressWarnings(try(global_model_tbl <- read_file(run_info,
-                                                         path = paste0(
-                                                           "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-                                                           "-", combo, "-global_models.", run_info$data_output
-                                                         ),
-                                                         return_type = "df"
-      ),
-      silent = TRUE
-      ))
-    }
-
-    local_model_tbl <- single_model_tbl %>%
-      rbind(ensemble_model_tbl)
-
-    predictions_tbl <- local_model_tbl %>%
-      rbind(global_model_tbl) %>%
-      dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-      dplyr::filter(Train_Test_ID %in% train_test_id_list)
-
-    # get model list
-    if (!is.null(local_model_tbl)) {
-      local_model_list <- local_model_tbl %>%
-        dplyr::pull(Model_ID) %>%
+      # get individual and ensemble model predictions
+      train_test_id_list <- model_train_test_tbl %>%
+        dplyr::filter(Run_Type %in% c("Back_Test", "Future_Forecast")) %>%
+        dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+        dplyr::pull(Train_Test_ID) %>%
         unique()
-    } else {
-      local_model_list <- NULL
-    }
 
-    if (!is.null(global_model_tbl)) {
-      global_model_list <- global_model_tbl %>%
-        dplyr::pull(Model_ID) %>%
-        unique()
-    } else {
-      global_model_list <- NULL
-    }
-
-    final_model_list <- c(local_model_list, global_model_list)
-
-    # simple model averaging
-    if (average_models & length(final_model_list) > 1) {
-
-      # create model combinations list
-      model_combinations <- tibble::tibble()
-
-      for (number in 2:min(length(final_model_list), max_model_average)) {
-        temp <- data.frame(gtools::combinations(v = final_model_list, n = length(final_model_list), r = number))
-
-        temp <- temp %>%
-          tidyr::unite(Model_Combo, colnames(temp)) %>%
-          dplyr::select(Model_Combo) %>%
-          tibble::tibble()
-
-        model_combinations <- rbind(model_combinations, temp)
+      single_model_tbl <- NULL
+      if (run_local_models) {
+        suppressWarnings(try(single_model_tbl <- read_file(run_info,
+          path = paste0(
+            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+            "-", combo, "-single_models.", run_info$data_output
+          ),
+          return_type = "df"
+        ),
+        silent = TRUE
+        ))
       }
 
-      iter_list <- model_combinations %>%
-        dplyr::pull(Model_Combo)
-      
-      par_info <- par_start(
-        run_info = run_info,
-        parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
-        num_cores = num_cores,
-        task_length = nrow(iter_list)
-      )
-      
-      inner_cl <- par_info$cl
-      inner_packages <- par_info$packages
-      `%op%` <- par_info$foreach_operator
+      ensemble_model_tbl <- NULL
+      if (run_ensemble_models) {
+        suppressWarnings(try(ensemble_model_tbl <- read_file(run_info,
+          path = paste0(
+            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+            "-", combo, "-ensemble_models.", run_info$data_output
+          ),
+          return_type = "df"
+        ),
+        silent = TRUE
+        ))
+      }
 
-      averages_tbl <- foreach::foreach(
-        x = iter_list,
-        .combine = "rbind",
-        .packages = inner_packages,
-        .errorhandling = "remove",
-        .verbose = FALSE,
-        .inorder = FALSE,
-        .multicombine = TRUE,
-        .noexport = NULL
-      ) %op% {
+      global_model_tbl <- NULL
+      if (run_global_models) {
+        suppressWarnings(try(global_model_tbl <- read_file(run_info,
+          path = paste0(
+            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+            "-", combo, "-global_models.", run_info$data_output
+          ),
+          return_type = "df"
+        ),
+        silent = TRUE
+        ))
+      }
 
-        # get list of models to average
-        model_list <- strsplit(x, "_")[[1]]
+      local_model_tbl <- single_model_tbl %>%
+        rbind(ensemble_model_tbl)
 
-        # create model average
-        final_tbl <- predictions_tbl %>%
-          dplyr::filter(Model_ID %in% model_list) %>%
-          dplyr::group_by(Combo, Train_Test_ID, Date) %>%
-          dplyr::summarise(
-            Target = mean(Target, na.rm = TRUE),
-            Forecast = mean(Forecast, na.rm = TRUE)
-          ) %>%
-          dplyr::mutate(Model_ID = x) %>%
-          dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Target, Forecast) %>%
-          dplyr::ungroup()
+      predictions_tbl <- local_model_tbl %>%
+        rbind(global_model_tbl) %>%
+        dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
+        dplyr::filter(Train_Test_ID %in% train_test_id_list)
 
-        return(final_tbl)
-      } %>%
-        base::suppressPackageStartupMessages()
-      
-      par_end(inner_cl)
-    } else {
-      averages_tbl <- NULL
-    }
+      # get model list
+      if (!is.null(local_model_tbl)) {
+        local_model_list <- local_model_tbl %>%
+          dplyr::pull(Model_ID) %>%
+          unique()
+      } else {
+        local_model_list <- NULL
+      }
 
-    # choose best model
-    final_predictions_tbl <- predictions_tbl %>%
-      dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
-      rbind(averages_tbl)
+      if (!is.null(global_model_tbl)) {
+        global_model_list <- global_model_tbl %>%
+          dplyr::pull(Model_ID) %>%
+          unique()
+      } else {
+        global_model_list <- NULL
+      }
 
-    back_test_mape <- final_predictions_tbl %>%
-      dplyr::mutate(
-        Train_Test_ID = as.numeric(Train_Test_ID),
-        Target = ifelse(Target == 0, 0.1, Target)
-      ) %>%
-      dplyr::filter(Train_Test_ID != 1) %>%
-      dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+      final_model_list <- c(local_model_list, global_model_list)
 
-    best_model_mape <- back_test_mape %>%
-      dplyr::group_by(Model_ID, Combo) %>%
-      dplyr::mutate(
-        Combo_Total = sum(abs(Target), na.rm = TRUE),
-        weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
-      ) %>%
-      dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
-      dplyr::arrange(Rolling_MAPE) %>%
-      dplyr::ungroup() %>%
-      dplyr::group_by(Combo) %>%
-      dplyr::slice(1) %>%
-      dplyr::ungroup()
+      # simple model averaging
+      if (average_models & length(final_model_list) > 1) {
 
-    best_model_tbl <- best_model_mape %>%
-      dplyr::mutate(Best_Model = "Yes") %>%
-      dplyr::select(Combo, Model_ID, Best_Model)
+        # create model combinations list
+        model_combinations <- tibble::tibble()
 
-    back_test_mape_final <- back_test_mape %>%
-      dplyr::left_join(best_model_tbl,
-        by = c("Combo", "Model_ID")
-      ) %>%
-      dplyr::mutate(
-        Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"),
-        Train_Test_ID = Train_Test_ID - 1
-      ) %>%
-      dplyr::rename(Back_Test_Scenario = Train_Test_ID) %>%
-      dplyr::group_by(Combo, Model_ID, Back_Test_Scenario) %>%
-      dplyr::mutate(Horizon = dplyr::row_number()) %>%
-      dplyr::ungroup() %>%
-      dplyr::select(Combo, Model_ID, Back_Test_Scenario, Horizon, Date, Forecast, Target, MAPE, Best_Model)
+        for (number in 2:min(length(final_model_list), max_model_average)) {
+          temp <- data.frame(gtools::combinations(v = final_model_list, n = length(final_model_list), r = number))
 
-    best_model_final_tbl <- tibble::tibble(Model_ID = stringr::str_split(best_model_tbl$Model_ID, "_")[[1]]) %>%
-      dplyr::mutate(
-        Combo = best_model_tbl$Combo,
-        Best_Model = "Yes"
-      ) %>%
-      tidyr::separate(col = "Model_ID", into = c("Model_Name", "Recipe_ID", "Model_Type"), sep = "--", remove = FALSE)
+          temp <- temp %>%
+            tidyr::unite(Model_Combo, colnames(temp)) %>%
+            dplyr::select(Model_Combo) %>%
+            tibble::tibble()
 
-    # if a simple model average is the most accurate store the results
-    if (nrow(best_model_final_tbl) > 1) {
-      model_avg_final_tbl <- final_predictions_tbl %>%
-        dplyr::right_join(best_model_tbl,
+          model_combinations <- rbind(model_combinations, temp)
+        }
+
+        iter_list <- model_combinations %>%
+          dplyr::pull(Model_Combo)
+
+        par_info <- par_start(
+          run_info = run_info,
+          parallel_processing = if (inner_parallel) {
+            "local_machine"
+          } else {
+            NULL
+          },
+          num_cores = num_cores,
+          task_length = nrow(iter_list)
+        )
+
+        inner_cl <- par_info$cl
+        inner_packages <- par_info$packages
+        `%op%` <- par_info$foreach_operator
+
+        averages_tbl <- foreach::foreach(
+          x = iter_list,
+          .combine = "rbind",
+          .packages = inner_packages,
+          .errorhandling = "remove",
+          .verbose = FALSE,
+          .inorder = FALSE,
+          .multicombine = TRUE,
+          .noexport = NULL
+        ) %op%
+          {
+
+            # get list of models to average
+            model_list <- strsplit(x, "_")[[1]]
+
+            # create model average
+            final_tbl <- predictions_tbl %>%
+              dplyr::filter(Model_ID %in% model_list) %>%
+              dplyr::group_by(Combo, Train_Test_ID, Date) %>%
+              dplyr::summarise(
+                Target = mean(Target, na.rm = TRUE),
+                Forecast = mean(Forecast, na.rm = TRUE)
+              ) %>%
+              dplyr::mutate(Model_ID = x) %>%
+              dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Target, Forecast) %>%
+              dplyr::ungroup()
+
+            return(final_tbl)
+          } %>%
+          base::suppressPackageStartupMessages()
+
+        par_end(inner_cl)
+      } else {
+        averages_tbl <- NULL
+      }
+
+      # choose best model
+      final_predictions_tbl <- predictions_tbl %>%
+        dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
+        rbind(averages_tbl)
+
+      back_test_mape <- final_predictions_tbl %>%
+        dplyr::mutate(
+          Train_Test_ID = as.numeric(Train_Test_ID),
+          Target = ifelse(Target == 0, 0.1, Target)
+        ) %>%
+        dplyr::filter(Train_Test_ID != 1) %>%
+        dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+
+      best_model_mape <- back_test_mape %>%
+        dplyr::group_by(Model_ID, Combo) %>%
+        dplyr::mutate(
+          Combo_Total = sum(abs(Target), na.rm = TRUE),
+          weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
+        ) %>%
+        dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
+        dplyr::arrange(Rolling_MAPE) %>%
+        dplyr::ungroup() %>%
+        dplyr::group_by(Combo) %>%
+        dplyr::slice(1) %>%
+        dplyr::ungroup()
+
+      best_model_tbl <- best_model_mape %>%
+        dplyr::mutate(Best_Model = "Yes") %>%
+        dplyr::select(Combo, Model_ID, Best_Model)
+
+      back_test_mape_final <- back_test_mape %>%
+        dplyr::left_join(best_model_tbl,
           by = c("Combo", "Model_ID")
         ) %>%
         dplyr::mutate(
-          Combo_ID = Combo,
-          Model_Name = "NA",
-          Model_Type = "local",
-          Recipe_ID = "simple_average",
-          Hyperparameter_ID = "NA",
-          Best_Model = "Yes"
+          Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"),
+          Train_Test_ID = Train_Test_ID - 1
         ) %>%
-        dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+        dplyr::rename(Back_Test_Scenario = Train_Test_ID) %>%
+        dplyr::group_by(Combo, Model_ID, Back_Test_Scenario) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
         dplyr::ungroup() %>%
-        create_prediction_intervals(model_train_test_tbl) %>%
-        convert_weekly_to_daily(date_type, weekly_to_daily)
+        dplyr::select(Combo, Model_ID, Back_Test_Scenario, Horizon, Date, Forecast, Target, MAPE, Best_Model)
 
-      write_data(
-        x = model_avg_final_tbl,
-        combo = unique(model_avg_final_tbl$Combo_ID),
-        run_info = run_info,
-        output_type = "data",
-        folder = "forecasts",
-        suffix = "-average_models"
-      )
-
-      if (!is.null(single_model_tbl)) {
-        single_model_final_tbl <- single_model_tbl %>%
-          dplyr::mutate(Best_Model = "No") %>%
-          create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
-
-        write_data(
-          x = single_model_final_tbl,
-          combo = unique(single_model_final_tbl$Combo),
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-single_models"
-        )
-      }
-
-      if (!is.null(ensemble_model_tbl)) {
-        ensemble_model_final_tbl <- ensemble_model_tbl %>%
-          dplyr::mutate(Best_Model = "No") %>%
-          create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
-
-        write_data(
-          x = ensemble_model_final_tbl,
-          combo = unique(ensemble_model_final_tbl$Combo),
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-ensemble_models"
-        )
-      }
-
-      if (!is.null(global_model_tbl)) {
-        global_model_final_tbl <- global_model_tbl %>%
-          dplyr::mutate(Best_Model = "No") %>%
-          create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
-
-        write_data(
-          x = global_model_final_tbl,
-          combo = unique(global_model_final_tbl$Combo),
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-global_models"
-        )
-      }
-    } else { # choose the most accurate individual model and write outputs
-
-      final_model_tbl <- tibble::tibble(Model_ID = final_model_list) %>%
-        dplyr::left_join(
-          best_model_final_tbl %>%
-            dplyr::select(Model_ID, Best_Model),
-          by = "Model_ID"
+      best_model_final_tbl <- tibble::tibble(Model_ID = stringr::str_split(best_model_tbl$Model_ID, "_")[[1]]) %>%
+        dplyr::mutate(
+          Combo = best_model_tbl$Combo,
+          Best_Model = "Yes"
         ) %>%
-        dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
+        tidyr::separate(col = "Model_ID", into = c("Model_Name", "Recipe_ID", "Model_Type"), sep = "--", remove = FALSE)
 
-      if (!is.null(single_model_tbl)) {
-        single_model_final_tbl <- single_model_tbl %>%
-          dplyr::left_join(final_model_tbl,
-            by = "Model_ID"
+      # if a simple model average is the most accurate store the results
+      if (nrow(best_model_final_tbl) > 1) {
+        model_avg_final_tbl <- final_predictions_tbl %>%
+          dplyr::right_join(best_model_tbl,
+            by = c("Combo", "Model_ID")
           ) %>%
+          dplyr::mutate(
+            Combo_ID = Combo,
+            Model_Name = "NA",
+            Model_Type = "local",
+            Recipe_ID = "simple_average",
+            Hyperparameter_ID = "NA",
+            Best_Model = "Yes"
+          ) %>%
+          dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+          dplyr::mutate(Horizon = dplyr::row_number()) %>%
+          dplyr::ungroup() %>%
           create_prediction_intervals(model_train_test_tbl) %>%
           convert_weekly_to_daily(date_type, weekly_to_daily)
 
         write_data(
-          x = single_model_final_tbl,
-          combo = unique(single_model_final_tbl$Combo),
+          x = model_avg_final_tbl,
+          combo = unique(model_avg_final_tbl$Combo_ID),
           run_info = run_info,
           output_type = "data",
           folder = "forecasts",
-          suffix = "-single_models"
+          suffix = "-average_models"
         )
-      }
 
-      if (!is.null(ensemble_model_tbl)) {
-        ensemble_model_final_tbl <- ensemble_model_tbl %>%
-          dplyr::left_join(final_model_tbl,
+        if (!is.null(single_model_tbl)) {
+          single_model_final_tbl <- single_model_tbl %>%
+            dplyr::mutate(Best_Model = "No") %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = single_model_final_tbl,
+            combo = unique(single_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-single_models"
+          )
+        }
+
+        if (!is.null(ensemble_model_tbl)) {
+          ensemble_model_final_tbl <- ensemble_model_tbl %>%
+            dplyr::mutate(Best_Model = "No") %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = ensemble_model_final_tbl,
+            combo = unique(ensemble_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-ensemble_models"
+          )
+        }
+
+        if (!is.null(global_model_tbl)) {
+          global_model_final_tbl <- global_model_tbl %>%
+            dplyr::mutate(Best_Model = "No") %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = global_model_final_tbl,
+            combo = unique(global_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-global_models"
+          )
+        }
+      } else { # choose the most accurate individual model and write outputs
+
+        final_model_tbl <- tibble::tibble(Model_ID = final_model_list) %>%
+          dplyr::left_join(
+            best_model_final_tbl %>%
+              dplyr::select(Model_ID, Best_Model),
             by = "Model_ID"
           ) %>%
-          create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
+          dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
 
-        write_data(
-          x = ensemble_model_final_tbl,
-          combo = unique(ensemble_model_final_tbl$Combo),
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-ensemble_models"
-        )
+        if (!is.null(single_model_tbl)) {
+          single_model_final_tbl <- single_model_tbl %>%
+            dplyr::left_join(final_model_tbl,
+              by = "Model_ID"
+            ) %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = single_model_final_tbl,
+            combo = unique(single_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-single_models"
+          )
+        }
+
+        if (!is.null(ensemble_model_tbl)) {
+          ensemble_model_final_tbl <- ensemble_model_tbl %>%
+            dplyr::left_join(final_model_tbl,
+              by = "Model_ID"
+            ) %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = ensemble_model_final_tbl,
+            combo = unique(ensemble_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-ensemble_models"
+          )
+        }
+
+        if (!is.null(global_model_tbl)) {
+          global_model_final_tbl <- global_model_tbl %>%
+            dplyr::left_join(final_model_tbl,
+              by = "Model_ID"
+            ) %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = global_model_final_tbl,
+            combo = unique(global_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-global_models"
+          )
+        }
       }
 
-      if (!is.null(global_model_tbl)) {
-        global_model_final_tbl <- global_model_tbl %>%
-          dplyr::left_join(final_model_tbl,
-            by = "Model_ID"
-          ) %>%
-          create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
-
-        write_data(
-          x = global_model_final_tbl,
-          combo = unique(global_model_final_tbl$Combo),
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-global_models"
-        )
-      }
-    }
-
-    return(best_model_mape)
-  } %>%
+      return(best_model_mape)
+    } %>%
     base::suppressPackageStartupMessages()
 
   # clean up any parallel run process
   par_end(cl)
-  
+
   # reconcile hierarchical forecasts
-  if(forecast_approach != "bottoms_up") {
-    
+  if (forecast_approach != "bottoms_up") {
     cli::cli_progress_step("Reconciling Hierarchical Forecasts")
-    
-    reconcile_hierarchical_data(run_info, 
-                                parallel_processing, 
-                                forecast_approach,  
-                                negative_forecast)
+
+    reconcile_hierarchical_data(
+      run_info,
+      parallel_processing,
+      forecast_approach,
+      negative_forecast
+    )
   }
 
   # update logging file

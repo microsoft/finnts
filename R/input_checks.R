@@ -8,25 +8,27 @@
 #'
 #' @return nothing
 #' @noRd
-check_input_type <- function(input_name, 
-                             input_value, 
-                             type, 
+check_input_type <- function(input_name,
+                             input_value,
+                             type,
                              expected_value = NULL) {
-  
-  if(!inherits(input_value, type)) {
-    
-    stop(paste0("invalid type for input name '", input_name, "', needs to be of type ", 
-                glue::glue_collapse(type, " or ")), 
-         call. = FALSE)
+  if (!inherits(input_value, type)) {
+    stop(paste0(
+      "invalid type for input name '", input_name, "', needs to be of type ",
+      glue::glue_collapse(type, " or ")
+    ),
+    call. = FALSE
+    )
   }
-  
-  if(!is.null(expected_value) & !is.null(input_value)) {
-    
-    if(!(input_value %in% expected_value)) {
-      
-      stop(paste0("invalid value for input name '", input_name, "', value needs to equal ", 
-                  glue::glue_collapse(expected_value, " or ")), 
-           call. = FALSE)
+
+  if (!is.null(expected_value) & !is.null(input_value)) {
+    if (!(input_value %in% expected_value)) {
+      stop(paste0(
+        "invalid value for input name '", input_name, "', value needs to equal ",
+        glue::glue_collapse(expected_value, " or ")
+      ),
+      call. = FALSE
+      )
     }
   }
 }
@@ -40,86 +42,88 @@ check_input_type <- function(input_name,
 #' @param date_type date type
 #' @param fiscal_year_start fiscal year start
 #' @param parallel_processing parallel processing
-#' 
+#'
 #' @return nothing
 #' @noRd
-check_input_data <- function(input_data, 
-                             combo_variables, 
-                             target_variable, 
-                             external_regressors, 
-                             date_type, 
-                             fiscal_year_start, 
+check_input_data <- function(input_data,
+                             combo_variables,
+                             target_variable,
+                             external_regressors,
+                             date_type,
+                             fiscal_year_start,
                              parallel_processing) {
-  
-  #data combo names match the input data
-  if(sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
+
+  # data combo names match the input data
+  if (sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
     stop("combo variables do not match column headers in input data")
   }
-  
-  #target variable name matches the input data
-  if(!(target_variable %in% colnames(input_data))) {
+
+  # target variable name matches the input data
+  if (!(target_variable %in% colnames(input_data))) {
     stop("target variable does not match a column header in input data")
   }
-  
-  #target variable is numeric
-  if(!input_data %>% dplyr::rename(Target = target_variable) %>% dplyr::pull(Target) %>% is.numeric()) {
+
+  # target variable is numeric
+  if (!input_data %>%
+    dplyr::rename(Target = target_variable) %>%
+    dplyr::pull(Target) %>%
+    is.numeric()) {
     stop("Target variable in input data needs to be numeric")
   }
-  
-  #external regressors match the input data
-  if(!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
+
+  # external regressors match the input data
+  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
     stop("external regressors do not match column headers in input data")
   }
-  
-  #date column is labeled as "Date"
-  if(!("Date" %in% colnames(input_data))) {
+
+  # date column is labeled as "Date"
+  if (!("Date" %in% colnames(input_data))) {
     stop("date column in input data needs to be named as 'Date'")
   }
-  
-  #ensure month, quarter, year data repeats on the same day of each period
-  if((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
+
+  # ensure month, quarter, year data repeats on the same day of each period
+  if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
     stop("historical date values are not evenly spaced")
   }
-  
+
   # fiscal year start formatting
-  if(!is.numeric(fiscal_year_start) | fiscal_year_start < 1 | fiscal_year_start > 12) {
+  if (!is.numeric(fiscal_year_start) | fiscal_year_start < 1 | fiscal_year_start > 12) {
     stop("fiscal year start should be a number from 1 to 12")
   }
-  
+
   # input_data is correct type for parallel processing
-  if(inherits(input_data, c('data.frame', 'tbl')) & is.null(parallel_processing)) {
-    
+  if (inherits(input_data, c("data.frame", "tbl")) & is.null(parallel_processing)) {
+
     # do nothing
-    
-  } else if(inherits(input_data, 'tbl_spark') & is.null(parallel_processing)) {
-    
-    stop("spark data frames should run with spark parallel processing", 
-         call. = FALSE)
-    
-  } else if(inherits(input_data, 'tbl_spark') & parallel_processing != "spark") {
-    
-    stop("spark data frames should run with spark parallel processing", 
-         call. = FALSE)
+  } else if (inherits(input_data, "tbl_spark") & is.null(parallel_processing)) {
+    stop("spark data frames should run with spark parallel processing",
+      call. = FALSE
+    )
+  } else if (inherits(input_data, "tbl_spark") & parallel_processing != "spark") {
+    stop("spark data frames should run with spark parallel processing",
+      call. = FALSE
+    )
   }
-  
+
   # duplicate rows
   dup_col_check <- c(combo_variables, "Date")
 
-  duplicate_tbl <- input_data %>% 
+  duplicate_tbl <- input_data %>%
     tidyr::unite("Combo",
-                 combo_variables,
-                 sep = "--",
-                 remove = F
+      combo_variables,
+      sep = "--",
+      remove = F
     ) %>%
     dplyr::group_by(Combo, Date) %>%
     dplyr::filter(dplyr::n() > 1) %>%
     dplyr::ungroup() %>%
     dplyr::select(Date) %>%
     dplyr::collect()
-  
-  if(nrow(duplicate_tbl) > 1) {
-    stop("duplicate rows have been detected in the input data", 
-         call. = FALSE)
+
+  if (nrow(duplicate_tbl) > 1) {
+    stop("duplicate rows have been detected in the input data",
+      call. = FALSE
+    )
   }
 }
 
@@ -127,42 +131,33 @@ check_input_data <- function(input_data,
 #'
 #' @param parallel_processing parallel processing
 #' @param inner_parallel inner parallel
-#' 
+#'
 #' @return nothing
 #' @noRd
-check_parallel_processing <- function(parallel_processing, 
+check_parallel_processing <- function(parallel_processing,
                                       inner_parallel = FALSE) {
-  
+
   # parallel processing formatting
-  if(is.null(parallel_processing)) {
-    
+  if (is.null(parallel_processing)) {
+
     # no further checks needed
-    
-  } else if(parallel_processing %in% c("local_machine", "azure_batch", "spark") == FALSE) {
-    
+  } else if (parallel_processing %in% c("local_machine", "azure_batch", "spark") == FALSE) {
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
-    
-  } else if(parallel_processing == "local_machine" & inner_parallel) {
-    
+  } else if (parallel_processing == "local_machine" & inner_parallel) {
     stop("cannot run parallel process (inner_parallel input) within another parallel process (parallel_processing input) on a local machine. Please set inner_parallel to FALSE or run in spark")
-    
-  } else if(parallel_processing == "azure_batch") {
-    
+  } else if (parallel_processing == "azure_batch") {
     message("NOTE: Ensure that Azure Batch parallel back-end has been registered before calling 'forecast_time_series' function")
-    warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure", 
-            call. = FALSE)
-    
-  } else if(parallel_processing == "spark") {
-    
-    if(!exists("sc")) {
-      stop("Ensure that you are connected to a spark cluster using an object called 'sc'", 
-           call. = FALSE)
+    warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure",
+      call. = FALSE
+    )
+  } else if (parallel_processing == "spark") {
+    if (!exists("sc")) {
+      stop("Ensure that you are connected to a spark cluster using an object called 'sc'",
+        call. = FALSE
+      )
     }
-    
   } else {
-    
+
     # no further checks needed
-    
   }
-  
 }

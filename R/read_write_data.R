@@ -50,13 +50,13 @@ get_forecast_data <- function(run_info,
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
-  
+
   # get input values
   log_df <- read_file(run_info,
-                      path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
-                      return_type = "df"
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
   )
-  
+
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   forecast_approach <- log_df$forecast_approach
 
@@ -70,8 +70,8 @@ get_forecast_data <- function(run_info,
   ) %>%
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
-  
-  if(forecast_approach == "bottoms_up") {
+
+  if (forecast_approach == "bottoms_up") {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
@@ -95,9 +95,11 @@ get_forecast_data <- function(run_info,
     dplyr::select(-Combo_ID, -Hyperparameter_ID) %>%
     dplyr::relocate(Combo) %>%
     dplyr::arrange(Combo, dplyr::desc(Best_Model), Model_ID, Train_Test_ID, Date) %>%
-    tidyr::separate(col = Combo, 
-                    into = combo_variables, 
-                    remove = FALSE) %>%
+    tidyr::separate(
+      col = Combo,
+      into = combo_variables,
+      remove = FALSE
+    ) %>%
     base::suppressWarnings()
 
   return(forecast_tbl)
@@ -197,25 +199,26 @@ get_trained_models <- function(run_info) {
 #'   recipes_to_run = "R1"
 #' )
 #'
-#' R1_prepped_data_tbl <- get_prepped_data(run_info, 
-#'                                         recipe = "R1")
+#' R1_prepped_data_tbl <- get_prepped_data(run_info,
+#'   recipe = "R1"
+#' )
 #' }
 #' @export
-get_prepped_data <- function(run_info, 
-                             recipe, 
+get_prepped_data <- function(run_info,
+                             recipe,
                              return_type = "df") {
-  
+
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("recipe", recipe, "character", c("R1", "R2"))
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
-  
+
   # get input values
   log_df <- read_file(run_info,
-                      path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
-                      return_type = "df"
+    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
   )
-  
+
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
 
   # get prepped data
@@ -223,16 +226,18 @@ get_prepped_data <- function(run_info,
     "/prep_data/*", hash_data(run_info$experiment_name), "-",
     hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
   )
-  
+
   prep_data_tbl <- read_file(run_info,
-                             path = data_path,
-                             return_type = return_type
+    path = data_path,
+    return_type = return_type
   ) %>%
-    tidyr::separate(col = Combo, 
-                    into = combo_variables, 
-                    remove = FALSE) %>%
+    tidyr::separate(
+      col = Combo,
+      into = combo_variables,
+      remove = FALSE
+    ) %>%
     base::suppressWarnings()
-  
+
   return(prep_data_tbl)
 }
 
@@ -273,33 +278,33 @@ get_prepped_data <- function(run_info,
 #' }
 #' @export
 get_prepped_models <- function(run_info) {
-  
+
   # check input values
   check_input_type("run_info", run_info, "list")
-  
+
   # get prepped model info
   data_path <- paste0(
     "/prep_models/*", hash_data(run_info$experiment_name), "-",
     hash_data(run_info$run_name)
   )
-  
+
   train_test_tbl <- read_file(run_info,
-                             path = paste0(data_path, "-train_test_split.", run_info$data_output)
+    path = paste0(data_path, "-train_test_split.", run_info$data_output)
   )
-  
+
   model_hyperparameters_tbl <- read_file(run_info,
-                              path = paste0(data_path, "-model_hyperparameters.", run_info$object_output)
+    path = paste0(data_path, "-model_hyperparameters.", run_info$object_output)
   )
-  
+
   model_workflows_tbl <- read_file(run_info,
-                                         path = paste0(data_path, "-model_workflows.", run_info$object_output)
+    path = paste0(data_path, "-model_workflows.", run_info$object_output)
   )
-  
+
   final_tbl <- tibble::tibble(
-    Type = c("Model_Workflows", "Model_Hyperparameters", "Train_Test_Splits"), 
+    Type = c("Model_Workflows", "Model_Hyperparameters", "Train_Test_Splits"),
     Data = list(model_workflows_tbl, model_hyperparameters_tbl, train_test_tbl)
   )
-  
+
   return(final_tbl)
 }
 
@@ -429,8 +434,7 @@ write_data_folder <- function(x,
 #' @noRd
 list_files <- function(storage_object,
                        path) {
-
-  if(fs::path_dir(path) %in% c("/prep_data", "/prep_models", "/models", "/logs", "/forecasts")) {
+  if (fs::path_dir(path) %in% c("/prep_data", "/prep_models", "/models", "/logs", "/forecasts")) {
     fs::dir_create(tempdir(), fs::path_dir(path))
     dir <- fs::path_dir(paste0(tempdir(), path))
     file <- fs::path_file(path)
@@ -453,7 +457,7 @@ list_files <- function(storage_object,
       }
     )
   )
-  
+
   return(files)
 }
 
@@ -563,7 +567,7 @@ read_file <- function(run_info,
       parquet = arrow::open_dataset(sources = files, format = "parquet"),
       csv = arrow::open_dataset(sources = files, format = "csv")
     )
-  } else if(return_type == "object") {
+  } else if (return_type == "object") {
     readRDS(files)
   }
 }
@@ -620,10 +624,9 @@ get_recipe_data <- function(run_info,
       temp_path <- temp_path %>%
         dplyr::pull(Path)
 
-      temp_path <- switch(
-        class(run_info$storage_object)[[1]],
-        "NULL" = gsub(fs::path(run_info$path), "", temp_path),  
-        blob_container = gsub(fs::path(run_info$path), "", temp_path), 
+      temp_path <- switch(class(run_info$storage_object)[[1]],
+        "NULL" = gsub(fs::path(run_info$path), "", temp_path),
+        blob_container = gsub(fs::path(run_info$path), "", temp_path),
         ms_drive = fs::path("/prep_data/", temp_path)
       )
     }

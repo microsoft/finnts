@@ -24,8 +24,8 @@
 #'   outputs. Default will write object outputs like trained models as
 #'   rds files. The other option of 'qs' will instead serialize R objects
 #'   as qs files by using the 'qs' package.
-#' @param add_unique_id Add a unique id to end of run_name based on submission time. 
-#'   Set to FALSE to supply your own unique run name, which is helpful in 
+#' @param add_unique_id Add a unique id to end of run_name based on submission time.
+#'   Set to FALSE to supply your own unique run name, which is helpful in
 #'   multistage ML pipelines.
 #'
 #' @return A list of run information
@@ -42,9 +42,9 @@ set_run_info <- function(experiment_name = "finn_fcst",
                          storage_object = NULL,
                          path = NULL,
                          data_output = "csv",
-                         object_output = "rds", 
+                         object_output = "rds",
                          add_unique_id = TRUE) {
-  
+
   # initial input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
@@ -63,50 +63,44 @@ set_run_info <- function(experiment_name = "finn_fcst",
     is.null(path)) {
     path <- ""
   }
-  
+
   # create dir paths
-  if(is.null(path)) {
+  if (is.null(path)) {
     path <- fs::path(tempdir())
-    
+
     fs::dir_create(tempdir(), "prep_data")
     fs::dir_create(tempdir(), "prep_models")
     fs::dir_create(tempdir(), "models")
     fs::dir_create(tempdir(), "forecasts")
     fs::dir_create(tempdir(), "logs")
-    
-  } else if(is.null(storage_object)) {
-    
+  } else if (is.null(storage_object)) {
     fs::dir_create(path, "prep_data")
     fs::dir_create(path, "prep_models")
     fs::dir_create(path, "models")
     fs::dir_create(path, "forecasts")
     fs::dir_create(path, "logs")
-    
-  } else if(inherits(storage_object, "blob_container")) {
-    
+  } else if (inherits(storage_object, "blob_container")) {
     AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_data"))
     AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_models"))
     AzureStor::create_storage_dir(storage_object, fs::path(path, "models"))
     AzureStor::create_storage_dir(storage_object, fs::path(path, "forecasts"))
     AzureStor::create_storage_dir(storage_object, fs::path(path, "logs"))
-    
-  } else if(inherits(storage_object, "ms_drive")) {
-    
+  } else if (inherits(storage_object, "ms_drive")) {
     try(storage_object$create_folder(fs::path(path, "prep_data")), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, "prep_models")), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, "models")), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, "forecasts")), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, "logs")), silent = TRUE)
   }
-  
+
   # see if there is an existing log file to leverage
-  if(add_unique_id) {
+  if (add_unique_id) {
     run_name <- paste0(
       run_name, "-",
       format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
     )
   }
-  
+
   temp_run_info <- list(
     experiment_name = experiment_name,
     run_name = run_name,
@@ -115,20 +109,20 @@ set_run_info <- function(experiment_name = "finn_fcst",
     data_output = data_output,
     object_output = object_output
   )
-  
+
   log_df <- tryCatch(
     read_file(temp_run_info,
-              path = paste0("logs/", hash_data(experiment_name), "-", hash_data(run_name), ".csv"),
-              return_type = "df"
+      path = paste0("logs/", hash_data(experiment_name), "-", hash_data(run_name), ".csv"),
+      return_type = "df"
     ),
     error = function(e) {
-        tibble::tibble()
+      tibble::tibble()
     }
   ) %>%
     base::suppressWarnings()
-  
-  if(nrow(log_df) > 0 & add_unique_id == FALSE) {
-    
+
+  if (nrow(log_df) > 0 & add_unique_id == FALSE) {
+
     # check if input values have changed
     current_log_df <- tibble::tibble(
       experiment_name = experiment_name,
@@ -138,19 +132,19 @@ set_run_info <- function(experiment_name = "finn_fcst",
       object_output = object_output
     ) %>%
       data.frame()
-    
+
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
-    
+
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'set_run_info', 
-           please revert back to original inputs or start a 
+      stop("Inputs have recently changed in 'set_run_info',
+           please revert back to original inputs or start a
            new run with 'set_run_info'",
-           call. = FALSE
+        call. = FALSE
       )
     }
-    
+
     output_list <- list(
       experiment_name = experiment_name,
       run_name = run_name,
@@ -160,15 +154,13 @@ set_run_info <- function(experiment_name = "finn_fcst",
       data_output = data_output,
       object_output = object_output
     )
-    
+
     return(output_list)
-    
   } else {
-    
     created <- as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
-                          format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+      format = "%Y%m%dT%H%M%SZ", tz = "UTC"
     )
-    
+
     output_list <- list(
       experiment_name = experiment_name,
       run_name = run_name,
@@ -178,7 +170,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
       data_output = data_output,
       object_output = object_output
     )
-    
+
     output_tbl <- tibble::tibble(
       experiment_name = experiment_name,
       run_name = run_name,
@@ -187,7 +179,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
       data_output = data_output,
       object_output = object_output
     )
-    
+
     write_data(
       x = output_tbl,
       combo = NULL,
@@ -196,14 +188,14 @@ set_run_info <- function(experiment_name = "finn_fcst",
       folder = "logs",
       suffix = NULL
     )
-    
+
     cli::cli_bullets(c(
       "Finn Submission Info",
       "*" = paste0("Experiment Name: ", experiment_name),
-      "*" = paste0("Run Name: ", run_name), 
+      "*" = paste0("Run Name: ", run_name),
       ""
     ))
-    
+
     return(output_list)
   }
 }
