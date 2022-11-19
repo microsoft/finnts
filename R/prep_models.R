@@ -267,7 +267,7 @@ train_test_split <- function(run_info,
 
   source_path <- switch(
     class(run_info$storage_object)[[1]],
-    "NULL" = gsub(fs::path_dir(fs::path(tempdir(), "test")), "", file_name), 
+    "NULL" = gsub(fs::path(run_info$path), "", file_name),  
     blob_container = gsub(fs::path(run_info$path), "", file_name), 
     ms_drive = fs::path("/prep_data/", file_name)
   )
@@ -482,14 +482,14 @@ model_workflows <- function(run_info,
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
       dplyr::pull(Path)
-    
+
     source_path <- switch(
       class(run_info$storage_object)[[1]],
-      "NULL" = gsub(fs::path_dir(fs::path(tempdir(), "test")), "", temp_path), 
+      "NULL" = gsub(fs::path(run_info$path), "", temp_path), 
       blob_container = gsub(fs::path(run_info$path), "", temp_path), 
       ms_drive = fs::path("/prep_data/", temp_path)
     )
-    
+
     temp_file_tbl <- read_file(run_info,
       path = source_path,
       return_type = "df"
@@ -689,7 +689,7 @@ model_hyperparameters <- function(run_info,
 
     source_path <- switch(
       class(run_info$storage_object)[[1]],
-      "NULL" = gsub(fs::path_dir(fs::path(tempdir(), "test")), "", temp_path), 
+      "NULL" = gsub(fs::path(run_info$path), "", temp_path),  
       blob_container = gsub(fs::path(run_info$path), "", temp_path), 
       ms_drive = fs::path("/prep_data/", temp_path)
     )

@@ -622,7 +622,7 @@ get_recipe_data <- function(run_info,
 
       temp_path <- switch(
         class(run_info$storage_object)[[1]],
-        "NULL" = gsub(fs::path_dir(fs::path(tempdir(), "test")), "", temp_path), 
+        "NULL" = gsub(fs::path(run_info$path), "", temp_path),  
         blob_container = gsub(fs::path(run_info$path), "", temp_path), 
         ms_drive = fs::path("/prep_data/", temp_path)
       )
