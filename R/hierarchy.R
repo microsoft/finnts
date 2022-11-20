@@ -20,11 +20,17 @@ prep_hierarchical_data <- function(input_data,
   df_return_type <- ifelse(inherits(input_data, "tbl_spark"), "sdf", "df")
 
   # initial data prep
+  # combo_tbl <- input_data %>%
+  #   dplyr::mutate(Target = ifelse(is.na(Target), 0, Target)) %>%
+  #   dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables))) %>%
+  #   dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
+  #   adjust_df()
+  
   combo_tbl <- input_data %>%
-    dplyr::mutate(Target = ifelse(is.na(Target), 0, Target)) %>%
-    dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables))) %>%
-    dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
-    adjust_df()
+    dplyr::select(tidyselect::all_of(combo_variables)) %>%
+    dplyr::distinct() %>%
+    dplyr::collect() %>%
+    dplyr::distinct()
 
   hts_nodes <- combo_tbl %>%
     pick_right_hierarchy(
