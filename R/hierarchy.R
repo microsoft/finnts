@@ -45,8 +45,9 @@ prep_hierarchical_data <- function(input_data,
       names_from = Combo,
       values_from = Target
     ) %>%
-    dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
-    adjust_df()
+    adjust_df() %>%
+    dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) #%>%
+    #adjust_df()
 
   # create aggregations
   Date <- bottom_level_tbl$Date
