@@ -80,8 +80,18 @@ check_input_data <- function(input_data,
   if (!("Date" %in% colnames(input_data))) {
     stop("date column in input data needs to be named as 'Date'")
   }
-
-  # ensure month, quarter, year data repeats on the same day of each period
+  
+  # date column is formatted as a date
+    if(!input_data %>% 
+       dplyr::select(Date) %>%
+       head() %>%
+       dplyr::collect() %>%
+       dplyr::pull(Date) %>%
+       lubridate::is.Date()) {
+      stop("date column in input data needs to be formatted as a date value")
+    }
+  
+    # ensure month, quarter, year data repeats on the same day of each period
   if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
     stop("historical date values are not evenly spaced")
   }
