@@ -18,7 +18,7 @@ prep_hierarchical_data <- function(input_data,
   }
 
   df_return_type <- ifelse(inherits(input_data, "tbl_spark"), "sdf", "df")
-
+  print(input_data)
   # initial data prep
   combo_tbl <- input_data %>%
     dplyr::mutate(Target = tidyr::replace_na(Target, 0)) %>%
