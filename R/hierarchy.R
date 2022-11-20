@@ -20,12 +20,6 @@ prep_hierarchical_data <- function(input_data,
   df_return_type <- ifelse(inherits(input_data, "tbl_spark"), "sdf", "df")
 
   # initial data prep
-  # combo_tbl <- input_data %>%
-  #   dplyr::mutate(Target = ifelse(is.na(Target), 0, Target)) %>%
-  #   dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables))) %>%
-  #   dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
-  #   adjust_df()
-  
   combo_tbl <- input_data %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
     dplyr::distinct() %>%
@@ -46,8 +40,8 @@ prep_hierarchical_data <- function(input_data,
       values_from = Target
     ) %>%
     adjust_df() %>%
-    dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) #%>%
-    #adjust_df()
+    dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
+    base::suppressWarnings()
 
   # create aggregations
   Date <- bottom_level_tbl$Date
@@ -81,7 +75,7 @@ prep_hierarchical_data <- function(input_data,
   # write hierarchy structure to disk
   hts_list <- list(
     original_combos = colnames(bottom_level_tbl %>% dplyr::select(-Date)),
-    hts_combos = unique(hierarchical_tbl$Combo),
+    hts_combos = hierarchical_tbl %>% dplyr::collect() %>% dplyr::pull(Combo) %>% unique(),
     nodes = hts_nodes_final
   )
 
