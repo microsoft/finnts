@@ -167,16 +167,14 @@ check_parallel_processing <- function(run_info,
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'",
         call. = FALSE
       )
-    
-      if(is.null(run_info$path)) {
-        stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
-             call. = FALSE
-        ) 
-      } else if(substr(run_info$path, 1, 5) != "/dbfs" && substr(run_info$path, 1, 6) != "/synfs") {
-        stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
-             call. = FALSE
-        ) 
-      }
+    } else if(is.null(run_info$path)) {
+      stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
+           call. = FALSE
+      ) 
+    } else if(substr(run_info$path, 1, 5) != "/dbfs" && substr(run_info$path, 1, 6) != "/synfs") {
+      stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
+           call. = FALSE
+      ) 
     }
   } else {
 
