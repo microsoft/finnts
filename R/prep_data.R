@@ -121,7 +121,8 @@ prep_data <- function(run_info,
     fiscal_year_start,
     parallel_processing
   )
-  check_parallel_processing(parallel_processing)
+  check_parallel_processing(run_info, 
+                            parallel_processing)
 
   # get hist data start and end date
   if (is.null(hist_end_date)) {

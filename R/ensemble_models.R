@@ -63,7 +63,9 @@ ensemble_models <- function(run_info,
   check_input_type("run_info", run_info, "list")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
-  check_parallel_processing(parallel_processing, inner_parallel)
+  check_parallel_processing(run_info, 
+                            parallel_processing, 
+                            inner_parallel)
 
   # get input and combo values
   log_df <- read_file(run_info,

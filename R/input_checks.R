@@ -139,12 +139,14 @@ check_input_data <- function(input_data,
 
 #' Check parallel processing set up
 #'
+#' @param run_info run info
 #' @param parallel_processing parallel processing
 #' @param inner_parallel inner parallel
 #'
 #' @return nothing
 #' @noRd
-check_parallel_processing <- function(parallel_processing,
+check_parallel_processing <- function(run_info, 
+                                      parallel_processing,
                                       inner_parallel = FALSE) {
 
   # parallel processing formatting
@@ -165,6 +167,16 @@ check_parallel_processing <- function(parallel_processing,
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'",
         call. = FALSE
       )
+    
+      if(is.null(run_info$path)) {
+        stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
+             call. = FALSE
+        ) 
+      } else if(substr(run_info$path, 1, 5) != "/dbfs" && substr(run_info$path, 1, 6) != "/synfs") {
+        stop("Path arugument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
+             call. = FALSE
+        ) 
+      }
     }
   } else {
 

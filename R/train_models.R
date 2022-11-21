@@ -72,7 +72,9 @@ train_models <- function(run_info,
   check_input_type("global_model_recipes", global_model_recipes, "character")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
-  check_parallel_processing(parallel_processing, inner_parallel)
+  check_parallel_processing(run_info, 
+                            parallel_processing, 
+                            inner_parallel)
 
   # get input values
   log_df <- read_file(run_info,
