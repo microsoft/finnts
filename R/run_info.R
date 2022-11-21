@@ -232,10 +232,12 @@ set_run_info <- function(experiment_name = "finn_fcst",
 #' )
 #' }
 #' @export
-get_run_info <- function(experiment_name = "finn_fcst",
+get_run_info <- function(experiment_name = NULL,
                          run_name = NULL,
                          storage_object = NULL,
                          path = NULL) {
+  
+  # input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
   }
@@ -251,25 +253,35 @@ get_run_info <- function(experiment_name = "finn_fcst",
   if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
     path <- ""
   }
-
-  if (is.null(run_name)) {
-    run_name <- "*"
+  
+  # run info formatting
+  if (is.null(experiment_name)) {
+    experiment_name_final <- "*"
   } else {
-    run_name <- hash_data(run_name)
+    experiment_name_final <- hash_data(experiment_name)
+  }
+  
+  if (is.null(run_name)) {
+    run_name_final <- "*"
+  } else {
+    run_name_final <- hash_data(run_name)
   }
 
   info_list <- list(
     storage_object = storage_object,
     path = path
   )
-
+  
+  # read run metadata
   file_path <- paste0(
-    "/logs/*", hash_data(experiment_name), "-",
-    run_name, ".*"
+    "/logs/*", experiment_name_final, "-",
+    run_name_final, ".csv"
   )
 
   run_tbl <- read_file(info_list,
     path = file_path,
     return_type = "df"
   )
+  
+  return(run_tbl)
 }
