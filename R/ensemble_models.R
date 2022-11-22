@@ -77,6 +77,8 @@ ensemble_models <- function(run_info,
   negative_forecast <- log_df$negative_forecast
   run_global_models <- log_df$run_global_models
   run_local_models <- log_df$run_local_models
+  models_to_run <- log_df$models_to_run
+  models_not_to_run <- log_df$models_not_to_run
 
   if (log_df$run_ensemble_models == FALSE) {
     cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run.")
@@ -133,6 +135,17 @@ ensemble_models <- function(run_info,
   if (length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) {
     cli::cli_alert_info("Ensemble Models Already Trained")
     return(cli::cli_progress_done())
+  }
+  
+  # get ensemble models to run
+  ensemble_model_list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
+  
+  if (is.na(models_to_run) & is.na(models_not_to_run)) {
+    # do nothing, using existing ml_models list
+  } else if (is.na(models_to_run) & !is.na(models_not_to_run)) {
+    ensemble_model_list <- setdiff(ensemble_model_list, stringr::str_split(models_not_to_run, "---")[[1]])
+  } else {
+    ensemble_model_list <- ensemble_model_list[c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost") %in% stringr::str_split(models_to_run, '---')[[1]]]
   }
 
   # parallel run info
@@ -207,10 +220,6 @@ ensemble_models <- function(run_info,
         )
 
       # ensemble models to run
-      refit_models <- unique(initial_results_final_tbl$Model_Name)
-
-      ensemble_model_list <- refit_models[refit_models %in% c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")]
-
       if (length(ensemble_model_list) < 1) {
         stop("no ensemble models chosen to run")
       }

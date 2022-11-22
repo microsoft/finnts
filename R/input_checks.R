@@ -84,7 +84,7 @@ check_input_data <- function(input_data,
   # date column is formatted as a date
     if(!input_data %>% 
        dplyr::select(Date) %>%
-       head() %>%
+       utils::head() %>%
        dplyr::collect() %>%
        dplyr::pull(Date) %>%
        lubridate::is.Date()) {

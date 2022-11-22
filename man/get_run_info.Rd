@@ -5,7 +5,7 @@
 \title{Get run info}
 \usage{
 get_run_info(
-  experiment_name = "finn_fcst",
+  experiment_name = NULL,
   run_name = NULL,
   storage_object = NULL,
   path = NULL

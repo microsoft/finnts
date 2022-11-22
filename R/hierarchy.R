@@ -222,6 +222,7 @@ get_standard_nodes <- function(input_data,
       grouping_minus_1 <- hierarchy_combo_variables[num - 1]
 
       grouping_values <- input_data %>%
+        dplyr::mutate(Sum = 1) %>%
         dplyr::group_by(dplyr::across(tidyselect::all_of(c(grouping_minus_1, grouping_current)))) %>%
         dplyr::summarise(Sum = sum(Sum, na.rm = TRUE)) %>%
         dplyr::mutate(Sum = 1) %>%
