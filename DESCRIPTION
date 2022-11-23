@@ -63,7 +63,7 @@ Imports:
     workflows, 
     yardstick
 Suggests: 
-    arrow,
+    arrow (>= 8.0.0),
     AzureStor,
     knitr,
     Microsoft365R,

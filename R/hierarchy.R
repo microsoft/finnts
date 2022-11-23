@@ -485,12 +485,30 @@ reconcile_hierarchical_data <- function(run_info,
           "/forecasts/*", hash_data(run_info$experiment_name), "-",
           hash_data(run_info$run_name), "*models", ".", run_info$data_output
         )
+        
+        schema <- arrow::schema(arrow::field('Combo_ID', arrow::string()),
+                                arrow::field('Model_ID', arrow::string()),
+                                arrow::field('Model_Name', arrow::string()), 
+                                arrow::field('Model_Type', arrow::string()), 
+                                arrow::field('Recipe_ID', arrow::string()),
+                                arrow::field('Train_Test_ID', arrow::float64()),
+                                arrow::field('Hyperparameter_ID', arrow::float64()),
+                                arrow::field('Best_Model', arrow::string()),
+                                arrow::field('Combo', arrow::string()),
+                                arrow::field('Horizon', arrow::float64()),
+                                arrow::field('Date', arrow::date32()), 
+                                arrow::field('Target', arrow::float64()), 
+                                arrow::field('Forecast', arrow::float64()), 
+                                arrow::field('lo_95', arrow::float64()),
+                                arrow::field('lo_80', arrow::float64()),
+                                arrow::field('hi_80', arrow::float64()),
+                                arrow::field('hi_95', arrow::float64()))
 
         unreconciled_tbl <- read_file(run_info,
           path = fcst_path,
-          return_type = "arrow"
-        ) %>%
-          dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+          return_type = "arrow", 
+          schema = schema
+        )
 
         if (model == "Best-Model") {
           model_tbl <- unreconciled_tbl %>%
