@@ -261,13 +261,15 @@ get_hts_nodes <- function(hts_object,
 #' @param parallel_processing parallel processing
 #' @param forecast_approach forecast approach
 #' @param negative_forecast negative forecast
+#' @param num_cores number of cores for parallel processing
 #'
 #' @return hierarchy structure
 #' @noRd
 reconcile_hierarchical_data <- function(run_info,
                                         parallel_processing,
                                         forecast_approach,
-                                        negative_forecast = FALSE) {
+                                        negative_forecast = FALSE, 
+                                        num_cores) {
 
   # get run splits
   model_train_test_tbl <- read_file(run_info,
@@ -295,7 +297,7 @@ reconcile_hierarchical_data <- function(run_info,
   } else if (parallel_processing == "spark") {
     return_type <- "sdf"
   } else {
-    return_type <= "df"
+    return_type <- "df"
   }
 
   fcst_path <- paste0(

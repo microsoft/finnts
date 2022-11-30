@@ -535,7 +535,8 @@ final_models <- function(run_info,
       run_info,
       parallel_processing,
       forecast_approach,
-      negative_forecast
+      negative_forecast, 
+      num_cores
     )
   }
 
