@@ -33,13 +33,12 @@ prep_hierarchical_data <- function(input_data,
     )
 
   bottom_level_tbl <- input_data %>%
-    dplyr::arrange(Combo, Date) %>%
-    dplyr::select(-combo_variables) %>%
+    dplyr::select(Combo, Date, Target) %>%
+    adjust_df() %>%
     tidyr::pivot_wider(
       names_from = Combo,
       values_from = Target
     ) %>%
-    adjust_df() %>%
     dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
     base::suppressWarnings()
 
