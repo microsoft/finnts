@@ -322,7 +322,12 @@ reconcile_hierarchical_data <- function(run_info,
     c("Best-Model")
 
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
-
+    
+    hist_tbl <- read_file(run_info,
+                          path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
+    ) %>%
+      dplyr::select(Combo, Date, Target)
+    
     # parallel run info
     par_info <- par_start(
       run_info = run_info,
@@ -349,17 +354,18 @@ reconcile_hierarchical_data <- function(run_info,
       {
         model <- x
 
-        hist_tbl <- read_file(run_info,
-          path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
-        ) %>%
-          dplyr::select(Combo, Date, Target)
-
         if (model == "Best-Model") {
           model_tbl <- unreconciled_tbl %>%
-            dplyr::filter(Best_Model == "Yes")
+            dplyr::filter(Best_Model == "Yes") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         } else {
           model_tbl <- unreconciled_tbl %>%
-            dplyr::filter(Model_ID == model)
+            dplyr::filter(Model_ID == model) %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         }
 
         forecast_tbl <- model_tbl %>%
@@ -377,7 +383,7 @@ reconcile_hierarchical_data <- function(run_info,
           stats::ts()
 
         residuals_tbl <- model_tbl %>%
-          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::filter(Run_Type == "Back_Test") %>%
           dplyr::mutate(Residual = Target - Forecast) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
@@ -515,11 +521,17 @@ reconcile_hierarchical_data <- function(run_info,
         if (model == "Best-Model") {
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Best_Model == "Yes") %>%
-            dplyr::collect()
+            dplyr::collect() %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         } else {
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Model_ID == model) %>%
-            dplyr::collect()
+            dplyr::collect() %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         }
 
         forecast_tbl <- model_tbl %>%
@@ -537,7 +549,7 @@ reconcile_hierarchical_data <- function(run_info,
           stats::ts()
 
         residuals_tbl <- model_tbl %>%
-          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::filter(Run_Type == "Back_Test") %>%
           dplyr::mutate(Residual = Target - Forecast) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
