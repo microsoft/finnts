@@ -65,7 +65,6 @@ prep_hierarchical_data <- function(input_data,
       Date = Date,
       .before = 1
     ) %>%
-    adjust_df(df_return_type) %>%
     tidyr::pivot_longer(!Date,
       names_to = "Combo",
       values_to = "Target"
@@ -74,7 +73,7 @@ prep_hierarchical_data <- function(input_data,
   # write hierarchy structure to disk
   hts_list <- list(
     original_combos = colnames(bottom_level_tbl %>% dplyr::select(-Date)),
-    hts_combos = hierarchical_tbl %>% dplyr::collect() %>% dplyr::pull(Combo) %>% unique(),
+    hts_combos = hierarchical_tbl %>% dplyr::pull(Combo) %>% unique(),
     nodes = hts_nodes_final
   )
 
@@ -97,7 +96,7 @@ prep_hierarchical_data <- function(input_data,
     suffix = "-hts_data"
   )
 
-  return(hierarchical_tbl)
+  return(hierarchical_tbl %>% adjust_df(df_return_type))
 }
 
 #' Return correct data frame format
