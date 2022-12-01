@@ -20,10 +20,11 @@ prep_hierarchical_data <- function(input_data,
   df_return_type <- ifelse(inherits(input_data, "tbl_spark"), "sdf", "df")
 
   # initial data prep
-  combo_tbl <- input_data %>%
+  input_data_adj <- input_data() %>%
+    adjust_df()
+  
+  combo_tbl <- input_data_adj %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
-    dplyr::distinct() %>%
-    dplyr::collect() %>%
     dplyr::distinct()
 
   hts_nodes <- combo_tbl %>%
@@ -32,9 +33,8 @@ prep_hierarchical_data <- function(input_data,
       forecast_approach
     )
 
-  bottom_level_tbl <- input_data %>%
+  bottom_level_tbl <- input_data_adj %>%
     dplyr::select(Combo, Date, Target) %>%
-    adjust_df() %>%
     tidyr::pivot_wider(
       names_from = Combo,
       values_from = Target
@@ -89,7 +89,7 @@ prep_hierarchical_data <- function(input_data,
 
   # write bottom level data to disk
   write_data(
-    x = input_data,
+    x = input_data_adj,
     combo = NULL,
     run_info = run_info,
     output_type = "data",
