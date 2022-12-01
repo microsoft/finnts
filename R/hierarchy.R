@@ -20,7 +20,7 @@ prep_hierarchical_data <- function(input_data,
   df_return_type <- ifelse(inherits(input_data, "tbl_spark"), "sdf", "df")
 
   # initial data prep
-  input_data_adj <- input_data() %>%
+  input_data_adj <- input_data %>%
     adjust_df()
   
   combo_tbl <- input_data_adj %>%
