@@ -547,6 +547,7 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::select(Date, Train_Test_ID)
 
         ts <- forecast_tbl %>%
+          tibble::as_tibble() %>%
           dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           stats::ts()
