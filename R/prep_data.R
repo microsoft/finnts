@@ -201,13 +201,11 @@ prep_data <- function(run_info,
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
-  print("test1")
-  print(initial_prep_tbl)
+
   initial_prep_tbl <- initial_prep_tbl %>%
     # filter input data on combos that haven't completed running
     dplyr::filter(Combo %in% current_combo_list_final)
-  print("test2")
-  print(initial_prep_tbl)
+
   if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
 
     # check if input values have changed
@@ -250,7 +248,7 @@ prep_data <- function(run_info,
       )
     }
   }
-  print("test3")
+
   # parallel run info
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     par_info <- par_start(
