@@ -323,7 +323,7 @@ reconcile_hierarchical_data <- function(run_info,
     dplyr::distinct() %>%
     dplyr::pull(Model_ID) %>%
     c("Best-Model")
-  print(model_list)
+
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     
     hist_tbl <- read_file(run_info,
@@ -545,14 +545,7 @@ reconcile_hierarchical_data <- function(run_info,
 
         date_tbl <- forecast_tbl %>%
           dplyr::select(Date, Train_Test_ID)
-        write_data(
-          x = forecast_tbl,
-          combo = model,
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-forecast_tbl"
-        )
+
         ts <- forecast_tbl %>%
           tibble::as_tibble() %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
