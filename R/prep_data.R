@@ -202,7 +202,7 @@ prep_data <- function(run_info,
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
 
-  initial_prep_tbl <- initial_prep_tbl %>%
+  filtered_initial_prep_tbl <- initial_prep_tbl %>%
     # filter input data on combos that haven't completed running
     dplyr::filter(Combo %in% current_combo_list_final)
 
@@ -255,7 +255,7 @@ prep_data <- function(run_info,
       run_info = run_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
-      task_length = length(unique(initial_prep_tbl$Combo))
+      task_length = length(unique(filtered_initial_prep_tbl$Combo))
     )
 
     cl <- par_info$cl
@@ -264,7 +264,7 @@ prep_data <- function(run_info,
 
     # submit tasks
     final_data <- foreach::foreach(
-      x = initial_prep_tbl %>%
+      x = filtered_initial_prep_tbl %>%
         dplyr::select(Combo) %>%
         dplyr::distinct() %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
@@ -280,7 +280,7 @@ prep_data <- function(run_info,
         combo <- x %>%
           dplyr::pull(Combo)
 
-        initial_prep_combo_tbl <- initial_prep_tbl %>%
+        initial_prep_combo_tbl <- filtered_initial_prep_tbl %>%
           dplyr::filter(Combo == combo) %>%
           dplyr::collect()
 
@@ -414,7 +414,7 @@ prep_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
-    final_data <- initial_prep_tbl %>%
+    final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
         for (name in names(context)) {
