@@ -98,7 +98,8 @@ prep_hierarchical_data <- function(input_data,
   )
   
   return_data <- hierarchical_tbl %>% 
-    adjust_df(return_type = df_return_type)
+    adjust_df(return_type = df_return_type) %>%
+    dplyr::select(Combo, Date, Target)
 
   return(return_data)
 }
