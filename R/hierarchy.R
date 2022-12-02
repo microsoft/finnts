@@ -548,20 +548,20 @@ reconcile_hierarchical_data <- function(run_info,
 
         ts <- forecast_tbl %>%
           tibble::as_tibble() %>%
-          dplyr::select(-Date, -Train_Test_ID) %>%
+          #dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           stats::ts()
-
+        stop("stop1")
         residuals_tbl <- model_tbl %>%
           dplyr::filter(Run_Type == "Back_Test") %>%
           dplyr::mutate(Residual = Target - Forecast) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
           tibble::as_tibble() %>%
-          dplyr::select(-Date, -Train_Test_ID) %>%
+          #dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           as.matrix()
-
+        stop("stop2")
         if (forecast_approach == "standard_hierarchy") {
           ts_combined <- data.frame(hts::combinef(ts,
             nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
@@ -575,7 +575,7 @@ reconcile_hierarchical_data <- function(run_info,
           ))
           colnames(ts_combined) <- original_combo_list
         }
-
+        stop("stop3")
         reconciled_tbl <- ts_combined %>%
           tibble::add_column(
             Train_Test_ID = date_tbl$Train_Test_ID,
@@ -609,7 +609,7 @@ reconcile_hierarchical_data <- function(run_info,
             sep = "--"
           ) %>%
           suppressWarnings()
-
+        stop("stop4")
         # write outputs to disk
         write_data(
           x = reconciled_tbl,
