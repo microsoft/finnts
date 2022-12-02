@@ -68,7 +68,8 @@ prep_hierarchical_data <- function(input_data,
     tidyr::pivot_longer(!Date,
       names_to = "Combo",
       values_to = "Target"
-    )
+    ) %>%
+    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = 'none'))
 
   # write hierarchy structure to disk
   hts_list <- list(

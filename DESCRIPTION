@@ -53,6 +53,7 @@ Imports:
     recipes,
     rsample,
     rules,
+    snakecase,
     stringr,
     tibble,
     tidyr,
