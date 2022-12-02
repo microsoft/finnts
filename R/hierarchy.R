@@ -557,8 +557,9 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::mutate(Residual = Target - Forecast) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
+          tibble::as_tibble() %>%
           dplyr::select(-Date, -Train_Test_ID) %>%
-          dplyr::select(hts_combo_list) %>%
+          dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           as.matrix()
 
         if (forecast_approach == "standard_hierarchy") {
