@@ -545,7 +545,14 @@ reconcile_hierarchical_data <- function(run_info,
 
         date_tbl <- forecast_tbl %>%
           dplyr::select(Date, Train_Test_ID)
-
+        write_data(
+          x = forecast_tbl,
+          combo = model,
+          run_info = run_info,
+          output_type = "data",
+          folder = "forecasts",
+          suffix = "-forecast_tbl"
+        )
         ts <- forecast_tbl %>%
           tibble::as_tibble() %>%
           #dplyr::select(-Date, -Train_Test_ID) %>%
