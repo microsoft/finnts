@@ -96,8 +96,11 @@ prep_hierarchical_data <- function(input_data,
     folder = "prep_data",
     suffix = "-hts_data"
   )
+  
+  return_data <- hierarchical_tbl %>% 
+    adjust_df(return_type = df_return_type)
 
-  return(hierarchical_tbl %>% adjust_df(df_return_type))
+  return(return_data)
 }
 
 #' Return correct data frame format
