@@ -203,6 +203,12 @@ prep_data <- function(run_info,
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
+  
+  temp <- initial_prep_tbl %>% # ensure the table is loaded into spark memory
+    dplyr::select(Date) %>%
+    dplyr::distinct() %>%
+    dplyr::collect() %>%
+    suppressWarnings()
 
   filtered_initial_prep_tbl <- initial_prep_tbl %>%
     # filter input data on combos that haven't completed running

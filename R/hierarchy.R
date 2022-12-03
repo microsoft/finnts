@@ -114,15 +114,7 @@ prep_hierarchical_data <- function(input_data,
 adjust_df <- function(input_data,
                       return_type = "df") {
   if (return_type == "sdf" & inherits(input_data, c("tbl", "tbl_df", "data.frame"))) {
-    input_data <- sparklyr::sdf_copy_to(sc, input_data, overwrite = TRUE)
-    
-    # ensure the table is loaded into spark memory
-    temp <- input_data %>%
-      dplyr::select(Date) %>%
-      dplyr::distinct() %>%
-      dplyr::collect() %>%
-      suppressWarnings()
-    
+    input_data <- sparklyr::sdf_copy_to(sc, input_data, overwrite = TRUE)    
     return(input_data)
   } else if (return_type == "sdf" & inherits(input_data, "tbl_spark")) {
     input_data
