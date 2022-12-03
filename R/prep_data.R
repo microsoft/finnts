@@ -416,7 +416,7 @@ prep_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
-    invisible(print(filtered_initial_prep_tbl))
+    print(filtered_initial_prep_tbl) # prevents spark tbl errors
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
