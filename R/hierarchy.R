@@ -117,6 +117,7 @@ adjust_df <- function(input_data,
     input_data <- sparklyr::sdf_copy_to(sc, input_data, overwrite = TRUE)    
     return(input_data)
   } else if (return_type == "sdf" & inherits(input_data, "tbl_spark")) {
+    sparklyr::tbl_cache(sc, 'input_data', force = TRUE) 
     input_data
   } else {
     input_data %>% dplyr::collect()
