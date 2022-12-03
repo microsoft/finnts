@@ -657,7 +657,8 @@ forecast_time_series <- function(input_data,
           temp_residuals <- back_test_unreconciled %>%
             dplyr::filter(Model == model, 
                           Date <= max(Date)) %>% #only keep residuals that are equal or less than the forecast period
-            dplyr::mutate(Residual = Target - FCST) %>%
+            dplyr::mutate(FCST_Adj = ifelse((abs(Target) + 1)*10 < abs(FCST), (Target+1)*10, FCST), # prevent hts recon issues
+                          Residual = Target - FCST_Adj) %>%
             dplyr::select(-FCST, -Target) %>%
             tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
             dplyr::select(colnames(hts_gts_df), -Date) %>%
