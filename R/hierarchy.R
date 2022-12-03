@@ -118,8 +118,9 @@ adjust_df <- function(input_data,
     
     # ensure the table is loaded into spark memory
     temp <- input_data %>%
-      dplyr::select(Combo) %>%
+      dplyr::select(Date) %>%
       dplyr::distinct() %>%
+      dplyr::collect() %>%
       suppressWarnings()
     
     return(input_data)

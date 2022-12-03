@@ -132,7 +132,8 @@ prep_data <- function(run_info,
       dplyr::collect() %>%
       dplyr::distinct() %>%
       dplyr::filter(Date == max(Date)) %>%
-      dplyr::pull(Date)
+      dplyr::pull(Date) %>%
+      suppressWarnings()
   }
 
   if (is.null(hist_start_date)) {
@@ -142,7 +143,8 @@ prep_data <- function(run_info,
       dplyr::collect() %>%
       dplyr::distinct() %>%
       dplyr::filter(Date == min(Date)) %>%
-      dplyr::pull(Date)
+      dplyr::pull(Date) %>%
+      suppressWarnings()
   }
 
   # prep initial data before feature engineering
