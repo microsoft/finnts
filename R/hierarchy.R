@@ -322,7 +322,8 @@ reconcile_hierarchical_data <- function(run_info,
     dplyr::collect() %>%
     dplyr::distinct() %>%
     dplyr::pull(Model_ID) %>%
-    c("Best-Model")
+    c("Best-Model") %>%
+    suppressWarnings()
 
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     
