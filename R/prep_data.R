@@ -191,7 +191,8 @@ prep_data <- function(run_info,
     dplyr::collect() %>%
     dplyr::group_by(1:dplyr::n()) %>%
     dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
-    dplyr::ungroup()
+    dplyr::ungroup() %>%
+    suppressWarnings()
 
   combo_diff <- setdiff(
     current_combo_list %>%
@@ -203,17 +204,10 @@ prep_data <- function(run_info,
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
-  
-  temp <- initial_prep_tbl %>% # ensure the table is loaded into spark memory
-    dplyr::select(Date) %>%
-    dplyr::distinct() %>%
-    dplyr::collect() %>%
-    suppressWarnings()
-
-  filtered_initial_prep_tbl <- initial_prep_tbl %>%
-    # filter input data on combos that haven't completed running
+  print("test1")
+  filtered_initial_prep_tbl <- initial_prep_tbl %>% # filter input data on combos that haven't completed running
     dplyr::filter(Combo %in% current_combo_list_final)
-
+  print("test2")
   if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
 
     # check if input values have changed
