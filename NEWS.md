@@ -1,3 +1,9 @@
+# finnts DEVELOPMENT VERSION
+
+## Bug Fixes
+
+-   Fixed hierarchical forecast reconciliation issues. 
+
 # finnts 0.2.1
 
 ## Bug Fixes
