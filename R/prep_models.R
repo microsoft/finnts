@@ -199,8 +199,10 @@ train_test_split <- function(run_info,
 
   if (is.null(run_ensemble_models) & date_type %in% c("day", "week")) {
     run_ensemble_models <- FALSE
-  } else {
+  } else if (is.null(run_ensemble_models)) {
     run_ensemble_models <- TRUE
+  } else {
+    # do nothing
   }
 
   # adjust based on models planned to run
@@ -220,7 +222,7 @@ train_test_split <- function(run_info,
     "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
   )
 
-  if (sum(model_workflow_list %in% ml_models) == 0) {
+  if (sum(model_workflow_list %in% ml_models) == 0 & run_ensemble_models) {
     run_ensemble_models <- FALSE
     cli::cli_alert_info("Turning ensemble models off since no multivariate models were chosen to run.")
     cli::cli_progress_update()
@@ -426,6 +428,7 @@ model_workflows <- function(run_info,
   )
 
   date_type <- log_df$date_type
+  forecast_approach <- log_df$forecast_approach
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -517,8 +520,13 @@ model_workflows <- function(run_info,
     if (!is.null(models_not_to_run)) {
       cli::cli_alert_warning("Note: 'models_to_run' argument overrides the 'models_not_to_run' argument")
     }
-
-    ml_models <- models_to_run
+    
+    if(forecast_approach != "bottoms_up") {
+      # add snaive model to help fix hierarchical forecast reconciliation issues
+      ml_models <- unique(c(models_to_run, "snaive"))
+    } else {
+      ml_models <- models_to_run 
+    }
   }
 
   if (run_deep_learning) {

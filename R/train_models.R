@@ -131,7 +131,7 @@ train_models <- function(run_info,
     "svm-poly", "svm-rbf", "xgboost"
   )
 
-  if (sum(model_workflow_list %in% ml_models) == 0) {
+  if (sum(model_workflow_list %in% ml_models) == 0 & run_global_models) {
     run_global_models <- FALSE
     cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
     cli::cli_progress_update()
@@ -164,11 +164,11 @@ train_models <- function(run_info,
 
   if (length(combo_list) == 1 & run_global_models) {
     run_global_models <- FALSE
-    cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
+    cli::cli_alert_info("Turning global models off since there is only a single time series.")
     cli::cli_progress_update()
   }
 
-  if (run_global_models & (inherits(parallel_processing, "NULL") || parallel_processing == "local_machine") & length(combo_list) > 1) {
+  if (run_global_models & length(combo_list) > 1) {
     combo_test <- c(combo_list, hash_data("All-Data"))
     combo_list <- c(combo_list, "All-Data")
   }

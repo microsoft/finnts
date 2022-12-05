@@ -373,6 +373,21 @@ reconcile_hierarchical_data <- function(run_info,
                              by = "Train_Test_ID") %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         }
+        
+        if(length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
+          # add snaive fcst to missing combos to get a full hierarchy of forecasts to reconcile
+          snaive_combo_list <- setdiff(hts_combo_list, unique(model_tbl$Combo))
+          
+          snaive_tbl <- unreconciled_tbl %>%
+            dplyr::filter(Model_Name == 'snaive') %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"), 
+                          Combo %in% snaive_combo_list)
+          
+          model_tbl <- model_tbl %>%
+            rbind(snaive_tbl)
+        }
 
         forecast_tbl <- model_tbl %>%
           dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
@@ -539,6 +554,22 @@ reconcile_hierarchical_data <- function(run_info,
             dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
                              by = "Train_Test_ID") %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
+        }
+        
+        if(length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
+          # add snaive fcst to missing combos to get a full hierarchy of forecasts to reconcile
+          snaive_combo_list <- setdiff(hts_combo_list, unique(model_tbl$Combo))
+          
+          snaive_tbl <- unreconciled_tbl %>%
+            dplyr::filter(Model_Name == 'snaive') %>%
+            dplyr::collect() %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
+                             by = "Train_Test_ID") %>%
+            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"), 
+                          Combo %in% snaive_combo_list)
+          
+          model_tbl <- model_tbl %>%
+            rbind(snaive_tbl)
         }
 
         forecast_tbl <- model_tbl %>%

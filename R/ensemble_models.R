@@ -81,7 +81,7 @@ ensemble_models <- function(run_info,
   models_not_to_run <- log_df$models_not_to_run
 
   if (log_df$run_ensemble_models == FALSE) {
-    cli::cli_alert_info("Ensemble models not ran since no multivariate models were chosen to run.")
+    cli::cli_alert_info("Ensemble models have been turned off.")
     return(cli::cli_progress_done())
   }
 
