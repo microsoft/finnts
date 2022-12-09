@@ -1,5 +1,5 @@
 
-#' Check input vales
+#' Check input values
 #'
 #' @param input_name input name
 #' @param input_value input value
