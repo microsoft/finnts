@@ -234,7 +234,7 @@ forecast_time_series <- function(input_data,
   xregs_future_values_tbl <- data_tbl %>%
     dplyr::select(Combo, 
                   Date, 
-                  xregs_future_values_list) %>%
+                  dplyr::all_of(xregs_future_values_list)) %>%
     get_xregs_future_values_tbl(forecast_approach)
   
   external_regressors <- external_regressors %>%
@@ -729,7 +729,7 @@ forecast_time_series <- function(input_data,
                         lo.80 = Target, 
                         hi.80 = Target, 
                         hi.95 = Target) %>%
-          dplyr::select(Combo, combo_variables, Date, Model, Target, lo.95, lo.80, hi.80, hi.95) %>%
+          dplyr::select(Combo, dplyr::all_of(combo_variables), Date, Model, Target, lo.95, lo.80, hi.80, hi.95) %>%
           dplyr::filter(Date <= hist_end_date)
       ) %>%
       dplyr::arrange(Date, Combo, Model) %>%

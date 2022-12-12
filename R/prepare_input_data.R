@@ -15,10 +15,10 @@ get_data_tbl<- function(input_data,
   input_data %>%
     tibble::tibble() %>%
     tidyr::unite("Combo",
-          combo_variables,
+          dplyr::all_of(combo_variables),
           sep="--",
           remove=F) %>%
-    dplyr::rename("Target" =target_variable)
+    dplyr::rename("Target" = !!target_variable)
 }
 
 #' Gets the list of external regressors with future values
@@ -91,9 +91,9 @@ get_modelling_ready_tbl<-function(data_tbl,
   
   data_tbl %>%
     dplyr::select(c("Combo", 
-                    tidyselect::all_of(combo_variables), 
-                    tidyselect::all_of(external_regressors), 
-                    "Date", "Target")) %>%
+                    dplyr::all_of(c(combo_variables, external_regressors)),
+                    "Date",
+                    "Target")) %>%
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::arrange(Combo, Date) %>%
     combo_cleanup_func(combo_cleanup_date)

@@ -157,7 +157,7 @@ get_data_tbl_final <- function(data_tbl,
         
       data_cast <- df %>%
         dplyr::arrange(Combo, Date) %>%
-        dplyr::select(-combo_variables) %>%
+        dplyr::select(-dplyr::all_of(combo_variables)) %>%
         tidyr::pivot_wider(names_from = Combo, 
                            values_from = Target) %>%
         dplyr::mutate_if(is.numeric, list(~replace(., is.na(.), 0)))
@@ -223,7 +223,7 @@ get_poly_trans_clean <- function(df,
   df %>% 
     dplyr::mutate(
       dplyr::across(
-        (where(is.numeric) & c("Target", external_regressors)),
+        (where(is.numeric) & dplyr::all_of(c("Target", external_regressors))),
         correct_clean_func
         )
     ) %>%
@@ -312,7 +312,7 @@ get_full_data_tbl <- function(data_tbl,
     dplyr::select(Combo, 
                   Date, 
                   Target, 
-                  external_regressors) %>%
+                  dplyr::all_of(external_regressors)) %>%
     dplyr::group_by(Combo) %>%
     dplyr::group_split() %>%
     purrr::map(.f = function(df) { # latest update to timetk as of 11.18.21 doesn't allow for non NA pad value within dplyr groups. Filed bug and will update once fixed
@@ -331,7 +331,7 @@ get_full_data_tbl <- function(data_tbl,
                             .start_date = hist_start_date, 
                             .end_date = hist_end_date) %>% #fill in missing values at beginning of time series with zero
         dplyr::mutate(Combo = combo) %>%
-        dplyr::select(Combo, Date, Target, external_regressors)
+        dplyr::select(Combo, Date, Target, dplyr::all_of(external_regressors))
       
       return(pad_data)
     }) %>%
