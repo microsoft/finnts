@@ -67,7 +67,7 @@ validate_forecasting_inputs<-function(input_data,
   }
   
   #target variable is numeric
-  if(!input_data %>% dplyr::rename(Target = target_variable) %>% dplyr::pull(Target) %>% is.numeric()) {
+  if(!input_data %>% dplyr::rename(Target = !!target_variable) %>% dplyr::pull(Target) %>% is.numeric()) {
     stop("Target variable in input data needs to be numeric")
   }
   
@@ -169,10 +169,8 @@ validate_forecasting_inputs<-function(input_data,
     
     for(column in combo_variables) {
       
-      temp1 <- input_data %>%
-        dplyr::select(column)
-      
-      temp2 <- length(unique(temp1[[1]]))
+      temp1 <- input_data[[column]]
+      temp2 <- length(unique(temp1))
       
       
       combo_amount <- append(combo_amount, temp2)

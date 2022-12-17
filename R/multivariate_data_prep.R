@@ -21,7 +21,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
 
   for(column in c("Target", external_regressors)) {
 
-    if(is.numeric(dplyr::select(data, column)[[1]])) {
+    if(is.numeric(data[[column]])) {
       
       column_names_final <- c(column)
       
@@ -33,8 +33,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       if(column %in% external_regressors) {
         
         df_poly_column <- data %>%
-          dplyr::select(column) %>%
-          dplyr::rename(Col = column)
+          dplyr::select(Col = dplyr::all_of(column))
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
@@ -59,10 +58,10 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
       df_lag_final <- df
       
       #apply lags
-      for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))))) {
+      for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", dplyr::all_of(external_regressors)))))) {
 
         df_lag <- df %>%
-          timetk::tk_augment_lags(column, .lags = lag_periods) %>%
+          timetk::tk_augment_lags(dplyr::all_of(column), .lags = lag_periods) %>%
           tidyr::fill(stringr::str_c(column, "_lag", lag_periods), .direction = "up") %>%
           dplyr::select(stringr::str_c(column, "_lag", lag_periods))
         
@@ -80,9 +79,9 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
         
         df_roll <- df_lag_final %>%
           dplyr::arrange(Date) %>%
-          tidyr::fill(column, .direction = "up") %>%
+          tidyr::fill(dplyr::all_of(column), .direction = "up") %>%
           timetk::tk_augment_slidify(
-            column, 
+            dplyr::all_of(column),
             .f = ~mean(.x, na.rm = TRUE),
             .period = rolling_window_periods,
             .partial = TRUE, 
@@ -90,7 +89,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
             .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Avg")
           ) %>%
           timetk::tk_augment_slidify(
-            column,
+            dplyr::all_of(column),
             .f = ~sum(.x, na.rm = TRUE),
             .period = rolling_window_periods,
             .partial = TRUE,
@@ -98,7 +97,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
             .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Sum")
           ) %>%
           timetk::tk_augment_slidify(
-            column,
+            dplyr::all_of(column),
             .f = ~sd(.x, na.rm = TRUE),
             .period = rolling_window_periods,
             .partial = TRUE,
@@ -120,7 +119,7 @@ multivariate_prep_recipe_1 <- function(data, external_regressors, xregs_future_v
   
   #drop xregs that do not contain future values
   data_period <- data_period %>%
-    dplyr::select(-numeric_xregs)
+    dplyr::select(-dplyr::all_of(numeric_xregs))
 
   return(data_period)
 }
@@ -151,7 +150,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
   
   for(column in c("Target", external_regressors)) {
     
-    if(is.numeric(dplyr::select(data, column)[[1]])) {
+    if(is.numeric(data[[column]])) {
       
       column_names_final <- c(column)
       
@@ -163,8 +162,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
       if(column %in% external_regressors) {
         
         df_poly_column <- data %>%
-          dplyr::select(column) %>%
-          dplyr::rename(Col = column)
+          dplyr::select(Col = dplyr::all_of(column))
         
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
@@ -202,10 +200,10 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
         #apply lags
         df_lag_final <- df
         
-        for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))))) {
+        for(column in colnames(df %>% dplyr::select(tidyselect::contains(c("Target", dplyr::all_of(external_regressors)))))) {
           
           df_lag <- df %>%
-            timetk::tk_augment_lags(column, .lags = unique(c(lag_periods_r2, lag_periods))+(period-1)) %>%
+            timetk::tk_augment_lags(dplyr::all_of(column), .lags = unique(c(lag_periods_r2, lag_periods))+(period-1)) %>%
             tidyr::fill(stringr::str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1)), .direction = "up") %>%
             dplyr::select(stringr::str_c(column, "_lag", unique(c(lag_periods_r2, lag_periods))+(period-1))) 
           
@@ -223,9 +221,9 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
           
           df_roll <- df_lag_final %>%
             dplyr::arrange(Date) %>%
-            tidyr::fill(column, .direction = "up") %>%
+            tidyr::fill(dplyr::all_of(column), .direction = "up") %>%
             timetk::tk_augment_slidify(
-              column,
+              dplyr::all_of(column),
               .f = ~mean(.x, na.rm = TRUE),
               .period = rolling_window_periods,
               .partial = TRUE,
@@ -233,7 +231,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
               .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Avg")
             ) %>%
             timetk::tk_augment_slidify(
-              column,
+              dplyr::all_of(column),
               .f = ~sum(.x, na.rm = TRUE),
               .period = rolling_window_periods,
               .partial = TRUE,
@@ -241,7 +239,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
               .names = stringr::str_c(column, "_roll", rolling_window_periods, "_Sum")
             ) %>%
             timetk::tk_augment_slidify(
-              column,
+              dplyr::all_of(column),
               .f = ~sd(.x, na.rm = TRUE),
               .period = rolling_window_periods,
               .partial = TRUE,
@@ -267,7 +265,7 @@ multivariate_prep_recipe_2 <- function(data, external_regressors, xregs_future_v
     
     #drop xregs that do not contain future values
     data_period <- data_period %>%
-      dplyr::select(-numeric_xregs)
+      dplyr::select(-dplyr::all_of(numeric_xregs))
     
     #combine transformed data
     data_trans <- rbind(data_trans, data_period) 
