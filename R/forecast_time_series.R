@@ -224,7 +224,7 @@ forecast_time_series <- function(run_info = NULL,
   )
 
   if (return_data) {
-    fcst_results <- forecast_backwards_compatability(run_info, input_data)
+    fcst_results <- forecast_backwards_compatibility(run_info, input_data)
 
     return(fcst_results)
   }
@@ -239,7 +239,7 @@ forecast_time_series <- function(run_info = NULL,
 #'
 #' @return Returns list with forecast results
 #' @noRd
-forecast_backwards_compatability <- function(run_info,
+forecast_backwards_compatibility <- function(run_info,
                                              hist_tbl) {
   cli::cli_alert_warning("return_data is deprecated, please use 'get_forecast_data()' to get finnts results")
 
