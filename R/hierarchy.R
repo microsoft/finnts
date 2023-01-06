@@ -414,18 +414,39 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::select(hts_combo_list) %>%
           as.matrix()
 
-        if (forecast_approach == "standard_hierarchy") {
-          ts_combined <- data.frame(hts::combinef(ts,
-            nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-            keep = "bottom", nonnegative = !negative_forecast
-          ))
-          colnames(ts_combined) <- original_combo_list
-        } else if (forecast_approach == "grouped_hierarchy") {
-          ts_combined <- data.frame(hts::combinef(ts,
-            groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-            keep = "bottom", nonnegative = !negative_forecast
-          ))
-          colnames(ts_combined) <- original_combo_list
+        tryCatch({
+          
+          ts_combined <- NULL
+          
+          if (forecast_approach == "standard_hierarchy") {
+            ts_combined <- data.frame(hts::combinef(ts,
+                                                    nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                                                    keep = "bottom", nonnegative = !negative_forecast
+            ))
+            colnames(ts_combined) <- original_combo_list
+          } else if (forecast_approach == "grouped_hierarchy") {
+            ts_combined <- data.frame(hts::combinef(ts,
+                                                    groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                                                    keep = "bottom", nonnegative = !negative_forecast
+            ))
+            colnames(ts_combined) <- original_combo_list
+          }},
+          error = function(e) {
+            
+            if(model != "Best-Model") {
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+                      call. = FALSE
+              )
+            } else {
+              stop("The 'Best-Model' was not able to be properly reconciled.",
+                   call. = FALSE
+              )
+            }
+          }
+        )
+
+        if(is.null(ts_combined)) {
+          return(tibble::tibble())
         }
 
         reconciled_tbl <- ts_combined %>%
@@ -596,19 +617,40 @@ reconcile_hierarchical_data <- function(run_info,
           tibble::as_tibble() %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           as.matrix()
-
-        if (forecast_approach == "standard_hierarchy") {
-          ts_combined <- data.frame(hts::combinef(ts,
-            nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-            keep = "bottom", nonnegative = !negative_forecast
-          ))
-          colnames(ts_combined) <- original_combo_list
-        } else if (forecast_approach == "grouped_hierarchy") {
-          ts_combined <- data.frame(hts::combinef(ts,
-            groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-            keep = "bottom", nonnegative = !negative_forecast
-          ))
-          colnames(ts_combined) <- original_combo_list
+        
+        tryCatch({
+          
+          ts_combined <- NULL
+          
+          if (forecast_approach == "standard_hierarchy") {
+            ts_combined <- data.frame(hts::combinef(ts,
+                                                    nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                                                    keep = "bottom", nonnegative = !negative_forecast
+            ))
+            colnames(ts_combined) <- original_combo_list
+          } else if (forecast_approach == "grouped_hierarchy") {
+            ts_combined <- data.frame(hts::combinef(ts,
+                                                    groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                                                    keep = "bottom", nonnegative = !negative_forecast
+            ))
+            colnames(ts_combined) <- original_combo_list
+          }},
+          error = function(e) {
+            
+            if(model != "Best-Model") {
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+                      call. = FALSE
+              )
+            } else {
+              stop("The 'Best-Model' was not able to be properly reconciled.",
+                   call. = FALSE
+              )
+            }
+          }
+        )
+        
+        if(is.null(ts_combined)) {
+          return(tibble::tibble())
         }
 
         reconciled_tbl <- ts_combined %>%

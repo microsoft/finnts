@@ -183,7 +183,7 @@ prep_data <- function(run_info,
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique() %>%
-    base::suppressWarnings()
+    suppressWarnings()
 
   current_combo_list <- initial_prep_tbl %>%
     dplyr::select(Combo) %>%
