@@ -294,7 +294,7 @@ train_test_split <- function(run_info,
     timetk::time_series_cv(
       date_var = Date,
       initial = "1 year",
-      asses = forecast_horizon,
+      assess = forecast_horizon,
       skip = back_test_spacing_final,
       cumulative = TRUE,
       slice_limit = 1000
