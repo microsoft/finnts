@@ -307,7 +307,7 @@ prep_data <- function(run_info,
             Combo,
             Date,
             Target,
-            tidyselect::all_of(external_regressors)
+            tidyselect::all_of(setdiff(external_regressors, xregs_future_list))
           ) %>%
           dplyr::group_by(Combo) %>%
           timetk::pad_by_time(Date,
