@@ -64,7 +64,7 @@ prep_models <- function(run_info,
 
   # check input values
   check_input_type("run_info", run_info, "list")
-  check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "list", "numeric"))
+  check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "numeric"))
   check_input_type("back_test_spacing", back_test_spacing, c("NULL", "numeric"))
   check_input_type("models_to_run", models_to_run, c("NULL", "list", "character"))
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))

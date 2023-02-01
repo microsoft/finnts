@@ -69,7 +69,7 @@ train_models <- function(run_info,
   check_input_type("run_info", run_info, "list")
   check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
   check_input_type("run_local_models", run_local_models, "logical")
-  check_input_type("global_model_recipes", global_model_recipes, "character")
+  check_input_type("global_model_recipes", global_model_recipes, c("character", "list"))
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
   check_parallel_processing(run_info, 

@@ -106,12 +106,12 @@ prep_data <- function(run_info,
   check_input_type("clean_outliers", clean_outliers, "logical")
   check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "standard_hierarchy"))
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
-  check_input_type("num_cores", num_cores, c("character", "NULL"))
+  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
   check_input_type("target_log_transformation", target_log_transformation, "logical")
-  check_input_type("fourier_periods", fourier_periods, c("character", "NULL"))
-  check_input_type("lag_periods", lag_periods, c("character", "NULL"))
-  check_input_type("rolling_window_periods", rolling_window_periods, c("character", "NULL"))
-  check_input_type("recipes_to_run", recipes_to_run, c("character", "NULL"), c("R1", "R2"))
+  check_input_type("fourier_periods", fourier_periods, c("list", "numeric", "NULL"))
+  check_input_type("lag_periods", lag_periods, c("list", "numeric", "NULL"))
+  check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
+  check_input_type("recipes_to_run", recipes_to_run, c("list", "character", "NULL"), c("R1", "R2"))
   check_input_data(
     input_data,
     combo_variables,
