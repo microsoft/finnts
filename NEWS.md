@@ -1,8 +1,9 @@
-# finnts DEVELOPMENT VERSION
+# finnts 0.2.1.9000 DEVELOPMENT VERSION
 
 ## Bug Fixes
 
 -   Fixed hierarchical forecast reconciliation issues. 
+-   Compliant with latest dplyr v1.1.0
 
 # finnts 0.2.1
 

@@ -84,7 +84,7 @@ test_that("final forecast data rows are meaningful", {
   final_fc_dt <- final_fcst %>% 
     dplyr::filter(Type=="Historical") %>% 
     dplyr::filter(Date==max(Date)) %>%
-    dplyr::last()
+    dplyr::pull()
   
   print(paste("First Dt Val",final_fc_dt))
   
@@ -184,7 +184,7 @@ test_that("final forecast data rows are meaningful", {
   final_fc_dt <- final_fcst %>% 
     dplyr::filter(Type=="Historical") %>% 
     dplyr::filter(Date==max(Date)) %>%
-    dplyr::last()
+    dplyr::pull()
   
   print(paste("First Dt Val",final_fc_dt))
   
@@ -283,7 +283,7 @@ test_that("final forecast data rows are meaningful", {
   final_fc_dt <- final_fcst %>% 
     dplyr::filter(Type=="Historical") %>% 
     dplyr::filter(Date==max(Date)) %>%
-    dplyr::last()
+    dplyr::pull()
   
   print(paste("First Dt Val",final_fc_dt))
   
