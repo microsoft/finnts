@@ -189,6 +189,7 @@ prep_data <- function(run_info,
     dplyr::select(Combo) %>%
     dplyr::distinct(Combo) %>%
     dplyr::collect() %>%
+    dplyr::distinct(Combo) %>%
     dplyr::group_by(1:dplyr::n()) %>%
     dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
     dplyr::ungroup() %>%

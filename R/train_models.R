@@ -126,12 +126,9 @@ train_models <- function(run_info,
     dplyr::pull(Model_Name) %>%
     unique()
 
-  ml_models <- c(
-    "cubist", "glmnet", "mars",
-    "svm-poly", "svm-rbf", "xgboost"
-  )
+  global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
 
-  if (sum(model_workflow_list %in% ml_models) == 0 & run_global_models) {
+  if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
     cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
     cli::cli_progress_update()
@@ -139,8 +136,6 @@ train_models <- function(run_info,
 
   # get list of tasks to run
   combo_list <- c()
-
-  global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
 
   if (run_local_models) {
     combo_temp <- list_files(
