@@ -177,9 +177,11 @@ train_models <- function(run_info,
     )
   ) %>%
     tibble::tibble(
-      Path = .,
-      File = ifelse(is.null(.), "NA", fs::path_file(.))
+      Path = .
     ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     base::suppressWarnings()
 
