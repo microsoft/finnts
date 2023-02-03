@@ -177,27 +177,25 @@ prep_data <- function(run_info,
     )
   ) %>%
     tibble::tibble(
-      Path = .,
-      File = ifelse(is.null(.), "NA", fs::path_file(.))
+      Path = .
     ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
     tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique() %>%
     suppressWarnings()
-  
-  print(prev_combo_list)
 
   current_combo_list <- initial_prep_tbl %>%
     dplyr::select(Combo) %>%
     dplyr::distinct(Combo) %>%
     dplyr::collect() %>%
     dplyr::distinct(Combo) %>%
-    dplyr::group_by(1:dplyr::n()) %>%
+    dplyr::rowwise() %>%
     dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
     dplyr::ungroup() %>%
     suppressWarnings()
-  
-  print(current_combo_list)
 
   combo_diff <- setdiff(
     current_combo_list %>%
@@ -205,7 +203,7 @@ prep_data <- function(run_info,
       unique(),
     prev_combo_list
   )
-  print(combo_diff)
+
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
