@@ -184,6 +184,8 @@ prep_data <- function(run_info,
     dplyr::pull(Combo) %>%
     unique() %>%
     suppressWarnings()
+  
+  print(prev_combo_list)
 
   current_combo_list <- initial_prep_tbl %>%
     dplyr::select(Combo) %>%
@@ -194,6 +196,8 @@ prep_data <- function(run_info,
     dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
     dplyr::ungroup() %>%
     suppressWarnings()
+  
+  print(current_combo_list)
 
   combo_diff <- setdiff(
     current_combo_list %>%
@@ -201,7 +205,7 @@ prep_data <- function(run_info,
       unique(),
     prev_combo_list
   )
-
+  print(combo_diff)
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)
