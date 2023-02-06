@@ -363,7 +363,7 @@ prep_data <- function(run_info,
         # Run Recipes
         if (is.null(recipes_to_run)) {
           run_all_recipes_override <- FALSE
-        } else if (recipes_to_run == "all") {
+        } else if ("all" %in% recipes_to_run) {
           run_all_recipes_override <- TRUE
         } else {
           run_all_recipes_override <- FALSE
@@ -376,7 +376,8 @@ prep_data <- function(run_info,
               get_fourier_periods(fourier_periods, date_type),
               get_lag_periods(lag_periods, date_type, forecast_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type),
-              hist_end_date
+              hist_end_date, 
+              date_type
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
 
@@ -900,6 +901,7 @@ get_date_regex <- function(date_type) {
 #' @param lag_periods list of lag periods
 #' @param rolling_window_periods list of rolling window periods
 #' @param hist_end_date hist end date
+#' @param date_type date_type
 #'
 #' @return tbl with R1 feature engineering applied
 #' @noRd
@@ -909,7 +911,8 @@ multivariate_prep_recipe_1 <- function(data,
                                        fourier_periods,
                                        lag_periods,
                                        rolling_window_periods,
-                                       hist_end_date) {
+                                       hist_end_date, 
+                                       date_type) {
 
   # apply polynomial transformations
   numeric_xregs <- c()
@@ -943,8 +946,16 @@ multivariate_prep_recipe_1 <- function(data,
   }
 
   # add lags, rolling window calcs, and fourier periods
-  data_lag_window <- df_poly %>%
-    timetk::tk_augment_lags(tidyselect::contains(c("Target", external_regressors)), .lags = lag_periods) %>% # create lags
+  if(!is.null(xregs_future_values_list)) {
+    # create lags for xregs with future values
+    df_lag_initial <- df_poly %>%
+      timetk::tk_augment_lags(tidyselect::contains(xregs_future_values_list), .lags = get_lag_periods(NULL, date_type, 1))
+  } else {
+    df_lag_initial <- df_poly
+  }
+  
+  data_lag_window <- df_lag_initial %>%
+    timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
     timetk::tk_augment_slidify( # create rolling windows
       tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),

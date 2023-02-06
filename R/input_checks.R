@@ -22,7 +22,7 @@ check_input_type <- function(input_name,
   }
 
   if (!is.null(expected_value) & !is.null(input_value)) {
-    if (!(input_value %in% expected_value)) {
+    if (!sum(input_value %in% expected_value)) {
       stop(paste0(
         "invalid value for input name '", input_name, "', value needs to equal ",
         glue::glue_collapse(expected_value, " or ")
