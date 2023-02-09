@@ -1084,7 +1084,13 @@ multivariate_prep_recipe_2 <- function(data,
       ) %>%
       timetk::tk_augment_lags(tidyselect::contains(c("Target", external_regressors)),
         .lags = unique(c(lag_periods_r2, lag_periods)) + (period - 1),
-        .names = stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))
+        .names = expand.grid(
+          col      = df_poly %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))) %>% colnames(),
+          lag_val  = unique(c(lag_periods_r2, lag_periods)),
+          stringsAsFactors = FALSE
+        ) %>%
+          dplyr::mutate(Final_Col = paste0(col, "_lag", lag_val)) %>%
+          dplyr::pull(Final_Col)
       ) %>%
       tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
       timetk::tk_augment_slidify(
