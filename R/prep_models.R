@@ -215,14 +215,20 @@ train_test_split <- function(run_info,
   ) %>%
     dplyr::pull(Model_Name) %>%
     unique()
-
-  ml_models <- c(
+  
+  # models with hyperparameters to tune
+  hyperparam_model_list <- c(
     "arima-boost", "cubist", "glmnet", "mars",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
     "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
   )
+  
+  # ensemble models
+  ensemble_model_list <- c(
+    "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
+  )
 
-  if (sum(model_workflow_list %in% ml_models) == 0 & run_ensemble_models) {
+  if (sum(model_workflow_list %in% ensemble_model_list) == 0 & run_ensemble_models) {
     run_ensemble_models <- FALSE
     cli::cli_alert_info("Turning ensemble models off since no multivariate models were chosen to run.")
     cli::cli_progress_update()
@@ -358,7 +364,7 @@ train_test_split <- function(run_info,
   }
 
   # adjust based on models planned to run
-  if (sum(model_workflow_list %in% ml_models) == 0) {
+  if (sum(model_workflow_list %in% hyperparam_model_list) == 0) {
     train_test_final <- train_test_final %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
       rbind(
@@ -366,7 +372,7 @@ train_test_split <- function(run_info,
           dplyr::filter(Run_Type == "Validation") %>%
           dplyr::slice(1)
       )
-  } else if (sum(model_workflow_list %in% ml_models) > 0 & !run_ensemble_models) {
+  } else if (sum(model_workflow_list %in% hyperparam_model_list) > 0 & !run_ensemble_models) {
     train_test_final <- train_test_final %>%
       dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Validation"))
   } else {
