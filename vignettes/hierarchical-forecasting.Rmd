@@ -14,11 +14,11 @@ knitr::opts_chunk$set(
 )
 ```
 
-The finnts package leverages the great work of the [hts](https://pkg.earo.me/hts/) package. It's currently retired but we think old dogs can still learn new tricks! It's still of great use to finnts and allows for both standard and grouped hierarchical forecasting. 
+The finnts package leverages the great work of the [hts](https://pkg.earo.me/hts/) package. It's currently retired but we think old dogs can still learn new tricks! It's still of great use to finnts and allows for both standard and grouped hierarchical forecasting.
 
 ### Standard Hierarchy
 
-A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast. 
+A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.
 
 ```{r, echo = FALSE, message = TRUE}
 suppressMessages(library(dplyr))
@@ -38,11 +38,11 @@ print(hts)
 
 ```
 
-In the above example, "City" was the lowest level of the hierarchy, which feeds into "Country", which then feeds into "Continent". Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the "Best Model" and every other model is reconciled back down to the lowest level. 
+In the above example, "City" was the lowest level of the hierarchy, which feeds into "Country", which then feeds into "Continent". Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the "Best Model" and every other model is reconciled back down to the lowest level.
 
 ### Grouped Hierarchy
 
-Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls "grouped". A good example is a data set that contains historical time series by geography, customer segment, and product. 
+Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls "grouped". A good example is a data set that contains historical time series by geography, customer segment, and product.
 
 ```{r, echo = FALSE, message = TRUE}
 suppressMessages(library(dplyr))
@@ -62,15 +62,17 @@ print(gts)
 
 ```
 
+It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.
 
-It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels. 
-
-- Grand Total: model "Target" across the sum of "Country", "Segment", and "Product"
-- Country: model "Target" across the sum of "Country". Creating forecasts for the grand total of "United States" and "Mexico"
-- Segment: model "Target" across the sum of "Segment". Creating forecasts for the grand total of "Enterprise" and "Public Sector"
-- Product: model "Target" across the sum of "Product". Creating forecasts for the grand total of "Coffee" and "Tea". 
+-   Grand Total: model "Target" across the sum of "Country", "Segment", and "Product"
+-   Country: model "Target" across the sum of "Country". Creating forecasts for the grand total of "United States" and "Mexico"
+-   Segment: model "Target" across the sum of "Segment". Creating forecasts for the grand total of "Enterprise" and "Public Sector"
+-   Product: model "Target" across the sum of "Product". Creating forecasts for the grand total of "Coffee" and "Tea".
 
 ### External Regressors
 
-Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling. 
+Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling.
 
+### Corner Cases in Forecast Reconciliation
+
+Some forecasts can be widely off from the target value. This can cause issues when finnts tries to use historical back testing residuals as the initial weights in hts to reconcile the forecast at various aggregations of your data down to the lowest level. To prevent reconciliation issues, finnts will shrink these residuals to more appropriate numbers that still convey they are considerably off from the initial target values, but not astronomical. For example a residual value of 1,000,000,000,000 compared to a target value of 100 might get shrunk down to 900, since keeping the initial residual will throw the weighted reconciliation process out of whack and cause issues. Most forecasts in finnts will not have this problem, but if your data is very noisy then this fix will help prevent any issues when trying to run hierarchical forecasts in finnts. 
