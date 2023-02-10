@@ -498,14 +498,14 @@ download_file <- function(storage_object,
 #'
 #' @param run_info run info using the [set_run_info()] function
 #' @param path file path
-#' @param return_type type of data output read 
+#' @param return_type type of data output read
 #' @param schema column schema for arrow::open_dataset()
 #'
 #' @return file read into memory
 #' @noRd
 read_file <- function(run_info,
                       path,
-                      return_type = "df", 
+                      return_type = "df",
                       schema = NULL) {
   folder <- fs::path_dir(path)
   storage_object <- run_info$storage_object
@@ -566,14 +566,18 @@ read_file <- function(run_info,
     )
   } else if (return_type == "arrow") {
     switch(file_ext,
-      parquet = arrow::open_dataset(sources = files, 
-                                    format = "parquet", 
-                                    schema = schema, 
-                                    skip = ifelse(is.null(schema), 0, 1)),
-      csv = arrow::open_dataset(sources = files, 
-                                format = "csv", 
-                                schema = schema, 
-                                skip = ifelse(is.null(schema), 0, 1))
+      parquet = arrow::open_dataset(
+        sources = files,
+        format = "parquet",
+        schema = schema,
+        skip = ifelse(is.null(schema), 0, 1)
+      ),
+      csv = arrow::open_dataset(
+        sources = files,
+        format = "csv",
+        schema = schema,
+        skip = ifelse(is.null(schema), 0, 1)
+      )
     )
   } else if (return_type == "object") {
     readRDS(files)

@@ -236,7 +236,7 @@ get_run_info <- function(experiment_name = NULL,
                          run_name = NULL,
                          storage_object = NULL,
                          path = NULL) {
-  
+
   # input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
@@ -253,14 +253,14 @@ get_run_info <- function(experiment_name = NULL,
   if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
     path <- ""
   }
-  
+
   # run info formatting
   if (is.null(experiment_name)) {
     experiment_name_final <- "*"
   } else {
     experiment_name_final <- hash_data(experiment_name)
   }
-  
+
   if (is.null(run_name)) {
     run_name_final <- "*"
   } else {
@@ -271,7 +271,7 @@ get_run_info <- function(experiment_name = NULL,
     storage_object = storage_object,
     path = path
   )
-  
+
   # read run metadata
   file_path <- paste0(
     "/logs/*", experiment_name_final, "-",
@@ -282,6 +282,6 @@ get_run_info <- function(experiment_name = NULL,
     path = file_path,
     return_type = "df"
   )
-  
+
   return(run_tbl)
 }

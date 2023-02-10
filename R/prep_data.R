@@ -121,8 +121,10 @@ prep_data <- function(run_info,
     fiscal_year_start,
     parallel_processing
   )
-  check_parallel_processing(run_info, 
-                            parallel_processing)
+  check_parallel_processing(
+    run_info,
+    parallel_processing
+  )
 
   # get hist data start and end date
   if (is.null(hist_end_date)) {
@@ -376,7 +378,7 @@ prep_data <- function(run_info,
               get_fourier_periods(fourier_periods, date_type),
               get_lag_periods(lag_periods, date_type, forecast_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type),
-              hist_end_date, 
+              hist_end_date,
               date_type
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
@@ -420,7 +422,7 @@ prep_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
-    #print(filtered_initial_prep_tbl) # prevents spark tbl errors
+    # print(filtered_initial_prep_tbl) # prevents spark tbl errors
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
@@ -911,7 +913,7 @@ multivariate_prep_recipe_1 <- function(data,
                                        fourier_periods,
                                        lag_periods,
                                        rolling_window_periods,
-                                       hist_end_date, 
+                                       hist_end_date,
                                        date_type) {
 
   # apply polynomial transformations
@@ -946,14 +948,14 @@ multivariate_prep_recipe_1 <- function(data,
   }
 
   # add lags, rolling window calcs, and fourier periods
-  if(!is.null(xregs_future_values_list)) {
+  if (!is.null(xregs_future_values_list)) {
     # create lags for xregs with future values
     df_lag_initial <- df_poly %>%
       timetk::tk_augment_lags(tidyselect::contains(xregs_future_values_list), .lags = get_lag_periods(NULL, date_type, 1))
   } else {
     df_lag_initial <- df_poly
   }
-  
+
   data_lag_window <- df_lag_initial %>%
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
@@ -1085,8 +1087,8 @@ multivariate_prep_recipe_2 <- function(data,
       timetk::tk_augment_lags(tidyselect::contains(c("Target", external_regressors)),
         .lags = unique(c(lag_periods_r2, lag_periods)) + (period - 1),
         .names = expand.grid(
-          col      = df_poly %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))) %>% colnames(),
-          lag_val  = unique(c(lag_periods_r2, lag_periods)),
+          col = df_poly %>% dplyr::select(tidyselect::contains(c("Target", external_regressors))) %>% colnames(),
+          lag_val = unique(c(lag_periods_r2, lag_periods)),
           stringsAsFactors = FALSE
         ) %>%
           dplyr::mutate(Final_Col = paste0(col, "_lag", lag_val)) %>%

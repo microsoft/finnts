@@ -70,9 +70,11 @@ final_models <- function(run_info,
   check_input_type("average_models", average_models, "logical")
   check_input_type("max_model_average", max_model_average, "numeric")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
-  check_parallel_processing(run_info, 
-                            parallel_processing, 
-                            inner_parallel)
+  check_parallel_processing(
+    run_info,
+    parallel_processing,
+    inner_parallel
+  )
 
   # get combos
   combo_list <- list_files(
@@ -535,7 +537,7 @@ final_models <- function(run_info,
       run_info,
       parallel_processing,
       forecast_approach,
-      negative_forecast, 
+      negative_forecast,
       num_cores
     )
   }

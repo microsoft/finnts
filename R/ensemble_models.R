@@ -63,9 +63,11 @@ ensemble_models <- function(run_info,
   check_input_type("run_info", run_info, "list")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
   check_input_type("seed", seed, "numeric")
-  check_parallel_processing(run_info, 
-                            parallel_processing, 
-                            inner_parallel)
+  check_parallel_processing(
+    run_info,
+    parallel_processing,
+    inner_parallel
+  )
 
   # get input and combo values
   log_df <- read_file(run_info,
@@ -136,16 +138,16 @@ ensemble_models <- function(run_info,
     cli::cli_alert_info("Ensemble Models Already Trained")
     return(cli::cli_progress_done())
   }
-  
+
   # get ensemble models to run
   ensemble_model_list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
-  
+
   if (is.na(models_to_run) & is.na(models_not_to_run)) {
     # do nothing, using existing ml_models list
   } else if (is.na(models_to_run) & !is.na(models_not_to_run)) {
     ensemble_model_list <- setdiff(ensemble_model_list, stringr::str_split(models_not_to_run, "---")[[1]])
   } else {
-    ensemble_model_list <- ensemble_model_list[c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost") %in% stringr::str_split(models_to_run, '---')[[1]]]
+    ensemble_model_list <- ensemble_model_list[c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost") %in% stringr::str_split(models_to_run, "---")[[1]]]
   }
 
   # parallel run info

@@ -22,7 +22,7 @@ prep_hierarchical_data <- function(input_data,
   # initial data prep
   input_data_adj <- input_data %>%
     adjust_df()
-  
+
   combo_tbl <- input_data_adj %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
     dplyr::distinct()
@@ -69,7 +69,7 @@ prep_hierarchical_data <- function(input_data,
       names_to = "Combo",
       values_to = "Target"
     ) %>%
-    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = 'none'))
+    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
 
   # write hierarchy structure to disk
   hts_list <- list(
@@ -96,8 +96,8 @@ prep_hierarchical_data <- function(input_data,
     folder = "prep_data",
     suffix = "-hts_data"
   )
-  
-  return_data <- hierarchical_tbl %>% 
+
+  return_data <- hierarchical_tbl %>%
     adjust_df(return_type = df_return_type) %>%
     dplyr::select(Combo, Date, Target)
 
@@ -118,7 +118,7 @@ adjust_df <- function(input_data,
       sparklyr::sdf_register()
     return(input_data)
   } else if (return_type == "sdf" & inherits(input_data, "tbl_spark")) {
-    # sparklyr::tbl_cache(sc, 'input_data', force = TRUE) 
+    # sparklyr::tbl_cache(sc, 'input_data', force = TRUE)
     input_data
   } else {
     input_data %>% dplyr::collect()
@@ -274,7 +274,7 @@ get_hts_nodes <- function(hts_object,
 reconcile_hierarchical_data <- function(run_info,
                                         parallel_processing,
                                         forecast_approach,
-                                        negative_forecast = FALSE, 
+                                        negative_forecast = FALSE,
                                         num_cores) {
 
   # get run splits
@@ -329,12 +329,11 @@ reconcile_hierarchical_data <- function(run_info,
     suppressWarnings()
 
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
-    
     hist_tbl <- read_file(run_info,
-                          path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
+      path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
     ) %>%
       dplyr::select(Combo, Date, Target)
-    
+
     # parallel run info
     par_info <- par_start(
       run_info = run_info,
@@ -364,28 +363,33 @@ reconcile_hierarchical_data <- function(run_info,
         if (model == "Best-Model") {
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Best_Model == "Yes") %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         } else {
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Model_ID == model) %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         }
-        
-        if(length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
+
+        if (length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
           # add snaive fcst to missing combos to get a full hierarchy of forecasts to reconcile
           snaive_combo_list <- setdiff(hts_combo_list, unique(model_tbl$Combo))
-          
+
           snaive_tbl <- unreconciled_tbl %>%
-            dplyr::filter(Model_Name == 'snaive') %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
-            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"), 
-                          Combo %in% snaive_combo_list)
-          
+            dplyr::filter(Model_Name == "snaive") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
+            dplyr::filter(
+              Run_Type %in% c("Future_Forecast", "Back_Test"),
+              Combo %in% snaive_combo_list
+            )
+
           model_tbl <- model_tbl %>%
             rbind(snaive_tbl)
         }
@@ -404,48 +408,52 @@ reconcile_hierarchical_data <- function(run_info,
           dplyr::select(hts_combo_list) %>%
           stats::ts()
 
+        residual_multiplier <- 10 # shrink extra large residuals to prevent recon issues
+
         residuals_tbl <- model_tbl %>%
           dplyr::filter(Run_Type == "Back_Test") %>%
-          dplyr::mutate(Forecast_Adj = ifelse((abs(Target) + 1)*10 < abs(Forecast), (Target+1)*10, Forecast), # prevent hts recon issues
-                        Residual = Target - Forecast_Adj) %>%
+          dplyr::mutate(
+            Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
+            Residual = Target - Forecast_Adj
+          ) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
           dplyr::select(-Date, -Train_Test_ID) %>%
           dplyr::select(hts_combo_list) %>%
           as.matrix()
 
-        tryCatch({
-          
-          ts_combined <- NULL
-          
-          if (forecast_approach == "standard_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts,
-                                                    nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-                                                    keep = "bottom", nonnegative = !negative_forecast
-            ))
-            colnames(ts_combined) <- original_combo_list
-          } else if (forecast_approach == "grouped_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts,
-                                                    groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-                                                    keep = "bottom", nonnegative = !negative_forecast
-            ))
-            colnames(ts_combined) <- original_combo_list
-          }},
+        tryCatch(
+          {
+            ts_combined <- NULL
+
+            if (forecast_approach == "standard_hierarchy") {
+              ts_combined <- data.frame(hts::combinef(ts,
+                nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                keep = "bottom", nonnegative = !negative_forecast
+              ))
+              colnames(ts_combined) <- original_combo_list
+            } else if (forecast_approach == "grouped_hierarchy") {
+              ts_combined <- data.frame(hts::combinef(ts,
+                groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                keep = "bottom", nonnegative = !negative_forecast
+              ))
+              colnames(ts_combined) <- original_combo_list
+            }
+          },
           error = function(e) {
-            
-            if(model != "Best-Model") {
+            if (model != "Best-Model") {
               warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
-                      call. = FALSE
+                call. = FALSE
               )
             } else {
               stop("The 'Best-Model' was not able to be properly reconciled.",
-                   call. = FALSE
+                call. = FALSE
               )
             }
           }
         )
 
-        if(is.null(ts_combined)) {
+        if (is.null(ts_combined)) {
           return(tibble::tibble())
         }
 
@@ -537,28 +545,30 @@ reconcile_hierarchical_data <- function(run_info,
           "/forecasts/*", hash_data(run_info$experiment_name), "-",
           hash_data(run_info$run_name), "*models", ".", run_info$data_output
         )
-        
-        schema <- arrow::schema(arrow::field('Combo_ID', arrow::string()),
-                                arrow::field('Model_ID', arrow::string()),
-                                arrow::field('Model_Name', arrow::string()), 
-                                arrow::field('Model_Type', arrow::string()), 
-                                arrow::field('Recipe_ID', arrow::string()),
-                                arrow::field('Train_Test_ID', arrow::float64()),
-                                arrow::field('Hyperparameter_ID', arrow::float64()),
-                                arrow::field('Best_Model', arrow::string()),
-                                arrow::field('Combo', arrow::string()),
-                                arrow::field('Horizon', arrow::float64()),
-                                arrow::field('Date', arrow::date32()), 
-                                arrow::field('Target', arrow::float64()), 
-                                arrow::field('Forecast', arrow::float64()), 
-                                arrow::field('lo_95', arrow::float64()),
-                                arrow::field('lo_80', arrow::float64()),
-                                arrow::field('hi_80', arrow::float64()),
-                                arrow::field('hi_95', arrow::float64()))
+
+        schema <- arrow::schema(
+          arrow::field("Combo_ID", arrow::string()),
+          arrow::field("Model_ID", arrow::string()),
+          arrow::field("Model_Name", arrow::string()),
+          arrow::field("Model_Type", arrow::string()),
+          arrow::field("Recipe_ID", arrow::string()),
+          arrow::field("Train_Test_ID", arrow::float64()),
+          arrow::field("Hyperparameter_ID", arrow::float64()),
+          arrow::field("Best_Model", arrow::string()),
+          arrow::field("Combo", arrow::string()),
+          arrow::field("Horizon", arrow::float64()),
+          arrow::field("Date", arrow::date32()),
+          arrow::field("Target", arrow::float64()),
+          arrow::field("Forecast", arrow::float64()),
+          arrow::field("lo_95", arrow::float64()),
+          arrow::field("lo_80", arrow::float64()),
+          arrow::field("hi_80", arrow::float64()),
+          arrow::field("hi_95", arrow::float64())
+        )
 
         unreconciled_tbl <- read_file(run_info,
           path = fcst_path,
-          return_type = "arrow", 
+          return_type = "arrow",
           schema = schema
         )
 
@@ -566,30 +576,35 @@ reconcile_hierarchical_data <- function(run_info,
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Best_Model == "Yes") %>%
             dplyr::collect() %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         } else {
           model_tbl <- unreconciled_tbl %>%
             dplyr::filter(Model_ID == model) %>%
             dplyr::collect() %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
             dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
         }
-        
-        if(length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
+
+        if (length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
           # add snaive fcst to missing combos to get a full hierarchy of forecasts to reconcile
           snaive_combo_list <- setdiff(hts_combo_list, unique(model_tbl$Combo))
-          
+
           snaive_tbl <- unreconciled_tbl %>%
-            dplyr::filter(Model_Name == 'snaive') %>%
+            dplyr::filter(Model_Name == "snaive") %>%
             dplyr::collect() %>%
-            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID), 
-                             by = "Train_Test_ID") %>%
-            dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"), 
-                          Combo %in% snaive_combo_list)
-          
+            dplyr::left_join(model_train_test_tbl %>% dplyr::select(Run_Type, Train_Test_ID),
+              by = "Train_Test_ID"
+            ) %>%
+            dplyr::filter(
+              Run_Type %in% c("Future_Forecast", "Back_Test"),
+              Combo %in% snaive_combo_list
+            )
+
           model_tbl <- model_tbl %>%
             rbind(snaive_tbl)
         }
@@ -607,49 +622,53 @@ reconcile_hierarchical_data <- function(run_info,
           tibble::as_tibble() %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           stats::ts()
+        
+        residual_multiplier <- 10 # shrink extra large residuals to prevent recon issues
 
         residuals_tbl <- model_tbl %>%
           dplyr::filter(Run_Type == "Back_Test") %>%
-          dplyr::mutate(Forecast_Adj = ifelse((abs(Target) + 1)*10 < abs(Forecast), (Target+1)*10, Forecast), # prevent hts recon issues
-                        Residual = Target - Forecast_Adj) %>%
+          dplyr::mutate(
+            Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
+            Residual = Target - Forecast_Adj
+          ) %>%
           dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
           tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
           tibble::as_tibble() %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           as.matrix()
-        
-        tryCatch({
-          
-          ts_combined <- NULL
-          
-          if (forecast_approach == "standard_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts,
-                                                    nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-                                                    keep = "bottom", nonnegative = !negative_forecast
-            ))
-            colnames(ts_combined) <- original_combo_list
-          } else if (forecast_approach == "grouped_hierarchy") {
-            ts_combined <- data.frame(hts::combinef(ts,
-                                                    groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
-                                                    keep = "bottom", nonnegative = !negative_forecast
-            ))
-            colnames(ts_combined) <- original_combo_list
-          }},
+
+        tryCatch(
+          {
+            ts_combined <- NULL
+
+            if (forecast_approach == "standard_hierarchy") {
+              ts_combined <- data.frame(hts::combinef(ts,
+                nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                keep = "bottom", nonnegative = !negative_forecast
+              ))
+              colnames(ts_combined) <- original_combo_list
+            } else if (forecast_approach == "grouped_hierarchy") {
+              ts_combined <- data.frame(hts::combinef(ts,
+                groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                keep = "bottom", nonnegative = !negative_forecast
+              ))
+              colnames(ts_combined) <- original_combo_list
+            }
+          },
           error = function(e) {
-            
-            if(model != "Best-Model") {
+            if (model != "Best-Model") {
               warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
-                      call. = FALSE
+                call. = FALSE
               )
             } else {
               stop("The 'Best-Model' was not able to be properly reconciled.",
-                   call. = FALSE
+                call. = FALSE
               )
             }
           }
         )
-        
-        if(is.null(ts_combined)) {
+
+        if (is.null(ts_combined)) {
           return(tibble::tibble())
         }
 

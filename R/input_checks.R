@@ -80,18 +80,18 @@ check_input_data <- function(input_data,
   if (!("Date" %in% colnames(input_data))) {
     stop("date column in input data needs to be named as 'Date'")
   }
-  
+
   # date column is formatted as a date
-    if(!input_data %>% 
-       dplyr::select(Date) %>%
-       utils::head() %>%
-       dplyr::collect() %>%
-       dplyr::pull(Date) %>%
-       lubridate::is.Date()) {
-      stop("date column in input data needs to be formatted as a date value")
-    }
-  
-    # ensure month, quarter, year data repeats on the same day of each period
+  if (!input_data %>%
+    dplyr::select(Date) %>%
+    utils::head() %>%
+    dplyr::collect() %>%
+    dplyr::pull(Date) %>%
+    lubridate::is.Date()) {
+    stop("date column in input data needs to be formatted as a date value")
+  }
+
+  # ensure month, quarter, year data repeats on the same day of each period
   if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
     stop("historical date values are not evenly spaced")
   }
@@ -145,7 +145,7 @@ check_input_data <- function(input_data,
 #'
 #' @return nothing
 #' @noRd
-check_parallel_processing <- function(run_info, 
+check_parallel_processing <- function(run_info,
                                       parallel_processing,
                                       inner_parallel = FALSE) {
 
@@ -167,14 +167,14 @@ check_parallel_processing <- function(run_info,
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'",
         call. = FALSE
       )
-    } else if(is.null(run_info$path)) {
+    } else if (is.null(run_info$path)) {
       stop("Path argument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
-           call. = FALSE
-      ) 
-    } else if(substr(run_info$path, 1, 5) != "/dbfs" && substr(run_info$path, 1, 6) != "/synfs") {
+        call. = FALSE
+      )
+    } else if (substr(run_info$path, 1, 5) != "/dbfs" && substr(run_info$path, 1, 6) != "/synfs") {
       stop("Path argument in set_run_info() needs to be a path to a mounted Azure Data Lake Storage blob container",
-           call. = FALSE
-      ) 
+        call. = FALSE
+      )
     }
   } else {
 

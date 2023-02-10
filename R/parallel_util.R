@@ -64,15 +64,15 @@ par_start <- function(run_info,
     cores <- get_cores(num_cores)
 
     cl <- parallel::makeCluster(min(cores, task_length))
-    
-    if(substr(run_info$path, start=1, stop=6) == "/synfs") {
+
+    if (substr(run_info$path, start = 1, stop = 6) == "/synfs") {
       # make sure libraries are exported properly in Azure Synapse
       e <- new.env()
       e$libs <- .libPaths()
-      parallel::clusterExport(cl, "libs", envir=e)
+      parallel::clusterExport(cl, "libs", envir = e)
       parallel::clusterEvalQ(cl, .libPaths(libs))
     }
-    
+
     doParallel::registerDoParallel(cl)
 
     `%op%` <- foreach::`%dopar%`

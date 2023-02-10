@@ -215,14 +215,14 @@ train_test_split <- function(run_info,
   ) %>%
     dplyr::pull(Model_Name) %>%
     unique()
-  
+
   # models with hyperparameters to tune
   hyperparam_model_list <- c(
     "arima-boost", "cubist", "glmnet", "mars",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
     "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
   )
-  
+
   # ensemble models
   ensemble_model_list <- c(
     "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
@@ -526,12 +526,12 @@ model_workflows <- function(run_info,
     if (!is.null(models_not_to_run)) {
       cli::cli_alert_warning("Note: 'models_to_run' argument overrides the 'models_not_to_run' argument")
     }
-    
-    if(forecast_approach != "bottoms_up") {
+
+    if (forecast_approach != "bottoms_up") {
       # add snaive model to help fix hierarchical forecast reconciliation issues
       ml_models <- unique(c(models_to_run, "snaive"))
     } else {
-      ml_models <- models_to_run 
+      ml_models <- models_to_run
     }
   }
 
