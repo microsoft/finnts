@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.1</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.1.9000</span>
       </span>
     </div>
 
@@ -341,7 +341,7 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-in"><span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"snaive"</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Prepping Data</span> <span style="color: #00BBBB;">───────────────────────────────────────────────────────────────</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Date")</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Date)`</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Registered S3 method overwritten by 'quantmod':</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   method            from</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span>   as.zoo.data.frame zoo </span>
@@ -376,7 +376,7 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> ── Refitting Individual Models </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Data is not ordered by the 'date_var'. Resamples will be arranged by `Date`.</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Overlapping Timestamps Detected. Processing overlapping time series together using sliding windows.</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c(".id", ".row")</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(.id, .row)`</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> ── Forecast Output </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
@@ -385,10 +385,10 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Final Finn Outputs</span> <span style="color: #00BBBB;">──────────────────────────────────────────────────────────</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> ── Selecting Best Model </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Model")</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Model")</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Model")</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining, by = c("Combo", "Model")</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
     </div>
