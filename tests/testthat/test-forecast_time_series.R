@@ -135,6 +135,7 @@ finn_forecast <- forecast_time_series(
   run_model_parallel = FALSE,
   back_test_scenarios = 3,
   models_to_run = models_to_run, 
+  recipes_to_run = "R1",
   run_global_models = FALSE)
 
 final_fcst <- finn_forecast$final_fcst %>%
@@ -234,6 +235,7 @@ finn_forecast <- forecast_time_series(
   run_model_parallel = FALSE,
   back_test_scenarios = 3,
   models_to_run = models_to_run, 
+  recipes_to_run = "R1",
   run_global_models = FALSE)
 
 final_fcst <- finn_forecast$final_fcst %>%
