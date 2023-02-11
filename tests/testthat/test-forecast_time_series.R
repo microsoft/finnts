@@ -218,7 +218,8 @@ inp_data <- hts::infantgts %>%
     dplyr::mutate(Date = as.Date(paste0(index, "-07-01"))) %>%
     dplyr::select(-c("Total", "Sex/female", "Sex/male", dplyr::contains("State/"))) %>%
     tidyr::pivot_longer(-c("index", "Date"), names_to = "id") %>%
-    tidyr::separate(id, sep = " ", into = c("State", "Sex"), remove = FALSE)
+    tidyr::separate(id, sep = " ", into = c("State", "Sex"), remove = FALSE) %>%
+    dplyr::filter(Date >= "1985-07-01")
 
 inp_data_combos <- inp_data %>%
   dplyr::mutate(Combo = paste0(State, Sex))
