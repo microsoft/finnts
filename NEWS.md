@@ -1,4 +1,4 @@
-# finnts 0.2.1.9000 DEVELOPMENT VERSION
+# finnts 0.2.2
 
 ## Bug Fixes
 
