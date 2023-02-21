@@ -68,6 +68,7 @@ Suggests:
     AzureStor,
     knitr,
     Microsoft365R,
+    notebookutils, 
     reactable,
     rmarkdown,
     sparklyr,

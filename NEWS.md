@@ -1,4 +1,4 @@
-# finnts 0.2.1.9000 (Development Version)
+# finnts 0.2.2.9000 (Development Version)
 
 ## Improvements
 
@@ -25,6 +25,13 @@
 
 -   No longer support for Azure Batch parallel processing, please use spark instead
 -   Parallel processing through spark now needs a mounted Azure Data Lake Storage path supplied through `set_run_info()`. Please refer to the vignettes for more details.
+
+# finnts 0.2.2
+
+## Bug Fixes
+
+-   Fixed hierarchical forecast reconciliation issues for certain forecasts that have high residuals. 
+-   Compliant with latest dplyr v1.1.0
 
 # finnts 0.2.1
 
