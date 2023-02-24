@@ -1,10 +1,10 @@
 ## R CMD check results
 There were no ERRORs or WARNINGs. 
 
-There were 2 NOTES:
+There was 2 NOTEs:
 
 * checking dependencies in R code ... NOTE
-  Imports includes 34 non-default packages.
+  Imports includes 35 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
   use conditionally.

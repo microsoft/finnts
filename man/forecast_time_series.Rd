@@ -133,8 +133,7 @@ would only run models with the R1 or R2 recipe.}
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
 
 \item{reticulate_environment}{File path to python environment to use when training gluonts deep learning models.
-Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
-that has python environment already installed.}
+Azure parallel processing options should use its own docker image that has python environment already installed.}
 
 \item{models_to_run}{List of models to run. Default of NULL runs all models.}
 

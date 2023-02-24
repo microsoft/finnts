@@ -26,6 +26,7 @@ To leverage the full power of Finn, running within Azure is the best choice in b
 
 [Sparklyr](https://spark.rstudio.com/) is a great R package that allows you to run R code across a spark cluster. A user simply has to connect to a spark cluster then run Finn. Below is an example on how you can run Finn using [spark on Azure Databricks](https://docs.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr). Also check out the growing R support with using [spark on Azure Synapse](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-r-language).
 
+
 ```{r, message = FALSE, eval = FALSE}
 # load CRAN libraries
 library(finnts)

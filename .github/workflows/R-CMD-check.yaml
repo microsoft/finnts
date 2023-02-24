@@ -28,11 +28,11 @@ jobs:
 
 
           # Use older ubuntu to maximise backward compatibility
-          - {os: ubuntu-18.04,   r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-18.04,   r: 'release'}
-          - {os: ubuntu-18.04,   r: 'oldrel-1'}
-          - {os: ubuntu-18.04,   r: 'oldrel-2'}
-          - {os: ubuntu-18.04,   r: '3.6'} #3.6 is the min version for finnts
+          - {os: ubuntu-20.04,   r: 'devel', http-user-agent: 'release'}
+          - {os: ubuntu-20.04,   r: 'release'}
+          - {os: ubuntu-20.04,   r: 'oldrel-1'}
+          - {os: ubuntu-20.04,   r: 'oldrel-2'}
+          - {os: ubuntu-20.04,   r: '3.6'} #3.6 is the min version for finnts
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -54,7 +54,7 @@ jobs:
           install.packages(c('rcmdcheck', 'knitr', 'rmarkdown', 'lubridate', 'foreach', 'modeltime', 
           'Cubist', 'doParallel', 'devtools', 'dplyr', 'earth', 'glmnet', 
           'gtools', 'hts', 'kernlab', 'modeltime.gluonts', 'modeltime.resample', 'plyr', 'purrr', 
-          'rules', 'tibble', 'tidyr', 'timetk'))
+          'rules', 'tibble', 'tidyr', 'timetk', 'sparklyr'))
           
           devtools::install_github(c("Azure/rAzureBatch", "Azure/doAzureParallel"))
             

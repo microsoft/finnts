@@ -38,7 +38,6 @@
 ## Bug Fixes
 
 -   Fixed feature engineering issue around NaN/Inf values when computing log values of negative external regressor values.
-
 -   Fixed issue of ensuring random seed is set correctly in parallel processing.
 
 # finnts 0.2.0
@@ -57,7 +56,7 @@
 
 ## Default Function Behavior
 
--   Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models on large datasets often results in RAM issues when running in Azure Batch.
+-   Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models on large data sets often results in RAM issues when running in Azure Batch.
 
 ## Bug Fixes
 

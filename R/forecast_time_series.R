@@ -60,8 +60,7 @@
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types.
 #' @param reticulate_environment File path to python environment to use when training gluonts deep learning models.
-#'   Only important when parallel_processing is not set to 'azure_batch'. Azure Batch should use its own docker image
-#'   that has python environment already installed.
+#'   Azure parallel processing options should use its own docker image that has python environment already installed.
 #' @param models_to_run List of models to run. Default of NULL runs all models.
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
 #'   any model.
