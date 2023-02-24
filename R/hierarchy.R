@@ -622,7 +622,7 @@ reconcile_hierarchical_data <- function(run_info,
           tibble::as_tibble() %>%
           dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
           stats::ts()
-        
+
         residual_multiplier <- 10 # shrink extra large residuals to prevent recon issues
 
         residuals_tbl <- model_tbl %>%

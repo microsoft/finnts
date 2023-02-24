@@ -28,9 +28,10 @@ finn_forecast <- forecast_time_series(
   forecast_horizon = forecast_horizon,
   run_model_parallel = FALSE,
   back_test_scenarios = 3,
-  models_to_run = models_to_run, 
-  run_global_models = FALSE, 
-  run_ensemble_models = FALSE)
+  models_to_run = models_to_run,
+  run_global_models = FALSE,
+  run_ensemble_models = FALSE
+)
 
 final_fcst <- finn_forecast$final_fcst %>%
   mutate(Date = as.Date(Date))
@@ -138,10 +139,11 @@ finn_forecast <- forecast_time_series(
   forecast_approach = "standard_hierarchy",
   run_model_parallel = FALSE,
   back_test_scenarios = 3,
-  models_to_run = models_to_run, 
+  models_to_run = models_to_run,
   recipes_to_run = "R1",
-  run_global_models = FALSE, 
-  run_ensemble_models = FALSE)
+  run_global_models = FALSE,
+  run_ensemble_models = FALSE
+)
 
 final_fcst <- finn_forecast$final_fcst %>%
   mutate(Date = as.Date(Date))
@@ -181,7 +183,7 @@ test_that("back test data rows are meaningful", {
 
 test_that("final forecast data rows are meaningful", {
   types <- unique(final_fcst$Type)
-  
+
   to_check <- c("Historical", "Forecast")
   check_exist(to_check, types)
 
@@ -217,14 +219,16 @@ combo_variables <- c("State", "Sex")
 models_to_run <- c("meanf", "snaive")
 
 inp_data <- hts::infantgts %>%
-    hts::allts() %>%
-    timetk::tk_tbl() %>%
-    dplyr::mutate(Date = as.Date(paste0(index, "-07-01"))) %>%
-    dplyr::select(-c("Total", "Sex/female", "Sex/male", dplyr::contains("State/"))) %>%
-    tidyr::pivot_longer(-c("index", "Date"), names_to = "id") %>%
-    tidyr::separate(id, sep = " ", into = c("State", "Sex"), remove = FALSE) %>%
-    dplyr::filter(Date >= "1985-07-01", 
-                  State %in% c("NSW", "VIC"))
+  hts::allts() %>%
+  timetk::tk_tbl() %>%
+  dplyr::mutate(Date = as.Date(paste0(index, "-07-01"))) %>%
+  dplyr::select(-c("Total", "Sex/female", "Sex/male", dplyr::contains("State/"))) %>%
+  tidyr::pivot_longer(-c("index", "Date"), names_to = "id") %>%
+  tidyr::separate(id, sep = " ", into = c("State", "Sex"), remove = FALSE) %>%
+  dplyr::filter(
+    Date >= "1985-07-01",
+    State %in% c("NSW", "VIC")
+  )
 
 inp_data_combos <- inp_data %>%
   dplyr::mutate(Combo = paste0(State, Sex))
@@ -240,10 +244,11 @@ finn_forecast <- forecast_time_series(
   forecast_approach = "grouped_hierarchy",
   run_model_parallel = FALSE,
   back_test_scenarios = 3,
-  models_to_run = models_to_run, 
+  models_to_run = models_to_run,
   recipes_to_run = "R1",
-  run_global_models = FALSE, 
-  run_ensemble_models = FALSE)
+  run_global_models = FALSE,
+  run_ensemble_models = FALSE
+)
 
 final_fcst <- finn_forecast$final_fcst %>%
   mutate(Date = as.Date(Date))
