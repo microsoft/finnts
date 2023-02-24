@@ -55,7 +55,7 @@ jobs:
           'Cubist', 'doParallel', 'devtools', 'dplyr', 'earth', 'glmnet', 
           'gtools', 'hts', 'kernlab', 'modeltime.gluonts', 'modeltime.resample', 'plyr', 'purrr', 
           'rules', 'tibble', 'tidyr', 'timetk', 'sparklyr', 'arrow', 'AzureStor', 'Microsoft365R', 
-          'notebookutils', 'qs'))
+          'notebookutils', 'qs', 'lava'))
             
         shell: Rscript {0}
 
