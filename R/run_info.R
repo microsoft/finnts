@@ -74,11 +74,13 @@ set_run_info <- function(experiment_name = "finn_fcst",
     fs::dir_create(tempdir(), "forecasts")
     fs::dir_create(tempdir(), "logs")
   } else if(is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(path, "prep_data"))
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(path, "prep_models"))
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(path, "models"))
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(path, "forecasts"))
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(path, "logs"))
+    temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
+    
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "prep_data") %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "prep_models") %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "models") %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "forecasts") %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "logs") %>% as.character())
   } else if (is.null(storage_object)) {
     fs::dir_create(path, "prep_data")
     fs::dir_create(path, "prep_models")
