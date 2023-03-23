@@ -41,7 +41,6 @@ Imports:
     lubridate,
     magrittr,
     methods,
-    modeltime.gluonts,
     modeltime.resample,
     parallel,
     parsnip,

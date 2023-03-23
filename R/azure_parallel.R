@@ -16,8 +16,7 @@ get_fcast_parallel_azure_batch <- function(combo_list,
                                            models_to_run,
                                            models_not_to_run,
                                            recipes_to_run, 
-                                           pca, 
-                                           run_deep_learning){
+                                           pca){
   
   cli::cli_h2("Submitting Tasks to Azure Batch")
   
@@ -27,7 +26,6 @@ get_fcast_parallel_azure_batch <- function(combo_list,
   models_not_to_run <- models_not_to_run
   recipes_to_run <- recipes_to_run
   pca <- pca
-  run_deep_learning <- run_deep_learning
   
   fcst <- foreach::foreach(i = combo_list, .combine = 'rbind',
                   .packages = get_export_packages(), 
@@ -59,8 +57,7 @@ get_fcast_parallel_azure_spark <- function(combo_list,
                                            models_to_run,
                                            models_not_to_run,
                                            recipes_to_run, 
-                                           pca, 
-                                           run_deep_learning){
+                                           pca){
   
   cli::cli_h2("Submitting Tasks to Spark Cluster")
   
@@ -72,7 +69,6 @@ get_fcast_parallel_azure_spark <- function(combo_list,
   models_not_to_run <- models_not_to_run
   recipes_to_run <- recipes_to_run
   pca <- pca
-  run_deep_learning <- run_deep_learning
   
   fcst <- foreach::foreach(i = combo_list,
                            .combine = 'rbind',
