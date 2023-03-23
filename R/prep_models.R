@@ -565,14 +565,14 @@ model_workflows <- function(run_info,
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
 
-    # get args to feel into model spec functions
+    # get args to feed into model spec functions
     avail_arg_list <- list(
       "train_data" = recipe_tbl,
-      "frequency" = 12,
-      "horizon" = 12,
-      "seasonal_period" = c(3, 6, 12),
+      "frequency" = get_frequency_number(date_type),
+      "horizon" = forecast_horizon,
+      "seasonal_period" = get_seasonal_periods(date_type),
       "model_type" = "single",
-      "pca" = TRUE
+      "pca" = pca
     )
 
     # don't create workflows for models that only use R1 recipe
@@ -807,4 +807,40 @@ model_hyperparameters <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
+}
+
+#' Gets the right frequency numbers
+#' 
+#' @param date_type year, quarter, month, week, day
+#' 
+#' @return Returns frequency_number
+#' @noRd
+get_frequency_number <- function(date_type){
+  
+  frequency_number <- switch(date_type,
+                             "year" = 1,
+                             "quarter" = 4,
+                             "month" = 12,
+                             "week" = 365.25/7,
+                             "day" = 365.25)  
+  
+  return(frequency_number)
+}
+
+#' Gets the seasonal periods
+#' 
+#' @param date_type year, quarter, month, week, day
+#' 
+#' @return Returns seasonal_periods
+#' @noRd
+get_seasonal_periods <- function(date_type){
+  
+  seasonal_periods <- switch(date_type,
+                             "year" = c(1, 2, 3),
+                             "quarter" = c(4, 6, 12),
+                             "month" = c(12, 6, 4),
+                             "week" = c(365.25/7, (365.25/7)/4, (365.25/7)/12),
+                             "day" =  c(365.25, 365.25/4, 365.25/12))  
+  
+  return(seasonal_periods)
 }
