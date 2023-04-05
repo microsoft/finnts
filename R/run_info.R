@@ -65,40 +65,47 @@ set_run_info <- function(experiment_name = "finn_fcst",
   }
 
   # create dir paths
+
+  prep_data_folder <- "prep_data"
+  prep_models_folder <- "prep_models"
+  models_folder <- "models"
+  forecasts_folder <- "forecasts"
+  logs_folder <- "logs"
+
   if (is.null(path)) {
     path <- fs::path(tempdir())
 
-    fs::dir_create(tempdir(), "prep_data")
-    fs::dir_create(tempdir(), "prep_models")
-    fs::dir_create(tempdir(), "models")
-    fs::dir_create(tempdir(), "forecasts")
-    fs::dir_create(tempdir(), "logs")
+    fs::dir_create(tempdir(), prep_data_folder)
+    fs::dir_create(tempdir(), prep_models_folder)
+    fs::dir_create(tempdir(), models_folder)
+    fs::dir_create(tempdir(), forecasts_folder)
+    fs::dir_create(tempdir(), logs_folder)
   } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "prep_data") %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "prep_models") %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "models") %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "forecasts") %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, "logs") %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_data_folder) %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_models_folder) %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, models_folder) %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, forecasts_folder) %>% as.character())
+    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, logs_folder) %>% as.character())
   } else if (is.null(storage_object)) {
-    fs::dir_create(path, "prep_data")
-    fs::dir_create(path, "prep_models")
-    fs::dir_create(path, "models")
-    fs::dir_create(path, "forecasts")
-    fs::dir_create(path, "logs")
+    fs::dir_create(path, prep_data_folder)
+    fs::dir_create(path, prep_models_folder)
+    fs::dir_create(path, models_folder)
+    fs::dir_create(path, forecasts_folder)
+    fs::dir_create(path, logs_folder)
   } else if (inherits(storage_object, "blob_container")) {
-    AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_data"))
-    AzureStor::create_storage_dir(storage_object, fs::path(path, "prep_models"))
-    AzureStor::create_storage_dir(storage_object, fs::path(path, "models"))
-    AzureStor::create_storage_dir(storage_object, fs::path(path, "forecasts"))
-    AzureStor::create_storage_dir(storage_object, fs::path(path, "logs"))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, prep_data_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, prep_models_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, models_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, forecasts_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, logs_folder))
   } else if (inherits(storage_object, "ms_drive")) {
-    try(storage_object$create_folder(fs::path(path, "prep_data")), silent = TRUE)
-    try(storage_object$create_folder(fs::path(path, "prep_models")), silent = TRUE)
-    try(storage_object$create_folder(fs::path(path, "models")), silent = TRUE)
-    try(storage_object$create_folder(fs::path(path, "forecasts")), silent = TRUE)
-    try(storage_object$create_folder(fs::path(path, "logs")), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, prep_data_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, prep_models_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, models_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, forecasts_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, logs_folder)), silent = TRUE)
   }
 
   # see if there is an existing log file to leverage

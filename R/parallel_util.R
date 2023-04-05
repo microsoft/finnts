@@ -24,6 +24,20 @@ par_start <- function(run_info,
                       num_cores,
                       task_length) {
   cl <- NULL
+
+  base_packages <- c(
+    "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
+    "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
+    "Cubist", "earth", "glmnet", "kernlab", "purrr",
+    "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
+    "vroom", "utils", "cli"
+  )
+
+  parallel_packages <- c(
+    "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample",
+    "plyr", "rsample"
+  )
+
   add_packages <- NULL
 
   if (inherits(run_info$storage_object, "blob_container")) {
@@ -43,13 +57,7 @@ par_start <- function(run_info,
   if (is.null(parallel_processing)) {
     `%op%` <- foreach::`%do%`
 
-    packages <- c(
-      "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-      "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
-      "Cubist", "earth", "glmnet", "kernlab", "purrr",
-      "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
-      "vroom", "utils", "cli", add_packages
-    )
+    packages <- c(base_packages, add_packages)
   } else if (parallel_processing == "spark") {
     if (!exists("sc")) {
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'")
@@ -77,15 +85,7 @@ par_start <- function(run_info,
 
     `%op%` <- foreach::`%dopar%`
 
-    packages <- c(
-      "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
-      "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
-      "Cubist", "earth", "glmnet", "kernlab", "purrr",
-      "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
-      "vroom", "utils", "cli", "generics",
-      "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample",
-      "plyr", "rsample", add_packages
-    )
+    packages <- c(base_packages, add_packages, parallel_packages)
   } else {
     stop("error")
   }

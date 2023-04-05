@@ -151,17 +151,13 @@ check_parallel_processing <- function(run_info,
 
   # parallel processing formatting
   if (is.null(parallel_processing)) {
+    return()
+  }
 
-    # no further checks needed
-  } else if (parallel_processing %in% c("local_machine", "azure_batch", "spark") == FALSE) {
+  if (parallel_processing %in% c("local_machine", "spark") == FALSE) {
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
   } else if (parallel_processing == "local_machine" & inner_parallel) {
     stop("cannot run parallel process (inner_parallel input) within another parallel process (parallel_processing input) on a local machine. Please set inner_parallel to FALSE or run in spark")
-  } else if (parallel_processing == "azure_batch") {
-    message("NOTE: Ensure that Azure Batch parallel back-end has been registered before calling 'forecast_time_series' function")
-    warning("The azure batch parallel compute method is now deprecated, please use the new spark option in Azure",
-      call. = FALSE
-    )
   } else if (parallel_processing == "spark") {
     if (!exists("sc")) {
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'",
@@ -176,8 +172,5 @@ check_parallel_processing <- function(run_info,
         call. = FALSE
       )
     }
-  } else {
-
-    # no further checks needed
   }
 }
