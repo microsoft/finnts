@@ -491,40 +491,6 @@ croston <- function(train_data,
   return(wflw_spec)
 }
 
-#' Deep AR Model
-#'
-#' @param train_data Training Data
-#' @param horizon Horizon of forecast
-#' @param frequency Frequency of Data
-#'
-#' @return Get the DeepAR model
-#' @noRd
-deepar <- function(train_data,
-                   horizon,
-                   frequency) {
-  recipe_spec_gluon <- train_data %>%
-    get_recipie_combo()
-
-  model_spec <- modeltime.gluonts::deep_ar(
-    id = "Combo",
-    freq = frequency,
-    prediction_length = as.numeric(horizon),
-    epochs = 5,
-    num_batches_per_epoch = 5
-  ) %>%
-    parsnip::set_engine("gluonts_deepar")
-
-  wflw_fit_deepar_1 <- train_data %>%
-    get_fit_wkflw_nocombo(
-      model_spec_1,
-      recipe_spec_gluon
-    )
-
-  workflow <- get_workflow_simple(model_spec, recipe_spec_gluon)
-
-  return(workflow)
-}
-
 #' ETS Model
 #'
 #' @param train_data input data
@@ -659,34 +625,6 @@ meanf <- function(train_data,
   )
 
   return(wflw_spec_meanf)
-}
-
-#' nbeats model
-#'
-#' @param train_data Training Data
-#' @param horizon Horizon
-#' @param frequency Frequency of Data
-#'
-#' @return Get nbeats Model
-#' @noRd
-nbeats <- function(train_data,
-                   horizon,
-                   frequency) {
-  recipe_spec_gluon <- train_data %>%
-    get_recipie_combo()
-
-  model_spec_nbeats <- modeltime.gluonts::nbeats(
-    id = "Combo",
-    freq = frequency,
-    prediction_length = horizon,
-    epochs = 5,
-    num_batches_per_epoch = 5
-  ) %>%
-    parsnip::set_engine("gluonts_nbeats")
-
-  workflow <- get_workflow_simple(model_spec_nbeats, recipe_spec_gluon)
-
-  return(workflow)
 }
 
 #' nnetar model

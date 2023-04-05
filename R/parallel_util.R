@@ -46,7 +46,7 @@ par_start <- function(run_info,
     packages <- c(
       "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
       "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
-      "Cubist", "earth", "glmnet", "kernlab", "modeltime.gluonts", "purrr",
+      "Cubist", "earth", "glmnet", "kernlab", "purrr",
       "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
       "vroom", "utils", "cli", add_packages
     )
@@ -80,7 +80,7 @@ par_start <- function(run_info,
     packages <- c(
       "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
       "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
-      "Cubist", "earth", "glmnet", "kernlab", "modeltime.gluonts", "purrr",
+      "Cubist", "earth", "glmnet", "kernlab", "purrr",
       "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
       "vroom", "utils", "cli", "generics",
       "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample",

@@ -1,4 +1,4 @@
-# finnts 0.2.2.9000 (Development Version)
+# finnts 0.2.3.9000 (Development Version)
 
 ## Improvements
 
@@ -25,6 +25,12 @@
 
 -   No longer support for Azure Batch parallel processing, please use spark instead
 -   Parallel processing through spark now needs a mounted Azure Data Lake Storage path supplied through `set_run_info()`. Please refer to the vignettes for more details.
+
+# finnts 0.2.3
+
+## Dependency Fixes
+
+-   Removed package dependency modeltime.gluonts and its deep learning models because the package is no longer on CRAN.
 
 # finnts 0.2.2
 

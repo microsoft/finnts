@@ -59,13 +59,9 @@
 #'   would only run models with the R1 or R2 recipe.
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types.
-#' @param reticulate_environment File path to python environment to use when training gluonts deep learning models.
-#'   Azure parallel processing options should use its own docker image that has python environment already installed.
 #' @param models_to_run List of models to run. Default of NULL runs all models.
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
 #'   any model.
-#' @param run_deep_learning If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
-#'  models_not_to_run.
 #' @param run_global_models If TRUE, run multivariate models on the entire data set (across all time series) as a global model.
 #'   Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day.
 #' @param run_local_models If TRUE, run models by individual time series as local models.
@@ -135,10 +131,8 @@ forecast_time_series <- function(run_info = NULL,
                                  rolling_window_periods = NULL,
                                  recipes_to_run = NULL,
                                  pca = NULL,
-                                 reticulate_environment = NULL,
                                  models_to_run = NULL,
                                  models_not_to_run = NULL,
-                                 run_deep_learning = FALSE,
                                  run_global_models = NULL,
                                  run_local_models = TRUE,
                                  run_ensemble_models = NULL,
@@ -188,7 +182,6 @@ forecast_time_series <- function(run_info = NULL,
     models_to_run,
     models_not_to_run,
     run_ensemble_models,
-    run_deep_learning,
     pca,
     num_hyperparameters = 10
   )

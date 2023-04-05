@@ -16,8 +16,6 @@
 #' @param models_not_to_run List of models not to run, overrides values in
 #'   models_to_run. Default of NULL doesn't turn off any model.
 #' @param run_ensemble_models If TRUE, prep for ensemble models.
-#' @param run_deep_learning If TRUE, run deep learning models from gluonts.
-#'   (deepar and nbeats). Overrides models_to_run and models_not_to_run.
 #' @param pca If TRUE, run principle component analysis on any lagged features
 #'   to speed up model run time. Default of NULL runs PCA on day and week
 #'   date types across all local multivariate models, and also for global models
@@ -58,7 +56,6 @@ prep_models <- function(run_info,
                         models_to_run = NULL,
                         models_not_to_run = NULL,
                         run_ensemble_models = TRUE,
-                        run_deep_learning = FALSE,
                         pca = FALSE,
                         num_hyperparameters = 10) {
 
@@ -68,7 +65,6 @@ prep_models <- function(run_info,
   check_input_type("back_test_spacing", back_test_spacing, c("NULL", "numeric"))
   check_input_type("models_to_run", models_to_run, c("NULL", "list", "character"))
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
-  check_input_type("run_deep_learning", run_deep_learning, "logical")
   check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
 
@@ -77,7 +73,6 @@ prep_models <- function(run_info,
     run_info,
     models_to_run,
     models_not_to_run,
-    run_deep_learning,
     pca
   )
 
@@ -415,7 +410,6 @@ train_test_split <- function(run_info,
 #' @param run_info run info
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
-#' @param run_deep_learning run deep learning models
 #' @param pca pca
 #'
 #' @return Returns table of model workflows
@@ -423,7 +417,6 @@ train_test_split <- function(run_info,
 model_workflows <- function(run_info,
                             models_to_run = NULL,
                             models_not_to_run = NULL,
-                            run_deep_learning = FALSE,
                             pca = NULL) {
   cli::cli_progress_step("Creating Model Workflows")
 
@@ -435,6 +428,7 @@ model_workflows <- function(run_info,
 
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
+  forecast_horizon <- log_df$forecast_horizon
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -443,11 +437,10 @@ model_workflows <- function(run_info,
   }
 
   # check if input values have changed
-  if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "run_deep_learning", "pca")) == 4) {
+  if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
-      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
-      run_deep_learning = run_deep_learning
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---"))
     ) %>%
       data.frame()
 
@@ -535,10 +528,6 @@ model_workflows <- function(run_info,
     }
   }
 
-  if (run_deep_learning) {
-    ml_models <- c(ml_models, "nnetar", "nbeats")
-  }
-
   r2_models <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
 
   iter_tbl <- tibble::tibble()
@@ -621,7 +610,6 @@ model_workflows <- function(run_info,
     dplyr::mutate(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
       models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
-      run_deep_learning = run_deep_learning,
       pca = ifelse(is.null(pca), NA, pca)
     )
 

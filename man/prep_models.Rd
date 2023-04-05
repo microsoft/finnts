@@ -11,7 +11,6 @@ prep_models(
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_ensemble_models = TRUE,
-  run_deep_learning = FALSE,
   pca = FALSE,
   num_hyperparameters = 10
 )
@@ -34,9 +33,6 @@ quarter, and month data. Moves back 4 for week and 7 for day data.}
 models_to_run. Default of NULL doesn't turn off any model.}
 
 \item{run_ensemble_models}{If TRUE, prep for ensemble models.}
-
-\item{run_deep_learning}{If TRUE, run deep learning models from gluonts.
-(deepar and nbeats). Overrides models_to_run and models_not_to_run.}
 
 \item{pca}{If TRUE, run principle component analysis on any lagged features
 to speed up model run time. Default of NULL runs PCA on day and week
