@@ -1,3 +1,9 @@
+# finnts 0.2.3
+
+## Dependency Fixes
+
+-   Removed package dependency modeltime.gluonts and its deep learning models because the package is no longer on CRAN. 
+
 # finnts 0.2.2
 
 ## Bug Fixes

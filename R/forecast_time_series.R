@@ -56,14 +56,9 @@
 #'   would only run models with the R1 or R2 recipe.  
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types. 
-#' @param reticulate_environment File path to python environment to use when training gluonts deep learning models. 
-#'   Only important when parallel_processing is not set to 'azure_batch' or 'spark'. Azure options should use their own docker image 
-#'   that has python environment already installed. 
 #' @param models_to_run List of models to run. Default of NULL runs all models. 
 #' @param models_not_to_run List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off 
 #'   any model. 
-#' @param run_deep_learning If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and 
-#'  models_not_to_run. 
 #' @param run_global_models If TRUE, run multivariate models on the entire data set (across all time series) as a global model. 
 #'   Can be override by models_not_to_run. Default of NULL runs global models for all date types except week and day. 
 #' @param run_local_models If TRUE, run models by individual time series as local models.
@@ -117,10 +112,8 @@ forecast_time_series <- function(input_data,
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
   pca = NULL, 
-  reticulate_environment = NULL,
   models_to_run = NULL,
   models_not_to_run = NULL,
-  run_deep_learning = FALSE, 
   run_global_models = NULL,
   run_local_models = TRUE,
   run_ensemble_models = NULL,
@@ -129,13 +122,8 @@ forecast_time_series <- function(input_data,
   weekly_to_daily = TRUE, 
   seed = 123
 ) {
-
-  # 1. Load Environment Info: ----
   
-  load_env_info(reticulate_environment)
-  
-  
-  # 2. Initial Unit Tests: ----
+  # 1. Initial Unit Tests: ----
   hist_dt <- validate_forecasting_inputs(input_data,
                                          combo_variables,
                                          target_variable,
@@ -159,7 +147,7 @@ forecast_time_series <- function(input_data,
   hist_start_date <- hist_dt$hist_start_date
   hist_end_date <- hist_dt$hist_end_date
   
-  # 3. Update Input Values: ----
+  # 2. Update Input Values: ----
   
   # * Select fourier values ----
   fourier_periods <- get_fourier_periods(fourier_periods,
@@ -178,9 +166,6 @@ forecast_time_series <- function(input_data,
   
   # * Frequency number (year, quarter, month, etc) ----
   frequency_number <- get_frequency_number(date_type)
-  
-  # * TS frequency (year, quarter, month, etc) ----
-  gluon_ts_frequency <- get_gluon_ts_frequency(date_type)
   
   # * Seasonal_periods (year, quarter, month, etc) ----
   seasonal_periods <- get_seasonal_periods(date_type)
@@ -217,7 +202,7 @@ forecast_time_series <- function(input_data,
     # keep existing value of run_global_models
   }
   
-  # 4. Prep Data ----
+  # 3. Prep Data ----
   
   cli::cli_h1("Prepping Data")
   
@@ -268,7 +253,7 @@ forecast_time_series <- function(input_data,
   back_test_scenarios <- bt_conf$back_test_scenarios
   hist_periods_80 <- bt_conf$hist_periods_80
   
-  # 5. Modeling ----
+  # 4. Modeling ----
   
   cli::cli_h1("Kicking off Finn Modeling Process")
   
@@ -286,7 +271,6 @@ forecast_time_series <- function(input_data,
                                                run_model_parallel,
                                                parallel_processing,
                                                num_cores,
-                                               run_deep_learning,
                                                frequency_number,
                                                recipes_to_run, 
                                                models_to_run,
@@ -335,8 +319,7 @@ forecast_time_series <- function(input_data,
                                            models_to_run, 
                                            models_not_to_run,
                                            recipes_to_run, 
-                                           pca, 
-                                           run_deep_learning)
+                                           pca)
     
   } else if(parallel_processing=="spark") { # parallel run within spark on azure
     
@@ -346,8 +329,7 @@ forecast_time_series <- function(input_data,
                                            models_to_run, 
                                            models_not_to_run,
                                            recipes_to_run, 
-                                           pca, 
-                                           run_deep_learning)
+                                           pca)
   } else {
     
     stop("error during forecast run function call")
@@ -495,7 +477,7 @@ forecast_time_series <- function(input_data,
     fcst_combination <- rbind(fcst_combination, combinations_tbl_final)
   }
   
-  # 6. Final Finn Outputs ----
+  # 5. Final Finn Outputs ----
   
   cli::cli_h1("Final Finn Outputs")
   

@@ -105,24 +105,6 @@ get_frequency_number <- function(date_type){
   return(frequency_number)
 }
 
-#' Gets the right gluon ts frequency
-#' 
-#' @param date_type year, quarter, month, week, day
-#' 
-#' @return Returns gluon_ts_frequency
-#' @noRd
-get_gluon_ts_frequency <- function(date_type){
-  
-  gluon_ts_frequency <- switch(date_type,
-                             "year" = "Y",
-                             "quarter" = "Q",
-                             "month" = "M",
-                             "week" = "W",
-                             "day" = "D")  
-  
-  return(gluon_ts_frequency)
-}
-
 #' Gets the seasonal periods
 #' 
 #' @param date_type year, quarter, month, week, day
@@ -243,7 +225,7 @@ get_back_test_scenario_hist_periods<- function(full_data_tbl,
 #' @return Simple list of packages
 #' @noRd
 get_export_packages <- function(){
-  c('modeltime', 'modeltime.gluonts', 'modeltime.resample',
+  c('modeltime', 'modeltime.resample',
     'timetk', 'rules', 'Cubist', 'glmnet', 'earth', 'kernlab', 'xgboost', 
     'dplyr', 'tibble', 'tidyr', 'purrr', 'stringr', 'lubridate', 'prophet', 
     'doParallel', 'parallel')
@@ -254,12 +236,12 @@ get_export_packages <- function(){
 #' @return List of parallel transfer functions
 #' @noRd
 get_transfer_functions <- function(){
-  c("arima", "arima_boost", "croston", "cubist", "deepar", "ets", "glmnet", "mars",
-    "meanf", "nbeats", "nnetar", "nnetar_xregs", "prophet", "prophet_boost", "prophet_xregs", 
+  c("arima", "arima_boost", "croston", "cubist", "ets", "glmnet", "mars",
+    "meanf", "nnetar", "nnetar_xregs", "prophet", "prophet_boost", "prophet_xregs", 
     "snaive", "stlm_arima", "stlm_ets", "svm_poly", "svm_rbf", "tbats", "theta", "xgboost", 
     "multivariate_prep_recipe_1", "multivariate_prep_recipe_2","combo_specific_filter",
     "construct_forecast_models", "get_model_functions", "get_not_all_data_models", 
-    "get_r1_data_models", "get_r2_data_models", "get_deep_learning_models", "get_frequency_adjustment_models", 
+    "get_r1_data_models", "get_r2_data_models", "get_frequency_adjustment_models", 
     "invoke_forecast_function", "get_recipie_simple", "get_workflow_simple", "get_fit_simple", "get_freq_adjustment",
     "get_recipie_configurable", "get_fit_wkflw_nocombo", "get_latin_hypercube_grid", "get_resample_tune_grid", 
     "get_resample_tscv", "get_tune_grid", "get_not_all_data_models", "get_export_packages", "get_fit_wkflw_best",

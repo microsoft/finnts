@@ -40,7 +40,7 @@ get_not_all_data_models <- function(){
 #' @return List of r1 only models
 #' @noRd
 get_r1_data_models <- function(){
-  c('mars','deepar','nbeats')
+  c('mars')
 }
 
 #' Get list of r1 & r2 models
@@ -49,14 +49,6 @@ get_r1_data_models <- function(){
 #' @noRd
 get_r2_data_models <- function(){
   c('cubist','glmnet','svm-poly','svm-rbf','xgboost')
-}
-
-#' Get list of deep learning models
-#' 
-#' @return List of deep learning models
-#' @noRd
-get_deep_learning_models <- function(){
-  c('deepar','nbeats', 'tabnet')
 }
 
 #' Get list of seasonal correction
@@ -87,19 +79,15 @@ get_freq_adjustment <- function(date_type,
 #' 
 #' @param models_to_run List of models to run
 #' @param model_not_to_run List of models NOT to run
-#' @param run_deep_learning Deep Learning Models
 #' 
 #' @return uses models_to_run and models_not_to_run and returns correct list
 #' @noRd
 get_model_functions <- function(models_to_run,
-                                model_not_to_run,
-                                run_deep_learning){
+                                model_not_to_run){
   
   exhaustive_pre_load_list <- c(get_not_all_data_models(),
                                 get_r1_data_models(),
                                 get_r2_data_models())
-  
-  deep_learning_models <- get_deep_learning_models()
   
   fnlist <- list()
   
@@ -111,10 +99,6 @@ get_model_functions <- function(models_to_run,
   for(mr in models_to_run){
     
     if(mr %in% model_not_to_run){
-      next
-    }
-    
-    if((mr %in% deep_learning_models) & !run_deep_learning){
       next
     }
     
@@ -212,7 +196,6 @@ invoke_forecast_function <- function(fn_to_invoke,
 #' @param run_model_parallel Run Model in Parallel
 #' @param parallel_processing Which parallel processing to use
 #' @param num_cores number of cores for parallel processing
-#' @param run_deep_learning Run Deep Learning model
 #' @param frequency_number Frequency Number
 #' @param models_to_run Models to Run
 #' @param models_not_to_run Models not to run
@@ -240,7 +223,6 @@ construct_forecast_models <- function(full_data_tbl,
                                       run_model_parallel,
                                       parallel_processing,
                                       num_cores,
-                                      run_deep_learning,
                                       frequency_number,
                                       recipes_to_run,
                                       models_to_run,
@@ -358,14 +340,12 @@ construct_forecast_models <- function(full_data_tbl,
 
     # models to run
     model_list <- get_model_functions(models_to_run,
-                                      models_not_to_run,
-                                      run_deep_learning)
+                                      models_not_to_run)
     
     not_all_data_models <- get_not_all_data_models()
     r1_models <- get_r1_data_models()
     r2_models <- get_r2_data_models()
     freq_models <- get_frequency_adjustment_models()
-    deep_nn_models <- get_deep_learning_models()
     
     models_to_go_over <- names(model_list)
     
@@ -425,10 +405,6 @@ construct_forecast_models <- function(full_data_tbl,
         if(((model_name %in% r1_models) | (model_name %in% r2_models)) & (is.null(recipes_to_run) | run_all_recipes_override | "R1" %in% recipes_to_run)){
           
           add_name <- paste0(model_name,"-R1",model_name_suffix)
-          if(model_name %in% deep_nn_models){
-            freq_val <- gluon_ts_frequency
-            add_name <- paste0(model_name,model_name_suffix)
-          }
 
             try(mdl_called <- invoke_forecast_function(fn_to_invoke =  model_fn,
                                                        train_data = train_data_recipe_1,
@@ -697,8 +673,6 @@ construct_forecast_models <- function(full_data_tbl,
           slice_limit = back_test_scenarios) %>%
         timetk::tk_time_series_cv_plan() %>%
         dplyr::mutate(Horizon_char = as.character(Horizon))
-      
-      #return(ensemble_tscv)
       
       #Replace NaN/Inf with NA, then replace with zero
       is.na(ensemble_tscv) <- sapply(ensemble_tscv, is.infinite)
