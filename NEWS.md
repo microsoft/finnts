@@ -2,7 +2,7 @@
 
 ## Dependency Fixes
 
--   Fixed dependency issue with modeltime package ecosystem. 
+-   Fixed dependency issue with timetk. 
 
 # finnts 0.2.3
 
