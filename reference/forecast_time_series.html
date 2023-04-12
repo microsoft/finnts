@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.2</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.3</span>
       </span>
     </div>
 
@@ -118,10 +118,8 @@
 <span>  rolling_window_periods <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  recipes_to_run <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  pca <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  reticulate_environment <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  models_to_run <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  models_not_to_run <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  run_deep_learning <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  run_global_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  run_ensemble_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -269,12 +267,6 @@ would only run models with the R1 or R2 recipe.</p></dd>
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.</p></dd>
 
 
-<dt>reticulate_environment</dt>
-<dd><p>File path to python environment to use when training gluonts deep learning models.
-Only important when parallel_processing is not set to 'azure_batch' or 'spark'. Azure options should use their own docker image
-that has python environment already installed.</p></dd>
-
-
 <dt>models_to_run</dt>
 <dd><p>List of models to run. Default of NULL runs all models.</p></dd>
 
@@ -282,11 +274,6 @@ that has python environment already installed.</p></dd>
 <dt>models_not_to_run</dt>
 <dd><p>List of models not to run, overrides values in models_to_run. Default of NULL doesn't turn off
 any model.</p></dd>
-
-
-<dt>run_deep_learning</dt>
-<dd><p>If TRUE, run deep learning models from gluonts (deepar and nbeats). Overrides models_to_run and
-models_not_to_run.</p></dd>
 
 
 <dt>run_global_models</dt>
@@ -371,7 +358,7 @@ up to higher temporal levels like month or quarter.</p></dd>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">3</span>         3 <span style="color: #949494;">&lt;workflow&gt;</span> arima      </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> # Modeltime Table</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 0 × 3</span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># … with 3 variables: .model_id &lt;int&gt;, .model &lt;list&gt;, .model_desc &lt;chr&gt;</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># ℹ 3 variables: .model_id &lt;int&gt;, .model &lt;list&gt;, .model_desc &lt;chr&gt;</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> ── Refitting Individual Models </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Data is not ordered by the 'date_var'. Resamples will be arranged by `Date`.</span>
