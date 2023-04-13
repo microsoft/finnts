@@ -39,6 +39,12 @@ CRAN Reviewer Comments:
 * Please ensure that you do not use more than 2 cores in your examples, vignettes, etc.
 
   By default no parallel processing is ran in vignettes or tests. 
+  
+* CRAN repository db overrides:
+  X-CRAN-Comment: Archived on 2023-03-27 as requires archived package
+  'timetk'.
+  
+  This is why we are resubmitting a new version with no major changes to package. The dependency timetk   was archived, causing finnts to become archived. The timetk package was recently re-uploaded to CRAN,   so this is not a problem anymore. 
 
 ## Downstream dependencies
 There are currently no downstream dependencies for this package
