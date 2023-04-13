@@ -15,7 +15,7 @@ Authors@R:
 Description: Automated time series forecasting developed by Microsoft Finance. The Microsoft Finance Time 
     Series Forecasting Framework, aka Finn, can be used to forecast any component of the income 
     statement, balance sheet, or any other area of interest by finance. Any numerical quantity over time, 
-    Finn can be used to forecast it. While it can be applied outside of the finance domain, Finn want built 
+    Finn can be used to forecast it. While it can be applied outside of the finance domain, Finn was built 
     to meet the needs of financial analysts to better forecast their businesses within a company, and has 
     a lot of built in features that are specific to the needs of financial forecasters. Happy forecasting!
 URL: https://microsoft.github.io/finnts/, https://github.com/microsoft/finnts
