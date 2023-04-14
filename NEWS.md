@@ -1,3 +1,9 @@
+# finnts 0.2.4
+
+## Dependency Fixes
+
+-   Fixed dependency issue with timetk. 
+
 # finnts 0.2.3
 
 ## Dependency Fixes
