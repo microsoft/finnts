@@ -14,9 +14,9 @@ There was 2 NOTEs:
   So having many required packages is important to the package. 
   
 * checking R code for possible problems ... NOTE
-   Found the following assignments to the global environment:
-   File 'finnts/R/prep_data.R':
-     assign(name, context[[name]], envir = .GlobalEnv)
+  Found the following assignments to the global environment:
+  File 'finnts/R/prep_data.R':
+    assign(name, context[[name]], envir = .GlobalEnv)
   
   This assignment is ran when submitting tasks to run in spark by using sparklyr::spark_apply(). 
   You have to specify what variables get exported to the cluster then load them back into the 
