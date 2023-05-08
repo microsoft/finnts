@@ -39,7 +39,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9000</span>
       </span>
     </div>
 
@@ -71,6 +71,9 @@
       <a href="../articles/feature-engineering.html">Feature Engineering</a>
     </li>
     <li>
+      <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
+    </li>
+    <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
     </li>
     <li>
@@ -78,6 +81,9 @@
     </li>
     <li>
       <a href="../articles/parallel-processing.html">Parallel Processing</a>
+    </li>
+    <li>
+      <a href="../articles/tips-for-production.html">Tips for Production</a>
     </li>
   </ul>
 </li>
@@ -127,7 +133,7 @@
 </h2>
 <p>Data used in Finn needs to follow a few requirements, called out below.</p>
 <ul>
-<li>Data is tabular, formatted as data frame or tibble.</li>
+<li>Data is tabular, formatted as data frame, tibble, or spark data frame.</li>
 <li>Needs a time stamp or date column, which needs to be formatted as a date and labeled as “Date”. The date values need to start at the beginning of the period. For example, a monthly data set needs to have each date period started on the first day of each month. For a quarterly forecast, the first day of the quarter, etc.</li>
 <li>Contains at least one unique label to identify one time series from another. These are sometimes referred to as “data combos” or “combo variables” in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series.</li>
 <li>No duplicate rows at the intersection of data combos and date.</li>
@@ -166,48 +172,140 @@
 <div class="section level2">
 <h2 id="create-finn-forecast">2. Create Finn Forecast<a class="anchor" aria-label="anchor" href="#create-finn-forecast"></a>
 </h2>
-<p>Calling for “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
+<p>Before we call the Finn forecast function. Let’s first set up some run information using <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, this helps log all components of our Finn forecast successfully.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
-<span><span class="va">finn_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
+<span>  experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span>, </span>
+<span>  run_name <span class="op">=</span> <span class="st">"test_run"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Calling the “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
+<span><span class="co"># no need to assign it to a variable, since all of the outputs are written to disk :)</span></span>
+<span><span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
 <span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
 <span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,</span>
 <span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
 <span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
-<span>  back_test_scenarios <span class="op">=</span> <span class="fl">6</span>, </span>
-<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span>, </span>
-<span>  run_global_models <span class="op">=</span> <span class="cn">FALSE</span>, </span>
-<span>  run_model_parallel <span class="op">=</span> <span class="cn">FALSE</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="co">#&gt; $final_fcst</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 294 × 10</span></span></span>
+<span><span class="co">#&gt;    Combo id    Model Type       Date       value lo.95 lo.80 hi.80 hi.95</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-01-01  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-02-01  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-03-01  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-04-01  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-05-01  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-06-01  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-07-01 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-08-01 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-09-01 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-10-01  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 284 more rows</span></span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $back_test_data</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 360 × 10</span></span></span>
+<span><span class="co">#&gt;    Combo id    Back_Test_Scenario Date       Model   Horizon  FCST Target   MAPE</span></span>
+<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>              <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    M1    Back_Test_01       2015-06-01 arima-…       1 <span style="text-decoration: underline;">6</span>788.   <span style="text-decoration: underline;">6</span>890 0.014<span style="text-decoration: underline;">8</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    M1    Back_Test_02       2015-05-01 arima-…       1 <span style="text-decoration: underline;">5</span>518.   <span style="text-decoration: underline;">4</span>910 0.124 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    M1    Back_Test_02       2015-06-01 arima-…       2 <span style="text-decoration: underline;">7</span>128.   <span style="text-decoration: underline;">6</span>890 0.034<span style="text-decoration: underline;">5</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    M1    Back_Test_03       2015-04-01 arima-…       1 <span style="text-decoration: underline;">4</span>535.   <span style="text-decoration: underline;">5</span>210 0.130 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    M1    Back_Test_03       2015-05-01 arima-…       2 <span style="text-decoration: underline;">5</span>149.   <span style="text-decoration: underline;">4</span>910 0.048<span style="text-decoration: underline;">6</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    M1    Back_Test_03       2015-06-01 arima-…       3 <span style="text-decoration: underline;">6</span>960.   <span style="text-decoration: underline;">6</span>890 0.010<span style="text-decoration: underline;">1</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    M1    Back_Test_04       2015-03-01 arima-…       1 <span style="text-decoration: underline;">5</span>169.   <span style="text-decoration: underline;">5</span>090 0.015<span style="text-decoration: underline;">4</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    M1    Back_Test_04       2015-04-01 arima-…       2 <span style="text-decoration: underline;">4</span>536.   <span style="text-decoration: underline;">5</span>210 0.129 </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    M1    Back_Test_04       2015-05-01 arima-…       3 <span style="text-decoration: underline;">5</span>159.   <span style="text-decoration: underline;">4</span>910 0.050<span style="text-decoration: underline;">8</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    M1    Back_Test_05       2015-02-01 arima-…       1 <span style="text-decoration: underline;">5</span>461.   <span style="text-decoration: underline;">5</span>130 0.064<span style="text-decoration: underline;">5</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 350 more rows</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 1 more variable: Best_Model &lt;chr&gt;</span></span></span>
+<span><span class="co">#&gt; </span></span>
+<span><span class="co">#&gt; $back_test_best_MAPE</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 4 × 3</span></span></span>
+<span><span class="co">#&gt;   Combo Model                           Best_Model</span></span>
+<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                           <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> M1    arima--local--R1_ets--local--R1 Yes       </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> M1000 ets--local--R1                  Yes       </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> M2    arima--local--R1                Yes       </span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> M750  arima--local--R1_ets--local--R1 Yes</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="use-forecast-outputs">3. Use Forecast Outputs<a class="anchor" aria-label="anchor" href="#use-forecast-outputs"></a>
+<h2 id="get-forecast-outputs">3. Get Forecast Outputs<a class="anchor" aria-label="anchor" href="#get-forecast-outputs"></a>
 </h2>
+<div class="section level3">
+<h3 id="initial-finn-outputs">Initial Finn Outputs<a class="anchor" aria-label="anchor" href="#initial-finn-outputs"></a>
+</h3>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
+<span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output_tbl</span><span class="op">)</span></span></code></pre></div>
+</div>
 <div class="section level3">
 <h3 id="future-forecast">Future Forecast<a class="anchor" aria-label="anchor" href="#future-forecast"></a>
 </h3>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
+<span><span class="va">future_forecast_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Future_Forecast"</span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">finn_output</span><span class="op">$</span><span class="va">final_fcst</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">tail</a></span><span class="op">(</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">future_forecast_tbl</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="back-test-results">Back Test Results<a class="anchor" aria-label="anchor" href="#back-test-results"></a>
 </h3>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_data</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">back_test_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Back_Test"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">back_test_tbl</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="back-test-best-model-per-time-series">Back Test Best Model per Time Series<a class="anchor" aria-label="anchor" href="#back-test-best-model-per-time-series"></a>
 </h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output</span><span class="op">$</span><span class="va">back_test_best_MAPE</span><span class="op">)</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">best_model_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Best_Model</span> <span class="op">==</span> <span class="st">"Yes"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">Combo</span>, <span class="va">Model_ID</span>, <span class="va">Model_Name</span>, <span class="va">Model_Type</span>, <span class="va">Recipe_ID</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/distinct.html" class="external-link">distinct</a></span><span class="op">(</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">best_model_tbl</span><span class="op">)</span></span></code></pre></div>
 <p>Note: the best model for the “M1” combination is a simple average of “arima” and “ets” models.</p>
+</div>
+<div class="section level3">
+<h3 id="trained-models">Trained Models<a class="anchor" aria-label="anchor" href="#trained-models"></a>
+</h3>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">trained_model_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_trained_models.html">get_trained_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">trained_model_tbl</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="initial-prepped-data">Initial Prepped Data<a class="anchor" aria-label="anchor" href="#initial-prepped-data"></a>
+</h3>
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">R1_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>                                        recipe <span class="op">=</span> <span class="st">"R1"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R1_prepped_data_tbl</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">R2_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>                                        recipe <span class="op">=</span> <span class="st">"R2"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R2_prepped_data_tbl</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="run-info-metadata">Run Info Metadata<a class="anchor" aria-label="anchor" href="#run-info-metadata"></a>
+</h3>
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">run_info_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_run_info.html">get_run_info</a></span><span class="op">(</span>experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">run_info_tbl</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
   </div>

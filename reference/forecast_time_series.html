@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9000</span>
       </span>
     </div>
 
@@ -53,6 +53,9 @@
       <a href="../articles/feature-engineering.html">Feature Engineering</a>
     </li>
     <li>
+      <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
+    </li>
+    <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
     </li>
     <li>
@@ -60,6 +63,9 @@
     </li>
     <li>
       <a href="../articles/parallel-processing.html">Parallel Processing</a>
+    </li>
+    <li>
+      <a href="../articles/tips-for-production.html">Tips for Production</a>
     </li>
   </ul></li>
 <li>
@@ -91,13 +97,13 @@
 
     <div id="ref-usage">
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">forecast_time_series</span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  <span class="va">input_data</span>,</span>
 <span>  <span class="va">combo_variables</span>,</span>
 <span>  <span class="va">target_variable</span>,</span>
 <span>  <span class="va">date_type</span>,</span>
 <span>  <span class="va">forecast_horizon</span>,</span>
 <span>  external_regressors <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  run_name <span class="op">=</span> <span class="st">"finnts_forecast"</span>,</span>
 <span>  hist_start_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  hist_end_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  combo_cleanup_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -109,7 +115,7 @@
 <span>  modeling_approach <span class="op">=</span> <span class="st">"accuracy"</span>,</span>
 <span>  forecast_approach <span class="op">=</span> <span class="st">"bottoms_up"</span>,</span>
 <span>  parallel_processing <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  run_model_parallel <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  inner_parallel <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  num_cores <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  target_log_transformation <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  negative_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
@@ -126,13 +132,20 @@
 <span>  average_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  max_model_average <span class="op">=</span> <span class="fl">3</span>,</span>
 <span>  weekly_to_daily <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  seed <span class="op">=</span> <span class="fl">123</span></span>
+<span>  seed <span class="op">=</span> <span class="fl">123</span>,</span>
+<span>  run_model_parallel <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  return_data <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  run_name <span class="op">=</span> <span class="st">"finnts_forecast"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div id="arguments">
     <h2>Arguments</h2>
-    <dl><dt>input_data</dt>
+    <dl><dt>run_info</dt>
+<dd><p>Run info using <code><a href="set_run_info.html">set_run_info()</a></code></p></dd>
+
+
+<dt>input_data</dt>
 <dd><p>A data frame or tibble of historical time series data. Can also include external regressors for both
 historical and future data.</p></dd>
 
@@ -156,10 +169,6 @@ day, week, month, quarter, year.</p></dd>
 
 <dt>external_regressors</dt>
 <dd><p>List of column headers within input data to be used as features in multivariate models.</p></dd>
-
-
-<dt>run_name</dt>
-<dd><p>Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.</p></dd>
 
 
 <dt>hist_start_date</dt>
@@ -215,15 +224,17 @@ a more traditional hierarchical time series to forecast, both based on the hts p
 
 
 <dt>parallel_processing</dt>
-<dd><p>Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel
-on a spark cluster in Azure Databricks/Synapse.</p></dd>
+<dd><p>Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.</p></dd>
 
 
-<dt>run_model_parallel</dt>
-<dd><p>If TRUE, runs specific components like hyperparameter tuning or model refitting in parallel,
-only works when parallel_processing is not set to 'local_machine'.</p></dd>
+<dt>inner_parallel</dt>
+<dd><p>Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.</p></dd>
 
 
 <dt>num_cores</dt>
@@ -307,6 +318,22 @@ up to higher temporal levels like month or quarter.</p></dd>
 <dt>seed</dt>
 <dd><p>Set seed for random number generator. Numeric value.</p></dd>
 
+
+<dt>run_model_parallel</dt>
+<dd><p>If TRUE, runs model training in parallel, only works when parallel_processing is set to
+'local_machine' or 'spark'. Recommended to use a value of FALSE and leverage
+inner_parallel for new features.</p></dd>
+
+
+<dt>return_data</dt>
+<dd><p>If TRUE, return the forecast results. Used to be backwards compatible
+with previous finnts versions. Recommended to use a value of FALSE and leverage
+<code><a href="get_forecast_data.html">get_forecast_data()</a></code> for new features.</p></dd>
+
+
+<dt>run_name</dt>
+<dd><p>Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.</p></dd>
+
 </dl></div>
     <div id="value">
     <h2>Value</h2>
@@ -318,64 +345,55 @@ up to higher temporal levels like month or quarter.</p></dd>
     <div id="ref-examples">
     <h2>Examples</h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Experiment Name: finn_fcst</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20230508T200938Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
+<span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">finn_forecast</span> <span class="op">&lt;-</span> <span class="fu">forecast_time_series</span><span class="op">(</span></span></span>
-<span class="r-in"><span>  input_data <span class="op">=</span> <span class="va">m750</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span>, </span></span>
-<span class="r-in"><span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>, </span></span>
-<span class="r-in"><span>  target_variable <span class="op">=</span> <span class="st">"value"</span>, </span></span>
-<span class="r-in"><span>  date_type <span class="op">=</span> <span class="st">"month"</span>, </span></span>
-<span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>, </span></span>
+<span class="r-in"><span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span></span>
+<span class="r-in"><span>  input_data <span class="op">=</span> <span class="va">m750</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span></span>
+<span class="r-in"><span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span></span>
+<span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span></span>
 <span class="r-in"><span>  run_model_parallel <span class="op">=</span> <span class="cn">FALSE</span>,</span></span>
-<span class="r-in"><span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"snaive"</span><span class="op">)</span><span class="op">)</span></span></span>
+<span class="r-in"><span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"snaive"</span><span class="op">)</span>,</span></span>
+<span class="r-in"><span>  return_data <span class="op">=</span> <span class="cn">FALSE</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[2.3s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Prepping Data</span> <span style="color: #00BBBB;">───────────────────────────────────────────────────────────────</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Date)`</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Registered S3 method overwritten by 'quantmod':</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   method            from</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span>   as.zoo.data.frame zoo </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[332ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Kicking off Finn Modeling Process</span> <span style="color: #00BBBB;">───────────────────────────────────────────</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[204ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── <span style="font-weight: bold;">Running Combo: M750</span> ──</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Turning ensemble models off since no multivariate models were chosen to run.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[5.5s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── Initial Feature Engineering </span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Training Individual Models</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Turning global models off since no multivariate models were chosen to run.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Training Individual Models</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Training Individual Models <span style="color: #B2B2B2;">[1m 35.2s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── Individual Model Training </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Known model:arima function:arima</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Known model:ets function:ets</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Known model:snaive function:snaive</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Function being called: arima</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> arima</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Function being called: ets</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> ets</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Function being called: snaive</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> snaive</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> # Modeltime Table</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 3 × 3</span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   .model_id .model     .model_desc</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>       <span style="color: #949494; font-style: italic;">&lt;int&gt;</span> <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">1</span>         1 <span style="color: #949494;">&lt;workflow&gt;</span> snaive     </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">2</span>         2 <span style="color: #949494;">&lt;workflow&gt;</span> ets        </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">3</span>         3 <span style="color: #949494;">&lt;workflow&gt;</span> arima      </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> # Modeltime Table</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 0 × 3</span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># ℹ 3 variables: .model_id &lt;int&gt;, .model &lt;list&gt;, .model_desc &lt;chr&gt;</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Training Ensemble Models</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Ensemble models have been turned off.</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Training Ensemble Models</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Training Ensemble Models <span style="color: #B2B2B2;">[20ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── Refitting Individual Models </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Data is not ordered by the 'date_var'. Resamples will be arranged by `Date`.</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Overlapping Timestamps Detected. Processing overlapping time series together using sliding windows.</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(.id, .row)`</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Selecting Best Models</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Selecting Best Models <span style="color: #B2B2B2;">[437ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── Forecast Output </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Creating Simple Model Averages</span> <span style="color: #00BBBB;">──────────────────────────────────────────────</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">──</span> <span style="font-weight: bold;">Final Finn Outputs</span> <span style="color: #00BBBB;">──────────────────────────────────────────────────────────</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> ── Selecting Best Model </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> Joining with `by = join_by(Combo, Model)`</span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">fcst_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span><span class="va">run_info</span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="va">models_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="get_trained_models.html">get_trained_models</a></span><span class="op">(</span><span class="va">run_info</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

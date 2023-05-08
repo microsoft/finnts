@@ -39,7 +39,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9000</span>
       </span>
     </div>
 
@@ -71,6 +71,9 @@
       <a href="../articles/feature-engineering.html">Feature Engineering</a>
     </li>
     <li>
+      <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
+    </li>
+    <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
     </li>
     <li>
@@ -78,6 +81,9 @@
     </li>
     <li>
       <a href="../articles/parallel-processing.html">Parallel Processing</a>
+    </li>
+    <li>
+      <a href="../articles/tips-for-production.html">Tips for Production</a>
     </li>
   </ul>
 </li>
@@ -167,6 +173,11 @@
 <h3 id="external-regressors">External Regressors<a class="anchor" aria-label="anchor" href="#external-regressors"></a>
 </h3>
 <p>Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling.</p>
+</div>
+<div class="section level3">
+<h3 id="spark-parallel-processing">Spark Parallel Processing<a class="anchor" aria-label="anchor" href="#spark-parallel-processing"></a>
+</h3>
+<p>There is also a small limitation when doing hierarchical forecasting using spark as the parallel computing back-end. The hts package finnts uses cannot handle spark data frames. So behind the scenes finnts has to bring all of the data into memory on the spark cluster driver node in order to create the hierarchies. Please keep that in mind. If you have a lot of historical data that is greater than the RAM on the spark driver node, please consider using a different VM size with more memory. The same issue holds true when reconciling the hierarchical forecast, where all of the forecasts across all time series for a specific model is loaded into the same executor node to be reconciled. Because of these limitations, we are now exploring other options outside of the hts package, including the building of our own hierarchical forecasting package. Stay tuned.</p>
 </div>
 <div class="section level3">
 <h3 id="corner-cases-in-forecast-reconciliation">Corner Cases in Forecast Reconciliation<a class="anchor" aria-label="anchor" href="#corner-cases-in-forecast-reconciliation"></a>

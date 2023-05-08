@@ -34,6 +34,9 @@
     <loc>https://microsoft.github.io/finnts/articles/finnts.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/articles/forecast-components.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/articles/hierarchical-forecasting.html</loc>
   </url>
   <url>
@@ -46,6 +49,9 @@
     <loc>https://microsoft.github.io/finnts/articles/parallel-processing.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/articles/tips-for-production.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/authors.html</loc>
   </url>
   <url>
@@ -55,9 +61,42 @@
     <loc>https://microsoft.github.io/finnts/news/index.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/ensemble_models.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/final_models.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/forecast_time_series.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/get_forecast_data.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/get_prepped_data.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/get_prepped_models.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/get_run_info.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/get_trained_models.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/index.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/prep_data.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/prep_models.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/set_run_info.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/train_models.html</loc>
   </url>
 </urlset>

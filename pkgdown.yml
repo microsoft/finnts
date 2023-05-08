@@ -7,10 +7,12 @@ articles:
   external-regressors: external-regressors.html
   feature-engineering: feature-engineering.html
   finnts: finnts.html
+  forecast-components: forecast-components.html
   hierarchical-forecasting: hierarchical-forecasting.html
   models-used-in-finnts: models-used-in-finnts.html
   parallel-processing: parallel-processing.html
-last_built: 2023-04-14T18:19Z
+  tips-for-production: tips-for-production.html
+last_built: 2023-05-08T20:08Z
 urls:
   reference: https://microsoft.github.io/finnts/reference
   article: https://microsoft.github.io/finnts/articles

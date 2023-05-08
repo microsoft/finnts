@@ -39,7 +39,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9000</span>
       </span>
     </div>
 
@@ -71,6 +71,9 @@
       <a href="../articles/feature-engineering.html">Feature Engineering</a>
     </li>
     <li>
+      <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
+    </li>
+    <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
     </li>
     <li>
@@ -78,6 +81,9 @@
     </li>
     <li>
       <a href="../articles/parallel-processing.html">Parallel Processing</a>
+    </li>
+    <li>
+      <a href="../articles/tips-for-production.html">Tips for Production</a>
     </li>
   </ul>
 </li>
@@ -115,7 +121,7 @@
 
     
     
-<p>The “Best Model” you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual, ensemble, and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied to each unique data combo and model combination.</p>
+<p>The “Best-Model” you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual, ensemble, and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied to each unique data combo and model combination.</p>
 <p>A standard MAPE calculation is produced first, then instead of a simple average to get the final MAPE a weighted MAPE is taken based on the size of the target variable value. Please see below for an example of the process.</p>
 <pre><code><span><span class="co">#&gt; Simple Back Test Results</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 10 × 8</span></span></span>
@@ -138,8 +144,8 @@
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Country_1 arima 0.096<span style="text-decoration: underline;">3</span>        0.08  </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Country_1 ets   0.109         0.073<span style="text-decoration: underline;">3</span></span></span></code></pre>
-<p>During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the quick start guide.</p>
-<p>Some might think why not just use root mean squared error (RMSE)? This would have similar results to weighted MAPE, but make it harder to non-technical users of the forecast understand accuracy. Only showing MAPE to users allows them to comprehend accuracy based on their current latticework of mental models with similar metrics like variance to forecast or budget they might already be using in financial reporting.</p>
+<p>During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the back testing vignette.</p>
+<p>User of Finn can also take the Finn outputs, create their own accuracy metrics, and choose their own best models since all model results are written to disk.</p>
   </div>
 
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">
