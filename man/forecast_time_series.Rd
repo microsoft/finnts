@@ -5,13 +5,13 @@
 \title{Finn Forecast Framework}
 \usage{
 forecast_time_series(
+  run_info = NULL,
   input_data,
   combo_variables,
   target_variable,
   date_type,
   forecast_horizon,
   external_regressors = NULL,
-  run_name = "finnts_forecast",
   hist_start_date = NULL,
   hist_end_date = NULL,
   combo_cleanup_date = NULL,
@@ -23,7 +23,7 @@ forecast_time_series(
   modeling_approach = "accuracy",
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
-  run_model_parallel = FALSE,
+  inner_parallel = FALSE,
   num_cores = NULL,
   target_log_transformation = FALSE,
   negative_forecast = FALSE,
@@ -40,10 +40,15 @@ forecast_time_series(
   average_models = TRUE,
   max_model_average = 3,
   weekly_to_daily = TRUE,
-  seed = 123
+  seed = 123,
+  run_model_parallel = FALSE,
+  return_data = TRUE,
+  run_name = "finnts_forecast"
 )
 }
 \arguments{
+\item{run_info}{Run info using \code{\link[=set_run_info]{set_run_info()}}}
+
 \item{input_data}{A data frame or tibble of historical time series data. Can also include external regressors for both
 historical and future data.}
 
@@ -57,8 +62,6 @@ day, week, month, quarter, year.}
 \item{forecast_horizon}{Number of periods to forecast into the future.}
 
 \item{external_regressors}{List of column headers within input data to be used as features in multivariate models.}
-
-\item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
 
 \item{hist_start_date}{Date value of when your input_data starts. Default of NULL is to use earliest date value in
 input_data.}
@@ -92,13 +95,15 @@ future this could evolve to other areas like optimizing for interpretability ove
 time series. 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 a more traditional hierarchical time series to forecast, both based on the hts package.}
 
-\item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
-one after another. 'local_machine' leverages all cores on current machine Finn is running on. 'azure_batch'
-runs time series in parallel on a remote compute cluster in Azure Batch. 'spark' runs time series in parallel
-on a spark cluster in Azure Databricks/Synapse.}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.}
 
-\item{run_model_parallel}{If TRUE, runs specific components like hyperparameter tuning or model refitting in parallel,
-only works when parallel_processing is not set to 'local_machine'.}
+\item{inner_parallel}{Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
@@ -147,6 +152,16 @@ or max number of models ran.}
 up to higher temporal levels like month or quarter.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
+
+\item{run_model_parallel}{If TRUE, runs model training in parallel, only works when parallel_processing is set to
+'local_machine' or 'spark'. Recommended to use a value of FALSE and leverage
+inner_parallel for new features.}
+
+\item{return_data}{If TRUE, return the forecast results. Used to be backwards compatible
+with previous finnts versions. Recommended to use a value of FALSE and leverage
+\code{\link[=get_forecast_data]{get_forecast_data()}} for new features.}
+
+\item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -156,13 +171,23 @@ Calls the Finn forecast framework to automatically forecast any historical time 
 }
 \examples{
 \donttest{
+
+run_info <- set_run_info()
+
 finn_forecast <- forecast_time_series(
-  input_data = m750 \%>\% dplyr::rename(Date = date), 
-  combo_variables = c("id"), 
-  target_variable = "value", 
-  date_type = "month", 
-  forecast_horizon = 3, 
+  run_info = run_info,
+  input_data = m750 \%>\% dplyr::rename(Date = date),
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 3,
   run_model_parallel = FALSE,
-  models_to_run = c("arima", "ets", "snaive"))
+  models_to_run = c("arima", "ets", "snaive"),
+  return_data = FALSE
+)
+
+fcst_tbl <- get_forecast_data(run_info)
+
+models_tbl <- get_trained_models(run_info)
 }
 }

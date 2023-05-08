@@ -16,15 +16,16 @@ knitr::opts_chunk$set(
 
 ## Local Machine
 
-When the "parallel_processing" input within "forecast_time_series" is set to "local_machine", each time series (including training models on the entire data set) is ran in parallel on the users local machine. Each time series will run on a separate core of the machine. Hyperparameter tuning, model refitting, and model averaging will be ran sequentially, which cannot be done in parallel since a parallel process is already running on the machine for each time series. This works well for data that contains many time series where you might only want to run a few simpler models, and in scenarios where cloud computing is not available. 
+When `parallel_processing` within `forecast_time_series()` is set to "local_machine", each time series (including training models on the entire data set) is ran in parallel on the users local machine. Each time series will run on a separate core of the machine. Hyperparameter tuning, model refitting, and model averaging will be ran sequentially, which cannot be done in parallel since a parallel process is already running on the machine for each time series. This works well for data that contains many time series where you might only want to run a few simpler models, and in scenarios where cloud computing is not available.
 
-If "parallel_processing" is set to NULL and "run_model_parallel" is set to TRUE within the "forecast_time_series" function, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn. 
+If `parallel_processing` is set to NULL and `inner_parallel` is set to TRUE within `forecast_time_series`, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.
 
 ## Within Azure using Spark
 
-To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set "parallel_processing" to "spark" within the "forecast_time_series" function. This will run each time series in parallel across a spark compute cluster. 
+To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set `parallel_processing` to "spark" within `forecast_time_series()`. This will run each time series in parallel across a spark compute cluster.
 
-[Sparklyr](https://spark.rstudio.com/) is a great R package that allows you to run R code across a spark cluster. A user simply has to connect to a spark cluster then run Finn. Below is an example on how you can run Finn using [spark on Azure Databricks](https://docs.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr). 
+[Sparklyr](https://spark.rstudio.com/) is a great R package that allows you to run R code across a spark cluster. A user simply has to connect to a spark cluster then run Finn. Below is an example on how you can run Finn using [spark on Azure Databricks](https://docs.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr). Also check out the growing R support with using [spark on Azure Synapse](https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-r-language).
+
 
 ```{r, message = FALSE, eval = FALSE}
 # load CRAN libraries
@@ -45,112 +46,30 @@ hist_data <- timetk::m4_monthly %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
 
-finn_output <- finnts::forecast_time_series(
-  input_data = hist_data,
+data_sdf <- sparklyr::copy_to(sc, hist_data, "data_sdf", overwrite = TRUE)
+
+run_info <- set_run_info(
+  experiment_name = "finn_fcst", 
+  run_name = "spark_run_1", 
+  path = "/dbfs/mnt/example/folder" # important that you mount an ADLS path
+)
+
+forecast_time_series(
+  run_info = run_info,
+  input_data = data_sdf,
   combo_variables = c("id"),
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3, 
-  parallel_processing = "spark"
+  parallel_processing = "spark", 
+  return_data = FALSE
 )
+
+# return the outputs as a spark data frame
+finn_output_tbl <- get_forecast_data(run_info = run_info, 
+                                     return_type = "sdf")
 ```
 
-The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage all of the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set the "run_model_parallel" argument to TRUE in the "forecast_time_series" function. Also make sure that you adjust the number of spark executor cores to 1, that ensures that only 1 time series runs on an executor at a time. Leverage the "spark.executor.cores" argument when configuring your spark connection. This can be done using [sparklyr](https://spark.rstudio.com/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below.) or within the cluster manager itself within the Azure resource. Use the "num_cores" argument in the "forecast_time_series" function to control how many cores should be used within an executor when running things like hyperparameter tuning. 
+The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage all of the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set `inner_parallel` to TRUE in `forecast_time_series()`. Also make sure that you adjust the number of spark executor cores to 1, that ensures that only 1 time series runs on an executor at a time. Leverage the "spark.executor.cores" argument when configuring your spark connection. This can be done using [sparklyr](https://spark.rstudio.com/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below.) or within the cluster manager itself within the Azure resource. Use the "num_cores" argument in the "forecast_time_series" function to control how many cores should be used within an executor when running things like hyperparameter tuning.
 
-Finn does not leverage spark data frames (yet!), so the input data to Finn still needs to be a standard data frame or tibble. The "forecast_time_series" function will be looking for a variable called "sc" to use when submitting tasks to the spark cluster, so make sure you use that as the variable name when connecting to spark.
-
-## Within Azure using Azure Batch
-
-Important Note: The Azure Batch R packages have been deprecated. Please leverage the newer Azure compute options with Finn (like spark). 
-
-The second most efficient way to run Finn in Azure is to set "parallel_processing" to "azure_batch" and set "run_model_parallel" to "TRUE" within the "forecast_time_series" function. This will run each time series in separate virtual machines (VM) in Azure Batch. Within each VM, hyperparameter tuning, modeling refitting, and model averaging are all done in parallel across the cores available on the machine. 
-
-[Azure Batch](https://azure.microsoft.com/en-us/products/batch/#overview) is a powerful resource from Microsoft Azure, that allows for easily salable parallel compute. Finn leverages the [doAzureParallel](https://github.com/Azure/doAzureParallel) and rAzureBatch packages built by Microsoft to connect to Azure batch. Refer to their [GitHub site](https://github.com/Azure/doAzureParallel) for more information about how it works under the hood and how to set up your own Azure Batch resource to use with Finn. 
-
-In order to have Finn live on CRAN, it cannot contain any package dependencies that live outside of CRAN. The doAzureParallel and rAzureBatch packages are only on GitHub, so they will have to be installed and called outside of Finn. 
-
-Reference the example below to understand how to connect to an Azure Batch compute cluster and submit forecasts to run in the cloud. Make sure to enter your specific Azure account information. 
-
-```{r, message = FALSE, eval = FALSE}
-# load CRAN libraries
-library(finnts)
-library(devtools)
-
-# load GitHub libraries
-devtools::install_github("Azure/rAzureBatch")
-devtools::install_github("Azure/doAzureParallel")
-
-library(rAzureBatch)
-library(doAzureParallel)
-
-# create azure batch cluster info
-azure_batch_credentials <- list(
-  "sharedKey" = list(
-    "batchAccount" = list(
-      "name" = "<insert resource name>",
-      "key" = "<insert compute key>",
-      "url" = "<insert resource URL>"
-    ),
-    "storageAccount" = list(
-      "name" = "<insert resource name>",
-      "key" = "<insert compute key>",
-      "endpointSuffix" = "core.windows.net"
-    )
-  ),
-  "githubAuthenticationToken" = "",
-  "dockerAuthentication" = list("username" = "",
-                                "password" = "",
-                                "registry" = "")
-)
-
-azure_batch_cluster_config <- list(
-  "name" = "<insert compute cluster name>",
-  "vmSize" = "Standard_D5_v2", # solid VM size that has worked well in the past with Finn forecasts
-  "maxTasksPerNode" = 1, # tells the cluster to only run one unique time series for each VM. That enables us to then run another layer of parallel processing within the VM
-  "poolSize" = list(
-    "dedicatedNodes" = list(
-      "min" = 1,
-      "max" = 200
-    ),
-    "lowPriorityNodes" = list(
-      "min" = 1,
-      "max" = 100
-    ),
-    "autoscaleFormula" = "QUEUE" # automatically scales up VM's as more jobs get sent to the cluster. 
-  ),
-  "containerImage" = "mftokic/finn-azure-batch-dev", # docker image you can use that automatically downloads software needed for Finn to run in cloud
-  "rPackages" = list(
-    "cran" = c('Rcpp', 'modeltime', 'modeltime.resample', 'parsnip', 'tune', 'recipes', 'rsample', 'workflows', 'dials', 'lubridate', 'rules', 'Cubist', 'earth', 'kernlab', 'doParallel', 'dplyr', 'tibble', 'tidyr', 'purrr', 'stringr', 'prophet', 'glmnet', 'gtools'), # finnts package dependencies
-    "github" = list(),
-    "bioconductor" = list()
-  ),
-  "commandLine" = list()
-)
-
-# create or connect to existing Azure Batch cluster
-doAzureParallel::setCredentials(azure_batch_credentials)
-cluster <- doAzureParallel::makeCluster(azure_batch_cluster_config)
-doAzureParallel::registerDoAzureParallel(cluster)
-
-# call Finn with Azure Batch parallel processing
-hist_data <- timetk::m4_monthly %>%
-  dplyr::rename(Date = date) %>%
-  dplyr::mutate(id = as.character(id))
-
-finn_output <- finnts::forecast_time_series(
-  input_data = hist_data,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 3, 
-  parallel_processing = "azure_batch", 
-  run_name = "azure_batch_forecast_test"
-)
-
-# optional code to delete compute cluster
-parallel::stopCluster(cluster)
-```
-
-The best part of Azure Batch is how it can easily scale to more compute as needed. In the above example, the lowest amount of VM's running at any time will be 2, and can easily scale to 300 when needed. This allows you to pay for extra compute only when you need it, and allows for forecasts to run that much quicker. You can have separate Finn forecasts (different data sets or inputs) submitted to the same Azure Batch cluster to all run in parallel. How cool is that?!
-
-To keep your Azure resource keys secure without hard coding them into a R script, check out the [Azure Key Vault](https://github.com/Azure/AzureKeyVault) package to safely retrieve and leverage keys/secrets when using Finn. 
+`forecast_time_series()` will be looking for a variable called "sc" to use when submitting tasks to the spark cluster, so make sure you use that as the variable name when connecting to spark. Also it's important that you mount your spark session to an Azure Data Lake Storage (ADLS) account, and provide the mounted path to where you'd like your Finn results to be written to within `set_run_info()`.

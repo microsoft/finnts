@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.2.4
+Version: 0.2.4.9000
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -29,11 +29,14 @@ Imports:
     cli,
     Cubist,
     dials,
+    digest, 
     doParallel,
     dplyr,
     earth,
     foreach,
+    fs,
     generics,
+    glue, 
     glmnet,
     gtools,
     hts,
@@ -49,19 +52,27 @@ Imports:
     recipes,
     rsample,
     rules,
+    snakecase,
     stringr,
     tibble,
     tidyr,
     tidyselect,
     timetk,
     tune,
-    workflows
+    vroom,
+    workflows, 
+    yardstick
 Suggests: 
+    arrow (>= 8.0.0),
+    AzureStor,
     knitr,
+    Microsoft365R,
+    notebookutils, 
     reactable,
     rmarkdown,
     sparklyr,
-    testthat (>= 3.0.0)
+    testthat (>= 3.0.0), 
+    qs
 Config/testthat/edition: 3
 Depends: 
     R (>= 3.6.0), 

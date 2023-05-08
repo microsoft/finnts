@@ -14,29 +14,29 @@ knitr::opts_chunk$set(
 )
 ```
 
-External regressors in finnts can be entered two separate ways. 
+External regressors in finnts can be entered two separate ways.
 
-- historical values only
-- historical and future values
+-   historical values only
+-   historical and future values
 
 ### Historical Values Only
 
-If you have an external regressor, with just their historical values, finnts will only use lags of those values when creating features to use in a model. That fixes the need to know or predict what these values should be in the future. Forecasting these values into the future, either by simple methods like arima/ets or even using finnts to daisy chain forecasting regressors to then forecast the final target variable, only adds additional layers of uncertainty with the final future forecast. Using forecasts as inputs to another forecast can get out of hand quick, and is something we try to avoid within finnts. 
+If you have an external regressor with just their historical values, finnts will only use lags of those values when creating features to use in a model. That fixes the need to know or predict what these values should be in the future. Forecasting these values into the future, either by simple methods like arima/ets or even using finnts to daisy chain forecasting regressors to then forecast the final target variable, only adds additional layers of uncertainty with the final future forecast. Using forecasts as inputs to another forecast can get out of hand quick, and is something we try to avoid within finnts.
 
-**Note: ** This only works for continuous (numeric) external regressors. 
+**Note:** This only works for continuous (numeric) external regressors.
 
 ### Historical and Future Values
 
-If you have an external regressor, with both their historical and future values, finnts will then use both current (t-0) and lag (t-n) values when creating features to use in a model. This is required for categorical regressors, but optional for continuous (numeric) regressors. 
+If you have an external regressor, with both their historical and future values, finnts will then use both current (t-0) and lag (t-n) values when creating features to use in a model. This is required for categorical regressors, but optional for continuous (numeric) regressors.
 
-**Note: ** Future values of external regressors need to be provided for the entire forecast horizon. Current (t-0) values of these regressors will also be used as features during the back testing process. 
+**Note:** Future values of external regressors need to be provided for the entire forecast horizon. Current (t-0) values of these regressors will also be used as features during the back testing process.
 
-Below is an example of how you can set up your input_data to leverage future values of external regressors
+Below is an example of how you can set up your input_data to leverage future values of external regressors.
 
-- monthly date type
-- forecast horizon of 3
-- historical end date of "2020-12-01"
-- external regressors: Holiday, GDP, Sales_Pipeline
+-   monthly date type
+-   forecast horizon of 3
+-   historical end date of "2020-12-01"
+-   external regressors: Holiday, GDP, Sales_Pipeline
 
 ```{r, echo = FALSE, message = FALSE}
 library(dplyr)

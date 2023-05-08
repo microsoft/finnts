@@ -63,17 +63,17 @@ reactable::reactable(
 
 * **Univariate models** only use the date and target variable values when producing a forecast. They are mostly common on various statistical forecasting models like arima and ets. 
 
-* **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and svm-poly, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2" added onto the end of multivariate models. For example, "glmnet-R1" uses a specific recipe to engineer features before feeding the data into a glmnet model to train. 
+* **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette. 
 
 ### Global vs Local Models
 
-* **Global models** take the entire dataset across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series. 
+* **Global models** take the entire data set across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series. 
 
 * **Local models** take each individual time series from the input data and model them separately. 
 
 ### Ensemble Models
 
-Ensemble models are trained on predictions made by individual models. For example, a "glmnet-ensemble" model takes forecasts made by each individual model and feeds them as training data into a glmnet model. They also contain features related to date and forecasting horizon.
+Ensemble models are trained on predictions made by individual models. For example, a glmnet ensemble model takes forecasts made by each individual model and feeds them as training data into a glmnet model.
 
 ## Leveraging the Tidymodels Framework
 
