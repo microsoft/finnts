@@ -114,8 +114,8 @@ prep_hierarchical_data <- function(input_data,
 adjust_df <- function(input_data,
                       return_type = "df") {
   if (return_type == "sdf" & inherits(input_data, c("tbl", "tbl_df", "data.frame"))) {
-    input_data <- sparklyr::sdf_copy_to(sc, input_data, overwrite = TRUE) %>%
-      sparklyr::sdf_register()
+    input_data <- sparklyr::sdf_copy_to(sc, input_data, overwrite = TRUE) #%>%
+      #sparklyr::sdf_register()
     return(input_data)
   } else if (return_type == "sdf" & inherits(input_data, "tbl_spark")) {
     # sparklyr::tbl_cache(sc, 'input_data', force = TRUE)
