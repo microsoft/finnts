@@ -98,7 +98,8 @@ get_forecast_data <- function(run_info,
     tidyr::separate(
       col = Combo,
       into = combo_variables,
-      remove = FALSE
+      remove = FALSE, 
+      sep = "--"
     ) %>%
     base::suppressWarnings()
 
