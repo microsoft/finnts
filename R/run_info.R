@@ -83,11 +83,25 @@ set_run_info <- function(experiment_name = "finn_fcst",
   } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_data_folder) %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_models_folder) %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, models_folder) %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, forecasts_folder) %>% as.character())
-    notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, logs_folder) %>% as.character())
+    if (!dir.exists(fs::path(path, prep_data_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_data_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(path, prep_models_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_models_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(path, models_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, models_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(path, forecasts_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, forecasts_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(path, logs_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, logs_folder) %>% as.character())
+    }
   } else if (is.null(storage_object)) {
     fs::dir_create(path, prep_data_folder)
     fs::dir_create(path, prep_models_folder)
@@ -142,7 +156,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     current_log_df <- tibble::tibble(
       experiment_name = experiment_name,
       run_name = run_name,
-      path = path,
+      path = gsub("synfs/\\d+", "synfs", path), # remove synapse id to prevent issues
       data_output = data_output,
       object_output = object_output
     ) %>%
@@ -150,6 +164,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
 
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
+      dplyr::mutate(path = gsub("synfs/\\d+", "synfs", path)) %>% # remove synapse id to prevent issues
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
