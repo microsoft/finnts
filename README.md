@@ -6,6 +6,8 @@ editor_options:
 
 # Microsoft Finance Time Series Forecasting Framework
 
+[![](man/figures/logo.png){width="119"}](https://microsoft.github.io/finnts/)
+
 <!-- badges: start -->
 
 [![CRAN_Status_Badge](http://www.r-pkg.org/badges/version/finnts)](https://cran.r-project.org/package=finnts)
