@@ -1,6 +1,6 @@
 # Microsoft Finance Time Series Forecasting Framework
 
-[![](man/figures/logo.png){width="110"}](https://microsoft.github.io/finnts/)
+[![](man/figures/logo.png){align="right" width="110"}](https://microsoft.github.io/finnts/)
 
 <!-- badges: start -->
 
