@@ -1,6 +1,6 @@
 # Microsoft Finance Time Series Forecasting Framework
 
-<img src="man/figures/logo.png" align="right" width="110"/>
+<img src="man/figures/logo.png" align="right" height="200"/>
 
 <!-- badges: start -->
 
