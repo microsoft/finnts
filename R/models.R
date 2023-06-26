@@ -611,7 +611,7 @@ meanf <- function(train_data,
     get_recipie_simple()
 
   model_spec_meanf <- modeltime::window_reg(
-    window_size = frequency
+    window_size = round(frequency)
   ) %>%
     parsnip::set_engine(
       engine = "window_function",
@@ -815,7 +815,7 @@ snaive <- function(train_data,
     get_recipie_simple()
 
   model_spec_snaive <- modeltime::naive_reg(
-    seasonal_period = frequency
+    seasonal_period = round(frequency)
   ) %>%
     parsnip::set_engine("snaive")
 
