@@ -444,17 +444,19 @@ train_models <- function(run_info,
 
       # check if tuning failed
       if (is.null(initial_tune_tbl)) {
-        if (x == "All-Data") {
-          combo_name <- "Global-Model"
-        } else {
-          combo_name <- model_recipe_tbl %>%
-            dplyr::slice(1) %>%
-            dplyr::select(Data) %>%
-            tidyr::unnest(Data) %>%
-            dplyr::select(Combo) %>%
-            dplyr::pull(Combo) %>%
-            unique()
-        }
+        # if (x == "All-Data") {
+        #   combo_name <- "Global-Model"
+        # } else {
+        #   combo_name <- model_recipe_tbl %>%
+        #     dplyr::slice(1) %>%
+        #     dplyr::select(Data) %>%
+        #     tidyr::unnest(Data) %>%
+        #     dplyr::select(Combo) %>%
+        #     dplyr::pull(Combo) %>%
+        #     unique()
+        # }
+        
+        combo_name <- x
 
         stop(paste0(
           "All models failed during hyperparameter tuning process for time series combo: '",
