@@ -589,6 +589,41 @@ prep_data <- function(run_info,
       )
   }
 
+  # check if all time series combos ran correctly
+  successful_combos <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*R*.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique() %>%
+    length() %>%
+    suppressWarnings()
+
+  total_combos <- current_combo_list %>%
+    dplyr::pull(Combo_Hash) %>%
+    unique() %>%
+    length()
+
+  if (successful_combos != total_combos) {
+    stop(paste0(
+      "Not all time series were prepped within 'prep_data', expected ",
+      total_combos, " time series but only ", successful_combos,
+      " time series are prepped. ", "Please run 'prep_data' again."
+    ),
+    call. = FALSE
+    )
+  }
+
   # update logging file
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
