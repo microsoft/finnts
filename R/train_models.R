@@ -255,9 +255,8 @@ train_models <- function(run_info,
     .noexport = NULL
   ) %op%
     {
-      
       combo_hash <- x
-      
+
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x
       )
