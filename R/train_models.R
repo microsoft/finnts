@@ -255,6 +255,9 @@ train_models <- function(run_info,
     .noexport = NULL
   ) %op%
     {
+      
+      combo_hash <- x
+      
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x
       )
@@ -328,7 +331,6 @@ train_models <- function(run_info,
         .noexport = NULL
       ) %op%
         {
-
           # run input values
           param_combo <- x %>%
             dplyr::pull(Hyperparameter_ID)
@@ -443,6 +445,29 @@ train_models <- function(run_info,
 
       par_end(inner_cl)
 
+      # check if tuning failed
+      if (is.null(initial_tune_tbl)) {
+        if (combo_hash == "All-Data") {
+          combo_name <- "Global-Model"
+        } else {
+          combo_name <- model_recipe_tbl %>%
+            dplyr::slice(1) %>%
+            dplyr::select(Data) %>%
+            tidyr::unnest(Data) %>%
+            dplyr::select(Combo) %>%
+            dplyr::pull(Combo) %>%
+            unique()
+        }
+
+        stop(paste0(
+          "All models failed during hyperparameter tuning process for time series combo: '",
+          combo_name, "'"
+        ),
+        call. = FALSE
+        )
+      }
+
+      # select best hyperparamters
       best_param <- initial_tune_tbl %>%
         tidyr::unnest(Prediction) %>%
         dplyr::mutate(SE = (Target - Forecast)^2) %>%
