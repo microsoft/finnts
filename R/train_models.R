@@ -707,7 +707,7 @@ train_models <- function(run_info,
         )
       }
 
-      return(tibble::tibble())
+      return(tibble::tibble(Combo_Hash = combo_hash))
     } %>%
     base::suppressPackageStartupMessages()
 
