@@ -668,7 +668,7 @@ ensemble_models <- function(run_info,
         suffix = "-ensemble_models"
       )
 
-      return(tibble::tibble())
+      return(data.frame(Combo = combo))
     } %>%
     base::suppressPackageStartupMessages()
 
