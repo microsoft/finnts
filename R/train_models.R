@@ -714,6 +714,43 @@ train_models <- function(run_info,
   # clean up any parallel run process
   par_end(cl)
 
+  # check if all time series combos ran correctly
+  successful_combo_tbl <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    base::suppressWarnings()
+
+  successful_combos <- successful_combo_tbl %>%
+    dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
+    dplyr::pull(Combo) %>%
+    unique() %>%
+    length()
+
+  total_combos <- current_combo_list %>%
+    unique() %>%
+    length()
+
+  if (successful_combos != total_combos) {
+    stop(paste0(
+      "Not all time series were completed within 'train_models', expected ",
+      total_combos, " time series but only ", successful_combos,
+      " time series were ran. ", "Please run 'train_models' again."
+    ),
+    call. = FALSE
+    )
+  }
+
   # update logging file
   log_df <- log_df %>%
     dplyr::mutate(
