@@ -164,7 +164,7 @@ ensemble_models <- function(run_info,
 
   # get ind model forecasts ready for ensemble models
   ensemble_tbl <- foreach::foreach(
-    x = combo_list,
+    x = current_combo_list_final,
     .combine = "rbind",
     .packages = packages,
     .errorhandling = "remove",
@@ -674,4 +674,35 @@ ensemble_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
+
+  # check if all time series combos ran correctly
+  successful_combos <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*ensemble_models.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .,
+      File = fs::path_file(.)
+    ) %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique() %>%
+    length()
+
+  total_combos <- current_combo_list %>%
+    unique() %>%
+    length()
+
+  if (successful_combos != total_combos) {
+    stop(paste0(
+      "Not all time series were completed within 'ensemble_models', expected ",
+      total_combos, " time series but only ", successful_combos,
+      " time series were ran. ", "Please run 'ensemble_models' again."
+    ),
+    call. = FALSE
+    )
+  }
 }

@@ -668,7 +668,7 @@ convert_weekly_to_daily <- function(fcst_tbl,
 #' @noRd
 remove_best_model <- function(df) {
   if ("Best_Model" %in% names(df)) {
-    df <- df %>% select(-Best_Model)
+    df <- df %>% dplyr::select(-Best_Model)
   }
   return(df)
 }
