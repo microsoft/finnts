@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9006</span>
       </span>
     </div>
 
@@ -144,7 +144,7 @@
 <li>If you do use the sub components of Finn, then definitely set <code>add_unique_id</code> to FALSE within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>. That will let you call the exact same run info in each separate pipeline step. Make sure that you are using your own unique <code>run_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, one that is different than previous Finn runs but the same name when using <code><a href="../reference/set_run_info.html">set_run_info()</a></code> in each pipeline step.</li>
 <li>Connect your Azure ML Pipeline to a spark compute cluster and mount an Azure Data Lake Storage connection. Either through Azure Databricks or Azure Synapse. Also consider using different spark cluster configurations depending on the Finn forecast sub component you are running in each pipeline step.
 <ul>
-<li>For <code><a href="../reference/prep_data.html">prep_data()</a></code> and <code><a href="../reference/prep_models.html">prep_models()</a></code>, use the default spark cluster settings. Where each spark task get’s sent to a specific core on an executor.</li>
+<li>For <code><a href="../reference/prep_data.html">prep_data()</a></code> and <code><a href="../reference/prep_models.html">prep_models()</a></code>, use the default spark cluster settings. Where each spark task gets sent to a specific core on an executor.</li>
 <li>For all other functions like <code><a href="../reference/train_models.html">train_models()</a></code>, <code><a href="../reference/ensemble_models.html">ensemble_models()</a></code>, and <code><a href="../reference/final_models.html">final_models()</a></code> consider adjusting the spark cluster settings like “spark.executor.cores” equal to 1 and set <code>inner_parallel</code> to TRUE within each function. That way only a single task/time series gets sent to each spark executor node, and all cores within that node can be used during the modeling process for that task/time series. Use <code>num_cores</code> within each function to control how many cores on the executor to use, with the default being all available cores minus one. This can significantly speed up run time, but if you have many time series and want to run all of the models within Finn ensure that you have a spark cluster that can scale to many VM’s.</li>
 </ul>
 </li>

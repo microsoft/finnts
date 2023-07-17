@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9006</span>
       </span>
     </div>
 
@@ -133,19 +133,19 @@
 <pre><code><span><span class="co">#&gt; Loading required package: modeltime</span></span>
 <span><span class="co">#&gt; Finn Submission Info</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Experiment Name: finnts_fcst</span></span>
-<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20230714T180616Z</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20230717T200652Z</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Prepping Data</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[4.4s]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[3.8s]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[548ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[470ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[565ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[488ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[1.3s]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[1.2s]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 55 × 4</span></span></span>
 <span><span class="co">#&gt;    Run_Type        Train_Test_ID Train_End  Test_End  </span></span>
@@ -183,7 +183,7 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> xgboost R1                        7 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> xgboost R1                        8 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># ℹ 12 more rows</span></span></span></code></pre>
-<p>The above outputs allow a Finn user to understand what hyperparameters are chosen for tuning and how the model refitting process will work. When tuning hyperparameters, Finn uses the “Validation” train/test splits, with the final parameters chosen using RSME. For some models like ARIMA that don’t follow a traditional hyperparameter tuning process, the model is fit from scratch across all train/test splits. After hyperparameters are chosen, the model is refit across the “Back_Test” and “Future_Forecast” splits. The “Back_Test” splits are the true testing data that will be used when selecting the final “Best-Model”. “Ensemble” splits are also created as ensemble training data if ensemble models are chosen to run. Ensemble models follow a similar tuning process.</p>
+<p>The above outputs allow a Finn user to understand what hyperparameters are chosen for tuning and how the model refitting process will work. When tuning hyperparameters, Finn uses the “Validation” train/test splits, with the final parameters chosen using RMSE. For some models like ARIMA that don’t follow a traditional hyperparameter tuning process, the model is fit from scratch across all train/test splits. After hyperparameters are chosen, the model is refit across the “Back_Test” and “Future_Forecast” splits. The “Back_Test” splits are the true testing data that will be used when selecting the final “Best-Model”. “Ensemble” splits are also created as ensemble training data if ensemble models are chosen to run. Ensemble models follow a similar tuning process.</p>
   </div>
 
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">
