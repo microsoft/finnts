@@ -697,12 +697,11 @@ ensemble_models <- function(run_info,
     length()
 
   if (successful_combos != total_combos) {
-    stop(paste0(
+    cli::cli_alert_info(paste0(
       "Not all time series were completed within 'ensemble_models', expected ",
       total_combos, " time series but only ", successful_combos,
-      " time series were ran. ", "Please run 'ensemble_models' again."
-    ),
-    call. = FALSE
-    )
+      " time series were ran. Some ran into errors."
+    ))
+    cli::cli_progress_update()
   }
 }

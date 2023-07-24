@@ -426,8 +426,10 @@ prep_data <- function(run_info,
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
+        fn_env <- .GlobalEnv
+
         for (name in names(context)) {
-          assign(name, context[[name]], envir = .GlobalEnv)
+          assign(name, context[[name]], envir = fn_env)
         }
 
         combo <- unique(df$Combo)
