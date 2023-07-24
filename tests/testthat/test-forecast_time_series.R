@@ -30,7 +30,7 @@ finn_forecast <- forecast_time_series(
   back_test_scenarios = 3,
   models_to_run = models_to_run,
   run_global_models = FALSE,
-  run_ensemble_models = FALSE, 
+  run_ensemble_models = FALSE,
   average_models = FALSE
 )
 
@@ -143,7 +143,7 @@ finn_forecast <- forecast_time_series(
   models_to_run = models_to_run,
   recipes_to_run = "R1",
   run_global_models = FALSE,
-  run_ensemble_models = FALSE, 
+  run_ensemble_models = FALSE,
   average_models = FALSE
 )
 
@@ -249,7 +249,7 @@ finn_forecast <- forecast_time_series(
   models_to_run = models_to_run,
   recipes_to_run = "R1",
   run_global_models = FALSE,
-  run_ensemble_models = FALSE, 
+  run_ensemble_models = FALSE,
   average_models = FALSE
 )
 
