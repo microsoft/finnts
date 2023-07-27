@@ -12,7 +12,8 @@ prep_models(
   models_not_to_run = NULL,
   run_ensemble_models = TRUE,
   pca = FALSE,
-  num_hyperparameters = 10
+  num_hyperparameters = 10,
+  seed = 123
 )
 }
 \arguments{
@@ -41,6 +42,8 @@ across all date types.}
 
 \item{num_hyperparameters}{number of hyperparameter combinations to test
 out on validation data for model tuning.}
+
+\item{seed}{Set seed for random number generator. Numeric value.}
 }
 \value{
 Writes outputs related to model prep to disk.
