@@ -183,7 +183,8 @@ forecast_time_series <- function(run_info = NULL,
     models_not_to_run,
     run_ensemble_models,
     pca,
-    num_hyperparameters = 10
+    num_hyperparameters = 10,
+    seed
   )
 
   train_models(run_info,

@@ -22,6 +22,7 @@
 #'   across all date types.
 #' @param num_hyperparameters number of hyperparameter combinations to test
 #'   out on validation data for model tuning.
+#' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Writes outputs related to model prep to disk.
 #'
@@ -57,7 +58,8 @@ prep_models <- function(run_info,
                         models_not_to_run = NULL,
                         run_ensemble_models = TRUE,
                         pca = FALSE,
-                        num_hyperparameters = 10) {
+                        num_hyperparameters = 10,
+                        seed = 123) {
 
   # check input values
   check_input_type("run_info", run_info, "list")
@@ -67,6 +69,7 @@ prep_models <- function(run_info,
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
   check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
+  check_input_type("seed", seed, "numeric")
 
   # create model workflows
   model_workflows(
@@ -79,7 +82,8 @@ prep_models <- function(run_info,
   # create model hyperparameters
   model_hyperparameters(
     run_info,
-    num_hyperparameters
+    num_hyperparameters,
+    seed
   )
 
   # create train test splits
@@ -627,11 +631,13 @@ model_workflows <- function(run_info,
 #'
 #' @param run_info run info
 #' @param num_hyperparameters number of hyperparameter combinations
+#' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return table of model hyperparameters
 #' @noRd
 model_hyperparameters <- function(run_info,
-                                  num_hyperparameters = 10) {
+                                  num_hyperparameters = 10,
+                                  seed = 123) {
   cli::cli_progress_step("Creating Model Hyperparameters")
 
   # check if input values have changed
@@ -749,6 +755,8 @@ model_hyperparameters <- function(run_info,
           workflows::extract_parameter_set_dials() %>%
           dials::finalize(recipe_features, force = FALSE)
       }
+
+      set.seed(seed)
 
       grid <- dials::grid_latin_hypercube(parameters, size = num_hyperparameters)
 
