@@ -69,6 +69,7 @@ prep_models <- function(run_info,
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
   check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
+  check_input_type("seed", seed, "numeric")
 
   # create model workflows
   model_workflows(
