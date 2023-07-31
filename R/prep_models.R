@@ -57,7 +57,7 @@ prep_models <- function(run_info,
                         models_to_run = NULL,
                         models_not_to_run = NULL,
                         run_ensemble_models = TRUE,
-                        pca = FALSE,
+                        pca = NULL,
                         num_hyperparameters = 10,
                         seed = 123) {
 
@@ -76,7 +76,8 @@ prep_models <- function(run_info,
     run_info,
     models_to_run,
     models_not_to_run,
-    pca
+    pca,
+    seed
   )
 
   # create model hyperparameters
@@ -415,14 +416,18 @@ train_test_split <- function(run_info,
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
 #' @param pca pca
+#' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Returns table of model workflows
 #' @noRd
 model_workflows <- function(run_info,
                             models_to_run = NULL,
                             models_not_to_run = NULL,
-                            pca = NULL) {
+                            pca = NULL,
+                            seed = 123) {
   cli::cli_progress_step("Creating Model Workflows")
+
+  set.seed(seed)
 
   # get inputs
   log_df <- read_file(run_info,
@@ -436,8 +441,10 @@ model_workflows <- function(run_info,
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
-  } else {
+  } else if (is.null(pca)) {
     pca <- FALSE
+  } else {
+    # do nothing
   }
 
   # check if input values have changed
