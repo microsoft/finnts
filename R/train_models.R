@@ -330,6 +330,7 @@ train_models <- function(run_info,
         .noexport = NULL
       ) %op%
         {
+
           # run input values
           param_combo <- x %>%
             dplyr::pull(Hyperparameter_ID)
@@ -387,15 +388,6 @@ train_models <- function(run_info,
               dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
           }
 
-          # get workflow
-          workflow <- model_workflow_tbl %>%
-            dplyr::filter(
-              Model_Name == model,
-              Model_Recipe == data_prep_recipe
-            )
-
-          workflow_final <- workflow$Model_Workflow[[1]]
-
           # get hyperparameters
           hyperparameters <- model_hyperparameter_tbl %>%
             dplyr::filter(
@@ -406,12 +398,21 @@ train_models <- function(run_info,
             dplyr::select(Hyperparameters) %>%
             tidyr::unnest(Hyperparameters)
 
+          # get workflow
+          workflow <- model_workflow_tbl %>%
+            dplyr::filter(
+              Model_Name == model,
+              Model_Recipe == data_prep_recipe
+            )
+
+          workflow_final <- workflow$Model_Workflow[[1]] %>%
+            tune::finalize_workflow(parameters = hyperparameters)
+
           # fit model
           set.seed(seed)
 
           if (nrow(hyperparameters) > 0) {
             model_fit <- workflow_final %>%
-              tune::finalize_workflow(parameters = hyperparameters) %>%
               generics::fit(data = training)
           } else {
             model_fit <- workflow_final %>%
@@ -419,6 +420,8 @@ train_models <- function(run_info,
           }
 
           # create prediction
+          set.seed(seed)
+
           model_prediction <- testing %>%
             dplyr::bind_cols(
               predict(model_fit, new_data = testing)
@@ -594,15 +597,6 @@ train_models <- function(run_info,
               dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
           }
 
-          # get workflow
-          workflow <- model_workflow_tbl %>%
-            dplyr::filter(
-              Model_Name == model,
-              Model_Recipe == recipe
-            )
-
-          workflow_final <- workflow$Model_Workflow[[1]]
-
           # get hyperparameters
           hyperparameters <- model_hyperparameter_tbl %>%
             dplyr::filter(
@@ -613,12 +607,21 @@ train_models <- function(run_info,
             dplyr::select(Hyperparameters) %>%
             tidyr::unnest(Hyperparameters)
 
+          # get workflow
+          workflow <- model_workflow_tbl %>%
+            dplyr::filter(
+              Model_Name == model,
+              Model_Recipe == recipe
+            )
+
+          workflow_final <- workflow$Model_Workflow[[1]] %>%
+            tune::finalize_workflow(parameters = hyperparameters)
+
           # fit model
           set.seed(seed)
 
           if (nrow(hyperparameters) > 0) {
             model_fit <- workflow_final %>%
-              tune::finalize_workflow(parameters = hyperparameters) %>%
               generics::fit(data = training)
           } else {
             model_fit <- workflow_final %>%
@@ -626,6 +629,8 @@ train_models <- function(run_info,
           }
 
           # create prediction
+          set.seed(seed)
+
           model_prediction <- testing %>%
             dplyr::bind_cols(
               predict(model_fit, new_data = testing)
