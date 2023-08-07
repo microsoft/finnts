@@ -28,8 +28,7 @@
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.
 #' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
-#'   Value of 'azure_batch' runs time series in parallel on a remote compute cluster in Azure Batch. Value of 'spark'
-#'   runs time series in parallel on a spark cluster in Azure Databricks/Synapse.
+#'   Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 #'   than number of cores on machine minus 1.

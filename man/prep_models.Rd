@@ -11,7 +11,7 @@ prep_models(
   models_to_run = NULL,
   models_not_to_run = NULL,
   run_ensemble_models = TRUE,
-  pca = FALSE,
+  pca = NULL,
   num_hyperparameters = 10,
   seed = 123
 )

@@ -174,6 +174,8 @@ ensemble_models <- function(run_info,
     .noexport = NULL
   ) %op%
     {
+      set.seed(seed)
+
       combo <- x
 
       # model forecasts
@@ -286,6 +288,8 @@ ensemble_models <- function(run_info,
             dials::finalize(recipe_features, force = FALSE)
         }
 
+        set.seed(seed)
+
         grid <- dials::grid_latin_hypercube(parameters, size = num_hyperparameters)
 
         hyperparameters_temp <- grid %>%
@@ -352,7 +356,6 @@ ensemble_models <- function(run_info,
         .noexport = NULL
       ) %op%
         {
-
           # run input values
           param_combo <- x %>%
             dplyr::pull(Hyperparameter_ID)
@@ -389,12 +392,6 @@ ensemble_models <- function(run_info,
               Train_Test_ID == data_split
             )
 
-          # get workflow
-          workflow <- model_workflow_tbl %>%
-            dplyr::filter(Model_Name == model)
-
-          workflow_final <- workflow$Model_Workflow[[1]]
-
           # get hyperparameters
           hyperparameters <- hyperparameters_tbl %>%
             dplyr::filter(
@@ -404,14 +401,22 @@ ensemble_models <- function(run_info,
             dplyr::select(Hyperparameters) %>%
             tidyr::unnest(Hyperparameters)
 
+          # get workflow
+          workflow <- model_workflow_tbl %>%
+            dplyr::filter(Model_Name == model)
+
+          workflow_final <- workflow$Model_Workflow[[1]] %>%
+            tune::finalize_workflow(parameters = hyperparameters)
+
           # fit model
           set.seed(seed)
 
           model_fit <- workflow_final %>%
-            tune::finalize_workflow(parameters = hyperparameters) %>%
             generics::fit(data = training)
 
           # create prediction
+          set.seed(seed)
+
           model_prediction <- testing %>%
             dplyr::bind_cols(
               predict(model_fit, new_data = testing)
@@ -608,6 +613,8 @@ ensemble_models <- function(run_info,
             generics::fit(data = training)
 
           # create prediction
+          set.seed(seed)
+
           model_prediction <- testing %>%
             dplyr::bind_cols(
               predict(model_fit, new_data = testing)
