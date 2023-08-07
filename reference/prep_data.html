@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9008</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9009</span>
       </span>
     </div>
 
@@ -192,8 +192,7 @@ a more traditional hierarchical time series to forecast, both based on the hts p
 <dt>parallel_processing</dt>
 <dd><p>Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
-Value of 'azure_batch' runs time series in parallel on a remote compute cluster in Azure Batch. Value of 'spark'
-runs time series in parallel on a spark cluster in Azure Databricks/Synapse.</p></dd>
+Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.</p></dd>
 
 
 <dt>num_cores</dt>
@@ -249,7 +248,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Experiment Name: finn_fcst</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20230727T191740Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20230807T182120Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">prep_data</span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -260,7 +259,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
 <span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[8.5s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[8.1s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
