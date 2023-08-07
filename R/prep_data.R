@@ -162,8 +162,10 @@ prep_data <- function(run_info,
       tidyselect::all_of(external_regressors),
       "Date", "Target"
     )) %>%
-    combo_cleanup_fn(combo_cleanup_date, 
-                     hist_end_date) %>%
+    combo_cleanup_fn(
+      combo_cleanup_date,
+      hist_end_date
+    ) %>%
     prep_hierarchical_data(run_info,
       combo_variables,
       forecast_approach,
@@ -692,12 +694,14 @@ get_log_transformation <- function(df,
 #' @return tbl with or without specific time series removed
 #' @noRd
 combo_cleanup_fn <- function(df,
-                             combo_cleanup_date, 
+                             combo_cleanup_date,
                              hist_end_date) {
   if (!is.null(combo_cleanup_date)) {
     combo_df <- df %>%
-      dplyr::filter(Date >= combo_cleanup_date, 
-                    Date <= hist_end_date) %>%
+      dplyr::filter(
+        Date >= combo_cleanup_date,
+        Date <= hist_end_date
+      ) %>%
       dplyr::group_by(Combo) %>%
       dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
       dplyr::filter(Sum != 0) %>%
