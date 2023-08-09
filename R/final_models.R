@@ -31,7 +31,7 @@
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     Date >= "2012-01-01",
+#'     Date >= "2013-01-01",
 #'     Date <= "2015-06-01"
 #'   )
 #'
@@ -46,7 +46,8 @@
 #' )
 #'
 #' prep_models(run_info,
-#'   models_to_run = c("arima", "ets")
+#'   models_to_run = c("arima", "ets"),
+#'   back_test_scenarios = 3
 #' )
 #'
 #' train_models(run_info,

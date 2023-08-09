@@ -46,7 +46,7 @@ A good example to use when producing your first Finn forecast is to leverage exi
 library(finnts)
 
 hist_data <- timetk::m4_monthly %>%
-  dplyr::filter(date >= "2010-01-01") %>%
+  dplyr::filter(date >= "2013-01-01") %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
 
@@ -82,7 +82,9 @@ forecast_time_series(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
-  models_to_run = c("arima", "ets")
+  back_test_scenarios = 6, 
+  models_to_run = c("arima", "ets"), 
+  return_data = FALSE
 )
 ```
 
@@ -90,7 +92,7 @@ forecast_time_series(
 
 ### Initial Finn Outputs
 
-```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
 
 finn_output_tbl <- get_forecast_data(run_info = run_info)
 
@@ -99,7 +101,7 @@ print(finn_output_tbl)
 
 ### Future Forecast
 
-```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
 
 future_forecast_tbl <- finn_output_tbl %>%
   dplyr::filter(Run_Type == "Future_Forecast")
@@ -109,7 +111,7 @@ print(future_forecast_tbl)
 
 ### Back Test Results
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
 back_test_tbl <- finn_output_tbl %>%
   dplyr::filter(Run_Type == "Back_Test")
 
@@ -118,7 +120,7 @@ print(back_test_tbl)
 
 ### Back Test Best Model per Time Series
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
 best_model_tbl <- finn_output_tbl %>%
   dplyr::filter(Best_Model == "Yes") %>%
   dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID) %>%
@@ -131,7 +133,7 @@ Note: the best model for the "M1" combination is a simple average of "arima" and
 
 ### Trained Models
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
 trained_model_tbl <- get_trained_models(run_info = run_info)
 
 print(trained_model_tbl)
@@ -139,7 +141,7 @@ print(trained_model_tbl)
 
 ### Initial Prepped Data
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
 R1_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
                                         recipe = "R1")
 
@@ -153,7 +155,7 @@ print(R2_prepped_data_tbl)
 
 ### Run Info Metadata
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE}
+```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
 run_info_tbl <- get_run_info(experiment_name = "finn_forecast")
 
 print(run_info_tbl)
