@@ -29,7 +29,7 @@ Let's get some example data and then set our Finn run info.
 library(finnts)
 
 hist_data <- timetk::m4_monthly %>%
-  dplyr::filter(date >= "2010-01-01", 
+  dplyr::filter(date >= "2013-01-01", 
                 id == "M2") %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
@@ -71,7 +71,7 @@ Then we can kick off training each model on our data.
 
 ```{r, message = FALSE}
 prep_models(run_info = run_info, 
-            models_to_run = c("arima", "ets", "xgboost"), 
+            models_to_run = c("arima", "ets", "glmnet"), 
             num_hyperparameters = 2)
 
 train_models(run_info = run_info, 

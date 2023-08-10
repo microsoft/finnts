@@ -22,7 +22,7 @@ When `prep_models()` is ran, hyperparameters and back test splits are calculated
 library(finnts)
 
 hist_data <- timetk::m4_monthly %>%
-  dplyr::filter(date >= "2010-01-01", 
+  dplyr::filter(date >= "2012-01-01", 
                 id == "M2") %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
@@ -37,6 +37,7 @@ prep_data(run_info = run_info,
           combo_variables = c("id"), 
           target_variable = "value", 
           date_type = "month", 
+          recipes_to_run = "R1",
           forecast_horizon = 6)
 
 prep_models(run_info = run_info, 

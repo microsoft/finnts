@@ -32,7 +32,7 @@
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     Date >= "2012-01-01",
+#'     Date >= "2013-01-01",
 #'     Date <= "2015-06-01"
 #'   )
 #'
@@ -49,6 +49,7 @@
 #' prep_models(run_info,
 #'   models_to_run = c("arima", "glmnet"),
 #'   num_hyperparameters = 2,
+#'   back_test_scenarios = 6,
 #'   run_ensemble_models = FALSE
 #' )
 #'

@@ -51,7 +51,7 @@
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     Date >= "2012-01-01",
+#'     Date >= "2013-01-01",
 #'     Date <= "2015-06-01"
 #'   )
 #'
@@ -62,7 +62,8 @@
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month",
-#'   forecast_horizon = 3
+#'   forecast_horizon = 3,
+#'   recipes_to_run = "R1"
 #' )
 #' }
 #' @export
