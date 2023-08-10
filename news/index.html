@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9011</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.3.0</span>
       </span>
     </div>
 
@@ -91,9 +91,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.2.4.9000" id="finnts-0249000-development-version">finnts 0.2.4.9000 (Development Version)<a class="anchor" aria-label="anchor" href="#finnts-0249000-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.3.0" id="finnts-030">finnts 0.3.0<small>2023-08-09</small><a class="anchor" aria-label="anchor" href="#finnts-030"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-2-4-9000">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-2-4-9000"></a></h3>
+<h3 id="improvements-0-3-0">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-3-0"></a></h3>
 <ul><li>Spark data frame support. Initial input data can now be a spark data frame, enabling millions of time series to be ran across a spark compute cluster.</li>
 <li>Updated train/validation/test process for multivariate ML models.</li>
 <li>In addition to existing <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>, added new sub components of the finnts forecast process that can be called separately or in a production pipeline. Allows for more control of the forecast process<ul><li><code><a href="../reference/prep_data.html">prep_data()</a></code></li>
@@ -109,14 +109,14 @@
 <li>New MLOps features that allow you to retrieve the final trained models through <code><a href="../reference/get_trained_models.html">get_trained_models()</a></code>, get specific run information thorough <code><a href="../reference/get_run_info.html">get_run_info()</a></code>, and even retrieve the initial feature engineered data through <code><a href="../reference/get_prepped_data.html">get_prepped_data()</a></code>.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="deprecated-0-2-4-9000">Deprecated<a class="anchor" aria-label="anchor" href="#deprecated-0-2-4-9000"></a></h3>
+<h3 id="deprecated-0-3-0">Deprecated<a class="anchor" aria-label="anchor" href="#deprecated-0-3-0"></a></h3>
 <ul><li>
 <code>run_model_parallel</code> has been replaced with <code>inner_parallel</code> within <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>
 </li>
 <li>Data being returned as a list when running <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. Instead please use <code><a href="../reference/get_forecast_data.html">get_forecast_data()</a></code> to retrieve Finn forecast outputs.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-2-4-9000">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-2-4-9000"></a></h3>
+<h3 id="breaking-changes-0-3-0">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-3-0"></a></h3>
 <ul><li>No longer support for Azure Batch parallel processing, please use spark instead</li>
 <li>Parallel processing through spark now needs a mounted Azure Data Lake Storage path supplied through <code><a href="../reference/set_run_info.html">set_run_info()</a></code>. Please refer to the vignettes for more details.</li>
 </ul></div>

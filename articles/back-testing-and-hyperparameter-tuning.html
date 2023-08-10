@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9011</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.3.0</span>
       </span>
     </div>
 
@@ -133,21 +133,21 @@
 <pre><code><span><span class="co">#&gt; Loading required package: modeltime</span></span>
 <span><span class="co">#&gt; Finn Submission Info</span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Experiment Name: finnts_fcst</span></span>
-<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20230807T222538Z</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20230810T190307Z</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Prepping Data</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[3.8s]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[1.2s]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[474ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[146ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[484ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[233ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[1.2s]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[508ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 55 × 4</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 31 × 4</span></span></span>
 <span><span class="co">#&gt;    Run_Type        Train_Test_ID Train_End  Test_End  </span></span>
 <span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                   <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>    </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Future_Forecast             1 2015-06-01 2015-12-01</span></span>
@@ -159,17 +159,16 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Back_Test                   7 2014-12-01 2015-06-01</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Back_Test                   8 2014-11-01 2015-05-01</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Back_Test                   9 2014-10-01 2015-04-01</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Back_Test                  10 2014-09-01 2015-03-01</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 45 more rows</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Validation                 10 2014-09-01 2014-10-01</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 21 more rows</span></span></span>
 <span><span class="co">#&gt; [1] "Future_Forecast" "Back_Test"       "Validation"      "Ensemble"</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 4 × 3</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 3 × 3</span></span></span>
 <span><span class="co">#&gt;   Model_Name Model_Recipe Model_Workflow</span></span>
 <span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>        </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> arima      R1           <span style="color: #949494;">&lt;workflow&gt;</span>    </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> ets        R1           <span style="color: #949494;">&lt;workflow&gt;</span>    </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> xgboost    R1           <span style="color: #949494;">&lt;workflow&gt;</span>    </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> xgboost    R2           <span style="color: #949494;">&lt;workflow&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 22 × 4</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> xgboost    R1           <span style="color: #949494;">&lt;workflow&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 12 × 4</span></span></span>
 <span><span class="co">#&gt;    Model   Recipe Hyperparameter_Combo Hyperparameters </span></span>
 <span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                 <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;list&gt;</span>          </span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> arima   R1                        1 <span style="color: #949494;">&lt;tibble [0 × 0]&gt;</span></span></span>
@@ -182,7 +181,8 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> xgboost R1                        6 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> xgboost R1                        7 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> xgboost R1                        8 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 12 more rows</span></span></span></code></pre>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> xgboost R1                        9 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> xgboost R1                       10 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span></code></pre>
 <p>The above outputs allow a Finn user to understand what hyperparameters are chosen for tuning and how the model refitting process will work. When tuning hyperparameters, Finn uses the “Validation” train/test splits, with the final parameters chosen using RMSE. For some models like ARIMA that don’t follow a traditional hyperparameter tuning process, the model is fit from scratch across all train/test splits. After hyperparameters are chosen, the model is refit across the “Back_Test” and “Future_Forecast” splits. The “Back_Test” splits are the true testing data that will be used when selecting the final “Best-Model”. “Ensemble” splits are also created as ensemble training data if ensemble models are chosen to run. Ensemble models follow a similar tuning process.</p>
   </div>
 

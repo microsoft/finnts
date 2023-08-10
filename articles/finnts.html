@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.2.4.9011</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.3.0</span>
       </span>
     </div>
 
@@ -152,25 +152,25 @@
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2010-01-01"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2013-01-01"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">)</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 264 × 3</span></span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 120 × 3</span></span></span>
 <span><span class="co">#&gt;    id    Date       value</span></span>
 <span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    2010-01-01  <span style="text-decoration: underline;">9</span>480</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    2010-02-01  <span style="text-decoration: underline;">8</span>800</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    2010-03-01  <span style="text-decoration: underline;">8</span>810</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    2010-04-01  <span style="text-decoration: underline;">7</span>690</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    2010-05-01  <span style="text-decoration: underline;">7</span>710</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    2010-06-01  <span style="text-decoration: underline;">9</span>660</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    2010-07-01 <span style="text-decoration: underline;">11</span>870</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    2010-08-01 <span style="text-decoration: underline;">12</span>920</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    2010-09-01 <span style="text-decoration: underline;">10</span>890</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    2010-10-01  <span style="text-decoration: underline;">9</span>500</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 254 more rows</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    2013-01-01  <span style="text-decoration: underline;">9</span>120</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    2013-02-01  <span style="text-decoration: underline;">8</span>280</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    2013-03-01  <span style="text-decoration: underline;">7</span>860</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    2013-04-01  <span style="text-decoration: underline;">7</span>150</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    2013-05-01  <span style="text-decoration: underline;">8</span>110</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    2013-06-01 <span style="text-decoration: underline;">10</span>860</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    2013-07-01 <span style="text-decoration: underline;">10</span>730</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    2013-08-01  <span style="text-decoration: underline;">9</span>610</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    2013-09-01  <span style="text-decoration: underline;">8</span>270</span></span>
+<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    2013-10-01  <span style="text-decoration: underline;">9</span>200</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 110 more rows</span></span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] "M1"    "M2"    "M750"  "M1000"</span></span></code></pre></div>
@@ -197,49 +197,10 @@
 <span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
 <span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
-<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="co">#&gt; $final_fcst</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 294 × 10</span></span></span>
-<span><span class="co">#&gt;    Combo id    Model Type       Date       value lo.95 lo.80 hi.80 hi.95</span></span>
-<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-01-01  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480  <span style="text-decoration: underline;">9</span>480</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-02-01  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800  <span style="text-decoration: underline;">8</span>800</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-03-01  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810  <span style="text-decoration: underline;">8</span>810</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-04-01  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690  <span style="text-decoration: underline;">7</span>690</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-05-01  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710  <span style="text-decoration: underline;">7</span>710</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-06-01  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660  <span style="text-decoration: underline;">9</span>660</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-07-01 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870 <span style="text-decoration: underline;">11</span>870</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-08-01 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920 <span style="text-decoration: underline;">12</span>920</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-09-01 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890 <span style="text-decoration: underline;">10</span>890</span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    M1    <span style="color: #BB0000;">NA</span>    Historical 2010-10-01  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500  <span style="text-decoration: underline;">9</span>500</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 284 more rows</span></span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $back_test_data</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 360 × 10</span></span></span>
-<span><span class="co">#&gt;    Combo id    Back_Test_Scenario Date       Model   Horizon  FCST Target   MAPE</span></span>
-<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>              <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M1    M1    Back_Test_01       2015-06-01 arima-…       1 <span style="text-decoration: underline;">6</span>788.   <span style="text-decoration: underline;">6</span>890 0.014<span style="text-decoration: underline;">8</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> M1    M1    Back_Test_02       2015-05-01 arima-…       1 <span style="text-decoration: underline;">5</span>518.   <span style="text-decoration: underline;">4</span>910 0.124 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> M1    M1    Back_Test_02       2015-06-01 arima-…       2 <span style="text-decoration: underline;">7</span>128.   <span style="text-decoration: underline;">6</span>890 0.034<span style="text-decoration: underline;">5</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> M1    M1    Back_Test_03       2015-04-01 arima-…       1 <span style="text-decoration: underline;">4</span>535.   <span style="text-decoration: underline;">5</span>210 0.130 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> M1    M1    Back_Test_03       2015-05-01 arima-…       2 <span style="text-decoration: underline;">5</span>149.   <span style="text-decoration: underline;">4</span>910 0.048<span style="text-decoration: underline;">6</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> M1    M1    Back_Test_03       2015-06-01 arima-…       3 <span style="text-decoration: underline;">6</span>960.   <span style="text-decoration: underline;">6</span>890 0.010<span style="text-decoration: underline;">1</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> M1    M1    Back_Test_04       2015-03-01 arima-…       1 <span style="text-decoration: underline;">5</span>169.   <span style="text-decoration: underline;">5</span>090 0.015<span style="text-decoration: underline;">4</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    M1    Back_Test_04       2015-04-01 arima-…       2 <span style="text-decoration: underline;">4</span>536.   <span style="text-decoration: underline;">5</span>210 0.129 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    M1    Back_Test_04       2015-05-01 arima-…       3 <span style="text-decoration: underline;">5</span>159.   <span style="text-decoration: underline;">4</span>910 0.050<span style="text-decoration: underline;">8</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    M1    Back_Test_05       2015-02-01 arima-…       1 <span style="text-decoration: underline;">5</span>461.   <span style="text-decoration: underline;">5</span>130 0.064<span style="text-decoration: underline;">5</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 350 more rows</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 1 more variable: Best_Model &lt;chr&gt;</span></span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; $back_test_best_MAPE</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 4 × 3</span></span></span>
-<span><span class="co">#&gt;   Combo Model                           Best_Model</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                           <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> M1    arima--local--R1_ets--local--R1 Yes       </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> M1000 ets--local--R1                  Yes       </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">3</span> M2    arima--local--R1                Yes       </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">4</span> M750  arima--local--R1_ets--local--R1 Yes</span></span></code></pre></div>
+<span>  back_test_scenarios <span class="op">=</span> <span class="fl">6</span>, </span>
+<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span>, </span>
+<span>  return_data <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="get-forecast-outputs">3. Get Forecast Outputs<a class="anchor" aria-label="anchor" href="#get-forecast-outputs"></a>
