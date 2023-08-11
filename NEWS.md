@@ -1,3 +1,9 @@
+# finnts 0.3.0.9000 (DEVELOPMENT VERSION)
+
+## Improvements
+
+-   Tidymodels speed up
+
 # finnts 0.3.0
 
 ## Improvements

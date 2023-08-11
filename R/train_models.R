@@ -269,37 +269,6 @@ train_models <- function(run_info,
         negative_forecast <- negative_forecast
       }
 
-      # tune models
-      tune_iter_list <- model_train_test_tbl %>%
-        dplyr::mutate(Combo = x) %>%
-        dplyr::filter(Run_Type == "Validation") %>%
-        dplyr::select(Combo, Train_Test_ID) %>%
-        dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-        purrr::map(.f = function(x) {
-          temp <- model_hyperparameter_tbl %>%
-            dplyr::select(Hyperparameter_Combo, Model, Recipe) %>%
-            dplyr::rename(
-              Hyperparameter_ID = Hyperparameter_Combo,
-              Recipe_ID = Recipe
-            ) %>%
-            dplyr::mutate(
-              Combo = x$Combo,
-              Train_Test_ID = x$Train_Test_ID
-            )
-
-          if (x$Combo == "All-Data") {
-            temp <- temp %>%
-              dplyr::filter(
-                Model %in% global_model_list,
-                Recipe_ID %in% global_model_recipes
-              )
-          }
-
-          return(temp)
-        }) %>%
-        dplyr::bind_rows() %>%
-        dplyr::select(Combo, Model, Recipe_ID, Train_Test_ID, Hyperparameter_ID)
-
       par_info <- par_start(
         run_info = run_info,
         parallel_processing = if (inner_parallel) {
@@ -308,362 +277,142 @@ train_models <- function(run_info,
           NULL
         },
         num_cores = num_cores,
-        task_length = nrow(tune_iter_list)
+        task_length = num_cores
       )
 
       inner_cl <- par_info$cl
       inner_packages <- par_info$packages
-      `%op%` <- par_info$foreach_operator
 
-      initial_tune_tbl <- foreach::foreach(
-        x = tune_iter_list %>%
+      model_tbl <- foreach::foreach(
+        model_run = model_workflow_tbl %>%
+          dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .packages = inner_packages,
         .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
         .noexport = NULL
-      ) %op%
-        {
+      ) %do% {
 
-          # run input values
-          param_combo <- x %>%
-            dplyr::pull(Hyperparameter_ID)
+        # get initial run info
+        model <- model_run %>%
+          dplyr::pull(Model_Name)
 
-          model <- x %>%
-            dplyr::pull(Model)
+        data_prep_recipe <- model_run %>%
+          dplyr::pull(Model_Recipe)
 
-          data_split <- x %>%
-            dplyr::pull(Train_Test_ID)
+        prep_data <- model_recipe_tbl %>%
+          dplyr::filter(Recipe == data_prep_recipe) %>%
+          dplyr::select(Data) %>%
+          tidyr::unnest(Data)
 
-          data_prep_recipe <- x %>%
-            dplyr::pull(Recipe_ID)
+        workflow <- model_workflow_tbl %>%
+          dplyr::filter(
+            Model_Name == model,
+            Model_Recipe == data_prep_recipe
+          ) %>%
+          dplyr::select(Model_Workflow)
 
-          combo <- x %>%
-            dplyr::pull(Combo)
+        workflow <- workflow$Model_Workflow[[1]]
 
-          train_end_date <- model_train_test_tbl %>%
-            dplyr::filter(Train_Test_ID == data_split) %>%
-            dplyr::pull(Train_End)
+        hyperparameters <- model_hyperparameter_tbl %>%
+          dplyr::filter(
+            Model == model,
+            Recipe == data_prep_recipe
+          ) %>%
+          dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
+          tidyr::unnest(Hyperparameters)
 
-          test_end_date <- model_train_test_tbl %>%
-            dplyr::filter(Train_Test_ID == data_split) %>%
-            dplyr::pull(Test_End)
+        # tune hyperparameters
+        set.seed(seed)
 
-          # get train/test data
-          full_data <- model_recipe_tbl %>%
-            dplyr::filter(Recipe == data_prep_recipe) %>%
-            dplyr::select(Data) %>%
-            tidyr::unnest(Data)
-
-          if (combo == "All-Data") {
-            full_data <- full_data %>%
-              tidyr::separate(
-                col = Combo,
-                into = combo_variables,
-                sep = "---",
-                remove = FALSE
-              )
-          }
-
-          training <- full_data %>%
-            dplyr::filter(Date <= train_end_date)
-
-          testing <- full_data %>%
-            dplyr::filter(
-              Date > train_end_date,
-              Date <= test_end_date
-            )
-
-          if (data_prep_recipe == "R2") {
-            train_origin_max <- training %>%
-              dplyr::filter(Horizon == 1)
-
-            testing <- testing %>%
-              dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
-          }
-
-          # get hyperparameters
-          hyperparameters <- model_hyperparameter_tbl %>%
-            dplyr::filter(
-              Model == model,
-              Recipe == data_prep_recipe,
-              Hyperparameter_Combo == param_combo
-            ) %>%
-            dplyr::select(Hyperparameters) %>%
-            tidyr::unnest(Hyperparameters)
-
-          # get workflow
-          workflow <- model_workflow_tbl %>%
-            dplyr::filter(
-              Model_Name == model,
-              Model_Recipe == data_prep_recipe
-            )
-
-          workflow_final <- workflow$Model_Workflow[[1]] %>%
-            tune::finalize_workflow(parameters = hyperparameters)
-
-          # fit model
-          set.seed(seed)
-
-          if (nrow(hyperparameters) > 0) {
-            model_fit <- workflow_final %>%
-              generics::fit(data = training)
-          } else {
-            model_fit <- workflow_final %>%
-              generics::fit(data = training)
-          }
-
-          # create prediction
-          set.seed(seed)
-
-          model_prediction <- testing %>%
-            dplyr::bind_cols(
-              predict(model_fit, new_data = testing)
-            ) %>%
-            dplyr::select(Combo, Date, Target, .pred) %>%
-            dplyr::rename(Forecast = .pred) %>%
-            negative_fcst_adj(negative_forecast)
-
-          # finalize output tbl
-          final_tbl <- tibble::tibble(
-            Combo_ID = combo,
-            Model_Name = model,
-            Model_Type = ifelse(combo == "All-Data", "global", "local"),
-            Recipe_ID = data_prep_recipe,
-            Train_Test_ID = data_split,
-            Hyperparameter_ID = param_combo,
-            Prediction = list(model_prediction)
+        tune_results <- tune::tune_grid(
+          object = workflow,
+          resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+          grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
+          control = tune::control_grid(
+            allow_par = inner_parallel,
+            pkgs = inner_packages,
+            parallel_over = "everything"
           )
+        ) %>%
+          base::suppressWarnings()
 
-          return(final_tbl)
-        } %>%
-        base::suppressPackageStartupMessages()
+        best_param <- tune::select_best(tune_results, metric = "rmse")
 
-      par_end(inner_cl)
-
-      # check if tuning failed
-      if (is.null(initial_tune_tbl)) {
-        if (combo_hash == "All-Data") {
-          combo_name <- "Global-Model"
+        if (length(colnames(best_param)) == 1) {
+          hyperparameter_id <- 1
         } else {
-          combo_name <- model_recipe_tbl %>%
-            dplyr::slice(1) %>%
-            dplyr::select(Data) %>%
-            tidyr::unnest(Data) %>%
-            dplyr::select(Combo) %>%
-            dplyr::pull(Combo) %>%
-            unique()
+          hyperparameter_id <- hyperparameters %>%
+            dplyr::inner_join(best_param) %>%
+            dplyr::select(Hyperparameter_Combo) %>%
+            dplyr::pull() %>%
+            base::suppressMessages()
         }
 
-        stop(paste0(
-          "All models failed during hyperparameter tuning process for time series combo: '",
-          combo_name, "'"
-        ),
-        call. = FALSE
-        )
-      }
+        final_wflow <- tune::finalize_workflow(workflow, best_param)
+        set.seed(seed)
+        wflow_fit <- generics::fit(final_wflow, prep_data %>% tidyr::drop_na(Target))
 
-      # select best hyperparamters
-      best_param <- initial_tune_tbl %>%
-        tidyr::unnest(Prediction) %>%
-        dplyr::mutate(SE = (Target - Forecast)^2) %>%
-        dplyr::group_by(Combo_ID, Model_Name, Model_Type, Recipe_ID, Hyperparameter_ID) %>%
-        dplyr::summarise(RMSE = sqrt(mean(SE, na.rm = TRUE))) %>%
-        dplyr::arrange(RMSE) %>%
-        dplyr::slice(1) %>%
-        dplyr::ungroup()
+        # refit on all train test splits
+        set.seed(seed)
 
-      model_tune_tbl <- initial_tune_tbl %>%
-        dplyr::select(Model_Name, Model_Type, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction) %>%
-        dplyr::right_join(best_param, by = c("Model_Name", "Model_Type", "Recipe_ID", "Hyperparameter_ID")) %>%
-        tidyr::unnest(Prediction) %>%
-        dplyr::mutate(
-          Combo_Hash = Combo_ID,
-          Combo_ID = ifelse(Combo_ID == "All-Data", "All-Data", Combo)
-        ) %>%
-        dplyr::select(Combo_Hash, Combo_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID, Combo, Date, Forecast, Target)
-
-      # refit models
-      refit_iter_list <- model_train_test_tbl %>%
-        dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Ensemble")) %>%
-        dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
-        purrr::map(.f = function(x) {
-          model_tune_tbl %>%
-            dplyr::mutate(
-              Run_Type = x %>% dplyr::pull(Run_Type),
-              Train_Test_ID = x %>% dplyr::pull(Train_Test_ID),
-              Train_End = x %>% dplyr::pull(Train_End),
-              Test_End = x %>% dplyr::pull(Test_End)
-            ) %>%
-            dplyr::select(
-              Combo_ID, Run_Type, Train_Test_ID, Recipe_ID,
-              Hyperparameter_ID, Train_End, Test_End, Model_Name, Model_Type
-            ) %>%
-            dplyr::distinct()
-        }) %>%
-        dplyr::bind_rows()
-
-      par_info <- par_start(
-        run_info = run_info,
-        parallel_processing = if (inner_parallel) {
-          "local_machine"
-        } else {
-          NULL
-        },
-        num_cores = num_cores,
-        task_length = nrow(refit_iter_list)
-      )
-
-      inner_cl <- par_info$cl
-      inner_packages <- par_info$packages
-      `%op%` <- par_info$foreach_operator
-
-      refit_tbl <- foreach::foreach(
-        x = refit_iter_list %>%
-          dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-        .combine = "rbind",
-        .packages = inner_packages,
-        .errorhandling = "remove",
-        .verbose = FALSE,
-        .inorder = FALSE,
-        .multicombine = TRUE,
-        .noexport = NULL
-      ) %op%
-        {
-          combo <- x %>%
-            dplyr::pull(Combo_ID)
-
-          model <- x %>%
-            dplyr::pull(Model_Name)
-
-          recipe <- x %>%
-            dplyr::pull(Recipe_ID)
-
-          param <- x %>%
-            dplyr::pull(Hyperparameter_ID)
-
-          run_type <- x %>%
-            dplyr::pull(Run_Type)
-
-          run_id <- x %>%
-            dplyr::pull(Train_Test_ID)
-
-          train_end <- x %>%
-            dplyr::pull(Train_End)
-
-          test_end <- x %>%
-            dplyr::pull(Test_End)
-
-          if (combo != "All-Data") {
-            recipe_data <- model_recipe_tbl %>%
-              dplyr::filter(
-                Recipe == recipe,
-              ) %>%
-              dplyr::select(Data) %>%
-              tidyr::unnest(Data)
-          } else {
-            recipe_data <- model_recipe_tbl %>%
-              dplyr::filter(Recipe == recipe) %>%
-              dplyr::select(Data) %>%
-              tidyr::unnest(Data) %>%
-              tidyr::separate(
-                col = Combo,
-                into = combo_variables,
-                sep = "---",
-                remove = FALSE
-              )
-          }
-
-          training <- recipe_data %>%
-            dplyr::filter(Date <= train_end)
-
-          testing <- recipe_data %>%
-            dplyr::filter(
-              Date > train_end,
-              Date <= test_end
-            )
-
-          if (recipe == "R2") {
-            train_origin_max <- training %>%
-              dplyr::filter(Horizon == 1)
-
-            testing <- testing %>%
-              dplyr::filter(Origin == max(train_origin_max$Origin) + 1)
-          }
-
-          # get hyperparameters
-          hyperparameters <- model_hyperparameter_tbl %>%
-            dplyr::filter(
-              Model == model,
-              Recipe == recipe,
-              Hyperparameter_Combo == param
-            ) %>%
-            dplyr::select(Hyperparameters) %>%
-            tidyr::unnest(Hyperparameters)
-
-          # get workflow
-          workflow <- model_workflow_tbl %>%
-            dplyr::filter(
-              Model_Name == model,
-              Model_Recipe == recipe
-            )
-
-          workflow_final <- workflow$Model_Workflow[[1]] %>%
-            tune::finalize_workflow(parameters = hyperparameters)
-
-          # fit model
-          set.seed(seed)
-
-          if (nrow(hyperparameters) > 0) {
-            model_fit <- workflow_final %>%
-              generics::fit(data = training)
-          } else {
-            model_fit <- workflow_final %>%
-              generics::fit(data = training)
-          }
-
-          # create prediction
-          set.seed(seed)
-
-          model_prediction <- testing %>%
-            dplyr::bind_cols(
-              predict(model_fit, new_data = testing)
-            ) %>%
-            dplyr::select(Combo, Date, Target, .pred) %>%
-            dplyr::rename(Forecast = .pred) %>%
-            negative_fcst_adj(negative_forecast)
-
-          # finalize output tbl
-          if (run_id == 1) {
-            model_fit <- model_fit
-          } else {
-            model_fit <- NULL
-          }
-
-          final_tbl <- tibble::tibble(
-            Combo_ID = combo,
-            Model_Name = model,
-            Model_Type = ifelse(combo == "All-Data", "global", "local"),
-            Recipe_ID = recipe,
-            Train_Test_ID = run_id,
-            Hyperparameter_ID = param,
-            Model_Fit = list(model_fit),
-            Prediction = list(model_prediction)
+        refit_tbl <- tune::fit_resamples(
+          object = final_wflow,
+          resamples = create_splits(prep_data, model_train_test_tbl),
+          metrics = NULL,
+          control = tune::control_resamples(
+            allow_par = inner_parallel,
+            save_pred = TRUE,
+            pkgs = inner_packages,
+            parallel_over = "everything"
           )
+        )
 
-          return(final_tbl)
-        } %>%
-        base::suppressPackageStartupMessages()
+        final_fcst <- tune::collect_predictions(refit_tbl) %>%
+          dplyr::rename(
+            Forecast = .pred,
+            Train_Test_ID = id
+          ) %>%
+          dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+          dplyr::left_join(model_train_test_tbl %>%
+            dplyr::select(Run_Type, Train_Test_ID),
+          by = "Train_Test_ID"
+          ) %>%
+          dplyr::left_join(
+            prep_data %>%
+              dplyr::mutate(.row = dplyr::row_number()) %>%
+              dplyr::select(Combo, Date, .row),
+            by = ".row"
+          ) %>%
+          dplyr::mutate(Hyperparameter_ID = hyperparameter_id) %>%
+          dplyr::select(-.row, -.config) %>%
+          negative_fcst_adj(negative_forecast)
+
+        combo_id <- ifelse(x == "All-Data", "All-Data", unique(final_fcst$Combo))
+
+        final_return_tbl <- tibble::tibble(
+          Combo_ID = combo_id,
+          Model_Name = model,
+          Model_Type = ifelse(combo_id == "All-Data", "global", "local"),
+          Recipe_ID = data_prep_recipe,
+          Forecast_Tbl = list(final_fcst),
+          Model_Fit = list(wflow_fit)
+        )
+
+        return(final_return_tbl)
+      }
 
       par_end(inner_cl)
 
+      # ensure at least one model ran successfully
+      if (nrow(model_tbl) < 1) {
+        stop("All models failed to train")
+      }
+
       # write outputs
-      fitted_models <- refit_tbl %>%
-        dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
-        dplyr::filter(Train_Test_ID == 1) %>%
+      fitted_models <- model_tbl %>%
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
         dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
 
@@ -676,11 +425,9 @@ train_models <- function(run_info,
         suffix = "-single_models"
       )
 
-      final_forecast_tbl <- refit_tbl %>%
+      final_forecast_tbl <- model_tbl %>%
         dplyr::select(-Model_Fit) %>%
-        tidyr::unnest(Prediction) %>%
-        rbind(model_tune_tbl %>%
-          dplyr::select(-Combo_Hash)) %>%
+        tidyr::unnest(Forecast_Tbl) %>%
         dplyr::arrange(Train_Test_ID) %>%
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
         dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
@@ -806,4 +553,62 @@ negative_fcst_adj <- function(data,
   }
 
   return(fcst_final)
+}
+
+#' Function to get train test splits in rsample format
+#'
+#' @param data data frame
+#' @param train_test_splits list of finnts train test splits df
+#'
+#' @return tbl with train test splits
+#' @noRd
+create_splits <- function(data, train_test_splits) {
+
+  # Create the rsplit object
+  analysis_split <- function(data, train_indices, test_indices) {
+    rsplit_object <- rsample::make_splits(
+      x = list(analysis = train_indices, assessment = test_indices),
+      data = data
+    )
+  }
+
+  # Create a list to store the splits and a vector to store the IDs
+  splits <- list()
+  ids <- character()
+
+  # Loop over the rows of the split data frame
+  for (i in seq_len(nrow(train_test_splits))) {
+    # Get the train and test end dates
+    train_end <- train_test_splits$Train_End[i]
+    test_end <- train_test_splits$Test_End[i]
+
+
+
+    # Create the train and test indices
+    train_indices <- which(data$Date <= train_end)
+
+    if ("Horizon" %in% colnames(data)) {
+      # adjust for the horizon in R2 recipe data
+      train_data <- data %>%
+        dplyr::filter(
+          Horizon == 1,
+          Date <= train_end
+        )
+
+      test_indices <- which(data$Date > train_end & data$Date <= test_end & data$Origin == max(train_data$Origin) + 1)
+    } else {
+      test_indices <- which(data$Date > train_end & data$Date <= test_end)
+    }
+
+    # Create the split and add it to the list
+    splits[[i]] <- analysis_split(data, train_indices, test_indices)
+
+    # Add the ID to the vector
+    ids[i] <- as.character(train_test_splits$Train_Test_ID[i])
+  }
+
+  # Create the resamples
+  resamples <- rsample::manual_rset(splits = splits, ids = ids)
+
+  return(resamples)
 }
