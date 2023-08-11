@@ -4,7 +4,7 @@ There were no ERRORs or WARNINGs.
 There was 1 NOTE:
 
 * checking dependencies in R code ... NOTE
-  Imports includes 34 non-default packages.
+  Imports includes 32 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
   use conditionally.
