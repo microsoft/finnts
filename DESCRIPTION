@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.3.0
+Version: 0.3.0.9000
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -59,8 +59,7 @@ Imports:
     timetk,
     tune,
     vroom,
-    workflows, 
-    yardstick
+    workflows
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
