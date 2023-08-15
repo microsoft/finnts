@@ -132,8 +132,10 @@ train_models <- function(run_info,
     unique()
 
   global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
-  fs_model_list <- c(global_model_list, 'arima-boost', 'prophet-boost', 'prophet-xregs', 
-                     'nnetar-xregs')
+  fs_model_list <- c(
+    global_model_list, "arima-boost", "prophet-boost", "prophet-xregs",
+    "nnetar-xregs"
+  )
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
@@ -272,8 +274,8 @@ train_models <- function(run_info,
         negative_fcst_adj <- negative_fcst_adj
         negative_forecast <- negative_forecast
       }
-      
-      if(feature_selection) {
+
+      if (feature_selection) {
         # ensure feature selection objects get exported
         multicolinearity_fn <- multicolinearity_fn
         lofo_fn <- lofo_fn
@@ -287,41 +289,46 @@ train_models <- function(run_info,
       }
 
       # run feature selection
-      if(feature_selection & sum(unique(model_workflow_tbl$Model_Name) %in% fs_model_list) > 0) {
-        
+      if (feature_selection & sum(unique(model_workflow_tbl$Model_Name) %in% fs_model_list) > 0) {
         fs_list <- list()
-        
-        if("R1" %in% unique(model_workflow_tbl$Model_Recipe)) {
-          
+
+        if ("R1" %in% unique(model_workflow_tbl$Model_Recipe)) {
           R1_fs_list <- model_recipe_tbl %>%
             dplyr::filter(Recipe == "R1") %>%
             dplyr::select(Data) %>%
             tidyr::unnest(Data) %>%
             select_features(
-              run_info = run_info, 
-              train_test_data = model_train_test_tbl, 
-              parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
-              date_type = date_type, 
+              run_info = run_info,
+              train_test_data = model_train_test_tbl,
+              parallel_processing = if (inner_parallel) {
+                "local_machine"
+              } else {
+                NULL
+              },
+              date_type = date_type,
               fast = FALSE
             )
-          
+
           fs_list <- append(fs_list, list(R1 = R1_fs_list))
         }
-        
-        if("R2" %in% unique(model_workflow_tbl$Model_Recipe)) {
-          
+
+        if ("R2" %in% unique(model_workflow_tbl$Model_Recipe)) {
           R2_fs_list <- model_recipe_tbl %>%
             dplyr::filter(Recipe == "R2") %>%
             dplyr::select(Data) %>%
             tidyr::unnest(Data) %>%
             select_features(
-              run_info = run_info, 
-              train_test_data = model_train_test_tbl, 
-              parallel_processing = if(inner_parallel) {"local_machine"} else {NULL},
-              date_type = date_type, 
+              run_info = run_info,
+              train_test_data = model_train_test_tbl,
+              parallel_processing = if (inner_parallel) {
+                "local_machine"
+              } else {
+                NULL
+              },
+              date_type = date_type,
               fast = FALSE
             )
-          
+
           fs_list <- append(fs_list, list(R2 = R2_fs_list))
         }
       }
@@ -373,10 +380,10 @@ train_models <- function(run_info,
           dplyr::select(Model_Workflow)
 
         workflow <- workflow$Model_Workflow[[1]]
-        
-        if(feature_selection & model %in% fs_model_list) {
+
+        if (feature_selection & model %in% fs_model_list) {
           # update model workflow to only use features from feature selection process
-          if(data_prep_recipe == 'R1') {
+          if (data_prep_recipe == "R1") {
             final_features_list <- fs_list$R1
           } else {
             final_features_list <- fs_list$R2
@@ -389,7 +396,7 @@ train_models <- function(run_info,
             workflows::extract_recipe(estimated = FALSE) %>%
             recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
             recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor")
-          
+
           empty_workflow_final <- workflow %>%
             workflows::update_recipe(updated_recipe)
         } else {
