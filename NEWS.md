@@ -1,8 +1,9 @@
-# finnts 0.3.0.9000 (DEVELOPMENT VERSION)
+# finnts 0.3.0.9001 (DEVELOPMENT VERSION)
 
 ## Improvements
 
 -   Tidymodels speed up
+-   Automated feature selection
 
 # finnts 0.3.0
 
