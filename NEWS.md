@@ -3,7 +3,7 @@
 ## Improvements
 
 -   Tidymodels speed up
--   Automated feature selection
+-   Automated feature selection, refer to feature selection vignette for more details
 
 # finnts 0.3.0
 
