@@ -215,6 +215,7 @@ train_models <- function(run_info,
       run_global_models = run_global_models,
       run_local_models = run_local_models,
       global_model_recipes = global_model_recipes,
+      feature_selection = feature_selection,
       seed = seed
     ) %>%
       data.frame()
@@ -603,6 +604,7 @@ train_models <- function(run_info,
       run_global_models = run_global_models,
       run_local_models = run_local_models,
       global_model_recipes = paste(unlist(global_model_recipes), collapse = "---"),
+      feature_selection = feature_selection,
       seed = seed,
       negative_forecast = negative_forecast,
       inner_parallel = inner_parallel
