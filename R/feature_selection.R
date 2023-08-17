@@ -21,8 +21,13 @@ select_features <- function(input_data,
 
   # only keep historical data and drop correlated features
   input_data <- input_data %>%
-    tidyr::drop_na(Target) %>%
-    dplyr::select(Combo, Target, tidyselect::all_of(non_cor_cols))
+    tidyr::drop_na(Target) #%>%
+    #dplyr::select(Combo, Target, tidyselect::all_of(non_cor_cols))
+  
+  if(ncol(input_data) > 250) {
+    print("skipping lofo")
+    fast = TRUE
+  }
 
   # run feature selection
   if (date_type %in% c("day", "week")) {
@@ -57,7 +62,7 @@ select_features <- function(input_data,
         train_test_data,
         parallel_processing
       ) %>%
-        dplyr::filter(Imp > 0) %>%
+        dplyr::filter(Imp >= 0) %>%
         dplyr::rename(Feature = LOFO_Var) %>%
         dplyr::mutate(
           Vote = 1,

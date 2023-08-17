@@ -38,7 +38,7 @@ Boruta is not ran for daily or weekly data, in order to save time.
 
 ### Model Variable Importance
 
-Multiple models (cubist, glmnet, xgboost) are trained on the entire training data. These models are then fed into the variable importance function within the [vip](https://koalaverse.github.io/vip/index.html) package. For each model, any feature with a variable importance score above zero is flagged as important.
+Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the [vip](https://koalaverse.github.io/vip/index.html) package. For each model, any feature with a variable importance score above zero is flagged as important.
 
 ## Voting Process
 

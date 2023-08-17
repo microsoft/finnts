@@ -332,6 +332,7 @@ train_models <- function(run_info,
 
           fs_list <- append(fs_list, list(R2 = R2_fs_list))
         }
+        print(fs_list)
       }
 
       # train each model
