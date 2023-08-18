@@ -321,7 +321,6 @@ train_models <- function(run_info,
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
         .packages = inner_packages,
-        .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
@@ -407,16 +406,22 @@ train_models <- function(run_info,
 
           # fit model
           set.seed(seed)
-
-          if (nrow(hyperparameters) > 0) {
-            model_fit <- workflow_final %>%
-              tune::finalize_workflow(parameters = hyperparameters) %>%
-              generics::fit(data = training)
-          } else {
-            model_fit <- workflow_final %>%
-              generics::fit(data = training)
+          tryCatch(
+          {
+            if (nrow(hyperparameters) > 0) {
+              model_fit <- workflow_final %>%
+                tune::finalize_workflow(parameters = hyperparameters) %>%
+                generics::fit(data = training)
+            } else {
+              model_fit <- workflow_final %>%
+                generics::fit(data = training)
+                
+            }
+            
+          }, error = function(err) {
+            stop("ERROR:", err)
           }
-
+          )
           # create prediction
           model_prediction <- testing %>%
             dplyr::bind_cols(
@@ -436,7 +441,7 @@ train_models <- function(run_info,
             Hyperparameter_ID = param_combo,
             Prediction = list(model_prediction)
           )
-
+          browser()
           return(final_tbl)
         } %>%
         base::suppressPackageStartupMessages()
@@ -451,7 +456,7 @@ train_models <- function(run_info,
         dplyr::arrange(RMSE) %>%
         dplyr::slice(1) %>%
         dplyr::ungroup()
-
+      
       model_tune_tbl <- initial_tune_tbl %>%
         dplyr::select(Model_Name, Model_Type, Recipe_ID, Hyperparameter_ID, Train_Test_ID, Prediction) %>%
         dplyr::right_join(best_param, by = c("Model_Name", "Model_Type", "Recipe_ID", "Hyperparameter_ID")) %>%
