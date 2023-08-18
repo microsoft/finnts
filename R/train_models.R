@@ -278,7 +278,6 @@ train_models <- function(run_info,
 
       if (feature_selection) {
         # ensure feature selection objects get exported
-        multicolinearity_fn <- multicolinearity_fn
         lofo_fn <- lofo_fn
         target_corr_fn <- target_corr_fn
         vip_rf_fn <- vip_rf_fn
@@ -332,7 +331,6 @@ train_models <- function(run_info,
 
           fs_list <- append(fs_list, list(R2 = R2_fs_list))
         }
-        print(fs_list)
       }
 
       # train each model

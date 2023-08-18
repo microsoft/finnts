@@ -6,6 +6,7 @@
 #' @param parallel_processing parallel processing
 #' @param date_type date_type
 #' @param fast turns off lofo
+#' @param seed seed
 #'
 #' @return list of best features to use
 #' @noRd
@@ -14,18 +15,15 @@ select_features <- function(input_data,
                             train_test_data,
                             parallel_processing = NULL,
                             date_type,
-                            fast = FALSE) {
+                            fast = FALSE, 
+                            seed = 123) {
 
-  # list correlated features
-  non_cor_cols <- multicolinearity_fn(input_data)
-
-  # only keep historical data and drop correlated features
+  # only keep historical data
   input_data <- input_data %>%
-    tidyr::drop_na(Target) #%>%
-    #dplyr::select(Combo, Target, tidyselect::all_of(non_cor_cols))
+    tidyr::drop_na(Target) 
   
+  # skip lofo if there are too many features
   if(ncol(input_data) > 250) {
-    print("skipping lofo")
     fast = TRUE
   }
 
@@ -57,10 +55,11 @@ select_features <- function(input_data,
 
       # run leave one feature out selection
       lofo_results <- lofo_fn(
-        run_info,
-        input_data,
-        train_test_data,
-        parallel_processing
+        run_info = run_info,
+        data = input_data,
+        train_test_splits = train_test_data,
+        parallel_processing = parallel_processing, 
+        seed = seed
       ) %>%
         dplyr::filter(Imp >= 0) %>%
         dplyr::rename(Feature = LOFO_Var) %>%
@@ -89,14 +88,16 @@ select_features <- function(input_data,
 
     # botuta feature selection
     boruta_results <- tibble::tibble(
-      Feature = boruta_fn(input_data),
+      Feature = boruta_fn(input_data, 
+                          seed),
       Vote = 1,
       Auto_Accept = 0
     )
   }
 
   # random forest feature importance
-  vip_rf_results <- vip_rf_fn(input_data) %>%
+  vip_rf_results <- vip_rf_fn(input_data, 
+                              seed) %>%
     dplyr::rename(Feature = Variable) %>%
     dplyr::mutate(
       Vote = 1,
@@ -105,7 +106,8 @@ select_features <- function(input_data,
     dplyr::select(Feature, Vote, Auto_Accept)
 
   # cubist feature importance
-  vip_cubist_results <- vip_cubist_fn(input_data) %>%
+  vip_cubist_results <- vip_cubist_fn(input_data, 
+                                      seed) %>%
     dplyr::rename(Feature = Variable) %>%
     dplyr::mutate(
       Vote = 1,
@@ -114,7 +116,8 @@ select_features <- function(input_data,
     dplyr::select(Feature, Vote, Auto_Accept)
 
   # lasso regression feature importance
-  vip_lm_initial <- vip_lm_fn(input_data)
+  vip_lm_initial <- vip_lm_fn(input_data, 
+                              seed)
 
   missing_cols <- setdiff(
     colnames(input_data %>%
@@ -163,24 +166,6 @@ select_features <- function(input_data,
     sort()
 
   return(fs_list)
-}
-
-#' Multicolinearity Filter
-#'
-#' @param data data
-#'
-#' @return list of features that are not correlated with one another
-#' @noRd
-multicolinearity_fn <- function(data) {
-  recipes::recipe(
-    Target ~ .,
-    data = data
-  ) %>%
-    recipes::step_zv(recipes::all_predictors()) %>%
-    recipes::step_corr(recipes::all_numeric_predictors(), threshold = .9) %>%
-    recipes::prep(training = data) %>%
-    recipes::bake(data) %>%
-    colnames()
 }
 
 #' Target Correlation Filter
@@ -304,11 +289,14 @@ vip_cubist_fn <- function(data,
 #'
 #' @param data data
 #' @param iterations iterations
+#' @param seed seed
 #'
 #' @return list of most important features in boruta selection process
 #' @noRd
 boruta_fn <- function(data,
-                      iterations = 100) {
+                      iterations = 100, 
+                      seed = 123) {
+  set.seed(seed)
   Boruta::Boruta(Target ~ ., data = data, maxRuns = iterations) %>%
     Boruta::getSelectedAttributes()
 }
@@ -327,7 +315,8 @@ lofo_fn <- function(run_info,
                     data,
                     train_test_splits,
                     parallel_processing,
-                    pca = FALSE) {
+                    pca = FALSE, 
+                    seed = 123) {
 
   # parallel run info
   par_info <- par_start(
@@ -448,7 +437,7 @@ lofo_fn <- function(run_info,
           Date <= test_end
         )
 
-      set.seed(123)
+      set.seed(seed)
 
       xgb_model_fit <- wflw_spec_tune_xgboost %>%
         generics::fit(train_data)
@@ -464,7 +453,7 @@ lofo_fn <- function(run_info,
         ) %>%
         dplyr::select(Target, Forecast, Train_Test_ID, LOFO_Var)
 
-      set.seed(123)
+      set.seed(seed)
 
       lr_model_fit <- wflw_spec_glmnet %>%
         generics::fit(train_data)
@@ -480,7 +469,7 @@ lofo_fn <- function(run_info,
         ) %>%
         dplyr::select(Target, Forecast, Train_Test_ID, LOFO_Var)
 
-      set.seed(123)
+      set.seed(seed)
 
       cubist_model_fit <- wflw_spec_cubist %>%
         generics::fit(train_data)
@@ -517,8 +506,7 @@ lofo_fn <- function(run_info,
     dplyr::rename(Var_RMSE = RMSE) %>%
     dplyr::rowwise() %>%
     dplyr::mutate(
-      Imp = Var_RMSE - baseline_rmse,
-      Imp_Norm = max(c(1 - (baseline_rmse / Var_RMSE), 0))
+      Imp = Var_RMSE - baseline_rmse
     ) %>%
     dplyr::ungroup()
 

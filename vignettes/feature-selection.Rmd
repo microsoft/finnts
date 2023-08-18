@@ -18,17 +18,17 @@ Finn leverages multiple techniques of feature selection to ensure only the best 
 
 ## Feature Selection Techniques
 
-Below are the techniques used in the feature selection process. It's important to note that before running this process, multicolinearity is removed from each feature engineering recipe by removing features that are over 0.9 correlated with another feature.
+Below are the techniques used in the feature selection process.
 
 ### Target Correlation
 
 Removes features that are correlated with the target variable. For daily and weekly data, a correlation filter of 0.2 is applied. For all other date types, a correlation of 0.5 is applied.
 
-### Leave One Feature Out
+### Leave One Feature Out (lofo)
 
-This is a more complex process where various models (cubist, glmnet, xgboost) are trained on the validation splits of the data. Each round, one feature is held out of the data, and the change in prediction accuracy over the hold out validation data is calculated. If the accuracy gets worse by removing the feature, it gets flagged as an important feature. This is not a recursive feature elimination process, instead only one feature is ever held out at any point in time.
+This is a more complex process where various models (cubist, glmnet, xgboost) are trained on the validation splits of the data. Each round, one feature is held out of the data, and the change in prediction accuracy (RMSE) over the hold out validation data is calculated. If the accuracy gets worse by removing the feature, it gets flagged as an important feature. This is not a recursive feature elimination process, instead only one feature is ever held out at any point in time.
 
-This technique is used for local models for yearly, quarterly, and monthly data. It's turned off for global models or daily or weekly data since it would take too long to run properly.
+This technique is used for yearly, quarterly, and monthly data. It's turned off for daily or weekly data since it would take too long to run properly. If a feature engineering recipe contains more than 250 features, lofo is also turned off to keep runtime low. 
 
 ### Boruta
 
@@ -44,4 +44,4 @@ Multiple models (cubist, glmnet, ranger) are trained on the entire training data
 
 Since we use multiple techniques for feature selection, we need to determine how we will use this information to select the final features. This is where the voting process comes in. If a feature gets flagged in one of the above techniques successfully, it gets a vote. If a feature receives enough votes, it is kept and ultimately used when training individual models.
 
-Daily and weekly data have a voting threshold of 3, meaning a feature needs to get at least 3 votes from 3 separate feature selection techniques in order to be kept. Yearly, quarterly, or monthly data have a voting threshold of 4. Each feature needs to get a majority of the votes in order to be kept. This process can reduce up to 50%-90% of features. The final result is keeping all the features that contain the "signal" while discarding all other features that just contain "noise".
+Daily and weekly data have a voting threshold of 3, meaning a feature needs to get at least 3 votes from 3 separate feature selection techniques in order to be kept. Yearly, quarterly, or monthly data have a voting threshold of 4 (3 if lofo isn't ran). Each feature needs to get a majority of the votes in order to be kept. This process can reduce up to 50%-95% of features. The final result is keeping all the features that contain the "signal" while discarding all other features that just contain "noise".
