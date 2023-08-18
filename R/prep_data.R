@@ -730,7 +730,8 @@ clean_outliers_missing_values <- function(df,
                                           clean_outliers,
                                           clean_missing_values,
                                           frequency_number,
-                                          external_regressors) {
+                                          external_regressors,
+                                          outlier_method = '') {
   correct_clean_func <- function(col) {
     if (clean_missing_values & sum(!is.na(col)) < 2) {
       col
