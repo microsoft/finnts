@@ -63,7 +63,7 @@ Imports:
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
-    boruta,
+    Boruta,
     corrr,
     knitr,
     Microsoft365R,
