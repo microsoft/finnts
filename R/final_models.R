@@ -31,7 +31,7 @@
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     Date >= "2012-01-01",
+#'     Date >= "2013-01-01",
 #'     Date <= "2015-06-01"
 #'   )
 #'
@@ -46,7 +46,8 @@
 #' )
 #'
 #' prep_models(run_info,
-#'   models_to_run = c("arima", "ets")
+#'   models_to_run = c("arima", "ets"),
+#'   back_test_scenarios = 3
 #' )
 #'
 #' train_models(run_info,
@@ -240,6 +241,13 @@ final_models <- function(run_info,
         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
         dplyr::filter(Train_Test_ID %in% train_test_id_list)
 
+      # check if model averaging already happened
+      if ("Best_Model" %in% colnames(local_model_tbl %>% rbind(global_model_tbl))) {
+        best_model_check <- TRUE
+      } else {
+        best_model_check <- FALSE
+      }
+
       # get model list
       if (!is.null(local_model_tbl)) {
         local_model_list <- local_model_tbl %>%
@@ -260,7 +268,7 @@ final_models <- function(run_info,
       final_model_list <- c(local_model_list, global_model_list)
 
       # simple model averaging
-      if (average_models & length(final_model_list) > 1) {
+      if (average_models & length(final_model_list) > 1 & !best_model_check) {
 
         # create model combinations list
         model_combinations <- tibble::tibble()
@@ -469,6 +477,7 @@ final_models <- function(run_info,
 
         if (!is.null(single_model_tbl)) {
           single_model_final_tbl <- single_model_tbl %>%
+            remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
             ) %>%
@@ -487,6 +496,7 @@ final_models <- function(run_info,
 
         if (!is.null(ensemble_model_tbl)) {
           ensemble_model_final_tbl <- ensemble_model_tbl %>%
+            remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
             ) %>%
@@ -505,6 +515,7 @@ final_models <- function(run_info,
 
         if (!is.null(global_model_tbl)) {
           global_model_final_tbl <- global_model_tbl %>%
+            remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
             ) %>%
@@ -648,4 +659,17 @@ convert_weekly_to_daily <- function(fcst_tbl,
   }
 
   return(final_tbl)
+}
+
+#' Check if there is a best model column and remove it
+#'
+#' @param df data frame
+#'
+#' @return data frame with no best model column
+#' @noRd
+remove_best_model <- function(df) {
+  if ("Best_Model" %in% names(df)) {
+    df <- df %>% dplyr::select(-Best_Model)
+  }
+  return(df)
 }

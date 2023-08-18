@@ -28,8 +28,7 @@
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.
 #' @param parallel_processing Default of NULL runs no parallel processing and forecasts each individual time series
 #'   one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
-#'   Value of 'azure_batch' runs time series in parallel on a remote compute cluster in Azure Batch. Value of 'spark'
-#'   runs time series in parallel on a spark cluster in Azure Databricks/Synapse.
+#'   Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 #'   than number of cores on machine minus 1.
@@ -52,7 +51,7 @@
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id)) %>%
 #'   dplyr::filter(
-#'     Date >= "2012-01-01",
+#'     Date >= "2013-01-01",
 #'     Date <= "2015-06-01"
 #'   )
 #'
@@ -63,7 +62,8 @@
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month",
-#'   forecast_horizon = 3
+#'   forecast_horizon = 3,
+#'   recipes_to_run = "R1"
 #' )
 #' }
 #' @export
@@ -163,7 +163,10 @@ prep_data <- function(run_info,
       tidyselect::all_of(external_regressors),
       "Date", "Target"
     )) %>%
-    combo_cleanup_fn(combo_cleanup_date) %>%
+    combo_cleanup_fn(
+      combo_cleanup_date,
+      hist_end_date
+    ) %>%
     prep_hierarchical_data(run_info,
       combo_variables,
       forecast_approach,
@@ -426,8 +429,10 @@ prep_data <- function(run_info,
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
+        fn_env <- .GlobalEnv
+
         for (name in names(context)) {
-          assign(name, context[[name]], envir = .GlobalEnv)
+          assign(name, context[[name]], envir = fn_env)
         }
 
         combo <- unique(df$Combo)
@@ -589,6 +594,41 @@ prep_data <- function(run_info,
       )
   }
 
+  # check if all time series combos ran correctly
+  successful_combos <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*R*.", run_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique() %>%
+    length() %>%
+    suppressWarnings()
+
+  total_combos <- current_combo_list %>%
+    dplyr::pull(Combo_Hash) %>%
+    unique() %>%
+    length()
+
+  if (successful_combos != total_combos) {
+    stop(paste0(
+      "Not all time series were prepped within 'prep_data', expected ",
+      total_combos, " time series but only ", successful_combos,
+      " time series are prepped. ", "Please run 'prep_data' again."
+    ),
+    call. = FALSE
+    )
+  }
+
   # update logging file
   log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
@@ -650,14 +690,19 @@ get_log_transformation <- function(df,
 #'
 #' @param df data frame
 #' @param combo_cleanup_date date value to test for non-zero values after
+#' @param hist_end_date last period in historical data
 #'
 #' @return tbl with or without specific time series removed
 #' @noRd
 combo_cleanup_fn <- function(df,
-                             combo_cleanup_date) {
+                             combo_cleanup_date,
+                             hist_end_date) {
   if (!is.null(combo_cleanup_date)) {
     combo_df <- df %>%
-      dplyr::filter(Date >= combo_cleanup_date) %>%
+      dplyr::filter(
+        Date >= combo_cleanup_date,
+        Date <= hist_end_date
+      ) %>%
       dplyr::group_by(Combo) %>%
       dplyr::summarise(Sum = sum(Target, na.rm = TRUE)) %>%
       dplyr::filter(Sum != 0) %>%

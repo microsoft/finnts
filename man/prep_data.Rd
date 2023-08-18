@@ -69,8 +69,7 @@ a more traditional hierarchical time series to forecast, both based on the hts p
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
-Value of 'azure_batch' runs time series in parallel on a remote compute cluster in Azure Batch. Value of 'spark'
-runs time series in parallel on a spark cluster in Azure Databricks/Synapse.}
+Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
@@ -104,7 +103,7 @@ data_tbl <- timetk::m4_monthly \%>\%
   dplyr::rename(Date = date) \%>\%
   dplyr::mutate(id = as.character(id)) \%>\%
   dplyr::filter(
-    Date >= "2012-01-01",
+    Date >= "2013-01-01",
     Date <= "2015-06-01"
   )
 
@@ -115,7 +114,8 @@ prep_data(run_info,
   combo_variables = c("id"),
   target_variable = "value",
   date_type = "month",
-  forecast_horizon = 3
+  forecast_horizon = 3,
+  recipes_to_run = "R1"
 )
 }
 }

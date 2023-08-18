@@ -181,6 +181,7 @@ finn_forecast <- forecast_time_series(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
+  back_test_scenarios = 6,
   run_model_parallel = FALSE,
   models_to_run = c("arima", "ets", "snaive"),
   return_data = FALSE

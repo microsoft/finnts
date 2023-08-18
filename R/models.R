@@ -29,10 +29,12 @@ get_recipe_combo <- function(train_data) {
 #' @param character_factor is character factor
 #' @param center_scale Center and scale
 #' @param one_hot True or False
+#' @param pca pca
 #' @return configurable recipe
 #' @noRd
+
 get_recipe_configurable <- function(train_data,
-                                     mutate_adj_half = FALSE, # todo Fix this. Should be true
+                                     mutate_adj_half = FALSE,
                                      rm_date = "plain",
                                      step_nzv = "zv",
                                      norm_date_adj_year = FALSE,
@@ -46,7 +48,8 @@ get_recipe_configurable <- function(train_data,
       df %>%
         recipes::step_mutate(
           Date_half_factor = as.factor(Date_half),
-          Date_quarter_factor = as.factor(Date_quarter)
+          Date_quarter_factor = as.factor(Date_quarter),
+          id = "step_mutate_adj_half"
         )
     } else {
       df
@@ -58,7 +61,7 @@ get_recipe_configurable <- function(train_data,
       "with_adj" = df %>%
         recipes::step_rm(Date),
       "with_adj_index" = df %>%
-        recipes::step_rm(Date, Date_index.num),
+        recipes::step_rm(Date, Date_index.num, id = "step_remove_date"),
       df,
       "none" = df
     )
@@ -67,9 +70,9 @@ get_recipe_configurable <- function(train_data,
   step_nz_fn <- function(df) {
     switch(step_nzv,
       "zv" = df %>%
-        recipes::step_zv(recipes::all_predictors()),
+        recipes::step_zv(recipes::all_predictors(), id = "step_zv"),
       "nzv" = df %>%
-        recipes::step_nzv(recipes::all_predictors()),
+        recipes::step_nzv(recipes::all_predictors(), id = "step_nzv"),
       df
     )
   }
@@ -77,7 +80,7 @@ get_recipe_configurable <- function(train_data,
   norm_date_adj_year_fn <- function(df) {
     if (norm_date_adj_year) {
       df %>%
-        recipes::step_normalize(Date_index.num, Date_year)
+        recipes::step_normalize(Date_index.num, Date_year, id = "step_normalize_date")
     } else {
       df
     }
@@ -86,7 +89,7 @@ get_recipe_configurable <- function(train_data,
   dummy_one_hot_fn <- function(df) {
     if (dummy_one_hot) {
       df %>%
-        recipes::step_dummy(recipes::all_nominal(), one_hot = one_hot)
+        recipes::step_dummy(recipes::all_nominal(), one_hot = one_hot, id = "step_dummy")
     } else {
       df
     }
@@ -95,7 +98,7 @@ get_recipe_configurable <- function(train_data,
   character_factor_fn <- function(df) {
     if (character_factor) {
       df %>%
-        recipes::step_mutate_at(where(is.character), fn = ~ as.factor(.))
+        recipes::step_mutate_at(where(is.character), fn = ~ as.factor(.), id = "step_char_conv")
     } else {
       df
     }
@@ -104,8 +107,8 @@ get_recipe_configurable <- function(train_data,
   center_scale_fn <- function(df) {
     if (center_scale) {
       df %>%
-        recipes::step_center(recipes::all_predictors()) %>%
-        recipes::step_scale(recipes::all_predictors())
+        recipes::step_center(recipes::all_predictors(), id = "step_center") %>%
+        recipes::step_scale(recipes::all_predictors(), id = "step_scale")
     } else {
       df
     }
@@ -114,7 +117,7 @@ get_recipe_configurable <- function(train_data,
   pca_fn <- function(df) {
     if (pca) {
       df %>%
-        recipes::step_pca(tidyselect::contains("lag"), threshold = .99, options = list(center = !center_scale, scale. = !center_scale))
+        recipes::step_pca(tidyselect::contains("lag"), threshold = .99, options = list(center = !center_scale, scale. = !center_scale), id = "step_pca")
     } else {
       df
     }
@@ -611,7 +614,7 @@ meanf <- function(train_data,
     get_recipe_simple()
 
   model_spec_meanf <- modeltime::window_reg(
-    window_size = frequency
+    window_size = round(frequency)
   ) %>%
     parsnip::set_engine(
       engine = "window_function",
@@ -815,7 +818,7 @@ snaive <- function(train_data,
     get_recipe_simple()
 
   model_spec_snaive <- modeltime::naive_reg(
-    seasonal_period = frequency
+    seasonal_period = round(frequency)
   ) %>%
     parsnip::set_engine("snaive")
 
