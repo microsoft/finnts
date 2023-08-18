@@ -505,7 +505,7 @@ model_workflows <- function(run_info,
 
   # models to run
   ml_models <- c(
-    "arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "arima", "arima-boost", "arima-xregs", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
   )
