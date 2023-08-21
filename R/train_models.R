@@ -389,13 +389,11 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          # final_features_list <- final_features_list[final_features_list != "Combo"]
-          # final_features_list <- final_features_list[final_features_list != "Target"]
-
           updated_recipe <- workflow %>%
             workflows::extract_recipe(estimated = FALSE) %>%
             recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
-            recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor")
+            recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
+            base::suppressWarnings()
 
           empty_workflow_final <- workflow %>%
             workflows::update_recipe(updated_recipe)

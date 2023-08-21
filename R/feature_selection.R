@@ -15,16 +15,26 @@ select_features <- function(input_data,
                             train_test_data,
                             parallel_processing = NULL,
                             date_type,
-                            fast = FALSE, 
+                            fast = FALSE,
                             seed = 123) {
+
+  # check for more than one unique target value
+  if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
+
+    # just return the date features
+    fs_list <- input_data %>%
+      dplyr::select(tidyselect::contains("Date"))
+
+    return(fs_list)
+  }
 
   # only keep historical data
   input_data <- input_data %>%
-    tidyr::drop_na(Target) 
-  
+    tidyr::drop_na(Target)
+
   # skip lofo if there are too many features
-  if(ncol(input_data) > 250) {
-    fast = TRUE
+  if (ncol(input_data) > 250) {
+    fast <- TRUE
   }
 
   # run feature selection
@@ -54,20 +64,28 @@ select_features <- function(input_data,
       votes_needed <- 4
 
       # run leave one feature out selection
-      lofo_results <- lofo_fn(
-        run_info = run_info,
-        data = input_data,
-        train_test_splits = train_test_data,
-        parallel_processing = parallel_processing, 
-        seed = seed
-      ) %>%
-        dplyr::filter(Imp >= 0) %>%
-        dplyr::rename(Feature = LOFO_Var) %>%
-        dplyr::mutate(
-          Vote = 1,
-          Auto_Accept = 0
-        ) %>%
-        dplyr::select(Feature, Vote, Auto_Accept)
+      tryCatch(
+        {
+          lofo_results <- lofo_fn(
+            run_info = run_info,
+            data = input_data,
+            train_test_splits = train_test_data,
+            parallel_processing = parallel_processing,
+            seed = seed
+          ) %>%
+            dplyr::filter(Imp >= 0) %>%
+            dplyr::rename(Feature = LOFO_Var) %>%
+            dplyr::mutate(
+              Vote = 1,
+              Auto_Accept = 0
+            ) %>%
+            dplyr::select(Feature, Vote, Auto_Accept)
+        },
+        error = function(e) {
+          votes_needed <- 3
+          lofo_results <- tibble::tibble()
+        }
+      )
     } else { # fast implementation
 
       # votes needed for feature to be selected
@@ -88,16 +106,20 @@ select_features <- function(input_data,
 
     # botuta feature selection
     boruta_results <- tibble::tibble(
-      Feature = boruta_fn(input_data, 
-                          seed),
+      Feature = boruta_fn(
+        input_data,
+        seed
+      ),
       Vote = 1,
       Auto_Accept = 0
     )
   }
 
   # random forest feature importance
-  vip_rf_results <- vip_rf_fn(input_data, 
-                              seed) %>%
+  vip_rf_results <- vip_rf_fn(
+    input_data,
+    seed
+  ) %>%
     dplyr::rename(Feature = Variable) %>%
     dplyr::mutate(
       Vote = 1,
@@ -106,8 +128,10 @@ select_features <- function(input_data,
     dplyr::select(Feature, Vote, Auto_Accept)
 
   # cubist feature importance
-  vip_cubist_results <- vip_cubist_fn(input_data, 
-                                      seed) %>%
+  vip_cubist_results <- vip_cubist_fn(
+    input_data,
+    seed
+  ) %>%
     dplyr::rename(Feature = Variable) %>%
     dplyr::mutate(
       Vote = 1,
@@ -116,8 +140,10 @@ select_features <- function(input_data,
     dplyr::select(Feature, Vote, Auto_Accept)
 
   # lasso regression feature importance
-  vip_lm_initial <- vip_lm_fn(input_data, 
-                              seed)
+  vip_lm_initial <- vip_lm_fn(
+    input_data,
+    seed
+  )
 
   missing_cols <- setdiff(
     colnames(input_data %>%
@@ -294,7 +320,7 @@ vip_cubist_fn <- function(data,
 #' @return list of most important features in boruta selection process
 #' @noRd
 boruta_fn <- function(data,
-                      iterations = 100, 
+                      iterations = 100,
                       seed = 123) {
   set.seed(seed)
   Boruta::Boruta(Target ~ ., data = data, maxRuns = iterations) %>%
@@ -315,7 +341,7 @@ lofo_fn <- function(run_info,
                     data,
                     train_test_splits,
                     parallel_processing,
-                    pca = FALSE, 
+                    pca = FALSE,
                     seed = 123) {
 
   # parallel run info
@@ -341,6 +367,7 @@ lofo_fn <- function(run_info,
       colnames() %>%
       c("Baseline_Model"),
     .combine = "rbind",
+    .errorhandling = "remove",
     .packages = packages
   ) %op% {
     col <- x
