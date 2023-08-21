@@ -64,9 +64,9 @@ select_features <- function(input_data,
       votes_needed <- 4
 
       # run leave one feature out selection
-      tryCatch(
+      lofo_results <- tryCatch(
         {
-          lofo_results <- lofo_fn(
+          lofo_fn(
             run_info = run_info,
             data = input_data,
             train_test_splits = train_test_data,
@@ -82,10 +82,13 @@ select_features <- function(input_data,
             dplyr::select(Feature, Vote, Auto_Accept)
         },
         error = function(e) {
-          votes_needed <- 3
-          lofo_results <- tibble::tibble()
+          tibble::tibble()
         }
       )
+
+      if (nrow(lofo_results) == 0) {
+        votes_needed <- 3
+      }
     } else { # fast implementation
 
       # votes needed for feature to be selected
@@ -206,7 +209,8 @@ target_corr_fn <- function(data,
   data %>%
     corrr::correlate(quiet = TRUE) %>%
     dplyr::filter(abs(Target) > threshold) %>%
-    dplyr::select(term, Target)
+    dplyr::select(term, Target) %>%
+    base::suppressWarnings()
 }
 
 #' Random Forest Variable Importance
