@@ -9,6 +9,7 @@
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models.
 #' @param global_model_recipes Recipes to use in global models.
+#' @param feature_selection Implement feature selection before model training
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
@@ -59,6 +60,7 @@ train_models <- function(run_info,
                          run_global_models = FALSE,
                          run_local_models = TRUE,
                          global_model_recipes = c("R1"),
+                         feature_selection = FALSE,
                          negative_forecast = FALSE,
                          parallel_processing = NULL,
                          inner_parallel = FALSE,
@@ -130,6 +132,10 @@ train_models <- function(run_info,
     unique()
 
   global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+  fs_model_list <- c(
+    global_model_list, "arima-boost", "prophet-boost", "prophet-xregs",
+    "nnetar-xregs"
+  )
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
@@ -209,6 +215,7 @@ train_models <- function(run_info,
       run_global_models = run_global_models,
       run_local_models = run_local_models,
       global_model_recipes = global_model_recipes,
+      feature_selection = feature_selection,
       seed = seed
     ) %>%
       data.frame()
@@ -269,6 +276,64 @@ train_models <- function(run_info,
         negative_forecast <- negative_forecast
       }
 
+      if (feature_selection) {
+        # ensure feature selection objects get exported
+        lofo_fn <- lofo_fn
+        target_corr_fn <- target_corr_fn
+        vip_rf_fn <- vip_rf_fn
+        vip_lm_fn <- vip_lm_fn
+        vip_cubist_fn <- vip_cubist_fn
+        boruta_fn <- boruta_fn
+        feature_selection <- feature_selection
+        fs_model_list <- fs_model_list
+      }
+
+      # run feature selection
+      if (feature_selection & sum(unique(model_workflow_tbl$Model_Name) %in% fs_model_list) > 0) {
+        fs_list <- list()
+
+        if ("R1" %in% unique(model_workflow_tbl$Model_Recipe)) {
+          R1_fs_list <- model_recipe_tbl %>%
+            dplyr::filter(Recipe == "R1") %>%
+            dplyr::select(Data) %>%
+            tidyr::unnest(Data) %>%
+            select_features(
+              run_info = run_info,
+              train_test_data = model_train_test_tbl,
+              parallel_processing = if (inner_parallel) {
+                "local_machine"
+              } else {
+                NULL
+              },
+              date_type = date_type,
+              fast = FALSE
+            )
+
+          fs_list <- append(fs_list, list(R1 = R1_fs_list))
+        }
+
+        if ("R2" %in% unique(model_workflow_tbl$Model_Recipe)) {
+          R2_fs_list <- model_recipe_tbl %>%
+            dplyr::filter(Recipe == "R2") %>%
+            dplyr::select(Data) %>%
+            tidyr::unnest(Data) %>%
+            select_features(
+              run_info = run_info,
+              train_test_data = model_train_test_tbl,
+              parallel_processing = if (inner_parallel) {
+                "local_machine"
+              } else {
+                NULL
+              },
+              date_type = date_type,
+              fast = FALSE
+            )
+
+          fs_list <- append(fs_list, list(R2 = R2_fs_list))
+        }
+      }
+
+      # train each model
       par_info <- par_start(
         run_info = run_info,
         parallel_processing = if (inner_parallel) {
@@ -316,6 +381,26 @@ train_models <- function(run_info,
 
         workflow <- workflow$Model_Workflow[[1]]
 
+        if (feature_selection & model %in% fs_model_list) {
+          # update model workflow to only use features from feature selection process
+          if (data_prep_recipe == "R1") {
+            final_features_list <- fs_list$R1
+          } else {
+            final_features_list <- fs_list$R2
+          }
+
+          updated_recipe <- workflow %>%
+            workflows::extract_recipe(estimated = FALSE) %>%
+            recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
+            recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
+            base::suppressWarnings()
+
+          empty_workflow_final <- workflow %>%
+            workflows::update_recipe(updated_recipe)
+        } else {
+          empty_workflow_final <- workflow
+        }
+
         hyperparameters <- model_hyperparameter_tbl %>%
           dplyr::filter(
             Model == model,
@@ -328,7 +413,7 @@ train_models <- function(run_info,
         set.seed(seed)
 
         tune_results <- tune::tune_grid(
-          object = workflow,
+          object = empty_workflow_final,
           resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
           grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
           control = tune::control_grid(
@@ -337,6 +422,7 @@ train_models <- function(run_info,
             parallel_over = "everything"
           )
         ) %>%
+          base::suppressMessages() %>%
           base::suppressWarnings()
 
         best_param <- tune::select_best(tune_results, metric = "rmse")
@@ -351,15 +437,16 @@ train_models <- function(run_info,
             base::suppressMessages()
         }
 
-        final_wflow <- tune::finalize_workflow(workflow, best_param)
+        finalized_workflow <- tune::finalize_workflow(empty_workflow_final, best_param)
         set.seed(seed)
-        wflow_fit <- generics::fit(final_wflow, prep_data %>% tidyr::drop_na(Target))
+        wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
+          base::suppressMessages()
 
         # refit on all train test splits
         set.seed(seed)
 
         refit_tbl <- tune::fit_resamples(
-          object = final_wflow,
+          object = finalized_workflow,
           resamples = create_splits(prep_data, model_train_test_tbl),
           metrics = NULL,
           control = tune::control_resamples(
@@ -514,6 +601,7 @@ train_models <- function(run_info,
       run_global_models = run_global_models,
       run_local_models = run_local_models,
       global_model_recipes = paste(unlist(global_model_recipes), collapse = "---"),
+      feature_selection = feature_selection,
       seed = seed,
       negative_forecast = negative_forecast,
       inner_parallel = inner_parallel

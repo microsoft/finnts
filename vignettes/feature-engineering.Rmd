@@ -65,7 +65,7 @@ In addition to the standard approaches above, finnts also does two different way
 
 In the first recipe, referred to as "R1" in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled "up". This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.
 
-```{r, echo = FALSE, message = FALSE}
+```{r, message = FALSE}
 
 library(finnts)
 
@@ -96,7 +96,7 @@ print(R1_prepped_data_tbl)
 
 The second recipe is referred to as "R2" in default finnts models. It takes a very different approach than the "R1" recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created depending on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, "Origin" and "Horizon" features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in "R1". NA values created by generating lag features are filled "up".
 
-```{r, echo = FALSE, message = FALSE}
+```{r, message = FALSE}
 
 library(finnts)
 
