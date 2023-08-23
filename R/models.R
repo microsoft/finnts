@@ -405,19 +405,19 @@ arima <- function(train_data,
 }
 
 
-#' ARIMA Xregs Model
+#' ARIMAX Model
 #'
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
 #'
-#' @return Get the ARIMA based model
+#' @return Get the ARIMAX based model
 #' @noRd
-arima_xregs <- function(train_data,
+arimax <- function(train_data,
                   frequency,
                   pca) {
   
   recipie_simple <- train_data %>% # rename recipe
-    get_recipie_configurable(
+    get_recipe_configurable(
       step_nzv = "zv",
       dummy_one_hot = TRUE,
       corr = TRUE,
