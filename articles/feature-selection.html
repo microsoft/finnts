@@ -5,7 +5,7 @@
 <meta charset="utf-8">
 <meta http-equiv="X-UA-Compatible" content="IE=edge">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Best Model Selection • finnts</title>
+<title>Feature Selection • finnts</title>
 <!-- favicons --><link rel="icon" type="image/png" sizes="16x16" href="../favicon-16x16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="../favicon-32x32.png">
 <link rel="apple-touch-icon" type="image/png" sizes="180x180" href="../apple-touch-icon.png">
@@ -17,7 +17,7 @@
 <script src="../bootstrap-toc.js"></script><!-- Font Awesome icons --><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.1/css/all.min.css" integrity="sha256-mmgLkCYLUQbXn0B1SRqzHar6dCnv9oZFPEC1g1cwlkk=" crossorigin="anonymous">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.12.1/css/v4-shims.min.css" integrity="sha256-wZjR52fzng1pJHwx4aV2AO3yyTOXrcDW7jBpJtTwVxw=" crossorigin="anonymous">
 <!-- clipboard.js --><script src="https://cdnjs.cloudflare.com/ajax/libs/clipboard.js/2.0.6/clipboard.min.js" integrity="sha256-inc5kl9MA1hkeYUt+EC3BhlIgyp/2jDIyBLS6k3UxPI=" crossorigin="anonymous"></script><!-- headroom.js --><script src="https://cdnjs.cloudflare.com/ajax/libs/headroom/0.11.0/headroom.min.js" integrity="sha256-AsUX4SJE1+yuDu5+mAVzJbuYNPHj/WroHuZ8Ir/CkE0=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/headroom/0.11.0/jQuery.headroom.min.js" integrity="sha256-ZX/yNShbjqsohH1k95liqY9Gd8uOiE1S4vZc+9KQ1K4=" crossorigin="anonymous"></script><!-- pkgdown --><link href="../pkgdown.css" rel="stylesheet">
-<script src="../pkgdown.js"></script><meta property="og:title" content="Best Model Selection">
+<script src="../pkgdown.js"></script><meta property="og:title" content="Feature Selection">
 <meta property="og:description" content="finnts">
 <meta property="og:image" content="https://microsoft.github.io/finnts/logo.png">
 <!-- mathjax --><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js" integrity="sha256-nvJJv9wWKEm88qvoQl9ekL2J+k/RWIsaSScxxlsrv8k=" crossorigin="anonymous"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/config/TeX-AMS-MML_HTMLorMML.js" integrity="sha256-84DKXVJXs0/F8OTMzX4UR909+jtl4G7SPypPavF+GfA=" crossorigin="anonymous"></script><!--[if lt IE 9]>
@@ -118,49 +118,60 @@
 
       
 
-      </header><script src="best-model-selection_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><script src="feature-selection_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
-      <h1 data-toc-skip>Best Model Selection</h1>
+      <h1 data-toc-skip>Feature Selection</h1>
             
       
-      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/best-model-selection.Rmd" class="external-link"><code>vignettes/best-model-selection.Rmd</code></a></small>
-      <div class="hidden name"><code>best-model-selection.Rmd</code></div>
+      <small class="dont-index">Source: <a href="https://github.com/microsoft/finnts/blob/main/vignettes/feature-selection.Rmd" class="external-link"><code>vignettes/feature-selection.Rmd</code></a></small>
+      <div class="hidden name"><code>feature-selection.Rmd</code></div>
 
     </div>
 
     
     
-<p>The “Best-Model” you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual, ensemble, and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied to each unique data combo and model combination.</p>
-<p>A standard MAPE calculation is produced first, then instead of a simple average to get the final MAPE a weighted MAPE is taken based on the size of the target variable value. Please see below for an example of the process.</p>
-<pre><code><span><span class="co">#&gt; Simple Back Test Results</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 10 × 8</span></span></span>
-<span><span class="co">#&gt;    Combo     Date       Model  FCST Target   MAPE Target_Total Percent_Total</span></span>
-<span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>        <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> Country_1 2020-01-01 arima     9     10 0.1             150        0.066<span style="text-decoration: underline;">7</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 2</span> Country_1 2020-02-01 arima    23     20 0.15            150        0.133 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 3</span> Country_1 2020-03-01 arima    35     30 0.167           150        0.2   </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 4</span> Country_1 2020-04-01 arima    41     40 0.025           150        0.267 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 5</span> Country_1 2020-05-01 arima    48     50 0.04            150        0.333 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 6</span> Country_1 2020-01-01 ets       7     10 0.3             150        0.066<span style="text-decoration: underline;">7</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 7</span> Country_1 2020-02-01 ets      22     20 0.1             150        0.133 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> Country_1 2020-03-01 ets      29     30 0.033<span style="text-decoration: underline;">3</span>          150        0.2   </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> Country_1 2020-04-01 ets      42     40 0.05            150        0.267 </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Country_1 2020-05-01 ets      53     50 0.06            150        0.333</span></span>
-<span><span class="co">#&gt; </span></span>
-<span><span class="co">#&gt; Overall Model Accuracy by Combo</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 2 × 4</span></span></span>
-<span><span class="co">#&gt;   Combo     Model   MAPE Weighted_MAPE</span></span>
-<span><span class="co">#&gt;   <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>         <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">1</span> Country_1 arima 0.096<span style="text-decoration: underline;">3</span>        0.08  </span></span>
-<span><span class="co">#&gt; <span style="color: #BCBCBC;">2</span> Country_1 ets   0.109         0.073<span style="text-decoration: underline;">3</span></span></span></code></pre>
-<p>During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the back testing vignette.</p>
-<p>User of Finn can also take the Finn outputs, create their own accuracy metrics, and choose their own best models since all model results are written to disk.</p>
+<p>Finn leverages multiple techniques of feature selection to ensure only the best features are used in individual model training. This speeds up run time while also improving model accuracy. Feature selection can be enabled by setting <code>feature_selection</code> to TRUE in either <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> or <code><a href="../reference/train_models.html">train_models()</a></code>. By default it’s turned off, meaning every feature in each feature engineering recipe will be used in model training.</p>
+<div class="section level2">
+<h2 id="feature-selection-techniques">Feature Selection Techniques<a class="anchor" aria-label="anchor" href="#feature-selection-techniques"></a>
+</h2>
+<p>Below are the techniques used in the feature selection process.</p>
+<div class="section level3">
+<h3 id="target-correlation">Target Correlation<a class="anchor" aria-label="anchor" href="#target-correlation"></a>
+</h3>
+<p>Removes features that are correlated with the target variable. For daily and weekly data, a correlation filter of 0.2 is applied. For all other date types, a correlation of 0.5 is applied.</p>
+</div>
+<div class="section level3">
+<h3 id="leave-one-feature-out-lofo">Leave One Feature Out (lofo)<a class="anchor" aria-label="anchor" href="#leave-one-feature-out-lofo"></a>
+</h3>
+<p>This is a more complex process where various models (cubist, glmnet, xgboost) are trained on the validation splits of the data. Each round, one feature is held out of the data, and the change in prediction accuracy (RMSE) over the hold out validation data is calculated. If the accuracy gets worse by removing the feature, it gets flagged as an important feature. This is not a recursive feature elimination process, instead only one feature is ever held out at any point in time.</p>
+<p>This technique is used for yearly, quarterly, and monthly data. It’s turned off for daily or weekly data since it would take too long to run properly. If a feature engineering recipe contains more than 250 features, lofo is also turned off to keep runtime low.</p>
+</div>
+<div class="section level3">
+<h3 id="boruta">Boruta<a class="anchor" aria-label="anchor" href="#boruta"></a>
+</h3>
+<p>Uses the <a href="https://cran.r-project.org/web/packages/Boruta/index.html" class="external-link">Boruta</a> package. It finds relevant features by comparing original attributes’ importance with importance achievable at random, estimated using their permuted copies (shadows).</p>
+<p>Boruta is not ran for daily or weekly data, in order to save time.</p>
+</div>
+<div class="section level3">
+<h3 id="model-variable-importance">Model Variable Importance<a class="anchor" aria-label="anchor" href="#model-variable-importance"></a>
+</h3>
+<p>Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the <a href="https://koalaverse.github.io/vip/index.html" class="external-link">vip</a> package. For each model, any feature with a variable importance score above zero is flagged as important.</p>
+</div>
+</div>
+<div class="section level2">
+<h2 id="voting-process">Voting Process<a class="anchor" aria-label="anchor" href="#voting-process"></a>
+</h2>
+<p>Since we use multiple techniques for feature selection, we need to determine how we will use this information to select the final features. This is where the voting process comes in. If a feature gets flagged in one of the above techniques successfully, it gets a vote. If a feature receives enough votes, it is kept and ultimately used when training individual models.</p>
+<p>Daily and weekly data have a voting threshold of 3, meaning a feature needs to get at least 3 votes from 3 separate feature selection techniques in order to be kept. Yearly, quarterly, or monthly data have a voting threshold of 4 (3 if lofo isn’t ran). Each feature needs to get a majority of the votes in order to be kept. This process can reduce up to 50%-95% of features. The final result is keeping all the features that contain the “signal” while discarding all other features that just contain “noise”.</p>
+</div>
   </div>
 
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">
 
-      </div>
+        <nav id="toc" data-toggle="toc"><h2 data-toc-skip>Contents</h2>
+    </nav>
+</div>
 
 </div>
 

@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.3.0.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.3.0.9001</span>
       </span>
     </div>
 
@@ -76,6 +76,9 @@
     </li>
     <li>
       <a href="../articles/feature-engineering.html">Feature Engineering</a>
+    </li>
+    <li>
+      <a href="../articles/feature-selection.html">Feature Selection</a>
     </li>
     <li>
       <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
@@ -194,7 +197,34 @@
 </h2>
 <p>In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model.</p>
 <p>In the first recipe, referred to as “R1” in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled “up”. This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.</p>
-<pre><code><span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 45 × 79</span></span></span>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2012-01-01"</span>, </span>
+<span>                <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
+<span>  experiment_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>, </span>
+<span>  run_name <span class="op">=</span> <span class="st">"R1_run"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/prep_data.html">prep_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>          input_data <span class="op">=</span> <span class="va">hist_data</span>, </span>
+<span>          combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>, </span>
+<span>          target_variable <span class="op">=</span> <span class="st">"value"</span>, </span>
+<span>          date_type <span class="op">=</span> <span class="st">"month"</span>, </span>
+<span>          forecast_horizon <span class="op">=</span> <span class="fl">3</span>, </span>
+<span>          recipes_to_run <span class="op">=</span> <span class="st">"R1"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">R1_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>                                        recipe <span class="op">=</span> <span class="st">"R1"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R1_prepped_data_tbl</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 45 × 79</span></span></span>
 <span><span class="co">#&gt;    Combo id    Date       Target Date_index.num Date_diff Date_year Date_half</span></span>
 <span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>          <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M2    M2    2012-01-01   <span style="text-decoration: underline;">2</span>490     <span style="text-decoration: underline;">1</span>325<span style="text-decoration: underline;">376</span>000         0      <span style="text-decoration: underline;">2</span>012         1</span></span>
@@ -213,9 +243,36 @@
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag9 &lt;dbl&gt;, Target_lag12 &lt;dbl&gt;, Target_lag3_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll3_Avg &lt;dbl&gt;, Target_lag9_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12_roll3_Avg &lt;dbl&gt;, Target_lag3_roll6_Avg &lt;dbl&gt;,</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll6_Avg &lt;dbl&gt;, Target_lag9_roll6_Avg &lt;dbl&gt;, …</span></span></span></code></pre>
+<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll6_Avg &lt;dbl&gt;, Target_lag9_roll6_Avg &lt;dbl&gt;, …</span></span></span></code></pre></div>
 <p>The second recipe is referred to as “R2” in default finnts models. It takes a very different approach than the “R1” recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created depending on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, “Origin” and “Horizon” features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in “R1”. NA values created by generating lag features are filled “up”.</p>
-<pre><code><span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 135 × 107</span></span></span>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
+<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2012-01-01"</span>, </span>
+<span>                <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
+<span>  experiment_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>, </span>
+<span>  run_name <span class="op">=</span> <span class="st">"R2_run"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/prep_data.html">prep_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>          input_data <span class="op">=</span> <span class="va">hist_data</span>, </span>
+<span>          combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>, </span>
+<span>          target_variable <span class="op">=</span> <span class="st">"value"</span>, </span>
+<span>          date_type <span class="op">=</span> <span class="st">"month"</span>, </span>
+<span>          forecast_horizon <span class="op">=</span> <span class="fl">3</span>, </span>
+<span>          recipes_to_run <span class="op">=</span> <span class="st">"R2"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">R2_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
+<span>                                        recipe <span class="op">=</span> <span class="st">"R2"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R2_prepped_data_tbl</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 135 × 107</span></span></span>
 <span><span class="co">#&gt;    Combo id    Date       Target Date_index.num Date_diff Date_year Date_half</span></span>
 <span><span class="co">#&gt;    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;date&gt;</span>      <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>          <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span>     <span style="color: #949494; font-style: italic;">&lt;dbl&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 1</span> M2    M2    2012-01-01   <span style="text-decoration: underline;">2</span>490     <span style="text-decoration: underline;">1</span>325<span style="text-decoration: underline;">376</span>000         0      <span style="text-decoration: underline;">2</span>012         1</span></span>
@@ -234,7 +291,7 @@
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag2 &lt;dbl&gt;, Target_lag3 &lt;dbl&gt;, Target_lag6 &lt;dbl&gt;, Target_lag9 &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12 &lt;dbl&gt;, Target_lag1_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag2_roll3_Avg &lt;dbl&gt;, Target_lag3_roll3_Avg &lt;dbl&gt;,</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll3_Avg &lt;dbl&gt;, Target_lag9_roll3_Avg &lt;dbl&gt;, …</span></span></span></code></pre>
+<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll3_Avg &lt;dbl&gt;, Target_lag9_roll3_Avg &lt;dbl&gt;, …</span></span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="model-specific-preprocessing">Model Specific Preprocessing<a class="anchor" aria-label="anchor" href="#model-specific-preprocessing"></a>

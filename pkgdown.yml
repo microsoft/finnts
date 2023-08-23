@@ -6,13 +6,14 @@ articles:
   best-model-selection: best-model-selection.html
   external-regressors: external-regressors.html
   feature-engineering: feature-engineering.html
+  feature-selection: feature-selection.html
   finnts: finnts.html
   forecast-components: forecast-components.html
   hierarchical-forecasting: hierarchical-forecasting.html
   models-used-in-finnts: models-used-in-finnts.html
   parallel-processing: parallel-processing.html
   tips-for-production: tips-for-production.html
-last_built: 2023-08-12T15:10Z
+last_built: 2023-08-23T23:26Z
 urls:
   reference: https://microsoft.github.io/finnts/reference
   article: https://microsoft.github.io/finnts/articles
