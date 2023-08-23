@@ -97,7 +97,7 @@ get_recipie_configurable <- function(train_data,
   dummy_one_hot_fn <- function(df) {
     if (dummy_one_hot) {
       df %>%
-        recipes::step_dummy(recipes::all_nominal(), one_hot = one_hot)
+        recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = one_hot)
     } else {
       df
     }
@@ -416,12 +416,11 @@ arima_xregs <- function(train_data,
   recipie_simple <- train_data %>% # rename recipe
     get_recipie_configurable(
       step_nzv = "zv",
-      dummy_one_hot = FALSE,
+      dummy_one_hot = TRUE,
       corr = TRUE,
       pca = FALSE,
       lincomb = TRUE
-    ) %>%
-    step_select(recipes::all_numeric_predictors(),recipes::all_date_predictors(),recipes::all_datetime_predictors())
+    )
   model_spec_arima <- modeltime::arima_reg(
     seasonal_period = frequency
   ) %>%

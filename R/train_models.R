@@ -247,7 +247,7 @@ train_models <- function(run_info,
     x = current_combo_list_final,
     .combine = "rbind",
     .packages = packages,
-    .errorhandling = "stop",
+    .errorhandling = "remove",
     .verbose = FALSE,
     .inorder = FALSE,
     .multicombine = TRUE,
@@ -406,8 +406,6 @@ train_models <- function(run_info,
 
           # fit model
           set.seed(seed)
-          tryCatch(
-          {
             if (nrow(hyperparameters) > 0) {
               model_fit <- workflow_final %>%
                 tune::finalize_workflow(parameters = hyperparameters) %>%
@@ -417,11 +415,6 @@ train_models <- function(run_info,
                 generics::fit(data = training)
                 
             }
-            
-          }, error = function(err) {
-            stop("ERROR:", err)
-          }
-          )
           # create prediction
           model_prediction <- testing %>%
             dplyr::bind_cols(
@@ -441,7 +434,6 @@ train_models <- function(run_info,
             Hyperparameter_ID = param_combo,
             Prediction = list(model_prediction)
           )
-          browser()
           return(final_tbl)
         } %>%
         base::suppressPackageStartupMessages()
