@@ -6,6 +6,10 @@
 -   Automated feature selection, refer to feature selection vignette for more details
 -   Error handling in hierarchical forecast reconciliation
 
+## Bug Fixes
+
+-   Best model selection
+
 # finnts 0.3.0
 
 ## Improvements
