@@ -359,6 +359,8 @@ reconcile_hierarchical_data <- function(run_info,
     ) %op%
       {
         model <- x
+        
+        ts_combined <- NULL
 
         tryCatch(
           {
@@ -423,8 +425,6 @@ reconcile_hierarchical_data <- function(run_info,
               dplyr::select(-Date, -Train_Test_ID) %>%
               dplyr::select(hts_combo_list) %>%
               as.matrix()
-            
-            ts_combined <- NULL
 
             if (forecast_approach == "standard_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
@@ -537,7 +537,9 @@ reconcile_hierarchical_data <- function(run_info,
     ) %op%
       {
         model <- x
-
+        
+        ts_combined <- NULL
+        
         tryCatch(
           {
             hist_tbl <- read_file(run_info,
@@ -640,8 +642,6 @@ reconcile_hierarchical_data <- function(run_info,
               tibble::as_tibble() %>%
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
               as.matrix()
-            
-            ts_combined <- NULL
 
             if (forecast_approach == "standard_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
