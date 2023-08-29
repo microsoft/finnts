@@ -16,6 +16,24 @@ knitr::opts_chunk$set(
 
 Automated feature engineering is a cornerstone of the package. Below are some of the techniques we use in multivariate machine learning models, and the outside packages that make it possible.
 
+## Missing Data and Outliers
+
+Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padded using NA. Then the same process is ran again, this time padding data from the `hist_start_date` from `forecast_time_series()`, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step.
+
+After missing data is padded, the [ts_impute_vec](https://business-science.github.io/timetk/reference/ts_impute_vec.html) function from the timetk package is called to impute any NA values. This only happens if the `clean_missing_values` input from `forecast_time_series()` is set to TRUE, otherwise NA values are replaced with zero.
+
+Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. Outliers are replaced after the missing data process, and only runs if the `clean_outliers` input from `forecast_time_series()` is set to TRUE.
+
+**Important Note:** Missing values and outliers are replaced for the target variable and any numeric external regressors.
+
+## Box-Cox
+
+Stabilizes the variance in each time series using the [box_cox_vec](https://business-science.github.io/timetk/reference/box_cox_vec.html) function from the timetk package. Applied to both the target variable and any external regressor before other transformations like differencing. You can control this within `prep_models()`. 
+
+## Differencing
+
+Uses the [feasts](https://feasts.tidyverts.org/reference/unitroot_ndiffs.html) package to check if each time series is stationary and applies the differencing required (up to two standard differences with lag one) in order to make the time series stationary. Uses the [diff_vec](https://business-science.github.io/timetk/reference/diff_vec.html) function from the timetk package to do the differencing. This is applied to the target variable and any external regressor before other features are created. Data is undifferenced before training for univariate models like arima, but differenced data is used for all multivariate models. You can control the differencing done within `prep_models()`.
+
 ## Date Features
 
 The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the time stamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed.
@@ -32,16 +50,6 @@ m4_monthly %>%
   timetk::tk_augment_fourier(date, .periods = c(3, 6, 12), .K = 1) %>%
   dplyr::ungroup()
 ```
-
-## Missing Data and Outliers
-
-Missing data is filled in using the [pad_by_time](https://business-science.github.io/timetk/reference/pad_by_time.html) function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padded using NA. Then the same process is ran again, this time padding data from the `hist_start_date` from `forecast_time_series()`, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step.
-
-After missing data is padded, the [ts_impute_vec](https://business-science.github.io/timetk/reference/ts_impute_vec.html) function from the timetk package is called to impute any NA values. This only happens if the `clean_missing_values` input from `forecast_time_series()` is set to TRUE, otherwise NA values are replaced with zero.
-
-Outliers are handled using the [ts_clean_vec](https://business-science.github.io/timetk/reference/ts_clean_vec.html) function from the timetk package. Outliers are replaced after the missing data process, and only runs if the `clean_outliers` input from `forecast_time_series()` is set to TRUE.
-
-**Important Note:** Missing values and outliers are replaced for the target variable and any numeric external regressors.
 
 ## Lags, Rolling Windows, and Polynomial Transformations
 
