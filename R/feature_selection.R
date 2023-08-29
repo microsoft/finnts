@@ -146,14 +146,14 @@ select_features <- function(input_data,
     },
     warning = function(w) {
       # do nothing
-    }, 
+    },
     error = function(e) {
       tibble::tibble()
     }
   )
-  
+
   if (nrow(vip_cubist_results) == 0) {
-    votes_needed <- votes_needed-1
+    votes_needed <- votes_needed - 1
   }
 
   # lasso regression feature importance

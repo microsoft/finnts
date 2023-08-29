@@ -8,7 +8,7 @@ list_models <- function() {
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
   )
-  
+
   return(list)
 }
 
@@ -23,7 +23,7 @@ list_hyperparmater_models <- function() {
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
     "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
   )
-  
+
   return(list)
 }
 
@@ -36,7 +36,7 @@ list_ensemble_models <- function() {
   list <- c(
     "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
   )
-  
+
   return(list)
 }
 
@@ -47,7 +47,7 @@ list_ensemble_models <- function() {
 #' @noRd
 list_r2_models <- function() {
   list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
-  
+
   return(list)
 }
 
@@ -58,7 +58,7 @@ list_r2_models <- function() {
 #' @noRd
 list_global_models <- function() {
   list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
-  
+
   return(list)
 }
 
@@ -72,7 +72,7 @@ list_multivariate_models <- function() {
     list_global_models(), "arima-boost", "prophet-boost", "prophet-xregs",
     "nnetar-xregs"
   )
-  
+
   return(list)
 }
 
