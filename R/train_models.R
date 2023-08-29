@@ -90,6 +90,8 @@ train_models <- function(run_info,
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
+  stationary <- log_df$stationary
+  box_cox <- log_df$box_cox
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -131,16 +133,24 @@ train_models <- function(run_info,
     dplyr::pull(Model_Name) %>%
     unique()
 
-  global_model_list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
-  fs_model_list <- c(
-    global_model_list, "arima-boost", "prophet-boost", "prophet-xregs",
-    "nnetar-xregs"
-  )
+  global_model_list <- list_global_models()
+  fs_model_list <- list_multivariate_models()
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
     cli::cli_alert_info("Turning global models off since no multivariate models were chosen to run.")
     cli::cli_progress_update()
+  }
+  
+  # get other time series info
+  if(box_cox || stationary) {
+    orig_combo_info_tbl <- read_file(run_info,
+                                      path = paste0(
+                                        "/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                                        "-orig_combo_info.", run_info$data_output
+                                      ),
+                                      return_type = "df"
+    )
   }
 
   # get list of tasks to run
@@ -259,11 +269,19 @@ train_models <- function(run_info,
     .noexport = NULL
   ) %op%
     {
+      
+      # get time series
       combo_hash <- x
 
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x
       )
+      
+      # get other time series info
+      if(box_cox || stationary) {
+        filtered_combo_info_tbl <- orig_combo_info_tbl %>%
+          dplyr::filter(Combo_Hash == combo_hash)
+      }
 
       if (inner_parallel) {
         # ensure variables get exported
@@ -408,6 +426,13 @@ train_models <- function(run_info,
           ) %>%
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
+        
+        if(stationary & !(model %in% list_multivariate_models())) {
+          # undifference the data for a univariate model
+          prep_data <- prep_data %>% 
+            undifference_recipe(filtered_combo_info_tbl, 
+                                model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End))
+        }
 
         # tune hyperparameters
         set.seed(seed)
@@ -455,9 +480,11 @@ train_models <- function(run_info,
             pkgs = inner_packages,
             parallel_over = "everything"
           )
-        )
+        ) %>%
+          tune::collect_predictions()
 
-        final_fcst <- tune::collect_predictions(refit_tbl) %>%
+        # finalize forecast
+        final_fcst <- refit_tbl %>%
           dplyr::rename(
             Forecast = .pred,
             Train_Test_ID = id
@@ -474,9 +501,28 @@ train_models <- function(run_info,
             by = ".row"
           ) %>%
           dplyr::mutate(Hyperparameter_ID = hyperparameter_id) %>%
-          dplyr::select(-.row, -.config) %>%
+          dplyr::select(-.row, -.config)
+
+        # undo differencing transformation
+        if(stationary & model %in% list_multivariate_models()) {
+          final_fcst <- final_fcst %>%
+            undifference_forecast(prep_data,
+                                  filtered_combo_info_tbl)
+        }
+
+        # undo box-cox transformation
+        if(box_cox) {
+          lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
+          final_fcst <- final_fcst %>%
+            dplyr::mutate(Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                          Target = timetk::box_cox_inv_vec(Target, lambda = lambda))
+        }
+
+        # negative forecast adjustment
+        final_fcst <- final_fcst %>%
           negative_fcst_adj(negative_forecast)
 
+        # return the forecast
         combo_id <- ifelse(x == "All-Data", "All-Data", unique(final_fcst$Combo))
 
         final_return_tbl <- tibble::tibble(
@@ -700,3 +746,156 @@ create_splits <- function(data, train_test_splits) {
 
   return(resamples)
 }
+
+#' Function to undifference forecast data
+#'
+#' @param forecast_data forecast data
+#' @param recipe_data recipe data
+#' @param diff_tbl diff table
+#'
+#' @return tbl with undifferenced forecast
+#' @noRd
+undifference_forecast <- function(forecast_data,
+                              recipe_data,
+                              diff_tbl) {
+
+  # check if data needs to be undifferenced
+  diff1 <- diff_tbl$Diff_Value1
+  diff2 <- diff_tbl$Diff_Value2
+  
+  if(is.na(diff1) & is.na(diff2)) {
+    return(forecast_data)
+  }
+  
+  # return df
+  return_tbl <- tibble::tibble()
+  
+  # train test id number
+  train_test_id <- unique(forecast_data$Train_Test_ID)
+  
+  # non seasonal differencing
+  if(!is.na(diff1)) {
+    
+    # loop through each back test split
+    for(id in train_test_id) {
+
+      # get specific train test split
+      fcst_temp_tbl <- forecast_data %>%
+        dplyr::filter(Train_Test_ID == id)
+
+      fcst_start_date <- min(unique(fcst_temp_tbl$Date))
+      
+      # prep recipe data
+      if("Horizon" %in% colnames(recipe_data)) {
+        filtered_recipe_data <- recipe_data %>%
+          dplyr::filter(Date < fcst_start_date,
+                        Horizon == min(unique(recipe_data$Horizon)))
+      } else {
+        filtered_recipe_data <- recipe_data %>%
+          dplyr::filter(Date < fcst_start_date)
+      }
+      
+      # adjust recipe data 
+      filtered_recipe_data$Target[1] <- NA
+      
+      if(!is.na(diff2)) {
+        filtered_recipe_data$Target[2] <- NA
+      }
+      
+      # get number of differences and initial values
+      if(!is.na(diff1) & !is.na(diff2)) {
+        num_diffs <- 2
+        initial_value <- c(diff1, diff2)
+      } else {
+        num_diffs <- 1
+        initial_value <- diff1
+      }
+
+      # combine historical data with forecast, then undifference and return forecast
+      combined_data <- filtered_recipe_data %>%
+        dplyr::mutate(Forecast = Target) %>%
+        dplyr::select(Date, Target, Forecast) %>%
+        rbind(
+          fcst_temp_tbl %>%
+            dplyr::select(Date, Target, Forecast)
+        ) %>%
+        dplyr::arrange(Date)
+      
+      if(id == 1) {
+        target_tbl <- combined_data %>%
+          dplyr::select(-Forecast) %>%
+          dplyr::filter(Date < fcst_start_date) %>%
+          dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
+      } else {
+        target_tbl <- combined_data %>%
+          dplyr::select(-Forecast) %>%
+          dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
+      }
+
+      forecast_tbl <- combined_data %>%
+        dplyr::select(-Target) %>%
+        dplyr::mutate(Forecast = timetk::diff_inv_vec(Forecast, difference = num_diffs, initial_values = initial_value))
+
+      final_forecast <- fcst_temp_tbl %>%
+        dplyr::select(-Target, -Forecast) %>%
+        dplyr::left_join(forecast_tbl, by = "Date") %>%
+        dplyr::left_join(target_tbl, by = "Date")
+
+      return_tbl <- return_tbl %>%
+        rbind(final_forecast)
+    }
+  }
+  
+  return(return_tbl)
+}
+
+#' Function to undifference recipe data
+#'
+#' @param recipe_data recipe data
+#' @param diff_tbl diff table
+#' @param hist_end_date historical data end date
+#'
+#' @return tbl with undifferenced recipe
+#' @noRd
+undifference_recipe <- function(recipe_data,
+                                diff_tbl, 
+                                hist_end_date) {
+  
+  # check if data needs to be undifferenced
+  diff1 <- diff_tbl$Diff_Value1
+  diff2 <- diff_tbl$Diff_Value2
+  
+  if(is.na(diff1) & is.na(diff2)) {
+    return(recipe_data)
+  }
+  
+  # adjust recipe data
+  recipe_data$Target[1] <- NA
+  
+  if(!is.na(diff2)) {
+    recipe_data$Target[2] <- NA
+  }
+  
+  # get number of differences and initial values
+  if(!is.na(diff1) & !is.na(diff2)) {
+    num_diffs <- 2
+    initial_value <- c(diff1, diff2)
+  } else {
+    num_diffs <- 1
+    initial_value <- diff1
+  }
+  
+  # undifference the data
+  undiff_recipe_data <- recipe_data %>%
+    dplyr::filter(Date <= hist_end_date) %>% 
+    dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value)) 
+  
+  future_data <- recipe_data %>%
+    dplyr::filter(Date > hist_end_date)
+  
+  final_recipe_data <- undiff_recipe_data %>%
+    rbind(future_data)
+    
+  return(final_recipe_data)
+}
+

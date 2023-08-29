@@ -217,16 +217,10 @@ train_test_split <- function(run_info,
     unique()
 
   # models with hyperparameters to tune
-  hyperparam_model_list <- c(
-    "arima-boost", "cubist", "glmnet", "mars",
-    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
-    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
-  )
+  hyperparam_model_list <- list_hyperparmater_models()
 
   # ensemble models
-  ensemble_model_list <- c(
-    "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
-  )
+  ensemble_model_list <- list_ensemble_models()
 
   if (sum(model_workflow_list %in% ensemble_model_list) == 0 & run_ensemble_models) {
     run_ensemble_models <- FALSE
@@ -515,11 +509,7 @@ model_workflows <- function(run_info,
   model_workflow_tbl <- tibble::tibble()
 
   # models to run
-  ml_models <- c(
-    "arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
-    "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
-    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
-  )
+  ml_models <- list_models()
 
   if (is.null(models_to_run) & is.null(models_not_to_run)) {
 
@@ -539,7 +529,7 @@ model_workflows <- function(run_info,
     }
   }
 
-  r2_models <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
+  r2_models <- list_r2_models()
 
   iter_tbl <- tibble::tibble()
 

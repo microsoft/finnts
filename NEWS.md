@@ -5,6 +5,8 @@
 -   Tidymodels speed up
 -   Automated feature selection, refer to feature selection vignette for more details
 -   Error handling in hierarchical forecast reconciliation
+-   Box-cox and differencing transformations
+-   Added new function, `list_models()`, that lists available models in the package 
 
 ## Bug Fixes
 

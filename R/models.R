@@ -1,3 +1,81 @@
+#' List all available models
+#'
+#' @return list of models
+#' @export
+list_models <- function() {
+  list <- c(
+    "arima", "arima-boost", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
+  )
+  
+  return(list)
+}
+
+#' List models with hyperparameters
+#'
+#'
+#' @return list of models
+#' @noRd
+list_hyperparmater_models <- function() {
+  list <- c(
+    "arima-boost", "cubist", "glmnet", "mars",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
+    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
+  )
+  
+  return(list)
+}
+
+#' List ensemble models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_ensemble_models <- function() {
+  list <- c(
+    "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
+  )
+  
+  return(list)
+}
+
+#' List models capable with R2 recipe
+#'
+#'
+#' @return list of models
+#' @noRd
+list_r2_models <- function() {
+  list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
+  
+  return(list)
+}
+
+#' List global models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_global_models <- function() {
+  list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+  
+  return(list)
+}
+
+#' List multivariate models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_multivariate_models <- function() {
+  list <- c(
+    list_global_models(), "arima-boost", "prophet-boost", "prophet-xregs",
+    "nnetar-xregs"
+  )
+  
+  return(list)
+}
+
 #' Gets a simple recipe
 #'
 #' @param train_data Training Data
