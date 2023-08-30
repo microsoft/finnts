@@ -292,6 +292,8 @@ train_models <- function(run_info,
         combo_variables <- combo_variables
         negative_fcst_adj <- negative_fcst_adj
         negative_forecast <- negative_forecast
+        stationary <- stationary
+        box_cox <- box_cox
       }
 
       if (feature_selection) {
