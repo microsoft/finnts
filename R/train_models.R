@@ -721,13 +721,14 @@ create_splits <- function(data, train_test_splits) {
     # Get the train and test end dates
     train_end <- train_test_splits$Train_End[i]
     test_end <- train_test_splits$Test_End[i]
-
-
+    train_test_id <- train_test_splits$Train_Test_ID[i]
 
     # Create the train and test indices
     train_indices <- which(data$Date <= train_end)
 
-    if ("Horizon" %in% colnames(data)) {
+    if ("Train_Test_ID" %in% colnames(data)) {
+      test_indices <- which(data$Train_Test_ID == train_test_id)
+    } else if ("Horizon" %in% colnames(data)) {
       # adjust for the horizon in R2 recipe data
       train_data <- data %>%
         dplyr::filter(
