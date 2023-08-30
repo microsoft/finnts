@@ -377,7 +377,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "stop",
+        .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
