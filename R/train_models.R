@@ -373,7 +373,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "remove",
+        .errorhandling = "stop",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
@@ -548,7 +548,7 @@ train_models <- function(run_info,
       par_end(inner_cl)
 
       # ensure at least one model ran successfully
-      if (nrow(model_tbl) < 1) {
+      if (is.null(model_tbl)) {
         stop("All models failed to train")
       }
 
