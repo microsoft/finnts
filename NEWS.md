@@ -3,6 +3,7 @@
 ## Improvements
 
 -   Tidymodels speed up
+-   Added external regressor support for ARIMA by introducing a new model option of `arimax`, which uses engineered features in addition to any external regressors supplied.
 
 # finnts 0.3.0
 
