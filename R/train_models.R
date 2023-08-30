@@ -294,6 +294,10 @@ train_models <- function(run_info,
         negative_forecast <- negative_forecast
         stationary <- stationary
         box_cox <- box_cox
+        undifference_forecast <- undifference_forecast
+        undifference_recipe <- undifference_recipe
+        list_global_models <- list_global_models
+        list_multivariate_models <- list_multivariate_models
       }
 
       if (feature_selection) {
