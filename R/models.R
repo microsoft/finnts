@@ -72,7 +72,7 @@ get_recipe_configurable <- function(train_data,
   corr_fn <- function(df) {
     if (corr) {
       df %>%
-        recipes::step_corr(recipes::all_numeric_predictors(), threshold = .5)
+        recipes::step_corr(recipes::all_numeric_predictors(), threshold = .5, id = "remove_correlated_vars")
     } else {
       df
     }
@@ -137,7 +137,7 @@ get_recipe_configurable <- function(train_data,
   rm_lincomb_fn <- function(df) {
     if (lincomb) {
       df %>%
-        recipes::step_lincomb(recipes::all_numeric_predictors())
+        recipes::step_lincomb(recipes::all_numeric_predictors(),  id = "remove_linear_combs")
     } else {
       df
     }
@@ -145,13 +145,13 @@ get_recipe_configurable <- function(train_data,
 
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     mutate_adj_half_fn() %>%
+    step_nz_fn() %>%
     rm_date_fn() %>%
     norm_date_adj_year_fn() %>%
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
     center_scale_fn() %>%
     pca_fn() %>%
-    step_nz_fn() %>%
     rm_lincomb_fn() %>%
     corr_fn()
 }
@@ -416,12 +416,12 @@ arimax <- function(train_data,
                   frequency,
                   pca) {
   
-  recipie_simple <- train_data %>% # rename recipe
+  recipe_spec_arimax <- train_data %>%
     get_recipe_configurable(
       step_nzv = "zv",
       dummy_one_hot = TRUE,
       corr = TRUE,
-      pca = FALSE,
+      pca = pca,
       lincomb = TRUE
     )
   model_spec_arima <- modeltime::arima_reg(
@@ -431,7 +431,7 @@ arimax <- function(train_data,
   
   wflw_spec <- get_workflow_simple(
     model_spec_arima,
-    recipie_simple
+    recipe_spec_arimax
   )
   
   return(wflw_spec)
