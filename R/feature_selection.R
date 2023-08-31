@@ -152,7 +152,7 @@ select_features <- function(input_data,
     }
   )
 
-  if (nrow(vip_cubist_results) == 0) {
+  if (is.null(vip_cubist_results)) {
     votes_needed <- votes_needed - 1
   }
 
