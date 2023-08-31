@@ -1,0 +1,47 @@
+---
+title: "Feature Selection"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{feature-selection}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Finn leverages multiple techniques of feature selection to ensure only the best features are used in individual model training. This speeds up run time while also improving model accuracy. Feature selection can be enabled by setting `feature_selection` to TRUE in either `forecast_time_series()` or `train_models()`. By default it's turned off, meaning every feature in each feature engineering recipe will be used in model training.
+
+## Feature Selection Techniques
+
+Below are the techniques used in the feature selection process.
+
+### Target Correlation
+
+Removes features that are correlated with the target variable. For daily and weekly data, a correlation filter of 0.2 is applied. For all other date types, a correlation of 0.5 is applied.
+
+### Leave One Feature Out (lofo)
+
+This is a more complex process where various models (cubist, glmnet, xgboost) are trained on the validation splits of the data. Each round, one feature is held out of the data, and the change in prediction accuracy (RMSE) over the hold out validation data is calculated. If the accuracy gets worse by removing the feature, it gets flagged as an important feature. This is not a recursive feature elimination process, instead only one feature is ever held out at any point in time.
+
+This technique is used for yearly, quarterly, and monthly data. It's turned off for daily or weekly data since it would take too long to run properly. If a feature engineering recipe contains more than 250 features, lofo is also turned off to keep runtime low. 
+
+### Boruta
+
+Uses the [Boruta](https://cran.r-project.org/web/packages/Boruta/index.html) package. It finds relevant features by comparing original attributes' importance with importance achievable at random, estimated using their permuted copies (shadows).
+
+Boruta is not ran for daily or weekly data, in order to save time.
+
+### Model Variable Importance
+
+Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the [vip](https://koalaverse.github.io/vip/index.html) package. For each model, any feature with a variable importance score above zero is flagged as important.
+
+## Voting Process
+
+Since we use multiple techniques for feature selection, we need to determine how we will use this information to select the final features. This is where the voting process comes in. If a feature gets flagged in one of the above techniques successfully, it gets a vote. If a feature receives enough votes, it is kept and ultimately used when training individual models.
+
+Daily and weekly data have a voting threshold of 3, meaning a feature needs to get at least 3 votes from 3 separate feature selection techniques in order to be kept. Yearly, quarterly, or monthly data have a voting threshold of 4 (3 if lofo isn't ran). Each feature needs to get a majority of the votes in order to be kept. This process can reduce up to 50%-95% of features. The final result is keeping all the features that contain the "signal" while discarding all other features that just contain "noise".

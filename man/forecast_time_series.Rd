@@ -39,6 +39,7 @@ forecast_time_series(
   run_ensemble_models = NULL,
   average_models = TRUE,
   max_model_average = 3,
+  feature_selection = FALSE,
   weekly_to_daily = TRUE,
   seed = 123,
   run_model_parallel = FALSE,
@@ -147,6 +148,8 @@ date types.}
 
 \item{max_model_average}{Max number of models to average together. Will create model averages for 2 models up until input value
 or max number of models ran.}
+
+\item{feature_selection}{Implement feature selection before model training}
 
 \item{weekly_to_daily}{If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}

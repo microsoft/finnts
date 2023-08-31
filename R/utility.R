@@ -11,7 +11,9 @@ utils::globalVariables(c(
   "combo_list", "data", "get_export_packages", "hi_80", "hi_95", "i", "lo_80", "lo_95",
   "model_spec_1", "name", "path_ext", "predict", "read.csv", "sc", "weighted_MAPE", "where",
   "x", "num_cores", "run_info", "negative_forecast", "Forecast_Adj", "Final_Col", "lag_val", "libs",
-  ".config", "Forecast_Tbl", "Model_Workflow", "id", "model_run"
+  ".config", "Forecast_Tbl", "Model_Workflow", "id", "model_run",
+  "Auto_Accept", "Feature", "Imp", "Importance", "LOFO_Var", "Var_RMSE", "Vote", "Votes", "desc",
+  "term"
 ))
 
 #' @importFrom magrittr %>%

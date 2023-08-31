@@ -9,6 +9,7 @@ train_models(
   run_global_models = FALSE,
   run_local_models = TRUE,
   global_model_recipes = c("R1"),
+  feature_selection = FALSE,
   negative_forecast = FALSE,
   parallel_processing = NULL,
   inner_parallel = FALSE,
@@ -28,6 +29,8 @@ except week and day.}
 local models.}
 
 \item{global_model_recipes}{Recipes to use in global models.}
+
+\item{feature_selection}{Implement feature selection before model training}
 
 \item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
