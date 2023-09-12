@@ -1,3 +1,81 @@
+#' List all available models
+#'
+#' @return list of models
+#' @export
+list_models <- function() {
+  list <- c(
+    "arima", "arima-boost", "arimax", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
+  )
+
+  return(list)
+}
+
+#' List models with hyperparameters
+#'
+#'
+#' @return list of models
+#' @noRd
+list_hyperparmater_models <- function() {
+  list <- c(
+    "arima-boost", "cubist", "glmnet", "mars",
+    "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
+    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
+  )
+
+  return(list)
+}
+
+#' List ensemble models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_ensemble_models <- function() {
+  list <- c(
+    "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
+  )
+
+  return(list)
+}
+
+#' List models capable with R2 recipe
+#'
+#'
+#' @return list of models
+#' @noRd
+list_r2_models <- function() {
+  list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
+
+  return(list)
+}
+
+#' List global models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_global_models <- function() {
+  list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+
+  return(list)
+}
+
+#' List multivariate models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_multivariate_models <- function() {
+  list <- c(
+    list_global_models(), "arima-boost", "prophet-boost", "prophet-xregs",
+    "nnetar-xregs"
+  )
+
+  return(list)
+}
+
 #' Gets a simple recipe
 #'
 #' @param train_data Training Data
@@ -34,17 +112,17 @@ get_recipe_combo <- function(train_data) {
 #' @noRd
 
 get_recipe_configurable <- function(train_data,
-                                     mutate_adj_half = FALSE,
-                                     rm_date = "plain",
-                                     step_nzv = "zv",
-                                     norm_date_adj_year = FALSE,
-                                     dummy_one_hot = TRUE,
-                                     character_factor = FALSE,
-                                     center_scale = FALSE,
-                                     one_hot = FALSE,
-                                     pca = TRUE,
-                                     corr = FALSE,
-                                     lincomb = FALSE) {
+                                    mutate_adj_half = FALSE,
+                                    rm_date = "plain",
+                                    step_nzv = "zv",
+                                    norm_date_adj_year = FALSE,
+                                    dummy_one_hot = TRUE,
+                                    character_factor = FALSE,
+                                    center_scale = FALSE,
+                                    one_hot = FALSE,
+                                    pca = TRUE,
+                                    corr = FALSE,
+                                    lincomb = FALSE) {
   mutate_adj_half_fn <- function(df) {
     if (mutate_adj_half) {
       df %>%
@@ -68,7 +146,7 @@ get_recipe_configurable <- function(train_data,
       "none" = df
     )
   }
-  
+
   corr_fn <- function(df) {
     if (corr) {
       df %>%
@@ -137,7 +215,7 @@ get_recipe_configurable <- function(train_data,
   rm_lincomb_fn <- function(df) {
     if (lincomb) {
       df %>%
-        recipes::step_lincomb(recipes::all_numeric_predictors(),  id = "remove_linear_combs")
+        recipes::step_lincomb(recipes::all_numeric_predictors(), id = "remove_linear_combs")
     } else {
       df
     }
@@ -413,9 +491,8 @@ arima <- function(train_data,
 #' @return Get the ARIMAX based model
 #' @noRd
 arimax <- function(train_data,
-                  frequency,
-                  pca) {
-  
+                   frequency,
+                   pca) {
   recipe_spec_arimax <- train_data %>%
     get_recipe_configurable(
       step_nzv = "zv",
@@ -428,12 +505,12 @@ arimax <- function(train_data,
     seasonal_period = frequency
   ) %>%
     parsnip::set_engine("auto_arima")
-  
+
   wflw_spec <- get_workflow_simple(
     model_spec_arima,
     recipe_spec_arimax
   )
-  
+
   return(wflw_spec)
 }
 

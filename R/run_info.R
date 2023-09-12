@@ -80,7 +80,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     fs::dir_create(tempdir(), models_folder)
     fs::dir_create(tempdir(), forecasts_folder)
     fs::dir_create(tempdir(), logs_folder)
-    } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
+  } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
     if (!dir.exists(fs::path(path, prep_data_folder) %>% as.character())) {

@@ -140,14 +140,14 @@ ensemble_models <- function(run_info,
   }
 
   # get ensemble models to run
-  ensemble_model_list <- c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost")
+  ensemble_model_list <- list_ensemble_models()
 
   if (is.na(models_to_run) & is.na(models_not_to_run)) {
     # do nothing, using existing ml_models list
   } else if (is.na(models_to_run) & !is.na(models_not_to_run)) {
     ensemble_model_list <- setdiff(ensemble_model_list, stringr::str_split(models_not_to_run, "---")[[1]])
   } else {
-    ensemble_model_list <- ensemble_model_list[c("cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost") %in% stringr::str_split(models_to_run, "---")[[1]]]
+    ensemble_model_list <- ensemble_model_list[list_ensemble_models() %in% stringr::str_split(models_to_run, "---")[[1]]]
   }
 
   # parallel run info

@@ -18,6 +18,8 @@ prep_data(
   fiscal_year_start = 1,
   clean_missing_values = TRUE,
   clean_outliers = FALSE,
+  box_cox = TRUE,
+  stationary = TRUE,
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
   num_cores = NULL,
@@ -62,6 +64,10 @@ existing series, and does not add new values onto the beginning or end, but does
 values.}
 
 \item{clean_outliers}{If TRUE, outliers are cleaned and inputted with values more in line with historical data.}
+
+\item{box_cox}{Apply box-cox transformation to normalize variance in data}
+
+\item{stationary}{Apply differencing to make data stationary}
 
 \item{forecast_approach}{How the forecast is created. The default of 'bottoms_up' trains models for each individual
 time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates

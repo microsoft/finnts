@@ -23,6 +23,8 @@
 #'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 #'   values.
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data.
+#' @param box_cox Apply box-cox transformation to normalize variance in data
+#' @param stationary Apply differencing to make data stationary
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual
 #'   time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.
@@ -80,6 +82,8 @@ prep_data <- function(run_info,
                       fiscal_year_start = 1,
                       clean_missing_values = TRUE,
                       clean_outliers = FALSE,
+                      box_cox = TRUE,
+                      stationary = TRUE,
                       forecast_approach = "bottoms_up",
                       parallel_processing = NULL,
                       num_cores = NULL,
@@ -104,6 +108,8 @@ prep_data <- function(run_info,
   check_input_type("fiscal_year_start", fiscal_year_start, "numeric")
   check_input_type("clean_missing_values", clean_missing_values, "logical")
   check_input_type("clean_outliers", clean_outliers, "logical")
+  check_input_type("box_cox", box_cox, "logical")
+  check_input_type("stationary", stationary, "logical")
   check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "standard_hierarchy"))
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
@@ -287,13 +293,20 @@ prep_data <- function(run_info,
       .noexport = NULL
     ) %op%
       {
+        # get specific time series
         combo <- x %>%
           dplyr::pull(Combo)
+
+        return_tbl <- tibble::tibble(
+          Combo = combo,
+          Combo_Hash = hash_data(combo)
+        )
 
         initial_prep_combo_tbl <- filtered_initial_prep_tbl %>%
           dplyr::filter(Combo == combo) %>%
           dplyr::collect()
 
+        # external regressor handling
         xregs_future_tbl <- get_xregs_future_values_tbl(
           initial_prep_combo_tbl,
           external_regressors,
@@ -309,6 +322,7 @@ prep_data <- function(run_info,
           xregs_future_list <- NULL
         }
 
+        # initial data prep
         initial_tbl <- initial_prep_combo_tbl %>%
           dplyr::filter(Combo == combo) %>%
           dplyr::select(
@@ -351,6 +365,29 @@ prep_data <- function(run_info,
             Target
           ))
 
+        # box-cox transformation
+        if (box_cox) {
+          box_cox_tbl <- initial_tbl %>%
+            apply_box_cox()
+
+          initial_tbl <- box_cox_tbl$data
+
+          return_tbl <- return_tbl %>%
+            dplyr::left_join(box_cox_tbl$diff_info, by = "Combo")
+        }
+
+        # make stationary
+        if (stationary) {
+          stationary_tbl <- initial_tbl %>%
+            make_stationary()
+
+          initial_tbl <- stationary_tbl$data
+
+          return_tbl <- return_tbl %>%
+            dplyr::left_join(stationary_tbl$diff_info, by = "Combo")
+        }
+
+        # date features
         date_features <- initial_tbl %>%
           dplyr::select(Date) %>%
           dplyr::mutate(
@@ -418,25 +455,31 @@ prep_data <- function(run_info,
             suffix = "-R2"
           )
         }
-        return()
+        return(return_tbl)
       } %>%
       base::suppressPackageStartupMessages()
-
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
-    # print(filtered_initial_prep_tbl) # prevents spark tbl errors
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(function(df, context) {
+        # update objects
         fn_env <- .GlobalEnv
 
         for (name in names(context)) {
           assign(name, context[[name]], envir = fn_env)
         }
 
+        # get specific time series
         combo <- unique(df$Combo)
 
+        return_tbl <- tibble::tibble(
+          Combo = combo,
+          Combo_Hash = hash_data(combo)
+        )
+
+        # handle external regressors
         xregs_future_tbl <- get_xregs_future_values_tbl(
           df,
           external_regressors,
@@ -452,6 +495,7 @@ prep_data <- function(run_info,
           xregs_future_list <- NULL
         }
 
+        # initial data prep
         initial_tbl <- df %>%
           dplyr::filter(Combo == combo) %>%
           dplyr::select(
@@ -494,6 +538,29 @@ prep_data <- function(run_info,
             Target
           ))
 
+        # box-cox transformation
+        if (box_cox) {
+          box_cox_tbl <- initial_tbl %>%
+            apply_box_cox()
+
+          initial_tbl <- box_cox_tbl$data
+
+          return_tbl <- return_tbl %>%
+            dplyr::left_join(box_cox_tbl$diff_info, by = "Combo")
+        }
+
+        # make stationary
+        if (stationary) {
+          stationary_tbl <- initial_tbl %>%
+            make_stationary()
+
+          initial_tbl <- stationary_tbl$data
+
+          return_tbl <- return_tbl %>%
+            dplyr::left_join(stationary_tbl$diff_info, by = "Combo")
+        }
+
+        # create date features
         date_features <- initial_tbl %>%
           dplyr::select(Date) %>%
           dplyr::mutate(
@@ -559,7 +626,7 @@ prep_data <- function(run_info,
           )
         }
 
-        return(data.frame(Combo = combo))
+        return(data.frame(return_tbl))
       },
       group_by = "Combo",
       context = list(
@@ -589,7 +656,11 @@ prep_data <- function(run_info,
         rolling_window_periods = rolling_window_periods,
         write_data = write_data,
         write_data_folder = write_data_folder,
-        write_data_type = write_data_type
+        write_data_type = write_data_type,
+        box_cox = box_cox,
+        stationary = stationary,
+        make_stationary = make_stationary,
+        apply_box_cox = apply_box_cox
       )
       )
   }
@@ -646,6 +717,8 @@ prep_data <- function(run_info,
       fiscal_year_start = fiscal_year_start,
       clean_missing_values = clean_missing_values,
       clean_outliers = clean_outliers,
+      stationary = stationary,
+      box_cox = box_cox,
       forecast_approach = forecast_approach,
       parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
       num_cores = ifelse(is.null(num_cores), NA, num_cores),
@@ -664,6 +737,18 @@ prep_data <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
+
+  # write any transformation data
+  if (box_cox || stationary) {
+    write_data(
+      x = final_data,
+      combo = NULL,
+      run_info = run_info,
+      output_type = "data",
+      folder = "prep_data",
+      suffix = "-orig_combo_info"
+    )
+  }
 }
 
 #' Function to perform log transformation
@@ -937,6 +1022,116 @@ get_date_regex <- function(date_type) {
   )
 
   return(date_regex)
+}
+
+#' Apply box cox transformation
+#'
+#' @param data input data
+#'
+#' @return Returns df of box cox transformed data
+#' @noRd
+apply_box_cox <- function(df) {
+  final_tbl <- df %>% dplyr::select(Date)
+
+  diff_info <- tibble::tibble(
+    Combo = unique(df$Combo),
+    Box_Cox_Lambda = NULL
+  )
+
+  for (column_name in names(df)) {
+
+    # Only check numeric columns with more than 2 unique values
+    if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
+      temp_tbl <- df %>%
+        dplyr::select(Date, column_name) %>%
+        dplyr::rename(Column = column_name)
+
+      # get lambda value
+      lambda_value <- timetk::auto_lambda(temp_tbl$Column)
+
+      if (column_name == "Target") {
+        diff_info <- diff_info %>%
+          dplyr::mutate(Box_Cox_Lambda = lambda_value)
+      }
+
+      # box cox transformation
+      temp_tbl <- temp_tbl %>%
+        dplyr::mutate(Column = timetk::box_cox_vec(Column,
+          lambda = lambda_value,
+          silent = TRUE
+        ))
+
+      # clean up names and add to final df
+      colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
+
+      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(column_name))
+    } else {
+      if (column_name != "Date") {
+        final_tbl <- cbind(final_tbl, df %>% dplyr::select(column_name))
+      }
+    }
+  }
+
+  return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
+}
+
+#' Make data stationary
+#'
+#' @param data input data
+#'
+#' @return Returns df of differenced data
+#' @noRd
+make_stationary <- function(df) {
+  final_tbl <- df %>% dplyr::select(Date)
+
+  diff_info <- tibble::tibble(
+    Combo = unique(df$Combo),
+    Diff_Value1 = NA,
+    Diff_Value2 = NA
+  )
+
+  for (column_name in names(df)) {
+
+    # Only check numeric columns with more than 2 unique values
+    if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
+      temp_tbl <- df %>%
+        dplyr::select(Date, column_name) %>%
+        dplyr::rename(Column = column_name)
+
+      # check for standard difference
+      ndiffs <- temp_tbl %>%
+        dplyr::pull(Column) %>%
+        feasts::unitroot_ndiffs() %>%
+        as.numeric()
+
+      if (ndiffs > 0) {
+        if (column_name == "Target") {
+          diff_info <- diff_info %>%
+            dplyr::mutate(Diff_Value1 = temp_tbl %>% dplyr::slice(1) %>% dplyr::pull(Column))
+
+          if (ndiffs > 1) {
+            diff_info <- diff_info %>%
+              dplyr::mutate(Diff_Value2 = temp_tbl %>% dplyr::slice(2) %>% dplyr::pull(Column))
+          }
+        }
+        temp_tbl <- temp_tbl %>%
+          dplyr::mutate(Column = timetk::diff_vec(Column,
+            difference = ndiffs,
+            silent = TRUE
+          ))
+      }
+
+      colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
+
+      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(column_name))
+    } else {
+      if (column_name != "Date") {
+        final_tbl <- cbind(final_tbl, df %>% dplyr::select(column_name))
+      }
+    }
+  }
+
+  return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
 
 #' Function to perform feature engineering according to R1 recipe

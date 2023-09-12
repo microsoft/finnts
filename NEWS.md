@@ -1,4 +1,4 @@
-# finnts 0.3.0.9002 (DEVELOPMENT VERSION)
+# finnts 0.3.0.9003 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -6,6 +6,8 @@
 -   Added external regressor support for ARIMA by introducing a new model option of `arimax`, which uses engineered features in addition to any external regressors supplied.
 -   Automated feature selection, refer to feature selection vignette for more details
 -   Error handling in hierarchical forecast reconciliation
+-   Box-cox and differencing transformations
+-   Added new function, `list_models()`, that lists available models in the package 
 
 ## Bug Fixes
 

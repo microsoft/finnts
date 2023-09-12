@@ -131,16 +131,30 @@ select_features <- function(input_data,
     dplyr::select(Feature, Vote, Auto_Accept)
 
   # cubist feature importance
-  vip_cubist_results <- vip_cubist_fn(
-    input_data,
-    seed
-  ) %>%
-    dplyr::rename(Feature = Variable) %>%
-    dplyr::mutate(
-      Vote = 1,
-      Auto_Accept = 0
-    ) %>%
-    dplyr::select(Feature, Vote, Auto_Accept)
+  vip_cubist_results <- tryCatch(
+    {
+      vip_cubist_fn(
+        input_data,
+        seed
+      ) %>%
+        dplyr::rename(Feature = Variable) %>%
+        dplyr::mutate(
+          Vote = 1,
+          Auto_Accept = 0
+        ) %>%
+        dplyr::select(Feature, Vote, Auto_Accept)
+    },
+    warning = function(w) {
+      # do nothing
+    },
+    error = function(e) {
+      tibble::tibble()
+    }
+  )
+
+  if (is.null(vip_cubist_results)) {
+    votes_needed <- votes_needed - 1
+  }
 
   # lasso regression feature importance
   vip_lm_initial <- vip_lm_fn(
