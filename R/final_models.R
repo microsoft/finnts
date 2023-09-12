@@ -196,57 +196,104 @@ final_models <- function(run_info,
 
       single_model_tbl <- NULL
       if (run_local_models) {
-        suppressWarnings(try(single_model_tbl <- read_file(run_info,
-          path = paste0(
-            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-            "-", combo, "-single_models.", run_info$data_output
-          ),
-          return_type = "df"
-        ),
-        silent = TRUE
-        ))
+        single_model_tbl <- tryCatch(
+          {
+            read_file(run_info,
+              path = paste0(
+                "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                "-", combo, "-single_models.", run_info$data_output
+              ),
+              return_type = "df"
+            )
+          },
+          warning = function(w) {
+            # do nothing
+          },
+          error = function(e) {
+            NULL
+          }
+        )
       }
 
       ensemble_model_tbl <- NULL
       if (run_ensemble_models) {
-        suppressWarnings(try(ensemble_model_tbl <- read_file(run_info,
-          path = paste0(
-            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-            "-", combo, "-ensemble_models.", run_info$data_output
-          ),
-          return_type = "df"
-        ),
-        silent = TRUE
-        ))
+        ensemble_model_tbl <- tryCatch(
+          {
+            read_file(run_info,
+              path = paste0(
+                "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                "-", combo, "-ensemble_models.", run_info$data_output
+              ),
+              return_type = "df"
+            )
+          },
+          warning = function(w) {
+            # do nothing
+          },
+          error = function(e) {
+            NULL
+          }
+        )
       }
 
       global_model_tbl <- NULL
       if (run_global_models) {
-        suppressWarnings(try(global_model_tbl <- read_file(run_info,
-          path = paste0(
-            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-            "-", combo, "-global_models.", run_info$data_output
-          ),
-          return_type = "df"
-        ),
-        silent = TRUE
-        ))
+        global_model_tbl <- tryCatch(
+          {
+            read_file(run_info,
+              path = paste0(
+                "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                "-", combo, "-global_models.", run_info$data_output
+              ),
+              return_type = "df"
+            )
+          },
+          warning = function(w) {
+            # do nothing
+          },
+          error = function(e) {
+            NULL
+          }
+        )
       }
 
       local_model_tbl <- single_model_tbl %>%
         rbind(ensemble_model_tbl)
 
-      predictions_tbl <- local_model_tbl %>%
-        rbind(global_model_tbl) %>%
-        dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-        dplyr::filter(Train_Test_ID %in% train_test_id_list)
-
       # check if model averaging already happened
       if ("Best_Model" %in% colnames(local_model_tbl %>% rbind(global_model_tbl))) {
+        # see if average models file exists and add to model tbl
+        average_model_tbl <- tryCatch(
+          {
+            read_file(run_info,
+              path = paste0(
+                "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+                "-", combo, "-average_models.", run_info$data_output
+              ),
+              return_type = "df"
+            )
+          },
+          warning = function(w) {
+            # do nothing
+          },
+          error = function(e) {
+            NULL
+          }
+        )
+
+        local_model_tbl <- local_model_tbl %>%
+          rbind(average_model_tbl)
+
         best_model_check <- TRUE
       } else {
         best_model_check <- FALSE
       }
+
+      # combine all forecasts
+      predictions_tbl <- local_model_tbl %>%
+        rbind(global_model_tbl) %>%
+        dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
+        dplyr::filter(Train_Test_ID %in% train_test_id_list)
 
       # get model list
       if (!is.null(local_model_tbl)) {

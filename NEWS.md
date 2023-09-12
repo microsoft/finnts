@@ -1,10 +1,15 @@
-# finnts 0.3.0.9001 (DEVELOPMENT VERSION)
+# finnts 0.3.0.9002 (DEVELOPMENT VERSION)
 
 ## Improvements
 
 -   Tidymodels speed up
 -   Added external regressor support for ARIMA by introducing a new model option of `arimax`, which uses engineered features in addition to any external regressors supplied.
 -   Automated feature selection, refer to feature selection vignette for more details
+-   Error handling in hierarchical forecast reconciliation
+
+## Bug Fixes
+
+-   Best model selection
 
 # finnts 0.3.0
 
