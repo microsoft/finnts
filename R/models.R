@@ -82,7 +82,7 @@ list_multivariate_models <- function() {
 #'
 #' @return simple recipe
 #' @noRd
-get_recipie_simple <- function(train_data) {
+get_recipe_simple <- function(train_data) {
   recipes::recipe(Target ~ Date, data = train_data %>% dplyr::select(-Combo))
 }
 
@@ -92,7 +92,7 @@ get_recipie_simple <- function(train_data) {
 #'
 #' @return combo recipe
 #' @noRd
-get_recipie_combo <- function(train_data) {
+get_recipe_combo <- function(train_data) {
   recipes::recipe(Target ~ Date + Combo, data = train_data)
 }
 
@@ -110,7 +110,8 @@ get_recipie_combo <- function(train_data) {
 #' @param pca pca
 #' @return configurable recipe
 #' @noRd
-get_recipie_configurable <- function(train_data,
+
+get_recipe_configurable <- function(train_data,
                                      mutate_adj_half = FALSE,
                                      rm_date = "plain",
                                      step_nzv = "zv",
@@ -119,7 +120,9 @@ get_recipie_configurable <- function(train_data,
                                      character_factor = FALSE,
                                      center_scale = FALSE,
                                      one_hot = FALSE,
-                                     pca = TRUE) {
+                                     pca = TRUE,
+                                     corr = FALSE,
+                                     lincomb = FALSE) {
   mutate_adj_half_fn <- function(df) {
     if (mutate_adj_half) {
       df %>%
@@ -142,6 +145,15 @@ get_recipie_configurable <- function(train_data,
       df,
       "none" = df
     )
+  }
+  
+  corr_fn <- function(df) {
+    if (corr) {
+      df %>%
+        recipes::step_corr(recipes::all_numeric_predictors(), threshold = .5, id = "remove_correlated_vars")
+    } else {
+      df
+    }
   }
 
   step_nz_fn <- function(df) {
@@ -166,7 +178,7 @@ get_recipie_configurable <- function(train_data,
   dummy_one_hot_fn <- function(df) {
     if (dummy_one_hot) {
       df %>%
-        recipes::step_dummy(recipes::all_nominal(), one_hot = one_hot, id = "step_dummy")
+        recipes::step_dummy(recipes::all_nominal_predictors(), one_hot = one_hot, id = "step_dummy")
     } else {
       df
     }
@@ -200,6 +212,15 @@ get_recipie_configurable <- function(train_data,
     }
   }
 
+  rm_lincomb_fn <- function(df) {
+    if (lincomb) {
+      df %>%
+        recipes::step_lincomb(recipes::all_numeric_predictors(),  id = "remove_linear_combs")
+    } else {
+      df
+    }
+  }
+
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     mutate_adj_half_fn() %>%
     step_nz_fn() %>%
@@ -208,7 +229,9 @@ get_recipie_configurable <- function(train_data,
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
     center_scale_fn() %>%
-    pca_fn()
+    pca_fn() %>%
+    rm_lincomb_fn() %>%
+    corr_fn()
 }
 
 
@@ -246,7 +269,7 @@ get_fit_simple <- function(train_data,
 #' @param tune_results Tune results
 #' @param wflw_spec_tune Worflow Spec after tuning
 #'
-#' @return simple recipie
+#' @return simple recipe
 #' @noRd
 get_fit_wkflw_best <- function(train_data,
                                tune_results,
@@ -265,14 +288,14 @@ get_fit_wkflw_best <- function(train_data,
 #'
 #' @param train_data Training Data
 #' @param model_spec Model Spec
-#' @param recipie_spec Recipe Spec
+#' @param recipe_spec Recipe Spec
 #'
 #' @return simple recipe
 #' @noRd
 get_fit_wkflw_nocombo <- function(train_data,
                                   model_spec,
-                                  recipie_spec) {
-  get_workflow_simple(model_spec, recipie_spec) %>%
+                                  recipe_spec) {
+  get_workflow_simple(model_spec, recipe_spec) %>%
     generics::fit(train_data)
 }
 
@@ -443,8 +466,8 @@ get_latin_hypercube_grid <- function(model_spec) {
 #' @noRd
 arima <- function(train_data,
                   frequency) {
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
+  recipe_simple <- train_data %>%
+    get_recipe_simple()
 
   model_spec_arima <- modeltime::arima_reg(
     seasonal_period = frequency
@@ -453,12 +476,44 @@ arima <- function(train_data,
 
   wflw_spec <- get_workflow_simple(
     model_spec_arima,
-    recipie_simple
+    recipe_simple
   )
 
   return(wflw_spec)
 }
 
+
+#' ARIMAX Model
+#'
+#' @param train_data Training Data
+#' @param frequency Frequency of Data
+#'
+#' @return Get the ARIMAX based model
+#' @noRd
+arimax <- function(train_data,
+                  frequency,
+                  pca) {
+  
+  recipe_spec_arimax <- train_data %>%
+    get_recipe_configurable(
+      step_nzv = "zv",
+      dummy_one_hot = TRUE,
+      corr = TRUE,
+      pca = pca,
+      lincomb = TRUE
+    )
+  model_spec_arima <- modeltime::arima_reg(
+    seasonal_period = frequency
+  ) %>%
+    parsnip::set_engine("auto_arima")
+  
+  wflw_spec <- get_workflow_simple(
+    model_spec_arima,
+    recipe_spec_arimax
+  )
+  
+  return(wflw_spec)
+}
 
 #' ARIMA Boost Model
 #'
@@ -472,7 +527,7 @@ arima_boost <- function(train_data,
                         frequency,
                         pca) {
   recipe_spec_arima_boost <- train_data %>%
-    get_recipie_configurable(
+    get_recipe_configurable(
       step_nzv = "zv",
       norm_date_adj_year = TRUE,
       one_hot = TRUE,
@@ -514,7 +569,7 @@ cubist <- function(train_data,
                    pca) {
   if (model_type == "ensemble") {
     recipe_spec_cubist <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "nzv",
         one_hot = FALSE,
@@ -522,7 +577,7 @@ cubist <- function(train_data,
       )
   } else {
     recipe_spec_cubist <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "nzv",
         one_hot = FALSE,
@@ -555,8 +610,8 @@ cubist <- function(train_data,
 #' @noRd
 croston <- function(train_data,
                     frequency) {
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
+  recipe_simple <- train_data %>%
+    get_recipe_simple()
 
   model_spec_croston <- modeltime::exp_smoothing(
     seasonal_period = frequency
@@ -565,7 +620,7 @@ croston <- function(train_data,
 
   wflw_spec <- get_workflow_simple(
     model_spec_croston,
-    recipie_simple
+    recipe_simple
   )
 
   return(wflw_spec)
@@ -580,8 +635,8 @@ croston <- function(train_data,
 #' @noRd
 ets <- function(train_data,
                 frequency) {
-  recipie_simple <- train_data %>%
-    get_recipie_simple()
+  recipe_simple <- train_data %>%
+    get_recipe_simple()
 
   model_spec_ets <- modeltime::exp_smoothing(
     error = "auto",
@@ -593,7 +648,7 @@ ets <- function(train_data,
 
   wflw_spec <- get_workflow_simple(
     model_spec_ets,
-    recipie_simple
+    recipe_simple
   )
 
   return(wflw_spec)
@@ -612,7 +667,7 @@ glmnet <- function(train_data,
                    pca) {
   if (model_type == "ensemble") {
     recipe_spec_glmnet <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = FALSE,
@@ -621,7 +676,7 @@ glmnet <- function(train_data,
       )
   } else {
     recipe_spec_glmnet <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = FALSE,
@@ -657,7 +712,7 @@ mars <- function(train_data,
                  model_type = "single",
                  pca) {
   recipe_spec_mars <- train_data %>%
-    get_recipie_configurable(
+    get_recipe_configurable(
       rm_date = "with_adj",
       pca = pca
     )
@@ -688,7 +743,7 @@ mars <- function(train_data,
 meanf <- function(train_data,
                   frequency) {
   recipe_spec_meanf <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_meanf <- modeltime::window_reg(
     window_size = round(frequency)
@@ -719,7 +774,7 @@ nnetar <- function(train_data,
                    horizon,
                    frequency) {
   recipe_spec_nnetar <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_nnetar <- modeltime::nnetar_reg(
     seasonal_period = frequency,
@@ -752,7 +807,7 @@ nnetar_xregs <- function(train_data,
                          frequency,
                          pca) {
   recipe_spec_nnetar <- train_data %>%
-    get_recipie_configurable(
+    get_recipe_configurable(
       norm_date_adj_year = TRUE,
       one_hot = TRUE,
       pca = pca
@@ -785,7 +840,7 @@ nnetar_xregs <- function(train_data,
 #' @noRd
 prophet <- function(train_data) {
   recipe_spec_prophet <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_prophet <- modeltime::prophet_reg(
     growth = tune::tune(),
@@ -817,7 +872,7 @@ prophet <- function(train_data) {
 prophet_boost <- function(train_data,
                           pca) {
   recipe_spec_prophet_boost <- train_data %>%
-    get_recipie_configurable(
+    get_recipe_configurable(
       step_nzv = "zv",
       norm_date_adj_year = TRUE,
       one_hot = TRUE,
@@ -855,7 +910,7 @@ prophet_boost <- function(train_data,
 prophet_xregs <- function(train_data,
                           pca) {
   recipe_spec_prophet_xregs <- train_data %>%
-    get_recipie_configurable(
+    get_recipe_configurable(
       step_nzv = "zv",
       dummy_one_hot = FALSE,
       character_factor = TRUE,
@@ -892,7 +947,7 @@ prophet_xregs <- function(train_data,
 snaive <- function(train_data,
                    frequency) {
   recipe_spec_snaive <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_snaive <- modeltime::naive_reg(
     seasonal_period = round(frequency)
@@ -919,7 +974,7 @@ stlm_arima <- function(train_data,
   seasonal_period_stlm_arima <- seasonal_period
 
   recipe_spec_stlm_arima <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_stlm_arima <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_arima[1],
@@ -948,7 +1003,7 @@ stlm_ets <- function(train_data,
   seasonal_period_stlm_ets <- seasonal_period
 
   recipe_spec_stlm_ets <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_stlm_ets <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_ets[1],
@@ -978,14 +1033,14 @@ svm_poly <- function(train_data,
                      pca) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         one_hot = FALSE,
         pca = pca
       )
   } else {
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         norm_date_adj_year = TRUE,
         one_hot = FALSE,
@@ -1023,14 +1078,14 @@ svm_rbf <- function(train_data,
                     pca) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         one_hot = FALSE,
         pca = pca
       )
   } else {
     recipe_spec_svm <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         norm_date_adj_year = TRUE,
         rm_date = "with_adj",
         one_hot = FALSE,
@@ -1066,7 +1121,7 @@ tbats <- function(train_data,
   seasonal_period_tbats <- seasonal_period
 
   recipe_spec_tbats <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_tbats <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_tbats[1],
@@ -1093,7 +1148,7 @@ tbats <- function(train_data,
 theta <- function(train_data,
                   frequency) {
   recipe_spec_theta <- train_data %>%
-    get_recipie_simple()
+    get_recipe_simple()
 
   model_spec_theta <- modeltime::exp_smoothing(
     seasonal_period = frequency
@@ -1123,7 +1178,7 @@ xgboost <- function(train_data,
   # create model recipe
   if (model_type == "ensemble") {
     recipe_spec_xgboost <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = TRUE,
@@ -1131,7 +1186,7 @@ xgboost <- function(train_data,
       )
   } else {
     recipe_spec_xgboost <- train_data %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = TRUE,

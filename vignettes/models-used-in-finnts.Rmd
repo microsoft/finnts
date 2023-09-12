@@ -7,7 +7,6 @@ vignette: >
   %\VignetteEncoding{UTF-8}
 ---
 
-
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
@@ -23,6 +22,7 @@ reactable::reactable(
   data.frame() %>%
     rbind(data.frame(Model = "arima", Type = "univariate, local", Underlying.Package = "modeltime, forecast", Description = "Regression model that is based on finding relationships between lagged values of the target variable you are trying to forecast.")) %>%
     rbind(data.frame(Model = "arima-boost", Type = "multivariate, local", Underlying.Package = "modeltime, forecast, xgboost", Description = "Arima model (refer to arima) that models the trend compoent of target variable, then uses xgboost model (refer to xgboost) to train on the remaining residuals.")) %>%
+        rbind(data.frame(Model = "arimax", Type = "multivariate, local", Underlying.Package = "modeltime, forecast", Description = "ARIMA model that incorporates external regressors and other engineered features.")) %>%
     rbind(data.frame(Model = "cubist", Type = "multivariate, local, global, ensemble", Underlying.Package = "rules", Description = "Hybrid of tree based and linear regression approach. Many decision trees are built, but regression coefficients are used at each terminal node instead of averging values in other tree based approaches.")) %>%
     rbind(data.frame(Model = "croston", Type = "univariate, local", Underlying.Package = "modeltime, forecast", Description = "Useful for intermittent demand forecasting, aka when there are a lot of periods of zero values. Involves simple exponential smoothing on non-zero values of target variable and another application of seasonal exponential smoothing on periods between non-zero elements of the target variable. Refer to ets for more details on exponential smoothing.")) %>%
     rbind(data.frame(Model = "ets", Type = "univariate, local", Underlying.Package = "modeltime, forecast", Description = "Forecasts produced using exponential smoothing methods are weighted averages of past observations, with the weights decaying exponentially as the observations get older. Exponential smoothing models try to forecast the components of a time series which can be broken down in to error, trend, and seasonality. These components can be forecasted separately then either added or multiplied together to get the final forecast output.")) %>%
@@ -61,15 +61,15 @@ reactable::reactable(
 
 ### Univariate vs Multivariate Models
 
-* **Univariate models** only use the date and target variable values when producing a forecast. They are mostly common on various statistical forecasting models like arima and ets. 
+-   **Univariate models** only use the date and target variable values when producing a forecast. They are mostly common on various statistical forecasting models like arima and ets.
 
-* **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette. 
+-   **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette.
 
 ### Global vs Local Models
 
-* **Global models** take the entire data set across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series. 
+-   **Global models** take the entire data set across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series.
 
-* **Local models** take each individual time series from the input data and model them separately. 
+-   **Local models** take each individual time series from the input data and model them separately.
 
 ### Ensemble Models
 
