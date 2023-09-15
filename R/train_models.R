@@ -277,10 +277,22 @@ train_models <- function(run_info,
         combo = x
       )
 
+      if (combo_hash == "All-Data") {
+        model_workflow_tbl <- model_workflow_tbl %>%
+          dplyr::filter(
+            Model_Name %in% list_global_models(),
+            Model_Recipe %in% global_model_recipes
+          )
+      }
+
       # get other time series info
       if (box_cox || stationary) {
-        filtered_combo_info_tbl <- orig_combo_info_tbl %>%
-          dplyr::filter(Combo_Hash == combo_hash)
+        if (combo_hash == "All-Data") {
+          filtered_combo_info_tbl <- orig_combo_info_tbl
+        } else {
+          filtered_combo_info_tbl <- orig_combo_info_tbl %>%
+            dplyr::filter(Combo_Hash == combo_hash)
+        }
       }
 
       if (inner_parallel) {
@@ -513,21 +525,62 @@ train_models <- function(run_info,
 
         # undo differencing transformation
         if (stationary & model %in% list_multivariate_models()) {
-          final_fcst <- final_fcst %>%
-            undifference_forecast(
-              prep_data,
-              filtered_combo_info_tbl
-            )
+          if (combo_hash == "All-Data") {
+            final_fcst <- final_fcst %>%
+              dplyr::group_by(Combo) %>%
+              dplyr::group_split() %>%
+              purrr::map(function(x) {
+                combo <- unique(x$Combo)
+
+                final_fcst_return <- x %>%
+                  undifference_forecast(
+                    prep_data %>% dplyr::filter(Combo == combo),
+                    filtered_combo_info_tbl %>% dplyr::filter(Combo == combo)
+                  )
+
+                return(final_fcst_return)
+              }) %>%
+              dplyr::bind_rows()
+          } else {
+            final_fcst <- final_fcst %>%
+              undifference_forecast(
+                prep_data,
+                filtered_combo_info_tbl
+              )
+          }
         }
 
         # undo box-cox transformation
         if (box_cox) {
-          lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
-          final_fcst <- final_fcst %>%
-            dplyr::mutate(
-              Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
-              Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
-            )
+          if (combo_hash == "All-Data") {
+            final_fcst <- final_fcst %>%
+              dplyr::group_by(Combo) %>%
+              dplyr::group_split() %>%
+              purrr::map(function(x) {
+                combo <- unique(x$Combo)
+
+                lambda <- filtered_combo_info_tbl %>%
+                  dplyr::filter(Combo == combo) %>%
+                  dplyr::select(Box_Cox_Lambda) %>%
+                  dplyr::pull(Box_Cox_Lambda)
+
+                final_fcst_return <- x %>%
+                  dplyr::mutate(
+                    Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                    Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+                  )
+
+                return(final_fcst_return)
+              }) %>%
+              dplyr::bind_rows()
+          } else {
+            lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
+            final_fcst <- final_fcst %>%
+              dplyr::mutate(
+                Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+              )
+          }
         }
 
         # negative forecast adjustment

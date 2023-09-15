@@ -69,7 +69,7 @@ list_global_models <- function() {
 #' @noRd
 list_multivariate_models <- function() {
   list <- c(
-    list_global_models(), "arima-boost", "prophet-boost", "prophet-xregs",
+    list_global_models(), "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
     "nnetar-xregs"
   )
 
