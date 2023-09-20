@@ -137,6 +137,8 @@ final_models <- function(run_info,
   run_global_models <- prev_log_df$run_global_models
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
+  case_weights <- prev_log_df$case_weights
+  hist_end_date <- prev_log_df$hist_end_date
 
   if ((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
 
@@ -390,26 +392,53 @@ final_models <- function(run_info,
         dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
         rbind(averages_tbl)
 
-      back_test_mape <- final_predictions_tbl %>%
-        dplyr::mutate(
-          Train_Test_ID = as.numeric(Train_Test_ID),
-          Target = ifelse(Target == 0, 0.1, Target)
-        ) %>%
-        dplyr::filter(Train_Test_ID != 1) %>%
-        dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+      if(case_weights) {
+        back_test_mape <- final_predictions_tbl %>%
+          dplyr::mutate(
+            Train_Test_ID = as.numeric(Train_Test_ID),
+            Target = ifelse(Target == 0, 0.1, Target)
+          ) %>%
+          weights_from_dates(case_weights,
+                             hist_end_date, 
+                             date_type) %>%
+          dplyr::mutate(Weight = ifelse(Weight == 1, 3, Weight)) %>%
+          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
 
-      best_model_mape <- back_test_mape %>%
-        dplyr::group_by(Model_ID, Combo) %>%
-        dplyr::mutate(
-          Combo_Total = sum(abs(Target), na.rm = TRUE),
-          weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
-        ) %>%
-        dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
-        dplyr::arrange(Rolling_MAPE) %>%
-        dplyr::ungroup() %>%
-        dplyr::group_by(Combo) %>%
-        dplyr::slice(1) %>%
-        dplyr::ungroup()
+        best_model_mape <- back_test_mape %>%
+          dplyr::group_by(Model_ID, Combo) %>%
+          dplyr::mutate(
+            Weight_Total = sum(abs(Weight), na.rm = TRUE),
+            weighted_MAPE = (abs(Target) / Weight_Total) * MAPE
+          ) %>%
+          dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
+          dplyr::arrange(Rolling_MAPE) %>%
+          dplyr::ungroup() %>%
+          dplyr::group_by(Combo) %>%
+          dplyr::slice(1) %>%
+          dplyr::ungroup()
+      } else {
+        back_test_mape <- final_predictions_tbl %>%
+          dplyr::mutate(
+            Train_Test_ID = as.numeric(Train_Test_ID),
+            Target = ifelse(Target == 0, 0.1, Target)
+          ) %>%
+          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+        
+        best_model_mape <- back_test_mape %>%
+          dplyr::group_by(Model_ID, Combo) %>%
+          dplyr::mutate(
+            Combo_Total = sum(abs(Target), na.rm = TRUE),
+            weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
+          ) %>%
+          dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
+          dplyr::arrange(Rolling_MAPE) %>%
+          dplyr::ungroup() %>%
+          dplyr::group_by(Combo) %>%
+          dplyr::slice(1) %>%
+          dplyr::ungroup()
+      }
 
       best_model_tbl <- best_model_mape %>%
         dplyr::mutate(Best_Model = "Yes") %>%

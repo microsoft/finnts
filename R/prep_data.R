@@ -373,7 +373,8 @@ prep_data <- function(run_info,
             Target
           )) %>% # case weights
           weights_from_dates(case_weights,
-                             hist_end_date)
+                             hist_end_date, 
+                             date_type)
 
         # box-cox transformation
         if (box_cox) {
@@ -548,7 +549,8 @@ prep_data <- function(run_info,
             Target
           )) %>% # case weights
           weights_from_dates(case_weights,
-                             hist_end_date)
+                             hist_end_date, 
+                             date_type)
 
         # box-cox transformation
         if (box_cox) {
@@ -1157,6 +1159,7 @@ make_stationary <- function(df,
 #' @param df df
 #' @param case_weights create case weights
 #' @param hist_end_date historical end date
+#' @param date_type date type
 #' @param base base value to use in exponential weight calc
 #'
 #' @return Returns series of weights to use as case weights
@@ -1164,14 +1167,64 @@ make_stationary <- function(df,
 weights_from_dates <- function(df, 
                                case_weights = FALSE,
                                hist_end_date, 
+                               date_type, 
                                base = 0.999) {
   
+  get_future_periods <- function(df, 
+                                 hist_end_date, 
+                                 date_type) {
+    
+    future_dates <- df %>%
+      dplyr::filter(Date > hist_end_date)
+    
+    if(date_type == "year") {
+      future_dates <- future_dates %>%
+        dplyr::mutate(Period = lubridate::year(Date))
+    } else if(date_type == "quarter" & nrow(future_dates) < 3) {
+      future_dates <- future_dates %>%
+        dplyr::mutate(Period = lubridate::quarter(Date))
+    } else if(date_type == "month" & nrow(future_dates) < 7) {
+      future_dates <- future_dates %>%
+        dplyr::mutate(Period = lubridate::month(Date))
+    } else if(date_type == "week" & nrow(future_dates) < 30) {
+      future_dates <- future_dates %>%
+        dplyr::mutate(Period = lubridate::week(Date))
+    } else if(date_type == "day" & nrow(future_dates) < 182) {
+      future_dates <- future_dates %>%
+        dplyr::mutate(Period = lubridate::day(Date))
+    } else {
+      return(c(999))
+    }
+
+    return(unique(future_dates$Period))
+  }
+  
+  get_period <- function(date, 
+                         date_type) {
+    
+    switch(
+      date_type, 
+      year = lubridate::year(date), 
+      quarter = lubridate::quarter(date), 
+      month = lubridate::month(date), 
+      week = lubridate::week(date), 
+      day = lubridate::day(date)
+    )
+  }
+  
   if(case_weights) {
+    
+    periods <- get_future_periods(df, 
+                                  hist_end_date, 
+                                  date_type)
+
     df %>%
+      dplyr::rowwise() %>%
       dplyr::mutate(Weight = ifelse(
-        Date > hist_end_date, 
+        Date > hist_end_date || get_period(Date, date_type) %in% periods, 
         1,
-        base^as.numeric(difftime(hist_end_date, Date, units = "days"))))
+        base^as.numeric(difftime(hist_end_date+1, Date, units = "days")))) %>%
+      dplyr::ungroup()
   } else {
     df
   }
