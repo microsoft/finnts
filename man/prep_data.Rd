@@ -20,6 +20,7 @@ prep_data(
   clean_outliers = FALSE,
   box_cox = TRUE,
   stationary = TRUE,
+  case_weights = TRUE,
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
   num_cores = NULL,
@@ -68,6 +69,8 @@ values.}
 \item{box_cox}{Apply box-cox transformation to normalize variance in data}
 
 \item{stationary}{Apply differencing to make data stationary}
+
+\item{case_weights}{Apply case weights during model training and best model selection}
 
 \item{forecast_approach}{How the forecast is created. The default of 'bottoms_up' trains models for each individual
 time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates

@@ -25,7 +25,7 @@
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data.
 #' @param box_cox Apply box-cox transformation to normalize variance in data
 #' @param stationary Apply differencing to make data stationary
-#' @param case_weights Apply case weights during model training
+#' @param case_weights Apply case weights during model training and best model selection
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual
 #'   time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.
