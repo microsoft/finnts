@@ -566,7 +566,7 @@ arima_boost <- function(train_data,
 #' @noRd
 cubist <- function(train_data,
                    model_type = "single",
-                   pca, 
+                   pca,
                    case_weights) {
   if (model_type == "ensemble") {
     recipe_spec_cubist <- train_data %>%
@@ -598,8 +598,8 @@ cubist <- function(train_data,
     model_spec_cubist,
     recipe_spec_cubist
   )
-  
-  if(model_type == "single" & case_weights) {
+
+  if (model_type == "single" & case_weights) {
     wflw_spec_cubist <- wflw_spec_cubist %>%
       workflows::add_case_weights(Weight)
   }
@@ -671,7 +671,7 @@ ets <- function(train_data,
 #' @noRd
 glmnet <- function(train_data,
                    model_type = "single",
-                   pca, 
+                   pca,
                    case_weights) {
   if (model_type == "ensemble") {
     recipe_spec_glmnet <- train_data %>%
@@ -704,8 +704,8 @@ glmnet <- function(train_data,
     model_spec_glmnet,
     recipe_spec_glmnet
   )
-  
-  if(model_type == "single" & case_weights) {
+
+  if (model_type == "single" & case_weights) {
     wflw_spec_glmnet <- wflw_spec_glmnet %>%
       workflows::add_case_weights(Weight)
   }
@@ -724,7 +724,7 @@ glmnet <- function(train_data,
 #' @noRd
 mars <- function(train_data,
                  model_type = "single",
-                 pca, 
+                 pca,
                  case_weights) {
   recipe_spec_mars <- train_data %>%
     get_recipe_configurable(
@@ -744,8 +744,8 @@ mars <- function(train_data,
     model_spec_mars,
     recipe_spec_mars
   )
-  
-  if(model_type == "single" & case_weights) {
+
+  if (model_type == "single" & case_weights) {
     wflw_spec_mars <- wflw_spec_mars %>%
       workflows::add_case_weights(Weight)
   }
@@ -1194,7 +1194,7 @@ theta <- function(train_data,
 #' @noRd
 xgboost <- function(train_data,
                     model_type = "single",
-                    pca, 
+                    pca,
                     case_weights) {
 
   # create model recipe
@@ -1229,8 +1229,8 @@ xgboost <- function(train_data,
     model_spec_xgboost,
     recipe_spec_xgboost
   )
-  
-  if(model_type == "single" & case_weights) {
+
+  if (model_type == "single" & case_weights) {
     wflw_spec_tune_xgboost <- wflw_spec_tune_xgboost %>%
       workflows::add_case_weights(Weight)
   }

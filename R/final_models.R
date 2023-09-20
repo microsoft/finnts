@@ -392,15 +392,17 @@ final_models <- function(run_info,
         dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
         rbind(averages_tbl)
 
-      if(case_weights) {
+      if (case_weights) {
         back_test_mape <- final_predictions_tbl %>%
           dplyr::mutate(
             Train_Test_ID = as.numeric(Train_Test_ID),
             Target = ifelse(Target == 0, 0.1, Target)
           ) %>%
-          weights_from_dates(case_weights,
-                             hist_end_date, 
-                             date_type) %>%
+          weights_from_dates(
+            case_weights,
+            hist_end_date,
+            date_type
+          ) %>%
           dplyr::mutate(Weight = ifelse(Weight == 1, 3, Weight)) %>%
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
@@ -425,7 +427,7 @@ final_models <- function(run_info,
           ) %>%
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
-        
+
         best_model_mape <- back_test_mape %>%
           dplyr::group_by(Model_ID, Combo) %>%
           dplyr::mutate(

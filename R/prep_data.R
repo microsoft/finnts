@@ -85,7 +85,7 @@ prep_data <- function(run_info,
                       clean_outliers = FALSE,
                       box_cox = TRUE,
                       stationary = TRUE,
-                      case_weights = TRUE, 
+                      case_weights = TRUE,
                       forecast_approach = "bottoms_up",
                       parallel_processing = NULL,
                       num_cores = NULL,
@@ -95,9 +95,9 @@ prep_data <- function(run_info,
                       rolling_window_periods = NULL,
                       recipes_to_run = NULL) {
   cli::cli_progress_step("Prepping Data")
-  
+
   # deprecation check
-  if(target_log_transformation) {
+  if (target_log_transformation) {
     cli::cli_alert_warning("'target_log_transformation has been deprecated, please use 'box_cox' inside of 'prep_data()'")
   }
 
@@ -372,9 +372,11 @@ prep_data <- function(run_info,
             NA,
             Target
           )) %>% # case weights
-          weights_from_dates(case_weights,
-                             hist_end_date, 
-                             date_type)
+          weights_from_dates(
+            case_weights,
+            hist_end_date,
+            date_type
+          )
 
         # box-cox transformation
         if (box_cox) {
@@ -548,9 +550,11 @@ prep_data <- function(run_info,
             NA,
             Target
           )) %>% # case weights
-          weights_from_dates(case_weights,
-                             hist_end_date, 
-                             date_type)
+          weights_from_dates(
+            case_weights,
+            hist_end_date,
+            date_type
+          )
 
         # box-cox transformation
         if (box_cox) {
@@ -674,7 +678,7 @@ prep_data <- function(run_info,
         box_cox = box_cox,
         stationary = stationary,
         make_stationary = make_stationary,
-        apply_box_cox = apply_box_cox, 
+        apply_box_cox = apply_box_cox,
         case_weights = case_weights
       )
       )
@@ -1047,7 +1051,7 @@ get_date_regex <- function(date_type) {
 #'
 #' @return Returns df of box cox transformed data
 #' @noRd
-apply_box_cox <- function(df, 
+apply_box_cox <- function(df,
                           external_regressors) {
   final_tbl <- df %>% dplyr::select(-Target, -tidyselect::any_of(external_regressors))
 
@@ -1056,7 +1060,9 @@ apply_box_cox <- function(df,
     Box_Cox_Lambda = NULL
   )
 
-  for (column_name in df %>% dplyr::select(Target, tidyselect::any_of(external_regressors)) %>% names()) {
+  for (column_name in df %>%
+    dplyr::select(Target, tidyselect::any_of(external_regressors)) %>%
+    names()) {
 
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
@@ -1100,7 +1106,7 @@ apply_box_cox <- function(df,
 #'
 #' @return Returns df of differenced data
 #' @noRd
-make_stationary <- function(df, 
+make_stationary <- function(df,
                             external_regressors) {
   final_tbl <- df %>% dplyr::select(-Target, -tidyselect::any_of(external_regressors))
 
@@ -1110,7 +1116,9 @@ make_stationary <- function(df,
     Diff_Value2 = NA
   )
 
-  for (column_name in df %>% dplyr::select(Target, tidyselect::any_of(external_regressors)) %>% names()) {
+  for (column_name in df %>%
+    dplyr::select(Target, tidyselect::any_of(external_regressors)) %>%
+    names()) {
 
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
@@ -1164,32 +1172,30 @@ make_stationary <- function(df,
 #'
 #' @return Returns series of weights to use as case weights
 #' @noRd
-weights_from_dates <- function(df, 
+weights_from_dates <- function(df,
                                case_weights = FALSE,
-                               hist_end_date, 
-                               date_type, 
+                               hist_end_date,
+                               date_type,
                                base = 0.999) {
-  
-  get_future_periods <- function(df, 
-                                 hist_end_date, 
+  get_future_periods <- function(df,
+                                 hist_end_date,
                                  date_type) {
-    
     future_dates <- df %>%
       dplyr::filter(Date > hist_end_date)
-    
-    if(date_type == "year") {
+
+    if (date_type == "year") {
       future_dates <- future_dates %>%
         dplyr::mutate(Period = lubridate::year(Date))
-    } else if(date_type == "quarter" & nrow(future_dates) < 3) {
+    } else if (date_type == "quarter" & nrow(future_dates) < 3) {
       future_dates <- future_dates %>%
         dplyr::mutate(Period = lubridate::quarter(Date))
-    } else if(date_type == "month" & nrow(future_dates) < 7) {
+    } else if (date_type == "month" & nrow(future_dates) < 7) {
       future_dates <- future_dates %>%
         dplyr::mutate(Period = lubridate::month(Date))
-    } else if(date_type == "week" & nrow(future_dates) < 30) {
+    } else if (date_type == "week" & nrow(future_dates) < 30) {
       future_dates <- future_dates %>%
         dplyr::mutate(Period = lubridate::week(Date))
-    } else if(date_type == "day" & nrow(future_dates) < 182) {
+    } else if (date_type == "day" & nrow(future_dates) < 182) {
       future_dates <- future_dates %>%
         dplyr::mutate(Period = lubridate::day(Date))
     } else {
@@ -1198,32 +1204,32 @@ weights_from_dates <- function(df,
 
     return(unique(future_dates$Period))
   }
-  
-  get_period <- function(date, 
+
+  get_period <- function(date,
                          date_type) {
-    
-    switch(
-      date_type, 
-      year = lubridate::year(date), 
-      quarter = lubridate::quarter(date), 
-      month = lubridate::month(date), 
-      week = lubridate::week(date), 
+    switch(date_type,
+      year = lubridate::year(date),
+      quarter = lubridate::quarter(date),
+      month = lubridate::month(date),
+      week = lubridate::week(date),
       day = lubridate::day(date)
     )
   }
-  
-  if(case_weights) {
-    
-    periods <- get_future_periods(df, 
-                                  hist_end_date, 
-                                  date_type)
+
+  if (case_weights) {
+    periods <- get_future_periods(
+      df,
+      hist_end_date,
+      date_type
+    )
 
     df %>%
       dplyr::rowwise() %>%
       dplyr::mutate(Weight = ifelse(
-        Date > hist_end_date || get_period(Date, date_type) %in% periods, 
+        Date > hist_end_date || get_period(Date, date_type) %in% periods,
         1,
-        base^as.numeric(difftime(hist_end_date+1, Date, units = "days")))) %>%
+        base^as.numeric(difftime(hist_end_date + 1, Date, units = "days"))
+      )) %>%
       dplyr::ungroup()
   } else {
     df

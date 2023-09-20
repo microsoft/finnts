@@ -555,8 +555,8 @@ model_workflows <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
-    
-    if(case_weights) {
+
+    if (case_weights) {
       recipe_tbl <- recipe_tbl %>%
         dplyr::mutate(Weight = parsnip::importance_weights(Weight))
     }
@@ -568,7 +568,7 @@ model_workflows <- function(run_info,
       "horizon" = forecast_horizon,
       "seasonal_period" = get_seasonal_periods(date_type),
       "model_type" = "single",
-      "pca" = pca, 
+      "pca" = pca,
       "case_weights" = case_weights
     )
 

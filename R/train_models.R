@@ -408,12 +408,12 @@ train_models <- function(run_info,
           dplyr::filter(Recipe == data_prep_recipe) %>%
           dplyr::select(Data) %>%
           tidyr::unnest(Data)
-        
-        if(case_weights) {
+
+        if (case_weights) {
           prep_data <- prep_data %>%
             dplyr::mutate(Weight = parsnip::importance_weights(Weight))
         }
-        
+
         workflow <- model_workflow_tbl %>%
           dplyr::filter(
             Model_Name == model,
@@ -431,7 +431,7 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          if(case_weights) {
+          if (case_weights) {
             predictor_cols <- prep_data %>%
               dplyr::select(-Target, -Weight) %>%
               colnames()
