@@ -560,12 +560,14 @@ arima_boost <- function(train_data,
 #' @param train_data train data
 #' @param model_type single or ensemble model
 #' @param pca pca
+#' @param case_weights case weights
 #'
 #' @return Get the cubist model
 #' @noRd
 cubist <- function(train_data,
                    model_type = "single",
-                   pca) {
+                   pca, 
+                   case_weights) {
   if (model_type == "ensemble") {
     recipe_spec_cubist <- train_data %>%
       get_recipe_configurable(
@@ -596,6 +598,11 @@ cubist <- function(train_data,
     model_spec_cubist,
     recipe_spec_cubist
   )
+  
+  if(model_type == "single" & case_weights) {
+    wflw_spec_cubist <- wflw_spec_cubist %>%
+      workflows::add_case_weights(Weight)
+  }
 
   return(wflw_spec_cubist)
 }
@@ -658,12 +665,14 @@ ets <- function(train_data,
 #' @param train_data input data
 #' @param model_type single or ensemble
 #' @param pca pca
+#' @param case_weights case weights
 #'
 #' @return Get the GLM Net model
 #' @noRd
 glmnet <- function(train_data,
                    model_type = "single",
-                   pca) {
+                   pca, 
+                   case_weights) {
   if (model_type == "ensemble") {
     recipe_spec_glmnet <- train_data %>%
       get_recipe_configurable(
@@ -695,6 +704,11 @@ glmnet <- function(train_data,
     model_spec_glmnet,
     recipe_spec_glmnet
   )
+  
+  if(model_type == "single" & case_weights) {
+    wflw_spec_glmnet <- wflw_spec_glmnet %>%
+      workflows::add_case_weights(Weight)
+  }
 
   return(wflw_spec_glmnet)
 }
@@ -704,12 +718,14 @@ glmnet <- function(train_data,
 #' @param train_data input data
 #' @param model_type single or ensemble
 #' @param pca pca
+#' @param case_weights case weights
 #'
 #' @return Get the Mars model spec
 #' @noRd
 mars <- function(train_data,
                  model_type = "single",
-                 pca) {
+                 pca, 
+                 case_weights) {
   recipe_spec_mars <- train_data %>%
     get_recipe_configurable(
       rm_date = "with_adj",
@@ -728,6 +744,11 @@ mars <- function(train_data,
     model_spec_mars,
     recipe_spec_mars
   )
+  
+  if(model_type == "single" & case_weights) {
+    wflw_spec_mars <- wflw_spec_mars %>%
+      workflows::add_case_weights(Weight)
+  }
 
   return(wflw_spec_mars)
 }
@@ -1167,12 +1188,14 @@ theta <- function(train_data,
 #' @param train_data input table
 #' @param model_type single or ensemble
 #' @param pca pca
+#' @param case_weights case weights
 #'
 #' @return Get XGBoost model
 #' @noRd
 xgboost <- function(train_data,
                     model_type = "single",
-                    pca) {
+                    pca, 
+                    case_weights) {
 
   # create model recipe
   if (model_type == "ensemble") {
@@ -1206,6 +1229,11 @@ xgboost <- function(train_data,
     model_spec_xgboost,
     recipe_spec_xgboost
   )
+  
+  if(model_type == "single" & case_weights) {
+    wflw_spec_tune_xgboost <- wflw_spec_tune_xgboost %>%
+      workflows::add_case_weights(Weight)
+  }
 
   return(wflw_spec_tune_xgboost)
 }

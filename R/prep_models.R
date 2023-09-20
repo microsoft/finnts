@@ -432,6 +432,7 @@ model_workflows <- function(run_info,
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
   forecast_horizon <- log_df$forecast_horizon
+  case_weights <- log_df$case_weights
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -554,6 +555,11 @@ model_workflows <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
+    
+    if(case_weights) {
+      recipe_tbl <- recipe_tbl %>%
+        dplyr::mutate(Weight = parsnip::importance_weights(Weight))
+    }
 
     # get args to feed into model spec functions
     avail_arg_list <- list(
@@ -562,7 +568,8 @@ model_workflows <- function(run_info,
       "horizon" = forecast_horizon,
       "seasonal_period" = get_seasonal_periods(date_type),
       "model_type" = "single",
-      "pca" = pca
+      "pca" = pca, 
+      "case_weights" = case_weights
     )
 
     # don't create workflows for models that only use R1 recipe

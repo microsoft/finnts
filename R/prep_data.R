@@ -25,6 +25,7 @@
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data.
 #' @param box_cox Apply box-cox transformation to normalize variance in data
 #' @param stationary Apply differencing to make data stationary
+#' @param case_weights Apply case weights during model training
 #' @param forecast_approach How the forecast is created. The default of 'bottoms_up' trains models for each individual
 #'   time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
 #'   a more traditional hierarchical time series to forecast, both based on the hts package.
@@ -84,6 +85,7 @@ prep_data <- function(run_info,
                       clean_outliers = FALSE,
                       box_cox = TRUE,
                       stationary = TRUE,
+                      case_weights = TRUE, 
                       forecast_approach = "bottoms_up",
                       parallel_processing = NULL,
                       num_cores = NULL,
@@ -93,6 +95,11 @@ prep_data <- function(run_info,
                       rolling_window_periods = NULL,
                       recipes_to_run = NULL) {
   cli::cli_progress_step("Prepping Data")
+  
+  # deprecation check
+  if(target_log_transformation) {
+    cli::cli_alert_warning("'target_log_transformation has been deprecated, please use 'box_cox' inside of 'prep_data()'")
+  }
 
   # check input values
   check_input_type("run_info", run_info, "list")
@@ -110,6 +117,7 @@ prep_data <- function(run_info,
   check_input_type("clean_outliers", clean_outliers, "logical")
   check_input_type("box_cox", box_cox, "logical")
   check_input_type("stationary", stationary, "logical")
+  check_input_type("case_weights", case_weights, "logical")
   check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "standard_hierarchy"))
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
@@ -363,12 +371,14 @@ prep_data <- function(run_info,
           dplyr::mutate(Target = ifelse(Date > hist_end_date,
             NA,
             Target
-          ))
+          )) %>% # case weights
+          weights_from_dates(case_weights,
+                             hist_end_date)
 
         # box-cox transformation
         if (box_cox) {
           box_cox_tbl <- initial_tbl %>%
-            apply_box_cox()
+            apply_box_cox(external_regressors)
 
           initial_tbl <- box_cox_tbl$data
 
@@ -379,7 +389,7 @@ prep_data <- function(run_info,
         # make stationary
         if (stationary) {
           stationary_tbl <- initial_tbl %>%
-            make_stationary()
+            make_stationary(external_regressors)
 
           initial_tbl <- stationary_tbl$data
 
@@ -536,12 +546,14 @@ prep_data <- function(run_info,
           dplyr::mutate(Target = ifelse(Date > hist_end_date,
             NA,
             Target
-          ))
+          )) %>% # case weights
+          weights_from_dates(case_weights,
+                             hist_end_date)
 
         # box-cox transformation
         if (box_cox) {
           box_cox_tbl <- initial_tbl %>%
-            apply_box_cox()
+            apply_box_cox(external_regressors)
 
           initial_tbl <- box_cox_tbl$data
 
@@ -552,7 +564,7 @@ prep_data <- function(run_info,
         # make stationary
         if (stationary) {
           stationary_tbl <- initial_tbl %>%
-            make_stationary()
+            make_stationary(external_regressors)
 
           initial_tbl <- stationary_tbl$data
 
@@ -660,7 +672,8 @@ prep_data <- function(run_info,
         box_cox = box_cox,
         stationary = stationary,
         make_stationary = make_stationary,
-        apply_box_cox = apply_box_cox
+        apply_box_cox = apply_box_cox, 
+        case_weights = case_weights
       )
       )
   }
@@ -719,6 +732,7 @@ prep_data <- function(run_info,
       clean_outliers = clean_outliers,
       stationary = stationary,
       box_cox = box_cox,
+      case_weights = case_weights,
       forecast_approach = forecast_approach,
       parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
       num_cores = ifelse(is.null(num_cores), NA, num_cores),
@@ -1027,18 +1041,20 @@ get_date_regex <- function(date_type) {
 #' Apply box cox transformation
 #'
 #' @param data input data
+#' @param external_regressors list of xregs
 #'
 #' @return Returns df of box cox transformed data
 #' @noRd
-apply_box_cox <- function(df) {
-  final_tbl <- df %>% dplyr::select(Date)
+apply_box_cox <- function(df, 
+                          external_regressors) {
+  final_tbl <- df %>% dplyr::select(-Target, -tidyselect::any_of(external_regressors))
 
   diff_info <- tibble::tibble(
     Combo = unique(df$Combo),
     Box_Cox_Lambda = NULL
   )
 
-  for (column_name in names(df)) {
+  for (column_name in df %>% dplyr::select(Target, tidyselect::any_of(external_regressors)) %>% names()) {
 
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
@@ -1078,11 +1094,13 @@ apply_box_cox <- function(df) {
 #' Make data stationary
 #'
 #' @param data input data
+#' @param external_regressors list of xregs
 #'
 #' @return Returns df of differenced data
 #' @noRd
-make_stationary <- function(df) {
-  final_tbl <- df %>% dplyr::select(Date)
+make_stationary <- function(df, 
+                            external_regressors) {
+  final_tbl <- df %>% dplyr::select(-Target, -tidyselect::any_of(external_regressors))
 
   diff_info <- tibble::tibble(
     Combo = unique(df$Combo),
@@ -1090,7 +1108,7 @@ make_stationary <- function(df) {
     Diff_Value2 = NA
   )
 
-  for (column_name in names(df)) {
+  for (column_name in df %>% dplyr::select(Target, tidyselect::any_of(external_regressors)) %>% names()) {
 
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
@@ -1134,6 +1152,31 @@ make_stationary <- function(df) {
   return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
 
+#' Add case weights to data
+#'
+#' @param df df
+#' @param case_weights create case weights
+#' @param hist_end_date historical end date
+#' @param base base value to use in exponential weight calc
+#'
+#' @return Returns series of weights to use as case weights
+#' @noRd
+weights_from_dates <- function(df, 
+                               case_weights = FALSE,
+                               hist_end_date, 
+                               base = 0.999) {
+  
+  if(case_weights) {
+    df %>%
+      dplyr::mutate(Weight = ifelse(
+        Date > hist_end_date, 
+        1,
+        base^as.numeric(difftime(hist_end_date, Date, units = "days"))))
+  } else {
+    df
+  }
+}
+
 #' Function to perform feature engineering according to R1 recipe
 #'
 #' @param data data frame
@@ -1155,7 +1198,6 @@ multivariate_prep_recipe_1 <- function(data,
                                        rolling_window_periods,
                                        hist_end_date,
                                        date_type) {
-
   # apply polynomial transformations
   numeric_xregs <- c()
 

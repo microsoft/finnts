@@ -92,6 +92,7 @@ train_models <- function(run_info,
   forecast_approach <- log_df$forecast_approach
   stationary <- log_df$stationary
   box_cox <- log_df$box_cox
+  case_weights <- log_df$case_weights
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -407,7 +408,12 @@ train_models <- function(run_info,
           dplyr::filter(Recipe == data_prep_recipe) %>%
           dplyr::select(Data) %>%
           tidyr::unnest(Data)
-
+        
+        if(case_weights) {
+          prep_data <- prep_data %>%
+            dplyr::mutate(Weight = parsnip::importance_weights(Weight))
+        }
+        
         workflow <- model_workflow_tbl %>%
           dplyr::filter(
             Model_Name == model,
@@ -425,11 +431,23 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          updated_recipe <- workflow %>%
-            workflows::extract_recipe(estimated = FALSE) %>%
-            recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
-            recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
-            base::suppressWarnings()
+          if(case_weights) {
+            predictor_cols <- prep_data %>%
+              dplyr::select(-Target, -Weight) %>%
+              colnames()
+
+            updated_recipe <- workflow %>%
+              workflows::extract_recipe(estimated = FALSE) %>%
+              recipes::remove_role(tidyselect::any_of(predictor_cols), old_role = "predictor") %>%
+              recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
+              base::suppressWarnings()
+          } else {
+            updated_recipe <- workflow %>%
+              workflows::extract_recipe(estimated = FALSE) %>%
+              recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
+              recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
+              base::suppressWarnings()
+          }
 
           empty_workflow_final <- workflow %>%
             workflows::update_recipe(updated_recipe)

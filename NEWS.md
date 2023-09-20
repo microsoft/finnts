@@ -8,10 +8,14 @@
 -   Error handling in hierarchical forecast reconciliation
 -   Box-cox and differencing transformations
 -   Added new function, `list_models()`, that lists available models in the package 
+-   Case weights to weight more recent periods of data when training models in `train_models`
 
 ## Bug Fixes
 
 -   Best model selection
+
+## Deprecated
+-   `target_log_transformation` within `forecast_time_series()` and `prep_data` is now replaced by `box_cox` within `prep_data()`
 
 # finnts 0.3.0
 

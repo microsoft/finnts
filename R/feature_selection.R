@@ -17,7 +17,13 @@ select_features <- function(input_data,
                             date_type,
                             fast = FALSE,
                             seed = 123) {
-
+  
+  # handle case weights
+  if("Weight" %in% colnames(input_data)) {
+    input_data <- input_data %>%
+      dplyr::select(-Weight)
+  }
+  
   # check for more than one unique target value
   if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
 
@@ -207,7 +213,7 @@ select_features <- function(input_data,
     dplyr::filter(Votes >= votes_needed) %>%
     dplyr::pull(Feature) %>%
     sort()
-
+  
   return(fs_list)
 }
 
