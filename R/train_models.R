@@ -564,22 +564,29 @@ train_models <- function(run_info,
                   dplyr::select(Box_Cox_Lambda) %>%
                   dplyr::pull(Box_Cox_Lambda)
 
-                final_fcst_return <- x %>%
-                  dplyr::mutate(
-                    Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
-                    Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
-                  )
+                if (!is.na(lambda)) {
+                  final_fcst_return <- x %>%
+                    dplyr::mutate(
+                      Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                      Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+                    )
+                } else {
+                  final_fcst_return <- x
+                }
 
                 return(final_fcst_return)
               }) %>%
               dplyr::bind_rows()
           } else {
             lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
-            final_fcst <- final_fcst %>%
-              dplyr::mutate(
-                Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
-                Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
-              )
+
+            if (!is.na(lambda)) {
+              final_fcst <- final_fcst %>%
+                dplyr::mutate(
+                  Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                  Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+                )
+            }
           }
         }
 
