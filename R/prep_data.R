@@ -1035,7 +1035,7 @@ apply_box_cox <- function(df) {
 
   diff_info <- tibble::tibble(
     Combo = unique(df$Combo),
-    Box_Cox_Lambda = NULL
+    Box_Cox_Lambda = NA
   )
 
   for (column_name in names(df)) {
