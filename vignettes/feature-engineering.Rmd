@@ -34,6 +34,9 @@ Stabilizes the variance in each time series using the [box_cox_vec](https://busi
 
 Uses the [feasts](https://feasts.tidyverts.org/reference/unitroot_ndiffs.html) package to check if each time series is stationary and applies the differencing required (up to two standard differences with lag one) in order to make the time series stationary. Uses the [diff_vec](https://business-science.github.io/timetk/reference/diff_vec.html) function from the timetk package to do the differencing. This is applied to the target variable and any external regressor before other features are created. Data is undifferenced before training for univariate models like arima, but differenced data is used for all multivariate models. You can control the differencing done within `prep_models()`.
 
+## Case Weights
+Case weights can be applied to multivariate models that support them in tidymodels (cubist, glmnet, mars, xgboost). When turned on, importance weights are used to make a predictive model care more about recent observations than older ones. Importance weights are assigned to each observation based on an exponential decay function of the date. You can control the use of case weights within `prep_models()`. More information about how case weights are used in forecasting can be found in this [tidymodels blog post](https://www.tidymodels.org/learn/work/case-weights/).
+
 ## Date Features
 
 The [tk_augment_timeseries_signature](https://business-science.github.io/timetk/reference/tk_augment_timeseries.html) function from the timetk package easily extracts out various date features from the time stamp. The function doesn't differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed.
