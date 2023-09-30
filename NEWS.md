@@ -1,4 +1,4 @@
-# finnts 0.3.0.9003 (DEVELOPMENT VERSION)
+# finnts 0.3.0.9000 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -8,6 +8,7 @@
 -   Error handling in hierarchical forecast reconciliation
 -   Box-cox and differencing transformations
 -   Added new function, `list_models()`, that lists available models in the package 
+-   Improved feature engineering with lags
 
 ## Bug Fixes
 
