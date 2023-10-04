@@ -1198,7 +1198,7 @@ multivariate_prep_recipe_1 <- function(data,
 
   data_lag_window <- df_lag_initial %>%
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
-    dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_lag"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
+    # dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_lag"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
     timetk::tk_augment_slidify( # create rolling windows
       tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
@@ -1240,8 +1240,8 @@ multivariate_prep_recipe_1 <- function(data,
         unlist()
     ) %>%
     timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% # add fourier series
-    # tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
-    dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_roll"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
+    tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
+    # dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_roll"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
     dplyr::select(-numeric_xregs)
 
   is.na(data_lag_window) <- sapply(
@@ -1336,7 +1336,7 @@ multivariate_prep_recipe_2 <- function(data,
           dplyr::mutate(Final_Col = paste0(col, "_lag", lag_val)) %>%
           dplyr::pull(Final_Col)
       ) %>%
-      dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_lag"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
+      # dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_lag"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
       tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
       timetk::tk_augment_slidify(
         tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
@@ -1377,8 +1377,8 @@ multivariate_prep_recipe_2 <- function(data,
         ) %>%
           unlist()
       ) %>%
-      # tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
-      dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_roll"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
+      tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
+      # dplyr::mutate(dplyr::across(where(is.numeric) & tidyselect::matches("_roll"), ~ timetk::ts_impute_vec(., period = get_frequency_number(date_type)))) %>%
       timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% # add fourier series
       dplyr::select(-numeric_xregs) # drop xregs that do not contain future values
 
