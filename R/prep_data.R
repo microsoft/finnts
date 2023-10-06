@@ -1197,7 +1197,7 @@ weights_from_dates <- function(df,
         dplyr::mutate(Period = lubridate::week(Date))
     } else if (date_type == "day" & nrow(future_dates) < 182) {
       future_dates <- future_dates %>%
-        dplyr::mutate(Period = lubridate::day(Date))
+        dplyr::mutate(Period = lubridate::yday(Date))
     } else {
       return(c(999))
     }
@@ -1212,7 +1212,7 @@ weights_from_dates <- function(df,
       quarter = lubridate::quarter(date),
       month = lubridate::month(date),
       week = lubridate::week(date),
-      day = lubridate::day(date)
+      day = lubridate::yday(date)
     )
   }
 
