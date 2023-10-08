@@ -1,4 +1,4 @@
-# finnts 0.3.0.9003 (DEVELOPMENT VERSION)
+# finnts 0.3.0.9000 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -12,6 +12,7 @@
 ## Bug Fixes
 
 -   Best model selection
+-   Hierarchical forecast reconciliation
 
 # finnts 0.3.0
 
