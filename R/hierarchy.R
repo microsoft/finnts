@@ -400,6 +400,9 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
+              dplyr::rowwise() %>%
+              dplyr::mutate(Forecast = ifelse(Forecast > 100000000000000, 100000000000000, Forecast)) %>%
+              dplyr::ungroup() %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
             forecast_tbl[is.na(forecast_tbl)] <- 0
