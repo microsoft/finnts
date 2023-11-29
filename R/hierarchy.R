@@ -423,6 +423,9 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
+              dplyr::rowwise() %>%
+              dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
+              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               dplyr::select(-Date, -Train_Test_ID) %>%
@@ -640,6 +643,9 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
+              dplyr::rowwise() %>%
+              dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
+              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               tibble::as_tibble() %>%
