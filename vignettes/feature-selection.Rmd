@@ -32,7 +32,7 @@ This technique is used for yearly, quarterly, and monthly data. It's turned off 
 
 ### Boruta
 
-Uses the [Boruta](https://cran.r-project.org/web/packages/Boruta/index.html) package. It finds relevant features by comparing original attributes' importance with importance achievable at random, estimated using their permuted copies (shadows).
+Uses the [Boruta](https://CRAN.R-project.org/package=Boruta) package. It finds relevant features by comparing original attributes' importance with importance achievable at random, estimated using their permuted copies (shadows).
 
 Boruta is not ran for daily or weekly data, in order to save time.
 
