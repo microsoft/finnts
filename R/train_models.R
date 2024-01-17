@@ -637,6 +637,10 @@ train_models <- function(run_info,
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
         dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
+        dplyr::ungroup() %>%
+        dplyr::rowwise() %>%
+        dplyr::mutate(Forecast = ifelse(Forecast > 1000000000000000, 1000000000000000, Forecast)) %>%
+        dplyr::mutate(Forecast = ifelse(Forecast < -1000000000000000, -1000000000000000, Forecast)) %>%
         dplyr::ungroup()
 
       if (unique(final_forecast_tbl$Combo_ID) == "All-Data") {

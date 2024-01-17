@@ -1,3 +1,9 @@
+# finnts 0.4.9000 (DEVLOPMENT VERSION)
+
+## Bug Fixes
+
+-   Issue when writing extremely large forecasts to disk
+
 # finnts 0.4.0
 
 ## Improvements
