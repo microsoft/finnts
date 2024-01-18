@@ -1,4 +1,4 @@
-# finnts 0.4.9000 (DEVLOPMENT VERSION)
+# finnts 0.4.0.9000 (DEVELOPMENT VERSION)
 
 ## Bug Fixes
 
