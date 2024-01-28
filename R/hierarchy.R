@@ -3,6 +3,7 @@
 #' @param input_data initial historical data
 #' @param run_info run info
 #' @param combo_variables combo variables
+#' @param external_regressors external regressors
 #' @param forecast_approach whether it's a bottoms up or hierarchical forecast
 #' @param frequency_number frequency of time series
 #'
@@ -11,6 +12,7 @@
 prep_hierarchical_data <- function(input_data,
                                    run_info,
                                    combo_variables,
+                                   external_regressors,
                                    forecast_approach,
                                    frequency_number) {
   if (forecast_approach == "bottoms_up") {
@@ -42,40 +44,134 @@ prep_hierarchical_data <- function(input_data,
     dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
     base::suppressWarnings()
 
-  # create aggregations
-  Date <- bottom_level_tbl$Date
+  # create aggregations for target variable
+  hierarchical_tbl <- sum_hts_data(bottom_level_tbl, 
+                                   hts_nodes,
+                                   "Target",
+                                   forecast_approach, 
+                                   frequency_number)
+  
+  # create aggregations for external regressors
+  if(!is.null(external_regressors)) {
+    regressor_mapping <- external_regressor_mapping(input_data_adj, 
+                                                    combo_variables, 
+                                                    external_regressors)
 
-  hierarchical_object <- bottom_level_tbl %>%
-    dplyr::select(-Date) %>%
-    stats::ts(frequency = frequency_number) %>%
-    get_hts(
-      hts_nodes,
-      forecast_approach
-    )
+    regressor_agg <- foreach::foreach(
+      regressor_tbl = regressor_mapping %>%
+        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+      .combine = "rbind",
+      .errorhandling = "stop",
+      .verbose = FALSE,
+      .inorder = FALSE,
+      .multicombine = TRUE,
+      .noexport = NULL
+    ) %do% {
 
-  hts_nodes_final <- get_hts_nodes(
-    hierarchical_object,
-    forecast_approach
-  )
+      regressor_var <- regressor_tbl$Regressor
+      value_level <- regressor_tbl$Var
+      
+      if(value_level == "Global") {
+        
+        temp_tbl <- input_data_adj %>%
+          dplyr::select(Date, regressor_var) %>%
+          dplyr::distinct()
+        
+        hierarchical_tbl <- hierarchical_tbl %>%
+          dplyr::left_join(temp_tbl, by = c("Date"))
+        
+      } else if(value_level != "All") {
+        
+        # agg by lowest level
+        bottom_tbl <- input_data_adj %>%
+          tidyr::unite("Combo",
+                       combo_variables,
+                       sep = "_",
+                       remove = F
+          ) %>%
+          dplyr::select(Date, Combo, regressor_var) %>%
+          dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+        
+        bottom_combos <- unique(bottom_tbl$Combo)
+        
+        hier_temp_tbl_1 <- hierarchical_tbl %>%
+          dplyr::select(Combo, Date) %>%
+          dplyr::filter(Combo %in% bottom_combos) %>%
+          dplyr::left_join(bottom_tbl, by = c("Combo", "Date"))
 
-  hierarchical_tbl <- hierarchical_object %>%
-    hts::allts() %>%
-    data.frame() %>%
-    tibble::add_column(
-      Date = Date,
-      .before = 1
-    ) %>%
-    tidyr::pivot_longer(!Date,
-      names_to = "Combo",
-      values_to = "Target"
-    ) %>%
-    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+        # agg by value level
+        temp_tbl <- input_data_adj %>%
+          dplyr::select(Date, value_level, regressor_var) %>%
+          dplyr::distinct()
+        
+        colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
+        
+        temp_tbl$Combo <- paste0(value_level, "_", temp_tbl$Combo)
+        
+        temp_tbl <- temp_tbl %>%
+          dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+        
+        temp_combos <- unique(temp_tbl$Combo)
+
+        hier_temp_tbl_2 <- hierarchical_tbl %>%
+          dplyr::select(Combo, Date) %>%
+          dplyr::filter(Combo %in% temp_combos) %>%
+          dplyr::left_join(temp_tbl, by = c("Combo", "Date"))
+
+        # agg by total
+        total_tbl <- temp_tbl %>%
+          dplyr::group_by(Date) %>%
+          dplyr::rename("Agg" = regressor_var) %>%
+          dplyr::summarise(Agg = sum(Agg))
+        
+        colnames(total_tbl)[colnames(total_tbl) == "Agg"] <- regressor_var
+
+        hier_temp_tbl_3 <- hierarchical_tbl %>%
+          dplyr::select(Combo, Date) %>%
+          dplyr::filter(Combo %in% setdiff(unique(hierarchical_tbl$Combo), c(temp_combos, bottom_combos))) %>%
+          dplyr::left_join(total_tbl, by = c("Date"))
+
+        # combine together
+        hierarchical_tbl <- hierarchical_tbl %>%
+          dplyr::left_join(
+            rbind(hier_temp_tbl_1, hier_temp_tbl_2, hier_temp_tbl_3), 
+            by = c("Combo", "Date")
+          )
+        
+      } else if(value_level == "All") {
+        
+        bottom_level_temp_tbl <- input_data_adj %>%
+          dplyr::select(Combo, Date, tidyselect::all_of(regressor_var)) %>%
+          tidyr::pivot_wider(
+            names_from = Combo,
+            values_from = regressor_var
+          ) %>%
+          dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
+          base::suppressWarnings()
+        
+        temp_tbl <- sum_hts_data(bottom_level_temp_tbl, 
+                                 hts_nodes,
+                                 regressor_var,
+                                 forecast_approach, 
+                                 frequency_number)
+
+        hierarchical_tbl <- hierarchical_tbl %>%
+          dplyr::left_join(temp_tbl, by = c("Date", "Combo"))
+      }
+      return(regressor_tbl)
+    } 
+  }
 
   # write hierarchy structure to disk
   hts_list <- list(
     original_combos = colnames(bottom_level_tbl %>% dplyr::select(-Date)),
     hts_combos = hierarchical_tbl %>% dplyr::pull(Combo) %>% unique(),
-    nodes = hts_nodes_final
+    nodes = sum_hts_data(bottom_level_tbl, 
+                         hts_nodes,
+                         "Target",
+                         forecast_approach, 
+                         frequency_number, 
+                         return_type = "nodes")
   )
 
   write_data(
@@ -99,7 +195,7 @@ prep_hierarchical_data <- function(input_data,
 
   return_data <- hierarchical_tbl %>%
     adjust_df(return_type = df_return_type) %>%
-    dplyr::select(Combo, Date, Target)
+    dplyr::select(Combo, Date, Target, tidyselect::any_of(external_regressors))
 
   return(return_data)
 }
@@ -736,4 +832,146 @@ reconcile_hierarchical_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   }
+}
+
+#' Determine how external regressors should be aggregated
+#'
+#' @param data data
+#' @param combo_variables combo variables
+#' @param external_regressors external regressors
+#'
+#' @return data frame of regressor mappings
+#' @noRd
+external_regressor_mapping <- function(data, 
+                                       combo_variables, 
+                                       external_regressors) {
+  
+  # create var combinations list
+  var_combinations <- tibble::tibble()
+  
+  for (number in 2:min(length(combo_variables), 10)) {
+    temp <- data.frame(gtools::combinations(v = combo_variables, n = length(combo_variables), r = number))
+    
+    temp <- temp %>%
+      tidyr::unite(Var_Combo, colnames(temp), sep = "---") %>%
+      dplyr::select(Var_Combo) %>%
+      tibble::tibble()
+    
+    var_combinations <- rbind(var_combinations, temp)
+  }
+  
+  iter_list <- var_combinations %>%
+    dplyr::pull(Var_Combo) %>%
+    c(combo_variables)
+  
+  # get final counts per var per regressor
+  regressor_unique_tbl <- foreach::foreach(
+    regressor = external_regressors,
+    .combine = "rbind",
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %do% {
+    
+    var_unique_tbl <- foreach::foreach(
+      var = iter_list,
+      .combine = "rbind",
+      .errorhandling = "stop",
+      .verbose = FALSE,
+      .inorder = FALSE,
+      .multicombine = TRUE,
+      .noexport = NULL
+    ) %do%
+      {
+        var_list <- strsplit(var, split = "---")[[1]]
+        
+        if(length(var_list) == length(combo_variables)) {
+          var <- "All"
+        }
+        
+        temp_unique <- data %>%
+          tidyr::unite(Unique, tidyselect::all_of(c(var_list, "Date", regressor)), sep = "_") %>%
+          dplyr::pull(Unique) %>%
+          unique() %>%
+          length()
+        
+        return(data.frame(Var = var, Unique = temp_unique))
+      }
+    
+    if(length(unique(var_unique_tbl$Unique)) > 1) {
+      all_unique <- var_unique_tbl %>%
+        dplyr::filter(Var == "All") %>%
+        dplyr::pull(Unique)
+      
+      regressor_test <- var_unique_tbl %>%
+        dplyr::filter(Unique < all_unique) %>%
+        dplyr::pull(Var)
+      
+      if(length(regressor_test) > 1) {
+        regressor_test <- "Global"
+      }
+      
+      return(data.frame(Regressor = regressor, Var = regressor_test))
+    } else {
+      return(data.frame(Regressor = regressor, Var = "All"))
+    }
+  }
+  
+  return(regressor_unique_tbl)
+}
+
+#' Create hierarchical aggregations
+#'
+#' @param bottom_level_tbl bottom level table
+#' @param hts_nodes hts nodes
+#' @param sum_var column to get aggregated
+#' @param forecast_approach forecast approach
+#' @param frequency_number frequency number
+#' @param return_type return type
+#'
+#' @return data frame of hierarchical aggregations
+#' @noRd
+sum_hts_data <- function(bottom_level_tbl, 
+                         hts_nodes,
+                         sum_var,
+                         forecast_approach, 
+                         frequency_number, 
+                         return_type = "data") {
+  
+  # create aggregations for target variable
+  Date <- bottom_level_tbl$Date
+  
+  hierarchical_object <- bottom_level_tbl %>%
+    dplyr::select(-Date) %>%
+    stats::ts(frequency = frequency_number) %>%
+    get_hts(
+      hts_nodes,
+      forecast_approach
+    )
+  
+  hts_nodes_final <- get_hts_nodes(
+    hierarchical_object,
+    forecast_approach
+  )
+  
+  if(return_type == "nodes") {
+    return(hts_nodes_final)
+  }
+  
+  hierarchical_tbl <- hierarchical_object %>%
+    hts::allts() %>%
+    data.frame() %>%
+    tibble::add_column(
+      Date = Date,
+      .before = 1
+    ) %>%
+    tidyr::pivot_longer(!Date,
+                        names_to = "Combo",
+                        values_to = sum_var
+    ) %>%
+    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+  
+  return(hierarchical_tbl)
 }

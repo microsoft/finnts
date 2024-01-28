@@ -175,6 +175,7 @@ prep_data <- function(run_info,
     ) %>%
     prep_hierarchical_data(run_info,
       combo_variables,
+      external_regressors,
       forecast_approach,
       frequency_number = get_frequency_number(date_type)
     )

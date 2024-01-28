@@ -1,3 +1,9 @@
+# finnts 0.4.0.9000 (DEVELOPMENT VERSION)
+
+## Improvements
+
+-   Added support for hierarchical forecasting with external regressors
+
 # finnts 0.4.0
 
 ## Improvements
