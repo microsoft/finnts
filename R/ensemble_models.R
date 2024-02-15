@@ -404,10 +404,6 @@ ensemble_models <- function(run_info,
             Train_Test_ID = id
           ) %>%
           dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
-          dplyr::left_join(model_train_test_tbl %>%
-            dplyr::select(Run_Type, Train_Test_ID),
-          by = "Train_Test_ID"
-          ) %>%
           dplyr::left_join(
             prep_ensemble_tbl %>%
               dplyr::mutate(.row = dplyr::row_number()) %>%
