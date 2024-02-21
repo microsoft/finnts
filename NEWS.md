@@ -1,3 +1,9 @@
+# finnts 0.4.0.9000 (DEVELOPMENT VERSION)
+
+## Bug Fixes
+
+-   Error in run_type column join in final forecast output
+
 # finnts 0.4.0
 
 ## Improvements
