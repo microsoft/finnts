@@ -71,7 +71,7 @@ It would be hard to aggregate the above data in a traditional hierarchy. The sam
 
 ### External Regressors
 
-The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one regressor, then the relationship is respected while still being able to aggregate to the total level. 
+The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one or more combo variables, then the relationship is respected while still being able to aggregate to the total level. Aggregations of drivers are always summed. 
 
 Explore the final results of the aggregations by seeing the end result using `get_prepped_data()`.
 

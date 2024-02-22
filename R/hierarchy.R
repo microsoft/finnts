@@ -98,37 +98,64 @@ prep_hierarchical_data <- function(input_data,
           dplyr::select(Combo, Date) %>%
           dplyr::filter(Combo %in% bottom_combos) %>%
           dplyr::left_join(bottom_tbl, by = c("Combo", "Date"))
+        
+        # agg by specific combo variable level
+        value_level <- strsplit(value_level, split = "---")[[1]]
 
-        # agg by value level
-        temp_tbl <- input_data_adj %>%
-          dplyr::select(Date, value_level, regressor_var) %>%
-          dplyr::distinct()
-        
-        colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
-        
-        temp_tbl$Combo <- paste0(value_level, "_", temp_tbl$Combo)
-        
-        temp_tbl <- temp_tbl %>%
-          dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
-        
-        temp_combos <- unique(temp_tbl$Combo)
+        hier_temp_tbl_2 <- foreach::foreach(
+          value_level_iter = value_level,
+          .combine = "rbind",
+          .errorhandling = "stop",
+          .verbose = FALSE,
+          .inorder = FALSE,
+          .multicombine = TRUE,
+          .noexport = NULL
+        ) %do% {
 
-        hier_temp_tbl_2 <- hierarchical_tbl %>%
-          dplyr::select(Combo, Date) %>%
-          dplyr::filter(Combo %in% temp_combos) %>%
-          dplyr::left_join(temp_tbl, by = c("Combo", "Date"))
+          temp_tbl <- input_data_adj %>%
+            dplyr::select(Date, value_level_iter, regressor_var) %>%
+            dplyr::distinct()
+          
+          if(length(value_level) > 1) {
+            temp_tbl <- temp_tbl %>%
+              dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
+              dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE)) %>%
+              dplyr::ungroup()
+            
+            names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
+          }
+          
+          colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
+          
+          temp_tbl$Combo <- paste0(value_level_iter, "_", temp_tbl$Combo)
+          
+          temp_tbl <- temp_tbl %>%
+            dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+
+          temp_combos <- unique(temp_tbl$Combo)
+  
+          hier_temp_tbl <- hierarchical_tbl %>%
+            dplyr::select(Combo, Date) %>%
+            dplyr::filter(Combo %in% temp_combos) %>%
+            dplyr::distinct() %>%
+            dplyr::left_join(temp_tbl, by = c("Combo", "Date"))
+
+          return(hier_temp_tbl)
+        }
 
         # agg by total
-        total_tbl <- temp_tbl %>%
+        total_tbl <- input_data_adj %>%
+          dplyr::select(Date, value_level[[1]], regressor_var) %>%
+          dplyr::distinct() %>%
           dplyr::group_by(Date) %>%
           dplyr::rename("Agg" = regressor_var) %>%
-          dplyr::summarise(Agg = sum(Agg))
+          dplyr::summarise(Agg = sum(Agg, na.rm = TRUE))
         
         colnames(total_tbl)[colnames(total_tbl) == "Agg"] <- regressor_var
 
         hier_temp_tbl_3 <- hierarchical_tbl %>%
           dplyr::select(Combo, Date) %>%
-          dplyr::filter(Combo %in% setdiff(unique(hierarchical_tbl$Combo), c(temp_combos, bottom_combos))) %>%
+          dplyr::filter(Combo %in% setdiff(unique(hierarchical_tbl$Combo), c(unique(hier_temp_tbl_2$Combo), bottom_combos))) %>%
           dplyr::left_join(total_tbl, by = c("Date"))
 
         # combine together
@@ -864,8 +891,8 @@ external_regressor_mapping <- function(data,
     dplyr::pull(Var_Combo) %>%
     c(combo_variables)
   
-  # get final counts per var per regressor
-  regressor_unique_tbl <- foreach::foreach(
+  # get final mapping of regressor to combo var level
+  regressor_mapping_tbl <- foreach::foreach(
     regressor = external_regressors,
     .combine = "rbind",
     .errorhandling = "stop",
@@ -875,6 +902,7 @@ external_regressor_mapping <- function(data,
     .noexport = NULL
   ) %do% {
     
+    # get unique values of regressor per combo variable iteration
     var_unique_tbl <- foreach::foreach(
       var = iter_list,
       .combine = "rbind",
@@ -899,7 +927,8 @@ external_regressor_mapping <- function(data,
         
         return(data.frame(Var = var, Unique = temp_unique))
       }
-    
+
+    # determine regressor mappings
     if(length(unique(var_unique_tbl$Unique)) > 1) {
       all_unique <- var_unique_tbl %>%
         dplyr::filter(Var == "All") %>%
@@ -910,7 +939,24 @@ external_regressor_mapping <- function(data,
         dplyr::pull(Var)
       
       if(length(regressor_test) > 1) {
-        regressor_test <- "Global"
+        
+        combo_unique <- var_unique_tbl %>%
+          dplyr::filter(Var %in% combo_variables)
+        
+        if(length(unique(combo_unique$Unique)) == 1) {
+          regressor_test <- "Global"
+        } else {
+          
+          min_val <- min(unique(combo_unique$Unique))
+          
+          regressor_test <- combo_unique %>%
+            dplyr::filter(Unique == min_val) %>%
+            dplyr::pull(Var)
+        }
+      }
+      
+      if(length(regressor_test) > 1) {
+        regressor_test <- paste0(regressor_test, collapse = "---")
       }
       
       return(data.frame(Regressor = regressor, Var = regressor_test))
@@ -919,7 +965,7 @@ external_regressor_mapping <- function(data,
     }
   }
   
-  return(regressor_unique_tbl)
+  return(regressor_mapping_tbl)
 }
 
 #' Create hierarchical aggregations
