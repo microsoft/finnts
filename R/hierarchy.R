@@ -85,7 +85,7 @@ prep_hierarchical_data <- function(input_data,
         # agg by lowest level
         bottom_tbl <- input_data_adj %>%
           tidyr::unite("Combo",
-                       combo_variables,
+                       tidyselect::all_of(combo_variables),
                        sep = "_",
                        remove = F
           ) %>%
@@ -535,7 +535,7 @@ reconcile_hierarchical_data <- function(run_info,
 
             ts <- forecast_tbl %>%
               dplyr::select(-Date, -Train_Test_ID) %>%
-              dplyr::select(hts_combo_list) %>%
+              dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
               stats::ts()
 
             residual_multiplier <- 10 # shrink extra large residuals to prevent recon issues
@@ -552,7 +552,7 @@ reconcile_hierarchical_data <- function(run_info,
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               dplyr::select(-Date, -Train_Test_ID) %>%
-              dplyr::select(hts_combo_list) %>%
+              dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
               as.matrix()
 
             if (forecast_approach == "standard_hierarchy") {

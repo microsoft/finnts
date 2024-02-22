@@ -158,11 +158,11 @@ prep_data <- function(run_info,
   # prep initial data before feature engineering
   initial_prep_tbl <- input_data %>%
     tidyr::unite("Combo",
-      combo_variables,
+      tidyselect::all_of(combo_variables),
       sep = "--",
       remove = F
     ) %>%
-    dplyr::rename("Target" = target_variable) %>%
+    dplyr::rename("Target" = tidyselect::all_of(target_variable)) %>%
     dplyr::select(c(
       "Combo",
       tidyselect::all_of(combo_variables),
@@ -1044,8 +1044,8 @@ apply_box_cox <- function(df) {
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
-        dplyr::select(Date, column_name) %>%
-        dplyr::rename(Column = column_name)
+        dplyr::select(Date, tidyselect::all_of(column_name)) %>%
+        dplyr::rename(Column = tidyselect::all_of(column_name))
 
       # get lambda value
       lambda_value <- timetk::auto_lambda(temp_tbl$Column)
@@ -1065,10 +1065,10 @@ apply_box_cox <- function(df) {
       # clean up names and add to final df
       colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
 
-      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(column_name))
+      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(tidyselect::all_of(column_name)))
     } else {
       if (column_name != "Date") {
-        final_tbl <- cbind(final_tbl, df %>% dplyr::select(column_name))
+        final_tbl <- cbind(final_tbl, df %>% dplyr::select(tidyselect::all_of(column_name)))
       }
     }
   }
@@ -1096,8 +1096,8 @@ make_stationary <- function(df) {
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
-        dplyr::select(Date, column_name) %>%
-        dplyr::rename(Column = column_name)
+        dplyr::select(Date, tidyselect::all_of(column_name)) %>%
+        dplyr::rename(Column = tidyselect::all_of(column_name))
 
       # check for standard difference
       ndiffs <- temp_tbl %>%
@@ -1124,10 +1124,10 @@ make_stationary <- function(df) {
 
       colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
 
-      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(column_name))
+      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(tidyselect::all_of(column_name)))
     } else {
       if (column_name != "Date") {
-        final_tbl <- cbind(final_tbl, df %>% dplyr::select(column_name))
+        final_tbl <- cbind(final_tbl, df %>% dplyr::select(tidyselect::all_of(column_name)))
       }
     }
   }
@@ -1163,7 +1163,7 @@ multivariate_prep_recipe_1 <- function(data,
   df_poly <- data
 
   for (column in c("Target", external_regressors)) {
-    if (is.numeric(dplyr::select(data, column)[[1]])) {
+    if (is.numeric(dplyr::select(data, tidyselect::all_of(column))[[1]])) {
       column_names_final <- c(column)
 
       if ((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
@@ -1173,7 +1173,7 @@ multivariate_prep_recipe_1 <- function(data,
 
       if (column %in% external_regressors) {
         df_poly_column <- data %>%
-          dplyr::select(column) %>%
+          dplyr::select(tidyselect::all_of(column)) %>%
           dplyr::rename(Col = column)
 
         temp_squared <- df_poly_column^2
@@ -1241,7 +1241,7 @@ multivariate_prep_recipe_1 <- function(data,
     ) %>%
     timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% # add fourier series
     tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
-    dplyr::select(-numeric_xregs)
+    dplyr::select(-tidyselect::all_of(numeric_xregs))
 
   is.na(data_lag_window) <- sapply(
     data_lag_window,
@@ -1285,7 +1285,7 @@ multivariate_prep_recipe_2 <- function(data,
   df_poly <- data
 
   for (column in c("Target", external_regressors)) {
-    if (is.numeric(dplyr::select(data, column)[[1]])) {
+    if (is.numeric(dplyr::select(data, tidyselect::all_of(column))[[1]])) {
       column_names_final <- c(column)
 
       if ((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
@@ -1295,7 +1295,7 @@ multivariate_prep_recipe_2 <- function(data,
 
       if (column %in% external_regressors) {
         df_poly_column <- data %>%
-          dplyr::select(column) %>%
+          dplyr::select(tidyselect::all_of(column)) %>%
           dplyr::rename(Col = column)
 
         temp_squared <- df_poly_column^2
@@ -1377,7 +1377,7 @@ multivariate_prep_recipe_2 <- function(data,
       ) %>%
       tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
       timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% # add fourier series
-      dplyr::select(-numeric_xregs) # drop xregs that do not contain future values
+      dplyr::select(-tidyselect::all_of(numeric_xregs)) # drop xregs that do not contain future values
 
     is.na(data_lag_window) <- sapply(
       data_lag_window,
