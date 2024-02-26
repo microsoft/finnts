@@ -802,6 +802,34 @@ model_hyperparameters <- function(run_info,
   )
 }
 
+#' Detect date type
+#'
+#' @param dates Dates vector. Will use first two values to calculate difference.
+#'
+#' @return Returns date_type
+#' @noRd
+get_date_type <- function(dates) {
+  dayInterval <- as.integer(difftime(
+    dates[2],
+    dates[1],
+    units = "days"
+  ))
+  date_type <- if (dayInterval == 1) {
+    "day"
+  } else if (dayInterval == 7) {
+    "week"
+  } else if (dayInterval %in% 28:31) {
+    "month"
+  } else if (round(dayInterval/4) %in% 28:31) {
+    "quarter"
+  } else if (dayInterval %in% 365:366) {
+    "year"
+  } else {
+    stop("Dates data has to be daily, weekly, quarterly, monthly, or yearly")
+  }
+  return(date_type)
+}
+
 #' Gets the right frequency numbers
 #'
 #' @param date_type year, quarter, month, week, day
