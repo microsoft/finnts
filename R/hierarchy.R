@@ -901,7 +901,7 @@ external_regressor_mapping <- function(data,
     .multicombine = TRUE,
     .noexport = NULL
   ) %do% {
-    
+
     # get unique values of regressor per combo variable iteration
     var_unique_tbl <- foreach::foreach(
       var = iter_list,
@@ -930,6 +930,7 @@ external_regressor_mapping <- function(data,
 
     # determine regressor mappings
     if(length(unique(var_unique_tbl$Unique)) > 1) {
+      
       all_unique <- var_unique_tbl %>%
         dplyr::filter(Var == "All") %>%
         dplyr::pull(Unique)
@@ -938,21 +939,18 @@ external_regressor_mapping <- function(data,
         dplyr::filter(Unique < all_unique) %>%
         dplyr::pull(Var)
       
-      if(length(regressor_test) > 1) {
+      if(length(unique(data$Date)) == data %>% dplyr::select(Date, tidyselect::all_of(regressor)) %>% dplyr::distinct() %>% nrow()) {
+        regressor_test <- "Global"
+      } else if(length(regressor_test) > 1) {
         
         combo_unique <- var_unique_tbl %>%
           dplyr::filter(Var %in% combo_variables)
-        
-        if(length(unique(combo_unique$Unique)) == 1) {
-          regressor_test <- "Global"
-        } else {
           
-          min_val <- min(unique(combo_unique$Unique))
+        min_val <- min(unique(combo_unique$Unique))
           
-          regressor_test <- combo_unique %>%
-            dplyr::filter(Unique == min_val) %>%
-            dplyr::pull(Var)
-        }
+        regressor_test <- combo_unique %>%
+          dplyr::filter(Unique == min_val) %>%
+          dplyr::pull(Var)
       }
       
       if(length(regressor_test) > 1) {
