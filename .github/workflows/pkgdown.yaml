@@ -5,6 +5,10 @@ on:
 
 name: pkgdown
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   pkgdown:
     runs-on: ubuntu-20.04
