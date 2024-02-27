@@ -880,7 +880,7 @@ external_regressor_mapping <- function(data,
     temp <- data.frame(gtools::combinations(v = combo_variables, n = length(combo_variables), r = number))
     
     temp <- temp %>%
-      tidyr::unite(Var_Combo, colnames(temp), sep = "---") %>%
+      tidyr::unite(Var_Combo, tidyselect::all_of(colnames(temp)), sep = "---") %>%
       dplyr::select(Var_Combo) %>%
       tibble::tibble()
     

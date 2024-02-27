@@ -266,11 +266,11 @@ forecast_backwards_compatibility <- function(run_info,
         dplyr::collect() %>%
         tidyr::unite(
           col = "Combo",
-          combo_variables,
+          tidyselect::all_of(combo_variables),
           sep = "---",
           remove = FALSE
         ) %>%
-        dplyr::rename(Target = target_variable) %>%
+        dplyr::rename(Target = tidyselect::all_of(target_variable)) %>%
         dplyr::mutate(
           Model_ID = NA,
           lo_95 = Target,
@@ -278,7 +278,7 @@ forecast_backwards_compatibility <- function(run_info,
           hi_80 = Target,
           hi_95 = Target
         ) %>%
-        dplyr::select(Combo, combo_variables, Model_ID, Date, Target, lo_95, lo_80, hi_80, hi_95)
+        dplyr::select(Combo, tidyselect::all_of(combo_variables), Model_ID, Date, Target, lo_95, lo_80, hi_80, hi_95)
     ) %>%
     dplyr::mutate(Type = ifelse(is.na(Model_ID), "Historical", "Forecast")) %>%
     dplyr::relocate(Type, .before = Date) %>%
@@ -298,7 +298,7 @@ forecast_backwards_compatibility <- function(run_info,
     dplyr::filter(Run_Type == "Back_Test") %>%
     dplyr::mutate(MAPE = abs((Forecast - Target) / Target)) %>%
     dplyr::select(
-      Combo, combo_variables, Train_Test_ID, Date, Model_ID, Horizon,
+      Combo, tidyselect::all_of(combo_variables), Train_Test_ID, Date, Model_ID, Horizon,
       Forecast, Target, MAPE, Best_Model
     ) %>%
     dplyr::rename(
