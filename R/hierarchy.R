@@ -76,7 +76,7 @@ prep_hierarchical_data <- function(input_data,
 
       if (value_level == "Global") {
         temp_tbl <- input_data_adj %>%
-          dplyr::select(Date, regressor_var) %>%
+          dplyr::select(Date, tidyselect::all_of(regressor_var)) %>%
           dplyr::distinct()
 
         hierarchical_tbl <- hierarchical_tbl %>%
@@ -90,7 +90,7 @@ prep_hierarchical_data <- function(input_data,
             sep = "_",
             remove = F
           ) %>%
-          dplyr::select(Date, Combo, regressor_var) %>%
+          dplyr::select(Date, Combo, tidyselect::all_of(regressor_var)) %>%
           dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
 
         bottom_combos <- unique(bottom_tbl$Combo)
@@ -113,7 +113,7 @@ prep_hierarchical_data <- function(input_data,
           .noexport = NULL
         ) %do% {
           temp_tbl <- input_data_adj %>%
-            dplyr::select(Date, value_level_iter, regressor_var) %>%
+            dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
             dplyr::distinct()
 
           if (length(value_level) > 1) {
@@ -145,10 +145,10 @@ prep_hierarchical_data <- function(input_data,
 
         # agg by total
         total_tbl <- input_data_adj %>%
-          dplyr::select(Date, value_level[[1]], regressor_var) %>%
+          dplyr::select(Date, value_level[[1]], tidyselect::all_of(regressor_var)) %>%
           dplyr::distinct() %>%
           dplyr::group_by(Date) %>%
-          dplyr::rename("Agg" = regressor_var) %>%
+          dplyr::rename("Agg" = tidyselect::all_of(regressor_var)) %>%
           dplyr::summarise(Agg = sum(Agg, na.rm = TRUE))
 
         colnames(total_tbl)[colnames(total_tbl) == "Agg"] <- regressor_var
