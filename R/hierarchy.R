@@ -169,7 +169,7 @@ prep_hierarchical_data <- function(input_data,
           dplyr::select(Combo, Date, tidyselect::all_of(regressor_var)) %>%
           tidyr::pivot_wider(
             names_from = Combo,
-            values_from = regressor_var
+            values_from = tidyselect::all_of(regressor_var)
           ) %>%
           dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
           base::suppressWarnings()
