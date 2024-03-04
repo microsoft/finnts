@@ -2,24 +2,24 @@
 test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   # Mock data setup
   data <- tibble::tibble(
-    Segment = c(
+    Segment = as.character(c(
       "Commercial", "Commercial", "Commercial", "Commercial", "Commercial", "Commercial",
       "Commercial", "Commercial", "Commercial", "Commercial", "Commercial", "Commercial",
       "Consumer", "Consumer", "Consumer", "Consumer", "Consumer", "Consumer",
       "Consumer", "Consumer", "Consumer", "Consumer", "Consumer", "Consumer"
-    ),
-    Country = c(
+    )),
+    Country = as.character(c(
       "United (States)", "United (States)", "United (States)", "United (States)", "United (States)", "United (States)",
       "UK", "UK", "UK", "UK", "UK", "UK",
       "United (States)", "United (States)", "United (States)", "United (States)", "United (States)", "United (States)",
       "UK", "UK", "UK", "UK", "UK", "UK"
-    ),
-    Product = c(
+    )),
+    Product = as.character(c(
       "Office", "Office", "Office", "Excel", "Excel", "Excel",
       "Office", "Office", "Office", "Excel", "Excel", "Excel",
       "Office", "Office", "Office", "Excel", "Excel", "Excel",
       "Office", "Office", "Office", "Excel", "Excel", "Excel"
-    ),
+    )),
     Date = as.Date(c(
       "1/1/2020", "2/1/2020", "3/1/2020", "1/1/2020", "2/1/2020", "3/1/2020",
       "1/1/2020", "2/1/2020", "3/1/2020", "1/1/2020", "2/1/2020", "3/1/2020",
@@ -52,12 +52,12 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
 
   # Expected output setup
   expected_data <- tibble::tibble(
-    Combo = c(
+    Combo = as.character(c(
       "Total", "Segment_Commercial", "Segment_Consumer", "Country_United_States", "Country_UK",
       "Product_Office", "Product_Excel", "Commercial_United_States_Office", "Commercial_United_States_Excel",
       "Commercial_UK_Office", "Commercial_UK_Excel", "Consumer_United_States_Office", "Consumer_United_States_Excel",
       "Consumer_UK_Office", "Consumer_UK_Excel"
-    ),
+    )),
     Date = as.Date(c(
       "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01",
       "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01",
@@ -75,11 +75,11 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   expect_equal(result_data, expected_data)
 })
 
-test_that("prep_hierarchical_data returns correct standard hierarchies for region and city", {
+test_that("prep_hierarchical_data returns correct standard hierarchies", {
   # Mock data setup
   data <- tibble::tibble(
-    Area = c("EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "United States", "United States", "United States", "United States"),
-    Country = c("Croatia", "Croatia", "Croatia", "Croatia", "Greece", "Greece", "Greece", "Greece", "United States", "United States", "United States", "United States"),
+    Area = as.character(c("EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "United States", "United States", "United States", "United States")),
+    Country = as.character(c("Croatia", "Croatia", "Croatia", "Croatia", "Greece", "Greece", "Greece", "Greece", "United States", "United States", "United States", "United States")),
     Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01")),
     Target = c(1, 2, 3, 4, 100, 101, 102, 103, 1000, 1001, 1002, 1003),
     Value_All = c(10, 11, 12, 13, 46, 47, 48, 49, 82, 83, 84, 85),
@@ -105,7 +105,7 @@ test_that("prep_hierarchical_data returns correct standard hierarchies for regio
 
   # Expected output setup for a standard hierarchical forecast
   expected_data <- tibble::tibble(
-    Combo = c("Total", "A", "B", "EMEA_Croatia", "EMEA_Greece", "United_States_United_States"),
+    Combo = as.character(c("Total", "A", "B", "EMEA_Croatia", "EMEA_Greece", "United_States_United_States")),
     Date = as.Date(c("2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01")),
     Target = c(1101, 101, 1000, 1, 100, 1000),
     Value_All = c(138, 56, 82, 10, 46, 82),
