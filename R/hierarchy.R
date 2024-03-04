@@ -165,11 +165,12 @@ prep_hierarchical_data <- function(input_data,
             by = c("Combo", "Date")
           )
       } else if (value_level == "All") {
+        
         bottom_level_temp_tbl <- input_data_adj %>%
           dplyr::select(Combo, Date, tidyselect::all_of(regressor_var)) %>%
           tidyr::pivot_wider(
             names_from = Combo,
-            values_from = tidyselect::all_of(regressor_var)
+            values_from = as.character(regressor_var)
           ) %>%
           dplyr::mutate_if(is.numeric, list(~ replace(., is.na(.), 0))) %>%
           base::suppressWarnings()
