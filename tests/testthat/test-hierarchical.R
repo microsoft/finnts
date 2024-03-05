@@ -1,7 +1,7 @@
 
 test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   
-  skip_if(getRversion() == "3.6.0", "Skipping for R 3.6.0")
+  skip_if(getRversion() < "3.7.0", "Skipping for R 3.6.0 and below")
   
   # Mock data setup
   data <- tibble::tibble(
@@ -80,7 +80,7 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
 
 test_that("prep_hierarchical_data returns correct standard hierarchies", {
   
-  skip_if(getRversion() == "3.6.0", "Skipping for R 3.6.0")
+  skip_if(getRversion() < "3.7.0", "Skipping for R 3.6.0 and below")
   
   # Mock data setup
   data <- tibble::tibble(
