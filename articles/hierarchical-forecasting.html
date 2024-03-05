@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9000</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9001</span>
       </span>
     </div>
 
@@ -182,7 +182,9 @@
 <div class="section level3">
 <h3 id="external-regressors">External Regressors<a class="anchor" aria-label="anchor" href="#external-regressors"></a>
 </h3>
-<p>Currently finnts does not allow for external regressors to be used in a hierarchical forecast. This is something we plan to implement in a future release. If you select a hierarchical forecast method and include external regressor input values, Finn will ignore the external regressors and will not use them in modeling.</p>
+<p>The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one or more combo variables, then the relationship is respected while still being able to aggregate to the total level. Aggregations of drivers are always summed.</p>
+<p>The only limitation is when an external regressor maps to the middle of a standard hierarchy (not at the global level or bottom level), in this case the regressor will be summed at the global level across the hierarchy. This is due to limitations of aggregation naming in the hts package used in finnts.</p>
+<p>Explore the final results of the aggregations by seeing the end result using <code><a href="../reference/get_prepped_data.html">get_prepped_data()</a></code>.</p>
 </div>
 <div class="section level3">
 <h3 id="spark-parallel-processing">Spark Parallel Processing<a class="anchor" aria-label="anchor" href="#spark-parallel-processing"></a>
