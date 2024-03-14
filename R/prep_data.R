@@ -814,13 +814,13 @@ get_xregs_future_values_tbl <- function(data_tbl,
                                         external_regressors,
                                         hist_end_date) {
   xregs_future_values_list <- c()
-  
+
   for (variable in external_regressors) {
     temp <- data_tbl %>%
       dplyr::filter(Date > hist_end_date) %>%
       dplyr::select(variable) %>%
       tidyr::drop_na()
-    
+
     if (nrow(temp) > 0) {
       xregs_future_values_list <- append(
         xregs_future_values_list,
@@ -828,7 +828,7 @@ get_xregs_future_values_tbl <- function(data_tbl,
       )
     }
   }
-  
+
   data_tbl %>%
     dplyr::select(
       Combo,

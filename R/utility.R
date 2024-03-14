@@ -13,7 +13,7 @@ utils::globalVariables(c(
   "x", "num_cores", "run_info", "negative_forecast", "Forecast_Adj", "Final_Col", "lag_val", "libs",
   ".config", "Forecast_Tbl", "Model_Workflow", "id", "model_run",
   "Auto_Accept", "Feature", "Imp", "Importance", "LOFO_Var", "Var_RMSE", "Vote", "Votes", "desc",
-  "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var", 
+  "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
   "Var_Combo", "regressor", "regressor_tbl", "value_level_iter"
 ))
 
