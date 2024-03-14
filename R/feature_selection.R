@@ -110,8 +110,8 @@ select_features <- function(input_data,
     # botuta feature selection
     boruta_results <- tibble::tibble(
       Feature = boruta_fn(
-        input_data,
-        seed
+        data = input_data,
+        seed = seed
       ),
       Vote = 1,
       Auto_Accept = 0
