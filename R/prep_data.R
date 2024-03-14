@@ -311,8 +311,7 @@ prep_data <- function(run_info,
         xregs_future_tbl <- get_xregs_future_values_tbl(
           initial_prep_combo_tbl,
           external_regressors,
-          hist_end_date,
-          forecast_approach
+          hist_end_date
         )
 
         if (length(colnames(xregs_future_tbl)) > 2) {
@@ -484,8 +483,7 @@ prep_data <- function(run_info,
         xregs_future_tbl <- get_xregs_future_values_tbl(
           df,
           external_regressors,
-          hist_end_date,
-          forecast_approach
+          hist_end_date
         )
 
         if (length(colnames(xregs_future_tbl)) > 2) {
@@ -809,42 +807,34 @@ combo_cleanup_fn <- function(df,
 #' @param data_tbl data frame
 #' @param external_regressors list of external regressors
 #' @param hist_end_date date of when your historical data ends
-#' @param forecast_approach indicates what type of hierarchical time series method
 #'
 #' @return tbl with external regressors with future values
 #' @noRd
 get_xregs_future_values_tbl <- function(data_tbl,
                                         external_regressors,
-                                        hist_end_date,
-                                        forecast_approach) {
-  if (forecast_approach != "bottoms_up") {
-    data_tbl %>%
-      tibble::tibble() %>%
-      dplyr::select(Combo, Date)
-  } else {
-    xregs_future_values_list <- c()
-
-    for (variable in external_regressors) {
-      temp <- data_tbl %>%
-        dplyr::filter(Date > hist_end_date) %>%
-        dplyr::select(variable) %>%
-        tidyr::drop_na()
-
-      if (nrow(temp) > 0) {
-        xregs_future_values_list <- append(
-          xregs_future_values_list,
-          variable
-        )
-      }
-    }
-
-    data_tbl %>%
-      dplyr::select(
-        Combo,
-        Date,
-        tidyselect::all_of(xregs_future_values_list)
+                                        hist_end_date) {
+  xregs_future_values_list <- c()
+  
+  for (variable in external_regressors) {
+    temp <- data_tbl %>%
+      dplyr::filter(Date > hist_end_date) %>%
+      dplyr::select(variable) %>%
+      tidyr::drop_na()
+    
+    if (nrow(temp) > 0) {
+      xregs_future_values_list <- append(
+        xregs_future_values_list,
+        variable
       )
+    }
   }
+  
+  data_tbl %>%
+    dplyr::select(
+      Combo,
+      Date,
+      tidyselect::all_of(xregs_future_values_list)
+    )
 }
 
 #' Function to replace outliers and fill in missing values
