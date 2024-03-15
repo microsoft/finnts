@@ -1,4 +1,4 @@
-# finnts 0.4.0.9001 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9002 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -7,6 +7,7 @@
 ## Bug Fixes
 
 -   Error in run_type column join in final forecast output
+-   Error in running feature selection
 
 # finnts 0.4.0
 
