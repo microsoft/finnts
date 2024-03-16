@@ -808,7 +808,8 @@ model_hyperparameters <- function(run_info,
 #'
 #' @return Returns date_type
 #' @noRd
-get_date_type <- function(dates) {
+get_date_type <- function(dates, ...) {
+  dates <- as.Date(dates, origin = "1970-01-01", ...)
   dayInterval <- as.integer(difftime(
     dates[2],
     dates[1],
