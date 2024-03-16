@@ -8,7 +8,7 @@
 #' @param combo_variables List of column headers within input data to be used to separate individual time series.
 #' @param target_variable The column header formatted as a character value within input data you want to forecast.
 #' @param date_type The date granularity of the input data. Finn accepts the following as a character string:
-#'   day, week, month, quarter, year.
+#'   day, week, month, quarter, year. Default will detect automatically based on the difference of the first two dates.
 #' @param forecast_horizon Number of periods to forecast into the future.
 #' @param external_regressors List of column headers within input data to be used as features in multivariate models.
 #' @param hist_start_date Date value of when your input_data starts. Default of NULL uses earliest date value in
