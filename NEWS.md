@@ -1,8 +1,13 @@
-# finnts 0.4.0.9000 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9002 (DEVELOPMENT VERSION)
+
+## Improvements
+
+-   Added support for hierarchical forecasting with external regressors
 
 ## Bug Fixes
 
 -   Error in run_type column join in final forecast output
+-   Error in running feature selection
 
 # finnts 0.4.0
 
