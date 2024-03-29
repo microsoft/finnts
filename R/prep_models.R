@@ -432,6 +432,8 @@ model_workflows <- function(run_info,
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
   forecast_horizon <- log_df$forecast_horizon
+  multistep_horizon <- log_df$multistep_horizon
+  external_regressors <- ifelse(log_df$external_regressors == "NULL", NULL, strsplit(log_df$external_regressors, split = "---")[[1]])
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -556,14 +558,29 @@ model_workflows <- function(run_info,
       tidyr::unnest(Data)
 
     # get args to feed into model spec functions
-    avail_arg_list <- list(
-      "train_data" = recipe_tbl,
-      "frequency" = get_frequency_number(date_type),
-      "horizon" = forecast_horizon,
-      "seasonal_period" = get_seasonal_periods(date_type),
-      "model_type" = "single",
-      "pca" = pca
-    )
+    if(recipe == "R1") {
+      avail_arg_list <- list(
+        "train_data" = recipe_tbl,
+        "frequency" = get_frequency_number(date_type),
+        "horizon" = forecast_horizon,
+        "seasonal_period" = get_seasonal_periods(date_type),
+        "model_type" = "single",
+        "pca" = pca, 
+        "multistep" = multistep_horizon, 
+        "external_regressors" = external_regressors
+      )
+    } else {
+      avail_arg_list <- list(
+        "train_data" = recipe_tbl,
+        "frequency" = get_frequency_number(date_type),
+        "horizon" = forecast_horizon,
+        "seasonal_period" = get_seasonal_periods(date_type),
+        "model_type" = "single",
+        "pca" = pca, 
+        "multistep" = FALSE, 
+        "external_regressors" = external_regressors
+      )
+    }
 
     # don't create workflows for models that only use R1 recipe
     if (recipe == "R2" & !(model %in% r2_models)) {

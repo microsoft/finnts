@@ -76,6 +76,19 @@ list_multivariate_models <- function() {
   return(list)
 }
 
+#' List multistep models
+#'
+#'
+#' @return list of models
+#' @noRd
+list_multistep_models <- function() {
+  list <- c(
+    "glmnet", "xgboost"
+  )
+  
+  return(list)
+}
+
 #' Gets a simple recipe
 #'
 #' @param train_data Training Data
@@ -196,8 +209,8 @@ get_recipe_configurable <- function(train_data,
   center_scale_fn <- function(df) {
     if (center_scale) {
       df %>%
-        recipes::step_center(recipes::all_predictors(), id = "step_center") %>%
-        recipes::step_scale(recipes::all_predictors(), id = "step_scale")
+        recipes::step_center(recipes::all_numeric_predictors(), id = "step_center") %>%
+        recipes::step_scale(recipes::all_numeric_predictors(), id = "step_scale")
     } else {
       df
     }
@@ -656,23 +669,40 @@ ets <- function(train_data,
 #' GLM Net Function
 #'
 #' @param train_data input data
-#' @param model_type single or ensemble
 #' @param pca pca
+#' @param multistep multistep horizon
+#' @param horizon horizon
+#' @param external_regressors external regressors
 #'
 #' @return Get the GLM Net model
 #' @noRd
 glmnet <- function(train_data,
-                   model_type = "single",
-                   pca) {
-  if (model_type == "ensemble") {
+                   pca, 
+                   multistep, 
+                   horizon, 
+                   external_regressors) {
+  
+  # create model recipe and spec
+  if (multistep) {
     recipe_spec_glmnet <- train_data %>%
       get_recipe_configurable(
-        rm_date = "with_adj",
+        rm_date = "none",
         step_nzv = "zv",
         one_hot = FALSE,
         center_scale = TRUE,
         pca = pca
       )
+    
+    model_spec_glmnet <- glmnet_multistep(
+      mode = "regression",
+      penalty = tune::tune(),
+      mixture = tune::tune(), 
+      forecast_horizon = horizon, 
+      external_regressors = external_regressors, 
+      lag_periods = get_lag_periods(NULL, "month", horizon, TRUE)
+    ) %>%
+      parsnip::set_engine("glmnet_multistep_horizon")
+    
   } else {
     recipe_spec_glmnet <- train_data %>%
       get_recipe_configurable(
@@ -682,15 +712,16 @@ glmnet <- function(train_data,
         center_scale = TRUE,
         pca = pca
       )
+    
+    model_spec_glmnet <- parsnip::linear_reg(
+      mode = "regression",
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet")
   }
 
-  model_spec_glmnet <- parsnip::linear_reg(
-    mode = "regression",
-    penalty = tune::tune(),
-    mixture = tune::tune()
-  ) %>%
-    parsnip::set_engine("glmnet")
-
+  # create final model workflow
   wflw_spec_glmnet <- get_workflow_simple(
     model_spec_glmnet,
     recipe_spec_glmnet
@@ -1165,24 +1196,44 @@ theta <- function(train_data,
 #' XGBoost
 #'
 #' @param train_data input table
-#' @param model_type single or ensemble
 #' @param pca pca
+#' @param multistep multistep horizon
+#' @param horizon forecast horizon
+#' @param external_regressors external regressors
 #'
 #' @return Get XGBoost model
 #' @noRd
 xgboost <- function(train_data,
-                    model_type = "single",
-                    pca) {
+                    pca, 
+                    multistep, 
+                    horizon, 
+                    external_regressors) {
 
-  # create model recipe
-  if (model_type == "ensemble") {
+  # create model recipe and spec
+  if(multistep) {
     recipe_spec_xgboost <- train_data %>%
       get_recipe_configurable(
-        rm_date = "with_adj",
+        rm_date = "none",
         step_nzv = "zv",
         one_hot = TRUE,
         pca = pca
       )
+    
+    model_spec_xgboost <- xgboost_multistep(
+      lag_periods = get_lag_periods(NULL, "month", horizon, TRUE),
+      external_regressors = external_regressors,
+      forecast_horizon = horizon,
+      mode = "regression",
+      trees = tune::tune(),
+      tree_depth = tune::tune(),
+      learn_rate = tune::tune(),
+      min_n = tune::tune(),
+      sample_size = tune::tune(),
+      mtry = tune::tune(),
+      loss_reduction = tune::tune()
+    ) %>%
+      parsnip::set_engine("xgboost_multistep_horizon")
+    
   } else {
     recipe_spec_xgboost <- train_data %>%
       get_recipe_configurable(
@@ -1191,17 +1242,18 @@ xgboost <- function(train_data,
         one_hot = TRUE,
         pca = pca
       )
+    
+    model_spec_xgboost <- parsnip::boost_tree(
+      mode = "regression",
+      trees = tune::tune(),
+      tree_depth = tune::tune(),
+      learn_rate = tune::tune(),
+      loss_reduction = tune::tune()
+    ) %>%
+      parsnip::set_engine("xgboost")
   }
 
-  model_spec_xgboost <- parsnip::boost_tree(
-    mode = "regression",
-    trees = tune::tune(),
-    tree_depth = tune::tune(),
-    learn_rate = tune::tune(),
-    loss_reduction = tune::tune()
-  ) %>%
-    parsnip::set_engine("xgboost")
-
+  # create model workflow
   wflw_spec_tune_xgboost <- get_workflow_simple(
     model_spec_xgboost,
     recipe_spec_xgboost
