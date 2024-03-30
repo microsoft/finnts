@@ -514,6 +514,7 @@ print.xgboost_multistep_fit_impl <- function(x, ...) {
 #'
 #' @return predictions
 #' @noRd
+#' @export
 predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
   xgboost_multistep_predict_impl(object, new_data, ...)
 }
@@ -527,6 +528,7 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 #'
 #' @return predictions
 #' @noRd
+#' @export
 xgboost_multistep_predict_impl <- function(object, new_data, ...) {
   
   # PREPARE INPUTS

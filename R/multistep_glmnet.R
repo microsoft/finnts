@@ -406,8 +406,6 @@ glmnet_multistep_fit_impl <- function(x, y,
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(tidyselect::any_of(selected_features[[element_name]]), 
                       tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final))))
-      
-
     }
 
     combined_df <- xreg_tbl_final %>%
@@ -491,6 +489,7 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 #'
 #' @return predictions
 #' @noRd
+#' @export
 predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
   glmnet_multistep_predict_impl(object, new_data, ...)
 }
@@ -503,6 +502,7 @@ predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
 #'
 #' @return predictions
 #' @noRd
+#' @export
 glmnet_multistep_predict_impl <- function(object, new_data, ...) {
   
   # PREPARE INPUTS
@@ -529,7 +529,6 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
     glmnet_model <- object$models[[model_name]]
 
     xreg_tbl_final <- xreg_tbl %>% 
-      # dplyr::select(tidyselect::any_of(xgboost_model$feature_names)) %>%
       dplyr::slice(start_val:lag_number)
     
     if (!is.null(xreg_tbl)) {
