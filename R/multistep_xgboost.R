@@ -181,6 +181,7 @@ make_xgboost_multistep <- function() {
 #'
 #' @return Get Multistep Horizon XGBoost model
 #' @noRd
+#' @export
 xgboost_multistep <- function(mode = "regression",
                               mtry = NULL, trees = NULL, min_n = NULL,
                               tree_depth = NULL, learn_rate = NULL,
@@ -223,6 +224,7 @@ xgboost_multistep <- function(mode = "regression",
 #'
 #' @return Prints model info
 #' @noRd
+#' @export
 print.xgboost_multistep <- function(x, ...) {
   cat("XGBoost Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
@@ -256,6 +258,7 @@ print.xgboost_multistep <- function(x, ...) {
 #' @return Updated model
 #' @noRd
 #' @importFrom stats update
+#' @export
 update.xgboost_multistep <- function(object,
                                      parameters = NULL,
                                      mtry = NULL, trees = NULL, min_n = NULL,
@@ -321,6 +324,7 @@ update.xgboost_multistep <- function(object,
 #' @return translated model
 #' @noRd
 #' @importFrom parsnip translate
+#' @export
 translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
   if (is.null(engine)) {
     message("Used `engine = 'xgboost_multistep_horizon'` for translation.")
@@ -365,6 +369,7 @@ translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
 #'
 #' @noRd
 #' @importFrom stats frequency
+#' @export
 xgboost_multistep_fit_impl <- function(x, y, 
                                        # xgboost params
                                        max_depth = 6,
@@ -491,6 +496,7 @@ xgboost_multistep_fit_impl <- function(x, y,
 #'
 #' @return prints custom model
 #' @noRd
+#' @export
 print.xgboost_multistep_fit_impl <- function(x, ...) {
   
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))

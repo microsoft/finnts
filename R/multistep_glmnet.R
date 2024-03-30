@@ -211,6 +211,7 @@ make_glmnet_multistep <- function() {
 #'
 #' @return Get Multistep Horizon GLMNET model
 #' @noRd
+#' @export
 glmnet_multistep <- function(mode = "regression",
                              mixture = NULL, penalty = NULL, 
                              lag_periods = NULL, 
@@ -246,6 +247,7 @@ glmnet_multistep <- function(mode = "regression",
 #'
 #' @return Prints model info
 #' @noRd
+#' @export
 print.glmnet_multistep <- function(x, ...) {
   cat("GLMNET Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
@@ -273,6 +275,7 @@ print.glmnet_multistep <- function(x, ...) {
 #' @return Updated model
 #' @noRd
 #' @importFrom stats update
+#' @export
 update.glmnet_multistep <- function(object,
                                     parameters = NULL,
                                     mixture = NULL, penalty = NULL, 
@@ -329,6 +332,7 @@ update.glmnet_multistep <- function(object,
 #' @return translated model
 #' @noRd
 #' @importFrom parsnip translate
+#' @export
 translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
   if (is.null(engine)) {
     message("Used `engine = 'glmnet_multistep_horizon'` for translation.")
@@ -354,6 +358,7 @@ translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
 #'
 #' @noRd
 #' @importFrom stats frequency
+#' @export
 glmnet_multistep_fit_impl <- function(x, y, 
                                       # glmnet params
                                       alpha = 0,
@@ -466,6 +471,7 @@ glmnet_multistep_fit_impl <- function(x, y,
 #'
 #' @return prints custom model
 #' @noRd
+#' @export
 print.glmnet_multistep_fit_impl <- function(x, ...) {
   
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
