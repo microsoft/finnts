@@ -71,7 +71,7 @@ Polynomial transformations are created for the target variable, and lags are the
 
 In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model.
 
-In the first recipe, referred to as "R1" in default finnts models, all of the engineered target and external regressor features are used but cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those one that are for periods equal to or greater than 3. Recursive forecasting is not supported in default finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled "up". This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.
+In the first recipe, referred to as "R1" in default finnts models, by default takes a multistep horizon approach. Meaning it will create features that can be used by specific multivariate models that optimize for each period in a forecast horizon. More on this in the "models used in finnts" vignette. If `multistep_horizon` is FALSE in `prep_models()`, all of the engineered target and external regressor features are used but the lags cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those lags that are for periods equal to or greater than 3. Recursive forecasting is not supported in finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled "up". This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.
 
 ```{r, message = FALSE}
 
@@ -94,7 +94,8 @@ prep_data(run_info = run_info,
           target_variable = "value", 
           date_type = "month", 
           forecast_horizon = 3, 
-          recipes_to_run = "R1")
+          recipes_to_run = "R1", 
+          multistep_horizon = TRUE)
 
 R1_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
                                         recipe = "R1")

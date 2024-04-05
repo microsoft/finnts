@@ -3,7 +3,7 @@
 ## Improvements
 
 -   Added support for hierarchical forecasting with external regressors
--   Multistep horizon forecasts
+-   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
 
 ## Bug Fixes
 

@@ -80,3 +80,23 @@ cbind.fill <- function(..., fill = NA) {
   bufferedInputs <- lapply(inputs, buffer, length.out = maxlength, fill, preserveClass = FALSE)
   return(Reduce(cbind.data.frame, bufferedInputs))
 }
+
+
+# The functions below define the model information. These access the model
+# environment inside of parsnip so they have to be executed once parsnip has
+# been loaded.
+
+.onLoad <- function(libname, pkgname) {
+  
+  # CRAN OMP THREAD LIMIT
+  Sys.setenv("OMP_THREAD_LIMIT" = 1)
+  
+  # This defines the model database
+  make_cubist_multistep()
+  make_glmnet_multistep()
+  make_mars_multistep()
+  make_svm_poly_multistep()
+  make_svm_rbf_multistep()
+  make_xgboost_multistep()
+  
+}

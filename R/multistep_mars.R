@@ -1,65 +1,73 @@
 
-# GLMNET Multistep ----
+# MARS Multistep ----
 
-#' Initialize custom glmnet parsnip model
+#' Initialize custom mars parsnip model
 #'
 #'
 #' @return NA
 #' @noRd
-make_glmnet_multistep <- function() {
+make_mars_multistep <- function() {
   
-  parsnip::set_new_model("glmnet_multistep")
-  parsnip::set_model_mode("glmnet_multistep", "regression")
-
+  parsnip::set_new_model("mars_multistep")
+  parsnip::set_model_mode("mars_multistep", "regression")
+  
   # * Model ----
-  parsnip::set_model_engine("glmnet_multistep", mode = "regression", eng = "glmnet_multistep_horizon")
-  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "glmnet")
-  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "parsnip")
+  parsnip::set_model_engine("mars_multistep", mode = "regression", eng = "mars_multistep_horizon")
+  parsnip::set_dependency("mars_multistep", "mars_multistep_horizon", "earth")
+  parsnip::set_dependency("mars_multistep", "mars_multistep_horizon", "parsnip")
   
-  # * Args - GLMNET ----
+  # * Args - MARS ----
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
-    parsnip      = "mixture",
-    original     = "alpha",
-    func         = list(pkg = "dials", fun = "mixture"),
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
+    parsnip      = "num_terms",
+    original     = "nprune",
+    func         = list(pkg = "dials", fun = "max_num_terms"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
-    parsnip      = "penalty",
-    original     = "lambda",
-    func         = list(pkg = "dials", fun = "penalty"),
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
+    parsnip      = "prod_degree",
+    original     = "degree",
+    func         = list(pkg = "dials", fun = "prod_degree"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
+    parsnip      = "prune_method",
+    original     = "pmethod",
+    func         = list(pkg = "dials", fun = "prune_method"),
+    has_submodel = FALSE
+  )
+  parsnip::set_model_arg(
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
     parsnip      = "lag_periods",
     original     = "lag_periods",
     func         = list(fun = "lag_periods"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
     parsnip      = "external_regressors",
     original     = "external_regressors",
     func         = list(fun = "external_regressors"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
     parsnip      = "forecast_horizon",
     original     = "forecast_horizon",
     func         = list(fun = "forecast_horizon"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "mars_multistep",
+    eng          = "mars_multistep_horizon",
     parsnip      = "selected_features",
     original     = "selected_features",
     func         = list(fun = "selected_features"),
@@ -68,8 +76,8 @@ make_glmnet_multistep <- function() {
   
   # * Encoding ----
   parsnip::set_encoding(
-    model   = "glmnet_multistep",
-    eng     = "glmnet_multistep_horizon",
+    model   = "mars_multistep",
+    eng     = "mars_multistep_horizon",
     mode    = "regression",
     options = list(
       predictor_indicators = "none",
@@ -81,21 +89,21 @@ make_glmnet_multistep <- function() {
   
   # * Fit ----
   parsnip::set_fit(
-    model         = "glmnet_multistep",
-    eng           = "glmnet_multistep_horizon",
+    model         = "mars_multistep",
+    eng           = "mars_multistep_horizon",
     mode          = "regression",
     value         = list(
       interface = "data.frame",
       protect   = c("x", "y"),
-      func      = c(fun = "glmnet_multistep_fit_impl"),
+      func      = c(fun = "mars_multistep_fit_impl"),
       defaults  = list()
     )
   )
   
   # * Predict ----
   parsnip::set_pred(
-    model         = "glmnet_multistep",
-    eng           = "glmnet_multistep_horizon",
+    model         = "mars_multistep",
+    eng           = "mars_multistep_horizon",
     mode          = "regression",
     type          = "numeric",
     value         = list(
@@ -111,33 +119,38 @@ make_glmnet_multistep <- function() {
   )
 }
 
-#' GLMNET Multistep Horizon
+#' MARS Multistep Horizon
 #'
-#' @inheritParams parsnip::linear_reg
+#' @inheritParams parsnip::mars
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
-#' @param mixture mixture
-#' @param penalty penalty
+#' @param num_terms The number of features that will be retained in 
+#'  the final model, including the intercept.
+#' @param prod_degree The highest possible interaction degree.
+#' @param prune_method The pruning method.
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @return Get Multistep Horizon GLMNET model
+#' @return Get Multistep Horizon MARS model
 #' @noRd
 #' @export
-glmnet_multistep <- function(mode = "regression",
-                             mixture = NULL, penalty = NULL, 
-                             lag_periods = NULL, 
-                             external_regressors = NULL, 
-                             forecast_horizon = NULL, 
-                             selected_features = NULL
+mars_multistep <- function(mode = "regression",
+                           num_terms = NULL, 
+                           prod_degree = NULL, 
+                           prune_method = NULL,
+                           lag_periods = NULL, 
+                           external_regressors = NULL, 
+                           forecast_horizon = NULL, 
+                           selected_features = NULL
 ) {
   
   args <- list(
-    # GLMNET
-    mixture                   = rlang::enquo(mixture), 
-    penalty                   = rlang::enquo(penalty),
+    # MARS
+    prod_degree               = rlang::enquo(prod_degree), 
+    num_terms                 = rlang::enquo(num_terms),
+    prune_method              = rlang::enquo(prune_method),
     # Custom
     lag_periods               = rlang::enquo(lag_periods), 
     external_regressors       = rlang::enquo(external_regressors),
@@ -146,7 +159,7 @@ glmnet_multistep <- function(mode = "regression",
   )
   
   parsnip::new_model_spec(
-    "glmnet_multistep",
+    "mars_multistep",
     args     = args,
     eng_args = NULL,
     mode     = mode,
@@ -156,14 +169,14 @@ glmnet_multistep <- function(mode = "regression",
   
 }
 
-#' Print custom glmnet model
+#' Print custom mars model
 #'
 #'
 #' @return Prints model info
 #' @noRd
 #' @export
-print.glmnet_multistep <- function(x, ...) {
-  cat("GLMNET Multistep Horizon (", x$mode, ")\n\n", sep = "")
+print.mars_multistep <- function(x, ...) {
+  cat("MARS Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
   
   if(!is.null(x$method$fit$args)) {
@@ -174,29 +187,35 @@ print.glmnet_multistep <- function(x, ...) {
   invisible(x)
 }
 
-#' Update parameter in custom glmnet model
+#' Update parameter in custom mars model
 #'
 #' @param object model object
 #' @param parameters parameters
-#' @param mixture mixture
-#' @param penalty penalty
+#' @param num_terms The number of features that will be retained in 
+#'  the final model, including the intercept.
+#' @param prod_degree The highest possible interaction degree.
+#' @param prune_method The pruning method.
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
+#' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #' @param fresh fresh
-#' @param ... extra args passed to glmnet
+#' @param ... extra args passed to mars
 #'
 #' @return Updated model
 #' @noRd
 #' @importFrom stats update
 #' @export
-update.glmnet_multistep <- function(object,
-                                    parameters = NULL,
-                                    mixture = NULL, penalty = NULL, 
-                                    lag_periods = NULL, 
-                                    external_regressors = NULL,
-                                    selected_features = NULL,
-                                    fresh = FALSE, ...) {
+update.mars_multistep <- function(object,
+                                  parameters = NULL,
+                                  num_terms = NULL, 
+                                  prod_degree = NULL, 
+                                  prune_method = NULL, 
+                                  lag_periods = NULL, 
+                                  external_regressors = NULL,
+                                  forecast_horizon = NULL, 
+                                  selected_features = NULL,
+                                  fresh = FALSE, ...) {
   
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
   
@@ -205,9 +224,10 @@ update.glmnet_multistep <- function(object,
   }
   
   args <- list(
-    # GLMNET
-    mixture                   = rlang::enquo(mixture),
-    penalty                   = rlang::enquo(penalty),
+    # MARS
+    prod_degree               = rlang::enquo(prod_degree), 
+    num_terms                 = rlang::enquo(num_terms),
+    prune_method              = rlang::enquo(prune_method),
     # Custom
     lag_periods               = rlang::enquo(lag_periods), 
     external_regressors       = rlang::enquo(external_regressors),
@@ -231,7 +251,7 @@ update.glmnet_multistep <- function(object,
   }
   
   parsnip::new_model_spec(
-    "glmnet_multistep",
+    "mars_multistep",
     args     = object$args,
     eng_args = object$eng_args,
     mode     = object$mode,
@@ -240,31 +260,33 @@ update.glmnet_multistep <- function(object,
   )
 }
 
-#' Translate custom glmnet model
+#' Translate custom mars model
 #'
 #'
 #' @return translated model
 #' @noRd
 #' @importFrom parsnip translate
 #' @export
-translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
+translate.mars_multistep <- function(x, engine = x$engine, ...) {
   if (is.null(engine)) {
-    message("Used `engine = 'glmnet_multistep_horizon'` for translation.")
-    engine <- "glmnet_multistep_horizon"
+    message("Used `engine = 'mars_multistep_horizon'` for translation.")
+    engine <- "mars_multistep_horizon"
   }
   x <- parsnip::translate.default(x, engine, ...)
   
   x
 }
 
-# FIT BRIDGE - GLMNET Multistep ----
+# FIT BRIDGE - MARS Multistep ----
 
-#' Bridge GLMNET Multistep Modeling function
+#' Bridge MARS Multistep Modeling function
 #'
 #' @param x A dataframe of xreg (exogenous regressors)
 #' @param y A numeric vector of values to fit
-#' @param alpha alpha
-#' @param lambda lambda
+#' @param nprune The number of features that will be retained in 
+#'  the final model, including the intercept.
+#' @param degree The highest possible interaction degree.
+#' @param pmethod The pruning method.
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
 #' @param forecast_horizon forecast horizon
@@ -273,15 +295,16 @@ translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
 #' @noRd
 #' @importFrom stats frequency
 #' @export
-glmnet_multistep_fit_impl <- function(x, y, 
-                                      # glmnet params
-                                      alpha = 0,
-                                      lambda = 1,
-                                      # custom params
-                                      lag_periods = NULL,
-                                      external_regressors = NULL,
-                                      forecast_horizon = NULL, 
-                                      selected_features = NULL) {
+mars_multistep_fit_impl <- function(x, y, 
+                                    # mars params
+                                    nprune = NULL,
+                                    degree = 1L,
+                                    pmethod = "backward",
+                                    # custom params
+                                    lag_periods = NULL,
+                                    external_regressors = NULL,
+                                    forecast_horizon = NULL, 
+                                    selected_features = NULL) {
   
   # X & Y
   # Expect outcomes  = vector
@@ -296,7 +319,7 @@ glmnet_multistep_fit_impl <- function(x, y,
   # Clean names, get xreg recipe, process predictors
   xreg_recipe <- modeltime::create_xreg_recipe(predictor, prepare = TRUE, one_hot = TRUE, clean_names = FALSE)
   xreg_tbl    <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
-
+  
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
   
@@ -304,14 +327,16 @@ glmnet_multistep_fit_impl <- function(x, y,
   models <- list()
   model_predictions <- list()
   
-  linreg_reg_spec <- parsnip::linear_reg(
-    mixture = alpha,
-    penalty = lambda
+  mars_reg_spec <- parsnip::mars(
+    mode = "regression",
+    num_terms = nprune,
+    prod_degree = degree,
+    prune_method = pmethod
   ) %>%
-    parsnip::set_engine("glmnet")
+    parsnip::set_engine("earth")
   
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
-
+    
     # get final features based on lag
     xreg_tbl_final <- multi_feature_selection(xreg_tbl,
                                               future_xregs, 
@@ -321,27 +346,27 @@ glmnet_multistep_fit_impl <- function(x, y,
     if(!is.null(selected_features)) {
       
       element_name <- paste0("model_lag_", lag)
-
+      
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(tidyselect::any_of(selected_features[[element_name]]), 
                       tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final))))
     }
-
+    
     combined_df <- xreg_tbl_final %>%
       dplyr::mutate(Target = outcome)
     
     # fit model
-    fit_glmnet <- linreg_reg_spec %>% 
+    fit_mars <- mars_reg_spec %>% 
       fit(Target ~ ., data = combined_df)
     
     # create prediction
-    glmnet_fitted <- predict(fit_glmnet, combined_df)
+    mars_fitted <- predict(fit_mars, combined_df)
     
     # append outputs
     element_name <- paste0("model_lag_", lag)
-    models[[element_name]] <- fit_glmnet
+    models[[element_name]] <- fit_mars
     
-    model_predictions <- c(model_predictions, list(glmnet_fitted))
+    model_predictions <- c(model_predictions, list(mars_fitted))
   }
   
   # Create Final Predictions, Averaged Across Each Trained Model
@@ -351,7 +376,7 @@ glmnet_multistep_fit_impl <- function(x, y,
   # RETURN A NEW MODELTIME BRIDGE
   
   # Class - Add a class for the model
-  class <- "glmnet_multistep_fit_impl"
+  class <- "mars_multistep_fit_impl"
   
   # Data - Start with index tbl and add .actual, .fitted, and .residuals columns
   data <- index_tbl %>%
@@ -367,7 +392,7 @@ glmnet_multistep_fit_impl <- function(x, y,
   )
   
   # Model Description - Gets printed to describe the high-level model structure
-  desc <- "Multistep Horizon GLMNET Model"
+  desc <- "Multistep Horizon MARS Model"
   
   # Create new model
   modeltime::new_modeltime_bridge(
@@ -380,13 +405,13 @@ glmnet_multistep_fit_impl <- function(x, y,
 }
 
 
-#' Print fitted custom glmnet model
+#' Print fitted custom mars model
 #'
 #'
 #' @return prints custom model
 #' @noRd
 #' @export
-print.glmnet_multistep_fit_impl <- function(x, ...) {
+print.mars_multistep_fit_impl <- function(x, ...) {
   
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
   cat("---\n")
@@ -402,7 +427,7 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 
 # PREDICT BRIDGE ----
 
-#' Predict custom glmnet model
+#' Predict custom mars model
 #'
 #' @param object model object
 #' @param new_data input data to predict
@@ -410,11 +435,11 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 #' @return predictions
 #' @noRd
 #' @export
-predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
-  glmnet_multistep_predict_impl(object, new_data, ...)
+predict.mars_multistep_fit_impl <- function(object, new_data, ...) {
+  mars_multistep_predict_impl(object, new_data, ...)
 }
 
-#' Bridge prediction Function for GLMNET Multistep Horizon Models
+#' Bridge prediction Function for mars Multistep Horizon Models
 #'
 #' @inheritParams parsnip::predict.model_fit
 #' @param object model object
@@ -423,7 +448,7 @@ predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
 #' @return predictions
 #' @noRd
 #' @export
-glmnet_multistep_predict_impl <- function(object, new_data, ...) {
+mars_multistep_predict_impl <- function(object, new_data, ...) {
   
   # PREPARE INPUTS
   xreg_recipe     <- object$extras$xreg_recipe
@@ -433,7 +458,7 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
   xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, 
                                           new_data, 
                                           format = "tbl")
-
+  
   # PREDICTIONS
   final_prediction <- tibble::tibble()
   start_val <- 1
@@ -446,19 +471,19 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
     
     lag_number <- stringr::str_extract(model_name, "[0-9]+")
     
-    glmnet_model <- object$models[[model_name]]
-
+    mars_model <- object$models[[model_name]]
+    
     xreg_tbl_final <- xreg_tbl %>% 
       dplyr::slice(start_val:lag_number)
     
     if (!is.null(xreg_tbl)) {
-      preds_glmnet <- predict(glmnet_model, xreg_tbl_final)
+      preds_mars <- predict(mars_model, xreg_tbl_final)
     } else {
-      preds_glmnet <- rep(0, h_horizon)
+      preds_mars <- rep(0, h_horizon)
     }
-
+    
     start_val <- as.numeric(lag_number) + 1
-    final_prediction <- rbind(final_prediction, preds_glmnet)
+    final_prediction <- rbind(final_prediction, preds_mars)
   }
   
   return(final_prediction)

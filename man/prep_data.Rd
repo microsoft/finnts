@@ -28,7 +28,7 @@ prep_data(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
-  multistep_horizon = FALSE
+  multistep_horizon = TRUE
 )
 }
 \arguments{
@@ -97,7 +97,7 @@ chooses these values based on date_type.}
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
 
-\item{multistep_horizon}{Use a multistep horizon approach when training multivariate models.}
+\item{multistep_horizon}{Use a multistep horizon approach when training multivariate models with R1 recipe.}
 }
 \value{
 No return object. Feature engineered data is written to disk based on the output locations provided in

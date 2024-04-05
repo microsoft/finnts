@@ -1,65 +1,74 @@
 
-# GLMNET Multistep ----
+# CUBIST Multistep ----
 
-#' Initialize custom glmnet parsnip model
+#' Initialize custom cubist parsnip model
 #'
 #'
 #' @return NA
 #' @noRd
-make_glmnet_multistep <- function() {
+make_cubist_multistep <- function() {
   
-  parsnip::set_new_model("glmnet_multistep")
-  parsnip::set_model_mode("glmnet_multistep", "regression")
-
+  parsnip::set_new_model("cubist_multistep")
+  parsnip::set_model_mode("cubist_multistep", "regression")
+  
   # * Model ----
-  parsnip::set_model_engine("glmnet_multistep", mode = "regression", eng = "glmnet_multistep_horizon")
-  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "glmnet")
-  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "parsnip")
+  parsnip::set_model_engine("cubist_multistep", mode = "regression", eng = "cubist_multistep_horizon")
+  parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "parsnip")
+  parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "Cubist")
+  parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "rules")
   
-  # * Args - GLMNET ----
+  # * Args - CUBIST ----
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
-    parsnip      = "mixture",
-    original     = "alpha",
-    func         = list(pkg = "dials", fun = "mixture"),
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
+    parsnip      = "committees",
+    original     = "committees",
+    func         = list(pkg = "rules", fun = "committees"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
-    parsnip      = "penalty",
-    original     = "lambda",
-    func         = list(pkg = "dials", fun = "penalty"),
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
+    parsnip      = "neighbors",
+    original     = "neighbors",
+    func         = list(pkg = "dials", fun = "neighbors"),
+    has_submodel = TRUE
+  )
+  parsnip::set_model_arg(
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
+    parsnip      = "max_rules",
+    original     = "max_rules",
+    func         = list(pkg = "rules", fun = "max_rules"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
     parsnip      = "lag_periods",
     original     = "lag_periods",
     func         = list(fun = "lag_periods"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
     parsnip      = "external_regressors",
     original     = "external_regressors",
     func         = list(fun = "external_regressors"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
     parsnip      = "forecast_horizon",
     original     = "forecast_horizon",
     func         = list(fun = "forecast_horizon"),
     has_submodel = FALSE
   )
   parsnip::set_model_arg(
-    model        = "glmnet_multistep",
-    eng          = "glmnet_multistep_horizon",
+    model        = "cubist_multistep",
+    eng          = "cubist_multistep_horizon",
     parsnip      = "selected_features",
     original     = "selected_features",
     func         = list(fun = "selected_features"),
@@ -68,8 +77,8 @@ make_glmnet_multistep <- function() {
   
   # * Encoding ----
   parsnip::set_encoding(
-    model   = "glmnet_multistep",
-    eng     = "glmnet_multistep_horizon",
+    model   = "cubist_multistep",
+    eng     = "cubist_multistep_horizon",
     mode    = "regression",
     options = list(
       predictor_indicators = "none",
@@ -81,21 +90,21 @@ make_glmnet_multistep <- function() {
   
   # * Fit ----
   parsnip::set_fit(
-    model         = "glmnet_multistep",
-    eng           = "glmnet_multistep_horizon",
+    model         = "cubist_multistep",
+    eng           = "cubist_multistep_horizon",
     mode          = "regression",
     value         = list(
       interface = "data.frame",
       protect   = c("x", "y"),
-      func      = c(fun = "glmnet_multistep_fit_impl"),
+      func      = c(fun = "cubist_multistep_fit_impl"),
       defaults  = list()
     )
   )
   
   # * Predict ----
   parsnip::set_pred(
-    model         = "glmnet_multistep",
-    eng           = "glmnet_multistep_horizon",
+    model         = "cubist_multistep",
+    eng           = "cubist_multistep_horizon",
     mode          = "regression",
     type          = "numeric",
     value         = list(
@@ -111,33 +120,34 @@ make_glmnet_multistep <- function() {
   )
 }
 
-#' GLMNET Multistep Horizon
+#' CUBIST Multistep Horizon
 #'
-#' @inheritParams parsnip::linear_reg
+#' @inheritParams parsnip::cubist_rules
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
-#' @param mixture mixture
-#' @param penalty penalty
-#' @param lag_periods lag periods
+#' @param committees committees
+#' @param neighbors neighbors
+#' @param max_rules max rules
 #' @param external_regressors external regressors
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @return Get Multistep Horizon GLMNET model
+#' @return Get Multistep Horizon CUBIST model
 #' @noRd
 #' @export
-glmnet_multistep <- function(mode = "regression",
-                             mixture = NULL, penalty = NULL, 
-                             lag_periods = NULL, 
+cubist_multistep <- function(mode = "regression",
+                             committees = NULL, neighbors = NULL, 
+                             max_rules = NULL, lag_periods = NULL, 
                              external_regressors = NULL, 
                              forecast_horizon = NULL, 
                              selected_features = NULL
 ) {
   
   args <- list(
-    # GLMNET
-    mixture                   = rlang::enquo(mixture), 
-    penalty                   = rlang::enquo(penalty),
+    # CUBIST
+    committees                = rlang::enquo(committees), 
+    neighbors                 = rlang::enquo(neighbors),
+    max_rules                 = rlang::enquo(max_rules),
     # Custom
     lag_periods               = rlang::enquo(lag_periods), 
     external_regressors       = rlang::enquo(external_regressors),
@@ -146,7 +156,7 @@ glmnet_multistep <- function(mode = "regression",
   )
   
   parsnip::new_model_spec(
-    "glmnet_multistep",
+    "cubist_multistep",
     args     = args,
     eng_args = NULL,
     mode     = mode,
@@ -156,14 +166,14 @@ glmnet_multistep <- function(mode = "regression",
   
 }
 
-#' Print custom glmnet model
+#' Print custom cubist model
 #'
 #'
 #' @return Prints model info
 #' @noRd
 #' @export
-print.glmnet_multistep <- function(x, ...) {
-  cat("GLMNET Multistep Horizon (", x$mode, ")\n\n", sep = "")
+print.cubist_multistep <- function(x, ...) {
+  cat("CUBIST Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
   
   if(!is.null(x$method$fit$args)) {
@@ -174,25 +184,28 @@ print.glmnet_multistep <- function(x, ...) {
   invisible(x)
 }
 
-#' Update parameter in custom glmnet model
+#' Update parameter in custom cubist model
 #'
 #' @param object model object
 #' @param parameters parameters
-#' @param mixture mixture
-#' @param penalty penalty
+#' @param committees committees
+#' @param neighbors neighbors
+#' @param max_rules max rules
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
 #' @param selected_features selected features
 #' @param fresh fresh
-#' @param ... extra args passed to glmnet
+#' @param ... extra args passed to cubist
 #'
 #' @return Updated model
 #' @noRd
 #' @importFrom stats update
 #' @export
-update.glmnet_multistep <- function(object,
+update.cubist_multistep <- function(object,
                                     parameters = NULL,
-                                    mixture = NULL, penalty = NULL, 
+                                    committees = NULL, 
+                                    neighbors = NULL,
+                                    max_rules = NULL,
                                     lag_periods = NULL, 
                                     external_regressors = NULL,
                                     selected_features = NULL,
@@ -205,9 +218,10 @@ update.glmnet_multistep <- function(object,
   }
   
   args <- list(
-    # GLMNET
-    mixture                   = rlang::enquo(mixture),
-    penalty                   = rlang::enquo(penalty),
+    # CUBIST
+    committees                = rlang::enquo(committees), 
+    neighbors                 = rlang::enquo(neighbors),
+    max_rules                 = rlang::enquo(max_rules),
     # Custom
     lag_periods               = rlang::enquo(lag_periods), 
     external_regressors       = rlang::enquo(external_regressors),
@@ -231,7 +245,7 @@ update.glmnet_multistep <- function(object,
   }
   
   parsnip::new_model_spec(
-    "glmnet_multistep",
+    "cubist_multistep",
     args     = object$args,
     eng_args = object$eng_args,
     mode     = object$mode,
@@ -240,31 +254,32 @@ update.glmnet_multistep <- function(object,
   )
 }
 
-#' Translate custom glmnet model
+#' Translate custom cubist model
 #'
 #'
 #' @return translated model
 #' @noRd
 #' @importFrom parsnip translate
 #' @export
-translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
+translate.cubist_multistep <- function(x, engine = x$engine, ...) {
   if (is.null(engine)) {
-    message("Used `engine = 'glmnet_multistep_horizon'` for translation.")
-    engine <- "glmnet_multistep_horizon"
+    message("Used `engine = 'cubist_multistep_horizon'` for translation.")
+    engine <- "cubist_multistep_horizon"
   }
   x <- parsnip::translate.default(x, engine, ...)
   
   x
 }
 
-# FIT BRIDGE - GLMNET Multistep ----
+# FIT BRIDGE - Cubist Multistep ----
 
-#' Bridge GLMNET Multistep Modeling function
+#' Bridge CUBIST Multistep Modeling function
 #'
 #' @param x A dataframe of xreg (exogenous regressors)
 #' @param y A numeric vector of values to fit
-#' @param alpha alpha
-#' @param lambda lambda
+#' @param committees committees
+#' @param neighbors neighbors
+#' @param max_rules max rules
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
 #' @param forecast_horizon forecast horizon
@@ -273,10 +288,11 @@ translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
 #' @noRd
 #' @importFrom stats frequency
 #' @export
-glmnet_multistep_fit_impl <- function(x, y, 
-                                      # glmnet params
-                                      alpha = 0,
-                                      lambda = 1,
+cubist_multistep_fit_impl <- function(x, y, 
+                                      # cubist params
+                                      committees = 1,
+                                      neighbors = 0,
+                                      max_rules = 10,
                                       # custom params
                                       lag_periods = NULL,
                                       external_regressors = NULL,
@@ -296,22 +312,16 @@ glmnet_multistep_fit_impl <- function(x, y,
   # Clean names, get xreg recipe, process predictors
   xreg_recipe <- modeltime::create_xreg_recipe(predictor, prepare = TRUE, one_hot = TRUE, clean_names = FALSE)
   xreg_tbl    <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
-
+  
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
   
   # fit multiple models
   models <- list()
   model_predictions <- list()
-  
-  linreg_reg_spec <- parsnip::linear_reg(
-    mixture = alpha,
-    penalty = lambda
-  ) %>%
-    parsnip::set_engine("glmnet")
-  
-  for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
 
+  for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
+    
     # get final features based on lag
     xreg_tbl_final <- multi_feature_selection(xreg_tbl,
                                               future_xregs, 
@@ -321,27 +331,29 @@ glmnet_multistep_fit_impl <- function(x, y,
     if(!is.null(selected_features)) {
       
       element_name <- paste0("model_lag_", lag)
-
+      
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(tidyselect::any_of(selected_features[[element_name]]), 
                       tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final))))
     }
-
-    combined_df <- xreg_tbl_final %>%
-      dplyr::mutate(Target = outcome)
     
     # fit model
-    fit_glmnet <- linreg_reg_spec %>% 
-      fit(Target ~ ., data = combined_df)
+    fit_cubist <- rules::cubist_fit(
+      x = xreg_tbl_final, 
+      y = outcome, 
+      committees = committees, 
+      neighbors = neighbors, 
+      max_rules = max_rules
+    )
     
     # create prediction
-    glmnet_fitted <- predict(fit_glmnet, combined_df)
-    
+    cubist_fitted <- predict(fit_cubist, xreg_tbl_final)
+
     # append outputs
     element_name <- paste0("model_lag_", lag)
-    models[[element_name]] <- fit_glmnet
+    models[[element_name]] <- fit_cubist
     
-    model_predictions <- c(model_predictions, list(glmnet_fitted))
+    model_predictions <- c(model_predictions, list(cubist_fitted))
   }
   
   # Create Final Predictions, Averaged Across Each Trained Model
@@ -351,7 +363,7 @@ glmnet_multistep_fit_impl <- function(x, y,
   # RETURN A NEW MODELTIME BRIDGE
   
   # Class - Add a class for the model
-  class <- "glmnet_multistep_fit_impl"
+  class <- "cubist_multistep_fit_impl"
   
   # Data - Start with index tbl and add .actual, .fitted, and .residuals columns
   data <- index_tbl %>%
@@ -367,7 +379,7 @@ glmnet_multistep_fit_impl <- function(x, y,
   )
   
   # Model Description - Gets printed to describe the high-level model structure
-  desc <- "Multistep Horizon GLMNET Model"
+  desc <- "Multistep Horizon CUBIST Model"
   
   # Create new model
   modeltime::new_modeltime_bridge(
@@ -380,13 +392,13 @@ glmnet_multistep_fit_impl <- function(x, y,
 }
 
 
-#' Print fitted custom glmnet model
+#' Print fitted custom cubist model
 #'
 #'
 #' @return prints custom model
 #' @noRd
 #' @export
-print.glmnet_multistep_fit_impl <- function(x, ...) {
+print.cubist_multistep_fit_impl <- function(x, ...) {
   
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
   cat("---\n")
@@ -402,7 +414,7 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 
 # PREDICT BRIDGE ----
 
-#' Predict custom glmnet model
+#' Predict custom cubist model
 #'
 #' @param object model object
 #' @param new_data input data to predict
@@ -410,11 +422,11 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 #' @return predictions
 #' @noRd
 #' @export
-predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
-  glmnet_multistep_predict_impl(object, new_data, ...)
+predict.cubist_multistep_fit_impl <- function(object, new_data, ...) {
+  cubist_multistep_predict_impl(object, new_data, ...)
 }
 
-#' Bridge prediction Function for GLMNET Multistep Horizon Models
+#' Bridge prediction Function for CUBIST Multistep Horizon Models
 #'
 #' @inheritParams parsnip::predict.model_fit
 #' @param object model object
@@ -423,7 +435,7 @@ predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
 #' @return predictions
 #' @noRd
 #' @export
-glmnet_multistep_predict_impl <- function(object, new_data, ...) {
+cubist_multistep_predict_impl <- function(object, new_data, ...) {
   
   # PREPARE INPUTS
   xreg_recipe     <- object$extras$xreg_recipe
@@ -433,32 +445,32 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
   xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, 
                                           new_data, 
                                           format = "tbl")
-
+  
   # PREDICTIONS
-  final_prediction <- tibble::tibble()
+  final_prediction <- c()
   start_val <- 1
   
   for(model_name in names(object$models)) {
-    
+
     if (start_val > nrow(xreg_tbl)) {
       break
     }
     
     lag_number <- stringr::str_extract(model_name, "[0-9]+")
     
-    glmnet_model <- object$models[[model_name]]
-
+    cubist_model <- object$models[[model_name]]
+    
     xreg_tbl_final <- xreg_tbl %>% 
       dplyr::slice(start_val:lag_number)
     
     if (!is.null(xreg_tbl)) {
-      preds_glmnet <- predict(glmnet_model, xreg_tbl_final)
+      preds_cubist <- predict(cubist_model, xreg_tbl_final)
     } else {
-      preds_glmnet <- rep(0, h_horizon)
+      preds_cubist <- rep(0, h_horizon)
     }
 
     start_val <- as.numeric(lag_number) + 1
-    final_prediction <- rbind(final_prediction, preds_glmnet)
+    final_prediction <- c(final_prediction, preds_cubist)
   }
   
   return(final_prediction)

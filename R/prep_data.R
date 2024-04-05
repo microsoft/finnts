@@ -44,7 +44,7 @@
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 #'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.
-#' @param multistep_horizon Use a multistep horizon approach when training multivariate models.
+#' @param multistep_horizon Use a multistep horizon approach when training multivariate models with R1 recipe.
 #'
 #' @return No return object. Feature engineered data is written to disk based on the output locations provided in
 #'   [set_run_info()].
@@ -93,7 +93,7 @@ prep_data <- function(run_info,
                       lag_periods = NULL,
                       rolling_window_periods = NULL,
                       recipes_to_run = NULL, 
-                      multistep_horizon = FALSE) {
+                      multistep_horizon = TRUE) {
   cli::cli_progress_step("Prepping Data")
 
   # check input values
