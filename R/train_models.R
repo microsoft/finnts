@@ -344,9 +344,9 @@ train_models <- function(run_info,
                 NULL
               },
               date_type = date_type,
-              fast = FALSE, 
-              forecast_horizon = forecast_horizon, 
-              external_regressors = external_regressors, 
+              fast = FALSE,
+              forecast_horizon = forecast_horizon,
+              external_regressors = external_regressors,
               multistep_horizon = multistep_horizon
             )
 
@@ -367,9 +367,9 @@ train_models <- function(run_info,
                 NULL
               },
               date_type = date_type,
-              fast = FALSE, 
-              forecast_horizon = forecast_horizon, 
-              external_regressors = external_regressors, 
+              fast = FALSE,
+              forecast_horizon = forecast_horizon,
+              external_regressors = external_regressors,
               multistep_horizon = FALSE
             )
 
@@ -432,32 +432,30 @@ train_models <- function(run_info,
           } else {
             final_features_list <- fs_list$R2
           }
-          
-          if(multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
-            
+
+          if (multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
             updated_model_spec <- workflow %>%
               workflows::extract_spec_parsnip() %>%
               update(selected_features = final_features_list)
-            
+
             empty_workflow_final <- workflow %>%
               workflows::update_model(updated_model_spec)
           } else {
             final_features_list <- final_features_list[[paste0("model_lag_", forecast_horizon)]]
-            
+
             updated_recipe <- workflow %>%
               workflows::extract_recipe(estimated = FALSE) %>%
               recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
               recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
               base::suppressWarnings()
-            
+
             empty_workflow_final <- workflow %>%
               workflows::update_recipe(updated_recipe)
           }
-
         } else {
           empty_workflow_final <- workflow
         }
-        
+
         hyperparameters <- model_hyperparameter_tbl %>%
           dplyr::filter(
             Model == model,
@@ -490,9 +488,9 @@ train_models <- function(run_info,
         ) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
-        
+
         best_param <- tune::select_best(tune_results, metric = "rmse")
-        
+
         if (length(colnames(best_param)) == 1) {
           hyperparameter_id <- 1
         } else {

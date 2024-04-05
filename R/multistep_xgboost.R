@@ -7,17 +7,16 @@
 #' @return NA
 #' @noRd
 make_xgboost_multistep <- function() {
-  
   parsnip::set_new_model("xgboost_multistep")
   parsnip::set_model_mode("xgboost_multistep", "regression")
-  
+
   # xgboost multistep ----
-  
+
   # * Model ----
   parsnip::set_model_engine("xgboost_multistep", mode = "regression", eng = "xgboost_multistep_horizon")
   parsnip::set_dependency("xgboost_multistep", "xgboost_multistep_horizon", "xgboost")
   parsnip::set_dependency("xgboost_multistep", "xgboost_multistep_horizon", "modeltime")
-  
+
   # * Args - Xgboost ----
   parsnip::set_model_arg(
     model        = "xgboost_multistep",
@@ -115,12 +114,12 @@ make_xgboost_multistep <- function() {
     func         = list(fun = "selected_features"),
     has_submodel = FALSE
   )
-  
+
   # * Encoding ----
   parsnip::set_encoding(
-    model   = "xgboost_multistep",
-    eng     = "xgboost_multistep_horizon",
-    mode    = "regression",
+    model = "xgboost_multistep",
+    eng = "xgboost_multistep_horizon",
+    mode = "regression",
     options = list(
       predictor_indicators = "none",
       compute_intercept    = FALSE,
@@ -128,31 +127,31 @@ make_xgboost_multistep <- function() {
       allow_sparse_x       = FALSE
     )
   )
-  
+
   # * Fit ----
   parsnip::set_fit(
-    model         = "xgboost_multistep",
-    eng           = "xgboost_multistep_horizon",
-    mode          = "regression",
-    value         = list(
+    model = "xgboost_multistep",
+    eng = "xgboost_multistep_horizon",
+    mode = "regression",
+    value = list(
       interface = "data.frame",
       protect   = c("x", "y"),
       func      = c(fun = "xgboost_multistep_fit_impl"),
       defaults  = list(objective = "reg:squarederror", nthread = 1, verbose = 0)
     )
   )
-  
+
   # * Predict ----
   parsnip::set_pred(
-    model         = "xgboost_multistep",
-    eng           = "xgboost_multistep_horizon",
-    mode          = "regression",
-    type          = "numeric",
-    value         = list(
-      pre       = NULL,
-      post      = NULL,
-      func      = c(fun = "predict"),
-      args      =
+    model = "xgboost_multistep",
+    eng = "xgboost_multistep_horizon",
+    mode = "regression",
+    type = "numeric",
+    value = list(
+      pre = NULL,
+      post = NULL,
+      func = c(fun = "predict"),
+      args =
         list(
           object   = rlang::expr(object$fit),
           new_data = rlang::expr(new_data)
@@ -186,11 +185,9 @@ xgboost_multistep <- function(mode = "regression",
                               mtry = NULL, trees = NULL, min_n = NULL,
                               tree_depth = NULL, learn_rate = NULL,
                               loss_reduction = NULL,
-                              sample_size = NULL, stop_iter = NULL, 
-                              lag_periods = NULL, external_regressors = NULL, 
-                              forecast_horizon = NULL, selected_features = NULL
-) {
-  
+                              sample_size = NULL, stop_iter = NULL,
+                              lag_periods = NULL, external_regressors = NULL,
+                              forecast_horizon = NULL, selected_features = NULL) {
   args <- list(
     # XGBoost
     mtry                      = rlang::enquo(mtry),
@@ -200,14 +197,14 @@ xgboost_multistep <- function(mode = "regression",
     learn_rate                = rlang::enquo(learn_rate),
     loss_reduction            = rlang::enquo(loss_reduction),
     sample_size               = rlang::enquo(sample_size),
-    stop_iter                 = rlang::enquo(stop_iter), 
+    stop_iter                 = rlang::enquo(stop_iter),
     # Custom
-    lag_periods               = rlang::enquo(lag_periods), 
+    lag_periods               = rlang::enquo(lag_periods),
     external_regressors       = rlang::enquo(external_regressors),
     forecast_horizon          = rlang::enquo(forecast_horizon),
     selected_features         = rlang::enquo(selected_features)
   )
-  
+
   parsnip::new_model_spec(
     "xgboost_multistep",
     args     = args,
@@ -216,7 +213,6 @@ xgboost_multistep <- function(mode = "regression",
     method   = NULL,
     engine   = NULL
   )
-  
 }
 
 #' Print custom xgboost model
@@ -228,12 +224,12 @@ xgboost_multistep <- function(mode = "regression",
 print.xgboost_multistep <- function(x, ...) {
   cat("XGBoost Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
-  
-  if(!is.null(x$method$fit$args)) {
+
+  if (!is.null(x$method$fit$args)) {
     cat("Model fit template:\n")
     print(parsnip::show_call(x))
   }
-  
+
   invisible(x)
 }
 
@@ -268,13 +264,12 @@ update.xgboost_multistep <- function(object,
                                      lag_periods = NULL, external_regressors = NULL,
                                      selected_features = NULL,
                                      fresh = FALSE, ...) {
-  
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
-  
+
   if (!is.null(parameters)) {
     parameters <- parsnip::check_final_param(parameters)
   }
-  
+
   args <- list(
     # XGBoost
     mtry                      = rlang::enquo(mtry),
@@ -286,27 +281,30 @@ update.xgboost_multistep <- function(object,
     sample_size               = rlang::enquo(sample_size),
     stop_iter                 = rlang::enquo(stop_iter),
     # Custom
-    lag_periods               = rlang::enquo(lag_periods), 
+    lag_periods               = rlang::enquo(lag_periods),
     external_regressors       = rlang::enquo(external_regressors),
-    forecast_horizon          = rlang::enquo(forecast_horizon), 
+    forecast_horizon          = rlang::enquo(forecast_horizon),
     selected_features         = rlang::enquo(selected_features)
   )
-  
+
   args <- parsnip::update_main_parameters(args, parameters)
-  
+
   if (fresh) {
     object$args <- args
     object$eng_args <- eng_args
   } else {
     null_args <- purrr::map_lgl(args, parsnip::null_value)
-    if (any(null_args))
+    if (any(null_args)) {
       args <- args[!null_args]
-    if (length(args) > 0)
+    }
+    if (length(args) > 0) {
       object$args[names(args)] <- args
-    if (length(eng_args) > 0)
+    }
+    if (length(eng_args) > 0) {
       object$eng_args[names(eng_args)] <- eng_args
+    }
   }
-  
+
   parsnip::new_model_spec(
     "xgboost_multistep",
     args     = object$args,
@@ -331,7 +329,7 @@ translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
     engine <- "xgboost_multistep_horizon"
   }
   x <- parsnip::translate.default(x, engine, ...)
-  
+
   x
 }
 
@@ -370,11 +368,11 @@ translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
 #' @noRd
 #' @importFrom stats frequency
 #' @export
-xgboost_multistep_fit_impl <- function(x, y, 
+xgboost_multistep_fit_impl <- function(x, y,
                                        # xgboost params
                                        max_depth = 6,
                                        nrounds = 15,
-                                       eta  = 0.3,
+                                       eta = 0.3,
                                        colsample_bytree = NULL,
                                        colsample_bynode = NULL,
                                        min_child_weight = 1,
@@ -388,47 +386,48 @@ xgboost_multistep_fit_impl <- function(x, y,
                                        forecast_horizon = NULL,
                                        selected_features = NULL,
                                        ...) {
-  
+
   # X & Y
   # Expect outcomes  = vector
   # Expect predictor = data.frame
-  outcome    <- y
-  predictor  <- x %>% dplyr::select(-Date)
-  
+  outcome <- y
+  predictor <- x %>% dplyr::select(-Date)
+
   # INDEX
   index_tbl <- modeltime::parse_index_from_data(x)
-  
+
   # XREGS
   # Clean names, get xreg recipe, process predictors
   xreg_recipe <- modeltime::create_xreg_recipe(predictor, prepare = TRUE, one_hot = FALSE, clean_names = FALSE)
-  xreg_tbl    <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
-  
+  xreg_tbl <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
+
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
-  
+
   # fit multiple models
   models <- list()
   model_predictions <- list()
-  
+
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
 
     # get final features based on lag
-    xreg_tbl_final <- multi_feature_selection(xreg_tbl,
-                                              future_xregs, 
-                                              lag_periods, 
-                                              lag)
-    
-    if(!is.null(selected_features)) {
-      
+    xreg_tbl_final <- multi_feature_selection(
+      xreg_tbl,
+      future_xregs,
+      lag_periods,
+      lag
+    )
+
+    if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
-        dplyr::select(tidyselect::any_of(selected_features[[element_name]]), 
-                      tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final))))
-      
-      
+        dplyr::select(
+          tidyselect::any_of(selected_features[[element_name]]),
+          tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final)))
+        )
     }
-    
+
     # fit model
     fit_xgboost <- modeltime::xgboost_impl(
       x = xreg_tbl_final,
@@ -445,42 +444,42 @@ xgboost_multistep_fit_impl <- function(x, y,
       early_stop = early_stop,
       ...
     )
-    
+
     # create prediction
     xgboost_fitted <- modeltime::xgboost_predict(fit_xgboost, newdata = xreg_tbl_final)
-    
+
     # append outputs
     element_name <- paste0("model_lag_", lag)
     models[[element_name]] <- fit_xgboost
-    
+
     model_predictions <- c(model_predictions, list(xgboost_fitted))
   }
-  
+
   # Create Final Predictions, Averaged Across Each Trained Model
   model_predictions <- do.call(rbind, model_predictions)
   model_predictions <- apply(model_predictions, 2, mean)
-  
+
   # RETURN A NEW MODELTIME BRIDGE
-  
+
   # Class - Add a class for the model
   class <- "xgboost_multistep_fit_impl"
-  
+
   # Data - Start with index tbl and add .actual, .fitted, and .residuals columns
   data <- index_tbl %>%
     dplyr::mutate(
-      .actual    =  y,
-      .fitted    =  model_predictions,
+      .actual = y,
+      .fitted = model_predictions,
       .residuals = .actual - .fitted
     )
-  
+
   # Extras - Pass on transformation recipe
   extras <- list(
     xreg_recipe = xreg_recipe
   )
-  
+
   # Model Description - Gets printed to describe the high-level model structure
   desc <- "Multistep Horizon XGBOOST Model"
-  
+
   # Create new model
   modeltime::new_modeltime_bridge(
     class  = class,
@@ -498,7 +497,6 @@ xgboost_multistep_fit_impl <- function(x, y,
 #' @noRd
 #' @export
 print.xgboost_multistep_fit_impl <- function(x, ...) {
-  
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
   cat("---\n")
   model_names <- names(x$models)
@@ -536,45 +534,46 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 #' @noRd
 #' @export
 xgboost_multistep_predict_impl <- function(object, new_data, ...) {
-  
+
   # PREPARE INPUTS
-  xreg_recipe     <- object$extras$xreg_recipe
-  h_horizon       <- nrow(new_data)
-  
+  xreg_recipe <- object$extras$xreg_recipe
+  h_horizon <- nrow(new_data)
+
   # XREG
-  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, 
-                                          new_data, 
-                                          format = "tbl")
-  
+  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
+    new_data,
+    format = "tbl"
+  )
+
   # PREDICTIONS
   final_prediction <- c()
   start_val <- 1
-  
-  for(model_name in names(object$models)) {
-    
+
+  for (model_name in names(object$models)) {
     if (start_val > nrow(xreg_tbl)) {
       break
     }
-    
+
     lag_number <- stringr::str_extract(model_name, "[0-9]+")
-    
+
     xgboost_model <- object$models[[model_name]]
-    
-    xreg_tbl_final <- xreg_tbl %>% 
+
+    xreg_tbl_final <- xreg_tbl %>%
       dplyr::select(tidyselect::any_of(xgboost_model$feature_names)) %>%
       dplyr::slice(start_val:lag_number)
-    
+
     if (!is.null(xreg_tbl)) {
-      preds_xgboost <- modeltime::xgboost_predict(xgboost_model, 
-                                                  newdata = xreg_tbl_final, 
-                                                  ...)
+      preds_xgboost <- modeltime::xgboost_predict(xgboost_model,
+        newdata = xreg_tbl_final,
+        ...
+      )
     } else {
       preds_xgboost <- rep(0, h_horizon)
     }
-    
+
     start_val <- as.numeric(lag_number) + 1
     final_prediction <- c(final_prediction, preds_xgboost)
   }
-  
+
   return(final_prediction)
 }

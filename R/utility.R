@@ -87,10 +87,10 @@ cbind.fill <- function(..., fill = NA) {
 # been loaded.
 
 .onLoad <- function(libname, pkgname) {
-  
+
   # CRAN OMP THREAD LIMIT
   Sys.setenv("OMP_THREAD_LIMIT" = 1)
-  
+
   # This defines the model database
   make_cubist_multistep()
   make_glmnet_multistep()
@@ -98,5 +98,4 @@ cbind.fill <- function(..., fill = NA) {
   make_svm_poly_multistep()
   make_svm_rbf_multistep()
   make_xgboost_multistep()
-  
 }

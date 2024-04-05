@@ -7,15 +7,14 @@
 #' @return NA
 #' @noRd
 make_mars_multistep <- function() {
-  
   parsnip::set_new_model("mars_multistep")
   parsnip::set_model_mode("mars_multistep", "regression")
-  
+
   # * Model ----
   parsnip::set_model_engine("mars_multistep", mode = "regression", eng = "mars_multistep_horizon")
   parsnip::set_dependency("mars_multistep", "mars_multistep_horizon", "earth")
   parsnip::set_dependency("mars_multistep", "mars_multistep_horizon", "parsnip")
-  
+
   # * Args - MARS ----
   parsnip::set_model_arg(
     model        = "mars_multistep",
@@ -73,12 +72,12 @@ make_mars_multistep <- function() {
     func         = list(fun = "selected_features"),
     has_submodel = FALSE
   )
-  
+
   # * Encoding ----
   parsnip::set_encoding(
-    model   = "mars_multistep",
-    eng     = "mars_multistep_horizon",
-    mode    = "regression",
+    model = "mars_multistep",
+    eng = "mars_multistep_horizon",
+    mode = "regression",
     options = list(
       predictor_indicators = "none",
       compute_intercept    = FALSE,
@@ -86,31 +85,31 @@ make_mars_multistep <- function() {
       allow_sparse_x       = FALSE
     )
   )
-  
+
   # * Fit ----
   parsnip::set_fit(
-    model         = "mars_multistep",
-    eng           = "mars_multistep_horizon",
-    mode          = "regression",
-    value         = list(
+    model = "mars_multistep",
+    eng = "mars_multistep_horizon",
+    mode = "regression",
+    value = list(
       interface = "data.frame",
       protect   = c("x", "y"),
       func      = c(fun = "mars_multistep_fit_impl"),
       defaults  = list()
     )
   )
-  
+
   # * Predict ----
   parsnip::set_pred(
-    model         = "mars_multistep",
-    eng           = "mars_multistep_horizon",
-    mode          = "regression",
-    type          = "numeric",
-    value         = list(
-      pre       = NULL,
-      post      = NULL,
-      func      = c(fun = "predict"),
-      args      =
+    model = "mars_multistep",
+    eng = "mars_multistep_horizon",
+    mode = "regression",
+    type = "numeric",
+    value = list(
+      pre = NULL,
+      post = NULL,
+      func = c(fun = "predict"),
+      args =
         list(
           object   = rlang::expr(object$fit),
           new_data = rlang::expr(new_data)
@@ -124,7 +123,7 @@ make_mars_multistep <- function() {
 #' @inheritParams parsnip::mars
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
-#' @param num_terms The number of features that will be retained in 
+#' @param num_terms The number of features that will be retained in
 #'  the final model, including the intercept.
 #' @param prod_degree The highest possible interaction degree.
 #' @param prune_method The pruning method.
@@ -137,27 +136,25 @@ make_mars_multistep <- function() {
 #' @noRd
 #' @export
 mars_multistep <- function(mode = "regression",
-                           num_terms = NULL, 
-                           prod_degree = NULL, 
+                           num_terms = NULL,
+                           prod_degree = NULL,
                            prune_method = NULL,
-                           lag_periods = NULL, 
-                           external_regressors = NULL, 
-                           forecast_horizon = NULL, 
-                           selected_features = NULL
-) {
-  
+                           lag_periods = NULL,
+                           external_regressors = NULL,
+                           forecast_horizon = NULL,
+                           selected_features = NULL) {
   args <- list(
     # MARS
-    prod_degree               = rlang::enquo(prod_degree), 
+    prod_degree               = rlang::enquo(prod_degree),
     num_terms                 = rlang::enquo(num_terms),
     prune_method              = rlang::enquo(prune_method),
     # Custom
-    lag_periods               = rlang::enquo(lag_periods), 
+    lag_periods               = rlang::enquo(lag_periods),
     external_regressors       = rlang::enquo(external_regressors),
     forecast_horizon          = rlang::enquo(forecast_horizon),
     selected_features         = rlang::enquo(selected_features)
   )
-  
+
   parsnip::new_model_spec(
     "mars_multistep",
     args     = args,
@@ -166,7 +163,6 @@ mars_multistep <- function(mode = "regression",
     method   = NULL,
     engine   = NULL
   )
-  
 }
 
 #' Print custom mars model
@@ -178,12 +174,12 @@ mars_multistep <- function(mode = "regression",
 print.mars_multistep <- function(x, ...) {
   cat("MARS Multistep Horizon (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
-  
-  if(!is.null(x$method$fit$args)) {
+
+  if (!is.null(x$method$fit$args)) {
     cat("Model fit template:\n")
     print(parsnip::show_call(x))
   }
-  
+
   invisible(x)
 }
 
@@ -191,7 +187,7 @@ print.mars_multistep <- function(x, ...) {
 #'
 #' @param object model object
 #' @param parameters parameters
-#' @param num_terms The number of features that will be retained in 
+#' @param num_terms The number of features that will be retained in
 #'  the final model, including the intercept.
 #' @param prod_degree The highest possible interaction degree.
 #' @param prune_method The pruning method.
@@ -208,48 +204,50 @@ print.mars_multistep <- function(x, ...) {
 #' @export
 update.mars_multistep <- function(object,
                                   parameters = NULL,
-                                  num_terms = NULL, 
-                                  prod_degree = NULL, 
-                                  prune_method = NULL, 
-                                  lag_periods = NULL, 
+                                  num_terms = NULL,
+                                  prod_degree = NULL,
+                                  prune_method = NULL,
+                                  lag_periods = NULL,
                                   external_regressors = NULL,
-                                  forecast_horizon = NULL, 
+                                  forecast_horizon = NULL,
                                   selected_features = NULL,
                                   fresh = FALSE, ...) {
-  
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
-  
+
   if (!is.null(parameters)) {
     parameters <- parsnip::check_final_param(parameters)
   }
-  
+
   args <- list(
     # MARS
-    prod_degree               = rlang::enquo(prod_degree), 
+    prod_degree               = rlang::enquo(prod_degree),
     num_terms                 = rlang::enquo(num_terms),
     prune_method              = rlang::enquo(prune_method),
     # Custom
-    lag_periods               = rlang::enquo(lag_periods), 
+    lag_periods               = rlang::enquo(lag_periods),
     external_regressors       = rlang::enquo(external_regressors),
-    forecast_horizon          = rlang::enquo(forecast_horizon), 
+    forecast_horizon          = rlang::enquo(forecast_horizon),
     selected_features         = rlang::enquo(selected_features)
   )
-  
+
   args <- parsnip::update_main_parameters(args, parameters)
-  
+
   if (fresh) {
     object$args <- args
     object$eng_args <- eng_args
   } else {
     null_args <- purrr::map_lgl(args, parsnip::null_value)
-    if (any(null_args))
+    if (any(null_args)) {
       args <- args[!null_args]
-    if (length(args) > 0)
+    }
+    if (length(args) > 0) {
       object$args[names(args)] <- args
-    if (length(eng_args) > 0)
+    }
+    if (length(eng_args) > 0) {
       object$eng_args[names(eng_args)] <- eng_args
+    }
   }
-  
+
   parsnip::new_model_spec(
     "mars_multistep",
     args     = object$args,
@@ -273,7 +271,7 @@ translate.mars_multistep <- function(x, engine = x$engine, ...) {
     engine <- "mars_multistep_horizon"
   }
   x <- parsnip::translate.default(x, engine, ...)
-  
+
   x
 }
 
@@ -283,7 +281,7 @@ translate.mars_multistep <- function(x, engine = x$engine, ...) {
 #'
 #' @param x A dataframe of xreg (exogenous regressors)
 #' @param y A numeric vector of values to fit
-#' @param nprune The number of features that will be retained in 
+#' @param nprune The number of features that will be retained in
 #'  the final model, including the intercept.
 #' @param degree The highest possible interaction degree.
 #' @param pmethod The pruning method.
@@ -295,7 +293,7 @@ translate.mars_multistep <- function(x, engine = x$engine, ...) {
 #' @noRd
 #' @importFrom stats frequency
 #' @export
-mars_multistep_fit_impl <- function(x, y, 
+mars_multistep_fit_impl <- function(x, y,
                                     # mars params
                                     nprune = NULL,
                                     degree = 1L,
@@ -303,30 +301,30 @@ mars_multistep_fit_impl <- function(x, y,
                                     # custom params
                                     lag_periods = NULL,
                                     external_regressors = NULL,
-                                    forecast_horizon = NULL, 
+                                    forecast_horizon = NULL,
                                     selected_features = NULL) {
-  
+
   # X & Y
   # Expect outcomes  = vector
   # Expect predictor = data.frame
-  outcome    <- y
-  predictor  <- x %>% dplyr::select(-Date)
-  
+  outcome <- y
+  predictor <- x %>% dplyr::select(-Date)
+
   # INDEX
   index_tbl <- modeltime::parse_index_from_data(x)
-  
+
   # XREGS
   # Clean names, get xreg recipe, process predictors
   xreg_recipe <- modeltime::create_xreg_recipe(predictor, prepare = TRUE, one_hot = TRUE, clean_names = FALSE)
-  xreg_tbl    <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
-  
+  xreg_tbl <- modeltime::juice_xreg_recipe(xreg_recipe, format = "tbl")
+
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
-  
+
   # fit multiple models
   models <- list()
   model_predictions <- list()
-  
+
   mars_reg_spec <- parsnip::mars(
     mode = "regression",
     num_terms = nprune,
@@ -334,66 +332,69 @@ mars_multistep_fit_impl <- function(x, y,
     prune_method = pmethod
   ) %>%
     parsnip::set_engine("earth")
-  
+
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
-    
+
     # get final features based on lag
-    xreg_tbl_final <- multi_feature_selection(xreg_tbl,
-                                              future_xregs, 
-                                              lag_periods, 
-                                              lag)
-    
-    if(!is.null(selected_features)) {
-      
+    xreg_tbl_final <- multi_feature_selection(
+      xreg_tbl,
+      future_xregs,
+      lag_periods,
+      lag
+    )
+
+    if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
-        dplyr::select(tidyselect::any_of(selected_features[[element_name]]), 
-                      tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final))))
+        dplyr::select(
+          tidyselect::any_of(selected_features[[element_name]]),
+          tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final)))
+        )
     }
-    
+
     combined_df <- xreg_tbl_final %>%
       dplyr::mutate(Target = outcome)
-    
+
     # fit model
-    fit_mars <- mars_reg_spec %>% 
+    fit_mars <- mars_reg_spec %>%
       fit(Target ~ ., data = combined_df)
-    
+
     # create prediction
     mars_fitted <- predict(fit_mars, combined_df)
-    
+
     # append outputs
     element_name <- paste0("model_lag_", lag)
     models[[element_name]] <- fit_mars
-    
+
     model_predictions <- c(model_predictions, list(mars_fitted))
   }
-  
+
   # Create Final Predictions, Averaged Across Each Trained Model
   model_predictions <- do.call(rbind, model_predictions)
   model_predictions <- apply(model_predictions, 2, mean)
-  
+
   # RETURN A NEW MODELTIME BRIDGE
-  
+
   # Class - Add a class for the model
   class <- "mars_multistep_fit_impl"
-  
+
   # Data - Start with index tbl and add .actual, .fitted, and .residuals columns
   data <- index_tbl %>%
     dplyr::mutate(
-      .actual    =  y,
-      .fitted    =  model_predictions,
+      .actual = y,
+      .fitted = model_predictions,
       .residuals = .actual - .fitted
     )
-  
+
   # Extras - Pass on transformation recipe
   extras <- list(
     xreg_recipe = xreg_recipe
   )
-  
+
   # Model Description - Gets printed to describe the high-level model structure
   desc <- "Multistep Horizon MARS Model"
-  
+
   # Create new model
   modeltime::new_modeltime_bridge(
     class  = class,
@@ -412,7 +413,6 @@ mars_multistep_fit_impl <- function(x, y,
 #' @noRd
 #' @export
 print.mars_multistep_fit_impl <- function(x, ...) {
-  
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
   cat("---\n")
   model_names <- names(x$models)
@@ -449,42 +449,42 @@ predict.mars_multistep_fit_impl <- function(object, new_data, ...) {
 #' @noRd
 #' @export
 mars_multistep_predict_impl <- function(object, new_data, ...) {
-  
+
   # PREPARE INPUTS
-  xreg_recipe     <- object$extras$xreg_recipe
-  h_horizon       <- nrow(new_data)
-  
+  xreg_recipe <- object$extras$xreg_recipe
+  h_horizon <- nrow(new_data)
+
   # XREG
-  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, 
-                                          new_data, 
-                                          format = "tbl")
-  
+  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
+    new_data,
+    format = "tbl"
+  )
+
   # PREDICTIONS
   final_prediction <- tibble::tibble()
   start_val <- 1
-  
-  for(model_name in names(object$models)) {
-    
+
+  for (model_name in names(object$models)) {
     if (start_val > nrow(xreg_tbl)) {
       break
     }
-    
+
     lag_number <- stringr::str_extract(model_name, "[0-9]+")
-    
+
     mars_model <- object$models[[model_name]]
-    
-    xreg_tbl_final <- xreg_tbl %>% 
+
+    xreg_tbl_final <- xreg_tbl %>%
       dplyr::slice(start_val:lag_number)
-    
+
     if (!is.null(xreg_tbl)) {
       preds_mars <- predict(mars_model, xreg_tbl_final)
     } else {
       preds_mars <- rep(0, h_horizon)
     }
-    
+
     start_val <- as.numeric(lag_number) + 1
     final_prediction <- rbind(final_prediction, preds_mars)
   }
-  
+
   return(final_prediction)
 }

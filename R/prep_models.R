@@ -558,15 +558,15 @@ model_workflows <- function(run_info,
       tidyr::unnest(Data)
 
     # get args to feed into model spec functions
-    if(recipe == "R1") {
+    if (recipe == "R1") {
       avail_arg_list <- list(
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
         "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
-        "pca" = pca, 
-        "multistep" = multistep_horizon, 
+        "pca" = pca,
+        "multistep" = multistep_horizon,
         "external_regressors" = external_regressors
       )
     } else {
@@ -576,8 +576,8 @@ model_workflows <- function(run_info,
         "horizon" = forecast_horizon,
         "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
-        "pca" = pca, 
-        "multistep" = FALSE, 
+        "pca" = pca,
+        "multistep" = FALSE,
         "external_regressors" = external_regressors
       )
     }

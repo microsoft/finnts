@@ -92,7 +92,7 @@ prep_data <- function(run_info,
                       fourier_periods = NULL,
                       lag_periods = NULL,
                       rolling_window_periods = NULL,
-                      recipes_to_run = NULL, 
+                      recipes_to_run = NULL,
                       multistep_horizon = TRUE) {
   cli::cli_progress_step("Prepping Data")
 
@@ -120,6 +120,7 @@ prep_data <- function(run_info,
   check_input_type("lag_periods", lag_periods, c("list", "numeric", "NULL"))
   check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
   check_input_type("recipes_to_run", recipes_to_run, c("list", "character", "NULL"), c("R1", "R2"))
+  check_input_type("multistep_horizon", multistep_horizon, "logical")
   check_input_data(
     input_data,
     combo_variables,
@@ -727,7 +728,7 @@ prep_data <- function(run_info,
       fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
       lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
       rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
-      recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")), 
+      recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")),
       multistep_horizon = multistep_horizon
     )
 
@@ -933,7 +934,7 @@ get_fourier_periods <- function(fourier_periods,
 #' @noRd
 get_lag_periods <- function(lag_periods,
                             date_type,
-                            forecast_horizon, 
+                            forecast_horizon,
                             multistep_horizon = FALSE) {
   if (!is.null(lag_periods)) {
     return(lag_periods)
@@ -946,13 +947,13 @@ get_lag_periods <- function(lag_periods,
     "day" = c(7, 14, 21, 28, 60, 90, 180, 365)
   )
 
-  if(multistep_horizon) {
-    if(max(oplist) < forecast_horizon) {
+  if (multistep_horizon) {
+    if (max(oplist) < forecast_horizon) {
       lag_periods <- c(oplist, forecast_horizon)
     } else {
       lag_periods <- oplist
     }
-  } else{
+  } else {
     oplist <- c(oplist, forecast_horizon)
     lag_periods <- oplist[oplist >= forecast_horizon]
     lag_periods <- unique(lag_periods)

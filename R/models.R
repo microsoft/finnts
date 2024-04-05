@@ -85,7 +85,7 @@ list_multistep_models <- function() {
   list <- c(
     "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost"
   )
-  
+
   return(list)
 }
 
@@ -580,11 +580,10 @@ arima_boost <- function(train_data,
 #' @return Get the cubist model
 #' @noRd
 cubist <- function(train_data,
-                   pca, 
-                   multistep, 
+                   pca,
+                   multistep,
                    horizon,
                    external_regressors) {
-  
   if (multistep) {
     recipe_spec_cubist <- train_data %>%
       get_recipe_configurable(
@@ -593,19 +592,17 @@ cubist <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_cubist <- cubist_multistep(
       mode = "regression",
       committees = tune::tune(),
       neighbors = tune::tune(),
-      max_rules = tune::tune(), 
-      forecast_horizon = horizon, 
-      external_regressors = external_regressors, 
+      max_rules = tune::tune(),
+      forecast_horizon = horizon,
+      external_regressors = external_regressors,
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE)
-      
     ) %>%
       parsnip::set_engine("cubist_multistep_horizon")
-    
   } else {
     recipe_spec_cubist <- train_data %>%
       get_recipe_configurable(
@@ -614,7 +611,7 @@ cubist <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_cubist <- parsnip::cubist_rules(
       mode = "regression",
       committees = tune::tune(),
@@ -696,11 +693,11 @@ ets <- function(train_data,
 #' @return Get the GLM Net model
 #' @noRd
 glmnet <- function(train_data,
-                   pca, 
-                   multistep, 
-                   horizon, 
+                   pca,
+                   multistep,
+                   horizon,
                    external_regressors) {
-  
+
   # create model recipe and spec
   if (multistep) {
     recipe_spec_glmnet <- train_data %>%
@@ -711,17 +708,16 @@ glmnet <- function(train_data,
         center_scale = TRUE,
         pca = pca
       )
-    
+
     model_spec_glmnet <- glmnet_multistep(
       mode = "regression",
       penalty = tune::tune(),
-      mixture = tune::tune(), 
-      forecast_horizon = horizon, 
-      external_regressors = external_regressors, 
+      mixture = tune::tune(),
+      forecast_horizon = horizon,
+      external_regressors = external_regressors,
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE)
     ) %>%
       parsnip::set_engine("glmnet_multistep_horizon")
-    
   } else {
     recipe_spec_glmnet <- train_data %>%
       get_recipe_configurable(
@@ -731,7 +727,7 @@ glmnet <- function(train_data,
         center_scale = TRUE,
         pca = pca
       )
-    
+
     model_spec_glmnet <- parsnip::linear_reg(
       mode = "regression",
       penalty = tune::tune(),
@@ -761,36 +757,34 @@ glmnet <- function(train_data,
 #' @return Get the Mars model spec
 #' @noRd
 mars <- function(train_data,
-                 pca, 
-                 multistep, 
-                 horizon, 
+                 pca,
+                 multistep,
+                 horizon,
                  external_regressors) {
-  
-  if(multistep) {
+  if (multistep) {
     recipe_spec_mars <- train_data %>%
       get_recipe_configurable(
         rm_date = "none",
         pca = pca
       )
-    
+
     model_spec_mars <- mars_multistep(
       mode = "regression",
       num_terms = tune::tune(),
       prod_degree = tune::tune(),
-      prune_method = tune::tune(), 
-      forecast_horizon = horizon, 
-      external_regressors = external_regressors, 
+      prune_method = tune::tune(),
+      forecast_horizon = horizon,
+      external_regressors = external_regressors,
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE)
     ) %>%
       parsnip::set_engine("mars_multistep_horizon")
-    
   } else {
     recipe_spec_mars <- train_data %>%
       get_recipe_configurable(
         rm_date = "with_adj",
         pca = pca
       )
-    
+
     model_spec_mars <- parsnip::mars(
       mode = "regression",
       num_terms = tune::tune(),
@@ -1108,20 +1102,18 @@ stlm_ets <- function(train_data,
 #' @noRd
 svm_poly <- function(train_data,
                      model_type = "single",
-                     pca, 
-                     multistep, 
-                     horizon, 
+                     pca,
+                     multistep,
+                     horizon,
                      external_regressors) {
-  
   if (model_type == "ensemble") {
-    
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
         rm_date = "with_adj",
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- parsnip::svm_poly(
       mode = "regression",
       cost = tune::tune(),
@@ -1130,9 +1122,7 @@ svm_poly <- function(train_data,
       scale_factor = tune::tune()
     ) %>%
       parsnip::set_engine("kernlab")
-    
-  } else if(multistep) {
-    
+  } else if (multistep) {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
         rm_date = "none",
@@ -1140,21 +1130,19 @@ svm_poly <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- svm_poly_multistep(
       mode = "regression",
       cost = tune::tune(),
       degree = tune::tune(),
       margin = tune::tune(),
-      scale_factor = tune::tune(), 
+      scale_factor = tune::tune(),
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon
     ) %>%
       parsnip::set_engine("svm_poly_multistep_horizon")
-    
   } else {
-    
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
         rm_date = "with_adj",
@@ -1162,7 +1150,7 @@ svm_poly <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- parsnip::svm_poly(
       mode = "regression",
       cost = tune::tune(),
@@ -1194,11 +1182,10 @@ svm_poly <- function(train_data,
 #' @noRd
 svm_rbf <- function(train_data,
                     model_type = "single",
-                    pca, 
-                    multistep, 
-                    horizon, 
+                    pca,
+                    multistep,
+                    horizon,
                     external_regressors) {
-  
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
@@ -1206,7 +1193,7 @@ svm_rbf <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- parsnip::svm_rbf(
       mode = "regression",
       cost = tune::tune(),
@@ -1214,9 +1201,7 @@ svm_rbf <- function(train_data,
       margin = tune::tune()
     ) %>%
       parsnip::set_engine("kernlab")
-    
-  } else if(multistep) {
-    
+  } else if (multistep) {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
         norm_date_adj_year = TRUE,
@@ -1224,18 +1209,17 @@ svm_rbf <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- svm_rbf_multistep(
       mode = "regression",
       cost = tune::tune(),
       rbf_sigma = tune::tune(),
-      margin = tune::tune(), 
+      margin = tune::tune(),
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon
     ) %>%
       parsnip::set_engine("svm_rbf_multistep_horizon")
-    
   } else {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
@@ -1244,7 +1228,7 @@ svm_rbf <- function(train_data,
         one_hot = FALSE,
         pca = pca
       )
-    
+
     model_spec_svm <- parsnip::svm_rbf(
       mode = "regression",
       cost = tune::tune(),
@@ -1328,13 +1312,13 @@ theta <- function(train_data,
 #' @return Get XGBoost model
 #' @noRd
 xgboost <- function(train_data,
-                    pca, 
-                    multistep, 
-                    horizon, 
+                    pca,
+                    multistep,
+                    horizon,
                     external_regressors) {
 
   # create model recipe and spec
-  if(multistep) {
+  if (multistep) {
     recipe_spec_xgboost <- train_data %>%
       get_recipe_configurable(
         rm_date = "none",
@@ -1342,7 +1326,7 @@ xgboost <- function(train_data,
         one_hot = TRUE,
         pca = pca
       )
-    
+
     model_spec_xgboost <- xgboost_multistep(
       lag_periods = get_lag_periods(NULL, "month", horizon, TRUE),
       external_regressors = external_regressors,
@@ -1357,7 +1341,6 @@ xgboost <- function(train_data,
       loss_reduction = tune::tune()
     ) %>%
       parsnip::set_engine("xgboost_multistep_horizon")
-    
   } else {
     recipe_spec_xgboost <- train_data %>%
       get_recipe_configurable(
@@ -1366,7 +1349,7 @@ xgboost <- function(train_data,
         one_hot = TRUE,
         pca = pca
       )
-    
+
     model_spec_xgboost <- parsnip::boost_tree(
       mode = "regression",
       trees = tune::tune(),
