@@ -42,7 +42,7 @@ run_feature_selection <- function(input_data,
 
   # run feature selection
   if (multistep_horizon) {
-    initial_lag_periods <- get_lag_periods(NULL, "month", forecast_horizon, TRUE)
+    initial_lag_periods <- get_lag_periods(NULL, date_type, forecast_horizon, TRUE)
 
     iteration_list <- get_multi_lags(
       initial_lag_periods,

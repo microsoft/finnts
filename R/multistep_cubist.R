@@ -189,6 +189,7 @@ print.cubist_multistep <- function(x, ...) {
 #' @param max_rules max rules
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
+#' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #' @param fresh fresh
 #' @param ... extra args passed to cubist
@@ -204,6 +205,7 @@ update.cubist_multistep <- function(object,
                                     max_rules = NULL,
                                     lag_periods = NULL,
                                     external_regressors = NULL,
+                                    forecast_horizon = NULL,
                                     selected_features = NULL,
                                     fresh = FALSE, ...) {
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
@@ -330,7 +332,7 @@ cubist_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-
+      
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
           tidyselect::any_of(selected_features[[element_name]]),
