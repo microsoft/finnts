@@ -144,7 +144,7 @@ make_svm_poly_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon SVM-POLY model
-#' @noRd
+#' @keywords internal
 #' @export
 svm_poly_multistep <- function(mode = "regression",
                                cost = NULL,
@@ -182,7 +182,7 @@ svm_poly_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.svm_poly_multistep <- function(x, ...) {
   cat("SVM-POLY Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -214,7 +214,7 @@ print.svm_poly_multistep <- function(x, ...) {
 #' @param ... extra args passed to svm_poly
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.svm_poly_multistep <- function(object,
@@ -278,7 +278,7 @@ update.svm_poly_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.svm_poly_multistep <- function(x, engine = x$engine, ...) {
@@ -309,7 +309,7 @@ translate.svm_poly_multistep <- function(x, engine = x$engine, ...) {
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 svm_poly_multistep_fit_impl <- function(x, y,
@@ -434,7 +434,7 @@ svm_poly_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.svm_poly_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -457,7 +457,7 @@ print.svm_poly_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.svm_poly_multistep_fit_impl <- function(object, new_data, ...) {
   svm_poly_multistep_predict_impl(object, new_data, ...)
@@ -470,7 +470,7 @@ predict.svm_poly_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 svm_poly_multistep_predict_impl <- function(object, new_data, ...) {
 

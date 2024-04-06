@@ -132,7 +132,7 @@ make_cubist_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon CUBIST model
-#' @noRd
+#' @keywords internal
 #' @export
 cubist_multistep <- function(mode = "regression",
                              committees = NULL, neighbors = NULL,
@@ -166,7 +166,7 @@ cubist_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.cubist_multistep <- function(x, ...) {
   cat("CUBIST Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -195,7 +195,7 @@ print.cubist_multistep <- function(x, ...) {
 #' @param ... extra args passed to cubist
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.cubist_multistep <- function(object,
@@ -258,7 +258,7 @@ update.cubist_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.cubist_multistep <- function(x, engine = x$engine, ...) {
@@ -285,7 +285,7 @@ translate.cubist_multistep <- function(x, engine = x$engine, ...) {
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 cubist_multistep_fit_impl <- function(x, y,
@@ -399,7 +399,7 @@ cubist_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.cubist_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -422,7 +422,7 @@ print.cubist_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.cubist_multistep_fit_impl <- function(object, new_data, ...) {
   cubist_multistep_predict_impl(object, new_data, ...)
@@ -435,7 +435,7 @@ predict.cubist_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 cubist_multistep_predict_impl <- function(object, new_data, ...) {
 

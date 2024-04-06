@@ -134,7 +134,7 @@ make_svm_rbf_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon SVM-RBF model
-#' @noRd
+#' @keywords internal
 #' @export
 svm_rbf_multistep <- function(mode = "regression",
                               cost = NULL,
@@ -170,7 +170,7 @@ svm_rbf_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.svm_rbf_multistep <- function(x, ...) {
   cat("SVM-RBF Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -200,7 +200,7 @@ print.svm_rbf_multistep <- function(x, ...) {
 #' @param ... extra args passed to svm_rbf
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.svm_rbf_multistep <- function(object,
@@ -262,7 +262,7 @@ update.svm_rbf_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.svm_rbf_multistep <- function(x, engine = x$engine, ...) {
@@ -291,7 +291,7 @@ translate.svm_rbf_multistep <- function(x, engine = x$engine, ...) {
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 svm_rbf_multistep_fit_impl <- function(x, y,
@@ -414,7 +414,7 @@ svm_rbf_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.svm_rbf_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -437,7 +437,7 @@ print.svm_rbf_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.svm_rbf_multistep_fit_impl <- function(object, new_data, ...) {
   svm_rbf_multistep_predict_impl(object, new_data, ...)
@@ -450,7 +450,7 @@ predict.svm_rbf_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 svm_rbf_multistep_predict_impl <- function(object, new_data, ...) {
 

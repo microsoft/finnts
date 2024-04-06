@@ -14,14 +14,15 @@ utils::globalVariables(c(
   ".config", "Forecast_Tbl", "Model_Workflow", "id", "model_run",
   "Auto_Accept", "Feature", "Imp", "Importance", "LOFO_Var", "Var_RMSE", "Vote", "Votes", "desc",
   "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
-  "Var_Combo", "regressor", "regressor_tbl", "value_level_iter"
+  "Var_Combo", "regressor", "regressor_tbl", "value_level_iter", ".actual", ".fitted",
+  "forecast_horizon", "lag", "new_data", "object", "fit"
 ))
 
 #' @importFrom magrittr %>%
 
 #' @importFrom methods formalArgs
 
-#' @importFrom stats sd
+#' @importFrom stats sd setNames
 
 #' @importFrom foreach %do% %dopar%
 

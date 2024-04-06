@@ -123,7 +123,7 @@ make_glmnet_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon GLMNET model
-#' @noRd
+#' @keywords internal
 #' @export
 glmnet_multistep <- function(mode = "regression",
                              mixture = NULL, penalty = NULL,
@@ -156,7 +156,7 @@ glmnet_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.glmnet_multistep <- function(x, ...) {
   cat("GLMNET Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -184,7 +184,7 @@ print.glmnet_multistep <- function(x, ...) {
 #' @param ... extra args passed to glmnet
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.glmnet_multistep <- function(object,
@@ -244,7 +244,7 @@ update.glmnet_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
@@ -270,7 +270,7 @@ translate.glmnet_multistep <- function(x, engine = x$engine, ...) {
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 glmnet_multistep_fit_impl <- function(x, y,
@@ -387,7 +387,7 @@ glmnet_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.glmnet_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -410,7 +410,7 @@ print.glmnet_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
   glmnet_multistep_predict_impl(object, new_data, ...)
@@ -423,7 +423,7 @@ predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 glmnet_multistep_predict_impl <- function(object, new_data, ...) {
 

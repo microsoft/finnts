@@ -50,6 +50,7 @@ Imports:
     plyr,
     purrr,
     recipes,
+    rlang,
     rsample,
     rules,
     snakecase,

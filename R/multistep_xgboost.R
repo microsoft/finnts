@@ -179,7 +179,7 @@ make_xgboost_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon XGBoost model
-#' @noRd
+#' @keywords internal
 #' @export
 xgboost_multistep <- function(mode = "regression",
                               mtry = NULL, trees = NULL, min_n = NULL,
@@ -219,7 +219,7 @@ xgboost_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.xgboost_multistep <- function(x, ...) {
   cat("XGBoost Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -253,7 +253,7 @@ print.xgboost_multistep <- function(x, ...) {
 #' @param ... extra args passed to xgboost
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.xgboost_multistep <- function(object,
@@ -323,7 +323,7 @@ update.xgboost_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
@@ -368,7 +368,7 @@ translate.xgboost_multistep <- function(x, engine = x$engine, ...) {
 #' @param ... Additional arguments passed to `xgboost::xgb.train`
 #'
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 xgboost_multistep_fit_impl <- function(x, y,
@@ -497,7 +497,7 @@ xgboost_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.xgboost_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -520,7 +520,7 @@ print.xgboost_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
   xgboost_multistep_predict_impl(object, new_data, ...)
@@ -534,7 +534,7 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param ... Additional arguments passed to `predict.xgb.Booster()`
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 xgboost_multistep_predict_impl <- function(object, new_data, ...) {
 

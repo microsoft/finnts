@@ -133,7 +133,7 @@ make_mars_multistep <- function() {
 #' @param selected_features selected features
 #'
 #' @return Get Multistep Horizon MARS model
-#' @noRd
+#' @keywords internal
 #' @export
 mars_multistep <- function(mode = "regression",
                            num_terms = NULL,
@@ -169,7 +169,7 @@ mars_multistep <- function(mode = "regression",
 #'
 #'
 #' @return Prints model info
-#' @noRd
+#' @keywords internal
 #' @export
 print.mars_multistep <- function(x, ...) {
   cat("MARS Multistep Horizon (", x$mode, ")\n\n", sep = "")
@@ -199,7 +199,7 @@ print.mars_multistep <- function(x, ...) {
 #' @param ... extra args passed to mars
 #'
 #' @return Updated model
-#' @noRd
+#' @keywords internal
 #' @importFrom stats update
 #' @export
 update.mars_multistep <- function(object,
@@ -262,7 +262,7 @@ update.mars_multistep <- function(object,
 #'
 #'
 #' @return translated model
-#' @noRd
+#' @keywords internal
 #' @importFrom parsnip translate
 #' @export
 translate.mars_multistep <- function(x, engine = x$engine, ...) {
@@ -290,7 +290,7 @@ translate.mars_multistep <- function(x, engine = x$engine, ...) {
 #' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #'
-#' @noRd
+#' @keywords internal
 #' @importFrom stats frequency
 #' @export
 mars_multistep_fit_impl <- function(x, y,
@@ -410,7 +410,7 @@ mars_multistep_fit_impl <- function(x, y,
 #'
 #'
 #' @return prints custom model
-#' @noRd
+#' @keywords internal
 #' @export
 print.mars_multistep_fit_impl <- function(x, ...) {
   if (!is.null(x$desc)) cat(paste0(x$desc, "\n"))
@@ -433,7 +433,7 @@ print.mars_multistep_fit_impl <- function(x, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 predict.mars_multistep_fit_impl <- function(object, new_data, ...) {
   mars_multistep_predict_impl(object, new_data, ...)
@@ -446,7 +446,7 @@ predict.mars_multistep_fit_impl <- function(object, new_data, ...) {
 #' @param new_data input data to predict
 #'
 #' @return predictions
-#' @noRd
+#' @keywords internal
 #' @export
 mars_multistep_predict_impl <- function(object, new_data, ...) {
 
