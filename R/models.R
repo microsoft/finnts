@@ -584,7 +584,7 @@ cubist <- function(train_data,
                    pca,
                    multistep,
                    horizon,
-                   external_regressors, 
+                   external_regressors,
                    frequency) {
   if (multistep) {
     recipe_spec_cubist <- train_data %>%
@@ -699,7 +699,7 @@ glmnet <- function(train_data,
                    pca,
                    multistep,
                    horizon,
-                   external_regressors, 
+                   external_regressors,
                    frequency) {
 
   # create model recipe and spec
@@ -765,7 +765,7 @@ mars <- function(train_data,
                  pca,
                  multistep,
                  horizon,
-                 external_regressors, 
+                 external_regressors,
                  frequency) {
   if (multistep) {
     recipe_spec_mars <- train_data %>%
@@ -1112,7 +1112,7 @@ svm_poly <- function(train_data,
                      pca,
                      multistep,
                      horizon,
-                     external_regressors, 
+                     external_regressors,
                      frequency) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
@@ -1145,7 +1145,7 @@ svm_poly <- function(train_data,
       degree = tune::tune(),
       margin = tune::tune(),
       scale_factor = tune::tune(),
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE), 
+      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon
     ) %>%
@@ -1194,7 +1194,7 @@ svm_rbf <- function(train_data,
                     pca,
                     multistep,
                     horizon,
-                    external_regressors, 
+                    external_regressors,
                     frequency) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
@@ -1326,7 +1326,7 @@ xgboost <- function(train_data,
                     pca,
                     multistep,
                     horizon,
-                    external_regressors, 
+                    external_regressors,
                     frequency) {
 
   # create model recipe and spec

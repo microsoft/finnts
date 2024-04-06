@@ -192,7 +192,7 @@ update.glmnet_multistep <- function(object,
                                     mixture = NULL, penalty = NULL,
                                     lag_periods = NULL,
                                     external_regressors = NULL,
-                                    forecast_horizon = NULL, 
+                                    forecast_horizon = NULL,
                                     selected_features = NULL,
                                     fresh = FALSE, ...) {
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
@@ -322,7 +322,7 @@ glmnet_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
           tidyselect::any_of(selected_features[[element_name]]),

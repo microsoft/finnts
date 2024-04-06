@@ -262,9 +262,9 @@ update.xgboost_multistep <- function(object,
                                      tree_depth = NULL, learn_rate = NULL,
                                      loss_reduction = NULL,
                                      sample_size = NULL, stop_iter = NULL,
-                                     lag_periods = NULL, 
+                                     lag_periods = NULL,
                                      external_regressors = NULL,
-                                     forecast_horizon = NULL, 
+                                     forecast_horizon = NULL,
                                      selected_features = NULL,
                                      fresh = FALSE, ...) {
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
@@ -423,7 +423,7 @@ xgboost_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
           tidyselect::any_of(selected_features[[element_name]]),

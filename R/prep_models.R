@@ -830,7 +830,7 @@ get_frequency_number <- function(date_type) {
     "year" = 1,
     "quarter" = 4,
     "month" = 12,
-    "week" =  52.17857, # 365.25 / 7
+    "week" = 52.17857, # 365.25 / 7
     "day" = 365.25
   )
 
@@ -845,13 +845,13 @@ get_frequency_number <- function(date_type) {
 #' @noRd
 get_date_type <- function(frequency) {
   date_type <- switch(as.character(frequency),
-                      "1" = "year",
-                      "4" = "quarter",
-                      "12" = "month",
-                      "52.17857" = "week",
-                      "365.25" = "day"
+    "1" = "year",
+    "4" = "quarter",
+    "12" = "month",
+    "52.17857" = "week",
+    "365.25" = "day"
   )
-  
+
   return(date_type)
 }
 

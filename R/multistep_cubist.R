@@ -332,7 +332,7 @@ cubist_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
           tidyselect::any_of(selected_features[[element_name]]),
