@@ -335,7 +335,7 @@ glmnet_multistep_fit_impl <- function(x, y,
 
     # fit model
     fit_glmnet <- linreg_reg_spec %>%
-      fit(Target ~ ., data = combined_df)
+      generics::fit(Target ~ ., data = combined_df)
 
     # create prediction
     glmnet_fitted <- predict(fit_glmnet, combined_df)

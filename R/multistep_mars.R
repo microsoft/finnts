@@ -358,7 +358,7 @@ mars_multistep_fit_impl <- function(x, y,
 
     # fit model
     fit_mars <- mars_reg_spec %>%
-      fit(Target ~ ., data = combined_df)
+      generics::fit(Target ~ ., data = combined_df)
 
     # create prediction
     mars_fitted <- predict(fit_mars, combined_df)
