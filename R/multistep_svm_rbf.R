@@ -195,6 +195,7 @@ print.svm_rbf_multistep <- function(x, ...) {
 #'   insensitive loss function.
 #' @param lag_periods lag periods
 #' @param external_regressors external regressors
+#' @param forecast_horizon forecast horizon
 #' @param selected_features selected features
 #' @param fresh fresh
 #' @param ... extra args passed to svm_rbf
@@ -210,6 +211,7 @@ update.svm_rbf_multistep <- function(object,
                                      margin = NULL,
                                      lag_periods = NULL,
                                      external_regressors = NULL,
+                                     forecast_horizon = NULL,
                                      selected_features = NULL,
                                      fresh = FALSE, ...) {
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)

@@ -13,6 +13,7 @@
   margin = NULL,
   lag_periods = NULL,
   external_regressors = NULL,
+  forecast_horizon = NULL,
   selected_features = NULL,
   fresh = FALSE,
   ...
@@ -37,6 +38,8 @@ insensitive loss function}
 \item{lag_periods}{lag periods}
 
 \item{external_regressors}{external regressors}
+
+\item{forecast_horizon}{forecast horizon}
 
 \item{selected_features}{selected features}
 
