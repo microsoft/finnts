@@ -361,7 +361,7 @@ svm_rbf_multistep_fit_impl <- function(x, y,
 
     # fit model
     fit_svm <- svm_reg_spec %>%
-      fit(
+      generics::fit(
         Target ~ .,
         combined_df
       )
