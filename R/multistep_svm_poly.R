@@ -226,7 +226,7 @@ update.svm_poly_multistep <- function(object,
                                       margin = NULL,
                                       lag_periods = NULL,
                                       external_regressors = NULL,
-                                      forecast_horizon = NULL, 
+                                      forecast_horizon = NULL,
                                       selected_features = NULL,
                                       fresh = FALSE, ...) {
   eng_args <- parsnip::update_engine_parameters(object$eng_args, fresh, ...)
