@@ -28,7 +28,7 @@ prep_data(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
-  multistep_horizon = TRUE
+  multistep_horizon = FALSE
 )
 }
 \arguments{
