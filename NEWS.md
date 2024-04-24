@@ -10,6 +10,10 @@
 -   Error in run_type column join in final forecast output
 -   Error in running feature selection
 
+## Breaking Changes
+
+-   Minimum R version now set to R 4.0 to comply with package dependency minimum version for tune
+
 # finnts 0.4.0
 
 ## Improvements

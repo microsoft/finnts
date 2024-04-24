@@ -78,6 +78,6 @@ Suggests:
     vip
 Config/testthat/edition: 3
 Depends: 
-    R (>= 3.6.0), 
+    R (>= 4.0), 
     modeltime
 VignetteBuilder: knitr
