@@ -26,7 +26,8 @@ test_that("multistep_horizon yearly data", {
     back_test_scenarios = 4,
     models_to_run = "xgboost",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1
+    num_hyperparameters = 1, 
+    pca = TRUE
   )
 
   # train models
@@ -69,7 +70,8 @@ test_that("multistep_horizon quarterly data", {
     back_test_scenarios = 6,
     models_to_run = "mars",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1
+    num_hyperparameters = 1, 
+    pca = TRUE
   )
 
   # train models
@@ -118,7 +120,8 @@ test_that("multistep_horizon monthly data", {
     back_test_scenarios = 2,
     models_to_run = "cubist",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1
+    num_hyperparameters = 1, 
+    pca = TRUE
   )
 
   # train models
@@ -164,7 +167,8 @@ test_that("multistep_horizon weekly data", {
     back_test_scenarios = 4,
     models_to_run = "glmnet",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1
+    num_hyperparameters = 1, 
+    pca = TRUE
   )
 
   # train models
@@ -177,7 +181,7 @@ test_that("multistep_horizon weekly data", {
   model_length <- length(workflow_tbl$Model_Fit[[1]]$fit$fit$fit$models)
 
   # Assertions
-  expect_equal(model_length, 4)
+  expect_equal(model_length, 1)
 })
 
 test_that("multistep_horizon daily data", {
@@ -200,7 +204,7 @@ test_that("multistep_horizon daily data", {
     combo_variables = c("id"),
     target_variable = "value",
     date_type = "day",
-    forecast_horizon = 28,
+    forecast_horizon = 30,
     recipes_to_run = "R1",
     multistep_horizon = TRUE
   )
@@ -211,7 +215,8 @@ test_that("multistep_horizon daily data", {
     back_test_spacing = 7,
     models_to_run = "glmnet",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1
+    num_hyperparameters = 1, 
+    pca = TRUE
   )
 
   # train models
@@ -224,5 +229,5 @@ test_that("multistep_horizon daily data", {
   model_length <- length(workflow_tbl$Model_Fit[[1]]$fit$fit$fit$models)
 
   # Assertions
-  expect_equal(model_length, 4)
+  expect_equal(model_length, 2)
 })

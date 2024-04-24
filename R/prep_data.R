@@ -947,7 +947,16 @@ get_lag_periods <- function(lag_periods,
     "day" = c(7, 14, 21, 28, 60, 90, 180, 365)
   )
 
+  # change multistep horizons to run based on date type
   if (multistep_horizon) {
+    if (date_type == "day") {
+      oplist <- c(28, 90, 180)
+    } else if (date_type == "week") {
+      oplist <- c(4, 12, 24)
+    } else if (date_type == "month") {
+      c(1, 2, 3, 6, 12)
+    }
+
     if (max(oplist) < forecast_horizon) {
       lag_periods <- c(oplist, forecast_horizon)
     } else {
