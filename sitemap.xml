@@ -64,6 +64,15 @@
     <loc>https://microsoft.github.io/finnts/news/index.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/cubist_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/cubist_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/cubist_multistep_predict_impl.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/ensemble_models.html</loc>
   </url>
   <url>
@@ -88,10 +97,46 @@
     <loc>https://microsoft.github.io/finnts/reference/get_trained_models.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/glmnet_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/glmnet_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/glmnet_multistep_predict_impl.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/index.html</loc>
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/list_models.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/mars_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/mars_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/mars_multistep_predict_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.cubist_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.glmnet_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.mars_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.svm_poly_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.svm_rbf_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/predict.xgboost_multistep_fit_impl.html</loc>
   </url>
   <url>
     <loc>https://microsoft.github.io/finnts/reference/prep_data.html</loc>
@@ -100,9 +145,108 @@
     <loc>https://microsoft.github.io/finnts/reference/prep_models.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.mars_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.mars_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.svm_poly_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.svm_poly_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.svm_rbf_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.svm_rbf_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep_fit_impl.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/set_run_info.html</loc>
   </url>
   <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_poly_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_poly_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_poly_multistep_predict_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep_predict_impl.html</loc>
+  </url>
+  <url>
     <loc>https://microsoft.github.io/finnts/reference/train_models.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.cubist_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.glmnet_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.mars_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.svm_poly_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.svm_rbf_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/translate.xgboost_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.cubist_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.glmnet_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.mars_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.svm_poly_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.svm_rbf_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/update.xgboost_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/xgboost_multistep.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_fit_impl.html</loc>
+  </url>
+  <url>
+    <loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_predict_impl.html</loc>
   </url>
 </urlset>
