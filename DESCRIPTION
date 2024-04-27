@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.4.0.9002
+Version: 0.4.0.9003
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -50,6 +50,7 @@ Imports:
     plyr,
     purrr,
     recipes,
+    rlang,
     rsample,
     rules,
     snakecase,
@@ -77,6 +78,6 @@ Suggests:
     vip
 Config/testthat/edition: 3
 Depends: 
-    R (>= 3.6.0), 
+    R (>= 4.0), 
     modeltime
 VignetteBuilder: knitr

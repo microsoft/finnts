@@ -44,6 +44,7 @@
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
 #'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.
+#' @param multistep_horizon Use a multistep horizon approach when training multivariate models with R1 recipe.
 #'
 #' @return No return object. Feature engineered data is written to disk based on the output locations provided in
 #'   [set_run_info()].
@@ -91,7 +92,8 @@ prep_data <- function(run_info,
                       fourier_periods = NULL,
                       lag_periods = NULL,
                       rolling_window_periods = NULL,
-                      recipes_to_run = NULL) {
+                      recipes_to_run = NULL,
+                      multistep_horizon = FALSE) {
   cli::cli_progress_step("Prepping Data")
 
   # check input values
@@ -118,6 +120,7 @@ prep_data <- function(run_info,
   check_input_type("lag_periods", lag_periods, c("list", "numeric", "NULL"))
   check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
   check_input_type("recipes_to_run", recipes_to_run, c("list", "character", "NULL"), c("R1", "R2"))
+  check_input_type("multistep_horizon", multistep_horizon, "logical")
   check_input_data(
     input_data,
     combo_variables,
@@ -416,7 +419,7 @@ prep_data <- function(run_info,
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
-              get_lag_periods(lag_periods, date_type, forecast_horizon),
+              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type),
               hist_end_date,
               date_type
@@ -588,7 +591,7 @@ prep_data <- function(run_info,
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
-              get_lag_periods(lag_periods, date_type, forecast_horizon),
+              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type)
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
@@ -725,7 +728,8 @@ prep_data <- function(run_info,
       fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
       lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
       rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
-      recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---"))
+      recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")),
+      multistep_horizon = multistep_horizon
     )
 
   write_data(
@@ -924,12 +928,14 @@ get_fourier_periods <- function(fourier_periods,
 #' @param lag_periods list of lag periods
 #' @param date_type date type
 #' @param forecast_horizon forecast horizon
+#' @param multistep_horizon multistep horizon
 #'
 #' @return list of lag periods
 #' @noRd
 get_lag_periods <- function(lag_periods,
                             date_type,
-                            forecast_horizon) {
+                            forecast_horizon,
+                            multistep_horizon = FALSE) {
   if (!is.null(lag_periods)) {
     return(lag_periods)
   }
@@ -941,9 +947,26 @@ get_lag_periods <- function(lag_periods,
     "day" = c(7, 14, 21, 28, 60, 90, 180, 365)
   )
 
-  oplist <- c(oplist, forecast_horizon)
-  lag_periods <- oplist[oplist >= forecast_horizon]
-  lag_periods <- unique(lag_periods)
+  # change multistep horizons to run based on date type
+  if (multistep_horizon) {
+    if (date_type == "day") {
+      oplist <- c(28, 90, 180)
+    } else if (date_type == "week") {
+      oplist <- c(4, 12, 24)
+    } else if (date_type == "month") {
+      c(1, 2, 3, 6, 12)
+    }
+
+    if (max(oplist) < forecast_horizon) {
+      lag_periods <- c(oplist, forecast_horizon)
+    } else {
+      lag_periods <- oplist
+    }
+  } else {
+    oplist <- c(oplist, forecast_horizon)
+    lag_periods <- oplist[oplist >= forecast_horizon]
+    lag_periods <- unique(lag_periods)
+  }
 
   return(lag_periods)
 }

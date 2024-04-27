@@ -92,6 +92,9 @@ train_models <- function(run_info,
   forecast_approach <- log_df$forecast_approach
   stationary <- log_df$stationary
   box_cox <- log_df$box_cox
+  multistep_horizon <- log_df$multistep_horizon
+  forecast_horizon <- log_df$forecast_horizon
+  external_regressors <- ifelse(log_df$external_regressors == "NULL", NULL, strsplit(log_df$external_regressors, split = "---")[[1]])
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -333,7 +336,7 @@ train_models <- function(run_info,
             dplyr::filter(Recipe == "R1") %>%
             dplyr::select(Data) %>%
             tidyr::unnest(Data) %>%
-            select_features(
+            run_feature_selection(
               run_info = run_info,
               train_test_data = model_train_test_tbl,
               parallel_processing = if (inner_parallel) {
@@ -342,7 +345,10 @@ train_models <- function(run_info,
                 NULL
               },
               date_type = date_type,
-              fast = FALSE
+              fast = FALSE,
+              forecast_horizon = forecast_horizon,
+              external_regressors = external_regressors,
+              multistep_horizon = multistep_horizon
             )
 
           fs_list <- append(fs_list, list(R1 = R1_fs_list))
@@ -353,7 +359,7 @@ train_models <- function(run_info,
             dplyr::filter(Recipe == "R2") %>%
             dplyr::select(Data) %>%
             tidyr::unnest(Data) %>%
-            select_features(
+            run_feature_selection(
               run_info = run_info,
               train_test_data = model_train_test_tbl,
               parallel_processing = if (inner_parallel) {
@@ -362,7 +368,10 @@ train_models <- function(run_info,
                 NULL
               },
               date_type = date_type,
-              fast = FALSE
+              fast = FALSE,
+              forecast_horizon = forecast_horizon,
+              external_regressors = external_regressors,
+              multistep_horizon = FALSE
             )
 
           fs_list <- append(fs_list, list(R2 = R2_fs_list))
@@ -425,14 +434,25 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          updated_recipe <- workflow %>%
-            workflows::extract_recipe(estimated = FALSE) %>%
-            recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
-            recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
-            base::suppressWarnings()
+          if (multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+            updated_model_spec <- workflow %>%
+              workflows::extract_spec_parsnip() %>%
+              update(selected_features = final_features_list)
 
-          empty_workflow_final <- workflow %>%
-            workflows::update_recipe(updated_recipe)
+            empty_workflow_final <- workflow %>%
+              workflows::update_model(updated_model_spec)
+          } else {
+            final_features_list <- final_features_list[[paste0("model_lag_", forecast_horizon)]]
+
+            updated_recipe <- workflow %>%
+              workflows::extract_recipe(estimated = FALSE) %>%
+              recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
+              recipes::update_role(tidyselect::any_of(unique(c(final_features_list, "Date"))), new_role = "predictor") %>%
+              base::suppressWarnings()
+
+            empty_workflow_final <- workflow %>%
+              workflows::update_recipe(updated_recipe)
+          }
         } else {
           empty_workflow_final <- workflow
         }
@@ -463,7 +483,7 @@ train_models <- function(run_info,
           grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
           control = tune::control_grid(
             allow_par = inner_parallel,
-            pkgs = inner_packages,
+            pkgs = c(inner_packages, "finnts"),
             parallel_over = "everything"
           )
         ) %>%
@@ -483,6 +503,7 @@ train_models <- function(run_info,
         }
 
         finalized_workflow <- tune::finalize_workflow(empty_workflow_final, best_param)
+
         set.seed(seed)
         wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
           base::suppressMessages()

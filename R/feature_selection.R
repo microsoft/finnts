@@ -7,16 +7,22 @@
 #' @param date_type date_type
 #' @param fast turns off lofo
 #' @param seed seed
+#' @param forecast_horizon forecast horizon
+#' @param external_regressors external reressors
+#' @param multistep_horizon multistep horizon forecast
 #'
 #' @return list of best features to use
 #' @noRd
-select_features <- function(input_data,
-                            run_info,
-                            train_test_data,
-                            parallel_processing = NULL,
-                            date_type,
-                            fast = FALSE,
-                            seed = 123) {
+run_feature_selection <- function(input_data,
+                                  run_info,
+                                  train_test_data,
+                                  parallel_processing = NULL,
+                                  date_type,
+                                  fast = FALSE,
+                                  seed = 123,
+                                  forecast_horizon,
+                                  external_regressors,
+                                  multistep_horizon = FALSE) {
 
   # check for more than one unique target value
   if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
@@ -28,187 +34,230 @@ select_features <- function(input_data,
     return(fs_list)
   }
 
-  # only keep historical data
-  input_data <- input_data %>%
-    tidyr::drop_na(Target)
-
-  # skip lofo if there are too many features
-  if (ncol(input_data) > 250) {
-    fast <- TRUE
-  }
+  # check for external regressors future values
+  future_xregs <- multi_future_xreg_check(
+    input_data,
+    external_regressors
+  )
 
   # run feature selection
-  if (date_type %in% c("day", "week")) {
+  if (multistep_horizon) {
+    initial_lag_periods <- get_lag_periods(NULL, date_type, forecast_horizon, TRUE)
 
-    # number of votes needed for feature to be selected
-    votes_needed <- 3
-
-    # don't run leave one feature out process for daily and weekly data
-    lofo_results <- tibble::tibble()
-
-    # target correlation
-    target_corr_results <- target_corr_fn(input_data, 0.2) %>%
-      dplyr::rename(Feature = term) %>%
-      dplyr::mutate(
-        Vote = 1,
-        Auto_Accept = 0
-      ) %>%
-      dplyr::select(Feature, Vote, Auto_Accept)
-
-    # don't run boruta process for daily and weekly data
-    boruta_results <- tibble::tibble()
-  } else {
-    if (!fast) { # full implementation
-
-      # votes needed for feature to be selected
-      votes_needed <- 4
-
-      # run leave one feature out selection
-      lofo_results <- tryCatch(
-        {
-          lofo_fn(
-            run_info = run_info,
-            data = input_data,
-            train_test_splits = train_test_data,
-            parallel_processing = parallel_processing,
-            seed = seed
-          ) %>%
-            dplyr::filter(Imp >= 0) %>%
-            dplyr::rename(Feature = LOFO_Var) %>%
-            dplyr::mutate(
-              Vote = 1,
-              Auto_Accept = 0
-            ) %>%
-            dplyr::select(Feature, Vote, Auto_Accept)
-        },
-        error = function(e) {
-          tibble::tibble()
-        }
-      )
-
-      if (nrow(lofo_results) == 0) {
-        votes_needed <- 3
-      }
-    } else { # fast implementation
-
-      # votes needed for feature to be selected
-      votes_needed <- 3
-
-      # don't run lofo
-      lofo_results <- tibble::tibble()
-    }
-
-    # correlation to target
-    target_corr_results <- target_corr_fn(input_data, 0.5) %>%
-      dplyr::rename(Feature = term) %>%
-      dplyr::mutate(
-        Vote = 1,
-        Auto_Accept = 0
-      ) %>%
-      dplyr::select(Feature, Vote, Auto_Accept)
-
-    # botuta feature selection
-    boruta_results <- tibble::tibble(
-      Feature = boruta_fn(
-        data = input_data,
-        seed = seed
-      ),
-      Vote = 1,
-      Auto_Accept = 0
+    iteration_list <- get_multi_lags(
+      initial_lag_periods,
+      forecast_horizon
     )
+  } else {
+    iteration_list <- (forecast_horizon)
   }
 
-  # random forest feature importance
-  vip_rf_results <- vip_rf_fn(
-    input_data,
-    seed
-  ) %>%
-    dplyr::rename(Feature = Variable) %>%
-    dplyr::mutate(
-      Vote = 1,
-      Auto_Accept = 0
-    ) %>%
-    dplyr::select(Feature, Vote, Auto_Accept)
-
-  # cubist feature importance
-  vip_cubist_results <- tryCatch(
-    {
-      vip_cubist_fn(
-        input_data,
-        seed
+  fs_list_final <- foreach::foreach(
+    lag = iteration_list,
+    .combine = "c",
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .init = list(),
+    .noexport = NULL
+  ) %do% {
+    # only keep historical data
+    if (multistep_horizon) {
+      input_data_lag <- multi_feature_selection(input_data,
+        future_xregs,
+        initial_lag_periods,
+        lag,
+        target = TRUE
       ) %>%
-        dplyr::rename(Feature = Variable) %>%
+        tidyr::drop_na(Target)
+    } else {
+      input_data_lag <- input_data %>%
+        tidyr::drop_na(Target)
+    }
+
+    # skip lofo if there are too many features
+    if (ncol(input_data_lag) > 250) {
+      fast <- TRUE
+    }
+
+    # run feature selection
+    if (date_type %in% c("day", "week")) {
+
+      # number of votes needed for feature to be selected
+      votes_needed <- 3
+
+      # don't run leave one feature out process for daily and weekly data
+      lofo_results <- tibble::tibble()
+
+      # target correlation
+      target_corr_results <- target_corr_fn(input_data_lag, 0.2) %>%
+        dplyr::rename(Feature = term) %>%
         dplyr::mutate(
           Vote = 1,
           Auto_Accept = 0
         ) %>%
         dplyr::select(Feature, Vote, Auto_Accept)
-    },
-    warning = function(w) {
-      # do nothing
-    },
-    error = function(e) {
-      tibble::tibble()
-    }
-  )
 
-  if (is.null(vip_cubist_results)) {
-    votes_needed <- votes_needed - 1
+      # don't run boruta process for daily and weekly data
+      boruta_results <- tibble::tibble()
+    } else {
+      if (!fast) { # full implementation
+
+        # votes needed for feature to be selected
+        votes_needed <- 4
+
+        # run leave one feature out selection
+        lofo_results <- tryCatch(
+          {
+            lofo_fn(
+              run_info = run_info,
+              data = input_data_lag,
+              train_test_splits = train_test_data,
+              parallel_processing = parallel_processing,
+              seed = seed
+            ) %>%
+              dplyr::filter(Imp >= 0) %>%
+              dplyr::rename(Feature = LOFO_Var) %>%
+              dplyr::mutate(
+                Vote = 1,
+                Auto_Accept = 0
+              ) %>%
+              dplyr::select(Feature, Vote, Auto_Accept)
+          },
+          error = function(e) {
+            tibble::tibble()
+          }
+        )
+
+        if (nrow(lofo_results) == 0) {
+          votes_needed <- 3
+        }
+      } else { # fast implementation
+
+        # votes needed for feature to be selected
+        votes_needed <- 3
+
+        # don't run lofo
+        lofo_results <- tibble::tibble()
+      }
+
+      # correlation to target
+      target_corr_results <- target_corr_fn(input_data_lag, 0.5) %>%
+        dplyr::rename(Feature = term) %>%
+        dplyr::mutate(
+          Vote = 1,
+          Auto_Accept = 0
+        ) %>%
+        dplyr::select(Feature, Vote, Auto_Accept)
+
+      # botuta feature selection
+      boruta_results <- tibble::tibble(
+        Feature = boruta_fn(
+          data = input_data_lag,
+          seed = seed
+        ),
+        Vote = 1,
+        Auto_Accept = 0
+      )
+    }
+
+    # random forest feature importance
+    vip_rf_results <- vip_rf_fn(
+      input_data_lag,
+      seed
+    ) %>%
+      dplyr::rename(Feature = Variable) %>%
+      dplyr::mutate(
+        Vote = 1,
+        Auto_Accept = 0
+      ) %>%
+      dplyr::select(Feature, Vote, Auto_Accept)
+
+    # cubist feature importance
+    vip_cubist_results <- tryCatch(
+      {
+        vip_cubist_fn(
+          input_data_lag,
+          seed
+        ) %>%
+          dplyr::rename(Feature = Variable) %>%
+          dplyr::mutate(
+            Vote = 1,
+            Auto_Accept = 0
+          ) %>%
+          dplyr::select(Feature, Vote, Auto_Accept)
+      },
+      warning = function(w) {
+        # do nothing
+      },
+      error = function(e) {
+        tibble::tibble()
+      }
+    )
+
+    if (is.null(vip_cubist_results)) {
+      votes_needed <- votes_needed - 1
+    }
+
+    # lasso regression feature importance
+    vip_lm_initial <- vip_lm_fn(
+      input_data_lag,
+      seed
+    )
+
+    missing_cols <- setdiff(
+      colnames(input_data_lag %>%
+        dplyr::select(-Combo, -Date, -Target)),
+      vip_lm_initial$Variable
+    )
+
+    cat_cols <- input_data_lag %>%
+      dplyr::select_if(is.character) %>%
+      dplyr::select(tidyselect::contains(missing_cols)) %>%
+      colnames()
+
+    vip_lm_cols <- input_data_lag %>%
+      dplyr::select(
+        tidyselect::contains(cat_cols),
+        tidyselect::any_of(vip_lm_initial$Variable)
+      ) %>%
+      colnames()
+
+    vip_lm_results <- tibble::tibble(
+      Feature = vip_lm_cols,
+      Vote = 1,
+      Auto_Accept = 1
+    )
+
+    # consolidate results and create votes
+    final_feature_votes <- rbind(
+      target_corr_results,
+      vip_rf_results,
+      vip_cubist_results,
+      vip_lm_results,
+      boruta_results,
+      lofo_results
+    ) %>%
+      dplyr::group_by(Feature) %>%
+      dplyr::summarise(
+        Votes = sum(Vote),
+        Auto_Accept = sum(Auto_Accept)
+      ) %>%
+      dplyr::arrange(desc(Votes))
+
+    # get final selected features list
+    fs_list <- final_feature_votes %>%
+      dplyr::filter(Votes >= votes_needed | Auto_Accept > 0) %>%
+      dplyr::pull(Feature) %>%
+      sort()
+
+    element_name <- paste0("model_lag_", lag)
+
+    return(setNames(list(fs_list), element_name))
   }
 
-  # lasso regression feature importance
-  vip_lm_initial <- vip_lm_fn(
-    input_data,
-    seed
-  )
-
-  missing_cols <- setdiff(
-    colnames(input_data %>%
-      dplyr::select(-Combo, -Date, -Target)),
-    vip_lm_initial$Variable
-  )
-
-  cat_cols <- input_data %>%
-    dplyr::select_if(is.character) %>%
-    dplyr::select(tidyselect::contains(missing_cols)) %>%
-    colnames()
-
-  vip_lm_cols <- input_data %>%
-    dplyr::select(
-      tidyselect::contains(cat_cols),
-      tidyselect::any_of(vip_lm_initial$Variable)
-    ) %>%
-    colnames()
-
-  vip_lm_results <- tibble::tibble(
-    Feature = vip_lm_cols,
-    Vote = 1,
-    Auto_Accept = 1
-  )
-
-  # consolidate results and create votes
-  final_feature_votes <- rbind(
-    target_corr_results,
-    vip_rf_results,
-    vip_cubist_results,
-    vip_lm_results,
-    boruta_results,
-    lofo_results
-  ) %>%
-    dplyr::group_by(Feature) %>%
-    dplyr::summarise(
-      Votes = sum(Vote),
-      Auto_Accept = sum(Auto_Accept)
-    ) %>%
-    dplyr::arrange(desc(Votes))
-
-  # get final selected features list
-  fs_list <- final_feature_votes %>%
-    dplyr::filter(Votes >= votes_needed | Auto_Accept > 0) %>%
-    dplyr::pull(Feature) %>%
-    sort()
-
-  return(fs_list)
+  return(fs_list_final)
 }
 
 #' Target Correlation Filter

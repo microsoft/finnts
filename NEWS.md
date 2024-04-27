@@ -1,13 +1,18 @@
-# finnts 0.4.0.9002 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9003 (DEVELOPMENT VERSION)
 
 ## Improvements
 
 -   Added support for hierarchical forecasting with external regressors
+-   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
 
 ## Bug Fixes
 
 -   Error in run_type column join in final forecast output
 -   Error in running feature selection
+
+## Breaking Changes
+
+-   Minimum R version now set to R 4.0 to comply with package dependency minimum version for tune
 
 # finnts 0.4.0
 
