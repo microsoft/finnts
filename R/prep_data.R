@@ -419,7 +419,7 @@ prep_data <- function(run_info,
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
-              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon),
+              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
               get_rolling_window_periods(rolling_window_periods, date_type),
               hist_end_date,
               date_type
@@ -591,7 +591,7 @@ prep_data <- function(run_info,
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
-              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon),
+              get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
               get_rolling_window_periods(rolling_window_periods, date_type)
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
@@ -929,13 +929,15 @@ get_fourier_periods <- function(fourier_periods,
 #' @param date_type date type
 #' @param forecast_horizon forecast horizon
 #' @param multistep_horizon multistep horizon
+#' @param feature_engineering adjust lags used for feature engineering
 #'
 #' @return list of lag periods
 #' @noRd
 get_lag_periods <- function(lag_periods,
                             date_type,
                             forecast_horizon,
-                            multistep_horizon = FALSE) {
+                            multistep_horizon = FALSE,
+                            feature_engineering = FALSE) {
   if (!is.null(lag_periods)) {
     return(lag_periods)
   }
@@ -950,11 +952,23 @@ get_lag_periods <- function(lag_periods,
   # change multistep horizons to run based on date type
   if (multistep_horizon) {
     if (date_type == "day") {
-      oplist <- c(28, 90, 180)
+      if (feature_engineering) {
+        oplist <- c(28, 60, 90, 180, 365)
+      } else {
+        oplist <- c(28, 90, 180)
+      }
     } else if (date_type == "week") {
-      oplist <- c(4, 12, 24)
+      if (feature_engineering) {
+        oplist <- c(4, 8, 12, 24, 48, 52)
+      } else {
+        oplist <- c(4, 12, 24)
+      }
     } else if (date_type == "month") {
-      c(1, 2, 3, 6, 12)
+      if (feature_engineering) {
+        oplist <- c(1, 2, 3, 6, 9, 12)
+      } else {
+        oplist <- c(1, 2, 3, 6, 12)
+      }
     }
 
     if (max(oplist) < forecast_horizon) {
