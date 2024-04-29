@@ -158,7 +158,7 @@
 <div class="section level3">
 <h3 id="multistep-horizon-models">Multistep Horizon Models<a class="anchor" aria-label="anchor" href="#multistep-horizon-models"></a>
 </h3>
-<p>By default within <code><a href="../reference/prep_models.html">prep_models()</a></code>, the <code>multistep_horizon</code> argument is set to TRUE. Meaning a multistep horizon approach is taken for specific multivariate models trained on the R1 feature engineering recipe. Below are the models that can run as multistep.</p>
+<p>By default within <code><a href="../reference/prep_models.html">prep_models()</a></code>, the <code>multistep_horizon</code> argument is set to FALSE. If set to TRUE, a multistep horizon approach is taken for specific multivariate models trained on the R1 feature engineering recipe. Below are the models that can run as multistep.</p>
 <ul>
 <li>cubist</li>
 <li>glmnet</li>
@@ -167,7 +167,7 @@
 <li>svm-rbf</li>
 <li>xgboost</li>
 </ul>
-<p>A multistep model optimizes for each period in a forecast horizon. Let’s take an example of a monthly data set with a forecast horizon of 3. When creating the features for the R1 recipe, finnts will create lags of 1, 2, 3, 6, 9, 12 months. Then when training a mulitstep model it will iteratively use specific features to train the model. First it will train a model on the first forecast horizon (H1), where it will use all available feature lags. Then for H2 it will use lags of 2 or more. Finally for H3 it will use lags of 3 or more. So the final model is actually a collection of multiple models that each trained on a specific horizon. This let’s the model optimize for using all available data when creating the forecast. so in our example one glmnet model actually has three separate horizon specific models under the hood.</p>
+<p>A multistep model optimizes for each period in a forecast horizon. Let’s take an example of a monthly data set with a forecast horizon of 3. When creating the features for the R1 recipe, finnts will create lags of 1, 2, 3, 6, 9, 12 months. Then when training a mulitstep model it will iteratively use specific features to train the model. First it will train a model on the first forecast horizon (H1), where it will use all available feature lags. Then for H2 it will use lags of 2 or more. Finally for H3 it will use lags of 3 or more. So the final model is actually a collection of multiple models that each trained on a specific horizon. This lets the model optimize for using all available data when creating the forecast. So in our example, one glmnet model actually has three separate horizon specific models under the hood.</p>
 <p>A few more things to mention. If <code>multistep_horizon</code> is TRUE then other multivariate models like arima-boost or prophet-xregs will not run a multistep horizon approach. Instead they will use lags that are equal to or greater than the forecast horizon. One set of hyperparameters will be chosen for each multistep model, meaning glmnet will only use one combination of final hyperparameters and apply it to each horizon model. Multistep models are not ran for the R2 recipe, since it has it’s own way of dealing with multiple horizons. Finally if <code>feature_selection</code> is turned on, it will be ran for each horizon specific model, meaning for a 3 month forecast horizon the feature selection process will be ran 3 times. One for each combination of features tied to a specific horizon.</p>
 </div>
 <div class="section level2">
