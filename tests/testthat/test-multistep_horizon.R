@@ -28,7 +28,7 @@ test_that("multistep_horizon monthly data", {
     back_test_scenarios = 2,
     models_to_run = "cubist",
     run_ensemble_models = FALSE,
-    num_hyperparameters = 1, 
+    num_hyperparameters = 1,
     pca = TRUE
   )
 

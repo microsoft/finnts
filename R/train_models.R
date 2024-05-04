@@ -98,8 +98,6 @@ train_models <- function(run_info,
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
-  } else if (forecast_approach != "bottoms_up") {
-    run_global_models <- FALSE
   } else if (is.null(run_global_models)) {
     run_global_models <- TRUE
   } else {
@@ -479,7 +477,7 @@ train_models <- function(run_info,
 
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
-          resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+          resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation"), tune = TRUE, seed = seed),
           grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
           control = tune::control_grid(
             allow_par = inner_parallel,
@@ -652,7 +650,7 @@ train_models <- function(run_info,
         tidyr::unnest(Forecast_Tbl) %>%
         dplyr::arrange(Train_Test_ID) %>%
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
-        dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+        dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
         dplyr::ungroup()
 
@@ -782,10 +780,15 @@ negative_fcst_adj <- function(data,
 #'
 #' @param data data frame
 #' @param train_test_splits list of finnts train test splits df
+#' @param tune shorten training data for tuning on large datasets
+#' @param seed set random seed
 #'
 #' @return tbl with train test splits
 #' @noRd
-create_splits <- function(data, train_test_splits) {
+create_splits <- function(data,
+                          train_test_splits,
+                          tune = FALSE,
+                          seed = 123) {
 
   # Create the rsplit object
   analysis_split <- function(data, train_indices, test_indices) {
@@ -806,13 +809,23 @@ create_splits <- function(data, train_test_splits) {
     test_end <- train_test_splits$Test_End[i]
     train_test_id <- train_test_splits$Train_Test_ID[i]
 
-    # Create the train and test indices
+    # Create the train indices
     train_indices <- which(data$Date <= train_end)
 
+    if (tune && length(train_indices) > 1000) {
+      set.seed(seed) # For reproducibility
+      train_indices <- data %>%
+        dplyr::mutate(Row_Number = dplyr::row_number()) %>%
+        dplyr::filter(Date <= train_end) %>%
+        dplyr::sample_n(1000, replace = FALSE) %>%
+        dplyr::pull(Row_Number)
+    }
+
+    # Create the test indices
     if ("Train_Test_ID" %in% colnames(data)) {
       test_indices <- which(data$Train_Test_ID == train_test_id)
     } else if ("Horizon" %in% colnames(data)) {
-      # adjust for the horizon in R2 recipe data
+      # Adjust for the horizon in R2 recipe data
       train_data <- data %>%
         dplyr::filter(
           Horizon == 1,

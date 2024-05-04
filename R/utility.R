@@ -15,7 +15,7 @@ utils::globalVariables(c(
   "Auto_Accept", "Feature", "Imp", "Importance", "LOFO_Var", "Var_RMSE", "Vote", "Votes", "desc",
   "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
   "Var_Combo", "regressor", "regressor_tbl", "value_level_iter", ".actual", ".fitted",
-  "forecast_horizon", "lag", "new_data", "object", "fit"
+  "forecast_horizon", "lag", "new_data", "object", "fit", "Row_Num", "Row_Number", "Run_Number"
 ))
 
 #' @importFrom magrittr %>%

@@ -4,7 +4,8 @@
 
 -   Added support for hierarchical forecasting with external regressors
 -   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
--   Spark enabled global models
+-   Faster hyperparameter tuning for large data sets
+-   Allow global models for hierarchical forecasts
 
 ## Bug Fixes
 
