@@ -797,6 +797,9 @@ create_splits <- function(data,
       data = data
     )
   }
+  
+  # For reproducibility
+  set.seed(seed)
 
   # Create a list to store the splits and a vector to store the IDs
   splits <- list()
@@ -813,7 +816,6 @@ create_splits <- function(data,
     train_indices <- which(data$Date <= train_end)
 
     if (tune && length(train_indices) > 1000) {
-      set.seed(seed) # For reproducibility
       train_indices <- data %>%
         dplyr::mutate(Row_Number = dplyr::row_number()) %>%
         dplyr::filter(Date <= train_end) %>%
