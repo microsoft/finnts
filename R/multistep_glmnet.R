@@ -427,6 +427,13 @@ predict.glmnet_multistep_fit_impl <- function(object, new_data, ...) {
 #' @export
 glmnet_multistep_predict_impl <- function(object, new_data, ...) {
 
+  # Date Mapping Table
+  date_tbl <- new_data %>%
+    dplyr::select(Date, Date_index.num) %>%
+    dplyr::distinct() %>%
+    dplyr::arrange(Date) %>%
+    dplyr::mutate(Run_Number = dplyr::row_number())
+
   # PREPARE INPUTS
   xreg_recipe <- object$extras$xreg_recipe
   h_horizon <- nrow(new_data)
@@ -435,14 +442,16 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
   xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
     new_data,
     format = "tbl"
-  )
+  ) %>%
+    dplyr::left_join(date_tbl, by = "Date_index.num") %>%
+    dplyr::mutate(Row_Num = dplyr::row_number())
 
   # PREDICTIONS
   final_prediction <- tibble::tibble()
   start_val <- 1
 
   for (model_name in names(object$models)) {
-    if (start_val > nrow(xreg_tbl)) {
+    if (start_val > nrow(date_tbl)) {
       break
     }
 
@@ -451,7 +460,10 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
     glmnet_model <- object$models[[model_name]]
 
     xreg_tbl_final <- xreg_tbl %>%
-      dplyr::slice(start_val:lag_number)
+      dplyr::filter(
+        Run_Number >= start_val,
+        Run_Number <= lag_number
+      )
 
     if (!is.null(xreg_tbl)) {
       preds_glmnet <- predict(glmnet_model, xreg_tbl_final)
@@ -459,9 +471,17 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
       preds_glmnet <- rep(0, h_horizon)
     }
 
+    preds_glmnet <- preds_glmnet %>%
+      dplyr::mutate(Row_Num = xreg_tbl_final$Row_Num)
+
     start_val <- as.numeric(lag_number) + 1
     final_prediction <- rbind(final_prediction, preds_glmnet)
   }
+
+  # Ensure it's sorted correctly for global models
+  final_prediction <- final_prediction %>%
+    dplyr::arrange(Row_Num) %>%
+    dplyr::select(.pred)
 
   return(final_prediction)
 }

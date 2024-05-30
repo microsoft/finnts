@@ -98,8 +98,6 @@ train_models <- function(run_info,
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
-  } else if (forecast_approach != "bottoms_up") {
-    run_global_models <- FALSE
   } else if (is.null(run_global_models)) {
     run_global_models <- TRUE
   } else {
@@ -652,7 +650,7 @@ train_models <- function(run_info,
         tidyr::unnest(Forecast_Tbl) %>%
         dplyr::arrange(Train_Test_ID) %>%
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
-        dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+        dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
         dplyr::ungroup()
 
