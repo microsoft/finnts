@@ -42,7 +42,7 @@ Can also include external regressors for both historical and future data.}
 \item{target_variable}{The column header formatted as a character value within input data you want to forecast.}
 
 \item{date_type}{The date granularity of the input data. Finn accepts the following as a character string:
-day, week, month, quarter, year.}
+day, week, month, quarter, year. Default will detect automatically based on the difference of the first two dates.}
 
 \item{forecast_horizon}{Number of periods to forecast into the future.}
 
