@@ -1,8 +1,9 @@
-# finnts 0.4.0.9003 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9004 (DEVELOPMENT VERSION)
 
 ## Improvements
 
 -   Added support for hierarchical forecasting with external regressors
+-   Allow global models for hierarchical forecasts
 -   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
 
 ## Bug Fixes
