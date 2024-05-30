@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9003</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9004</span>
       </span>
     </div>
 
@@ -186,8 +186,9 @@
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12 &lt;dbl&gt;, Target_lag6_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag9_roll3_Avg &lt;dbl&gt;, Target_lag12_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll6_Avg &lt;dbl&gt;, Target_lag9_roll6_Avg &lt;dbl&gt;,</span></span></span>
-<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12_roll6_Avg &lt;dbl&gt;, Target_lag6_roll9_Avg &lt;dbl&gt;, …</span></span></span>
-<span></span>
+<span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12_roll6_Avg &lt;dbl&gt;, Target_lag6_roll9_Avg &lt;dbl&gt;, …</span></span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
 <span><span class="va">R2_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
 <span>                                        recipe <span class="op">=</span> <span class="st">"R2"</span><span class="op">)</span></span>
 <span></span>
@@ -218,7 +219,7 @@
 </h2>
 <p>Now that our data is prepared for modeling, let’s now train some models. First we need to create the model workflows, determine our back testing process, and how many hyperparameter combinations to try during the validation process.</p>
 <p>Then we can kick off training each model on our data.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
 <span>            models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"glmnet"</span><span class="op">)</span>, </span>
 <span>            num_hyperparameters <span class="op">=</span> <span class="fl">2</span><span class="op">)</span></span>
@@ -230,21 +231,21 @@
 <h2 id="train-ensemble-models">Train Ensemble Models<a class="anchor" aria-label="anchor" href="#train-ensemble-models"></a>
 </h2>
 <p>After each individual model is trained, we can feed those predictions into ensemble models.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/ensemble_models.html">ensemble_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="final-models">Final Models<a class="anchor" aria-label="anchor" href="#final-models"></a>
 </h2>
 <p>The last step is to create the final simple model averages and select the best models.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/final_models.html">final_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="get-forecast-results">Get Forecast Results<a class="anchor" aria-label="anchor" href="#get-forecast-results"></a>
 </h2>
 <p>Finally we can now retrieve the forecast results from this Finn run.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
 <span></span>

@@ -46,7 +46,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9003</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9004</span>
       </span>
     </div>
 
@@ -173,8 +173,9 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 8</span> M1    2013-08-01  <span style="text-decoration: underline;">9</span>610</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;"> 9</span> M1    2013-09-01  <span style="text-decoration: underline;">8</span>270</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> M1    2013-10-01  <span style="text-decoration: underline;">9</span>200</span></span>
-<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 110 more rows</span></span></span>
-<span></span>
+<span><span class="co">#&gt; <span style="color: #949494;"># ℹ 110 more rows</span></span></span></code></pre></div>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] "M1"    "M2"    "M750"  "M1000"</span></span></code></pre></div>
 <p>The above data set contains 4 individual time series, identified using the “id” column.</p>
@@ -183,14 +184,14 @@
 <h2 id="create-finn-forecast">2. Create Finn Forecast<a class="anchor" aria-label="anchor" href="#create-finn-forecast"></a>
 </h2>
 <p>Before we call the Finn forecast function. Let’s first set up some run information using <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, this helps log all components of our Finn forecast successfully.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
 <span>  experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span>, </span>
 <span>  run_name <span class="op">=</span> <span class="st">"test_run"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>Calling the “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="co"># no need to assign it to a variable, since all of the outputs are written to disk :)</span></span>
 <span><span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span></span>
@@ -211,7 +212,7 @@
 <div class="section level3">
 <h3 id="initial-finn-outputs">Initial Finn Outputs<a class="anchor" aria-label="anchor" href="#initial-finn-outputs"></a>
 </h3>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
 <span></span>
@@ -220,7 +221,7 @@
 <div class="section level3">
 <h3 id="future-forecast">Future Forecast<a class="anchor" aria-label="anchor" href="#future-forecast"></a>
 </h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span></span>
 <span><span class="va">future_forecast_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Future_Forecast"</span><span class="op">)</span></span>
@@ -230,7 +231,7 @@
 <div class="section level3">
 <h3 id="back-test-results">Back Test Results<a class="anchor" aria-label="anchor" href="#back-test-results"></a>
 </h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">back_test_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Back_Test"</span><span class="op">)</span></span>
 <span></span>
@@ -239,7 +240,7 @@
 <div class="section level3">
 <h3 id="back-test-best-model-per-time-series">Back Test Best Model per Time Series<a class="anchor" aria-label="anchor" href="#back-test-best-model-per-time-series"></a>
 </h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">best_model_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Best_Model</span> <span class="op">==</span> <span class="st">"Yes"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">Combo</span>, <span class="va">Model_ID</span>, <span class="va">Model_Name</span>, <span class="va">Model_Type</span>, <span class="va">Recipe_ID</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
@@ -251,7 +252,7 @@
 <div class="section level3">
 <h3 id="trained-models">Trained Models<a class="anchor" aria-label="anchor" href="#trained-models"></a>
 </h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">trained_model_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_trained_models.html">get_trained_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">trained_model_tbl</span><span class="op">)</span></span></code></pre></div>
@@ -259,7 +260,7 @@
 <div class="section level3">
 <h3 id="initial-prepped-data">Initial Prepped Data<a class="anchor" aria-label="anchor" href="#initial-prepped-data"></a>
 </h3>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">R1_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span>, </span>
 <span>                                        recipe <span class="op">=</span> <span class="st">"R1"</span><span class="op">)</span></span>
 <span></span>
@@ -273,7 +274,7 @@
 <div class="section level3">
 <h3 id="run-info-metadata">Run Info Metadata<a class="anchor" aria-label="anchor" href="#run-info-metadata"></a>
 </h3>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">run_info_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_run_info.html">get_run_info</a></span><span class="op">(</span>experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">run_info_tbl</span><span class="op">)</span></span></code></pre></div>
