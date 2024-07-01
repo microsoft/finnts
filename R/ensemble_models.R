@@ -81,6 +81,7 @@ ensemble_models <- function(run_info,
   run_local_models <- log_df$run_local_models
   models_to_run <- log_df$models_to_run
   models_not_to_run <- log_df$models_not_to_run
+  forecast_horizon <- as.numeric(log_df$forecast_horizon)
 
   if (log_df$run_ensemble_models == FALSE) {
     cli::cli_alert_info("Ensemble models have been turned off.")
@@ -234,7 +235,11 @@ ensemble_models <- function(run_info,
         avail_arg_list <- list(
           "train_data" = prep_ensemble_tbl %>% dplyr::select(-Train_Test_ID),
           "model_type" = "ensemble",
-          "pca" = FALSE
+          "pca" = FALSE, # not used in ensemble
+          "multistep" = FALSE, # not used in ensemble
+          "horizon" = NULL, # not used in ensemble
+          "frequency" = NULL, # not used in ensemble
+          "external_regressors" = NULL # not used in ensemble
         )
 
         # get specific model spec
@@ -357,7 +362,7 @@ ensemble_models <- function(run_info,
 
         tune_results <- tune::tune_grid(
           object = workflow,
-          resamples = create_splits(prep_ensemble_tbl, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+          resamples = create_splits(prep_ensemble_tbl %>% dplyr::select(-Combo, -Train_Test_ID), model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
           grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
           control = tune::control_grid(
             allow_par = inner_parallel,

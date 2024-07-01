@@ -224,7 +224,7 @@ train_test_split <- function(run_info,
 
   if (sum(model_workflow_list %in% ensemble_model_list) == 0 & run_ensemble_models) {
     run_ensemble_models <- FALSE
-    cli::cli_alert_info("Turning ensemble models off since no multivariate models were chosen to run.")
+    cli::cli_alert_info("Turning ensemble models off since no ensemble models were chosen to run.")
     cli::cli_progress_update()
   }
 
@@ -331,12 +331,14 @@ train_test_split <- function(run_info,
 
       test_tbl <- temp_tbl %>%
         dplyr::filter(Date <= min(back_test_date$Train_End))
-    } else {
+    } else if (as.numeric(id) > back_test_scenarios_final & as.numeric(id) < max(back_test_scenarios_final + (forecast_horizon / back_test_spacing_final) + 1, back_test_scenarios_final * 2)){
       run_type <- "Ensemble"
 
       test_tbl <- temp_tbl %>%
         dplyr::filter(.key == "testing") %>%
         dplyr::select(Date)
+    } else {
+      next 
     }
 
     train_test_tbl <- tibble::tibble(
@@ -352,9 +354,13 @@ train_test_split <- function(run_info,
 
   # check for back test and validation data
   if (!("Validation" %in% unique(train_test_final$Run_Type))) {
-    stop("No validation data produced. Add more historical data, shorten the forecast horizon, or shorten the number of back test scenarios")
+    stop("No validation data produced. Add more historical data, shorten the forecast horizon, or shorten the number of back test scenarios.")
   } else if (!("Back_Test" %in% unique(train_test_final$Run_Type))) {
-    stop("No back testing data produced. Shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing")
+    stop("No back testing data produced. Shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing.")
+  } else if(!("Ensemble" %in% unique(train_test_final$Run_Type)) & run_ensemble_models) {
+    run_ensemble_models <- FALSE
+    cli::cli_alert_info("Turning ensemble models off since no ensemble train/test splits could be created. To fix this either add more historical data, shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing.")
+    cli::cli_progress_update()
   }
 
   # adjust based on models planned to run
