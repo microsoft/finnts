@@ -34,7 +34,7 @@ list_hyperparmater_models <- function() {
 #' @noRd
 list_ensemble_models <- function() {
   list <- c(
-    "cubist", "glmnet", "svm-poly", "svm-rbf", "xgboost"
+    "glmnet", "xgboost"
   )
 
   return(list)
@@ -692,6 +692,7 @@ ets <- function(train_data,
 #' @param horizon horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param model_type single or ensemble
 #'
 #' @return Get the GLM Net model
 #' @noRd
@@ -700,7 +701,8 @@ glmnet <- function(train_data,
                    multistep,
                    horizon,
                    external_regressors,
-                   frequency) {
+                   frequency,
+                   model_type = "single") {
 
   # create model recipe and spec
   if (multistep) {
@@ -722,6 +724,22 @@ glmnet <- function(train_data,
       lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE)
     ) %>%
       parsnip::set_engine("glmnet_multistep_horizon")
+  } else if (model_type == "ensemble") {
+    recipe_spec_glmnet <- train_data %>%
+      get_recipe_configurable(
+        rm_date = "with_adj",
+        step_nzv = "zv",
+        one_hot = FALSE,
+        center_scale = FALSE,
+        pca = pca
+      )
+    
+    model_spec_glmnet <- parsnip::linear_reg(
+      mode = "regression",
+      penalty = tune::tune(),
+      mixture = tune::tune()
+    ) %>%
+      parsnip::set_engine("glmnet", lower.limits = 0)
   } else {
     recipe_spec_glmnet <- train_data %>%
       get_recipe_configurable(
