@@ -580,7 +580,8 @@ final_models <- function(run_info,
         }
       }
 
-      return(best_model_mape)
+      # return(best_model_mape)
+      return(data.frame(Combo_Hash = combo))
     } %>%
     base::suppressPackageStartupMessages()
 
@@ -607,8 +608,8 @@ final_models <- function(run_info,
   ) %>%
     dplyr::mutate(
       average_models = average_models,
-      max_model_average = max_model_average,
-      weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE)
+      max_model_average = max_model_average#,
+      #weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE)
     )
 
   write_data(
