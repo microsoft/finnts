@@ -186,6 +186,8 @@ final_models <- function(run_info,
   ) %op%
     {
       combo <- x
+      
+      Sys.sleep(runif(1, min = 3, max = 90))
 
       # get individual and ensemble model predictions
       train_test_id_list <- model_train_test_tbl %>%
