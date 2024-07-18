@@ -288,6 +288,11 @@ final_models <- function(run_info,
       } else {
         best_model_check <- FALSE
       }
+      
+      # if best model is already selected, end job
+      if(best_model_check) {
+        return(data.frame(Combo_Hash = combo))
+      }
 
       # combine all forecasts
       predictions_tbl <- local_model_tbl %>%
