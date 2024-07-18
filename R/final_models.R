@@ -175,7 +175,7 @@ final_models <- function(run_info,
 
   # submit tasks
   best_model_tbl <- foreach::foreach(
-    x = current_combo_list,
+    x = current_combo_list_final,
     .combine = "rbind",
     .packages = packages,
     .errorhandling = "stop",
@@ -581,7 +581,7 @@ final_models <- function(run_info,
       }
 
       # return(best_model_mape)
-      Sys.sleep(runif(1, min = 30, max = 90))
+      # Sys.sleep(runif(1, min = 30, max = 90))
       return(data.frame(Combo_Hash = combo))
     } %>%
     base::suppressPackageStartupMessages()
