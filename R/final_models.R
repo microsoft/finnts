@@ -581,7 +581,7 @@ final_models <- function(run_info,
       }
 
       # return(best_model_mape)
-      Sys.sleep(runif(1, min = 10, max = 30))
+      Sys.sleep(runif(1, min = 30, max = 90))
       return(data.frame(Combo_Hash = combo))
     } %>%
     base::suppressPackageStartupMessages()
