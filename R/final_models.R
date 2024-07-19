@@ -186,8 +186,6 @@ final_models <- function(run_info,
   ) %op%
     {
       combo <- x
-      
-      Sys.sleep(runif(1, min = 3, max = 90))
 
       # get individual and ensemble model predictions
       train_test_id_list <- model_train_test_tbl %>%
@@ -264,35 +262,6 @@ final_models <- function(run_info,
 
       # check if model averaging already happened
       if ("Best_Model" %in% colnames(local_model_tbl %>% rbind(global_model_tbl))) {
-        # see if average models file exists and add to model tbl
-        average_model_tbl <- tryCatch(
-          {
-            read_file(run_info,
-              path = paste0(
-                "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-                "-", combo, "-average_models.", run_info$data_output
-              ),
-              return_type = "df"
-            )
-          },
-          warning = function(w) {
-            # do nothing
-          },
-          error = function(e) {
-            NULL
-          }
-        )
-
-        local_model_tbl <- local_model_tbl %>%
-          rbind(average_model_tbl)
-
-        best_model_check <- TRUE
-      } else {
-        best_model_check <- FALSE
-      }
-      
-      # if best model is already selected, end job
-      if(best_model_check) {
         return(data.frame(Combo_Hash = combo))
       }
 
@@ -322,7 +291,7 @@ final_models <- function(run_info,
       final_model_list <- c(local_model_list, global_model_list)
 
       # simple model averaging
-      if (average_models & length(final_model_list) > 1 & !best_model_check) {
+      if (average_models & length(final_model_list) > 1) {
 
         # create model combinations list
         model_combinations <- tibble::tibble()
@@ -391,8 +360,35 @@ final_models <- function(run_info,
       } else {
         averages_tbl <- NULL
       }
+      
+      # choose best average model
+      if(!is.null(averages_tbl)) {
+        avg_back_test_mape <- averages_tbl %>%
+          dplyr::mutate(
+            Train_Test_ID = as.numeric(Train_Test_ID),
+            Target = ifelse(Target == 0, 0.1, Target)
+          ) %>%
+          dplyr::filter(Train_Test_ID != 1) %>%
+          dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+        
+        avg_best_model_mape <- avg_back_test_mape %>%
+          dplyr::group_by(Model_ID, Combo) %>%
+          dplyr::mutate(
+            Combo_Total = sum(abs(Target), na.rm = TRUE),
+            weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
+          ) %>%
+          dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
+          dplyr::arrange(Rolling_MAPE) %>%
+          dplyr::ungroup() %>%
+          dplyr::group_by(Combo) %>%
+          dplyr::slice(1) %>%
+          dplyr::ungroup()
+        
+        avg_best_model_tbl <- avg_best_model_mape %>%
+          dplyr::select(Combo, Model_ID)
+      }
 
-      # choose best model
+      # choose best overall model
       final_predictions_tbl <- predictions_tbl %>%
         dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Forecast, Target) %>%
         rbind(averages_tbl)
@@ -520,7 +516,6 @@ final_models <- function(run_info,
           )
         }
       } else { # choose the most accurate individual model and write outputs
-
         final_model_tbl <- tibble::tibble(Model_ID = final_model_list) %>%
           dplyr::left_join(
             best_model_final_tbl %>%
@@ -528,6 +523,35 @@ final_models <- function(run_info,
             by = "Model_ID"
           ) %>%
           dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
+        
+        if(!is.null(averages_tbl)) {
+          avg_model_final_tbl <- averages_tbl %>%
+            dplyr::right_join(avg_best_model_tbl,
+                              by = c("Combo", "Model_ID")
+            ) %>%
+            dplyr::mutate(
+              Combo_ID = Combo,
+              Model_Name = "NA",
+              Model_Type = "local",
+              Recipe_ID = "simple_average",
+              Hyperparameter_ID = "NA",
+              Best_Model = "No"
+            ) %>%
+            dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
+            dplyr::mutate(Horizon = dplyr::row_number()) %>%
+            dplyr::ungroup() %>%
+            create_prediction_intervals(model_train_test_tbl) %>%
+            convert_weekly_to_daily(date_type, weekly_to_daily)
+
+          write_data(
+            x = avg_model_final_tbl,
+            combo = unique(avg_model_final_tbl$Combo),
+            run_info = run_info,
+            output_type = "data",
+            folder = "forecasts",
+            suffix = "-average_models"
+          )
+        }
 
         if (!is.null(single_model_tbl)) {
           single_model_final_tbl <- single_model_tbl %>%
@@ -588,7 +612,6 @@ final_models <- function(run_info,
       }
 
       # return(best_model_mape)
-      # Sys.sleep(runif(1, min = 30, max = 90))
       return(data.frame(Combo_Hash = combo))
     } %>%
     base::suppressPackageStartupMessages()
