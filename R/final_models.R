@@ -124,7 +124,8 @@ final_models <- function(run_info,
   current_combo_list_final <- setdiff(
     current_combo_list,
     prev_combo_list
-  )
+  ) %>%
+    sample()
 
   prev_log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
