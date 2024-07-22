@@ -3,7 +3,8 @@
 #' Select Best Models and Prep Final Outputs
 #'
 #' @param run_info run info using the [set_run_info()] function.
-#' @param average_models If TRUE, create simple averages of individual models.
+#' @param average_models If TRUE, create simple averages of individual models
+#'  and save the most accurate one.
 #' @param max_model_average Max number of models to average together. Will
 #'   create model averages for 2 models up until input value or max number of
 #'   models ran.
@@ -612,7 +613,6 @@ final_models <- function(run_info,
         }
       }
 
-      # return(best_model_mape)
       return(data.frame(Combo_Hash = combo))
     } %>%
     base::suppressPackageStartupMessages()
@@ -632,6 +632,20 @@ final_models <- function(run_info,
       num_cores
     )
   }
+  
+  # calculate weighted mape
+  weighted_mape <- get_forecast_data(run_info = run_info) %>%
+    dplyr::filter(Run_Type == "Back_Test", 
+                  Best_Model == "Yes") %>%
+    dplyr::mutate(
+      Target = ifelse(Target == 0, 0.1, Target)
+    ) %>%
+    dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4), 
+                  Total = sum(Target, na.rm = TRUE), 
+                  Weight = (MAPE*Target)/Total) %>%
+    dplyr::pull(Weight) %>%
+    sum() %>%
+    round(digits = 4)
 
   # update logging file
   log_df <- read_file(run_info,
@@ -640,8 +654,8 @@ final_models <- function(run_info,
   ) %>%
     dplyr::mutate(
       average_models = average_models,
-      max_model_average = max_model_average#,
-      #weighted_mape = base::mean(best_model_tbl$Rolling_MAPE, na.rm = TRUE)
+      max_model_average = max_model_average,
+      weighted_mape = round(weighted_mape, digits = 4)
     )
 
   write_data(
