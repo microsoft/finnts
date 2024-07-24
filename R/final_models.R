@@ -140,7 +140,7 @@ final_models <- function(run_info,
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
 
-  if ((length(current_combo_list_final) == 0 & length(prev_combo_list) > 0) | sum(colnames(prev_log_df) %in% "weighted_mape")) {
+  if (sum(colnames(prev_log_df) %in% "weighted_mape")) {
 
     # check if input values have changed
     current_log_df <- tibble::tibble(
