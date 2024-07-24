@@ -633,6 +633,13 @@ final_models <- function(run_info,
     )
   }
   
+  # condense outputs into less files for larger runs
+  if(length(combo_list) > 1000) {
+    condense_data(run_info, 
+                  parallel_processing,
+                  num_cores)
+  }
+  
   # calculate weighted mape
   weighted_mape <- get_forecast_data(run_info = run_info) %>%
     dplyr::filter(Run_Type == "Back_Test", 

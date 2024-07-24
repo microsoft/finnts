@@ -60,7 +60,7 @@ get_forecast_data <- function(run_info,
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   forecast_approach <- log_df$forecast_approach
 
-  # get forecast data
+  # get train test split data
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
       "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
@@ -71,7 +71,28 @@ get_forecast_data <- function(run_info,
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
-  if (forecast_approach == "bottoms_up") {
+  # check if data has been condensed
+  cond_path <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
+  )
+  
+  condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
+  
+  if (length(condensed_files) > 0) {
+    condensed <- TRUE
+  } else {
+    condensed <- FALSE
+  }
+  
+  # get forecast data
+  if(condensed) {
+    print("reading condensed files")
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
+    )
+  } else if (forecast_approach == "bottoms_up") {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
