@@ -6,6 +6,7 @@
 -   Allow global models for hierarchical forecasts
 -   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
 -   Always save the most accurate model average, regardless if selected as best model. This allows for improved scaling with large data sets.
+-   Automatically condense large forecasts (+10k time series) into smaller amount of files to make it easier to read forecast outputs
 -   Improved weighted MAPE calculation across all time series
 
 ## Bug Fixes
