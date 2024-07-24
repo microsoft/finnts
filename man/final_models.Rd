@@ -17,7 +17,8 @@ final_models(
 \arguments{
 \item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
 
-\item{average_models}{If TRUE, create simple averages of individual models.}
+\item{average_models}{If TRUE, create simple averages of individual models
+and save the most accurate one.}
 
 \item{max_model_average}{Max number of models to average together. Will
 create model averages for 2 models up until input value or max number of
