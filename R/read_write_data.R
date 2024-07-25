@@ -715,7 +715,7 @@ condense_data <- function(run_info,
   list_of_batches <- list()
   
   # Define the batch size
-  batch_size <- 100
+  batch_size <- 10000
   
   # Calculate the number of batches needed
   num_batches <- ceiling(length(initial_file_list) / batch_size)

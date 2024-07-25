@@ -621,7 +621,7 @@ final_models <- function(run_info,
   par_end(cl)
   
   # condense outputs into less files for larger runs
-  if(length(combo_list) > 100) {
+  if(length(combo_list) > 10000) {
     cli::cli_progress_step("Condensing Forecasts")
     
     condense_data(run_info, 
