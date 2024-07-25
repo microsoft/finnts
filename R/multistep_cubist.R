@@ -1,4 +1,3 @@
-
 # CUBIST Multistep ----
 
 #' Initialize custom cubist parsnip model
@@ -298,7 +297,6 @@ cubist_multistep_fit_impl <- function(x, y,
                                       external_regressors = NULL,
                                       forecast_horizon = NULL,
                                       selected_features = NULL) {
-
   # X & Y
   # Expect outcomes  = vector
   # Expect predictor = data.frame
@@ -321,7 +319,6 @@ cubist_multistep_fit_impl <- function(x, y,
   model_predictions <- list()
 
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
-
     # get final features based on lag
     xreg_tbl_final <- multi_feature_selection(
       xreg_tbl,
@@ -438,7 +435,6 @@ predict.cubist_multistep_fit_impl <- function(object, new_data, ...) {
 #' @keywords internal
 #' @export
 cubist_multistep_predict_impl <- function(object, new_data, ...) {
-
   # Date Mapping Table
   date_tbl <- new_data %>%
     dplyr::select(Date, Date_index.num) %>%

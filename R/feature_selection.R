@@ -23,10 +23,8 @@ run_feature_selection <- function(input_data,
                                   forecast_horizon,
                                   external_regressors,
                                   multistep_horizon = FALSE) {
-
   # check for more than one unique target value
   if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
-
     # just return the date features
     fs_list <- input_data %>%
       dplyr::select(tidyselect::contains("Date"))
@@ -83,7 +81,6 @@ run_feature_selection <- function(input_data,
 
     # run feature selection
     if (date_type %in% c("day", "week")) {
-
       # number of votes needed for feature to be selected
       votes_needed <- 3
 
@@ -410,7 +407,6 @@ lofo_fn <- function(run_info,
                     parallel_processing,
                     pca = FALSE,
                     seed = 123) {
-
   # parallel run info
   par_info <- par_start(
     run_info = run_info,

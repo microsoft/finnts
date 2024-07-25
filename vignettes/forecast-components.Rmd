@@ -10,8 +10,8 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>", 
-  warning = FALSE, 
+  comment = "#>",
+  warning = FALSE,
   message = FALSE
 )
 library(finnts)
@@ -29,13 +29,15 @@ Let's get some example data and then set our Finn run info.
 library(finnts)
 
 hist_data <- timetk::m4_monthly %>%
-  dplyr::filter(date >= "2013-01-01", 
-                id == "M2") %>%
+  dplyr::filter(
+    date >= "2013-01-01",
+    id == "M2"
+  ) %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
 
 run_info <- set_run_info(
-  experiment_name = "finnts_fcst", 
+  experiment_name = "finnts_fcst",
   run_name = "finn_sub_component_run"
 )
 ```
@@ -45,20 +47,26 @@ run_info <- set_run_info(
 Clean and prepare our data before training models. We can even pull out our prepped data to see the features and transformations applied before models are trained.
 
 ```{r message=FALSE}
-prep_data(run_info = run_info, 
-          input_data = hist_data, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          forecast_horizon = 6)
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
+)
 
-R1_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
-                                        recipe = "R1")
+R1_prepped_data_tbl <- get_prepped_data(
+  run_info = run_info,
+  recipe = "R1"
+)
 
 print(R1_prepped_data_tbl)
 
-R2_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
-                                        recipe = "R2")
+R2_prepped_data_tbl <- get_prepped_data(
+  run_info = run_info,
+  recipe = "R2"
+)
 
 print(R2_prepped_data_tbl)
 ```
@@ -70,12 +78,16 @@ Now that our data is prepared for modeling, let's now train some models. First w
 Then we can kick off training each model on our data.
 
 ```{r, message = FALSE}
-prep_models(run_info = run_info, 
-            models_to_run = c("arima", "ets", "glmnet"), 
-            num_hyperparameters = 2)
+prep_models(
+  run_info = run_info,
+  models_to_run = c("arima", "ets", "glmnet"),
+  num_hyperparameters = 2
+)
 
-train_models(run_info = run_info, 
-             run_global_models = FALSE)
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
 ```
 
 ## Train Ensemble Models
@@ -99,7 +111,6 @@ final_models(run_info = run_info)
 Finally we can now retrieve the forecast results from this Finn run.
 
 ```{r, message = FALSE}
-
 finn_output_tbl <- get_forecast_data(run_info = run_info)
 
 print(finn_output_tbl)

@@ -1,4 +1,3 @@
-
 #' Prep Models
 #'
 #' Preps various aspects of run before training models. Things like train/test
@@ -60,7 +59,6 @@ prep_models <- function(run_info,
                         pca = NULL,
                         num_hyperparameters = 10,
                         seed = 123) {
-
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "numeric"))
@@ -514,7 +512,6 @@ model_workflows <- function(run_info,
   ml_models <- list_models()
 
   if (is.null(models_to_run) & is.null(models_not_to_run)) {
-
     # do nothing, using existing ml_models list
   } else if (is.null(models_to_run) & !is.null(models_not_to_run)) {
     ml_models <- setdiff(ml_models, models_not_to_run)

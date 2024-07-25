@@ -49,8 +49,8 @@ hist_data <- timetk::m4_monthly %>%
 data_sdf <- sparklyr::copy_to(sc, hist_data, "data_sdf", overwrite = TRUE)
 
 run_info <- set_run_info(
-  experiment_name = "finn_fcst", 
-  run_name = "spark_run_1", 
+  experiment_name = "finn_fcst",
+  run_name = "spark_run_1",
   path = "/dbfs/mnt/example/folder" # important that you mount an ADLS path
 )
 
@@ -60,14 +60,16 @@ forecast_time_series(
   combo_variables = c("id"),
   target_variable = "value",
   date_type = "month",
-  forecast_horizon = 3, 
-  parallel_processing = "spark", 
+  forecast_horizon = 3,
+  parallel_processing = "spark",
   return_data = FALSE
 )
 
 # return the outputs as a spark data frame
-finn_output_tbl <- get_forecast_data(run_info = run_info, 
-                                     return_type = "sdf")
+finn_output_tbl <- get_forecast_data(
+  run_info = run_info,
+  return_type = "sdf"
+)
 ```
 
 The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage all of the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set `inner_parallel` to TRUE in `forecast_time_series()`. Also make sure that you adjust the number of spark executor cores to 1, that ensures that only 1 time series runs on an executor at a time. Leverage the "spark.executor.cores" argument when configuring your spark connection. This can be done using [sparklyr](https://spark.rstudio.com/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below.) or within the cluster manager itself within the Azure resource. Use the "num_cores" argument in the "forecast_time_series" function to control how many cores should be used within an executor when running things like hyperparameter tuning.

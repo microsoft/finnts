@@ -1,4 +1,3 @@
-
 #' Get Final Forecast Data
 #'
 #' @param run_info run info using the [set_run_info()] function
@@ -46,7 +45,6 @@
 #' @export
 get_forecast_data <- function(run_info,
                               return_type = "df") {
-
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
@@ -76,17 +74,17 @@ get_forecast_data <- function(run_info,
     run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
-  
+
   condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
-  
+
   if (length(condensed_files) > 0) {
     condensed <- TRUE
   } else {
     condensed <- FALSE
   }
-  
+
   # get forecast data
-  if(forecast_approach != "bottoms_up") {
+  if (forecast_approach != "bottoms_up") {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
@@ -172,7 +170,6 @@ get_forecast_data <- function(run_info,
 #' }
 #' @export
 get_trained_models <- function(run_info) {
-
   # check input values
   check_input_type("run_info", run_info, "list")
 
@@ -228,7 +225,6 @@ get_trained_models <- function(run_info) {
 get_prepped_data <- function(run_info,
                              recipe,
                              return_type = "df") {
-
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("recipe", recipe, "character", c("R1", "R2"))
@@ -299,7 +295,6 @@ get_prepped_data <- function(run_info,
 #' }
 #' @export
 get_prepped_models <- function(run_info) {
-
   # check input values
   check_input_type("run_info", run_info, "list")
 
@@ -527,12 +522,12 @@ download_file <- function(storage_object,
 #' @noRd
 read_file <- function(run_info,
                       path = NULL,
-                      file_list = NULL, 
+                      file_list = NULL,
                       return_type = "df",
                       schema = NULL) {
   storage_object <- run_info$storage_object
-  
-  if(!is.null(path)) {
+
+  if (!is.null(path)) {
     folder <- fs::path_dir(path)
     initial_path <- run_info$path
     file <- fs::path_file(path)
@@ -551,7 +546,7 @@ read_file <- function(run_info,
     files <- list_files(storage_object, fs::path(initial_path, path))
   }
 
-  if(!is.null(file_list)) {
+  if (!is.null(file_list)) {
     file_temp <- files[[1]]
     file_ext <- fs::path_ext(file_temp)
   } else if (fs::path_ext(file) == "*") {
@@ -698,10 +693,9 @@ get_recipe_data <- function(run_info,
 #'
 #' @return nothing
 #' @noRd
-condense_data <- function(run_info, 
+condense_data <- function(run_info,
                           parallel_processing = NULL,
                           num_cores = NULL) {
-  
   # get initial list of files to condense
   initial_file_list <- list_files(
     run_info$storage_object,
@@ -710,16 +704,16 @@ condense_data <- function(run_info,
       hash_data(run_info$run_name), "*_models.", run_info$data_output
     )
   )
-  
+
   # Initialize an empty list to store the batches
   list_of_batches <- list()
-  
+
   # Define the batch size
   batch_size <- 10000
-  
+
   # Calculate the number of batches needed
   num_batches <- ceiling(length(initial_file_list) / batch_size)
-  
+
   # Loop through the large list and create batches
   for (i in 1:num_batches) {
     start_index <- (i - 1) * batch_size + 1
@@ -727,7 +721,7 @@ condense_data <- function(run_info,
     batch_name <- paste0("batch_", i)
     list_of_batches[[batch_name]] <- initial_file_list[start_index:end_index]
   }
-  
+
   # parallel run info
   par_info <- par_start(
     run_info = run_info,
@@ -735,11 +729,11 @@ condense_data <- function(run_info,
     num_cores = min(length(names(list_of_batches)), num_cores),
     task_length = length(names(list_of_batches))
   )
-  
+
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
-  
+
   # submit tasks
   condense_data_tbl <- foreach::foreach(
     batch = names(list_of_batches),
@@ -750,23 +744,23 @@ condense_data <- function(run_info,
     .inorder = FALSE,
     .multicombine = TRUE,
     .noexport = NULL
-  ) %op%
-    {
-      files <- list_of_batches[[batch]]
+  ) %op% {
+    files <- list_of_batches[[batch]]
 
-      data <- read_file(run_info,
-                        file_list = files, 
-                        return_type = "df")
-      
-      write_data(
-        x = data,
-        combo = batch,
-        run_info = run_info,
-        output_type = "data",
-        folder = "forecasts",
-        suffix = "-condensed"
-      )
-      
-      return(batch)
-    }
+    data <- read_file(run_info,
+      file_list = files,
+      return_type = "df"
+    )
+
+    write_data(
+      x = data,
+      combo = batch,
+      run_info = run_info,
+      output_type = "data",
+      folder = "forecasts",
+      suffix = "-condensed"
+    )
+
+    return(batch)
+  }
 }

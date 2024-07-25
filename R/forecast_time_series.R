@@ -323,7 +323,6 @@ forecast_backwards_compatibility <- function(run_info,
       dplyr::select(Combo, Model, Best_Model) %>%
       dplyr::distinct()
   } else {
-
     # read in unreconciled results
     best_model_tbl <- read_file(run_info,
       path = paste0(

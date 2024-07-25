@@ -701,7 +701,6 @@ glmnet <- function(train_data,
                    horizon,
                    external_regressors,
                    frequency) {
-
   # create model recipe and spec
   if (multistep) {
     recipe_spec_glmnet <- train_data %>%
@@ -1328,7 +1327,6 @@ xgboost <- function(train_data,
                     horizon,
                     external_regressors,
                     frequency) {
-
   # create model recipe and spec
   if (multistep) {
     recipe_spec_xgboost <- train_data %>%

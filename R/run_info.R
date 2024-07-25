@@ -44,7 +44,6 @@ set_run_info <- function(experiment_name = "finn_fcst",
                          data_output = "csv",
                          object_output = "rds",
                          add_unique_id = TRUE) {
-
   # initial input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
@@ -151,7 +150,6 @@ set_run_info <- function(experiment_name = "finn_fcst",
     base::suppressWarnings()
 
   if (nrow(log_df) > 0 & add_unique_id == FALSE) {
-
     # check if input values have changed
     current_log_df <- tibble::tibble(
       experiment_name = experiment_name,
@@ -266,7 +264,6 @@ get_run_info <- function(experiment_name = NULL,
                          run_name = NULL,
                          storage_object = NULL,
                          path = NULL) {
-
   # input checks
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")

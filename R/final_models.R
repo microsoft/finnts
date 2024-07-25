@@ -141,7 +141,6 @@ final_models <- function(run_info,
   run_ensemble_models <- prev_log_df$run_ensemble_models
 
   if (sum(colnames(prev_log_df) %in% "weighted_mape")) {
-
     # check if input values have changed
     current_log_df <- tibble::tibble(
       average_models = average_models,
@@ -294,7 +293,6 @@ final_models <- function(run_info,
 
       # simple model averaging
       if (average_models & length(final_model_list) > 1) {
-
         # create model combinations list
         model_combinations <- tibble::tibble()
 
@@ -338,7 +336,6 @@ final_models <- function(run_info,
           .noexport = NULL
         ) %op%
           {
-
             # get list of models to average
             model_list <- strsplit(x, "_")[[1]]
 
@@ -362,9 +359,9 @@ final_models <- function(run_info,
       } else {
         averages_tbl <- NULL
       }
-      
+
       # choose best average model
-      if(!is.null(averages_tbl)) {
+      if (!is.null(averages_tbl)) {
         avg_back_test_mape <- averages_tbl %>%
           dplyr::mutate(
             Train_Test_ID = as.numeric(Train_Test_ID),
@@ -372,7 +369,7 @@ final_models <- function(run_info,
           ) %>%
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
-        
+
         avg_best_model_mape <- avg_back_test_mape %>%
           dplyr::group_by(Model_ID, Combo) %>%
           dplyr::mutate(
@@ -385,7 +382,7 @@ final_models <- function(run_info,
           dplyr::group_by(Combo) %>%
           dplyr::slice(1) %>%
           dplyr::ungroup()
-        
+
         avg_best_model_tbl <- avg_best_model_mape %>%
           dplyr::select(Combo, Model_ID)
       }
@@ -525,11 +522,11 @@ final_models <- function(run_info,
             by = "Model_ID"
           ) %>%
           dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
-        
-        if(!is.null(averages_tbl)) {
+
+        if (!is.null(averages_tbl)) {
           avg_model_final_tbl <- averages_tbl %>%
             dplyr::right_join(avg_best_model_tbl,
-                              by = c("Combo", "Model_ID")
+              by = c("Combo", "Model_ID")
             ) %>%
             dplyr::mutate(
               Combo_ID = Combo,
@@ -619,14 +616,16 @@ final_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
-  
+
   # condense outputs into less files for larger runs
-  if(length(combo_list) > 10000) {
+  if (length(combo_list) > 10000) {
     cli::cli_progress_step("Condensing Forecasts")
-    
-    condense_data(run_info, 
-                  parallel_processing,
-                  num_cores)
+
+    condense_data(
+      run_info,
+      parallel_processing,
+      num_cores
+    )
   }
 
   # reconcile hierarchical forecasts
@@ -641,17 +640,21 @@ final_models <- function(run_info,
       num_cores
     )
   }
-  
+
   # calculate weighted mape
   weighted_mape <- get_forecast_data(run_info = run_info) %>%
-    dplyr::filter(Run_Type == "Back_Test", 
-                  Best_Model == "Yes") %>%
+    dplyr::filter(
+      Run_Type == "Back_Test",
+      Best_Model == "Yes"
+    ) %>%
     dplyr::mutate(
       Target = ifelse(Target == 0, 0.1, Target)
     ) %>%
-    dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4), 
-                  Total = sum(Target, na.rm = TRUE), 
-                  Weight = (MAPE*Target)/Total) %>%
+    dplyr::mutate(
+      MAPE = round(abs((Forecast - Target) / Target), digits = 4),
+      Total = sum(Target, na.rm = TRUE),
+      Weight = (MAPE * Target) / Total
+    ) %>%
     dplyr::pull(Weight) %>%
     sum() %>%
     round(digits = 4)

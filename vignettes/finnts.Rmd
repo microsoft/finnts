@@ -10,8 +10,8 @@ vignette: >
 ```{r, include = FALSE}
 knitr::opts_chunk$set(
   collapse = TRUE,
-  comment = "#>", 
-  warning = FALSE, 
+  comment = "#>",
+  warning = FALSE,
   message = FALSE
 )
 library(finnts)
@@ -62,18 +62,15 @@ The above data set contains 4 individual time series, identified using the "id" 
 Before we call the Finn forecast function. Let's first set up some run information using `set_run_info()`, this helps log all components of our Finn forecast successfully.
 
 ```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
-
 run_info <- set_run_info(
-  experiment_name = "finn_forecast", 
+  experiment_name = "finn_forecast",
   run_name = "test_run"
 )
-
 ```
 
 Calling the "forecast_time_series" function is the easiest part. In this example we will be running just two models.
 
 ```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
-
 # no need to assign it to a variable, since all of the outputs are written to disk :)
 forecast_time_series(
   run_info = run_info,
@@ -82,8 +79,8 @@ forecast_time_series(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
-  back_test_scenarios = 6, 
-  models_to_run = c("arima", "ets"), 
+  back_test_scenarios = 6,
+  models_to_run = c("arima", "ets"),
   return_data = FALSE
 )
 ```
@@ -93,7 +90,6 @@ forecast_time_series(
 ### Initial Finn Outputs
 
 ```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
-
 finn_output_tbl <- get_forecast_data(run_info = run_info)
 
 print(finn_output_tbl)
@@ -102,7 +98,6 @@ print(finn_output_tbl)
 ### Future Forecast
 
 ```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
-
 future_forecast_tbl <- finn_output_tbl %>%
   dplyr::filter(Run_Type == "Future_Forecast")
 
@@ -142,13 +137,17 @@ print(trained_model_tbl)
 ### Initial Prepped Data
 
 ```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-R1_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
-                                        recipe = "R1")
+R1_prepped_data_tbl <- get_prepped_data(
+  run_info = run_info,
+  recipe = "R1"
+)
 
 print(R1_prepped_data_tbl)
 
-R2_prepped_data_tbl <- get_prepped_data(run_info = run_info, 
-                                        recipe = "R2")
+R2_prepped_data_tbl <- get_prepped_data(
+  run_info = run_info,
+  recipe = "R2"
+)
 
 print(R2_prepped_data_tbl)
 ```

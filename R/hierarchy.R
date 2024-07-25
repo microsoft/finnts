@@ -82,7 +82,6 @@ prep_hierarchical_data <- function(input_data,
         hierarchical_tbl <- hierarchical_tbl %>%
           dplyr::left_join(temp_tbl, by = c("Date"))
       } else if (value_level != "All") {
-
         # agg by lowest level
         bottom_tbl <- input_data_adj %>%
           tidyr::unite("Combo",
@@ -400,7 +399,6 @@ reconcile_hierarchical_data <- function(run_info,
                                         forecast_approach,
                                         negative_forecast = FALSE,
                                         num_cores) {
-
   # get run splits
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
@@ -420,15 +418,15 @@ reconcile_hierarchical_data <- function(run_info,
   hts_nodes <- hts_list$nodes
   original_combo_list <- hts_list$original_combos
   hts_combo_list <- hts_list$hts_combos
-  
+
   # check if data has been condensed
   cond_path <- paste0(
     run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
-  
+
   condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
-  
+
   if (length(condensed_files) > 0) {
     condensed <- TRUE
   } else {
@@ -444,7 +442,7 @@ reconcile_hierarchical_data <- function(run_info,
     return_type <- "df"
   }
 
-  if(condensed) {
+  if (condensed) {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
@@ -453,7 +451,7 @@ reconcile_hierarchical_data <- function(run_info,
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
-    ) 
+    )
   }
 
   unreconciled_tbl <- read_file(run_info,
@@ -889,7 +887,6 @@ reconcile_hierarchical_data <- function(run_info,
 external_regressor_mapping <- function(data,
                                        combo_variables,
                                        external_regressors) {
-
   # create var combinations list
   var_combinations <- tibble::tibble()
 
@@ -918,7 +915,6 @@ external_regressor_mapping <- function(data,
     .multicombine = TRUE,
     .noexport = NULL
   ) %do% {
-
     # get unique values of regressor per combo variable iteration
     var_unique_tbl <- foreach::foreach(
       var = iter_list,
@@ -1000,7 +996,6 @@ sum_hts_data <- function(bottom_level_tbl,
                          forecast_approach,
                          frequency_number,
                          return_type = "data") {
-
   # create aggregations for target variable
   Date <- bottom_level_tbl$Date
 
