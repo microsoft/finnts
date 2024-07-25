@@ -420,6 +420,20 @@ reconcile_hierarchical_data <- function(run_info,
   hts_nodes <- hts_list$nodes
   original_combo_list <- hts_list$original_combos
   hts_combo_list <- hts_list$hts_combos
+  
+  # check if data has been condensed
+  cond_path <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
+  )
+  
+  condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
+  
+  if (length(condensed_files) > 0) {
+    condensed <- TRUE
+  } else {
+    condensed <- FALSE
+  }
 
   # get unreconciled forecast data
   if (is.null(parallel_processing)) {
@@ -430,10 +444,17 @@ reconcile_hierarchical_data <- function(run_info,
     return_type <- "df"
   }
 
-  fcst_path <- paste0(
-    "/forecasts/*", hash_data(run_info$experiment_name), "-",
-    hash_data(run_info$run_name), "*models", ".", run_info$data_output
-  )
+  if(condensed) {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
+    )
+  } else {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*models", ".", run_info$data_output
+    ) 
+  }
 
   unreconciled_tbl <- read_file(run_info,
     path = fcst_path,
@@ -676,11 +697,6 @@ reconcile_hierarchical_data <- function(run_info,
               path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
             ) %>%
               dplyr::select(Combo, Date, Target)
-
-            fcst_path <- paste0(
-              "/forecasts/*", hash_data(run_info$experiment_name), "-",
-              hash_data(run_info$run_name), "*models", ".", run_info$data_output
-            )
 
             schema <- arrow::schema(
               arrow::field("Combo_ID", arrow::string()),

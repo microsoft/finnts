@@ -619,6 +619,15 @@ final_models <- function(run_info,
 
   # clean up any parallel run process
   par_end(cl)
+  
+  # condense outputs into less files for larger runs
+  if(length(combo_list) > 100) {
+    cli::cli_progress_step("Condensing Forecasts")
+    
+    condense_data(run_info, 
+                  parallel_processing,
+                  num_cores)
+  }
 
   # reconcile hierarchical forecasts
   if (forecast_approach != "bottoms_up") {
@@ -631,13 +640,6 @@ final_models <- function(run_info,
       negative_forecast,
       num_cores
     )
-  }
-  
-  # condense outputs into less files for larger runs
-  if(length(combo_list) > 1000) {
-    condense_data(run_info, 
-                  parallel_processing,
-                  num_cores)
   }
   
   # calculate weighted mape

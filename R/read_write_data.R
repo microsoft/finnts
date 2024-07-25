@@ -86,21 +86,20 @@ get_forecast_data <- function(run_info,
   }
   
   # get forecast data
-  if(condensed) {
-    print("reading condensed files")
+  if(forecast_approach != "bottoms_up") {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
+    )
+  } else if (condensed) {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
       hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
     )
-  } else if (forecast_approach == "bottoms_up") {
-    fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*models", ".", run_info$data_output
-    )
   } else {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
+      hash_data(run_info$run_name), "*models", ".", run_info$data_output
     )
   }
 
@@ -716,7 +715,7 @@ condense_data <- function(run_info,
   list_of_batches <- list()
   
   # Define the batch size
-  batch_size <- 10000
+  batch_size <- 100
   
   # Calculate the number of batches needed
   num_batches <- ceiling(length(initial_file_list) / batch_size)
