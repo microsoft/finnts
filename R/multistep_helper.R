@@ -1,4 +1,3 @@
-
 # Helper Functions ----
 
 #' Return xregs that contain future values for multistep horizon forecast

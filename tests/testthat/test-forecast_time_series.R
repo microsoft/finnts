@@ -1,4 +1,3 @@
-
 # * custom test functions ----
 
 check_exist <- function(to_check, ret) {

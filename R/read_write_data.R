@@ -1,4 +1,3 @@
-
 #' Get Final Forecast Data
 #'
 #' @param run_info run info using the [set_run_info()] function
@@ -46,7 +45,6 @@
 #' @export
 get_forecast_data <- function(run_info,
                               return_type = "df") {
-
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
@@ -60,7 +58,7 @@ get_forecast_data <- function(run_info,
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   forecast_approach <- log_df$forecast_approach
 
-  # get forecast data
+  # get train test split data
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
       "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
@@ -71,15 +69,35 @@ get_forecast_data <- function(run_info,
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
-  if (forecast_approach == "bottoms_up") {
+  # check if data has been condensed
+  cond_path <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
+  )
+
+  condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
+
+  if (length(condensed_files) > 0) {
+    condensed <- TRUE
+  } else {
+    condensed <- FALSE
+  }
+
+  # get forecast data
+  if (forecast_approach != "bottoms_up") {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*models", ".", run_info$data_output
+      hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
+    )
+  } else if (condensed) {
+    fcst_path <- paste0(
+      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
     )
   } else {
     fcst_path <- paste0(
       "/forecasts/*", hash_data(run_info$experiment_name), "-",
-      hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
+      hash_data(run_info$run_name), "*models", ".", run_info$data_output
     )
   }
 
@@ -152,7 +170,6 @@ get_forecast_data <- function(run_info,
 #' }
 #' @export
 get_trained_models <- function(run_info) {
-
   # check input values
   check_input_type("run_info", run_info, "list")
 
@@ -208,7 +225,6 @@ get_trained_models <- function(run_info) {
 get_prepped_data <- function(run_info,
                              recipe,
                              return_type = "df") {
-
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("recipe", recipe, "character", c("R1", "R2"))
@@ -279,7 +295,6 @@ get_prepped_data <- function(run_info,
 #' }
 #' @export
 get_prepped_models <- function(run_info) {
-
   # check input values
   check_input_type("run_info", run_info, "list")
 
@@ -395,7 +410,7 @@ write_data_type <- function(x,
   switch(type,
     rds = saveRDS(x, path),
     parquet = arrow::write_parquet(x, path),
-    csv = utils::write.csv(x, path, row.names = FALSE),
+    csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
     qs = qs::qsave(x, path)
   )
 }
@@ -499,21 +514,28 @@ download_file <- function(storage_object,
 #'
 #' @param run_info run info using the [set_run_info()] function
 #' @param path file path
+#' @param file_list files
 #' @param return_type type of data output read
 #' @param schema column schema for arrow::open_dataset()
 #'
 #' @return file read into memory
 #' @noRd
 read_file <- function(run_info,
-                      path,
+                      path = NULL,
+                      file_list = NULL,
                       return_type = "df",
                       schema = NULL) {
-  folder <- fs::path_dir(path)
   storage_object <- run_info$storage_object
-  initial_path <- run_info$path
-  file <- fs::path_file(path)
 
-  if (inherits(storage_object, c("blob_container", "ms_drive"))) {
+  if (!is.null(path)) {
+    folder <- fs::path_dir(path)
+    initial_path <- run_info$path
+    file <- fs::path_file(path)
+  }
+
+  if (!is.null(file_list)) {
+    files <- file_list
+  } else if (inherits(storage_object, c("blob_container", "ms_drive"))) {
     download_file(storage_object, fs::path(initial_path, path), folder)
     final_path <- fs::path(tempdir(), folder)
     files <- list_files(NULL, fs::path(final_path, file))
@@ -524,7 +546,10 @@ read_file <- function(run_info,
     files <- list_files(storage_object, fs::path(initial_path, path))
   }
 
-  if (fs::path_ext(file) == "*") {
+  if (!is.null(file_list)) {
+    file_temp <- files[[1]]
+    file_ext <- fs::path_ext(file_temp)
+  } else if (fs::path_ext(file) == "*") {
     file_temp <- files[[1]]
     file_ext <- fs::path_ext(file_temp)
   } else {
@@ -658,4 +683,84 @@ get_recipe_data <- function(run_info,
   }
 
   return(recipe_tbl)
+}
+
+#' Condense forecast output files into less files
+#'
+#' @param run_info run info using the [set_run_info()] function
+#' @param parallel_processing type of parallel processing to run
+#' @param num_cores number of cores to use
+#'
+#' @return nothing
+#' @noRd
+condense_data <- function(run_info,
+                          parallel_processing = NULL,
+                          num_cores = NULL) {
+  # get initial list of files to condense
+  initial_file_list <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      hash_data(run_info$run_name), "*_models.", run_info$data_output
+    )
+  )
+
+  # Initialize an empty list to store the batches
+  list_of_batches <- list()
+
+  # Define the batch size
+  batch_size <- 10000
+
+  # Calculate the number of batches needed
+  num_batches <- ceiling(length(initial_file_list) / batch_size)
+
+  # Loop through the large list and create batches
+  for (i in 1:num_batches) {
+    start_index <- (i - 1) * batch_size + 1
+    end_index <- min(i * batch_size, length(initial_file_list))
+    batch_name <- paste0("batch_", i)
+    list_of_batches[[batch_name]] <- initial_file_list[start_index:end_index]
+  }
+
+  # parallel run info
+  par_info <- par_start(
+    run_info = run_info,
+    parallel_processing = parallel_processing,
+    num_cores = min(length(names(list_of_batches)), num_cores),
+    task_length = length(names(list_of_batches))
+  )
+
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+
+  # submit tasks
+  condense_data_tbl <- foreach::foreach(
+    batch = names(list_of_batches),
+    .combine = "rbind",
+    .packages = packages,
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %op% {
+    files <- list_of_batches[[batch]]
+
+    data <- read_file(run_info,
+      file_list = files,
+      return_type = "df"
+    )
+
+    write_data(
+      x = data,
+      combo = batch,
+      run_info = run_info,
+      output_type = "data",
+      folder = "forecasts",
+      suffix = "-condensed"
+    )
+
+    return(batch)
+  }
 }

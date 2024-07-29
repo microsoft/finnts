@@ -181,27 +181,29 @@ ensemble_models <- function(run_info,
       # model forecasts
       single_model_tbl <- NULL
       if (run_local_models) {
-        suppressWarnings(try(single_model_tbl <- read_file(run_info,
-          path = paste0(
-            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-            "-", combo, "-single_models.", run_info$data_output
+        suppressWarnings(try(
+          single_model_tbl <- read_file(run_info,
+            path = paste0(
+              "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+              "-", combo, "-single_models.", run_info$data_output
+            ),
+            return_type = "df"
           ),
-          return_type = "df"
-        ),
-        silent = TRUE
+          silent = TRUE
         ))
       }
 
       global_model_tbl <- NULL
       if (run_global_models) {
-        suppressWarnings(try(global_model_tbl <- read_file(run_info,
-          path = paste0(
-            "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-            "-", combo, "-global_models.", run_info$data_output
+        suppressWarnings(try(
+          global_model_tbl <- read_file(run_info,
+            path = paste0(
+              "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+              "-", combo, "-global_models.", run_info$data_output
+            ),
+            return_type = "df"
           ),
-          return_type = "df"
-        ),
-        silent = TRUE
+          silent = TRUE
         ))
       }
 
@@ -336,7 +338,6 @@ ensemble_models <- function(run_info,
         .multicombine = TRUE,
         .noexport = NULL
       ) %do% {
-
         # get initial run info
         model <- model_run %>%
           dplyr::pull(Model_Name)

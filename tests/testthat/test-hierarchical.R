@@ -1,6 +1,4 @@
-
 test_that("prep_hierarchical_data returns correct grouped hierarchies", {
-
   # Mock data setup
   data <- tibble::tibble(
     Segment = as.character(c(
@@ -77,7 +75,6 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
 })
 
 test_that("prep_hierarchical_data returns correct standard hierarchies", {
-
   # Mock data setup
   data <- tibble::tibble(
     Area = as.character(c("EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "United States", "United States", "United States", "United States")),

@@ -1,5 +1,4 @@
 test_that("multistep_horizon monthly data", {
-
   # Mock data setup
   data <- timetk::m4_monthly %>%
     dplyr::mutate(id = as.character(id)) %>%

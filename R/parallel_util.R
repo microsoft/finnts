@@ -34,7 +34,7 @@ par_start <- function(run_info,
   )
 
   parallel_packages <- c(
-    "gtools", "hts", "magrittr", "methods", "base", "modeltime.resample",
+    "gtools", "hts", "magrittr", "methods", "base",
     "plyr", "rsample"
   )
 

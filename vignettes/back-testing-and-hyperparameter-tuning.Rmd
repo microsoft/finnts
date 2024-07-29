@@ -22,27 +22,33 @@ When `prep_models()` is ran, hyperparameters and back test splits are calculated
 library(finnts)
 
 hist_data <- timetk::m4_monthly %>%
-  dplyr::filter(date >= "2012-01-01", 
-                id == "M2") %>%
+  dplyr::filter(
+    date >= "2012-01-01",
+    id == "M2"
+  ) %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
 
 run_info <- set_run_info(
-  experiment_name = "finnts_fcst", 
+  experiment_name = "finnts_fcst",
   run_name = "get_prepped_models"
 )
 
-prep_data(run_info = run_info, 
-          input_data = hist_data, 
-          combo_variables = c("id"), 
-          target_variable = "value", 
-          date_type = "month", 
-          recipes_to_run = "R1",
-          forecast_horizon = 6)
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  recipes_to_run = "R1",
+  forecast_horizon = 6
+)
 
-prep_models(run_info = run_info, 
-            models_to_run = c("arima", "ets", "xgboost"), 
-            num_hyperparameters = 10)
+prep_models(
+  run_info = run_info,
+  models_to_run = c("arima", "ets", "xgboost"),
+  num_hyperparameters = 10
+)
 
 model_info <- get_prepped_models(run_info = run_info)
 
@@ -67,7 +73,6 @@ model_hyperparameter_info <- model_info %>%
   tidyr::unnest(Data)
 
 print(model_hyperparameter_info)
-
 ```
 
 The above outputs allow a Finn user to understand what hyperparameters are chosen for tuning and how the model refitting process will work. When tuning hyperparameters, Finn uses the "Validation" train/test splits, with the final parameters chosen using RMSE. For some models like ARIMA that don't follow a traditional hyperparameter tuning process, the model is fit from scratch across all train/test splits. After hyperparameters are chosen, the model is refit across the "Back_Test" and "Future_Forecast" splits. The "Back_Test" splits are the true testing data that will be used when selecting the final "Best-Model". "Ensemble" splits are also created as ensemble training data if ensemble models are chosen to run. Ensemble models follow a similar tuning process.

@@ -1,4 +1,3 @@
-
 #' Train Individual Models
 #'
 #' @param run_info run info using the [set_run_info()] function
@@ -220,7 +219,6 @@ train_models <- function(run_info,
     stringr::str_replace(hash_data("All-Data"), "All-Data")
 
   if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
-
     # check if input values have changed
     current_log_df <- tibble::tibble(
       run_global_models = run_global_models,
@@ -270,7 +268,6 @@ train_models <- function(run_info,
     .noexport = NULL
   ) %op%
     {
-
       # get time series
       combo_hash <- x
 
@@ -402,7 +399,6 @@ train_models <- function(run_info,
         .multicombine = TRUE,
         .noexport = NULL
       ) %do% {
-
         # get initial run info
         model <- model_run %>%
           dplyr::pull(Model_Name)
@@ -719,12 +715,13 @@ train_models <- function(run_info,
     length()
 
   if (successful_combos != total_combos) {
-    stop(paste0(
-      "Not all time series were completed within 'train_models', expected ",
-      total_combos, " time series but only ", successful_combos,
-      " time series were ran. ", "Please run 'train_models' again."
-    ),
-    call. = FALSE
+    stop(
+      paste0(
+        "Not all time series were completed within 'train_models', expected ",
+        total_combos, " time series but only ", successful_combos,
+        " time series were ran. ", "Please run 'train_models' again."
+      ),
+      call. = FALSE
     )
   }
 
@@ -784,7 +781,6 @@ negative_fcst_adj <- function(data,
 #' @return tbl with train test splits
 #' @noRd
 create_splits <- function(data, train_test_splits) {
-
   # Create the rsplit object
   analysis_split <- function(data, train_indices, test_indices) {
     rsplit_object <- rsample::make_splits(
@@ -846,7 +842,6 @@ create_splits <- function(data, train_test_splits) {
 undifference_forecast <- function(forecast_data,
                                   recipe_data,
                                   diff_tbl) {
-
   # check if data needs to be undifferenced
   diff1 <- diff_tbl$Diff_Value1
   diff2 <- diff_tbl$Diff_Value2
@@ -863,10 +858,8 @@ undifference_forecast <- function(forecast_data,
 
   # non seasonal differencing
   if (!is.na(diff1)) {
-
     # loop through each back test split
     for (id in train_test_id) {
-
       # get specific train test split
       fcst_temp_tbl <- forecast_data %>%
         dplyr::filter(Train_Test_ID == id)
@@ -950,7 +943,6 @@ undifference_forecast <- function(forecast_data,
 undifference_recipe <- function(recipe_data,
                                 diff_tbl,
                                 hist_end_date) {
-
   # check if data needs to be undifferenced
   diff1 <- diff_tbl$Diff_Value1
   diff2 <- diff_tbl$Diff_Value2

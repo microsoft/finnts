@@ -1,4 +1,3 @@
-
 #' Check input values
 #'
 #' @param input_name input name
@@ -13,21 +12,23 @@ check_input_type <- function(input_name,
                              type,
                              expected_value = NULL) {
   if (!inherits(input_value, type)) {
-    stop(paste0(
-      "invalid type for input name '", input_name, "', needs to be of type ",
-      glue::glue_collapse(type, " or ")
-    ),
-    call. = FALSE
+    stop(
+      paste0(
+        "invalid type for input name '", input_name, "', needs to be of type ",
+        glue::glue_collapse(type, " or ")
+      ),
+      call. = FALSE
     )
   }
 
   if (!is.null(expected_value) & !is.null(input_value)) {
     if (!sum(input_value %in% expected_value)) {
-      stop(paste0(
-        "invalid value for input name '", input_name, "', value needs to equal ",
-        glue::glue_collapse(expected_value, " or ")
-      ),
-      call. = FALSE
+      stop(
+        paste0(
+          "invalid value for input name '", input_name, "', value needs to equal ",
+          glue::glue_collapse(expected_value, " or ")
+        ),
+        call. = FALSE
       )
     }
   }
@@ -52,7 +53,6 @@ check_input_data <- function(input_data,
                              date_type,
                              fiscal_year_start,
                              parallel_processing) {
-
   # data combo names match the input data
   if (sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
     stop("combo variables do not match column headers in input data")
@@ -103,7 +103,6 @@ check_input_data <- function(input_data,
 
   # input_data is correct type for parallel processing
   if (inherits(input_data, c("data.frame", "tbl")) & is.null(parallel_processing)) {
-
     # do nothing
   } else if (inherits(input_data, "tbl_spark") & is.null(parallel_processing)) {
     stop("spark data frames should run with spark parallel processing",
@@ -148,7 +147,6 @@ check_input_data <- function(input_data,
 check_parallel_processing <- function(run_info,
                                       parallel_processing,
                                       inner_parallel = FALSE) {
-
   # parallel processing formatting
   if (is.null(parallel_processing)) {
     return()

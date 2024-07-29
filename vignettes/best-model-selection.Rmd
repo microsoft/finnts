@@ -23,17 +23,21 @@ suppressMessages(library(dplyr))
 
 message("Simple Back Test Results")
 back_test_tbl <- tibble(
-  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"), 
-  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01"), 
-  Model = c("arima", "arima", "arima", "arima", "arima", "ets", "ets", "ets", "ets", "ets"), 
-  FCST = c(9, 23, 35, 41, 48, 7, 22, 29, 42, 53), 
+  Combo = c("Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1", "Country_1"),
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01"),
+  Model = c("arima", "arima", "arima", "arima", "arima", "ets", "ets", "ets", "ets", "ets"),
+  FCST = c(9, 23, 35, 41, 48, 7, 22, 29, 42, 53),
   Target = c(10, 20, 30, 40, 50, 10, 20, 30, 40, 50)
 ) %>%
-  dplyr::mutate(MAPE = abs(Target-FCST)/Target, 
-                Date = as.Date(Date)) %>%
+  dplyr::mutate(
+    MAPE = abs(Target - FCST) / Target,
+    Date = as.Date(Date)
+  ) %>%
   dplyr::group_by(Combo, Model) %>%
-  dplyr::mutate(Target_Total = sum(Target), 
-                Percent_Total = Target/Target_Total) %>%
+  dplyr::mutate(
+    Target_Total = sum(Target),
+    Percent_Total = Target / Target_Total
+  ) %>%
   dplyr::ungroup()
 
 print(back_test_tbl)
@@ -44,12 +48,13 @@ message("Overall Model Accuracy by Combo")
 suppressMessages(best_model <- back_test_tbl %>%
   dplyr::group_by(Combo, Model) %>%
   dplyr::mutate(Weighted_MAPE = MAPE * Percent_Total) %>%
-  dplyr::summarise(MAPE = mean(MAPE), 
-                   Weighted_MAPE = sum(Weighted_MAPE)) %>%
+  dplyr::summarise(
+    MAPE = mean(MAPE),
+    Weighted_MAPE = sum(Weighted_MAPE)
+  ) %>%
   dplyr::ungroup())
 
 print(best_model)
-
 ```
 
 During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the back testing vignette.

@@ -27,15 +27,14 @@ message("Standard Hierarchical Time Series Data")
 
 hts <- tibble(
   Continent = c("North America", "North America", "North America", "North America", "North America", "North America", "North America", "North America", "North America"),
-  Country = c("United States", "United States", "United States", "United States", "United States", "United States", "Mexico", "Mexico", "Mexico"), 
-  City = c("Kansas City", "Kansas City", "Kansas City", "Seattle", "Seattle", "Seattle", "Mexico City", "Mexico City", "Mexico City"), 
-  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01"), 
+  Country = c("United States", "United States", "United States", "United States", "United States", "United States", "Mexico", "Mexico", "Mexico"),
+  City = c("Kansas City", "Kansas City", "Kansas City", "Seattle", "Seattle", "Seattle", "Mexico City", "Mexico City", "Mexico City"),
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01"),
   Target = c(100, 250, 320, 80, 200, 270, 50, 80, 120)
 ) %>%
   dplyr::mutate(Date = as.Date(Date))
 
 print(hts)
-
 ```
 
 In the above example, "City" was the lowest level of the hierarchy, which feeds into "Country", which then feeds into "Continent". Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the "Best Model" and every other model is reconciled back down to the lowest level.
@@ -50,16 +49,15 @@ suppressMessages(library(dplyr))
 message("Grouped Hierarchical Time Series Data")
 
 gts <- tibble(
-  Country = c("United States", "United States", "United States", "United States", "United States", "United States", "Mexico", "Mexico", "Mexico", "Mexico", "Mexico", "Mexico"), 
-  Segment = c("Enterprise", "Enterprise", "Enterprise", "Public Sector", "Public Sector", "Public Sector", "Enterprise", "Enterprise", "Enterprise", "Enterprise", "Enterprise", "Enterprise"), 
-  Product = c("Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Tea", "Tea", "Tea"), 
-  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01"), 
+  Country = c("United States", "United States", "United States", "United States", "United States", "United States", "Mexico", "Mexico", "Mexico", "Mexico", "Mexico", "Mexico"),
+  Segment = c("Enterprise", "Enterprise", "Enterprise", "Public Sector", "Public Sector", "Public Sector", "Enterprise", "Enterprise", "Enterprise", "Enterprise", "Enterprise", "Enterprise"),
+  Product = c("Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Tea", "Tea", "Tea"),
+  Date = c("2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01", "2020-01-01", "2020-02-01", "2020-03-01"),
   Target = c(10, 20, 30, 5, 8, 11, 20, 23, 27, 50, 55, 60)
 ) %>%
   dplyr::mutate(Date = as.Date(Date))
 
 print(gts)
-
 ```
 
 It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.
