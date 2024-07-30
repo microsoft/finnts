@@ -18,7 +18,7 @@ prep_data(
   fiscal_year_start = 1,
   clean_missing_values = TRUE,
   clean_outliers = FALSE,
-  box_cox = TRUE,
+  box_cox = FALSE,
   stationary = TRUE,
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
