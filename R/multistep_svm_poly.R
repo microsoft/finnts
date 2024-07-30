@@ -518,7 +518,7 @@ svm_poly_multistep_predict_impl <- function(object, new_data, ...) {
 
     preds_svm_poly <- preds_svm_poly %>%
       dplyr::mutate(Row_Num = xreg_tbl_final$Row_Num)
-    
+
     start_val <- as.numeric(lag_number) + 1
     final_prediction <- rbind(final_prediction, preds_svm_poly)
   }

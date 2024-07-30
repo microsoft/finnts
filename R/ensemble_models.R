@@ -398,7 +398,7 @@ ensemble_models <- function(run_info,
             pkgs = inner_packages,
             parallel_over = "everything"
           )
-        ) %>% 
+        ) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
 

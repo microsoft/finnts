@@ -515,11 +515,11 @@ train_models <- function(run_info,
             pkgs = inner_packages,
             parallel_over = "everything"
           )
-        ) %>%  
+        ) %>%
           tune::collect_predictions() %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
-        
+
         # finalize forecast
         final_fcst <- refit_tbl %>%
           dplyr::rename(
@@ -535,9 +535,9 @@ train_models <- function(run_info,
           ) %>%
           dplyr::mutate(Hyperparameter_ID = hyperparameter_id) %>%
           dplyr::select(-.row, -.config)
-        
+
         # check for future forecast
-        if(as.numeric(min(unique(final_fcst$Train_Test_ID))) != 1) {
+        if (as.numeric(min(unique(final_fcst$Train_Test_ID))) != 1) {
           stop("model is missing future forecast")
         }
 
