@@ -506,8 +506,8 @@ svm_poly_multistep_predict_impl <- function(object, new_data, ...) {
 
     xreg_tbl_final <- xreg_tbl %>%
       dplyr::filter(
-        Run_Number >= start_val,
-        Run_Number <= lag_number
+        Run_Number >= as.numeric(start_val),
+        Run_Number <= as.numeric(lag_number)
       )
 
     if (!is.null(xreg_tbl)) {
@@ -518,7 +518,7 @@ svm_poly_multistep_predict_impl <- function(object, new_data, ...) {
 
     preds_svm_poly <- preds_svm_poly %>%
       dplyr::mutate(Row_Num = xreg_tbl_final$Row_Num)
-
+    
     start_val <- as.numeric(lag_number) + 1
     final_prediction <- rbind(final_prediction, preds_svm_poly)
   }
