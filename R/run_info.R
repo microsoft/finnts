@@ -202,7 +202,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     output_tbl <- tibble::tibble(
       experiment_name = experiment_name,
       run_name = run_name,
-      created = created,
+      created = format(created, "%Y-%m-%d %H:%M:%S"),
       path = path,
       data_output = data_output,
       object_output = object_output
