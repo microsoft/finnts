@@ -667,7 +667,8 @@ final_models <- function(run_info,
     dplyr::mutate(
       average_models = average_models,
       max_model_average = max_model_average,
-      weighted_mape = round(weighted_mape, digits = 4)
+      weighted_mape = round(weighted_mape, digits = 4),
+      created = format(created, "%Y-%m-%d %H:%M:%S")
     )
 
   write_data(

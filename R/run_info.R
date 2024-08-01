@@ -192,7 +192,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     output_list <- list(
       experiment_name = experiment_name,
       run_name = run_name,
-      created = created,
+      created = format(created, "%Y-%m-%d %H:%M:%S"),
       storage_object = storage_object,
       path = path,
       data_output = data_output,

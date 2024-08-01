@@ -389,7 +389,8 @@ train_test_split <- function(run_info,
     dplyr::mutate(
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing),
-      run_ensemble_models = run_ensemble_models
+      run_ensemble_models = run_ensemble_models,
+      created = format(created, "%Y-%m-%d %H:%M:%S")
     )
 
   write_data(
@@ -625,7 +626,8 @@ model_workflows <- function(run_info,
     dplyr::mutate(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
       models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
-      pca = ifelse(is.null(pca), NA, pca)
+      pca = ifelse(is.null(pca), NA, pca),
+      created = format(created, "%Y-%m-%d %H:%M:%S")
     )
 
   write_data(
@@ -804,7 +806,10 @@ model_hyperparameters <- function(run_info,
 
   # update logging file
   log_df <- log_df %>%
-    dplyr::mutate(num_hyperparameters = num_hyperparameters)
+    dplyr::mutate(
+      num_hyperparameters = num_hyperparameters,
+      created = format(created, "%Y-%m-%d %H:%M:%S")
+    )
 
   write_data(
     x = log_df,
