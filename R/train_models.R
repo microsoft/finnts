@@ -741,8 +741,7 @@ train_models <- function(run_info,
       feature_selection = feature_selection,
       seed = seed,
       negative_forecast = negative_forecast,
-      inner_parallel = inner_parallel,
-      created = format(created, "%Y-%m-%d %H:%M:%S")
+      inner_parallel = inner_parallel
     )
 
   write_data(

@@ -407,10 +407,17 @@ write_data <- function(x,
 write_data_type <- function(x,
                             path,
                             type) {
+  if (type == "csv") {
+    if (nrow(x) == 1) {
+      type <- "log"
+    }
+  }
+
   switch(type,
     rds = saveRDS(x, path),
     parquet = arrow::write_parquet(x, path),
     csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
+    log = write.csv(x, path, row.names = FALSE),
     qs = qs::qsave(x, path)
   )
 }

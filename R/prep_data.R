@@ -730,8 +730,7 @@ prep_data <- function(run_info,
       lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
       rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
       recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")),
-      multistep_horizon = multistep_horizon,
-      created = format(created, "%Y-%m-%d %H:%M:%S")
+      multistep_horizon = multistep_horizon
     )
 
   write_data(
