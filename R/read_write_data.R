@@ -417,7 +417,7 @@ write_data_type <- function(x,
     rds = saveRDS(x, path),
     parquet = arrow::write_parquet(x, path),
     csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
-    log = base::write.csv(x, path, row.names = FALSE),
+    log = utils::write.csv(x, path, row.names = FALSE),
     qs = qs::qsave(x, path)
   )
 }
