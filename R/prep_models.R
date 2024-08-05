@@ -804,7 +804,9 @@ model_hyperparameters <- function(run_info,
 
   # update logging file
   log_df <- log_df %>%
-    dplyr::mutate(num_hyperparameters = num_hyperparameters)
+    dplyr::mutate(
+      num_hyperparameters = num_hyperparameters
+    )
 
   write_data(
     x = log_df,

@@ -1,4 +1,4 @@
-# finnts 0.4.0.9005 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9006 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -8,6 +8,7 @@
 -   Always save the most accurate model average, regardless if selected as best model. This allows for improved scaling with large data sets.
 -   Automatically condense large forecasts (+10k time series) into smaller amount of files to make it easier to read forecast outputs
 -   Improved weighted MAPE calculation across all time series
+-   Changed default for box_cox argument in `prep_data()` to FALSE
 
 ## Bug Fixes
 

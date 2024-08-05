@@ -457,8 +457,8 @@ glmnet_multistep_predict_impl <- function(object, new_data, ...) {
 
     xreg_tbl_final <- xreg_tbl %>%
       dplyr::filter(
-        Run_Number >= start_val,
-        Run_Number <= lag_number
+        Run_Number >= as.numeric(start_val),
+        Run_Number <= as.numeric(lag_number)
       )
 
     if (!is.null(xreg_tbl)) {

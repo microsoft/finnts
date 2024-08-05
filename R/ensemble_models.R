@@ -366,6 +366,7 @@ ensemble_models <- function(run_info,
             parallel_over = "everything"
           )
         ) %>%
+          base::suppressMessages() %>%
           base::suppressWarnings()
 
         best_param <- tune::select_best(tune_results, metric = "rmse")
@@ -397,7 +398,9 @@ ensemble_models <- function(run_info,
             pkgs = inner_packages,
             parallel_over = "everything"
           )
-        )
+        ) %>%
+          base::suppressMessages() %>%
+          base::suppressWarnings()
 
         final_fcst <- tune::collect_predictions(refit_tbl) %>%
           dplyr::rename(
