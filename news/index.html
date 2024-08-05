@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.4.0.9006</span>
       </span>
     </div>
 
@@ -94,9 +94,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.4.0.9005" id="finnts-0409005-development-version">finnts 0.4.0.9005 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0409005-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.4.0.9006" id="finnts-0409006-development-version">finnts 0.4.0.9006 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0409006-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-4-0-9005">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-4-0-9005"></a></h3>
+<h3 id="improvements-0-4-0-9006">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-4-0-9006"></a></h3>
 <ul><li>Added support for hierarchical forecasting with external regressors</li>
 <li>Allow global models for hierarchical forecasts</li>
 <li>Multistep horizon forecasts for R1 recipe, listed as <code>multistep_horizon</code> within <code><a href="../reference/prep_data.html">prep_data()</a></code>
@@ -104,14 +104,15 @@
 <li>Always save the most accurate model average, regardless if selected as best model. This allows for improved scaling with large data sets.</li>
 <li>Automatically condense large forecasts (+10k time series) into smaller amount of files to make it easier to read forecast outputs</li>
 <li>Improved weighted MAPE calculation across all time series</li>
+<li>Changed default for box_cox argument in <code><a href="../reference/prep_data.html">prep_data()</a></code> to FALSE</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-4-0-9005">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-4-0-9005"></a></h3>
+<h3 id="bug-fixes-0-4-0-9006">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-4-0-9006"></a></h3>
 <ul><li>Error in run_type column join in final forecast output</li>
 <li>Error in running feature selection</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-4-0-9005">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-4-0-9005"></a></h3>
+<h3 id="breaking-changes-0-4-0-9006">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-4-0-9006"></a></h3>
 <ul><li>Minimum R version now set to R 4.0 to comply with package dependency minimum version for tune</li></ul></div>
 </div>
     <div class="section level2">
