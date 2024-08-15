@@ -1,0 +1,24 @@
+2024-08-15 15:34:46 - =======================START TEST========================== 
+2024-08-15 15:34:46 - Confidence levels: 0.8, 0.95 
+2024-08-15 15:34:46 - Split ratio: 0.8 
+2024-08-15 15:34:46 - Filtered forecast table rows: 522 
+2024-08-15 15:34:46 - Processing Combo: M1000 Model ID: meanf--local--R1_xgboost--local--R1 
+2024-08-15 15:34:46 - Z values: 332.49, 508.49 
+2024-08-15 15:34:46 - Horizon: 1, Q values: 325.81, 465.04 
+2024-08-15 15:34:46 - Horizon: 2, Q values: 335.10, 534.07 
+2024-08-15 15:34:46 - Horizon: 3, Q values: 399.33, 582.99 
+2024-08-15 15:34:46 - Horizon: 4, Q values: 514.96, 667.31 
+2024-08-15 15:34:46 - Horizon: 5, Q values: 563.58, 650.79 
+2024-08-15 15:34:46 - Horizon: 6, Q values: 585.17, 665.70 
+2024-08-15 15:34:46 - Horizon: 7, Q values: 611.54, 815.83 
+2024-08-15 15:34:46 - Horizon: 8, Q values: 597.36, 837.90 
+2024-08-15 15:34:46 - Horizon: 9, Q values: 583.55, 860.27 
+2024-08-15 15:34:46 - Horizon: 10, Q values: 650.33, 896.00 
+2024-08-15 15:34:46 - Horizon: 11, Q values: 702.77, 895.78 
+2024-08-15 15:34:46 - Horizon: 12, Q values: 786.01, 886.34 
+2024-08-15 15:34:46 - All-up Conformal Coverage: 80%: 62.50%, 95%: 84.62% 
+2024-08-15 15:34:46 - All-up Z-Score Coverage: 80%: 35.58%, 95%: 56.73% 
+2024-08-15 15:34:48 - ========================================================== 
+2024-08-15 15:34:48 - Creating plots for Combo: M1000 Model ID: meanf--local--R1_xgboost--local--R1 
+2024-08-15 15:34:50 - Forecast table written to: final_forecast_table/forecast_table_20240815_153450.csv 
+2024-08-15 15:34:50 - =======================COMPLETE========================== 

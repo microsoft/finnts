@@ -622,7 +622,8 @@ final_models <- function(run_info,
 }
 
 #' Create prediction intervals
-#'
+#'#This function calculates prediction intervals using both conformal prediction and z-score methods,
+# adjusting for different time horizons in forecasting data.
 #' @param fcst_tbl forecast table to use to create prediction intervals
 #' @param train_test_split train test split
 #' @param conf_levels confidence levels for prediction intervals (default: c(0.80, 0.95))
@@ -631,6 +632,8 @@ final_models <- function(run_info,
 #' @return data frame with prediction intervals
 #' @noRd
 create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels = c(0.80, 0.95), split_ratio = 0.8) {
+  
+  # Step 1: Set up logging
   log_file <- paste0("logs/prediction_intervals_log_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt")
   log_conn <- file(log_file, open = "wt")
   
@@ -644,6 +647,8 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
     log_message("Confidence levels:", paste(conf_levels, collapse = ", "))
     log_message("Split ratio:", split_ratio)
     
+
+    # Step 2: Filter and prepare data
     back_test_ids <- train_test_split %>%
       dplyr::filter(Run_Type == "Back_Test") %>%
       dplyr::pull(Train_Test_ID)
@@ -656,6 +661,8 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
     results <- list()
     
+
+    # Step 3: Process each combination of Combo and Model_ID
     for (combo in unique(fcst_tbl_filtered$Combo)) {
       for (model_id in unique(fcst_tbl_filtered$Model_ID[fcst_tbl_filtered$Combo == combo])) {
         log_message("Processing Combo:", combo, "Model ID:", model_id)
@@ -663,26 +670,14 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         combo_model_data <- fcst_tbl_filtered %>%
           dplyr::filter(Combo == combo, Model_ID == model_id)
 
-        # Combine calibration and test sets across all horizons
-        calibration_test_data <- list()
-        
-        for (h in unique(combo_model_data$Horizon)) {
-          horizon_data <- combo_model_data %>% dplyr::filter(Horizon == h)
-          
-          n <- nrow(horizon_data)
-          split_index <- ceiling(split_ratio * n)
-          calibration_set <- horizon_data[1:split_index, ]
-          test_set <- horizon_data[(split_index + 1):n, ]
-          
-          calibration_test_data[[h]] <- list(
-            calibration_set = calibration_set,
-            test_set = test_set
-          )
-        }
-        
-        # Calculate Z-scores and apply to all test sets across horizons
-        all_calibration_data <- do.call(rbind, lapply(calibration_test_data, function(x) x$calibration_set))
-        residuals <- all_calibration_data$Target - all_calibration_data$Forecast
+        # Step 4: Split data into calibration and test sets
+        n <- nrow(combo_model_data)
+        split_index <- ceiling(split_ratio * n)
+        calibration_set <- combo_model_data[1:split_index, ]
+        test_set <- combo_model_data[(split_index + 1):n, ]
+
+        # Step 5: Calculate Z-scores using calibration data
+        residuals <- calibration_set$Target - calibration_set$Forecast
         residual_std_dev <- sd(residuals, na.rm = TRUE)
         
         z_scores <- c(qnorm((1 + conf_levels[1]) / 2), qnorm((1 + conf_levels[2]) / 2))
@@ -690,57 +685,17 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
         log_message(sprintf("Z values: %.2f, %.2f", z_vals[1], z_vals[2]))
 
-        all_test_data <- do.call(rbind, lapply(calibration_test_data, function(x) x$test_set))
-        all_test_data <- all_test_data %>%
-          dplyr::mutate(
-            lo_80_z = Forecast - z_vals[1],
-            hi_80_z = Forecast + z_vals[1],
-            lo_95_z = Forecast - z_vals[2],
-            hi_95_z = Forecast + z_vals[2],
-            covered_80_z = Target >= lo_80_z & Target <= hi_80_z,
-            covered_95_z = Target >= lo_95_z & Target <= hi_95_z
-          )
-
-        z_coverage <- list(
-          z_80 = mean(all_test_data$covered_80_z, na.rm = TRUE),
-          z_95 = mean(all_test_data$covered_95_z, na.rm = TRUE)
-        )
-
-        log_message(sprintf("Z-Score Coverage: 80%%: %.2f%%, 95%%: %.2f%%", 
-                            z_coverage$z_80 * 100, z_coverage$z_95 * 100))
-
-        # Apply conformal method per horizon
-        horizon_results <- purrr::map_dfr(unique(combo_model_data$Horizon), function(h) {
-          horizon_data <- combo_model_data %>% dplyr::filter(Horizon == h)
-          calibration_set <- calibration_test_data[[h]]$calibration_set
-          test_set <- calibration_test_data[[h]]$test_set
-
-          residuals <- calibration_set$Target - calibration_set$Forecast
+        # Step 6: Apply conformal method per horizon
+        horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
+          horizon_calibration <- calibration_set %>% dplyr::filter(Horizon == h)
+          
+          residuals <- horizon_calibration$Target - horizon_calibration$Forecast
           q_vals <- sapply(conf_levels, function(cl) {
             alpha <- 1 - cl
-            two_sided_alpha <- alpha / 2
-            quantile(abs(residuals), probs = 1 - two_sided_alpha, na.rm = TRUE)
+            quantile(abs(residuals), probs = 1 - alpha/2, na.rm = TRUE)
           })
 
           log_message(sprintf("Horizon: %d, Q values: %.2f, %.2f", h, q_vals[1], q_vals[2]))
-
-          test_set <- test_set %>%
-            dplyr::mutate(
-              lo_80_conf = Forecast - q_vals[1],
-              hi_80_conf = Forecast + q_vals[1],
-              lo_95_conf = Forecast - q_vals[2],
-              hi_95_conf = Forecast + q_vals[2],
-              covered_80_conf = Target >= lo_80_conf & Target <= hi_80_conf,
-              covered_95_conf = Target >= lo_95_conf & Target <= hi_95_conf
-            )
-
-          coverage <- list(
-            conf_80 = mean(test_set$covered_80_conf, na.rm = TRUE),
-            conf_95 = mean(test_set$covered_95_conf, na.rm = TRUE)
-          )
-
-          log_message(sprintf("Horizon: %d, Conformal Coverage: 80%%: %.2f%%, 95%%: %.2f%%", 
-                              h, coverage$conf_80 * 100, coverage$conf_95 * 100))
 
           dplyr::tibble(
             Combo = combo,
@@ -749,25 +704,79 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
             q_val_80 = q_vals[1],
             q_val_95 = q_vals[2],
             z_val_80 = z_vals[1],
-            z_val_95 = z_vals[2],
-            coverage_conf_80 = coverage$conf_80,
-            coverage_conf_95 = coverage$conf_95,
-            coverage_z_80 = z_coverage$z_80,
-            coverage_z_95 = z_coverage$z_95
+            z_val_95 = z_vals[2]
           )
         })
 
-        results[[length(results) + 1]] <- horizon_results
+        # Step 7: Handle missing horizons
+        max_horizon <- max(horizon_results$Horizon)
+        max_horizon_values <- horizon_results %>%
+          dplyr::filter(Horizon == max_horizon) %>%
+          dplyr::select(q_val_80, q_val_95, z_val_80, z_val_95)
+
+        # Add fallback values for horizons not in calibration data
+        all_horizons <- unique(combo_model_data$Horizon)
+        missing_horizons <- setdiff(all_horizons, horizon_results$Horizon)
         
-        # Create calibration test plots
-        # create_calibration_plots(combo_model_data, horizon_results, combo, model_id)
+        if (length(missing_horizons) > 0) {
+          log_message(sprintf("Adding fallback values for horizons: %s", paste(missing_horizons, collapse = ", ")))
+          
+          fallback_results <- purrr::map_dfr(missing_horizons, function(h) {
+            dplyr::tibble(
+              Combo = combo,
+              Model_ID = model_id,
+              Horizon = h,
+              q_val_80 = max_horizon_values$q_val_80,
+              q_val_95 = max_horizon_values$q_val_95,
+              z_val_80 = max_horizon_values$z_val_80,
+              z_val_95 = max_horizon_values$z_val_95
+            )
+          })
+          
+          horizon_results <- dplyr::bind_rows(horizon_results, fallback_results)
+        }
+
+        # Step 8: Calculate coverage on test set
+        test_set_with_intervals <- test_set %>%
+          dplyr::left_join(horizon_results, by = c("Combo", "Model_ID", "Horizon")) %>%
+          dplyr::mutate(
+            covered_80_conf = Target >= (Forecast - q_val_80) & Target <= (Forecast + q_val_80),
+            covered_95_conf = Target >= (Forecast - q_val_95) & Target <= (Forecast + q_val_95),
+            covered_80_z = Target >= (Forecast - z_val_80) & Target <= (Forecast + z_val_80),
+            covered_95_z = Target >= (Forecast - z_val_95) & Target <= (Forecast + z_val_95)
+          )
+
+        coverage <- test_set_with_intervals %>%
+          dplyr::summarise(
+            coverage_conf_80 = mean(covered_80_conf, na.rm = TRUE),
+            coverage_conf_95 = mean(covered_95_conf, na.rm = TRUE),
+            coverage_z_80 = mean(covered_80_z, na.rm = TRUE),
+            coverage_z_95 = mean(covered_95_z, na.rm = TRUE)
+          )
+
+        log_message(sprintf("All-up Conformal Coverage: 80%%: %.2f%%, 95%%: %.2f%%", 
+                            coverage$coverage_conf_80 * 100, coverage$coverage_conf_95 * 100))
+        log_message(sprintf("All-up Z-Score Coverage: 80%%: %.2f%%, 95%%: %.2f%%", 
+                            coverage$coverage_z_80 * 100, coverage$coverage_z_95 * 100))
+        # Step 9: Store results
+        results[[length(results) + 1]] <- horizon_results %>%
+          dplyr::mutate(
+            coverage_conf_80 = coverage$coverage_conf_80,
+            coverage_conf_95 = coverage$coverage_conf_95,
+            coverage_z_80 = coverage$coverage_z_80,
+            coverage_z_95 = coverage$coverage_z_95
+          )
+        # Step 10: Create calibration plots (function not provided in the original code)
+        create_calibration_plots(combo_model_data, horizon_results, combo, model_id, split_ratio, coverage)
       }
+    
+     log_message("==========================================================")
     }
     
-    # Combine all results
+    # Step 11: Combine all results
     results <- do.call(rbind, results)
-
-    # Add prediction intervals to the full forecast table
+    fcst_tbl_copy <- fcst_tbl
+    # Step 13: Create final plots
     fcst_tbl <- fcst_tbl %>%
       dplyr::left_join(results, by = c("Combo", "Model_ID", "Horizon")) %>%
       dplyr::mutate(
@@ -781,10 +790,35 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         coverage_95 = pmax(coverage_z_95, coverage_conf_95, na.rm = TRUE)
       )
 
-    create_calibration_plots(combo_model_data, horizon_results, combo, model_id, split_ratio)
+    z_fcst_tbl <- fcst_tbl_copy %>%
+      dplyr::left_join(results, by = c("Combo", "Model_ID", "Horizon")) %>%
+      dplyr::mutate(
+        lo_80 = Forecast - z_val_80,
+        hi_80 = Forecast + z_val_80,
+        lo_95 = Forecast - z_val_95,
+        hi_95 = Forecast + z_val_95,
+        method_80 = "Z-Score", 
+        method_95 = "Z-Score", 
+        coverage_80 = coverage_z_80,
+        coverage_95 = coverage_z_95, 
+      )
+  
 
-    create_final_plot(fcst_tbl, combo, model_id)
     
+
+
+
+
+    for (combo in unique(fcst_tbl$Combo)) {
+      for (model_id in unique(fcst_tbl$Model_ID[fcst_tbl$Combo == combo])) {
+        log_message("Creating plots for Combo:", combo, "Model ID:", model_id)
+        create_final_plot(fcst_tbl, combo, model_id)
+        z_create_final_plot(z_fcst_tbl, combo, model_id)
+        plot_fitted_model_with_intervals(fcst_tbl, combo, model_id)
+      }
+    }
+
+    # Step 14: Save results
     filename <- paste0("final_forecast_table/forecast_table_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
     write.csv(fcst_tbl, file = filename, row.names = FALSE)
     log_message("Forecast table written to:", filename)
@@ -797,57 +831,36 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
     close(log_conn)
   })
   
+
+  
+ 
+
   return(fcst_tbl)
 }
-create_calibration_plots <- function(combo_model_data, horizon_results, combo, model_id, split_ratio) {
-  # Ensure correct data matching by joining on Combo, Model_ID, and Horizon
-  plot_data <- dplyr::left_join(combo_model_data, horizon_results, by = c("Combo", "Model_ID", "Horizon"))
-  
-  # Initialize lists to store calibration and test data for all horizons
-  all_calibration_sets <- list()
-  all_test_sets <- list()
-  
-  # Iterate through each horizon and split into calibration and test sets
-  for (h in unique(plot_data$Horizon)) {
-    horizon_data <- plot_data %>% dplyr::filter(Horizon == h)
-    
-    # Split into calibration and test sets
-    n <- nrow(horizon_data)
-    split_index <- ceiling(split_ratio * n)
-    calibration_set <- horizon_data[1:split_index, ]
-    test_set <- horizon_data[(split_index + 1):n, ]
-    
-    # Append calibration and test sets to their respective lists
-    all_calibration_sets[[length(all_calibration_sets) + 1]] <- calibration_set
-    all_test_sets[[length(all_test_sets) + 1]] <- test_set
-  }
-  
-  # Combine all calibration and test sets into separate data frames
-  calibration_data <- do.call(rbind, all_calibration_sets)
-  test_data <- do.call(rbind, all_test_sets)
+create_calibration_plots <- function(combo_model_data, horizon_results, combo, model_id, split_ratio, coverage) {
+  # Split data into calibration and test sets
+  n <- nrow(combo_model_data)
+  split_index <- ceiling(split_ratio * n)
+  calibration_data <- combo_model_data[1:split_index, ]
+  test_data <- combo_model_data[(split_index + 1):n, ]
 
-  # Calculate overall coverage using only the test data
-  overall_coverage <- test_data %>%
-    dplyr::summarise(
-      conf_80 = mean(Target >= (Forecast - q_val_80) & Target <= (Forecast + q_val_80), na.rm = TRUE),
-      conf_95 = mean(Target >= (Forecast - q_val_95) & Target <= (Forecast + q_val_95), na.rm = TRUE),
-      z_80 = mean(Target >= (Forecast - z_val_80) & Target <= (Forecast + z_val_80), na.rm = TRUE),
-      z_95 = mean(Target >= (Forecast - z_val_95) & Target <= (Forecast + z_val_95), na.rm = TRUE)
-    )
-  
+  # Join test data with horizon-specific results
+  test_data <- test_data %>%
+    dplyr::left_join(horizon_results, by = c("Combo", "Model_ID", "Horizon"))
+
   coverage_subtitle <- sprintf(
-    "Test Data Coverage - Conformal: 80%%: %.2f%%, 95%%: %.2f%% | Z-Score: 80%%: %.2f%%, 95%%: %.2f%%",
-    overall_coverage$conf_80 * 100, overall_coverage$conf_95 * 100,
-    overall_coverage$z_80 * 100, overall_coverage$z_95 * 100
+    "All-up Coverage - Conformal: 80%%: %.2f%%, 95%%: %.2f%% | Z-Score: 80%%: %.2f%%, 95%%: %.2f%%",
+    coverage$coverage_conf_80 * 100, coverage$coverage_conf_95 * 100,
+    coverage$coverage_z_80 * 100, coverage$coverage_z_95 * 100
   )
   
   # Histogram of absolute residuals using calibration data
   h <- ggplot2::ggplot(calibration_data, ggplot2::aes(x = abs(Target - Forecast))) +
     ggplot2::geom_histogram(binwidth = function(x) diff(range(x)) / 30, fill = "steelblue", color = "black") +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = q_val_80, color = "80% Conformal"), linetype = "dashed", size = 1) +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = q_val_95, color = "95% Conformal"), linetype = "dashed", size = 1) +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = z_val_80, color = "80% Z-Score"), linetype = "dotted", size = 1) +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = z_val_95, color = "95% Z-Score"), linetype = "dotted", size = 1) +
+    ggplot2::geom_vline(data = horizon_results, ggplot2::aes(xintercept = q_val_80, color = "80% Conformal"), linetype = "dashed", size = 1) +
+    ggplot2::geom_vline(data = horizon_results, ggplot2::aes(xintercept = q_val_95, color = "95% Conformal"), linetype = "dashed", size = 1) +
+    ggplot2::geom_vline(ggplot2::aes(xintercept = unique(horizon_results$z_val_80), color = "80% Z-Score"), linetype = "dotted", size = 1) +
+    ggplot2::geom_vline(ggplot2::aes(xintercept = unique(horizon_results$z_val_95), color = "95% Z-Score"), linetype = "dotted", size = 1) +
     ggplot2::facet_wrap(~Horizon, scales = "free") +
     ggplot2::scale_color_manual(values = c("80% Conformal" = "blue", "95% Conformal" = "red",
                                            "80% Z-Score" = "green", "95% Z-Score" = "purple")) +
@@ -867,6 +880,7 @@ create_calibration_plots <- function(combo_model_data, horizon_results, combo, m
   ggplot2::ggsave(paste0("plots/calibration_histogram_", combo, "_", model_id, ".png"), plot = h, width = 15, height = 10, dpi = 300, bg = "white")
 
   # Time series plot with prediction intervals using test data
+   # Time series plot with prediction intervals using test data
   p <- ggplot2::ggplot(test_data, ggplot2::aes(x = Date, y = Target)) +
     ggplot2::geom_line(ggplot2::aes(color = "Actual"), linetype = "dashed", size = 1) +
     ggplot2::geom_line(ggplot2::aes(y = Forecast, color = "Forecast"), linetype = "dashed", size = 1) +
@@ -918,6 +932,14 @@ create_final_plot <- function(fcst_tbl, combo, model_id) {
   actual_data <- plot_data %>% dplyr::filter(!is.na(Target))
   forecast_data <- plot_data %>% dplyr::filter(is.na(Target))
   
+  # Calculate overall coverage
+  overall_coverage_80 <- mean(forecast_data$coverage_80, na.rm = TRUE)
+  overall_coverage_95 <- mean(forecast_data$coverage_95, na.rm = TRUE)
+  
+  # Determine the dominant method
+  method_80 <- names(which.max(table(forecast_data$method_80)))
+  method_95 <- names(which.max(table(forecast_data$method_95)))
+  
   f_plot <- ggplot2::ggplot() +
     # Plot actual data (Target)
     ggplot2::geom_line(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
@@ -933,8 +955,8 @@ create_final_plot <- function(fcst_tbl, combo, model_id) {
     
     ggplot2::labs(
       title = paste("Final Forecast with Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = paste("80% PI Method:", unique(forecast_data$method_80), "- Coverage:", format(unique(forecast_data$coverage_80) * 100, digits = 2), "%\n",
-                       "95% PI Method:", unique(forecast_data$method_95), "- Coverage:", format(unique(forecast_data$coverage_95) * 100, digits = 2), "%"),
+      subtitle = paste("80% PI Method:", method_80, "- Coverage:", format(overall_coverage_80 * 100, digits = 2), "%\n",
+                       "95% PI Method:", method_95, "- Coverage:", format(overall_coverage_95 * 100, digits = 2), "%"),
       x = "Date", y = "Values"
     ) +
     ggplot2::theme_minimal() +
@@ -948,6 +970,134 @@ create_final_plot <- function(fcst_tbl, combo, model_id) {
     )
   
   ggplot2::ggsave(paste0("plots/final_forecast_", combo, "_", model_id, ".png"), plot = f_plot, width = 15, height = 10, dpi = 300, bg = "white")
+}
+
+
+z_create_final_plot <- function(fcst_tbl, combo, model_id) {
+  plot_data <- fcst_tbl %>%
+    dplyr::filter(Combo == combo, Model_ID == model_id) %>%
+    dplyr::arrange(Date)
+  
+  # Separate actual data and forecast data
+  actual_data <- plot_data %>% dplyr::filter(!is.na(Target))
+  forecast_data <- plot_data %>% dplyr::filter(is.na(Target))
+  
+  # Calculate overall coverage
+  overall_coverage_80 <- mean(forecast_data$coverage_80, na.rm = TRUE)
+  overall_coverage_95 <- mean(forecast_data$coverage_95, na.rm = TRUE)
+  
+  # Determine the dominant method
+  method_80 <- names(which.max(table(forecast_data$method_80)))
+  method_95 <- names(which.max(table(forecast_data$method_95)))
+  
+  f_plot <- ggplot2::ggplot() +
+    # Plot actual data (Target)
+    ggplot2::geom_line(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
+    ggplot2::geom_point(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
+    
+    # Plot forecast and PIs only where Target is NA
+    ggplot2::geom_line(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
+    ggplot2::geom_point(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
+    ggplot2::geom_ribbon(data = forecast_data, ggplot2::aes(x = Date, ymin = lo_80, ymax = hi_80), 
+                         fill = "lightblue", alpha = 0.3) +
+    ggplot2::geom_ribbon(data = forecast_data, ggplot2::aes(x = Date, ymin = lo_95, ymax = hi_95), 
+                         fill = "lightblue", alpha = 0.2) +
+    
+    ggplot2::labs(
+      title = paste("Final Forecast with **Z-Score** Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
+      subtitle = paste("80% PI Method:", method_80, "- Coverage:", format(overall_coverage_80 * 100, digits = 2), "%\n",
+                       "95% PI Method:", method_95, "- Coverage:", format(overall_coverage_95 * 100, digits = 2), "%"),
+      x = "Date", y = "Values"
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.background = ggplot2::element_rect(fill = "white"),
+      plot.background = ggplot2::element_rect(fill = "white"),
+      legend.background = ggplot2::element_rect(fill = "white"),
+      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
+      panel.grid.major = ggplot2::element_line(color = "gray90"),
+      panel.grid.minor = ggplot2::element_line(color = "gray95")
+    )
+  
+  ggplot2::ggsave(paste0("plots/z_final_forecast_", combo, "_", model_id, ".png"), plot = f_plot, width = 15, height = 10, dpi = 300, bg = "white")
+}
+
+
+
+plot_fitted_model_with_intervals <- function(fcst_tbl, combo, model_id) {
+  # Filter data for the specific combo and model_id
+  plot_data <- fcst_tbl %>%
+    dplyr::filter(Combo == combo, Model_ID == model_id) %>%
+    dplyr::arrange(Date, Horizon)
+  
+  # Aggregate fitted values and intervals across all folds
+  aggregated_data <- plot_data %>%
+    dplyr::group_by(Date) %>%
+    dplyr::summarise(
+      Target = mean(Target, na.rm = TRUE),
+      Forecast = mean(Forecast, na.rm = TRUE),
+      lo_80 = mean(lo_80, na.rm = TRUE),
+      hi_80 = mean(hi_80, na.rm = TRUE),
+      lo_95 = mean(lo_95, na.rm = TRUE),
+      hi_95 = mean(hi_95, na.rm = TRUE)
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::arrange(Date)
+  
+  # Identify the last date with actual data
+  last_actual_date <- max(aggregated_data$Date[!is.na(aggregated_data$Target)])
+  
+  # Create the plot
+  p <- ggplot2::ggplot(aggregated_data, ggplot2::aes(x = Date)) +
+    # Plot actual data
+    ggplot2::geom_line(ggplot2::aes(y = Target, color = "Actual"), size = 1) +
+    ggplot2::geom_point(ggplot2::aes(y = Target, color = "Actual"), size = 2) +
+    
+    # Plot fitted values and forecast
+    ggplot2::geom_line(ggplot2::aes(y = Forecast, color = "Fitted/Forecast"), size = 1, linetype = "dashed") +
+    ggplot2::geom_point(ggplot2::aes(y = Forecast, color = "Fitted/Forecast"), size = 2) +
+    
+    # Plot prediction intervals
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = lo_80, ymax = hi_80, fill = "80% PI"), alpha = 0.3) +
+    ggplot2::geom_ribbon(ggplot2::aes(ymin = lo_95, ymax = hi_95, fill = "95% PI"), alpha = 0.2) +
+    
+    # Add a vertical line to separate in-sample and out-of-sample periods
+    ggplot2::geom_vline(xintercept = last_actual_date, linetype = "dotted", color = "red", size = 1) +
+    
+    # Customize colors and labels
+    ggplot2::scale_color_manual(values = c("Actual" = "blue", "Fitted/Forecast" = "red"),
+                                name = "Data") +
+    ggplot2::scale_fill_manual(values = c("80% PI" = "lightblue", "95% PI" = "lightgreen"),
+                               name = "Prediction Intervals") +
+    
+    ggplot2::labs(
+      title = paste("Fitted Model with Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
+      subtitle = "Vertical red line separates in-sample (fitted) and out-of-sample (forecast) periods",
+      x = "Date",
+      y = "Values"
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      legend.position = "bottom",
+      panel.background = ggplot2::element_rect(fill = "white"),
+      plot.background = ggplot2::element_rect(fill = "white"),
+      legend.background = ggplot2::element_rect(fill = "white"),
+      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
+      panel.grid.major = ggplot2::element_line(color = "gray90"),
+      panel.grid.minor = ggplot2::element_line(color = "gray95")
+    )
+  
+  # Save the plot
+  ggplot2::ggsave(
+    paste0("plots/fitted_model_with_intervals_", combo, "_", model_id, ".png"),
+    plot = p,
+    width = 15,
+    height = 10,
+    dpi = 300,
+    bg = "white"
+  )
+  
+  return(p)
 }
 #' Convert weekly forecast down to daily
 #'
