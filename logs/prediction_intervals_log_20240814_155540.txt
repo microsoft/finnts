@@ -1,0 +1,33 @@
+2024-08-14 15:55:40 - =======================START TEST========================== 
+2024-08-14 15:55:40 - Confidence levels: 0.8, 0.95 
+2024-08-14 15:55:40 - Split ratio: 0.8 
+2024-08-14 15:55:40 - Filtered forecast table rows: 1050 
+2024-08-14 15:55:40 - Processing Combo: M2 Model ID: meanf--local--R1 
+2024-08-14 15:55:40 - Z values: 637.21, 974.53 
+2024-08-14 15:55:40 - Z-Score Coverage: 80%: 62.93%, 95%: 92.20% 
+2024-08-14 15:55:40 - Horizon: 1, Q values: 645.00, 839.38 
+2024-08-14 15:55:40 - Horizon: 1, Conformal Coverage: 80%: 88.89%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 2, Q values: 715.13, 839.93 
+2024-08-14 15:55:40 - Horizon: 2, Conformal Coverage: 80%: 88.89%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 3, Q values: 773.91, 898.11 
+2024-08-14 15:55:40 - Horizon: 3, Conformal Coverage: 80%: 88.89%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 4, Q values: 824.26, 945.55 
+2024-08-14 15:55:40 - Horizon: 4, Conformal Coverage: 80%: 88.89%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 5, Q values: 876.57, 998.09 
+2024-08-14 15:55:40 - Horizon: 5, Conformal Coverage: 80%: 94.12%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 6, Q values: 924.10, 1073.08 
+2024-08-14 15:55:40 - Horizon: 6, Conformal Coverage: 80%: 94.12%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 7, Q values: 965.98, 1104.43 
+2024-08-14 15:55:40 - Horizon: 7, Conformal Coverage: 80%: 94.12%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 8, Q values: 1016.31, 1161.22 
+2024-08-14 15:55:40 - Horizon: 8, Conformal Coverage: 80%: 100.00%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 9, Q values: 1055.41, 1254.27 
+2024-08-14 15:55:40 - Horizon: 9, Conformal Coverage: 80%: 94.12%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 10, Q values: 1071.25, 1331.28 
+2024-08-14 15:55:40 - Horizon: 10, Conformal Coverage: 80%: 93.75%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 11, Q values: 1116.94, 1397.59 
+2024-08-14 15:55:40 - Horizon: 11, Conformal Coverage: 80%: 100.00%, 95%: 100.00% 
+2024-08-14 15:55:40 - Horizon: 12, Q values: 1179.58, 1461.81 
+2024-08-14 15:55:40 - Horizon: 12, Conformal Coverage: 80%: 100.00%, 95%: 100.00% 
+2024-08-14 15:55:43 - Forecast table written to: final_forecast_table/forecast_table_20240814_155543.csv 
+2024-08-14 15:55:43 - =======================COMPLETE========================== 
