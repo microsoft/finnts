@@ -1,0 +1,75 @@
+2024-08-15 22:29:18 - =======================START TEST========================== 
+2024-08-15 22:29:18 - Confidence levels: 0.8, 0.95 
+2024-08-15 22:29:18 - Split ratio: 0.8 
+2024-08-15 22:29:19 - Filtered forecast table rows: 2088 
+2024-08-15 22:29:19 - Processing Combo: M750 Model ID: arima-boost--local--R1 
+2024-08-15 22:29:19 - Z values: 300.30, 459.26 
+2024-08-15 22:29:19 - Horizon: 1, Q values: 223.07, 273.59 
+2024-08-15 22:29:19 - Horizon: 2, Q values: 284.30, 425.19 
+2024-08-15 22:29:19 - Horizon: 3, Q values: 345.13, 397.92 
+2024-08-15 22:29:19 - Horizon: 4, Q values: 367.20, 428.63 
+2024-08-15 22:29:19 - Horizon: 5, Q values: 405.46, 458.91 
+2024-08-15 22:29:19 - Horizon: 6, Q values: 393.73, 540.49 
+2024-08-15 22:29:19 - Horizon: 7, Q values: 445.00, 532.17 
+2024-08-15 22:29:19 - Horizon: 8, Q values: 392.81, 735.57 
+2024-08-15 22:29:19 - Horizon: 9, Q values: 240.05, 792.92 
+2024-08-15 22:29:19 - Horizon: 10, Q values: 300.53, 760.95 
+2024-08-15 22:29:19 - Horizon: 11, Q values: 368.48, 681.04 
+2024-08-15 22:29:19 - Horizon: 12, Q values: 423.68, 664.45 
+2024-08-15 22:29:19 - All-up Conformal Coverage: 80%: 96.15%, 95%: 100.00% 
+2024-08-15 22:29:19 - All-up Z-Score Coverage: 80%: 92.31%, 95%: 100.00% 
+2024-08-15 22:29:21 - Processing Combo: M750 Model ID: arimax--local--R1 
+2024-08-15 22:29:21 - Z values: 675.06, 1032.41 
+2024-08-15 22:29:21 - Horizon: 1, Q values: 352.69, 924.63 
+2024-08-15 22:29:21 - Horizon: 2, Q values: 615.33, 916.46 
+2024-08-15 22:29:21 - Horizon: 3, Q values: 790.15, 1138.10 
+2024-08-15 22:29:21 - Horizon: 4, Q values: 908.15, 1095.66 
+2024-08-15 22:29:21 - Horizon: 5, Q values: 908.08, 1043.12 
+2024-08-15 22:29:21 - Horizon: 6, Q values: 1001.37, 1074.88 
+2024-08-15 22:29:21 - Horizon: 7, Q values: 918.68, 1010.12 
+2024-08-15 22:29:21 - Horizon: 8, Q values: 849.29, 942.20 
+2024-08-15 22:29:21 - Horizon: 9, Q values: 723.77, 1096.27 
+2024-08-15 22:29:21 - Horizon: 10, Q values: 630.86, 762.23 
+2024-08-15 22:29:21 - Horizon: 11, Q values: 610.40, 879.83 
+2024-08-15 22:29:21 - Horizon: 12, Q values: 382.07, 459.74 
+2024-08-15 22:29:21 - All-up Conformal Coverage: 80%: 94.23%, 95%: 97.12% 
+2024-08-15 22:29:21 - All-up Z-Score Coverage: 80%: 88.46%, 95%: 97.12% 
+2024-08-15 22:29:23 - Processing Combo: M750 Model ID: meanf--local--R1 
+2024-08-15 22:29:23 - Z values: 721.19, 1102.96 
+2024-08-15 22:29:23 - Horizon: 1, Q values: 769.35, 1348.89 
+2024-08-15 22:29:23 - Horizon: 2, Q values: 785.53, 1358.24 
+2024-08-15 22:29:23 - Horizon: 3, Q values: 646.40, 1173.29 
+2024-08-15 22:29:23 - Horizon: 4, Q values: 661.08, 1162.02 
+2024-08-15 22:29:23 - Horizon: 5, Q values: 695.01, 1150.77 
+2024-08-15 22:29:23 - Horizon: 6, Q values: 724.20, 1138.56 
+2024-08-15 22:29:23 - Horizon: 7, Q values: 752.04, 1124.73 
+2024-08-15 22:29:23 - Horizon: 8, Q values: 778.77, 1111.55 
+2024-08-15 22:29:23 - Horizon: 9, Q values: 800.45, 1118.00 
+2024-08-15 22:29:23 - Horizon: 10, Q values: 829.47, 1129.04 
+2024-08-15 22:29:23 - Horizon: 11, Q values: 850.97, 1156.86 
+2024-08-15 22:29:23 - Horizon: 12, Q values: 867.70, 1191.21 
+2024-08-15 22:29:23 - All-up Conformal Coverage: 80%: 96.15%, 95%: 100.00% 
+2024-08-15 22:29:23 - All-up Z-Score Coverage: 80%: 76.92%, 95%: 100.00% 
+2024-08-15 22:29:25 - Processing Combo: M750 Model ID: xgboost--local--R1 
+2024-08-15 22:29:25 - Z values: 437.38, 668.91 
+2024-08-15 22:29:25 - Horizon: 1, Q values: 251.28, 547.05 
+2024-08-15 22:29:25 - Horizon: 2, Q values: 429.07, 850.02 
+2024-08-15 22:29:25 - Horizon: 3, Q values: 446.03, 884.56 
+2024-08-15 22:29:25 - Horizon: 4, Q values: 533.58, 940.66 
+2024-08-15 22:29:25 - Horizon: 5, Q values: 585.64, 854.10 
+2024-08-15 22:29:25 - Horizon: 6, Q values: 576.20, 878.32 
+2024-08-15 22:29:25 - Horizon: 7, Q values: 584.74, 824.44 
+2024-08-15 22:29:25 - Horizon: 8, Q values: 616.28, 1050.85 
+2024-08-15 22:29:25 - Horizon: 9, Q values: 620.10, 899.28 
+2024-08-15 22:29:25 - Horizon: 10, Q values: 609.81, 861.28 
+2024-08-15 22:29:25 - Horizon: 11, Q values: 609.68, 947.97 
+2024-08-15 22:29:25 - Horizon: 12, Q values: 620.98, 738.92 
+2024-08-15 22:29:25 - All-up Conformal Coverage: 80%: 89.42%, 95%: 99.04% 
+2024-08-15 22:29:25 - All-up Z-Score Coverage: 80%: 56.73%, 95%: 97.12% 
+2024-08-15 22:29:28 - ========================================================== 
+2024-08-15 22:29:28 - Creating plots for Combo: M750 Model ID: arima-boost--local--R1 
+2024-08-15 22:29:29 - Creating plots for Combo: M750 Model ID: arimax--local--R1 
+2024-08-15 22:29:31 - Creating plots for Combo: M750 Model ID: meanf--local--R1 
+2024-08-15 22:29:32 - Creating plots for Combo: M750 Model ID: xgboost--local--R1 
+2024-08-15 22:29:34 - Forecast table written to: final_forecast_table/forecast_table_20240815_222934.csv 
+2024-08-15 22:29:34 - =======================COMPLETE========================== 

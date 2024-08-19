@@ -685,56 +685,81 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
         log_message(sprintf("Z values: %.2f, %.2f", z_vals[1], z_vals[2]))
 
-        # Step 6: Apply conformal method per horizon
-        horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
-          horizon_calibration <- calibration_set %>% dplyr::filter(Horizon == h)
-          
-          residuals <- horizon_calibration$Target - horizon_calibration$Forecast
-          q_vals <- sapply(conf_levels, function(cl) {
-            alpha <- 1 - cl
-            quantile(abs(residuals), probs = 1 - alpha/2, na.rm = TRUE)
-          })
+# Step 6: Apply adaptive rolling window conformal method per horizon
+horizon_results <- purrr::map_dfr(unique(combo_model_data$Horizon), function(h) {
+  horizon_data <- combo_model_data %>% 
+    dplyr::filter(Horizon == h) %>%
+    dplyr::arrange(Date)
+  
+  n_horizon <- nrow(horizon_data)
+  min_window_size <- 3  # You can adjust this or make it a parameter
+  
+  if (h <= 2 || n_horizon <= min_window_size) {
+    # Use all data for horizons 1-2 or if there's not enough data for a rolling window
+    residuals <- horizon_data$Target - horizon_data$Forecast
+  } else {
+    # Use rolling windows for horizons 3 and above
+    window_size <- min(min_window_size, n_horizon - 1)  # Ensure at least one test point
+    
+    # Collect all residuals from rolling windows
+    residuals <- numeric()
+    for (i in 1:(n_horizon - window_size + 1)) {
+      window_data <- horizon_data[i:(i + window_size - 1), ]
+      residuals <- c(residuals, window_data$Target - window_data$Forecast)
+    }
+  }
+  
+  # Calculate quantiles using all collected residuals
+  q_vals <- sapply(conf_levels, function(cl) {
+    alpha <- 1 - cl
+    quantile(abs(residuals), probs = 1 - alpha/2, na.rm = TRUE)
+  })
+  
+  log_message(sprintf("Horizon: %d, Q values: %.2f, %.2f", h, q_vals[1], q_vals[2]))
+  
+  dplyr::tibble(
+    Combo = combo,
+    Model_ID = model_id,
+    Horizon = h,
+    q_val_80 = q_vals[1],
+    q_val_95 = q_vals[2]
+  )
+})
 
-          log_message(sprintf("Horizon: %d, Q values: %.2f, %.2f", h, q_vals[1], q_vals[2]))
+# Add z-values to horizon_results
+horizon_results <- horizon_results %>%
+  dplyr::mutate(
+    z_val_80 = z_vals[1],
+    z_val_95 = z_vals[2]
+  )
 
-          dplyr::tibble(
-            Combo = combo,
-            Model_ID = model_id,
-            Horizon = h,
-            q_val_80 = q_vals[1],
-            q_val_95 = q_vals[2],
-            z_val_80 = z_vals[1],
-            z_val_95 = z_vals[2]
-          )
-        })
+# Step 7: Handle missing horizons
+max_horizon <- max(horizon_results$Horizon)
+max_horizon_values <- horizon_results %>%
+  dplyr::filter(Horizon == max_horizon) %>%
+  dplyr::select(q_val_80, q_val_95, z_val_80, z_val_95)
 
-        # Step 7: Handle missing horizons
-        max_horizon <- max(horizon_results$Horizon)
-        max_horizon_values <- horizon_results %>%
-          dplyr::filter(Horizon == max_horizon) %>%
-          dplyr::select(q_val_80, q_val_95, z_val_80, z_val_95)
+# Add fallback values for horizons not in calibration data
+all_horizons <- unique(combo_model_data$Horizon)
+missing_horizons <- setdiff(all_horizons, horizon_results$Horizon)
 
-        # Add fallback values for horizons not in calibration data
-        all_horizons <- unique(combo_model_data$Horizon)
-        missing_horizons <- setdiff(all_horizons, horizon_results$Horizon)
-        
-        if (length(missing_horizons) > 0) {
-          log_message(sprintf("Adding fallback values for horizons: %s", paste(missing_horizons, collapse = ", ")))
-          
-          fallback_results <- purrr::map_dfr(missing_horizons, function(h) {
-            dplyr::tibble(
-              Combo = combo,
-              Model_ID = model_id,
-              Horizon = h,
-              q_val_80 = max_horizon_values$q_val_80,
-              q_val_95 = max_horizon_values$q_val_95,
-              z_val_80 = max_horizon_values$z_val_80,
-              z_val_95 = max_horizon_values$z_val_95
-            )
-          })
-          
-          horizon_results <- dplyr::bind_rows(horizon_results, fallback_results)
-        }
+if (length(missing_horizons) > 0) {
+  log_message(sprintf("Adding fallback values for horizons: %s", paste(missing_horizons, collapse = ", ")))
+  
+  fallback_results <- purrr::map_dfr(missing_horizons, function(h) {
+    dplyr::tibble(
+      Combo = combo,
+      Model_ID = model_id,
+      Horizon = h,
+      q_val_80 = max_horizon_values$q_val_80,
+      q_val_95 = max_horizon_values$q_val_95,
+      z_val_80 = max_horizon_values$z_val_80,
+      z_val_95 = max_horizon_values$z_val_95
+    )
+  })
+  
+  horizon_results <- dplyr::bind_rows(horizon_results, fallback_results)
+}
 
         # Step 8: Calculate coverage on test set
         test_set_with_intervals <- test_set %>%
@@ -805,7 +830,6 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
   
 
     
-
 
 
 

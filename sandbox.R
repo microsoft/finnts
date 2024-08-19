@@ -80,3 +80,4 @@ plots <- lapply(combo_ids, function(combo_id) {
 print(plots[[1]])
 
 }) # End profiling
+View(fcst_tbl)

@@ -1,0 +1,24 @@
+2024-08-15 22:28:20 - =======================START TEST========================== 
+2024-08-15 22:28:20 - Confidence levels: 0.8, 0.95 
+2024-08-15 22:28:20 - Split ratio: 0.8 
+2024-08-15 22:28:20 - Filtered forecast table rows: 522 
+2024-08-15 22:28:20 - Processing Combo: M2 Model ID: arimax--local--R1_meanf--local--R1 
+2024-08-15 22:28:20 - Z values: 403.66, 617.35 
+2024-08-15 22:28:20 - Horizon: 1, Q values: 571.35, 670.92 
+2024-08-15 22:28:20 - Horizon: 2, Q values: 540.63, 712.35 
+2024-08-15 22:28:20 - Horizon: 3, Q values: 536.38, 862.34 
+2024-08-15 22:28:20 - Horizon: 4, Q values: 570.73, 781.05 
+2024-08-15 22:28:20 - Horizon: 5, Q values: 706.03, 842.95 
+2024-08-15 22:28:20 - Horizon: 6, Q values: 635.69, 859.42 
+2024-08-15 22:28:20 - Horizon: 7, Q values: 692.57, 791.63 
+2024-08-15 22:28:20 - Horizon: 8, Q values: 625.91, 786.37 
+2024-08-15 22:28:20 - Horizon: 9, Q values: 586.72, 1000.01 
+2024-08-15 22:28:20 - Horizon: 10, Q values: 844.91, 1006.92 
+2024-08-15 22:28:20 - Horizon: 11, Q values: 884.83, 942.28 
+2024-08-15 22:28:20 - Horizon: 12, Q values: 857.81, 1018.49 
+2024-08-15 22:28:20 - All-up Conformal Coverage: 80%: 87.50%, 95%: 95.19% 
+2024-08-15 22:28:20 - All-up Z-Score Coverage: 80%: 52.88%, 95%: 77.88% 
+2024-08-15 22:28:23 - ========================================================== 
+2024-08-15 22:28:23 - Creating plots for Combo: M2 Model ID: arimax--local--R1_meanf--local--R1 
+2024-08-15 22:28:25 - Forecast table written to: final_forecast_table/forecast_table_20240815_222825.csv 
+2024-08-15 22:28:25 - =======================COMPLETE========================== 
