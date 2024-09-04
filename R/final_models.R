@@ -685,29 +685,42 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
         log_message(sprintf("Z values: %.2f, %.2f", z_vals[1], z_vals[2]))
 
+
+#Expanding window implementation to catch more uncertainty
 # Step 6: Apply adaptive rolling window conformal method per horizon
-horizon_results <- purrr::map_dfr(unique(combo_model_data$Horizon), function(h) {
-  horizon_data <- combo_model_data %>% 
-    dplyr::filter(Horizon == h) %>%
+horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
+  horizon_data <- calibration_set %>% 
+    dplyr::filter(Horizon >= h & Horizon <= h + 2) %>%
     dplyr::arrange(Date)
   
-  n_horizon <- nrow(horizon_data)
-  min_window_size <- 3  # You can adjust this or make it a parameter
-  
-  if (h <= 2 || n_horizon <= min_window_size) {
-    # Use all data for horizons 1-2 or if there's not enough data for a rolling window
-    residuals <- horizon_data$Target - horizon_data$Forecast
-  } else {
-    # Use rolling windows for horizons 3 and above
-    window_size <- min(min_window_size, n_horizon - 1)  # Ensure at least one test point
+
+
+    n_horizon <- nrow(horizon_data)
+    min_window_size <- 3  #TO DO: make some floor?
+# Dynamic window size based on data variance
+  min_window_size <- max(3, round(n_horizon * 0.1))
+  window_size <- min(min_window_size, n_horizon - 1)
     
     # Collect all residuals from rolling windows
-    residuals <- numeric()
+    residuals <- numeric() 
     for (i in 1:(n_horizon - window_size + 1)) {
       window_data <- horizon_data[i:(i + window_size - 1), ]
-      residuals <- c(residuals, window_data$Target - window_data$Forecast)
+      current_residuals <- window_data$Target - window_data$Forecast
+      residuals <- c(residuals, current_residuals) #To make sure it changes the variable out of the loop scope
+
+    #log window information
+      log_message(sprintf("Horizon: %d, Window: %d, Start Date: %s, End Date: %s, Residuals: Mean=%f, Min=%f, Max=%f, Count=%d",
+                          h, i, 
+                          as.character(window_data$Date[1]), 
+                          as.character(window_data$Date[window_size]), 
+                          mean(residuals), 
+                          min(residuals), 
+                          max(residuals), 
+                          length(residuals)))
+
+
+
     }
-  }
   
   # Calculate quantiles using all collected residuals
   q_vals <- sapply(conf_levels, function(cl) {
