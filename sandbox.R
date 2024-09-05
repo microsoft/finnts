@@ -25,8 +25,8 @@ prep_data(run_info,
 )
 
 prep_models(run_info,
-  # models_to_run = c("arimax", "meanf","xgboost", "arima-boost"),
-  models_to_run = c("meanf"),
+  models_to_run = c("arimax", "meanf","xgboost", "arima-boost"),
+  # models_to_run = c("meanf"),
 )
 
 train_models(run_info,
@@ -38,3 +38,5 @@ final_models(run_info,
 )
 
 fcst_tbl <- get_forecast_data(run_info)
+
+View(fcst_tbl)

@@ -1,0 +1,24 @@
+2024-09-04 23:46:40 - =======================START TEST========================== 
+2024-09-04 23:46:40 - Confidence levels: 0.8, 0.95 
+2024-09-04 23:46:40 - Split ratio: 0.9 
+2024-09-04 23:46:40 - Filtered forecast table rows: 522 
+2024-09-04 23:46:40 - Processing Combo: M1 Model ID: arima-boost--local--R1_meanf--local--R1_xgboost--local--R1 
+2024-09-04 23:46:40 - Z values: 1066.50, 1631.07 
+2024-09-04 23:46:40 - Horizon: 1, Q values: 1203.11, 1650.12 
+2024-09-04 23:46:40 - Horizon: 2, Q values: 1359.15, 1650.12 
+2024-09-04 23:46:40 - Horizon: 3, Q values: 1385.57, 1650.12 
+2024-09-04 23:46:40 - Horizon: 4, Q values: 1469.75, 1980.78 
+2024-09-04 23:46:40 - Horizon: 5, Q values: 1606.29, 2005.79 
+2024-09-04 23:46:40 - Horizon: 6, Q values: 1933.46, 2125.48 
+2024-09-04 23:46:40 - Horizon: 7, Q values: 1948.49, 2282.92 
+2024-09-04 23:46:40 - Horizon: 8, Q values: 1966.17, 2306.92 
+2024-09-04 23:46:40 - Horizon: 9, Q values: 2089.04, 2573.37 
+2024-09-04 23:46:40 - Horizon: 10, Q values: 2168.00, 2735.45 
+2024-09-04 23:46:40 - Horizon: 11, Q values: 2376.51, 3046.67 
+2024-09-04 23:46:40 - Horizon: 12, Q values: 2396.86, 3053.93 
+2024-09-04 23:46:40 - All-up Conformal Coverage: 80%: 100.00%, 95%: 100.00% 
+2024-09-04 23:46:40 - All-up Z-Score Coverage: 80%: 80.77%, 95%: 100.00% 
+2024-09-04 23:46:42 - ========================================================== 
+2024-09-04 23:46:42 - Creating plots for Combo: M1 Model ID: arima-boost--local--R1_meanf--local--R1_xgboost--local--R1 
+2024-09-04 23:46:44 - Forecast table written to: final_forecast_table/forecast_table_20240904_234644.csv 
+2024-09-04 23:46:44 - =======================COMPLETE========================== 
