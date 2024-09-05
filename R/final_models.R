@@ -681,39 +681,195 @@ final_models <- function(run_info,
 }
 
 #' Create prediction intervals
-#'
+#' #This function calculates prediction intervals using both conformal prediction and z-score methods,
+# adjusting for different time horizons in forecasting data.
 #' @param fcst_tbl forecast table to use to create prediction intervals
 #' @param train_test_split train test split
+#' @param conf_levels confidence levels for prediction intervals (default: c(0.80, 0.95))
+#' @param split_ratio split ratio for calibration and test sets (default: 0.8)
 #'
 #' @return data frame with prediction intervals
 #' @noRd
-create_prediction_intervals <- function(fcst_tbl,
-                                        train_test_split) {
-  back_test_id <- train_test_split %>%
-    dplyr::filter(Run_Type == "Back_Test") %>%
-    dplyr::select(Train_Test_ID) %>%
-    dplyr::pull(Train_Test_ID)
+create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels = c(0.80, 0.95), split_ratio = 0.9) {
+  # Step 1: Set up logging
 
-  prediction_interval_tbl <- fcst_tbl %>%
-    dplyr::filter(Train_Test_ID %in% back_test_id) %>%
-    dplyr::mutate(Residual = Target - Forecast) %>%
-    dplyr::group_by(Combo, Model_ID) %>%
-    dplyr::summarise(Residual_Std_Dev = sd(Residual, na.rm = TRUE)) %>%
-    dplyr::ungroup()
 
-  final_tbl <- fcst_tbl %>%
-    dplyr::left_join(prediction_interval_tbl,
-      by = c("Model_ID", "Combo")
-    ) %>%
-    dplyr::mutate(
-      lo_80 = ifelse(Train_Test_ID == 1, Forecast - (1.28 * Residual_Std_Dev), NA),
-      lo_95 = ifelse(Train_Test_ID == 1, Forecast - (1.96 * Residual_Std_Dev), NA),
-      hi_80 = ifelse(Train_Test_ID == 1, Forecast + (1.28 * Residual_Std_Dev), NA),
-      hi_95 = ifelse(Train_Test_ID == 1, Forecast + (1.96 * Residual_Std_Dev), NA)
-    ) %>%
-    dplyr::select(-Residual_Std_Dev)
+  tryCatch({
+    
 
-  return(final_tbl)
+    # Step 2: Filter and prepare data
+    back_test_ids <- train_test_split %>%
+      dplyr::filter(Run_Type == "Back_Test") %>%
+      dplyr::pull(Train_Test_ID)
+
+    fcst_tbl_filtered <- fcst_tbl %>%
+      dplyr::filter(Train_Test_ID %in% back_test_ids) %>%
+      dplyr::arrange(Date, Horizon)
+
+
+    results <- list()
+
+    # Step 3: Process each combination of Combo and Model_ID
+    for (combo in unique(fcst_tbl_filtered$Combo)) {
+      for (model_id in unique(fcst_tbl_filtered$Model_ID[fcst_tbl_filtered$Combo == combo])) {
+ 
+        combo_model_data <- fcst_tbl_filtered %>%
+          dplyr::filter(Combo == combo, Model_ID == model_id)
+
+        # Step 4: Split data into calibration and test sets
+        n <- nrow(combo_model_data)
+        split_index <- ceiling(split_ratio * n)
+        calibration_set <- combo_model_data[1:split_index, ]
+        test_set <- combo_model_data[(split_index + 1):n, ]
+
+        # Step 5: Calculate Z-scores using calibration data
+        residuals <- calibration_set$Target - calibration_set$Forecast
+        residual_std_dev <- sd(residuals, na.rm = TRUE)
+
+        z_scores <- c(qnorm((1 + conf_levels[1]) / 2), qnorm((1 + conf_levels[2]) / 2))
+        z_vals <- z_scores * residual_std_dev
+
+        # Rolling window implementation to catch more uncertainty
+        # Step 6: Apply adaptive rolling window conformal method per horizon
+        horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
+          horizon_data <- calibration_set %>%
+            dplyr::filter(Horizon >= h & Horizon <= h + 2) %>%
+            dplyr::arrange(Date)
+
+          n_horizon <- nrow(horizon_data)
+
+          # Dynamic window size based on data variance
+          min_window_size <- max(3, round(n_horizon * 0.1))
+          window_size <- min(min_window_size, n_horizon - 1)
+
+          # Collect all residuals from rolling windows
+          residuals <- numeric()
+
+          for (i in 1:(n_horizon - window_size + 1)) {
+            window_data <- horizon_data[i:(i + window_size - 1), ]
+            current_residuals <- window_data$Target - window_data$Forecast
+            residuals <- c(residuals, current_residuals) # To make sure it changes the variable out of the loop scope
+          }
+          # Calculate quantiles using all collected residuals
+          q_vals <- sapply(conf_levels, function(cl) {
+            alpha <- 1 - cl
+            quantile(abs(residuals), probs = 1 - alpha / 2, na.rm = TRUE)
+          })
+
+          dplyr::tibble(
+            Combo = combo,
+            Model_ID = model_id,
+            Horizon = h,
+            q_val_80 = q_vals[1],
+            q_val_95 = q_vals[2]
+          )
+        })
+
+        # Add z-values to horizon_results
+        horizon_results <- horizon_results %>%
+          dplyr::mutate(
+            z_val_80 = z_vals[1],
+            z_val_95 = z_vals[2]
+          )
+
+        # Step 7: Handle missing horizons
+        max_horizon <- max(horizon_results$Horizon)
+        max_horizon_values <- horizon_results %>%
+          dplyr::filter(Horizon == max_horizon) %>%
+          dplyr::select(q_val_80, q_val_95, z_val_80, z_val_95)
+
+        # Add fallback values for horizons not in calibration data
+        all_horizons <- unique(combo_model_data$Horizon)
+        missing_horizons <- setdiff(all_horizons, horizon_results$Horizon)
+
+        if (length(missing_horizons) > 0) {
+         
+
+          fallback_results <- purrr::map_dfr(missing_horizons, function(h) {
+            dplyr::tibble(
+              Combo = combo,
+              Model_ID = model_id,
+              Horizon = h,
+              q_val_80 = max_horizon_values$q_val_80,
+              q_val_95 = max_horizon_values$q_val_95,
+              z_val_80 = max_horizon_values$z_val_80,
+              z_val_95 = max_horizon_values$z_val_95
+            )
+          })
+
+          horizon_results <- dplyr::bind_rows(horizon_results, fallback_results)
+        }
+
+        # Step 8: Calculate coverage on test set
+        test_set_with_intervals <- test_set %>%
+          dplyr::left_join(horizon_results, by = c("Combo", "Model_ID", "Horizon")) %>%
+          dplyr::mutate(
+            covered_80_conf = Target >= (Forecast - q_val_80) & Target <= (Forecast + q_val_80),
+            covered_95_conf = Target >= (Forecast - q_val_95) & Target <= (Forecast + q_val_95),
+            covered_80_z = Target >= (Forecast - z_val_80) & Target <= (Forecast + z_val_80),
+            covered_95_z = Target >= (Forecast - z_val_95) & Target <= (Forecast + z_val_95)
+          )
+
+        coverage <- test_set_with_intervals %>%
+          dplyr::summarise(
+            coverage_conf_80 = mean(covered_80_conf, na.rm = TRUE),
+            coverage_conf_95 = mean(covered_95_conf, na.rm = TRUE),
+            coverage_z_80 = mean(covered_80_z, na.rm = TRUE),
+            coverage_z_95 = mean(covered_95_z, na.rm = TRUE)
+          )
+
+        
+        # Step 9: Store results
+        results[[length(results) + 1]] <- horizon_results %>%
+          dplyr::mutate(
+            coverage_conf_80 = coverage$coverage_conf_80,
+            coverage_conf_95 = coverage$coverage_conf_95,
+            coverage_z_80 = coverage$coverage_z_80,
+            coverage_z_95 = coverage$coverage_z_95
+          )
+        # Step 10: Create calibration plots (function not provided in the original code)
+
+      }
+
+    }
+
+    # Step 11: Combine all results
+    results <- do.call(rbind, results)
+
+    fcst_tbl <- fcst_tbl %>%
+      dplyr::left_join(results, by = c("Combo", "Model_ID", "Horizon")) %>%
+      dplyr::mutate(
+        lo_80 = Forecast - pmax(z_val_80, q_val_80, na.rm = TRUE),
+        hi_80 = Forecast + pmax(z_val_80, q_val_80, na.rm = TRUE),
+        lo_95 = Forecast - pmax(z_val_95, q_val_95, na.rm = TRUE),
+        hi_95 = Forecast + pmax(z_val_95, q_val_95, na.rm = TRUE),
+        method_80 = ifelse(z_val_80 > q_val_80, "Z-Score", "Conformal"),
+        method_95 = ifelse(z_val_95 > q_val_95, "Z-Score", "Conformal"),
+        coverage_80 = pmax(coverage_z_80, coverage_conf_80, na.rm = TRUE),
+        coverage_95 = pmax(coverage_z_95, coverage_conf_95, na.rm = TRUE)
+      )
+
+    
+    # Step 14: Save results
+    filename <- paste0("final_forecast_table/forecast_table_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+    write.csv(fcst_tbl, file = filename, row.names = FALSE)
+
+  }, error = function(e) {
+
+    fcst_tbl <- dplyr::mutate(fcst_tbl,
+                              lo_80 = NA, 
+                              hi_80 = NA,
+                              lo_95 = NA,
+                              hi_95 = NA,
+                              method_80 = NA,
+                              method_95 = NA,
+                              coverage_80 = NA,
+                              coverage_95 = NA)
+    return(fcst_tbl)
+
+  })
+
+  return(fcst_tbl)
 }
 
 #' Convert weekly forecast down to daily
@@ -750,7 +906,7 @@ convert_weekly_to_daily <- function(fcst_tbl,
           ) %>%
           dplyr::select(
             Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-            Best_Model, Combo, Horizon, Date, Date_Day, Target, Forecast, lo_95, lo_80, hi_80, hi_95
+            Best_Model, Combo, Horizon, Date, Date_Day, Target, Forecast, lo_95, lo_80, hi_80, hi_95, coverage_80, coverage_95
           )
 
         return(daily_tbl)
@@ -760,7 +916,7 @@ convert_weekly_to_daily <- function(fcst_tbl,
     final_tbl <- fcst_tbl %>%
       dplyr::select(
         Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Hyperparameter_ID,
-        Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95
+        Best_Model, Combo, Horizon, Date, Target, Forecast, lo_95, lo_80, hi_80, hi_95, coverage_80, coverage_95
       )
   }
 
