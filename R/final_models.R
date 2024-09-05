@@ -703,23 +703,14 @@ horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
     
     # Collect all residuals from rolling windows
     residuals <- numeric() 
+    
+    
     for (i in 1:(n_horizon - window_size + 1)) {
       window_data <- horizon_data[i:(i + window_size - 1), ]
       current_residuals <- window_data$Target - window_data$Forecast
       residuals <- c(residuals, current_residuals) #To make sure it changes the variable out of the loop scope
 
-    #log window information
-      log_message(sprintf("Horizon: %d, Window: %d, Start Date: %s, End Date: %s, Residuals: Mean=%f, Min=%f, Max=%f, Count=%d",
-                          h, i, 
-                          as.character(window_data$Date[1]), 
-                          as.character(window_data$Date[window_size]), 
-                          mean(residuals), 
-                          min(residuals), 
-                          max(residuals), 
-                          length(residuals)))
-
-
-
+    
     }
   
   # Calculate quantiles using all collected residuals

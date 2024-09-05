@@ -1,0 +1,233 @@
+2024-09-04 14:31:27 - =======================START TEST========================== 
+2024-09-04 14:31:27 - Confidence levels: 0.8, 0.95 
+2024-09-04 14:31:27 - Split ratio: 0.8 
+2024-09-04 14:31:27 - Filtered forecast table rows: 144 
+2024-09-04 14:31:27 - Processing Combo: M2 Model ID: meanf--local--R1 
+2024-09-04 14:31:27 - Z values: 351.63, 537.77 
+
+2024-09-04 14:18:29 - Confidence levels: 0.8, 0.95 
+2024-09-04 14:18:29 - Split ratio: 0.8 
+2024-09-04 14:18:29 - Filtered forecast table rows: 144 
+2024-09-04 14:18:29 - Processing Combo: M2 Model ID: meanf--local--R1 
+2024-09-04 14:18:29 - Z values: 398.46, 609.39 
+
+
+
+
+2024-09-04 14:31:27 - Horizon: 1, Window: 1, Start Date: 2011-06-01, End Date: 2011-10-01, Residuals: Mean=-98.717675, Min=-2086.937287, Max=2435.828926, Count=116 
+2024-09-04 14:31:27 - Horizon: 1, Window: 2, Start Date: 2011-07-01, End Date: 2011-11-01, Residuals: Mean=-166.858264, Min=-2086.937287, Max=2435.828926, Count=232 
+2024-09-04 14:31:27 - Horizon: 1, Window: 3, Start Date: 2011-07-01, End Date: 2011-11-01, Residuals: Mean=-235.542410, Min=-2143.750297, Max=2435.828926, Count=348 
+2024-09-04 14:31:27 - Horizon: 1, Window: 4, Start Date: 2011-08-01, End Date: 2011-11-01, Residuals: Mean=-285.028100, Min=-2143.750297, Max=2435.828926, Count=464 
+2024-09-04 14:31:27 - Horizon: 1, Window: 5, Start Date: 2011-08-01, End Date: 2011-12-01, Residuals: Mean=-335.461324, Min=-2143.750297, Max=2435.828926, Count=580 
+2024-09-04 14:31:27 - Horizon: 1, Window: 6, Start Date: 2011-08-01, End Date: 2011-12-01, Residuals: Mean=-380.964281, Min=-2143.750297, Max=2435.828926, Count=696 
+2024-09-04 14:31:27 - Horizon: 1, Window: 7, Start Date: 2011-09-01, End Date: 2011-12-01, Residuals: Mean=-419.731307, Min=-2143.750297, Max=2435.828926, Count=812 
+2024-09-04 14:31:27 - Horizon: 1, Window: 8, Start Date: 2011-09-01, End Date: 2012-01-01, Residuals: Mean=-452.892433, Min=-2941.519906, Max=2435.828926, Count=928 
+2024-09-04 14:31:27 - Horizon: 1, Window: 9, Start Date: 2011-09-01, End Date: 2012-01-01, Residuals: Mean=-484.527408, Min=-3066.474262, Max=2435.828926, Count=1044 
+2024-09-04 14:31:27 - Horizon: 1, Window: 10, Start Date: 2011-10-01, End Date: 2012-01-01, Residuals: Mean=-513.452706, Min=-3066.474262, Max=2435.828926, Count=1160 
+2024-09-04 14:31:27 - Horizon: 1, Window: 11, Start Date: 2011-10-01, End Date: 2012-02-01, Residuals: Mean=-539.293057, Min=-3066.474262, Max=2435.828926, Count=1276 
+2024-09-04 14:31:27 - Horizon: 1, Window: 12, Start Date: 2011-10-01, End Date: 2012-02-01, Residuals: Mean=-565.593089, Min=-3066.474262, Max=2435.828926, Count=1392 
+2024-09-04 14:31:27 - Horizon: 1, Window: 13, Start Date: 2011-11-01, End Date: 2012-02-01, Residuals: Mean=-591.690178, Min=-3066.474262, Max=2435.828926, Count=1508 
+2024-09-04 14:31:27 - Horizon: 1, Window: 14, Start Date: 2011-11-01, End Date: 2012-03-01, Residuals: Mean=-614.270406, Min=-3066.474262, Max=2435.828926, Count=1624 
+2024-09-04 14:31:27 - Horizon: 1, Window: 15, Start Date: 2011-11-01, End Date: 2012-03-01, Residuals: Mean=-634.836925, Min=-3066.474262, Max=2435.828926, Count=1740 
+2024-09-04 14:31:27 - Horizon: 1, Window: 16, Start Date: 2011-12-01, End Date: 2012-03-01, Residuals: Mean=-656.767578, Min=-3066.474262, Max=2435.828926, Count=1856 
+2024-09-04 14:31:27 - Horizon: 1, Window: 17, Start Date: 2011-12-01, End Date: 2012-04-01, Residuals: Mean=-665.537060, Min=-3066.474262, Max=2435.828926, Count=1972 
+2024-09-04 14:31:27 - Horizon: 1, Window: 18, Start Date: 2011-12-01, End Date: 2012-04-01, Residuals: Mean=-666.223603, Min=-3066.474262, Max=2435.828926, Count=2088 
+2024-09-04 14:31:27 - Horizon: 1, Window: 19, Start Date: 2012-01-01, End Date: 2012-04-01, Residuals: Mean=-669.227190, Min=-3066.474262, Max=2435.828926, Count=2204 
+2024-09-04 14:31:27 - Horizon: 1, Window: 20, Start Date: 2012-01-01, End Date: 2012-05-01, Residuals: Mean=-655.378140, Min=-3066.474262, Max=2435.828926, Count=2320 
+2024-09-04 14:31:27 - Horizon: 1, Window: 21, Start Date: 2012-01-01, End Date: 2012-05-01, Residuals: Mean=-631.006322, Min=-3066.474262, Max=2435.828926, Count=2436 
+2024-09-04 14:31:27 - Horizon: 1, Window: 22, Start Date: 2012-02-01, End Date: 2012-05-01, Residuals: Mean=-609.499338, Min=-3066.474262, Max=2435.828926, Count=2552 
+2024-09-04 14:31:27 - Horizon: 1, Window: 23, Start Date: 2012-02-01, End Date: 2012-06-01, Residuals: Mean=-583.589197, Min=-3066.474262, Max=2435.828926, Count=2668 
+2024-09-04 14:31:27 - Horizon: 1, Window: 24, Start Date: 2012-02-01, End Date: 2012-06-01, Residuals: Mean=-554.098719, Min=-3066.474262, Max=2435.828926, Count=2784 
+2024-09-04 14:31:27 - Horizon: 1, Window: 25, Start Date: 2012-03-01, End Date: 2012-06-01, Residuals: Mean=-527.156590, Min=-3066.474262, Max=2435.828926, Count=2900 
+2024-09-04 14:31:27 - Horizon: 1, Window: 26, Start Date: 2012-03-01, End Date: 2012-07-01, Residuals: Mean=-503.798647, Min=-3066.474262, Max=2435.828926, Count=3016 
+2024-09-04 14:31:27 - Horizon: 1, Window: 27, Start Date: 2012-03-01, End Date: 2012-07-01, Residuals: Mean=-482.479805, Min=-3066.474262, Max=2435.828926, Count=3132 
+2024-09-04 14:31:27 - Horizon: 1, Window: 28, Start Date: 2012-04-01, End Date: 2012-07-01, Residuals: Mean=-462.570309, Min=-3066.474262, Max=2435.828926, Count=3248 
+2024-09-04 14:31:27 - Horizon: 1, Window: 29, Start Date: 2012-04-01, End Date: 2012-08-01, Residuals: Mean=-446.460696, Min=-3066.474262, Max=2435.828926, Count=3364 
+2024-09-04 14:31:27 - Horizon: 1, Window: 30, Start Date: 2012-04-01, End Date: 2012-08-01, Residuals: Mean=-433.737744, Min=-3066.474262, Max=2435.828926, Count=3480 
+2024-09-04 14:31:27 - Horizon: 1, Window: 31, Start Date: 2012-05-01, End Date: 2012-08-01, Residuals: Mean=-422.263446, Min=-3066.474262, Max=2435.828926, Count=3596 
+2024-09-04 14:31:27 - Horizon: 1, Window: 32, Start Date: 2012-05-01, End Date: 2012-09-01, Residuals: Mean=-413.803823, Min=-3066.474262, Max=2435.828926, Count=3712 
+2024-09-04 14:31:27 - Horizon: 1, Window: 33, Start Date: 2012-05-01, End Date: 2012-09-01, Residuals: Mean=-408.485494, Min=-3066.474262, Max=2435.828926, Count=3828 
+2024-09-04 14:31:27 - Horizon: 1, Window: 34, Start Date: 2012-06-01, End Date: 2012-09-01, Residuals: Mean=-404.887774, Min=-3066.474262, Max=2435.828926, Count=3944 
+2024-09-04 14:31:27 - Horizon: 1, Window: 35, Start Date: 2012-06-01, End Date: 2012-10-01, Residuals: Mean=-400.983556, Min=-3066.474262, Max=2435.828926, Count=4060 
+2024-09-04 14:31:27 - Horizon: 1, Window: 36, Start Date: 2012-06-01, End Date: 2012-10-01, Residuals: Mean=-397.693163, Min=-3066.474262, Max=2435.828926, Count=4176 
+2024-09-04 14:31:27 - Horizon: 1, Window: 37, Start Date: 2012-07-01, End Date: 2012-10-01, Residuals: Mean=-395.954364, Min=-3066.474262, Max=2435.828926, Count=4292 
+2024-09-04 14:31:27 - Horizon: 1, Window: 38, Start Date: 2012-07-01, End Date: 2012-11-01, Residuals: Mean=-391.894409, Min=-3066.474262, Max=2435.828926, Count=4408 
+2024-09-04 14:31:27 - Horizon: 1, Window: 39, Start Date: 2012-07-01, End Date: 2012-11-01, Residuals: Mean=-386.430463, Min=-3066.474262, Max=2435.828926, Count=4524 
+2024-09-04 14:31:27 - Horizon: 1, Window: 40, Start Date: 2012-08-01, End Date: 2012-11-01, Residuals: Mean=-382.284344, Min=-3066.474262, Max=2435.828926, Count=4640 
+2024-09-04 14:31:27 - Horizon: 1, Window: 41, Start Date: 2012-08-01, End Date: 2012-12-01, Residuals: Mean=-377.275666, Min=-3066.474262, Max=2435.828926, Count=4756 
+2024-09-04 14:31:27 - Horizon: 1, Window: 42, Start Date: 2012-08-01, End Date: 2012-12-01, Residuals: Mean=-371.388575, Min=-3066.474262, Max=2435.828926, Count=4872 
+2024-09-04 14:31:27 - Horizon: 1, Window: 43, Start Date: 2012-09-01, End Date: 2012-12-01, Residuals: Mean=-366.516885, Min=-3066.474262, Max=2435.828926, Count=4988 
+2024-09-04 14:31:27 - Horizon: 1, Window: 44, Start Date: 2012-09-01, End Date: 2013-01-01, Residuals: Mean=-362.192403, Min=-3066.474262, Max=2435.828926, Count=5104 
+2024-09-04 14:31:27 - Horizon: 1, Window: 45, Start Date: 2012-09-01, End Date: 2013-01-01, Residuals: Mean=-358.250795, Min=-3066.474262, Max=2435.828926, Count=5220 
+2024-09-04 14:31:27 - Horizon: 1, Window: 46, Start Date: 2012-10-01, End Date: 2013-01-01, Residuals: Mean=-354.889363, Min=-3066.474262, Max=2435.828926, Count=5336 
+2024-09-04 14:31:27 - Horizon: 1, Window: 47, Start Date: 2012-10-01, End Date: 2013-02-01, Residuals: Mean=-352.864394, Min=-3066.474262, Max=2435.828926, Count=5452 
+2024-09-04 14:31:27 - Horizon: 1, Window: 48, Start Date: 2012-10-01, End Date: 2013-02-01, Residuals: Mean=-351.948278, Min=-3066.474262, Max=2435.828926, Count=5568 
+2024-09-04 14:31:27 - Horizon: 1, Window: 49, Start Date: 2012-11-01, End Date: 2013-02-01, Residuals: Mean=-351.439064, Min=-3066.474262, Max=2435.828926, Count=5684 
+2024-09-04 14:31:27 - Horizon: 1, Window: 50, Start Date: 2012-11-01, End Date: 2013-03-01, Residuals: Mean=-352.646474, Min=-3066.474262, Max=2435.828926, Count=5800 
+2024-09-04 14:31:27 - Horizon: 1, Window: 51, Start Date: 2012-11-01, End Date: 2013-03-01, Residuals: Mean=-355.014124, Min=-3066.474262, Max=2435.828926, Count=5916 
+2024-09-04 14:31:27 - Horizon: 1, Window: 52, Start Date: 2012-12-01, End Date: 2013-03-01, Residuals: Mean=-357.696105, Min=-3066.474262, Max=2435.828926, Count=6032 
+2024-09-04 14:31:27 - Horizon: 1, Window: 53, Start Date: 2012-12-01, End Date: 2013-04-01, Residuals: Mean=-360.185009, Min=-3066.474262, Max=2435.828926, Count=6148 
+2024-09-04 14:31:27 - Horizon: 1, Window: 54, Start Date: 2012-12-01, End Date: 2013-04-01, Residuals: Mean=-362.445955, Min=-3066.474262, Max=2435.828926, Count=6264 
+2024-09-04 14:31:27 - Horizon: 1, Window: 55, Start Date: 2013-01-01, End Date: 2013-04-01, Residuals: Mean=-364.708207, Min=-3066.474262, Max=2435.828926, Count=6380 
+2024-09-04 14:31:27 - Horizon: 1, Window: 56, Start Date: 2013-01-01, End Date: 2013-05-01, Residuals: Mean=-365.108368, Min=-3066.474262, Max=2435.828926, Count=6496 
+2024-09-04 14:31:27 - Horizon: 1, Window: 57, Start Date: 2013-01-01, End Date: 2013-05-01, Residuals: Mean=-364.273565, Min=-3066.474262, Max=2435.828926, Count=6612 
+2024-09-04 14:31:27 - Horizon: 1, Window: 58, Start Date: 2013-02-01, End Date: 2013-05-01, Residuals: Mean=-363.350849, Min=-3066.474262, Max=2435.828926, Count=6728 
+2024-09-04 14:31:27 - Horizon: 1, Window: 59, Start Date: 2013-02-01, End Date: 2013-06-01, Residuals: Mean=-360.258523, Min=-3066.474262, Max=2435.828926, Count=6844 
+2024-09-04 14:31:27 - Horizon: 1, Window: 60, Start Date: 2013-02-01, End Date: 2013-06-01, Residuals: Mean=-355.852981, Min=-3066.474262, Max=2435.828926, Count=6960 
+2024-09-04 14:31:27 - Horizon: 1, Window: 61, Start Date: 2013-03-01, End Date: 2013-06-01, Residuals: Mean=-351.639332, Min=-3066.474262, Max=2435.828926, Count=7076 
+2024-09-04 14:31:27 - Horizon: 1, Window: 62, Start Date: 2013-03-01, End Date: 2013-07-01, Residuals: Mean=-345.084299, Min=-3066.474262, Max=2435.828926, Count=7192 
+2024-09-04 14:31:27 - Horizon: 1, Window: 63, Start Date: 2013-03-01, End Date: 2013-07-01, Residuals: Mean=-336.922871, Min=-3066.474262, Max=2435.828926, Count=7308 
+2024-09-04 14:31:27 - Horizon: 1, Window: 64, Start Date: 2013-04-01, End Date: 2013-07-01, Residuals: Mean=-329.128646, Min=-3066.474262, Max=2435.828926, Count=7424 
+2024-09-04 14:31:27 - Horizon: 1, Window: 65, Start Date: 2013-04-01, End Date: 2013-08-01, Residuals: Mean=-320.946063, Min=-3066.474262, Max=2435.828926, Count=7540 
+2024-09-04 14:31:27 - Horizon: 1, Window: 66, Start Date: 2013-04-01, End Date: 2013-08-01, Residuals: Mean=-312.388881, Min=-3066.474262, Max=2435.828926, Count=7656 
+2024-09-04 14:31:27 - Horizon: 1, Window: 67, Start Date: 2013-05-01, End Date: 2013-08-01, Residuals: Mean=-304.340139, Min=-3066.474262, Max=2435.828926, Count=7772 
+2024-09-04 14:31:27 - Horizon: 1, Window: 68, Start Date: 2013-05-01, End Date: 2013-09-01, Residuals: Mean=-297.695534, Min=-3066.474262, Max=2435.828926, Count=7888 
+2024-09-04 14:31:27 - Horizon: 1, Window: 69, Start Date: 2013-05-01, End Date: 2013-09-01, Residuals: Mean=-292.211681, Min=-3066.474262, Max=2435.828926, Count=8004 
+2024-09-04 14:31:27 - Horizon: 1, Window: 70, Start Date: 2013-06-01, End Date: 2013-09-01, Residuals: Mean=-287.252205, Min=-3066.474262, Max=2435.828926, Count=8120 
+2024-09-04 14:31:27 - Horizon: 1, Window: 71, Start Date: 2013-06-01, End Date: 2013-10-01, Residuals: Mean=-285.079959, Min=-3066.474262, Max=2435.828926, Count=8236 
+2024-09-04 14:31:27 - Horizon: 1, Window: 72, Start Date: 2013-06-01, End Date: 2013-10-01, Residuals: Mean=-285.185568, Min=-3066.474262, Max=2435.828926, Count=8352 
+2024-09-04 14:31:27 - Horizon: 1, Window: 73, Start Date: 2013-07-01, End Date: 2013-10-01, Residuals: Mean=-285.874611, Min=-3066.474262, Max=2435.828926, Count=8468 
+2024-09-04 14:31:27 - Horizon: 1, Window: 74, Start Date: 2013-07-01, End Date: 2013-11-01, Residuals: Mean=-290.252856, Min=-3066.474262, Max=2435.828926, Count=8584 
+2024-09-04 14:31:27 - Horizon: 1, Window: 75, Start Date: 2013-07-01, End Date: 2013-11-01, Residuals: Mean=-297.589305, Min=-3066.474262, Max=2435.828926, Count=8700 
+2024-09-04 14:31:27 - Horizon: 1, Window: 76, Start Date: 2013-08-01, End Date: 2013-11-01, Residuals: Mean=-305.647811, Min=-3066.474262, Max=2435.828926, Count=8816 
+2024-09-04 14:31:27 - Horizon: 1, Window: 77, Start Date: 2013-08-01, End Date: 2013-12-01, Residuals: Mean=-315.066277, Min=-3066.474262, Max=2435.828926, Count=8932 
+2024-09-04 14:31:27 - Horizon: 1, Window: 78, Start Date: 2013-08-01, End Date: 2013-12-01, Residuals: Mean=-325.905725, Min=-3066.474262, Max=2435.828926, Count=9048 
+2024-09-04 14:31:27 - Horizon: 1, Window: 79, Start Date: 2013-09-01, End Date: 2013-12-01, Residuals: Mean=-337.368606, Min=-3066.474262, Max=2435.828926, Count=9164 
+2024-09-04 14:31:27 - Horizon: 1, Window: 80, Start Date: 2013-09-01, End Date: 2014-01-01, Residuals: Mean=-348.143321, Min=-3066.474262, Max=2435.828926, Count=9280 
+2024-09-04 14:31:27 - Horizon: 1, Window: 81, Start Date: 2013-09-01, End Date: 2014-01-01, Residuals: Mean=-358.742379, Min=-3066.474262, Max=2435.828926, Count=9396 
+2024-09-04 14:31:27 - Horizon: 1, Window: 82, Start Date: 2013-10-01, End Date: 2014-01-01, Residuals: Mean=-369.957402, Min=-3066.474262, Max=2435.828926, Count=9512 
+2024-09-04 14:31:27 - Horizon: 1, Window: 83, Start Date: 2013-10-01, End Date: 2014-02-01, Residuals: Mean=-380.581589, Min=-3066.474262, Max=2435.828926, Count=9628 
+2024-09-04 14:31:27 - Horizon: 1, Window: 84, Start Date: 2013-10-01, End Date: 2014-02-01, Residuals: Mean=-390.946835, Min=-3066.474262, Max=2435.828926, Count=9744 
+2024-09-04 14:31:27 - Horizon: 1, Window: 85, Start Date: 2013-11-01, End Date: 2014-02-01, Residuals: Mean=-402.017457, Min=-3066.474262, Max=2435.828926, Count=9860 
+2024-09-04 14:31:27 - Horizon: 1, Window: 86, Start Date: 2013-11-01, End Date: 2014-03-01, Residuals: Mean=-412.743986, Min=-3066.474262, Max=2435.828926, Count=9976 
+2024-09-04 14:31:27 - Horizon: 1, Window: 87, Start Date: 2013-11-01, End Date: 2014-03-01, Residuals: Mean=-423.455882, Min=-3066.474262, Max=2435.828926, Count=10092 
+2024-09-04 14:31:27 - Horizon: 1, Window: 88, Start Date: 2013-12-01, End Date: 2014-03-01, Residuals: Mean=-434.882195, Min=-3066.474262, Max=2435.828926, Count=10208 
+2024-09-04 14:31:27 - Horizon: 1, Window: 89, Start Date: 2013-12-01, End Date: 2014-04-01, Residuals: Mean=-446.879623, Min=-3260.310267, Max=2435.828926, Count=10324 
+2024-09-04 14:31:27 - Horizon: 1, Window: 90, Start Date: 2013-12-01, End Date: 2014-04-01, Residuals: Mean=-459.564323, Min=-3524.057011, Max=2435.828926, Count=10440 
+2024-09-04 14:31:27 - Horizon: 1, Window: 91, Start Date: 2014-01-01, End Date: 2014-04-01, Residuals: Mean=-473.088051, Min=-3692.927182, Max=2435.828926, Count=10556 
+2024-09-04 14:31:27 - Horizon: 1, Window: 92, Start Date: 2014-01-01, End Date: 2014-05-01, Residuals: Mean=-487.843877, Min=-3705.367800, Max=2435.828926, Count=10672 
+2024-09-04 14:31:27 - Horizon: 1, Window: 93, Start Date: 2014-01-01, End Date: 2014-05-01, Residuals: Mean=-503.871122, Min=-4035.310267, Max=2435.828926, Count=10788 
+2024-09-04 14:31:27 - Horizon: 1, Window: 94, Start Date: 2014-02-01, End Date: 2014-05-01, Residuals: Mean=-520.903948, Min=-4299.057011, Max=2435.828926, Count=10904 
+2024-09-04 14:31:27 - Horizon: 1, Window: 95, Start Date: 2014-02-01, End Date: 2014-06-01, Residuals: Mean=-535.794018, Min=-4299.057011, Max=2435.828926, Count=11020 
+2024-09-04 14:31:27 - Horizon: 1, Window: 96, Start Date: 2014-02-01, End Date: 2014-06-01, Residuals: Mean=-549.556770, Min=-4299.057011, Max=2435.828926, Count=11136 
+2024-09-04 14:31:27 - Horizon: 1, Window: 97, Start Date: 2014-03-01, End Date: 2014-06-01, Residuals: Mean=-564.047007, Min=-4299.057011, Max=2435.828926, Count=11252 
+2024-09-04 14:31:27 - Horizon: 1, Window: 98, Start Date: 2014-03-01, End Date: 2014-07-01, Residuals: Mean=-573.388198, Min=-4299.057011, Max=2435.828926, Count=11368 
+2024-09-04 14:31:27 - Horizon: 1, Window: 99, Start Date: 2014-03-01, End Date: 2014-07-01, Residuals: Mean=-579.009031, Min=-4299.057011, Max=2435.828926, Count=11484 
+2024-09-04 14:31:27 - Horizon: 1, Window: 100, Start Date: 2014-04-01, End Date: 2014-07-01, Residuals: Mean=-585.130354, Min=-4299.057011, Max=2435.828926, Count=11600 
+2024-09-04 14:31:27 - Horizon: 1, Window: 101, Start Date: 2014-04-01, End Date: 2014-08-01, Residuals: Mean=-586.480872, Min=-4299.057011, Max=2435.828926, Count=11716 
+2024-09-04 14:31:27 - Horizon: 1, Window: 102, Start Date: 2014-04-01, End Date: 2014-08-01, Residuals: Mean=-584.187252, Min=-4299.057011, Max=2435.828926, Count=11832 
+2024-09-04 14:31:27 - Horizon: 1, Window: 103, Start Date: 2014-05-01, End Date: 2014-08-01, Residuals: Mean=-582.488729, Min=-4299.057011, Max=2435.828926, Count=11948 
+2024-09-04 14:31:27 - Horizon: 1, Window: 104, Start Date: 2014-05-01, End Date: 2014-09-01, Residuals: Mean=-576.689032, Min=-4299.057011, Max=2435.828926, Count=12064 
+2024-09-04 14:31:27 - Horizon: 1, Window: 105, Start Date: 2014-05-01, End Date: 2014-09-01, Residuals: Mean=-567.992237, Min=-4299.057011, Max=2435.828926, Count=12180 
+2024-09-04 14:31:27 - Horizon: 1, Q values: 583.59, 741.07 
+2024-09-04 14:31:27 - Horizon: 2, Window: 1, Start Date: 2011-07-01, End Date: 2011-11-01, Residuals: Mean=-98.566842, Min=-1669.549829, Max=1948.663141, Count=76 
+2024-09-04 14:31:27 - Horizon: 2, Window: 2, Start Date: 2011-08-01, End Date: 2011-11-01, Residuals: Mean=-210.077286, Min=-1715.000237, Max=1948.663141, Count=152 
+2024-09-04 14:31:27 - Horizon: 2, Window: 3, Start Date: 2011-08-01, End Date: 2011-12-01, Residuals: Mean=-263.812793, Min=-1715.000237, Max=1948.663141, Count=228 
+2024-09-04 14:31:27 - Horizon: 2, Window: 4, Start Date: 2011-09-01, End Date: 2011-12-01, Residuals: Mean=-320.444871, Min=-1715.000237, Max=1948.663141, Count=304 
+2024-09-04 14:31:27 - Horizon: 2, Window: 5, Start Date: 2011-09-01, End Date: 2012-01-01, Residuals: Mean=-360.314959, Min=-1715.000237, Max=1948.663141, Count=380 
+2024-09-04 14:31:27 - Horizon: 2, Window: 6, Start Date: 2011-10-01, End Date: 2012-01-01, Residuals: Mean=-396.226830, Min=-2453.179410, Max=1948.663141, Count=456 
+2024-09-04 14:31:27 - Horizon: 2, Window: 7, Start Date: 2011-10-01, End Date: 2012-02-01, Residuals: Mean=-426.116773, Min=-2453.179410, Max=1948.663141, Count=532 
+2024-09-04 14:31:27 - Horizon: 2, Window: 8, Start Date: 2011-11-01, End Date: 2012-02-01, Residuals: Mean=-456.250621, Min=-2453.179410, Max=1948.663141, Count=608 
+2024-09-04 14:31:27 - Horizon: 2, Window: 9, Start Date: 2011-11-01, End Date: 2012-03-01, Residuals: Mean=-483.306379, Min=-2453.179410, Max=1948.663141, Count=684 
+2024-09-04 14:31:27 - Horizon: 2, Window: 10, Start Date: 2011-12-01, End Date: 2012-03-01, Residuals: Mean=-508.135891, Min=-2453.179410, Max=1948.663141, Count=760 
+2024-09-04 14:31:27 - Horizon: 2, Window: 11, Start Date: 2011-12-01, End Date: 2012-04-01, Residuals: Mean=-527.630441, Min=-2453.179410, Max=1948.663141, Count=836 
+2024-09-04 14:31:27 - Horizon: 2, Window: 12, Start Date: 2012-01-01, End Date: 2012-04-01, Residuals: Mean=-528.152243, Min=-2453.179410, Max=1948.663141, Count=912 
+2024-09-04 14:31:27 - Horizon: 2, Window: 13, Start Date: 2012-01-01, End Date: 2012-05-01, Residuals: Mean=-524.805879, Min=-2453.179410, Max=1948.663141, Count=988 
+2024-09-04 14:31:27 - Horizon: 2, Window: 14, Start Date: 2012-02-01, End Date: 2012-05-01, Residuals: Mean=-494.399509, Min=-2453.179410, Max=1948.663141, Count=1064 
+2024-09-04 14:31:27 - Horizon: 2, Window: 15, Start Date: 2012-02-01, End Date: 2012-06-01, Residuals: Mean=-468.645542, Min=-2453.179410, Max=1948.663141, Count=1140 
+2024-09-04 14:31:27 - Horizon: 2, Window: 16, Start Date: 2012-03-01, End Date: 2012-06-01, Residuals: Mean=-432.639988, Min=-2453.179410, Max=1948.663141, Count=1216 
+2024-09-04 14:31:27 - Horizon: 2, Window: 17, Start Date: 2012-03-01, End Date: 2012-07-01, Residuals: Mean=-403.802563, Min=-2453.179410, Max=1948.663141, Count=1292 
+2024-09-04 14:31:27 - Horizon: 2, Window: 18, Start Date: 2012-04-01, End Date: 2012-07-01, Residuals: Mean=-378.080834, Min=-2453.179410, Max=1948.663141, Count=1368 
+2024-09-04 14:31:27 - Horizon: 2, Window: 19, Start Date: 2012-04-01, End Date: 2012-08-01, Residuals: Mean=-356.532207, Min=-2453.179410, Max=1948.663141, Count=1444 
+2024-09-04 14:31:27 - Horizon: 2, Window: 20, Start Date: 2012-05-01, End Date: 2012-08-01, Residuals: Mean=-341.897388, Min=-2453.179410, Max=1948.663141, Count=1520 
+2024-09-04 14:31:27 - Horizon: 2, Window: 21, Start Date: 2012-05-01, End Date: 2012-09-01, Residuals: Mean=-329.646835, Min=-2453.179410, Max=1948.663141, Count=1596 
+2024-09-04 14:31:27 - Horizon: 2, Window: 22, Start Date: 2012-06-01, End Date: 2012-09-01, Residuals: Mean=-324.396075, Min=-2453.179410, Max=1948.663141, Count=1672 
+2024-09-04 14:31:27 - Horizon: 2, Window: 23, Start Date: 2012-06-01, End Date: 2012-10-01, Residuals: Mean=-320.204570, Min=-2453.179410, Max=1948.663141, Count=1748 
+2024-09-04 14:31:27 - Horizon: 2, Window: 24, Start Date: 2012-07-01, End Date: 2012-10-01, Residuals: Mean=-316.994092, Min=-2453.179410, Max=1948.663141, Count=1824 
+2024-09-04 14:31:27 - Horizon: 2, Window: 25, Start Date: 2012-07-01, End Date: 2012-11-01, Residuals: Mean=-314.258385, Min=-2453.179410, Max=1948.663141, Count=1900 
+2024-09-04 14:31:27 - Horizon: 2, Window: 26, Start Date: 2012-08-01, End Date: 2012-11-01, Residuals: Mean=-308.082766, Min=-2453.179410, Max=1948.663141, Count=1976 
+2024-09-04 14:31:27 - Horizon: 2, Window: 27, Start Date: 2012-08-01, End Date: 2012-12-01, Residuals: Mean=-303.379315, Min=-2453.179410, Max=1948.663141, Count=2052 
+2024-09-04 14:31:27 - Horizon: 2, Window: 28, Start Date: 2012-09-01, End Date: 2012-12-01, Residuals: Mean=-296.482107, Min=-2453.179410, Max=1948.663141, Count=2128 
+2024-09-04 14:31:27 - Horizon: 2, Window: 29, Start Date: 2012-09-01, End Date: 2013-01-01, Residuals: Mean=-291.422086, Min=-2453.179410, Max=1948.663141, Count=2204 
+2024-09-04 14:31:27 - Horizon: 2, Window: 30, Start Date: 2012-10-01, End Date: 2013-01-01, Residuals: Mean=-286.578630, Min=-2453.179410, Max=1948.663141, Count=2280 
+2024-09-04 14:31:27 - Horizon: 2, Window: 31, Start Date: 2012-10-01, End Date: 2013-02-01, Residuals: Mean=-283.103004, Min=-2453.179410, Max=1948.663141, Count=2356 
+2024-09-04 14:31:27 - Horizon: 2, Window: 32, Start Date: 2012-11-01, End Date: 2013-02-01, Residuals: Mean=-281.779746, Min=-2453.179410, Max=1948.663141, Count=2432 
+2024-09-04 14:31:27 - Horizon: 2, Window: 33, Start Date: 2012-11-01, End Date: 2013-03-01, Residuals: Mean=-281.519700, Min=-2453.179410, Max=1948.663141, Count=2508 
+2024-09-04 14:31:27 - Horizon: 2, Window: 34, Start Date: 2012-12-01, End Date: 2013-03-01, Residuals: Mean=-284.107851, Min=-2453.179410, Max=1948.663141, Count=2584 
+2024-09-04 14:31:27 - Horizon: 2, Window: 35, Start Date: 2012-12-01, End Date: 2013-04-01, Residuals: Mean=-286.653641, Min=-2453.179410, Max=1948.663141, Count=2660 
+2024-09-04 14:31:27 - Horizon: 2, Window: 36, Start Date: 2013-01-01, End Date: 2013-04-01, Residuals: Mean=-288.811555, Min=-2453.179410, Max=1948.663141, Count=2736 
+2024-09-04 14:31:27 - Horizon: 2, Window: 37, Start Date: 2013-01-01, End Date: 2013-05-01, Residuals: Mean=-290.187691, Min=-2453.179410, Max=1948.663141, Count=2812 
+2024-09-04 14:31:27 - Horizon: 2, Window: 38, Start Date: 2013-02-01, End Date: 2013-05-01, Residuals: Mean=-288.668699, Min=-2453.179410, Max=1948.663141, Count=2888 
+2024-09-04 14:31:27 - Horizon: 2, Window: 39, Start Date: 2013-02-01, End Date: 2013-06-01, Residuals: Mean=-286.474611, Min=-2453.179410, Max=1948.663141, Count=2964 
+2024-09-04 14:31:27 - Horizon: 2, Window: 40, Start Date: 2013-03-01, End Date: 2013-06-01, Residuals: Mean=-281.100156, Min=-2453.179410, Max=1948.663141, Count=3040 
+2024-09-04 14:31:27 - Horizon: 2, Window: 41, Start Date: 2013-03-01, End Date: 2013-07-01, Residuals: Mean=-275.253300, Min=-2453.179410, Max=1948.663141, Count=3116 
+2024-09-04 14:31:27 - Horizon: 2, Window: 42, Start Date: 2013-04-01, End Date: 2013-07-01, Residuals: Mean=-265.648385, Min=-2453.179410, Max=1948.663141, Count=3192 
+2024-09-04 14:31:27 - Horizon: 2, Window: 43, Start Date: 2013-04-01, End Date: 2013-08-01, Residuals: Mean=-256.763860, Min=-2453.179410, Max=1948.663141, Count=3268 
+2024-09-04 14:31:27 - Horizon: 2, Window: 44, Start Date: 2013-05-01, End Date: 2013-08-01, Residuals: Mean=-246.956509, Min=-2453.179410, Max=1948.663141, Count=3344 
+2024-09-04 14:31:27 - Horizon: 2, Window: 45, Start Date: 2013-05-01, End Date: 2013-09-01, Residuals: Mean=-238.617305, Min=-2453.179410, Max=1948.663141, Count=3420 
+2024-09-04 14:31:27 - Horizon: 2, Window: 46, Start Date: 2013-06-01, End Date: 2013-09-01, Residuals: Mean=-232.446788, Min=-2453.179410, Max=1948.663141, Count=3496 
+2024-09-04 14:31:27 - Horizon: 2, Window: 47, Start Date: 2013-06-01, End Date: 2013-10-01, Residuals: Mean=-227.964910, Min=-2453.179410, Max=1948.663141, Count=3572 
+2024-09-04 14:31:27 - Horizon: 2, Window: 48, Start Date: 2013-07-01, End Date: 2013-10-01, Residuals: Mean=-228.398450, Min=-2453.179410, Max=1948.663141, Count=3648 
+2024-09-04 14:31:27 - Horizon: 2, Window: 49, Start Date: 2013-07-01, End Date: 2013-11-01, Residuals: Mean=-230.682530, Min=-2453.179410, Max=1948.663141, Count=3724 
+2024-09-04 14:31:27 - Horizon: 2, Window: 50, Start Date: 2013-08-01, End Date: 2013-11-01, Residuals: Mean=-239.736354, Min=-2453.179410, Max=1948.663141, Count=3800 
+2024-09-04 14:31:27 - Horizon: 2, Window: 51, Start Date: 2013-08-01, End Date: 2013-12-01, Residuals: Mean=-249.427819, Min=-2453.179410, Max=1948.663141, Count=3876 
+2024-09-04 14:31:27 - Horizon: 2, Window: 52, Start Date: 2013-09-01, End Date: 2013-12-01, Residuals: Mean=-262.343059, Min=-2453.179410, Max=1948.663141, Count=3952 
+2024-09-04 14:31:27 - Horizon: 2, Window: 53, Start Date: 2013-09-01, End Date: 2014-01-01, Residuals: Mean=-275.107531, Min=-2453.179410, Max=1948.663141, Count=4028 
+2024-09-04 14:31:27 - Horizon: 2, Window: 54, Start Date: 2013-10-01, End Date: 2014-01-01, Residuals: Mean=-287.572349, Min=-2453.179410, Max=1948.663141, Count=4104 
+2024-09-04 14:31:27 - Horizon: 2, Window: 55, Start Date: 2013-10-01, End Date: 2014-02-01, Residuals: Mean=-300.373987, Min=-2453.179410, Max=1948.663141, Count=4180 
+2024-09-04 14:31:27 - Horizon: 2, Window: 56, Start Date: 2013-11-01, End Date: 2014-02-01, Residuals: Mean=-312.599967, Min=-2453.179410, Max=1948.663141, Count=4256 
+2024-09-04 14:31:27 - Horizon: 2, Window: 57, Start Date: 2013-11-01, End Date: 2014-03-01, Residuals: Mean=-325.468582, Min=-2453.179410, Max=1948.663141, Count=4332 
+2024-09-04 14:31:27 - Horizon: 2, Window: 58, Start Date: 2013-12-01, End Date: 2014-03-01, Residuals: Mean=-338.048911, Min=-2453.179410, Max=1948.663141, Count=4408 
+2024-09-04 14:31:27 - Horizon: 2, Window: 59, Start Date: 2013-12-01, End Date: 2014-04-01, Residuals: Mean=-351.668486, Min=-2453.179410, Max=1948.663141, Count=4484 
+2024-09-04 14:31:27 - Horizon: 2, Window: 60, Start Date: 2014-01-01, End Date: 2014-04-01, Residuals: Mean=-366.651198, Min=-2819.245609, Max=1948.663141, Count=4560 
+2024-09-04 14:31:27 - Horizon: 2, Window: 61, Start Date: 2014-01-01, End Date: 2014-05-01, Residuals: Mean=-382.970579, Min=-2954.341746, Max=1948.663141, Count=4636 
+2024-09-04 14:31:27 - Horizon: 2, Window: 62, Start Date: 2014-02-01, End Date: 2014-05-01, Residuals: Mean=-402.013571, Min=-3228.248214, Max=1948.663141, Count=4712 
+2024-09-04 14:31:27 - Horizon: 2, Window: 63, Start Date: 2014-02-01, End Date: 2014-06-01, Residuals: Mean=-420.835161, Min=-3439.245609, Max=1948.663141, Count=4788 
+2024-09-04 14:31:27 - Horizon: 2, Window: 64, Start Date: 2014-03-01, End Date: 2014-06-01, Residuals: Mean=-436.790501, Min=-3439.245609, Max=1948.663141, Count=4864 
+2024-09-04 14:31:27 - Horizon: 2, Window: 65, Start Date: 2014-03-01, End Date: 2014-07-01, Residuals: Mean=-451.409970, Min=-3439.245609, Max=1948.663141, Count=4940 
+2024-09-04 14:31:27 - Horizon: 2, Window: 66, Start Date: 2014-04-01, End Date: 2014-07-01, Residuals: Mean=-457.703068, Min=-3439.245609, Max=1948.663141, Count=5016 
+2024-09-04 14:31:27 - Horizon: 2, Window: 67, Start Date: 2014-04-01, End Date: 2014-08-01, Residuals: Mean=-463.329655, Min=-3439.245609, Max=1948.663141, Count=5092 
+2024-09-04 14:31:27 - Horizon: 2, Window: 68, Start Date: 2014-05-01, End Date: 2014-08-01, Residuals: Mean=-460.674945, Min=-3439.245609, Max=1948.663141, Count=5168 
+2024-09-04 14:31:27 - Horizon: 2, Window: 69, Start Date: 2014-05-01, End Date: 2014-09-01, Residuals: Mean=-457.832579, Min=-3439.245609, Max=1948.663141, Count=5244 
+2024-09-04 14:31:27 - Horizon: 2, Q values: 598.32, 807.06 
+2024-09-04 14:31:27 - Horizon: 3, Window: 1, Start Date: 2011-08-01, End Date: 2011-11-01, Residuals: Mean=-127.104408, Min=-417.387457, Max=52.857410, Count=37 
+2024-09-04 14:31:27 - Horizon: 3, Window: 2, Start Date: 2011-09-01, End Date: 2011-12-01, Residuals: Mean=-168.932539, Min=-417.387457, Max=52.857410, Count=74 
+2024-09-04 14:31:27 - Horizon: 3, Window: 3, Start Date: 2011-10-01, End Date: 2012-01-01, Residuals: Mean=-195.530947, Min=-598.322997, Max=52.857410, Count=111 
+2024-09-04 14:31:27 - Horizon: 3, Window: 4, Start Date: 2011-11-01, End Date: 2012-02-01, Residuals: Mean=-215.649716, Min=-598.322997, Max=52.857410, Count=148 
+2024-09-04 14:31:27 - Horizon: 3, Window: 5, Start Date: 2011-12-01, End Date: 2012-03-01, Residuals: Mean=-233.370242, Min=-598.322997, Max=52.857410, Count=185 
+2024-09-04 14:31:27 - Horizon: 3, Window: 6, Start Date: 2012-01-01, End Date: 2012-04-01, Residuals: Mean=-234.872549, Min=-598.322997, Max=52.857410, Count=222 
+2024-09-04 14:31:27 - Horizon: 3, Window: 7, Start Date: 2012-02-01, End Date: 2012-05-01, Residuals: Mean=-211.899404, Min=-598.322997, Max=64.226209, Count=259 
+2024-09-04 14:31:27 - Horizon: 3, Window: 8, Start Date: 2012-03-01, End Date: 2012-06-01, Residuals: Mean=-182.699964, Min=-598.322997, Max=64.226209, Count=296 
+2024-09-04 14:31:27 - Horizon: 3, Window: 9, Start Date: 2012-04-01, End Date: 2012-07-01, Residuals: Mean=-160.011905, Min=-598.322997, Max=64.226209, Count=333 
+2024-09-04 14:31:27 - Horizon: 3, Window: 10, Start Date: 2012-05-01, End Date: 2012-08-01, Residuals: Mean=-146.131915, Min=-598.322997, Max=64.226209, Count=370 
+2024-09-04 14:31:27 - Horizon: 3, Window: 11, Start Date: 2012-06-01, End Date: 2012-09-01, Residuals: Mean=-141.128070, Min=-598.322997, Max=64.226209, Count=407 
+2024-09-04 14:31:27 - Horizon: 3, Window: 12, Start Date: 2012-07-01, End Date: 2012-10-01, Residuals: Mean=-138.470460, Min=-598.322997, Max=64.226209, Count=444 
+2024-09-04 14:31:27 - Horizon: 3, Window: 13, Start Date: 2012-08-01, End Date: 2012-11-01, Residuals: Mean=-133.921451, Min=-598.322997, Max=99.971940, Count=481 
+2024-09-04 14:31:27 - Horizon: 3, Window: 14, Start Date: 2012-09-01, End Date: 2012-12-01, Residuals: Mean=-129.045838, Min=-598.322997, Max=99.971940, Count=518 
+2024-09-04 14:31:27 - Horizon: 3, Window: 15, Start Date: 2012-10-01, End Date: 2013-01-01, Residuals: Mean=-125.189347, Min=-598.322997, Max=99.971940, Count=555 
+2024-09-04 14:31:27 - Horizon: 3, Window: 16, Start Date: 2012-11-01, End Date: 2013-02-01, Residuals: Mean=-123.477179, Min=-598.322997, Max=99.971940, Count=592 
+2024-09-04 14:31:27 - Horizon: 3, Window: 17, Start Date: 2012-12-01, End Date: 2013-03-01, Residuals: Mean=-124.920062, Min=-598.322997, Max=99.971940, Count=629 
+2024-09-04 14:31:27 - Horizon: 3, Window: 18, Start Date: 2013-01-01, End Date: 2013-04-01, Residuals: Mean=-126.360220, Min=-598.322997, Max=99.971940, Count=666 
+2024-09-04 14:31:27 - Horizon: 3, Window: 19, Start Date: 2013-02-01, End Date: 2013-05-01, Residuals: Mean=-124.865326, Min=-598.322997, Max=99.971940, Count=703 
+2024-09-04 14:31:27 - Horizon: 3, Window: 20, Start Date: 2013-03-01, End Date: 2013-06-01, Residuals: Mean=-120.346411, Min=-598.322997, Max=99.971940, Count=740 
+2024-09-04 14:31:27 - Horizon: 3, Window: 21, Start Date: 2013-04-01, End Date: 2013-07-01, Residuals: Mean=-112.657786, Min=-598.322997, Max=224.054565, Count=777 
+2024-09-04 14:31:27 - Horizon: 3, Window: 22, Start Date: 2013-05-01, End Date: 2013-08-01, Residuals: Mean=-104.942873, Min=-598.322997, Max=224.054565, Count=814 
+2024-09-04 14:31:27 - Horizon: 3, Window: 23, Start Date: 2013-06-01, End Date: 2013-09-01, Residuals: Mean=-99.990772, Min=-598.322997, Max=224.054565, Count=851 
+2024-09-04 14:31:27 - Horizon: 3, Window: 24, Start Date: 2013-07-01, End Date: 2013-10-01, Residuals: Mean=-99.976381, Min=-598.322997, Max=224.054565, Count=888 
+2024-09-04 14:31:27 - Horizon: 3, Window: 25, Start Date: 2013-08-01, End Date: 2013-11-01, Residuals: Mean=-106.964548, Min=-598.322997, Max=224.054565, Count=925 
+2024-09-04 14:31:27 - Horizon: 3, Window: 26, Start Date: 2013-09-01, End Date: 2013-12-01, Residuals: Mean=-117.455423, Min=-598.322997, Max=224.054565, Count=962 
+2024-09-04 14:31:27 - Horizon: 3, Window: 27, Start Date: 2013-10-01, End Date: 2014-01-01, Residuals: Mean=-128.024830, Min=-598.322997, Max=224.054565, Count=999 
+2024-09-04 14:31:27 - Horizon: 3, Window: 28, Start Date: 2013-11-01, End Date: 2014-02-01, Residuals: Mean=-138.708000, Min=-598.322997, Max=224.054565, Count=1036 
+2024-09-04 14:31:27 - Horizon: 3, Window: 29, Start Date: 2013-12-01, End Date: 2014-03-01, Residuals: Mean=-149.692872, Min=-598.452760, Max=224.054565, Count=1073 
+2024-09-04 14:31:27 - Horizon: 3, Window: 30, Start Date: 2014-01-01, End Date: 2014-04-01, Residuals: Mean=-162.481120, Min=-738.585436, Max=224.054565, Count=1110 
+2024-09-04 14:31:27 - Horizon: 3, Window: 31, Start Date: 2014-02-01, End Date: 2014-05-01, Residuals: Mean=-178.538201, Min=-859.811402, Max=224.054565, Count=1147 
+2024-09-04 14:31:27 - Horizon: 3, Window: 32, Start Date: 2014-03-01, End Date: 2014-06-01, Residuals: Mean=-192.193390, Min=-859.811402, Max=224.054565, Count=1184 
+2024-09-04 14:31:27 - Horizon: 3, Window: 33, Start Date: 2014-04-01, End Date: 2014-07-01, Residuals: Mean=-198.226332, Min=-859.811402, Max=338.926440, Count=1221 
+2024-09-04 14:31:27 - Horizon: 3, Window: 34, Start Date: 2014-05-01, End Date: 2014-08-01, Residuals: Mean=-197.511872, Min=-859.811402, Max=338.926440, Count=1258 
+2024-09-04 14:31:27 - Horizon: 3, Q values: 598.32, 859.81 
+2024-09-04 14:31:28 - All-up Conformal Coverage: 80%: 89.29%, 95%: 100.00% 
+2024-09-04 14:31:28 - All-up Z-Score Coverage: 80%: 39.29%, 95%: 89.29% 
+2024-09-04 14:31:29 - ========================================================== 
+2024-09-04 14:31:29 - Creating plots for Combo: M2 Model ID: meanf--local--R1 
+2024-09-04 14:31:31 - Forecast table written to: final_forecast_table/forecast_table_20240904_143131.csv 
+2024-09-04 14:31:31 - =======================COMPLETE========================== 
