@@ -314,7 +314,7 @@ final_models <- function(run_info,
       final_model_list <- c(local_model_list, global_model_list)
 
       # simple model averaging
-      if (average_models & length(final_model_list) > 1 & !best_model_check) {
+       if (average_models & length(final_model_list) > 1) {
         # create model combinations list
         model_combinations <- tibble::tibble()
 
