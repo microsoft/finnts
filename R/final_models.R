@@ -647,7 +647,6 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
     results <- list()
 
-
     # Step 3: Process each combination of Combo and Model_ID
     for (combo in unique(fcst_tbl_filtered$Combo)) {
       for (model_id in unique(fcst_tbl_filtered$Model_ID[fcst_tbl_filtered$Combo == combo])) {
@@ -668,17 +667,12 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         z_scores <- c(qnorm((1 + conf_levels[1]) / 2), qnorm((1 + conf_levels[2]) / 2))
         z_vals <- z_scores * residual_std_dev
 
-
-
-
         # Rolling window implementation to catch more uncertainty
         # Step 6: Apply adaptive rolling window conformal method per horizon
         horizon_results <- purrr::map_dfr(unique(calibration_set$Horizon), function(h) {
           horizon_data <- calibration_set %>%
             dplyr::filter(Horizon >= h & Horizon <= h + 2) %>%
             dplyr::arrange(Date)
-
-
 
           n_horizon <- nrow(horizon_data)
 
@@ -689,20 +683,16 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
           # Collect all residuals from rolling windows
           residuals <- numeric()
 
-
           for (i in 1:(n_horizon - window_size + 1)) {
             window_data <- horizon_data[i:(i + window_size - 1), ]
             current_residuals <- window_data$Target - window_data$Forecast
             residuals <- c(residuals, current_residuals) # To make sure it changes the variable out of the loop scope
           }
-
           # Calculate quantiles using all collected residuals
           q_vals <- sapply(conf_levels, function(cl) {
             alpha <- 1 - cl
             quantile(abs(residuals), probs = 1 - alpha / 2, na.rm = TRUE)
           })
-
-   
 
           dplyr::tibble(
             Combo = combo,
@@ -779,13 +769,11 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
       }
 
-     
     }
 
     # Step 11: Combine all results
     results <- do.call(rbind, results)
-    fcst_tbl_copy <- fcst_tbl
-    # Step 13: Create final plots
+
     fcst_tbl <- fcst_tbl %>%
       dplyr::left_join(results, by = c("Combo", "Model_ID", "Horizon")) %>%
       dplyr::mutate(
@@ -799,19 +787,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         coverage_95 = pmax(coverage_z_95, coverage_conf_95, na.rm = TRUE)
       )
 
-    z_fcst_tbl <- fcst_tbl_copy %>%
-      dplyr::left_join(results, by = c("Combo", "Model_ID", "Horizon")) %>%
-      dplyr::mutate(
-        lo_80 = Forecast - z_val_80,
-        hi_80 = Forecast + z_val_80,
-        lo_95 = Forecast - z_val_95,
-        hi_95 = Forecast + z_val_95,
-        method_80 = "Z-Score",
-        method_95 = "Z-Score",
-        coverage_80 = coverage_z_80,
-        coverage_95 = coverage_z_95,
-      )
-
+    
     # Step 14: Save results
     filename <- paste0("final_forecast_table/forecast_table_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
     write.csv(fcst_tbl, file = filename, row.names = FALSE)
@@ -833,291 +809,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
 
   return(fcst_tbl)
 }
-create_calibration_plots <- function(combo_model_data, horizon_results, combo, model_id, split_ratio, coverage) {
-  # Split data into calibration and test sets
-  n <- nrow(combo_model_data)
-  split_index <- ceiling(split_ratio * n)
-  calibration_data <- combo_model_data[1:split_index, ]
-  test_data <- combo_model_data[(split_index + 1):n, ]
 
-  # Join test data with horizon-specific results
-  test_data <- test_data %>%
-    dplyr::left_join(horizon_results, by = c("Combo", "Model_ID", "Horizon"))
-
-  coverage_subtitle <- sprintf(
-    "All-up Coverage - Conformal: 80%%: %.2f%%, 95%%: %.2f%% | Z-Score: 80%%: %.2f%%, 95%%: %.2f%%",
-    coverage$coverage_conf_80 * 100, coverage$coverage_conf_95 * 100,
-    coverage$coverage_z_80 * 100, coverage$coverage_z_95 * 100
-  )
-
-  # Histogram of absolute residuals using calibration data
-  h <- ggplot2::ggplot(calibration_data, ggplot2::aes(x = abs(Target - Forecast))) +
-    ggplot2::geom_histogram(binwidth = function(x) diff(range(x)) / 30, fill = "steelblue", color = "black") +
-    ggplot2::geom_vline(data = horizon_results, ggplot2::aes(xintercept = q_val_80, color = "80% Conformal"), linetype = "dashed", size = 1) +
-    ggplot2::geom_vline(data = horizon_results, ggplot2::aes(xintercept = q_val_95, color = "95% Conformal"), linetype = "dashed", size = 1) +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = unique(horizon_results$z_val_80), color = "80% Z-Score"), linetype = "dotted", size = 1) +
-    ggplot2::geom_vline(ggplot2::aes(xintercept = unique(horizon_results$z_val_95), color = "95% Z-Score"), linetype = "dotted", size = 1) +
-    ggplot2::facet_wrap(~Horizon, scales = "free") +
-    ggplot2::scale_color_manual(values = c(
-      "80% Conformal" = "blue", "95% Conformal" = "red",
-      "80% Z-Score" = "green", "95% Z-Score" = "purple"
-    )) +
-    ggplot2::labs(
-      title = paste("Calibration Test: Histogram of Absolute Residuals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = "Based on Calibration Data",
-      x = "Absolute Residuals", y = "Frequency"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      panel.background = ggplot2::element_rect(fill = "white"),
-      plot.background = ggplot2::element_rect(fill = "white"),
-      legend.background = ggplot2::element_rect(fill = "white")
-    ) +
-    ggplot2::guides(color = ggplot2::guide_legend(title = "Thresholds"))
-
-  ggplot2::ggsave(paste0("plots/calibration_histogram_", combo, "_", model_id, ".png"), plot = h, width = 15, height = 10, dpi = 300, bg = "white")
-
-  # Time series plot with prediction intervals using test data
-  # Time series plot with prediction intervals using test data
-  p <- ggplot2::ggplot(test_data, ggplot2::aes(x = Date, y = Target)) +
-    ggplot2::geom_line(ggplot2::aes(color = "Actual"), linetype = "dashed", size = 1) +
-    ggplot2::geom_line(ggplot2::aes(y = Forecast, color = "Forecast"), linetype = "dashed", size = 1) +
-    ggplot2::geom_ribbon(ggplot2::aes(
-      ymin = Forecast - q_val_80, ymax = Forecast + q_val_80,
-      fill = "80% Confidence: Conformal"
-    ), alpha = 0.3) +
-    ggplot2::geom_ribbon(ggplot2::aes(
-      ymin = Forecast - q_val_95, ymax = Forecast + q_val_95,
-      fill = "95% Confidence: Conformal"
-    ), alpha = 0.2) +
-    ggplot2::geom_ribbon(ggplot2::aes(
-      ymin = Forecast - z_val_80, ymax = Forecast + z_val_80,
-      fill = "80% Confidence: Z-Score"
-    ), alpha = 0.3) +
-    ggplot2::geom_ribbon(ggplot2::aes(
-      ymin = Forecast - z_val_95, ymax = Forecast + z_val_95,
-      fill = "95% Confidence: Z-Score"
-    ), alpha = 0.2) +
-    ggplot2::scale_color_manual(values = c("Actual" = "blue", "Forecast" = "red")) +
-    ggplot2::scale_fill_manual(values = c(
-      "80% Confidence: Conformal" = "#ffa601",
-      "95% Confidence: Conformal" = "#ffbb00",
-      "80% Confidence: Z-Score" = "#af4ced",
-      "95% Confidence: Z-Score" = "#cc91f1"
-    )) +
-    ggplot2::facet_wrap(~Horizon, scales = "free_y") +
-    ggplot2::labs(
-      title = paste("Test Data: Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = coverage_subtitle,
-      x = "Date", y = "Values"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      panel.background = ggplot2::element_rect(fill = "white"),
-      plot.background = ggplot2::element_rect(fill = "white"),
-      legend.background = ggplot2::element_rect(fill = "white"),
-      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
-      panel.grid.major = ggplot2::element_line(color = "gray90"),
-      panel.grid.minor = ggplot2::element_line(color = "gray95")
-    ) +
-    ggplot2::guides(
-      fill = ggplot2::guide_legend(title = "Prediction Intervals"),
-      color = ggplot2::guide_legend(title = "Series")
-    )
-
-  ggplot2::ggsave(paste0("plots/test_timeseries_", combo, "_", model_id, ".png"), plot = p, width = 15, height = 10, dpi = 300, bg = "white")
-}
-
-
-create_final_plot <- function(fcst_tbl, combo, model_id) {
-  plot_data <- fcst_tbl %>%
-    dplyr::filter(Combo == combo, Model_ID == model_id) %>%
-    dplyr::arrange(Date)
-
-  # Separate actual data and forecast data
-  actual_data <- plot_data %>% dplyr::filter(!is.na(Target))
-  forecast_data <- plot_data %>% dplyr::filter(is.na(Target))
-
-  # Calculate overall coverage
-  overall_coverage_80 <- mean(forecast_data$coverage_80, na.rm = TRUE)
-  overall_coverage_95 <- mean(forecast_data$coverage_95, na.rm = TRUE)
-
-  # Determine the dominant method
-  method_80 <- names(which.max(table(forecast_data$method_80)))
-  method_95 <- names(which.max(table(forecast_data$method_95)))
-
-  f_plot <- ggplot2::ggplot() +
-    # Plot actual data (Target)
-    ggplot2::geom_line(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
-    ggplot2::geom_point(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
-
-    # Plot forecast and PIs only where Target is NA
-    ggplot2::geom_line(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
-    ggplot2::geom_point(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
-    ggplot2::geom_ribbon(
-      data = forecast_data, ggplot2::aes(x = Date, ymin = lo_80, ymax = hi_80),
-      fill = "lightblue", alpha = 0.3
-    ) +
-    ggplot2::geom_ribbon(
-      data = forecast_data, ggplot2::aes(x = Date, ymin = lo_95, ymax = hi_95),
-      fill = "lightblue", alpha = 0.2
-    ) +
-    ggplot2::labs(
-      title = paste("Final Forecast with Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = paste(
-        "80% PI Method:", method_80, "- Coverage:", format(overall_coverage_80 * 100, digits = 2), "%\n",
-        "95% PI Method:", method_95, "- Coverage:", format(overall_coverage_95 * 100, digits = 2), "%"
-      ),
-      x = "Date", y = "Values"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      panel.background = ggplot2::element_rect(fill = "white"),
-      plot.background = ggplot2::element_rect(fill = "white"),
-      legend.background = ggplot2::element_rect(fill = "white"),
-      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
-      panel.grid.major = ggplot2::element_line(color = "gray90"),
-      panel.grid.minor = ggplot2::element_line(color = "gray95")
-    )
-
-  ggplot2::ggsave(paste0("plots/final_forecast_", combo, "_", model_id, ".png"), plot = f_plot, width = 15, height = 10, dpi = 300, bg = "white")
-}
-
-
-z_create_final_plot <- function(fcst_tbl, combo, model_id) {
-  plot_data <- fcst_tbl %>%
-    dplyr::filter(Combo == combo, Model_ID == model_id) %>%
-    dplyr::arrange(Date)
-
-  # Separate actual data and forecast data
-  actual_data <- plot_data %>% dplyr::filter(!is.na(Target))
-  forecast_data <- plot_data %>% dplyr::filter(is.na(Target))
-
-  # Calculate overall coverage
-  overall_coverage_80 <- mean(forecast_data$coverage_80, na.rm = TRUE)
-  overall_coverage_95 <- mean(forecast_data$coverage_95, na.rm = TRUE)
-
-  # Determine the dominant method
-  method_80 <- names(which.max(table(forecast_data$method_80)))
-  method_95 <- names(which.max(table(forecast_data$method_95)))
-
-  f_plot <- ggplot2::ggplot() +
-    # Plot actual data (Target)
-    ggplot2::geom_line(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
-    ggplot2::geom_point(data = actual_data, ggplot2::aes(x = Date, y = Target), color = "red") +
-
-    # Plot forecast and PIs only where Target is NA
-    ggplot2::geom_line(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
-    ggplot2::geom_point(data = forecast_data, ggplot2::aes(x = Date, y = Forecast), color = "blue") +
-    ggplot2::geom_ribbon(
-      data = forecast_data, ggplot2::aes(x = Date, ymin = lo_80, ymax = hi_80),
-      fill = "lightblue", alpha = 0.3
-    ) +
-    ggplot2::geom_ribbon(
-      data = forecast_data, ggplot2::aes(x = Date, ymin = lo_95, ymax = hi_95),
-      fill = "lightblue", alpha = 0.2
-    ) +
-    ggplot2::labs(
-      title = paste("Final Forecast with **Z-Score** Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = paste(
-        "80% PI Method:", method_80, "- Coverage:", format(overall_coverage_80 * 100, digits = 2), "%\n",
-        "95% PI Method:", method_95, "- Coverage:", format(overall_coverage_95 * 100, digits = 2), "%"
-      ),
-      x = "Date", y = "Values"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      panel.background = ggplot2::element_rect(fill = "white"),
-      plot.background = ggplot2::element_rect(fill = "white"),
-      legend.background = ggplot2::element_rect(fill = "white"),
-      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
-      panel.grid.major = ggplot2::element_line(color = "gray90"),
-      panel.grid.minor = ggplot2::element_line(color = "gray95")
-    )
-
-  ggplot2::ggsave(paste0("plots/z_final_forecast_", combo, "_", model_id, ".png"), plot = f_plot, width = 15, height = 10, dpi = 300, bg = "white")
-}
-
-
-
-plot_fitted_model_with_intervals <- function(fcst_tbl, combo, model_id) {
-  # Filter data for the specific combo and model_id
-  plot_data <- fcst_tbl %>%
-    dplyr::filter(Combo == combo, Model_ID == model_id) %>%
-    dplyr::arrange(Date, Horizon)
-
-  # Aggregate fitted values and intervals across all folds
-  aggregated_data <- plot_data %>%
-    dplyr::group_by(Date) %>%
-    dplyr::summarise(
-      Target = mean(Target, na.rm = TRUE),
-      Forecast = mean(Forecast, na.rm = TRUE),
-      lo_80 = mean(lo_80, na.rm = TRUE),
-      hi_80 = mean(hi_80, na.rm = TRUE),
-      lo_95 = mean(lo_95, na.rm = TRUE),
-      hi_95 = mean(hi_95, na.rm = TRUE)
-    ) %>%
-    dplyr::ungroup() %>%
-    dplyr::arrange(Date)
-
-  # Identify the last date with actual data
-  last_actual_date <- max(aggregated_data$Date[!is.na(aggregated_data$Target)])
-
-  # Create the plot
-  p <- ggplot2::ggplot(aggregated_data, ggplot2::aes(x = Date)) +
-    # Plot actual data
-    ggplot2::geom_line(ggplot2::aes(y = Target, color = "Actual"), size = 1) +
-    ggplot2::geom_point(ggplot2::aes(y = Target, color = "Actual"), size = 2) +
-
-    # Plot fitted values and forecast
-    ggplot2::geom_line(ggplot2::aes(y = Forecast, color = "Fitted/Forecast"), size = 1, linetype = "dashed") +
-    ggplot2::geom_point(ggplot2::aes(y = Forecast, color = "Fitted/Forecast"), size = 2) +
-
-    # Plot prediction intervals
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = lo_80, ymax = hi_80, fill = "80% PI"), alpha = 0.3) +
-    ggplot2::geom_ribbon(ggplot2::aes(ymin = lo_95, ymax = hi_95, fill = "95% PI"), alpha = 0.2) +
-
-    # Add a vertical line to separate in-sample and out-of-sample periods
-    ggplot2::geom_vline(xintercept = last_actual_date, linetype = "dotted", color = "red", size = 1) +
-
-    # Customize colors and labels
-    ggplot2::scale_color_manual(
-      values = c("Actual" = "blue", "Fitted/Forecast" = "red"),
-      name = "Data"
-    ) +
-    ggplot2::scale_fill_manual(
-      values = c("80% PI" = "lightblue", "95% PI" = "lightgreen"),
-      name = "Prediction Intervals"
-    ) +
-    ggplot2::labs(
-      title = paste("Fitted Model with Prediction Intervals for Model ID:", model_id, "and Combo:", combo),
-      subtitle = "Vertical red line separates in-sample (fitted) and out-of-sample (forecast) periods",
-      x = "Date",
-      y = "Values"
-    ) +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      legend.position = "bottom",
-      panel.background = ggplot2::element_rect(fill = "white"),
-      plot.background = ggplot2::element_rect(fill = "white"),
-      legend.background = ggplot2::element_rect(fill = "white"),
-      legend.key = ggplot2::element_rect(fill = "white", colour = "white"),
-      panel.grid.major = ggplot2::element_line(color = "gray90"),
-      panel.grid.minor = ggplot2::element_line(color = "gray95")
-    )
-
-  # Save the plot
-  ggplot2::ggsave(
-    paste0("plots/fitted_model_with_intervals_", combo, "_", model_id, ".png"),
-    plot = p,
-    width = 15,
-    height = 10,
-    dpi = 300,
-    bg = "white"
-  )
-
-  return(p)
-}
 #' Convert weekly forecast down to daily
 #'
 #' @param fcst_tbl forecast table to use to create prediction intervals
