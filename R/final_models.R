@@ -630,19 +630,10 @@ final_models <- function(run_info,
 #' @noRd
 create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels = c(0.80, 0.95), split_ratio = 0.9) {
   # Step 1: Set up logging
-  log_file <- paste0("logs/prediction_intervals_log_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".txt")
-  log_conn <- file(log_file, open = "wt")
 
-  log_message <- function(...) {
-    message <- paste0(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " - ", paste(...))
-    cat(message, "\n", file = log_conn, append = TRUE)
-  }
 
   tryCatch({
-    log_message("=======================START TEST==========================")
-    log_message("Confidence levels:", paste(conf_levels, collapse = ", "))
-    log_message("Split ratio:", split_ratio)
-
+    
 
     # Step 2: Filter and prepare data
     back_test_ids <- train_test_split %>%
@@ -653,7 +644,6 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
       dplyr::filter(Train_Test_ID %in% back_test_ids) %>%
       dplyr::arrange(Date, Horizon)
 
-    log_message("Filtered forecast table rows:", nrow(fcst_tbl_filtered))
 
     results <- list()
 
@@ -661,8 +651,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
     # Step 3: Process each combination of Combo and Model_ID
     for (combo in unique(fcst_tbl_filtered$Combo)) {
       for (model_id in unique(fcst_tbl_filtered$Model_ID[fcst_tbl_filtered$Combo == combo])) {
-        log_message("Processing Combo:", combo, "Model ID:", model_id)
-
+ 
         combo_model_data <- fcst_tbl_filtered %>%
           dplyr::filter(Combo == combo, Model_ID == model_id)
 
@@ -679,7 +668,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         z_scores <- c(qnorm((1 + conf_levels[1]) / 2), qnorm((1 + conf_levels[2]) / 2))
         z_vals <- z_scores * residual_std_dev
 
-        log_message(sprintf("Z values: %.2f, %.2f", z_vals[1], z_vals[2]))
+
 
 
         # Rolling window implementation to catch more uncertainty
@@ -713,7 +702,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
             quantile(abs(residuals), probs = 1 - alpha / 2, na.rm = TRUE)
           })
 
-          log_message(sprintf("Horizon: %d, Q values: %.2f, %.2f", h, q_vals[1], q_vals[2]))
+   
 
           dplyr::tibble(
             Combo = combo,
@@ -742,7 +731,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         missing_horizons <- setdiff(all_horizons, horizon_results$Horizon)
 
         if (length(missing_horizons) > 0) {
-          log_message(sprintf("Adding fallback values for horizons: %s", paste(missing_horizons, collapse = ", ")))
+         
 
           fallback_results <- purrr::map_dfr(missing_horizons, function(h) {
             dplyr::tibble(
@@ -777,14 +766,7 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
             coverage_z_95 = mean(covered_95_z, na.rm = TRUE)
           )
 
-        log_message(sprintf(
-          "All-up Conformal Coverage: 80%%: %.2f%%, 95%%: %.2f%%",
-          coverage$coverage_conf_80 * 100, coverage$coverage_conf_95 * 100
-        ))
-        log_message(sprintf(
-          "All-up Z-Score Coverage: 80%%: %.2f%%, 95%%: %.2f%%",
-          coverage$coverage_z_80 * 100, coverage$coverage_z_95 * 100
-        ))
+        
         # Step 9: Store results
         results[[length(results) + 1]] <- horizon_results %>%
           dplyr::mutate(
@@ -794,10 +776,10 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
             coverage_z_95 = coverage$coverage_z_95
           )
         # Step 10: Create calibration plots (function not provided in the original code)
-        create_calibration_plots(combo_model_data, horizon_results, combo, model_id, split_ratio, coverage)
+
       }
 
-      log_message("==========================================================")
+     
     }
 
     # Step 11: Combine all results
@@ -830,32 +812,24 @@ create_prediction_intervals <- function(fcst_tbl, train_test_split, conf_levels 
         coverage_95 = coverage_z_95,
       )
 
-
-    for (combo in unique(fcst_tbl$Combo)) {
-      for (model_id in unique(fcst_tbl$Model_ID[fcst_tbl$Combo == combo])) {
-        log_message("Creating plots for Combo:", combo, "Model ID:", model_id)
-        create_final_plot(fcst_tbl, combo, model_id)
-        z_create_final_plot(z_fcst_tbl, combo, model_id)
-        plot_fitted_model_with_intervals(fcst_tbl, combo, model_id)
-      }
-    }
-
     # Step 14: Save results
     filename <- paste0("final_forecast_table/forecast_table_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
     write.csv(fcst_tbl, file = filename, row.names = FALSE)
-    log_message("Forecast table written to:", filename)
 
-    log_message("=======================COMPLETE==========================")
   }, error = function(e) {
-    log_message("Error occurred:", conditionMessage(e))
-    print(e)
-  }, finally = {
-    close(log_conn)
+
+    fcst_tbl <- dplyr::mutate(fcst_tbl,
+                              lo_80 = NA, 
+                              hi_80 = NA,
+                              lo_95 = NA,
+                              hi_95 = NA,
+                              method_80 = NA,
+                              method_95 = NA,
+                              coverage_80 = NA,
+                              coverage_95 = NA)
+    return(fcst_tbl)
+
   })
-
-
-
-
 
   return(fcst_tbl)
 }
