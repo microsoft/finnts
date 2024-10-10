@@ -1,4 +1,4 @@
-# finnts 0.4.0.9006 (DEVELOPMENT VERSION)
+# finnts 0.4.0.9007 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -9,6 +9,7 @@
 -   Automatically condense large forecasts (+10k time series) into smaller amount of files to make it easier to read forecast outputs
 -   Improved weighted MAPE calculation across all time series
 -   Changed default for box_cox argument in `prep_data()` to FALSE
+-   Support for spark version 3.4 in Azure Synapse/Fabric
 
 ## Bug Fixes
 
