@@ -737,7 +737,7 @@ model_hyperparameters <- function(run_info,
   for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
     model <- x %>%
       dplyr::pull(Model_Name)
-
+    print(model)
     recipe <- x %>%
       dplyr::pull(Model_Recipe)
 
