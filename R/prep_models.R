@@ -769,7 +769,7 @@ model_hyperparameters <- function(run_info,
 
       set.seed(seed)
       print("2")
-      grid <- dials::grid_space_filling(parameters, size = num_hyperparameters)
+      grid <- dials::grid_latin_hypercube(parameters, size = num_hyperparameters)
       print("1")
       hyperparameters_temp <- grid %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%

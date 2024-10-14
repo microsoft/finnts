@@ -10,7 +10,6 @@
 -   Improved weighted MAPE calculation across all time series
 -   Changed default for box_cox argument in `prep_data()` to FALSE
 -   Support for spark version 3.4 in Azure Synapse/Fabric
--   Migrate hyperparameter grid search from grid_latin_hypercube to grid_space_filling in dials package 
 
 ## Bug Fixes
 
