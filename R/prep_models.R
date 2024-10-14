@@ -733,11 +733,11 @@ model_hyperparameters <- function(run_info,
 
   # get hyperparameters
   hyperparameters_tbl <- tibble::tibble()
-  print("4")
+
   for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
     model <- x %>%
       dplyr::pull(Model_Name)
-    print(model)
+
     recipe <- x %>%
       dplyr::pull(Model_Recipe)
 
@@ -756,7 +756,7 @@ model_hyperparameters <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
-    print("3")
+
     if (workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
       if (model == "svm-rbf") {
         parameters <- model_spec %>%
@@ -768,9 +768,9 @@ model_hyperparameters <- function(run_info,
       }
 
       set.seed(seed)
-      print("2")
+
       grid <- dials::grid_latin_hypercube(parameters, size = num_hyperparameters)
-      print("1")
+
       hyperparameters_temp <- grid %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
         purrr::map_df(tidyr::nest, data = tidyselect::everything()) %>%
