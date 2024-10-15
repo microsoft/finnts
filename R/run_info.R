@@ -154,7 +154,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
     current_log_df <- tibble::tibble(
       experiment_name = experiment_name,
       run_name = run_name,
-      path = gsub("synfs/\\d+", "synfs", path), # remove synapse id to prevent issues
+      path = gsub("synfs(/notebook)?/\\d+", "synfs", path), # remove synapse id to prevent issues
       data_output = data_output,
       object_output = object_output
     ) %>%
@@ -162,7 +162,7 @@ set_run_info <- function(experiment_name = "finn_fcst",
 
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
-      dplyr::mutate(path = gsub("synfs/\\d+", "synfs", path)) %>% # remove synapse id to prevent issues
+      dplyr::mutate(path = gsub("synfs(/notebook)?/\\d+", "synfs", path)) %>% # remove synapse id to prevent issues
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {

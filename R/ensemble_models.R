@@ -236,7 +236,8 @@ ensemble_models <- function(run_info,
         avail_arg_list <- list(
           "train_data" = prep_ensemble_tbl %>% dplyr::select(-Train_Test_ID),
           "model_type" = "ensemble",
-          "pca" = FALSE
+          "pca" = FALSE, 
+          "multistep" = FALSE
         )
 
         # get specific model spec
