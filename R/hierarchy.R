@@ -112,6 +112,7 @@ prep_hierarchical_data <- function(input_data,
           .noexport = NULL
         ) %do% {
           temp_tbl <- input_data_adj %>%
+            tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
             dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
             dplyr::distinct()
 
@@ -144,6 +145,7 @@ prep_hierarchical_data <- function(input_data,
 
         # agg by total
         total_tbl <- input_data_adj %>%
+          tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
           dplyr::select(Date, value_level[[1]], tidyselect::all_of(regressor_var)) %>%
           dplyr::distinct() %>%
           dplyr::group_by(Date) %>%
