@@ -419,6 +419,13 @@ train_models <- function(run_info,
           dplyr::select(Model_Workflow)
 
         workflow <- workflow$Model_Workflow[[1]]
+        
+        if (nrow(prep_data) > 500 & model == "xgboost") {
+          # update xgboost model to use 'hist' tree method to speed up training
+          workflow <- workflows::update_model(workflow,
+                                              workflows::extract_spec_parsnip(workflow) %>%
+                                                parsnip::set_args(tree_method = "hist"))
+        }
 
         if (feature_selection & model %in% fs_model_list) {
           # update model workflow to only use features from feature selection process

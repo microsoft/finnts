@@ -1,3 +1,10 @@
+# finnts 0.5.9001 (development version)
+
+## Improvements
+
+-   Shortened global model list to just xgboost
+-   Faster xgboost model training for larger datasets 
+
 # finnts 0.5.0
 
 ## Improvements
