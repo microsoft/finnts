@@ -31,6 +31,13 @@ run_feature_selection <- function(input_data,
 
     return(fs_list)
   }
+  
+  # check for multiple time series
+  if (length(unique(input_data$Combo)) > 1) {
+    global <- TRUE
+  } else {
+    global <- FALSE
+  }
 
   # check for external regressors future values
   future_xregs <- multi_future_xreg_check(
@@ -80,11 +87,11 @@ run_feature_selection <- function(input_data,
     }
 
     # run feature selection
-    if (date_type %in% c("day", "week")) {
+    if (date_type %in% c("day", "week") | global) {
       # number of votes needed for feature to be selected
       votes_needed <- 3
 
-      # don't run leave one feature out process for daily and weekly data
+      # don't run leave one feature out process for daily, weekly, or global model data
       lofo_results <- tibble::tibble()
 
       # target correlation
@@ -96,7 +103,7 @@ run_feature_selection <- function(input_data,
         ) %>%
         dplyr::select(Feature, Vote, Auto_Accept)
 
-      # don't run boruta process for daily and weekly data
+      # don't run leave one feature out process for daily, weekly, or global model data
       boruta_results <- tibble::tibble()
     } else {
       if (!fast) { # full implementation
@@ -253,7 +260,6 @@ run_feature_selection <- function(input_data,
 
     return(setNames(list(fs_list), element_name))
   }
-
   return(fs_list_final)
 }
 
