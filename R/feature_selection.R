@@ -31,7 +31,7 @@ run_feature_selection <- function(input_data,
 
     return(fs_list)
   }
-  
+
   # check for multiple time series
   if (length(unique(input_data$Combo)) > 1) {
     global <- TRUE
@@ -103,7 +103,7 @@ run_feature_selection <- function(input_data,
         ) %>%
         dplyr::select(Feature, Vote, Auto_Accept)
 
-      # don't run leave one feature out process for daily, weekly, or global model data
+      # don't run boruta for daily, weekly, or global model data
       boruta_results <- tibble::tibble()
     } else {
       if (!fast) { # full implementation

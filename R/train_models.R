@@ -419,7 +419,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Workflow)
 
         workflow <- workflow$Model_Workflow[[1]]
-        
+
         if (nrow(prep_data) > 500 & model == "xgboost") {
           # update xgboost model to use 'hist' tree method to speed up training
           workflow <- workflows::update_model(workflow,
@@ -429,8 +429,10 @@ train_models <- function(run_info,
 
         if (combo_hash == "All-Data") {
           # adjust column types to match original data
-          prep_data <- adjust_column_types(prep_data, 
-                                           workflows::extract_recipe(workflow, estimated = FALSE))
+          prep_data <- adjust_column_types(
+            prep_data,
+            workflows::extract_recipe(workflow, estimated = FALSE)
+          )
         }
 
         if (feature_selection & model %in% fs_model_list) {
@@ -1013,16 +1015,16 @@ adjust_column_types <- function(data, recipe) {
   expected_types <- recipe$var_info %>%
     dplyr::select(variable, type) %>%
     dplyr::mutate(type = purrr::map_chr(type, ~ .x[[1]]))
-  
+
   # Identify and coerce mismatched columns
   for (i in seq_len(nrow(expected_types))) {
     col_name <- expected_types$variable[i]
     expected_type <- expected_types$type[i]
-    
+
     # Check if column exists and type mismatch
     if (col_name %in% names(data)) {
       actual_type <- class(data[[col_name]])[1]
-      
+
       # Convert if types are different
       if (expected_type == "string" && actual_type != "character") {
         data[[col_name]] <- as.character(data[[col_name]])
@@ -1035,5 +1037,3 @@ adjust_column_types <- function(data, recipe) {
   }
   return(data)
 }
-
-

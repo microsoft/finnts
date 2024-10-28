@@ -69,7 +69,7 @@ list_global_models <- function() {
 #' @noRd
 list_multivariate_models <- function() {
   list <- c(
-    "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost", 
+    "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
     "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
     "nnetar-xregs"
   )
