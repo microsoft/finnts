@@ -57,7 +57,7 @@ list_r2_models <- function() {
 #' @return list of models
 #' @noRd
 list_global_models <- function() {
-  list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+  list <- c("xgboost")
 
   return(list)
 }
@@ -69,7 +69,8 @@ list_global_models <- function() {
 #' @noRd
 list_multivariate_models <- function() {
   list <- c(
-    list_global_models(), "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
+    "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
+    "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
     "nnetar-xregs"
   )
 

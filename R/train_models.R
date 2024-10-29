@@ -420,6 +420,21 @@ train_models <- function(run_info,
 
         workflow <- workflow$Model_Workflow[[1]]
 
+        if (nrow(prep_data) > 500 & model == "xgboost") {
+          # update xgboost model to use 'hist' tree method to speed up training
+          workflow <- workflows::update_model(workflow,
+                                              workflows::extract_spec_parsnip(workflow) %>%
+                                                parsnip::set_args(tree_method = "hist"))
+        }
+
+        if (combo_hash == "All-Data") {
+          # adjust column types to match original data
+          prep_data <- adjust_column_types(
+            prep_data,
+            workflows::extract_recipe(workflow, estimated = FALSE)
+          )
+        }
+
         if (feature_selection & model %in% fs_model_list) {
           # update model workflow to only use features from feature selection process
           if (data_prep_recipe == "R1") {
@@ -986,4 +1001,39 @@ undifference_recipe <- function(recipe_data,
     rbind(future_data)
 
   return(final_recipe_data)
+}
+
+#' Function to enforce correct column formatting
+#'
+#' @param data data
+#' @param recipe recipe
+#'
+#' @return tbl with correct column types
+#' @noRd
+adjust_column_types <- function(data, recipe) {
+  # Extract the required column types from the recipe
+  expected_types <- recipe$var_info %>%
+    dplyr::select(variable, type) %>%
+    dplyr::mutate(type = purrr::map_chr(type, ~ .x[[1]]))
+
+  # Identify and coerce mismatched columns
+  for (i in seq_len(nrow(expected_types))) {
+    col_name <- expected_types$variable[i]
+    expected_type <- expected_types$type[i]
+
+    # Check if column exists and type mismatch
+    if (col_name %in% names(data)) {
+      actual_type <- class(data[[col_name]])[1]
+
+      # Convert if types are different
+      if (expected_type == "string" && actual_type != "character") {
+        data[[col_name]] <- as.character(data[[col_name]])
+      } else if (expected_type %in% c("numeric", "double") && actual_type != "numeric") {
+        data[[col_name]] <- as.numeric(data[[col_name]])
+      } else if (expected_type == "date" && actual_type != "Date") {
+        data[[col_name]] <- as.Date(data[[col_name]])
+      }
+    }
+  }
+  return(data)
 }

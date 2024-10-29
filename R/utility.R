@@ -16,7 +16,7 @@ utils::globalVariables(c(
   "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
   "Var_Combo", "regressor", "regressor_tbl", "value_level_iter", ".actual", ".fitted",
   "forecast_horizon", "lag", "new_data", "object", "fit", "Row_Num", "Run_Number", "weight",
-  "Total", "Weight", "batch"
+  "Total", "Weight", "batch", "variable", "type"
 ))
 
 #' @importFrom magrittr %>%
