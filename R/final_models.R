@@ -680,39 +680,120 @@ final_models <- function(run_info,
   )
 }
 
-#' Create prediction intervals
+#' Create prediction intervals with hierarchical horizon grouping if data is limited
 #'
-#' @param fcst_tbl forecast table to use to create prediction intervals
-#' @param train_test_split train test split
+#' @param fcst_tbl forecast table containing columns:
+#'   - Combo
+#'   - Model_ID
+#'   - Train_Test_ID
+#'   - Target
+#'   - Forecast
+#'   - Horizon (an integer)
+#' @param train_test_split a data frame with columns:
+#'   - Run_Type (character): "Back_Test" or other types
+#'   - Train_Test_ID (numeric): ID indicating training/test splits
+#' @param min_residual_count minimum number of residual points needed to use conformal intervals at the horizon level
+#' @param min_residual_group_count minimum number of residual points needed to use conformal intervals at the horizon group level
 #'
-#' @return data frame with prediction intervals
+#' @return A data frame with columns lo_80, lo_95, hi_80, hi_95 added/updated.
+#'
 #' @noRd
 create_prediction_intervals <- function(fcst_tbl,
-                                        train_test_split) {
+                                        train_test_split,
+                                        min_residual_count = 20,
+                                        min_residual_group_count = 20) {
+  # Identify back test IDs
   back_test_id <- train_test_split %>%
     dplyr::filter(Run_Type == "Back_Test") %>%
-    dplyr::select(Train_Test_ID) %>%
     dplyr::pull(Train_Test_ID)
-
-  prediction_interval_tbl <- fcst_tbl %>%
+  
+  # Compute quantiles for horizon to split into thirds
+  horizon_quantiles <- quantile(fcst_tbl$Horizon, probs = c(1/3, 2/3), na.rm = TRUE)
+  q1 <- horizon_quantiles[1]
+  q2 <- horizon_quantiles[2]
+  
+  # Map horizons to short/medium/long based on thirds
+  fcst_tbl <- fcst_tbl %>%
+    dplyr::mutate(
+      Horizon_Group = dplyr::case_when(
+        Horizon <= q1 ~ "Short",
+        Horizon <= q2 ~ "Medium",
+        TRUE ~ "Long"
+      )
+    )
+  
+  # Compute residuals for back-test data
+  residuals_tbl <- fcst_tbl %>%
     dplyr::filter(Train_Test_ID %in% back_test_id) %>%
-    dplyr::mutate(Residual = Target - Forecast) %>%
-    dplyr::group_by(Combo, Model_ID) %>%
-    dplyr::summarise(Residual_Std_Dev = sd(Residual, na.rm = TRUE)) %>%
-    dplyr::ungroup()
-
+    dplyr::mutate(Residual = Target - Forecast)
+  
+  # Compute quantiles and std dev by exact horizon
+  horizon_stats <- residuals_tbl %>%
+    dplyr::group_by(Combo, Model_ID, Horizon) %>%
+    dplyr::summarise(
+      n = sum(!is.na(Residual)),
+      q_lower_80 = ifelse(n > 0, quantile(Residual, probs = 0.10, na.rm = TRUE), NA_real_),
+      q_upper_80 = ifelse(n > 0, quantile(Residual, probs = 0.90, na.rm = TRUE), NA_real_),
+      q_lower_95 = ifelse(n > 0, quantile(Residual, probs = 0.025, na.rm = TRUE), NA_real_),
+      q_upper_95 = ifelse(n > 0, quantile(Residual, probs = 0.975, na.rm = TRUE), NA_real_),
+      Residual_Std_Dev = sd(Residual, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Compute quantiles and std dev by horizon group
+  group_stats <- residuals_tbl %>%
+    dplyr::group_by(Combo, Model_ID, Horizon_Group) %>%
+    dplyr::summarise(
+      n_group = sum(!is.na(Residual)),
+      qg_lower_80 = ifelse(n_group > 0, quantile(Residual, probs = 0.10, na.rm = TRUE), NA_real_),
+      qg_upper_80 = ifelse(n_group > 0, quantile(Residual, probs = 0.90, na.rm = TRUE), NA_real_),
+      qg_lower_95 = ifelse(n_group > 0, quantile(Residual, probs = 0.025, na.rm = TRUE), NA_real_),
+      qg_upper_95 = ifelse(n_group > 0, quantile(Residual, probs = 0.975, na.rm = TRUE), NA_real_),
+      Group_Std_Dev = sd(Residual, na.rm = TRUE),
+      .groups = "drop"
+    )
+  
+  # Join horizon-level and group-level statistics to main fcst_tbl
   final_tbl <- fcst_tbl %>%
-    dplyr::left_join(prediction_interval_tbl,
-      by = c("Model_ID", "Combo")
+    dplyr::left_join(horizon_stats, by = c("Combo", "Model_ID", "Horizon")) %>%
+    dplyr::left_join(group_stats, by = c("Combo", "Model_ID", "Horizon_Group"))
+  
+  # Determine which method to use for each row
+  final_tbl <- final_tbl %>%
+    dplyr::mutate(
+      use_horizon_conformal = !is.na(n) & n >= min_residual_count & Train_Test_ID == 1,
+      use_group_conformal = !use_horizon_conformal & !is.na(n_group) & n_group >= min_residual_group_count & Train_Test_ID == 1
     ) %>%
     dplyr::mutate(
-      lo_80 = ifelse(Train_Test_ID == 1, Forecast - (1.28 * Residual_Std_Dev), NA),
-      lo_95 = ifelse(Train_Test_ID == 1, Forecast - (1.96 * Residual_Std_Dev), NA),
-      hi_80 = ifelse(Train_Test_ID == 1, Forecast + (1.28 * Residual_Std_Dev), NA),
-      hi_95 = ifelse(Train_Test_ID == 1, Forecast + (1.96 * Residual_Std_Dev), NA)
+      lo_80 = dplyr::case_when(
+        use_horizon_conformal ~ Forecast + q_lower_80,
+        use_group_conformal ~ Forecast + qg_lower_80,
+        Train_Test_ID == 1 ~ Forecast - (1.28 * dplyr::coalesce(Residual_Std_Dev, Group_Std_Dev, 0)),
+        TRUE ~ NA_real_
+      ),
+      hi_80 = dplyr::case_when(
+        use_horizon_conformal ~ Forecast + q_upper_80,
+        use_group_conformal ~ Forecast + qg_upper_80,
+        Train_Test_ID == 1 ~ Forecast + (1.28 * dplyr::coalesce(Residual_Std_Dev, Group_Std_Dev, 0)),
+        TRUE ~ NA_real_
+      ),
+      lo_95 = dplyr::case_when(
+        use_horizon_conformal ~ Forecast + q_lower_95,
+        use_group_conformal ~ Forecast + qg_lower_95,
+        Train_Test_ID == 1 ~ Forecast - (1.96 * dplyr::coalesce(Residual_Std_Dev, Group_Std_Dev, 0)),
+        TRUE ~ NA_real_
+      ),
+      hi_95 = dplyr::case_when(
+        use_horizon_conformal ~ Forecast + q_upper_95,
+        use_group_conformal ~ Forecast + qg_upper_95,
+        Train_Test_ID == 1 ~ Forecast + (1.96 * dplyr::coalesce(Residual_Std_Dev, Group_Std_Dev, 0)),
+        TRUE ~ NA_real_
+      )
     ) %>%
-    dplyr::select(-Residual_Std_Dev)
-
+    dplyr::select(-n, -q_lower_80, -q_upper_80, -q_lower_95, -q_upper_95,
+                  -n_group, -qg_lower_80, -qg_upper_80, -qg_lower_95, -qg_upper_95,
+                  -Residual_Std_Dev, -Group_Std_Dev, -use_horizon_conformal, -use_group_conformal)
+  
   return(final_tbl)
 }
 
