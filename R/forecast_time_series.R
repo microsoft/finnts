@@ -45,7 +45,6 @@
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 #'   than number of cores on machine minus 1.
-#' @param target_log_transformation If TRUE, log transform target variable before training models.
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses
 #'   these values based on the date_type.
@@ -126,7 +125,6 @@ forecast_time_series <- function(run_info = NULL,
                                  parallel_processing = NULL,
                                  inner_parallel = FALSE,
                                  num_cores = NULL,
-                                 target_log_transformation = FALSE,
                                  negative_forecast = FALSE,
                                  fourier_periods = NULL,
                                  lag_periods = NULL,
@@ -172,7 +170,6 @@ forecast_time_series <- function(run_info = NULL,
     forecast_approach = forecast_approach,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    target_log_transformation = target_log_transformation,
     fourier_periods = fourier_periods,
     lag_periods = lag_periods,
     rolling_window_periods = rolling_window_periods,

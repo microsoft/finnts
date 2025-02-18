@@ -93,7 +93,7 @@ train_models <- function(run_info,
   box_cox <- log_df$box_cox
   multistep_horizon <- log_df$multistep_horizon
   forecast_horizon <- log_df$forecast_horizon
-  external_regressors <- ifelse(log_df$external_regressors == "NULL", NULL, strsplit(log_df$external_regressors, split = "---")[[1]])
+  external_regressors <- if(is.na(log_df$external_regressors)) {NULL} else {unlist(strsplit(log_df$external_regressors, split = "---"))}
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE

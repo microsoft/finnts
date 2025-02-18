@@ -431,7 +431,7 @@ model_workflows <- function(run_info,
   forecast_approach <- log_df$forecast_approach
   forecast_horizon <- log_df$forecast_horizon
   multistep_horizon <- log_df$multistep_horizon
-  external_regressors <- ifelse(log_df$external_regressors == "NULL", NULL, strsplit(log_df$external_regressors, split = "---")[[1]])
+  external_regressors <- if(is.na(log_df$external_regressors)) {NULL} else {unlist(strsplit(log_df$external_regressors, split = "---"))}
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE

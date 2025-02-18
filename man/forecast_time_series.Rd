@@ -25,7 +25,6 @@ forecast_time_series(
   parallel_processing = NULL,
   inner_parallel = FALSE,
   num_cores = NULL,
-  target_log_transformation = FALSE,
   negative_forecast = FALSE,
   fourier_periods = NULL,
   lag_periods = NULL,
@@ -109,8 +108,6 @@ set to NULL or 'spark'.}
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 than number of cores on machine minus 1.}
-
-\item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 
 \item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
