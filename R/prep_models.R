@@ -3,7 +3,7 @@
 #' Preps various aspects of run before training models. Things like train/test
 #'   splits, creating hyperparameters, etc.
 #'
-#' @param run_info run info using the [set_run_info()] function.
+#' @param run_info Run info using the [set_run_info()] function.
 #' @param back_test_scenarios Number of specific back test folds to run when
 #'   determining the best model. Default of NULL will automatically choose
 #'   the number of back tests to run based on historical data size,
@@ -19,8 +19,9 @@
 #'   to speed up model run time. Default of NULL runs PCA on day and week
 #'   date types across all local multivariate models, and also for global models
 #'   across all date types.
-#' @param num_hyperparameters number of hyperparameter combinations to test
+#' @param num_hyperparameters Number of hyperparameter combinations to test
 #'   out on validation data for model tuning.
+#' @param seasonal_period List of numbers to be used for seasonal periods in specific univariate models like tbats.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Writes outputs related to model prep to disk.
@@ -58,6 +59,7 @@ prep_models <- function(run_info,
                         run_ensemble_models = TRUE,
                         pca = NULL,
                         num_hyperparameters = 10,
+                        seasonal_period = NULL,
                         seed = 123) {
   # check input values
   check_input_type("run_info", run_info, "list")
@@ -67,6 +69,7 @@ prep_models <- function(run_info,
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
   check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
+  check_input_type("seasonal_period", seasonal_period, c("NULL", "list", "numeric"))
   check_input_type("seed", seed, "numeric")
 
   # create model workflows
@@ -75,6 +78,7 @@ prep_models <- function(run_info,
     models_to_run,
     models_not_to_run,
     pca,
+    seasonal_period,
     seed
   )
 
@@ -408,6 +412,7 @@ train_test_split <- function(run_info,
 #' @param models_to_run models to run
 #' @param models_not_to_run models not to run
 #' @param pca pca
+#' @param seasonal_period seasonal period
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Returns table of model workflows
@@ -416,6 +421,7 @@ model_workflows <- function(run_info,
                             models_to_run = NULL,
                             models_not_to_run = NULL,
                             pca = NULL,
+                            seasonal_period = NULL,
                             seed = 123) {
   cli::cli_progress_step("Creating Model Workflows")
 
@@ -441,11 +447,19 @@ model_workflows <- function(run_info,
     # do nothing
   }
 
+  if (is.null(seasonal_period)) {
+    seasonal_period <- get_seasonal_periods(date_type)
+  } else {
+    # do nothing
+  }
+
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
-      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---"))
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")), 
+      pca = ifelse(is.null(pca), NA, pca), 
+      seasonal_period = ifelse(is.null(seasonal_period), NA, paste(seasonal_period, collapse = "---"))
     ) %>%
       data.frame()
 
@@ -560,7 +574,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = get_seasonal_periods(date_type),
+        "seasonal_period" = seasonal_period,
         "model_type" = "single",
         "pca" = pca,
         "multistep" = multistep_horizon,
@@ -571,7 +585,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = get_seasonal_periods(date_type),
+        "seasonal_period" = seasonal_period,
         "model_type" = "single",
         "pca" = pca,
         "multistep" = FALSE,
@@ -625,7 +639,8 @@ model_workflows <- function(run_info,
     dplyr::mutate(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
       models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
-      pca = ifelse(is.null(pca), NA, pca)
+      pca = ifelse(is.null(pca), NA, pca), 
+      seasonal_period = ifelse(is.null(seasonal_period), NA, paste(seasonal_period, collapse = "---"))
     )
 
   write_data(
@@ -863,8 +878,8 @@ get_date_type <- function(frequency) {
 get_seasonal_periods <- function(date_type) {
   seasonal_periods <- switch(date_type,
     "year" = c(1, 2, 3),
-    "quarter" = c(4, 6, 12),
-    "month" = c(12, 6, 4),
+    "quarter" = c(4, 2, 8),
+    "month" = c(12, 6, 3),
     "week" = c(365.25 / 7, (365.25 / 7) / 4, (365.25 / 7) / 12),
     "day" = c(365.25, 365.25 / 4, 365.25 / 12)
   )

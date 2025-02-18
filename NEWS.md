@@ -5,6 +5,7 @@
 -   Shortened global model list to just xgboost
 -   Faster xgboost model training for larger datasets 
 -   Faster feature selection for global model training
+-   Added `seasonal_period` within `prep_models()` for more control over multiple seasonal periods in models like tbats
 
 ## Bug Fixes
 

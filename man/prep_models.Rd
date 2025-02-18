@@ -13,11 +13,12 @@ prep_models(
   run_ensemble_models = TRUE,
   pca = NULL,
   num_hyperparameters = 10,
+  seasonal_period = NULL,
   seed = 123
 )
 }
 \arguments{
-\item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
+\item{run_info}{Run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
 
 \item{back_test_scenarios}{Number of specific back test folds to run when
 determining the best model. Default of NULL will automatically choose
@@ -40,8 +41,10 @@ to speed up model run time. Default of NULL runs PCA on day and week
 date types across all local multivariate models, and also for global models
 across all date types.}
 
-\item{num_hyperparameters}{number of hyperparameter combinations to test
+\item{num_hyperparameters}{Number of hyperparameter combinations to test
 out on validation data for model tuning.}
+
+\item{seasonal_period}{List of numbers to be used for seasonal periods in specific univariate models like tbats.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
 }
