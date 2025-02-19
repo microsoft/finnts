@@ -57,7 +57,7 @@ list_r2_models <- function() {
 #' @return list of models
 #' @noRd
 list_global_models <- function() {
-  list <- c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost")
+  list <- c("xgboost")
 
   return(list)
 }
@@ -69,7 +69,8 @@ list_global_models <- function() {
 #' @noRd
 list_multivariate_models <- function() {
   list <- c(
-    list_global_models(), "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
+    "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
+    "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
     "nnetar-xregs"
   )
 
@@ -1052,8 +1053,8 @@ stlm_arima <- function(train_data,
 
   model_spec_stlm_arima <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_arima[1],
-    seasonal_period_2 = seasonal_period_stlm_arima[2],
-    seasonal_period_3 = seasonal_period_stlm_arima[3]
+    seasonal_period_2 = if(is.na(seasonal_period_stlm_arima[2])) {NULL} else {seasonal_period_stlm_arima[2]},
+    seasonal_period_3 = if(is.na(seasonal_period_stlm_arima[3])) {NULL} else {seasonal_period_stlm_arima[3]}
   ) %>%
     parsnip::set_engine("stlm_arima")
 
@@ -1081,8 +1082,8 @@ stlm_ets <- function(train_data,
 
   model_spec_stlm_ets <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_stlm_ets[1],
-    seasonal_period_2 = seasonal_period_stlm_ets[2],
-    seasonal_period_3 = seasonal_period_stlm_ets[3]
+    seasonal_period_2 = if(is.na(seasonal_period_stlm_ets[2])) {NULL} else {seasonal_period_stlm_ets[2]},
+    seasonal_period_3 = if(is.na(seasonal_period_stlm_ets[3])) {NULL} else {seasonal_period_stlm_ets[3]}
   ) %>%
     parsnip::set_engine("stlm_ets")
 
@@ -1272,8 +1273,8 @@ tbats <- function(train_data,
 
   model_spec_tbats <- modeltime::seasonal_reg(
     seasonal_period_1 = seasonal_period_tbats[1],
-    seasonal_period_2 = seasonal_period_tbats[2],
-    seasonal_period_3 = seasonal_period_tbats[3]
+    seasonal_period_2 = if(is.na(seasonal_period_tbats[2])) {NULL} else {seasonal_period_tbats[2]},
+    seasonal_period_3 = if(is.na(seasonal_period_tbats[3])) {NULL} else {seasonal_period_tbats[3]}
   ) %>%
     parsnip::set_engine("tbats")
 

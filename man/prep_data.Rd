@@ -23,7 +23,6 @@ prep_data(
   forecast_approach = "bottoms_up",
   parallel_processing = NULL,
   num_cores = NULL,
-  target_log_transformation = FALSE,
   fourier_periods = NULL,
   lag_periods = NULL,
   rolling_window_periods = NULL,
@@ -81,8 +80,6 @@ Value of 'spark' runs time series in parallel on a spark cluster in Azure Databr
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
 on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 than number of cores on machine minus 1.}
-
-\item{target_log_transformation}{If TRUE, log transform target variable before training models.}
 
 \item{fourier_periods}{List of values to use in creating fourier series as features. Default of NULL automatically chooses
 these values based on the date_type.}

@@ -1,3 +1,18 @@
+# finnts 0.5.0.9002 (development version)
+
+## Improvements
+
+-   Shortened global model list to just xgboost
+-   Faster xgboost model training for larger datasets 
+-   Faster feature selection for global model training
+-   Added `seasonal_period` within `prep_models()` for more control over multiple seasonal periods in models like tbats
+
+## Bug Fixes
+
+-   Error in formatting of training data for global models
+-   Error when using multiple external regressors with future values
+-   Remove `target_log_transformation` within `prep_data()`, since `box_cox` has now replaced it for automated power transformations
+
 # finnts 0.5.0
 
 ## Improvements

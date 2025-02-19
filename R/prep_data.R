@@ -34,7 +34,6 @@
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
 #'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
 #'   than number of cores on machine minus 1.
-#' @param target_log_transformation If TRUE, log transform target variable before training models.
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses
 #'   these values based on the date_type.
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values
@@ -88,7 +87,6 @@ prep_data <- function(run_info,
                       forecast_approach = "bottoms_up",
                       parallel_processing = NULL,
                       num_cores = NULL,
-                      target_log_transformation = FALSE,
                       fourier_periods = NULL,
                       lag_periods = NULL,
                       rolling_window_periods = NULL,
@@ -115,7 +113,6 @@ prep_data <- function(run_info,
   check_input_type("forecast_approach", forecast_approach, "character", c("bottoms_up", "grouped_hierarchy", "standard_hierarchy"))
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  check_input_type("target_log_transformation", target_log_transformation, "logical")
   check_input_type("fourier_periods", fourier_periods, c("list", "numeric", "NULL"))
   check_input_type("lag_periods", lag_periods, c("list", "numeric", "NULL"))
   check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
@@ -243,7 +240,6 @@ prep_data <- function(run_info,
       forecast_approach = forecast_approach,
       parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
       num_cores = ifelse(is.null(num_cores), NA, num_cores),
-      target_log_transformation = target_log_transformation,
       fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
       lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
       rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
@@ -725,7 +721,6 @@ prep_data <- function(run_info,
       forecast_approach = forecast_approach,
       parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
       num_cores = ifelse(is.null(num_cores), NA, num_cores),
-      target_log_transformation = target_log_transformation,
       fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
       lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
       rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
@@ -752,26 +747,6 @@ prep_data <- function(run_info,
       folder = "prep_data",
       suffix = "-orig_combo_info"
     )
-  }
-}
-
-#' Function to perform log transformation
-#'
-#' @param df data frame
-#' @param target_log_transformation variable to indicate log transformation
-#'
-#' @return tbl with or without log transformation
-#' @noRd
-get_log_transformation <- function(df,
-                                   target_log_transformation) {
-  if (target_log_transformation) {
-    df %>%
-      dplyr::mutate(
-        Target = log1p(Target),
-        Target = ifelse(is.nan(Target), 0, Target)
-      )
-  } else {
-    df
   }
 }
 

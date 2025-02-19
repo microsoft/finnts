@@ -15,7 +15,7 @@ multi_future_xreg_check <- function(input_data,
     if (sum(external_regressors %in% colnames(input_data)) == 0) {
       future_xregs <- NULL
     } else {
-      future_xregs <- external_regressors[external_regressors %in% colnames(input_data)][[1]]
+      future_xregs <- unlist(intersect(external_regressors, colnames(input_data)), use.names = FALSE)
     }
   }
 
