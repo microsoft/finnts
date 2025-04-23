@@ -28,11 +28,11 @@ jobs:
 
 
           # Use older ubuntu to maximise backward compatibility
-          - {os: ubuntu-20.04,   r: 'devel', http-user-agent: 'release'}
-          - {os: ubuntu-20.04,   r: 'release'}
-          - {os: ubuntu-20.04,   r: 'oldrel-1'}
-          - {os: ubuntu-20.04,   r: 'oldrel-2'}
-          - {os: ubuntu-20.04,   r: '4.0'} # 4.0 is the min version for finnts
+          - {os: ubuntu-22.04,   r: 'devel', http-user-agent: 'release'}
+          - {os: ubuntu-22.04,   r: 'release'}
+          - {os: ubuntu-22.04,   r: 'oldrel-1'}
+          - {os: ubuntu-22.04,   r: 'oldrel-2'}
+          - {os: ubuntu-22.04,   r: '4.0'} # 4.0 is the min version for finnts
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
