@@ -139,6 +139,13 @@ final_models <- function(run_info,
   run_global_models <- prev_log_df$run_global_models
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
+  
+  if(forecast_approach != "bottoms_up" & date_type == "week") {
+    # turn off daily conversion before hts recon
+    initial_weekly_to_daily <- FALSE
+  } else {
+    initial_weekly_to_daily <- weekly_to_daily
+  }
 
   if (sum(colnames(prev_log_df) %in% "weighted_mape")) {
     # check if input values have changed
@@ -456,7 +463,7 @@ final_models <- function(run_info,
           dplyr::mutate(Horizon = dplyr::row_number()) %>%
           dplyr::ungroup() %>%
           create_prediction_intervals(model_train_test_tbl) %>%
-          convert_weekly_to_daily(date_type, weekly_to_daily)
+          convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
         write_data(
           x = model_avg_final_tbl,
@@ -471,7 +478,7 @@ final_models <- function(run_info,
           single_model_final_tbl <- single_model_tbl %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = single_model_final_tbl,
@@ -487,7 +494,7 @@ final_models <- function(run_info,
           ensemble_model_final_tbl <- ensemble_model_tbl %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = ensemble_model_final_tbl,
@@ -503,7 +510,7 @@ final_models <- function(run_info,
           global_model_final_tbl <- global_model_tbl %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = global_model_final_tbl,
@@ -540,7 +547,7 @@ final_models <- function(run_info,
             dplyr::mutate(Horizon = dplyr::row_number()) %>%
             dplyr::ungroup() %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = avg_model_final_tbl,
@@ -559,7 +566,7 @@ final_models <- function(run_info,
               by = "Model_ID"
             ) %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = single_model_final_tbl,
@@ -578,7 +585,7 @@ final_models <- function(run_info,
               by = "Model_ID"
             ) %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = ensemble_model_final_tbl,
@@ -597,7 +604,7 @@ final_models <- function(run_info,
               by = "Model_ID"
             ) %>%
             create_prediction_intervals(model_train_test_tbl) %>%
-            convert_weekly_to_daily(date_type, weekly_to_daily)
+            convert_weekly_to_daily(date_type, initial_weekly_to_daily)
 
           write_data(
             x = global_model_final_tbl,
@@ -637,6 +644,8 @@ final_models <- function(run_info,
       parallel_processing,
       forecast_approach,
       negative_forecast,
+      weekly_to_daily, 
+      date_type, 
       num_cores
     )
   }

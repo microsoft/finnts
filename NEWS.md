@@ -1,4 +1,4 @@
-# finnts 0.5.0.9002 (development version)
+# finnts 0.5.0.9003 (development version)
 
 ## Improvements
 
@@ -12,6 +12,7 @@
 -   Error in formatting of training data for global models
 -   Error when using multiple external regressors with future values
 -   Remove `target_log_transformation` within `prep_data()`, since `box_cox` has now replaced it for automated power transformations
+-   Error when running hierarchical forecasts with weekly data
 
 # finnts 0.5.0
 
