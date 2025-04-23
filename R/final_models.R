@@ -139,8 +139,8 @@ final_models <- function(run_info,
   run_global_models <- prev_log_df$run_global_models
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
-  
-  if(forecast_approach != "bottoms_up" & date_type == "week") {
+
+  if (forecast_approach != "bottoms_up" & date_type == "week") {
     # turn off daily conversion before hts recon
     initial_weekly_to_daily <- FALSE
   } else {
@@ -644,8 +644,8 @@ final_models <- function(run_info,
       parallel_processing,
       forecast_approach,
       negative_forecast,
-      weekly_to_daily, 
-      date_type, 
+      weekly_to_daily,
+      date_type,
       num_cores
     )
   }

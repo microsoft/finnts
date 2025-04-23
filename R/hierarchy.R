@@ -403,7 +403,7 @@ reconcile_hierarchical_data <- function(run_info,
                                         forecast_approach,
                                         negative_forecast = FALSE,
                                         weekly_to_daily = TRUE,
-                                        date_type, 
+                                        date_type,
                                         num_cores) {
   # get run splits
   model_train_test_tbl <- read_file(run_info,

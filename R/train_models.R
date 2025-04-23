@@ -93,7 +93,11 @@ train_models <- function(run_info,
   box_cox <- log_df$box_cox
   multistep_horizon <- log_df$multistep_horizon
   forecast_horizon <- log_df$forecast_horizon
-  external_regressors <- if(is.na(log_df$external_regressors)) {NULL} else {unlist(strsplit(log_df$external_regressors, split = "---"))}
+  external_regressors <- if (is.na(log_df$external_regressors)) {
+    NULL
+  } else {
+    unlist(strsplit(log_df$external_regressors, split = "---"))
+  }
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -422,9 +426,11 @@ train_models <- function(run_info,
 
         if (nrow(prep_data) > 500 & model == "xgboost") {
           # update xgboost model to use 'hist' tree method to speed up training
-          workflow <- workflows::update_model(workflow,
-                                              workflows::extract_spec_parsnip(workflow) %>%
-                                                parsnip::set_args(tree_method = "hist"))
+          workflow <- workflows::update_model(
+            workflow,
+            workflows::extract_spec_parsnip(workflow) %>%
+              parsnip::set_args(tree_method = "hist")
+          )
         }
 
         if (combo_hash == "All-Data") {
