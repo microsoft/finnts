@@ -437,7 +437,11 @@ model_workflows <- function(run_info,
   forecast_approach <- log_df$forecast_approach
   forecast_horizon <- log_df$forecast_horizon
   multistep_horizon <- log_df$multistep_horizon
-  external_regressors <- if(is.na(log_df$external_regressors)) {NULL} else {unlist(strsplit(log_df$external_regressors, split = "---"))}
+  external_regressors <- if (is.na(log_df$external_regressors)) {
+    NULL
+  } else {
+    unlist(strsplit(log_df$external_regressors, split = "---"))
+  }
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -457,8 +461,8 @@ model_workflows <- function(run_info,
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
-      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")), 
-      pca = ifelse(is.null(pca), NA, pca), 
+      models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
+      pca = ifelse(is.null(pca), NA, pca),
       seasonal_period = ifelse(is.null(seasonal_period), NA, paste(seasonal_period, collapse = "---"))
     ) %>%
       data.frame()
@@ -639,7 +643,7 @@ model_workflows <- function(run_info,
     dplyr::mutate(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
       models_not_to_run = ifelse(is.null(models_not_to_run), NA, paste(models_not_to_run, collapse = "---")),
-      pca = ifelse(is.null(pca), NA, pca), 
+      pca = ifelse(is.null(pca), NA, pca),
       seasonal_period = ifelse(is.null(seasonal_period), NA, paste(seasonal_period, collapse = "---"))
     )
 

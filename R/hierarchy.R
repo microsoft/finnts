@@ -392,6 +392,8 @@ get_hts_nodes <- function(hts_object,
 #' @param parallel_processing parallel processing
 #' @param forecast_approach forecast approach
 #' @param negative_forecast negative forecast
+#' @param weekly_to_daily convert weekly data to daily
+#' @param date_type date type
 #' @param num_cores number of cores for parallel processing
 #'
 #' @return hierarchy structure
@@ -400,6 +402,8 @@ reconcile_hierarchical_data <- function(run_info,
                                         parallel_processing,
                                         forecast_approach,
                                         negative_forecast = FALSE,
+                                        weekly_to_daily = TRUE,
+                                        date_type,
                                         num_cores) {
   # get run splits
   model_train_test_tbl <- read_file(run_info,
@@ -642,6 +646,7 @@ reconcile_hierarchical_data <- function(run_info,
             remove = FALSE,
             sep = "--"
           ) %>%
+          convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
 
         # write outputs to disk
@@ -857,6 +862,7 @@ reconcile_hierarchical_data <- function(run_info,
             remove = FALSE,
             sep = "--"
           ) %>%
+          convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
 
         # write outputs to disk
