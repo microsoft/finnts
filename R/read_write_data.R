@@ -364,7 +364,15 @@ write_data <- function(x,
   } else {
     combo_hash <- paste0("-", hash_data(combo))
   }
+  
+  if(is.null(run_info$run_name)) {
+    run_name <- NULL
+  } else {
+    run_name <- hash_data(run_info$run_name)
+  }
 
+  project_name <- hash_data(run_info$project_name)
+  
   # write to temp folder
   temp_path <- NULL
 
@@ -372,7 +380,7 @@ write_data <- function(x,
     (inherits(run_info$storage_object, "NULL") & is.null(run_info$path))) {
     fs::dir_create(tempdir(), folder)
 
-    temp_path <- paste0(fs::path(tempdir(), folder), "\\", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), combo_hash, suffix, ".", file_type)
+    temp_path <- paste0(fs::path(tempdir(), folder), "\\", project_name, "-", run_name, combo_hash, suffix, ".", file_type)
 
     write_data_type(x, temp_path, file_type)
   }
@@ -383,7 +391,7 @@ write_data <- function(x,
       fs::dir_create(run_info$path, folder)
     }
 
-    final_path <- paste0(fs::path(run_info$path, folder), "/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), combo_hash, suffix, ".", file_type)
+    final_path <- paste0(fs::path(run_info$path, folder), "/", project_name, "-", run_name, combo_hash, suffix, ".", file_type)
 
     write_data_folder(
       x,

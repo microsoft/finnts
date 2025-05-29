@@ -83,6 +83,12 @@ cbind.fill <- function(..., fill = NA) {
   return(Reduce(cbind.data.frame, bufferedInputs))
 }
 
+get_timestamp <- function() {
+  as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
+             format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+  )
+}
+
 
 # The functions below define the model information. These access the model
 # environment inside of parsnip so they have to be executed once parsnip has
