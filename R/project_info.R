@@ -133,7 +133,7 @@ set_project_info <- function(project_name = "finn_project",
       path = gsub("synfs(/notebook)?/\\d+", "synfs", path), # remove synapse id to prevent issues
       data_output = data_output,
       object_output = object_output, 
-      combo_variables = combo_variables,
+      combo_variables = paste(combo_variables, collapse = ", "),
       target_variable = target_variable,
       date_type = date_type, 
       fiscal_year_start = fiscal_year_start

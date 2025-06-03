@@ -39,11 +39,11 @@ set_agent_info <- function(project_info,
       dplyr::distinct() %>%
       dplyr::collect() %>%
       dplyr::distinct() %>%
-      dplyr::filter(Date == max(Date)) %>%
       dplyr::pull(Date) %>%
+      max() %>%
       suppressWarnings()
   }
-  
+  print(hist_end_date)
   final_input_data <- input_data %>%
     tidyr::unite("Combo",
                  tidyselect::all_of(combo_variables),

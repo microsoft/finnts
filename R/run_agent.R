@@ -1,4 +1,10 @@
 
+sanitize_args <- function(arg_list) {
+  purrr::imap(arg_list, function(val, nm) {
+    if (is.atomic(val)) val else sprintf("<object:%s>", nm)
+  })
+}
+
 # execute specific tools with retry
 execute_node <- function(node, ctx, chat) {
   # ──────────────────────────────────────────────────────────────────────────
@@ -21,7 +27,7 @@ execute_node <- function(node, ctx, chat) {
   attempt    <- 0L
   registry   <- chat$get_tools()   # names of all registered tools
   
-  message(sprintf("[agent] 🔧 Running %s...", tool_name))
+  cli::cli_progress_step(sprintf("🔧 Running %s...", tool_name))
   
   repeat {
     
@@ -31,56 +37,58 @@ execute_node <- function(node, ctx, chat) {
     }
     tool_fn <- registry[[tool_name]]
     result  <- try(do.call(tool_fn@name, ctx$args %||% list()), silent = TRUE)
-    
+
     # ── Success path ─────────────────────────────────────────────
     if (!inherits(result, "try-error")) {
       ctx[[tool_name]] <- result
       ctx$attempts[[tool_name]] <- 0L
-      message(sprintf("[agent] ✅ %s complete", tool_name))
       return(list(ctx = ctx, ok = TRUE))
     }
-    
+
     # ── Failure path ─────────────────────────────────────────────
     attempt <- attempt + 1L
     ctx$attempts[[tool_name]] <- attempt
     ctx$last_error <- as.character(result)
-    
+
     if (attempt > max_try) {
       stop(sprintf("Tool '%s' failed after %d attempt(s):\n%s",
                    tool_name, attempt, result), call. = FALSE)
     }
-    
-    message(sprintf("[agent] '%s' failed. Asking LLM to suggest a fix (attempt %d/%d)...",
-                    tool_name, attempt, max_try + 1L))
+
+    cli::cli_alert_info(
+      sprintf("Tool '%s' failed. Asking LLM to suggest a fix (attempt %d/%d).",
+              tool_name, attempt, max_try + 1L),
+      "\nError message:\n",
+      as.character(result)
+    )
     
     # ── Ask the LLM for a new tool call ─────────────────────────
     prompt <- paste0(
       "The tool '", tool_name, "' failed with this error:\n",
       ctx$last_error, "\n\n",
       "Its last arguments were:\n",
-      jsonlite::toJSON(ctx$args %||% list(), auto_unbox = TRUE), "\n\n",
+      jsonlite::toJSON(sanitize_args(ctx$args %||% list()), auto_unbox = TRUE), "\n\n",
       "Suggest a valid tool call with ONLY json like this:\n",
-      # '{"tool": "tool_name", "arguments": { "arg1": ..., "arg2": ... }}'
-      '```json\n{\"tool\": \"add_one\", \"arguments\": {"arg1": ..., "arg2": ...}}\n```'
+      '```json\n{\"tool\": \"add_one\", \"arguments\": {"agent_info": ..., "arg2": ...}}\n```'
     )
-    
+
     raw_response <- chat$chat(prompt, echo = FALSE)
-    
+
     # ── Clean and parse JSON from model ─────────────────────────
     clean_json <- gsub("(?s)```.*?\\n|\\n```", "", raw_response, perl = TRUE)
     tool_call <- try(jsonlite::fromJSON(clean_json), silent = TRUE)
     
     if (inherits(tool_call, "try-error") || is.null(tool_call$tool)) {
-      stop("[agent] LLM response could not be parsed or lacked a valid 'tool' field:\n", raw_response, call. = FALSE)
+      stop("LLM response could not be parsed or lacked a valid 'tool' field:\n", raw_response, call. = FALSE)
     }
     
     # ── Update tool and args based on LLM suggestion ────────────
     tool_name    <- tool_call$tool
     ctx$args     <- tool_call$arguments %||% list()
     
-    message(sprintf("[agent] Retrying with tool '%s' and args: %s",
-                    tool_name,
-                    paste(deparse(ctx$args), collapse = "")))
+    cli::cli_alert_info(sprintf("Retrying with tool '%s' and args: %s",
+                                tool_name,
+                                paste(deparse(ctx$args), collapse = "")))
   }
 }
 
