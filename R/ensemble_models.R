@@ -71,7 +71,7 @@ ensemble_models <- function(run_info,
 
   # get input and combo values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -90,7 +90,7 @@ ensemble_models <- function(run_info,
   combo_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*_models.", run_info$data_output
     )
   ) %>%
@@ -98,14 +98,14 @@ ensemble_models <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Type"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo != hash_data("All-Data")) %>%
     dplyr::pull(Combo) %>%
     unique()
 
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = "df"
@@ -115,7 +115,7 @@ ensemble_models <- function(run_info,
   prev_combo_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*ensemble_models.", run_info$data_output
     )
   ) %>%
@@ -123,7 +123,7 @@ ensemble_models <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique()
 
@@ -184,7 +184,7 @@ ensemble_models <- function(run_info,
         suppressWarnings(try(
           single_model_tbl <- read_file(run_info,
             path = paste0(
-              "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+              "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
               "-", combo, "-single_models.", run_info$data_output
             ),
             return_type = "df"
@@ -198,7 +198,7 @@ ensemble_models <- function(run_info,
         suppressWarnings(try(
           global_model_tbl <- read_file(run_info,
             path = paste0(
-              "/forecasts/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+              "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
               "-", combo, "-global_models.", run_info$data_output
             ),
             return_type = "df"
@@ -483,7 +483,7 @@ ensemble_models <- function(run_info,
   successful_combos <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*ensemble_models.", run_info$data_output
     )
   ) %>%
@@ -491,7 +491,7 @@ ensemble_models <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique() %>%
     length()

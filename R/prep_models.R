@@ -190,7 +190,7 @@ train_test_split <- function(run_info,
 
   # get inputs from previous functions
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -210,7 +210,7 @@ train_test_split <- function(run_info,
   # adjust based on models planned to run
   model_workflow_list <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_workflows.", run_info$object_output
     ),
     return_type = "df"
@@ -263,7 +263,7 @@ train_test_split <- function(run_info,
   file_name <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "-*.", run_info$data_output
     )
   )[1]
@@ -387,7 +387,7 @@ train_test_split <- function(run_info,
 
   # update logging file
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   ) %>%
     dplyr::mutate(
@@ -429,7 +429,7 @@ model_workflows <- function(run_info,
 
   # get inputs
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -487,7 +487,7 @@ model_workflows <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -495,7 +495,7 @@ model_workflows <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -672,7 +672,7 @@ model_hyperparameters <- function(run_info,
 
   # check if input values have changed
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -702,7 +702,7 @@ model_hyperparameters <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -710,7 +710,7 @@ model_hyperparameters <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -741,7 +741,7 @@ model_hyperparameters <- function(run_info,
   # get model workflow info
   model_workflow_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_workflows.", run_info$object_output
     ),
     return_type = "df"

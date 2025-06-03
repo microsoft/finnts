@@ -51,7 +51,7 @@ get_forecast_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -61,7 +61,7 @@ get_forecast_data <- function(run_info,
   # get train test split data
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = return_type
@@ -71,7 +71,7 @@ get_forecast_data <- function(run_info,
 
   # check if data has been condensed
   cond_path <- paste0(
-    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
 
@@ -86,17 +86,17 @@ get_forecast_data <- function(run_info,
   # get forecast data
   if (forecast_approach != "bottoms_up") {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
     )
   } else if (condensed) {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
     )
   } else {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
     )
   }
@@ -175,7 +175,7 @@ get_trained_models <- function(run_info) {
 
   # get trained files
   model_path <- paste0(
-    "/models/*", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+    "/models/*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
     "-*_models.", run_info$object_output
   )
 
@@ -232,7 +232,7 @@ get_prepped_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -240,7 +240,7 @@ get_prepped_data <- function(run_info,
 
   # get prepped data
   data_path <- paste0(
-    "/prep_data/*", hash_data(run_info$experiment_name), "-",
+    "/prep_data/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
   )
 
@@ -300,7 +300,7 @@ get_prepped_models <- function(run_info) {
 
   # get prepped model info
   data_path <- paste0(
-    "/prep_models/*", hash_data(run_info$experiment_name), "-",
+    "/prep_models/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name)
   )
 
@@ -652,7 +652,7 @@ get_recipe_data <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -660,7 +660,7 @@ get_recipe_data <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     get_combo(combo) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -670,7 +670,7 @@ get_recipe_data <- function(run_info,
 
     if (nrow(temp_path) > 1) {
       temp_path <- paste0(
-        "/prep_data/*", hash_data(run_info$experiment_name), "-",
+        "/prep_data/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
       )
     } else {
@@ -715,7 +715,7 @@ condense_data <- function(run_info,
   initial_file_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*_models.", run_info$data_output
     )
   )

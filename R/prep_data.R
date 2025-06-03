@@ -184,7 +184,7 @@ prep_data <- function(run_info,
   prev_combo_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -194,7 +194,7 @@ prep_data <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique() %>%
     suppressWarnings()
@@ -248,7 +248,7 @@ prep_data <- function(run_info,
       data.frame()
 
     prev_log_df <- read_file(run_info,
-      path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+      path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
       return_type = "df"
     ) %>%
       dplyr::select(colnames(current_log_df)) %>%
@@ -667,7 +667,7 @@ prep_data <- function(run_info,
   successful_combos <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -677,7 +677,7 @@ prep_data <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique() %>%
     length() %>%
@@ -701,7 +701,7 @@ prep_data <- function(run_info,
 
   # update logging file
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   ) %>%
     dplyr::mutate(

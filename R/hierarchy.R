@@ -408,7 +408,7 @@ reconcile_hierarchical_data <- function(run_info,
   # get run splits
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = "df"
@@ -417,7 +417,7 @@ reconcile_hierarchical_data <- function(run_info,
 
   # get hierarchical info
   hts_list <- read_file(run_info,
-    path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_info.", run_info$object_output),
+    path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_info.", run_info$object_output),
     return_type = "object"
   )
 
@@ -427,7 +427,7 @@ reconcile_hierarchical_data <- function(run_info,
 
   # check if data has been condensed
   cond_path <- paste0(
-    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
 
@@ -450,12 +450,12 @@ reconcile_hierarchical_data <- function(run_info,
 
   if (condensed) {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
     )
   } else {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
     )
   }
@@ -479,7 +479,7 @@ reconcile_hierarchical_data <- function(run_info,
 
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     hist_tbl <- read_file(run_info,
-      path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
+      path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
     ) %>%
       dplyr::select(Combo, Date, Target)
 
@@ -699,7 +699,7 @@ reconcile_hierarchical_data <- function(run_info,
         tryCatch(
           {
             hist_tbl <- read_file(run_info,
-              path = paste0("/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
+              path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
             ) %>%
               dplyr::select(Combo, Date, Target)
 

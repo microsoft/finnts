@@ -40,7 +40,7 @@ execute_node <- function(node, ctx, chat) {
 
     # ── Success path ─────────────────────────────────────────────
     if (!inherits(result, "try-error")) {
-      ctx[[tool_name]] <- result
+      ctx$results[[tool_name]] <- result
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
@@ -123,7 +123,63 @@ run_graph <- function(chat,
     }
     
     # ── normal tool node ───────────────────────────────
-    ctx$args <- node$args %||% list()      # <- ensure args exists
+    resolve_args <- function(arg_template, ctx) {
+      
+      if (is.null(arg_template)) return(list())
+      
+      # 
+      # Build a data-mask so rlang/glue can safely evaluate curly expressions.
+      # flatten_ctx() makes every nested element of `ctx` accessible by name.
+      # 
+      mask_env <- rlang::env(parent = emptyenv())
+      
+      flatten_ctx <- function(x, env) {
+        if (is.list(x)) {
+          purrr::imap(x, function(val, nm) {
+            assign(nm, val, envir = env)
+            flatten_ctx(val, env)            # recurse so results$foo -> foo
+          })
+        }
+      }
+      flatten_ctx(ctx, mask_env)
+      mask <- rlang::new_data_mask(mask_env)   # << key line (no warning)
+      
+      # 
+      walk_template <- function(x) {
+        
+        # recurse into sub-lists first
+        if (is.list(x))  return(purrr::modify(x, walk_template))
+        if (!is.character(x) || length(x) != 1) return(x)
+        
+        # ------ pure { expr } 
+        if (stringr::str_detect(x, "^\\{[^{}]+\\}$")) {
+          expr <- stringr::str_sub(x, 2, -2)          # remove outer braces
+          out  <- tryCatch(
+            rlang::eval_tidy(rlang::parse_expr(expr), mask),
+            error = function(e) {
+              stop(
+                sprintf("Failed to eval '%s': %s", expr, conditionMessage(e)),
+                call. = FALSE
+              )
+            }
+          )
+          return(out)
+        }
+        
+        # ------ mixed glue string 
+        val <- glue::glue_data(
+          mask,
+          x,
+          .open  = "{",
+          .close = "}"
+        )
+        if (identical(val, "NULL")) NULL else as.character(val)
+      }
+      
+      purrr::modify(arg_template, walk_template)
+    }
+    
+    ctx$args <- resolve_args(node$args, ctx)
     res      <- execute_node(node, ctx, chat)
     ctx      <- res$ctx
     
@@ -144,19 +200,27 @@ run_graph <- function(chat,
 register_tools <- function(agent_info) {
   # register the tools for the agent
   register_eda_tools(agent_info)
+  register_fcst_tools(agent_info)
 }
 
 run_agent <- function(agent_info, 
                       parallel_processing = NULL, 
+                      inner_parallel = FALSE, 
                       num_cores = NULL) {
   
   # register tools
   register_tools(agent_info)
   
   # run exploratory data analysis
-  results <- eda_agent_workflow(agent_info = agent_info, 
-                                parallel_processing = parallel_processing, 
-                                num_cores = num_cores) 
+  eda_results <- eda_agent_workflow(agent_info = agent_info, 
+                                    parallel_processing = parallel_processing, 
+                                    num_cores = num_cores) 
   
-  return(results)
+  # run the forecast iteration workflow
+  fcst_results <- fcst_agent_workflow(agent_info = agent_info, 
+                                      parallel_processing = parallel_processing, 
+                                      inner_parallel = inner_parallel,
+                                      num_cores = num_cores)
+  
+  message("[agent] ✅ Agent run completed successfully.")
 }

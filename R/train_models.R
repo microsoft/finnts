@@ -82,7 +82,7 @@ train_models <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -110,7 +110,7 @@ train_models <- function(run_info,
   # get model prep info
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = "df"
@@ -118,7 +118,7 @@ train_models <- function(run_info,
 
   model_workflow_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_workflows.", run_info$object_output
     ),
     return_type = "df"
@@ -126,7 +126,7 @@ train_models <- function(run_info,
 
   model_hyperparameter_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_hyperparameters.", run_info$object_output
     ),
     return_type = "df"
@@ -150,7 +150,7 @@ train_models <- function(run_info,
   if (box_cox || stationary) {
     orig_combo_info_tbl <- read_file(run_info,
       path = paste0(
-        "/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+        "/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
         "-orig_combo_info.", run_info$data_output
       ),
       return_type = "df"
@@ -163,7 +163,7 @@ train_models <- function(run_info,
   all_combo_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -171,7 +171,7 @@ train_models <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique()
 
@@ -193,7 +193,7 @@ train_models <- function(run_info,
   prev_combo_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*.", run_info$data_output
     )
   ) %>%
@@ -203,7 +203,7 @@ train_models <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     base::suppressWarnings()
 
   prev_combo_list <- prev_combo_tbl %>%
@@ -711,7 +711,7 @@ train_models <- function(run_info,
   successful_combo_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*.", run_info$data_output
     )
   ) %>%
@@ -721,7 +721,7 @@ train_models <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     base::suppressWarnings()
 
   successful_combos <- 0

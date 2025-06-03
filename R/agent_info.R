@@ -43,7 +43,7 @@ set_agent_info <- function(project_info,
       max() %>%
       suppressWarnings()
   }
-  print(hist_end_date)
+
   final_input_data <- input_data %>%
     tidyr::unite("Combo",
                  tidyselect::all_of(combo_variables),
