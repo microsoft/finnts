@@ -993,17 +993,22 @@ hierarchy_detect <- function(agent_info) {
     return("Hierarchy detection: flat panel (no hierarchy).")
   }
   
-  # skip if already logged 
-  hier_path <- paste0(
-    "eda/*", hash_data(project_info$project_name), "-",
-    hash_data(project_info$run_name), "-hierarchy.",
-    project_info$object_output
-  )
+  # check if hierarchy detection has already been done
+  hier_list <- tryCatch(
+    read_file(project_info,
+              path = paste0("eda/*", hash_data(project_info$project_name), "-", 
+                            hash_data(project_info$run_name), "-hierarchy.", project_info$object_output),
+              return_type = "object"
+    ),
+    error = function(e) {
+      list()
+    }
+  ) %>%
+    base::suppressWarnings()
   
-  if (length(tryCatch(read_file(project_info, hier_path, "object"),
-                      error = \(e) NULL)) > 0) {
-    cli::cli_alert_info("Hierarchy Already Detected")
-    return("Hierarchy detection already exists for this agent run. Skipping step.")
+  if(length(hier_list) > 0) {
+    cli::cli_alert_info("Hierarchy Detection Already Ran")
+    return("Hierarchy info already exists for this agent run. Skipping hierarchy step.")
   }
   
   # load full panel 

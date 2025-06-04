@@ -172,6 +172,10 @@ submit_fcst_run <- function(agent_info,
                             inner_parallel = FALSE, 
                             num_cores = NULL) {
 
+  cli::cli_alert_info(
+    "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
+  )
+  
   # get project info
   project_info <- agent_info$project_info
   
@@ -277,8 +281,23 @@ get_fcst_output <- function(run_info) {
   return(fcst_tbl)
 }
 
-calculate_fcst_metrics <- function(fcst_tbl) {
-  return("done")
+calculate_fcst_metrics <- function(run_info, 
+                                   fcst_tbl) {
+  
+  # get weighted mape from run logging
+  run_log_df <- read_file(run_info,
+                          path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+                          return_type = "df")
+  
+  weighted_mape <- run_log_df$weighted_mape
+  
+  if (is.null(weighted_mape)) {
+    stop("No weighted MAPE found in run log. Ensure the run was completed successfully.", call. = FALSE)
+  }
+  
+  cli::cli_alert_info(
+    "The weighted MAPE for this run is {round(weighted_mape*100, 2)}%."
+  )
 }
 
 fcst_agent_workflow <- function(agent_info, 
@@ -310,7 +329,8 @@ fcst_agent_workflow <- function(agent_info,
     ),
     calculate_fcst_metrics = list(
       fn = "calculate_fcst_metrics", `next` = "stop", max_retry = 0, 
-      args = list("fcst_tbl" = "{results$get_fcst_output}")
+      args = list("run_info" = "{results$submit_fcst_run}",
+                  "fcst_tbl" = "{results$get_fcst_output}")
     ),
     stop  = list(fn = NULL)
   )
