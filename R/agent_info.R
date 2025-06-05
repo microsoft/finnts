@@ -6,6 +6,7 @@ set_agent_info <- function(project_info,
                            external_regressors = NULL, 
                            hist_end_date = NULL, 
                            combo_cleanup_date = NULL,
+                           reason_llm = NULL, 
                            overwrite = FALSE) {
   
   # get metadata
@@ -21,6 +22,9 @@ set_agent_info <- function(project_info,
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
   check_input_type("hist_end_date", hist_end_date, c("Date", "NULL"))
+  check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
+  check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
+  check_input_type("overwrite", overwrite, "logical")
   
   check_input_data(
     input_data,
@@ -111,8 +115,9 @@ set_agent_info <- function(project_info,
       run_id = agent_runs_tbl$run_id,
       project_info = project_info,
       driver_llm = driver_llm,
+      reason_llm = reason_llm,
       forecast_horizon = prev_log_df$forecast_horizon,
-      external_regressors = prev_log_df$external_regressors,
+      external_regressors = strsplit(prev_log_df$external_regressors, ", ")[[1]],
       hist_end_date = prev_log_df$hist_end_date,
       combo_cleanup_date = prev_log_df$combo_cleanup_date
     )
@@ -170,6 +175,7 @@ set_agent_info <- function(project_info,
       run_id = agent_run_id,
       project_info = project_info,
       driver_llm = driver_llm,
+      reason_llm = reason_llm,
       forecast_horizon = forecast_horizon,
       external_regressors = external_regressors,
       hist_end_date = hist_end_date,

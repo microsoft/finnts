@@ -184,14 +184,13 @@ run_graph <- function(chat,
     ctx      <- res$ctx
     
     # ── choose next step ───────────────────────────────
-    ctx$node <- if (!is.null(node$branch)) {
-      node$branch(ctx)
+    if (!is.null(node$branch)) {
+      br   <- node$branch(ctx)
+      ctx  <- br$ctx            # ★ capture the updated context
+      ctx$node <- br$`next`
     } else {
-      node$`next`[1]
+      ctx$node <- node$`next`[1]
     }
-    
-    # ── checkpoint ─────────────────────────────────────
-    ###
   }
   
   ctx      # return full run state
@@ -204,6 +203,7 @@ register_tools <- function(agent_info) {
 }
 
 run_agent <- function(agent_info, 
+                      max_iter = 3,
                       parallel_processing = NULL, 
                       inner_parallel = FALSE, 
                       num_cores = NULL) {
@@ -218,9 +218,11 @@ run_agent <- function(agent_info,
   
   # run the forecast iteration workflow
   fcst_results <- fcst_agent_workflow(agent_info = agent_info, 
+                                      combo = NULL, 
                                       parallel_processing = parallel_processing, 
                                       inner_parallel = inner_parallel,
-                                      num_cores = num_cores)
+                                      num_cores = num_cores, 
+                                      max_iter = max_iter)
   
   message("[agent] ✅ Agent run completed successfully.")
 }
