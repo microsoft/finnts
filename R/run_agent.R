@@ -7,54 +7,54 @@ sanitize_args <- function(arg_list) {
 
 # execute specific tools with retry
 execute_node <- function(node, ctx, chat) {
-  # ──────────────────────────────────────────────────────────────────────────
-  # Executes a workflow node (tool) with optional retry and LLM-based fix.
-  # - If the tool runs successfully: store result and return.
-  # - If it fails, retry up to `max_retry` times with LLM-suggested fixes.
-  # - Tool must be registered via chat$register_tool(tool(...)).
-  #
-  # Args:
-  #   node: a list from the workflow (contains fn, max_retry, etc.)
-  #   ctx:  mutable state list (will be updated)
-  #   chat: ellmer chat object (openai or local)
-  #
-  # Returns:
-  #   list(ctx = ..., ok = TRUE)
-  # ──────────────────────────────────────────────────────────────────────────
   
-  tool_name  <- node$fn
-  max_try    <- node$max_retry %||% 0L
-  attempt    <- 0L
-  registry   <- chat$get_tools()   # names of all registered tools
+  tool_name   <- node$fn
+  max_try     <- node$max_retry %||% 0L
+  retry_mode  <- node$retry_mode  %||% "llm"   # "llm" (default) or "plain"
+  attempt     <- 0L
+  registry    <- chat$get_tools()
   
   cli::cli_progress_step(sprintf("🔧 Running %s...", tool_name))
   
   repeat {
+    # look up tool and call it
+    if (!tool_name %in% names(registry))
+      stop(sprintf("Tool '%s' not registered.", tool_name), call. = FALSE)
     
-    # Build and run the tool function (if registered)
-    if (!tool_name %in% names(registry)) {
-      stop(sprintf("Tool '%s' is not registered. Check workflow or LLM suggestion.", tool_name), call. = FALSE)
-    }
     tool_fn <- registry[[tool_name]]
     result  <- try(do.call(tool_fn@name, ctx$args %||% list()), silent = TRUE)
-
-    # ── Success path ─────────────────────────────────────────────
+    
+    # success 
     if (!inherits(result, "try-error")) {
-      ctx$results[[tool_name]] <- result
+      ctx$results[[tool_name]]  <- result
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
-
-    # ── Failure path ─────────────────────────────────────────────
+    
+    # failure bookkeeping 
     attempt <- attempt + 1L
     ctx$attempts[[tool_name]] <- attempt
-    ctx$last_error <- as.character(result)
-
-    if (attempt > max_try) {
+    ctx$last_error            <- as.character(result)
+    
+    if (attempt > max_try)
       stop(sprintf("Tool '%s' failed after %d attempt(s):\n%s",
                    tool_name, attempt, result), call. = FALSE)
+    
+    # Two retry strategies
+    if (identical(retry_mode, "plain")) {
+      cli::cli_alert_info(
+        sprintf("Tool '%s' failed (attempt %d/%d). Let's try again…",
+                tool_name, attempt, max_try)
+      )
+      
+      if(tool_name == "reason_inputs") {
+        ctx$args$last_error <- ctx$last_error
+      }
+      
+      next                                    # loop again with same args
     }
-
+    
+    # LLM-guided retry 
     cli::cli_alert_info(
       sprintf("Tool '%s' failed. Asking LLM to suggest a fix (attempt %d/%d).",
               tool_name, attempt, max_try + 1L),
@@ -62,33 +62,31 @@ execute_node <- function(node, ctx, chat) {
       as.character(result)
     )
     
-    # ── Ask the LLM for a new tool call ─────────────────────────
     prompt <- paste0(
       "The tool '", tool_name, "' failed with this error:\n",
       ctx$last_error, "\n\n",
       "Its last arguments were:\n",
-      jsonlite::toJSON(sanitize_args(ctx$args %||% list()), auto_unbox = TRUE), "\n\n",
-      "Suggest a valid tool call with ONLY json like this:\n",
-      '```json\n{\"tool\": \"add_one\", \"arguments\": {"agent_info": ..., "arg2": ...}}\n```'
+      jsonlite::toJSON(sanitize_args(ctx$args %||% list()),
+                       auto_unbox = TRUE), "\n\n",
+      "Suggest a valid tool call with ONLY json like:\n",
+      '{ "tool": "tool_name", "arguments": { "arg1": ..., "arg2": ... } }'
     )
-
+    
     raw_response <- chat$chat(prompt, echo = FALSE)
-
-    # ── Clean and parse JSON from model ─────────────────────────
-    clean_json <- gsub("(?s)```.*?\\n|\\n```", "", raw_response, perl = TRUE)
-    tool_call <- try(jsonlite::fromJSON(clean_json), silent = TRUE)
+    clean_json   <- gsub("(?s)```.*?\\n|\\n```", "", raw_response, perl = TRUE)
+    tool_call    <- try(jsonlite::fromJSON(clean_json), silent = TRUE)
     
-    if (inherits(tool_call, "try-error") || is.null(tool_call$tool)) {
-      stop("LLM response could not be parsed or lacked a valid 'tool' field:\n", raw_response, call. = FALSE)
-    }
+    if (inherits(tool_call, "try-error") || is.null(tool_call$tool))
+      stop("LLM response lacked a valid 'tool' field:\n", raw_response,
+           call. = FALSE)
     
-    # ── Update tool and args based on LLM suggestion ────────────
-    tool_name    <- tool_call$tool
-    ctx$args     <- tool_call$arguments %||% list()
+    tool_name <- tool_call$tool
+    ctx$args  <- tool_call$arguments %||% list()
     
-    cli::cli_alert_info(sprintf("Retrying with tool '%s' and args: %s",
-                                tool_name,
-                                paste(deparse(ctx$args), collapse = "")))
+    cli::cli_alert_info(
+      sprintf("Retrying with tool '%s' and args: %s",
+              tool_name, paste(deparse(ctx$args), collapse = " "))
+    )
   }
 }
 
@@ -204,6 +202,7 @@ register_tools <- function(agent_info) {
 
 run_agent <- function(agent_info, 
                       max_iter = 3,
+                      weighted_mape_goal = 0.03, 
                       parallel_processing = NULL, 
                       inner_parallel = FALSE, 
                       num_cores = NULL) {
@@ -216,9 +215,12 @@ run_agent <- function(agent_info,
                                     parallel_processing = parallel_processing, 
                                     num_cores = num_cores) 
   
-  # run the forecast iteration workflow
+  # optimize global models
+  message("[agent] 🌎 Starting Global Model Iteration Workflow")
+  
   fcst_results <- fcst_agent_workflow(agent_info = agent_info, 
                                       combo = NULL, 
+                                      weighted_mape_goal = weighted_mape_goal,
                                       parallel_processing = parallel_processing, 
                                       inner_parallel = inner_parallel,
                                       num_cores = num_cores, 

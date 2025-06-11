@@ -1232,56 +1232,83 @@ eda_agent_workflow <- function(agent_info,
                                parallel_processing, 
                                num_cores) {
   
-  message("[agent] 🔎 Starting exploratory data analysis workflow")
+  message("[agent] 🔎 Starting Exploratory Data Analysis Workflow")
   
   # construct workflow
   workflow <- list(
     start = list(
-      fn = "data_profile", `next` = "acf_scan", max_retry = 2, 
-                 args = list("agent_info" = agent_info)
+      fn = "data_profile", 
+      `next` = "acf_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info)
       ),
     acf_scan = list(
-      fn = "acf_scan", `next` = "pacf_scan", max_retry = 2, 
+      fn = "acf_scan", 
+      `next` = "pacf_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     pacf_scan = list(
-      fn = "pacf_scan", `next` = "stationarity_scan", max_retry = 2, 
+      fn = "pacf_scan", 
+      `next` = "stationarity_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     stationarity_scan = list(
-      fn = "stationarity_scan", `next` = "missing_scan", max_retry = 2, 
+      fn = "stationarity_scan", 
+      `next` = "missing_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     missing_scan = list(
-      fn = "missing_scan", `next` = "outlier_scan", max_retry = 2, 
+      fn = "missing_scan", 
+      `next` = "outlier_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     outlier_scan = list(
-      fn = "outlier_scan", `next` = "seasonality_scan", max_retry = 2, 
+      fn = "outlier_scan", 
+      `next` = "seasonality_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     seasonality_scan = list(
-      fn = "seasonality_scan", `next` = "hierarchy_detect", max_retry = 2, 
+      fn = "seasonality_scan", 
+      `next` = "hierarchy_detect",
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
     ),
     hierarchy_detect = list(
-      fn = "hierarchy_detect", `next` = "xreg_scan", max_retry = 2, 
+      fn = "hierarchy_detect", 
+      `next` = "xreg_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info)
     ),
     xreg_scan = list(
-      fn = "xreg_scan", `next` = "stop", max_retry = 2, 
+      fn = "xreg_scan", 
+      `next` = "stop", 
+      retry_mode = "plain",  
+      max_retry = 2, 
       args = list("agent_info" = agent_info, 
                   "parallel_processing" = agent_info$parallel_processing, 
                   "num_cores" = agent_info$num_cores)
