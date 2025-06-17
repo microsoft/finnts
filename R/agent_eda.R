@@ -249,6 +249,7 @@ acf_scan <- function(agent_info,
         Lag = drop(acf_result$lag),
         Value = drop(acf_result$acf)
       ) %>%
+        dplyr::mutate(Value = round(Value, 2)) %>%
         dplyr::rowwise() %>%
         dplyr::mutate(Significant = abs(Value) > crit) %>%  # flag spikes beyond band
         dplyr::ungroup() %>%
@@ -370,6 +371,7 @@ pacf_scan <- function(agent_info,
         Lag = drop(pacf_result$lag),
         Value = drop(pacf_result$acf)
       ) %>%
+        dplyr::mutate(Value = round(Value, 2)) %>%
         dplyr::rowwise() %>%
         dplyr::mutate(Significant = abs(Value) > crit) %>%  # flag spikes beyond band
         dplyr::ungroup() %>%
@@ -483,9 +485,9 @@ stationarity_scan <- function(agent_info,
       # build results table 
       stat_tbl <- tibble::tibble(
         Combo          = x,
-        p_value_adf    = adf_res$p.value,
+        p_value_adf    = round(adf_res$p.value, 2),
         stationary_adf = adf_res$p.value < 0.05, 
-        p_value_kpss  = kpss_res$p.value,
+        p_value_kpss  = round(kpss_res$p.value, 2),
         stationary_kpss = kpss_res$p.value > 0.05
       )
       
@@ -768,7 +770,7 @@ outlier_scan <- function(agent_info,
       Combo            = x,
       total_rows       = total_rows,
       outlier_count    = outlier_count,
-      outlier_pct      = outlier_pct,
+      outlier_pct      = round(outlier_pct, 2),
       first_outlier_dt = first_outlier,
       last_outlier_dt  = last_outlier
     )
@@ -921,6 +923,7 @@ seasonality_scan <- function(agent_info,
       Lag   = drop(acf_res$lag),
       Value = drop(acf_res$acf)
     ) %>%
+      dplyr::mutate(Value = round(Value, 2)) %>%
       dplyr::rowwise() %>%
       dplyr::mutate(Significant = abs(Value) > crit) %>%
       dplyr::ungroup() %>%
@@ -1193,6 +1196,7 @@ xreg_scan <- function(agent_info,
           energy::dcor(x[keep], y[keep])
         })
       ) %>%
+      dplyr::mutate(dCor = round(dCor, 2)) %>%
       dplyr::mutate(Combo = combo_name, .before = 1)
 
     # write per-combo result
@@ -1417,8 +1421,9 @@ load_eda_results <- function(agent_info,
     return_type = "object"
   )
   
-  data_profile_prompt <- 
-    glue::glue("Data Profile:
+  if(is.null(combo)) {
+    data_profile_prompt <- 
+      glue::glue("Data Profile:
                 - Total Rows: {data_profile$total_rows}
                 - Number of Time Series: {data_profile$n_series}
                 - Min Rows Per Series: {data_profile$rows_min}
@@ -1429,6 +1434,15 @@ load_eda_results <- function(agent_info,
                 - Start Date: {data_profile$date_start}
                 - End Date: {data_profile$date_end}
                 ")
+  } else {
+    data_profile_prompt <- 
+      glue::glue("Data Profile:
+                - Total Rows: {round(data_profile$total_rows/data_profile$n_series, 0)}
+                - Percent of Negative Values: {data_profile$neg_pct}%
+                - Start Date: {data_profile$date_start}
+                - End Date: {data_profile$date_end}
+                ")
+  }
   
   # acf scan
   acf_scan <- read_file(
@@ -1450,11 +1464,14 @@ load_eda_results <- function(agent_info,
       dplyr::summarise(
         Combo_Count = dplyr::n(),
         Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_Value   = mean(Value, na.rm = TRUE),
-        Mean_Abs_Value = mean(abs(Value), na.rm = TRUE),
+        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
         .groups = "drop"
       ) %>%
       dplyr::arrange(Lag)
+  } else {
+    acf_scan <- acf_scan %>%
+      dplyr::select(-Combo)
   }
   
   acf_scan_prompt <- 
@@ -1482,11 +1499,14 @@ load_eda_results <- function(agent_info,
       dplyr::summarise(
         Combo_Count = dplyr::n(),
         Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_Value   = mean(Value, na.rm = TRUE),
-        Mean_Abs_Value = mean(abs(Value), na.rm = TRUE),
+        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
         .groups = "drop"
       ) %>%
       dplyr::arrange(Lag)
+  } else {
+    pacf_scan <- pacf_scan %>%
+      dplyr::select(-Combo)
   }
   
   pacf_scan_prompt <- 
@@ -1516,6 +1536,9 @@ load_eda_results <- function(agent_info,
         Percent = dplyr::n() / data_profile$n_series * 100,
         .groups = "drop"
       )
+  } else {
+    stationarity_scan <- stationarity_scan %>%
+      dplyr::select(-Combo)
   }
   
   stationarity_scan_prompt <- 
@@ -1578,6 +1601,9 @@ load_eda_results <- function(agent_info,
         last_outlier_dt = max(last_outlier_dt, na.rm = TRUE),
         .groups = "drop"
       )
+  } else {
+    outlier_scan <- outlier_scan %>%
+      dplyr::select(-Combo)
   }
   
   outlier_scan_prompt <- 
@@ -1607,10 +1633,13 @@ load_eda_results <- function(agent_info,
       dplyr::summarise(
         Combo_Count = dplyr::n(),
         Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_ACF_Value   = mean(Value, na.rm = TRUE),
-        Mean_Abs_ACF_Value = mean(abs(Value), na.rm = TRUE),
+        Avg_ACF_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_ACF_Value = round(mean(abs(Value), na.rm = TRUE), 2),
         .groups = "drop"
       )
+  } else {
+    seasonality_scan <- seasonality_scan %>%
+      dplyr::select(-Combo)
   }
   
   seasonality_scan_prompt <- 
@@ -1628,10 +1657,17 @@ load_eda_results <- function(agent_info,
     return_type = "object"
   )
   
-  hierarchy_detect_prompt <- 
-    glue::glue("Hierarchy Detection Results:
+  if(is.null(combo)) {
+    hierarchy_detect_prompt <- 
+      glue::glue("Hierarchy Detection Results:
                 - Hierarchy Type: {hierarchy_detect$hierarchy}
                 ")
+  } else {
+    hierarchy_detect_prompt <- 
+      glue::glue("Hierarchy Detection Results:
+                - Hierarchy Type: bottoms_up (single time series)
+                ")
+  }
 
   # external regressor scan
   if(is.null(agent_info$external_regressors)) {
@@ -1653,12 +1689,15 @@ load_eda_results <- function(agent_info,
       xreg_scan <- xreg_scan %>%
         dplyr::group_by(Regressor, Lag) %>%
         dplyr::summarise(
-          Avg_dCor = mean(dCor, na.rm = TRUE),
-          Median_dCor = median(dCor, na.rm = TRUE),
-          Max_dCor = max(dCor, na.rm = TRUE),
+          Avg_dCor = round(mean(dCor, na.rm = TRUE), 2),
+          Median_dCor = round(median(dCor, na.rm = TRUE), 2),
+          Max_dCor = round(max(dCor, na.rm = TRUE), 2),
           .groups = "drop"
         ) %>%
         dplyr::arrange(dplyr::desc(Avg_dCor))
+    } else {
+      xreg_scan <- xreg_scan %>%
+        dplyr::select(-Combo)
     }
     
     xreg_scan_prompt <- 

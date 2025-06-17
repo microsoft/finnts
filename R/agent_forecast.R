@@ -76,6 +76,8 @@ reason_inputs <- function(agent_info,
       dplyr::pull() %>%
       length()
     
+    lag_changes_allowed <- lag_period_changes < 3
+    
     rolling_window_changes <- previous_run_results %>%
       dplyr::select(rolling_window_periods) %>%
       tidyr::drop_na(rolling_window_periods) %>%
@@ -83,167 +85,334 @@ reason_inputs <- function(agent_info,
       dplyr::pull() %>%
       length()
     
+    rolling_changes_allowed <- rolling_window_changes < 3
   } else {
     best_mape <- "NA"
     best_run <- "NA"
-    lag_period_changes <- 0
-    rolling_window_changes <- 0
+    lag_changes_allowed <- TRUE
+    rolling_changes_allowed <- TRUE
   }
 
   # create final prompt
-  final_prompt <- glue::glue(
-  '
-  -----CONTEXT-----
-  You are an autonomous time-series forecasting agent. Your goal is to choose
-  Finn-API parameters that **lower weighted MAPE** versus all prior runs.
-  
-  -----METADATA-----
-  • combos : <<combo>>
-  • target : <<target>>
-  • date type : <<dtype>>
-  • hist end date : <<hist_end>>
-  • forecast horizon : <<horizon>>
-  • potential external regressors : <<xregs>>
-  • run count : <<run_count>>
-  • weighted MAPE goal : <<weighted_mape_goal>>
-  • best weighted MAPE from previous runs : <<best_mape>>
-  • best run number from previous runs : <<best_run>>
-  • lag_period changes: <<lag_changes>>
-  • rolling_window_period changes: <<rolling_changes>>
-  
-  -----Exploratory Data Analysis-----
-  <<eda>>
-  
-  -----PREVIOUS RUN RESULTS-----
-  <<run_results>>
-  
-  -----LAST ERROR-----
-  <<last_error>>
-  
-  -----RULES (MUST / MUST NOT)-----
-  1.  YOU MUST output exactly one JSON object matching the schema below.
-  2.  YOU MUST include a "reasoning" field with ≤ 250 words.
-  3.  RUN CHANGE RULES
-      3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
-      3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run. 
-      3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change. 
-      3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT. 
-  6.  IF data is not stationary → stationary="TRUE".
-  7.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
-  8.  NEGATIVE FORECAST RULES
-      8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE". 
-      8-B.  IF no negative values are present → negative_forecast="FALSE".
-  9. HIERARCHICAL RULES
-      9-A. IF run_count == 0 → forecast_approach="bottoms_up"
-      9-B. IF run_count > 0 AND hiearchy type != "none" → forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-      9-C. IF hiearchy type == "none" → forecast_approach="bottoms_up".
-      9-D. You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
-      9-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped. 
-      9-F. You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
-  10. MISSING VALUES RULES
-      10-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
-      10-B. IF missing values are present AND run_count > 0 AND *Step A is complete* → clean_missing_values="TRUE"
-      10-C. ALWAYS use "FALSE" if no missing values are detected
-  11. OUTLIER RULES
-      11-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
-      11-B. IF outliers are present AND run_count > 0 AND *Step B is complete* → clean_outliers="TRUE"
-      11-C. ALWAYS use "FALSE" if no outliers are detected
-  12. EXTERNAL REGRESSOR RULES
-      12-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
-      12-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
-      12-C  IF adding external regressors AND run_count > 0 AND *Step C is complete*, add ONLY ONE new external regressor variable per run. 
-      12-D. ALWAYS use "NULL" if no external regressors are needed.
-      12-E. ALWAYS start with the most promising external regressors based on distance correlation results.  
-      12-F. ALWAYS set feature_selection="TRUE" if any external regressors are used.
-      12-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
-      12-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-      12-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
-  13. FEATURE LAG RULES
-      13-A. IF run_count == 0 → lag_periods = "NULL"
-      13-B. IF run_count > 0 AND *Step D is complete* → use ACF and PCF results from EDA to select lag_periods. 
-      13-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
-      13-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-      13-E. You MUST NOT change the lag_periods parameter more than *3 times* across all runs. IF you do you MUST ABORT. 
-      13-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
-  14. ROLLING WINDOW LAGS
-      14-A. IF run_count == 0 → rolling_window_periods = "NULL"
-      14-B. IF run_count > 0 AND *Step E is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---". 
-      14-C. You MUST NOT change the rolling_window_periods parameter more than *3 times* across all runs. IF you do you MUST ABORT. 
-      14-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
-  15. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-  16. An example value of "NULL|var1---var2" means YOU MUST either 
-      include "NULL" or a list of variables separated by "---". NOT both.
-  17. DECISION TREE RULES
-      17-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-      17-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
-  18. ABORT RULES
-      18-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
-      18-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
-     
-  -----ORDER OF OPERATIONS DECISION TREE (Rule 17)-----
-  Step A (Hierarchy - Rule 9) 
-  → Step B (Missing Values - Rule 10)
-  → Step C (Outliers - Rule 11) 
-  → Step D (External Regressors - Rule 12)
-  → Step E (Feature Lags - Rule 13)
-  → Step F (Rolling Window Lags - Rule 14)
-  
-  -----OUTPUT FORMAT-----
-  <scratchpad>
-  …your chain-of-thought, work through the decision tree, cite Rules #, 
-  compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
-  </scratchpad>
-  ```json
-  // ---- normal schema (when you propose a new run) ----
-  {
-    "external_regressors"   : "NULL|var1---var2",
-    "clean_missing_values"  : "TRUE|FALSE",
-    "clean_outliers"        : "TRUE|FALSE",
-    "negative_forecast"     : "TRUE|FALSE",
-    "forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy",
-    "stationary"            : "TRUE|FALSE",
-    "feature_selection"     : "TRUE|FALSE",
-    "multistep_horizon"     : "TRUE|FALSE",
-    "lag_periods"           : "NULL|1---2---3",
-    "rolling_window_periods" : "NULL|1---2---3",
-    "reasoning"             : "… ≤250 words …"
+  if(is.null(combo)) {
+    # global model prompt
+    final_prompt <- glue::glue(
+      '
+      -----CONTEXT-----
+      You are an autonomous time-series forecasting agent. Your goal is to choose
+      Finn-API parameters that **lower weighted MAPE** versus all prior runs.
+      
+      -----METADATA-----
+      • combos : <<combo>>
+      • target : <<target>>
+      • date type : <<dtype>>
+      • hist end date : <<hist_end>>
+      • forecast horizon : <<horizon>>
+      • potential external regressors : <<xregs>>
+      • run count : <<run_count>>
+      • weighted MAPE goal : <<weighted_mape_goal>>
+      • best weighted MAPE from previous runs : <<best_mape>>
+      • best run number from previous runs : <<best_run>>
+      • lag_changes_allowed: <<lag_changes>>
+      • rolling_changes_allowed changes: <<rolling_changes>>
+      
+      -----Exploratory Data Analysis-----
+      <<eda>>
+      
+      -----PREVIOUS RUN RESULTS-----
+      <<run_results>>
+      
+      -----LAST ERROR-----
+      <<last_error>>
+      
+      -----RULES (MUST / MUST NOT)-----
+      1.  YOU MUST output exactly one JSON object matching the schema below.
+      2.  YOU MUST include a "reasoning" field with ≤ 250 words.
+      3.  RUN CHANGE RULES
+          3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
+          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run. 
+          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change. 
+          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT. 
+      4.  IF data is not stationary → stationary="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
+      6.  NEGATIVE FORECAST RULES
+          6-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE". 
+          6-B.  IF no negative values are present → negative_forecast="FALSE".
+      7. HIERARCHICAL RULES
+          7-A. IF run_count == 0 → forecast_approach="bottoms_up"
+          7-B. IF run_count > 0 AND hiearchy type != "none" → forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
+          7-C. IF hiearchy type == "none" → forecast_approach="bottoms_up".
+          7-D. You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
+          7-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped. 
+          7-F. You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
+      8. MISSING VALUES RULES
+          8-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
+          8-B. IF missing values are present AND run_count > 0 AND *Step A is complete* → clean_missing_values="TRUE"
+          8-C. ALWAYS use "FALSE" if no missing values are detected
+      9. OUTLIER RULES
+          9-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
+          9-B. IF outliers are present AND run_count > 0 AND *Step B is complete* → clean_outliers="TRUE"
+          9-C. ALWAYS use "FALSE" if no outliers are detected
+      10. EXTERNAL REGRESSOR RULES
+          10-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
+          10-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
+          10-C  IF adding external regressors AND run_count > 0 AND *Step C is complete*, add ONLY ONE new external regressor variable per run. 
+          10-D. ALWAYS use "NULL" if no external regressors are needed.
+          10-E. ALWAYS start with the most promising external regressors based on distance correlation results.  
+          10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used.
+          10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
+          10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
+          10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
+          10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+      11. FEATURE LAG RULES
+          11-A. IF run_count == 0 → lag_periods = "NULL"
+          11-B. IF run_count > 0 AND *Step D is complete* → use ACF and PCF results from EDA to select lag_periods. 
+          11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
+          11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
+          11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes. 
+          11-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
+          11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+      12. ROLLING WINDOW LAGS
+          12-A. IF run_count == 0 → rolling_window_periods = "NULL"
+          12-B. IF run_count > 0 AND *Step E is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---". 
+          12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
+          12-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
+          12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+      13. An example value of "NULL|var1---var2" means YOU MUST either 
+          include "NULL" or a list of variables separated by "---". NOT both.
+      14. DECISION TREE RULES
+          14-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
+          14-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
+      15. ABORT RULES
+          15-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
+          15-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
+         
+      -----ORDER OF OPERATIONS DECISION TREE (Rule 14)-----
+      Step A (Hierarchy - Rule 7) 
+      → Step B (Missing Values - Rule 8)
+      → Step C (Outliers - Rule 9) 
+      → Step D (External Regressors - Rule 10)
+      → Step E (Feature Lags - Rule 11)
+      → Step F (Rolling Window Lags - Rule 12)
+      
+      -----OUTPUT FORMAT-----
+      <scratchpad>
+      …your chain-of-thought, work through the decision tree, cite Rules #, 
+      compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
+      </scratchpad>
+      ```json
+      // ---- normal schema (when you propose a new run) ----
+      {
+        "external_regressors"   : "NULL|var1---var2",
+        "clean_missing_values"  : "TRUE|FALSE",
+        "clean_outliers"        : "TRUE|FALSE",
+        "negative_forecast"     : "TRUE|FALSE",
+        "forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy",
+        "stationary"            : "TRUE|FALSE",
+        "feature_selection"     : "TRUE|FALSE",
+        "multistep_horizon"     : "TRUE|FALSE",
+        "lag_periods"           : "NULL|1---2---3",
+        "rolling_window_periods" : "NULL|1---2---3",
+        "reasoning"             : "… ≤250 words …"
+      }
+      // ---- abort schema (Rule 15) ----
+      {
+        "abort"     : "TRUE",
+        "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
+      }
+      ```
+      -----END OUTPUT-----',
+      .open = '<<', .close = '>>',
+      combo = combo_str,
+      target = project_info$target_variable,
+      dtype = project_info$date_type,
+      hist_end= agent_info$hist_end_date,
+      horizon = agent_info$forecast_horizon,
+      xregs = xregs_str,
+      eda = eda_results, 
+      run_results = make_pipe_table(previous_run_results), 
+      run_count = total_runs, 
+      weighted_mape_goal = weighted_mape_goal, 
+      best_mape = best_mape,
+      best_run = best_run, 
+      xregs_length = xregs_length, 
+      lag_changes = lag_changes_allowed,
+      rolling_changes = rolling_changes_allowed, 
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
+    )
+  } else {
+    # local model prompt
+    final_prompt <- glue::glue(
+      '
+      -----CONTEXT-----
+      You are an autonomous time-series forecasting agent. Your goal is to choose
+      Finn-API parameters that **lower weighted MAPE** versus all prior runs.
+      
+      -----METADATA-----
+      • combos : <<combo>>
+      • target : <<target>>
+      • date type : <<dtype>>
+      • hist end date : <<hist_end>>
+      • forecast horizon : <<horizon>>
+      • potential external regressors : <<xregs>>
+      • run count : <<run_count>>
+      • weighted MAPE goal : <<weighted_mape_goal>>
+      • best weighted MAPE from previous runs : <<best_mape>>
+      • best run number from previous runs : <<best_run>>
+      • lag_changes_allowed: <<lag_changes>>
+      • rolling_changes_allowed changes: <<rolling_changes>>
+      
+      -----Exploratory Data Analysis-----
+      <<eda>>
+      
+      -----PREVIOUS RUN RESULTS-----
+      <<run_results>>
+      
+      -----LAST ERROR-----
+      <<last_error>>
+      
+      -----RULES (MUST / MUST NOT)-----
+      1.  YOU MUST output exactly one JSON object matching the schema below.
+      2.  YOU MUST include a "reasoning" field with ≤ 250 words.
+      3.  RUN CHANGE RULES
+          3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
+          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run. 
+          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change. 
+          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT. 
+      4.  IF data is not stationary → stationary="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
+      6.  NEGATIVE FORECAST RULES
+          8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE". 
+          8-B.  IF no negative values are present → negative_forecast="FALSE".
+      7.  MISSING VALUES RULES
+          10-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
+          10-B. IF missing values are present AND run_count > 0 → clean_missing_values="TRUE"
+          10-C. ALWAYS use "FALSE" if no missing values are detected
+      8.  OUTLIER RULES
+          11-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
+          11-B. IF outliers are present AND run_count > 0 AND *Step A is complete* → clean_outliers= "TRUE" or "FALSE" based on EDA results.
+          11-C. ALWAYS use "FALSE" if no outliers are detected
+      9.  SEASONAL PERIOD RULES
+          9-A. IF run_count == 0 → seasonal_period = "NULL"
+          9-B. IF run_count > 0 AND *Step B is complete* → seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal_periods.
+          9-C. You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
+          9-D. A value of "NULL" means that seasonal periods are automatically selected using fixed logic, not that you are not using seasonal periods.
+          9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
+      10. FULL MODEL SWEEP RULES
+          10-A. IF run_count == 0 → models_to_run = "arima---tbats---xgboost"
+          10-B. IF run_count > 0 AND *Step C is complete* → models_to_run = "arima---ets---tbats---glmnet---xgboost"
+      11. EXTERNAL REGRESSOR RULES
+          11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
+          11-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
+          11-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run. 
+          11-D. ALWAYS use "NULL" if no external regressors are needed.
+          11-E. ALWAYS start with the most promising external regressors based on distance correlation results.  
+          11-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
+          11-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
+          11-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
+          11-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
+          11-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+      12. FEATURE LAG RULES
+          12-A. IF run_count == 0 → lag_periods = "NULL"
+          12-B. IF run_count > 0 AND *Step E is complete* → use ACF and PCF results from EDA to select lag_periods. 
+          12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
+          12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
+          12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
+          12-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
+          12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+      13. ROLLING WINDOW LAGS
+          13-A. IF run_count == 0 → rolling_window_periods = "NULL"
+          13-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---". 
+          13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
+          13-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
+          13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+      14. RECIPE RULES
+          14-A. IF run_count == 0 → recipes_to_run = "R1"
+          14-B. IF run_count > 0 AND *Step G is complete* → recipes_to_run = "NULL" or "R1"
+          14-C. A value of "NULL" means that recipes are automatically selected using fixed logic, not that you are not using recipes for feature engineering.
+      15. An example value of "NULL|var1---var2" means YOU MUST either 
+          include "NULL" or a list of variables separated by "---". NOT both.
+      16. DECISION TREE RULES
+          15-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
+          15-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
+      17. ABORT RULES
+          17-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
+          17-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
+         
+      -----ORDER OF OPERATIONS DECISION TREE (Rule 16)-----
+      Step A (Missing Values - Rule 7)
+      → Step B (Outliers - Rule 8)
+      → Step C (Seasonal Period - Rule 9)
+      → Step D (Full Model Sweep - Rule 10)
+      → Step E (External Regressors - Rule 11)
+      → Step F (Feature Lags - Rule 12)
+      → Step G (Rolling Window Lags - Rule 13) 
+      → Step H (Recipes - Rule 14)
+      
+      -----OUTPUT FORMAT-----
+      <scratchpad>
+      …your chain-of-thought, work through the decision tree, cite Rules #, 
+      compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
+      </scratchpad>
+      ```json
+      // ---- normal schema (when you propose a new run) ----
+      {
+        "external_regressors"   : "NULL|var1---var2",
+        "clean_missing_values"  : "TRUE|FALSE",
+        "clean_outliers"        : "TRUE|FALSE",
+        "negative_forecast"     : "TRUE|FALSE",
+        "seasonal_period"       : "NULL|1---2---3",
+        "models_to_run"         : "arima---ets---tbats---snaive---stlm-arima---xgboost",
+        "stationary"            : "TRUE|FALSE",
+        "feature_selection"     : "TRUE|FALSE",
+        "multistep_horizon"     : "TRUE|FALSE",
+        "lag_periods"           : "NULL|1---2---3",
+        "rolling_window_periods": "NULL|1---2---3",
+        "recipes_to_run"        : "R1|NULL",
+        "reasoning"             : "… ≤250 words …"
+      }
+      // ---- abort schema (Rule 17) ----
+      {
+        "abort"     : "TRUE",
+        "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
+      }
+      ```
+      -----END OUTPUT-----',
+      .open = '<<', .close = '>>',
+      combo = combo_str,
+      target = project_info$target_variable,
+      dtype = project_info$date_type,
+      hist_end= agent_info$hist_end_date,
+      horizon = agent_info$forecast_horizon,
+      xregs = xregs_str,
+      eda = eda_results, 
+      run_results = make_pipe_table(previous_run_results), 
+      run_count = total_runs, 
+      weighted_mape_goal = weighted_mape_goal, 
+      best_mape = best_mape,
+      best_run = best_run, 
+      xregs_length = xregs_length, 
+      lag_changes = lag_changes_allowed,
+      rolling_changes = rolling_changes_allowed, 
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
+    )
   }
-  // ---- abort schema (Rule 18) ----
-  {
-    "abort"     : "TRUE",
-    "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
-  }
-  ```
-  -----END OUTPUT-----',
-  .open = '<<', .close = '>>',
-  combo = combo_str,
-  target = project_info$target_variable,
-  dtype = project_info$date_type,
-  hist_end= agent_info$hist_end_date,
-  horizon = agent_info$forecast_horizon,
-  xregs = xregs_str,
-  eda = eda_results, 
-  run_results = make_pipe_table(previous_run_results), 
-  run_count = total_runs, 
-  weighted_mape_goal = weighted_mape_goal, 
-  best_mape = best_mape,
-  best_run = best_run, 
-  xregs_length = xregs_length, 
-  lag_changes = lag_period_changes,
-  rolling_changes = rolling_window_changes, 
-  last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
-  )
 
   # send prompt to LLM
   response <- llm$chat(final_prompt, echo = FALSE)
   
   # extract out json from response and convert to list
   input_list <- extract_json_object(response)
-
+  print(input_list$reasoning)
   # check if the response is an abort schema
   if ("abort" %in% names(input_list) && input_list$abort == "TRUE") {
     cli::cli_alert_info("LLM has aborted the run. Reason: {input_list$reasoning}")
     return(input_list)
+  }
+  
+  # force specific inputs if single time series
+  if (!is.null(combo)) {
+    input_list$forecast_approach <- "bottoms_up"
   }
   
   # check if all required fields are present
@@ -284,7 +453,7 @@ reason_inputs <- function(agent_info,
     )
   } else {
     default_values <- list(
-      models_to_run = "NULL",
+      models_to_run = "arima---ets---tbats---stlm-arima---xgboost---glmnet",
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
@@ -294,7 +463,7 @@ reason_inputs <- function(agent_info,
       feature_selection = TRUE,
       multistep_horizon = FALSE,
       seasonal_period = "NULL",
-      recipes_to_run = "NULL",
+      recipes_to_run = "R1",
       lag_periods = "NULL",
       rolling_window_periods = "NULL",
       reasoning = "no reasoning provided"
@@ -354,6 +523,7 @@ reason_inputs <- function(agent_info,
     check_inputs$recipes_to_run         <- collapse_or_na(check_inputs$recipes_to_run)
     check_inputs$lag_periods            <- collapse_or_na(check_inputs$lag_periods)
     check_inputs$rolling_window_periods <- collapse_or_na(check_inputs$rolling_window_periods)
+    check_inputs$seasonal_period        <- collapse_or_na(check_inputs$seasonal_period)
     check_inputs <- check_inputs[names(check_inputs) %in% names(previous_runs_tbl)]
     
     cols_to_fix <- c(
@@ -361,7 +531,8 @@ reason_inputs <- function(agent_info,
       "external_regressors",
       "recipes_to_run",
       "lag_periods",
-      "rolling_window_periods"
+      "rolling_window_periods", 
+      "seasonal_period"
     )
     
     previous_runs_tbl <- previous_runs_tbl %>%
@@ -372,23 +543,28 @@ reason_inputs <- function(agent_info,
         )
       )
     
-    if(does_param_set_exist(check_inputs, previous_runs_tbl)) {
+    if (does_param_set_exist(check_inputs, previous_runs_tbl)) {
       cli::cli_alert_info("The proposed input parameters have already been used in a previous run.")
-      stop("The proposed input parameters have already been used in a previous run. Please modify the inputs to ensure they are unique.",
+      
+      stop(
+        sprintf(
+          "Duplicate parameter set detected. Please modify the inputs or ABORT. Inputs proposed:\n%s",
+          jsonlite::toJSON(check_inputs, auto_unbox = TRUE)
+        ),
         call. = FALSE
       )
     }
     
     if(length(unique(c(previous_runs_tbl$lag_periods, check_inputs$lag_periods))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
-      stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods.",
+      stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
         call. = FALSE
       )
     }
     
     if(length(unique(c(previous_runs_tbl$rolling_window_periods, check_inputs$rolling_window_periods)))  > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique rolling window period changes across all runs.")
-      stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods.",
+      stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods or ABORT.",
         call. = FALSE
       )
     }
@@ -399,7 +575,7 @@ reason_inputs <- function(agent_info,
 
 submit_fcst_run <- function(agent_info,
                             inputs, 
-                            combo = NULL, 
+                            combo, 
                             parallel_processing = NULL, 
                             inner_parallel = FALSE, 
                             num_cores = NULL) {
@@ -410,12 +586,16 @@ submit_fcst_run <- function(agent_info,
   
   # get project info
   project_info <- agent_info$project_info
-  
+
   # read all combos or just one
   if(is.null(combo)) {
     combo_value <- "*"
+    global_models <- TRUE
+    local_models <- FALSE
   } else {
     combo_value <- combo
+    global_models <- FALSE
+    local_models <- TRUE
   }
   
   # get input data
@@ -430,7 +610,7 @@ submit_fcst_run <- function(agent_info,
     ),
     return_type = "df"
   )
-  
+
   # create unique run name
   run_name <- paste0(
     "agent_",
@@ -478,7 +658,7 @@ submit_fcst_run <- function(agent_info,
   # prepare models for training
   prep_models(
     run_info = run_info,
-    back_test_scenarios = NULL,
+    back_test_scenarios = 3,
     back_test_spacing = NULL,
     models_to_run = null_converter(inputs$models_to_run),
     models_not_to_run = NULL,
@@ -491,8 +671,8 @@ submit_fcst_run <- function(agent_info,
   # train models
   train_models(
     run_info = run_info,
-    run_global_models = TRUE,
-    run_local_models = FALSE,
+    run_global_models = global_models,
+    run_local_models = local_models,
     global_model_recipes = c("R1"),
     feature_selection = inputs$feature_selection,
     negative_forecast = inputs$negative_forecast,
@@ -543,6 +723,9 @@ log_best_run <- function(agent_info,
                          weighted_mape, 
                          combo = NULL) {
   
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+  
   # check if previous best run exists and is more accurate
   previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
   
@@ -559,17 +742,13 @@ log_best_run <- function(agent_info,
   } else {
     log_results <- TRUE
   }
-  print(log_results)
+
   # log results if the new run is better or if no previous runs exist
   if(log_results) {
     
     if (is.null(combo)) {
       combo <- "all"
     }
-    
-    project_info <- agent_info$project_info
-    project_info$run_name <- agent_info$run_id
-    
     
     # get back test data
     back_test_tbl <- get_forecast_data(run_info = run_info) %>%
@@ -617,7 +796,7 @@ log_best_run <- function(agent_info,
       }
       
       if(wmape < prev_wmape || combo == "all") { # always log the wmape for global models, but check for local models
-        print(combo_name)
+
         # log the best run
         log_df <- tibble::tibble(
           project_name = agent_info$project_info$project_name,
@@ -643,11 +822,49 @@ log_best_run <- function(agent_info,
     }
   }
   
+  # log wmape by model for local models
+  # if (!is.null(combo) || combo != "all") {
+  #   
+  #   back_test_tbl <- get_forecast_data(run_info = run_info)
+  #   
+  #   best_model <- back_test_tbl %>%
+  #     dplyr::filter(Best_Model == "Yes") %>%
+  #     dplyr::pull(Model_ID) %>%
+  #     unique() %>%
+  #     stringr::str_split("_")
+  #   print(best_model)
+  #   model_wmape_tbl <- back_test_tbl %>%
+  #     dplyr::filter(Run_Type == "Back_Test", 
+  #                   Recipe_ID != "simple_average") %>%
+  #     dplyr::group_by(Model_ID) %>%
+  #     dplyr::summarise(
+  #       MAPE = round(mean(abs((Forecast - Target) / Target), na.rm = TRUE), digits = 4),
+  #       Total = sum(Target, na.rm = TRUE),
+  #       Weight = (MAPE * Total) / sum(Total, na.rm = TRUE)
+  #     ) %>%
+  #     dplyr::mutate(
+  #       Weighted_MAPE = round(Weight, digits = 4)
+  #     ) %>%
+  #     dplyr::select(Model_ID, Weighted_MAPE) %>%
+  #     dplyr::mutate(
+  #       Best_Model = ifelse(Model_ID %in% best_model[[1]], "Yes", "No")
+  #     )
+  #   
+  #   write_data(
+  #     x = model_wmape_tbl,
+  #     combo = unique(back_test_tbl$Combo),
+  #     run_info = project_info,
+  #     output_type = "log",
+  #     folder = "logs",
+  #     suffix = "-local_model_wmape"
+  #   )
+  # }
+
   return("Run logged successfully.")
 }
 
 fcst_agent_workflow <- function(agent_info,
-                                combo = NULL,
+                                combo,
                                 weighted_mape_goal, 
                                 parallel_processing,
                                 inner_parallel,
@@ -656,6 +873,10 @@ fcst_agent_workflow <- function(agent_info,
 ) {
   
   message("[agent] 📈 Starting Forecast Iteration Workflow")
+  
+  if(!is.null(agent_info$reason_llm)) {
+    agent_info$reason_llm <- agent_info$reason_llm$clone()
+  }
   
   # 1. construct the workflow 
   workflow <- list(
@@ -690,7 +911,7 @@ fcst_agent_workflow <- function(agent_info,
       args = list(
         agent_info          = agent_info,
         inputs              = "{results$reason_inputs}",
-        combo               = NULL,
+        combo               = combo,
         parallel_processing = parallel_processing,
         inner_parallel      = inner_parallel,
         num_cores           = num_cores
@@ -916,9 +1137,9 @@ load_run_results <- function(agent_info,
   }
   
   previous_runs <- get_run_info(project_name = agent_info$project_info$project_name,
-               run_name = NULL,
-               storage_object = agent_info$project_info$storage_object,
-               path = agent_info$project_info$path)
+                                run_name = NULL,
+                                storage_object = agent_info$project_info$storage_object,
+                                path = agent_info$project_info$path)
   
   if("run_name" %in% names(previous_runs)) {
     
@@ -1039,10 +1260,105 @@ does_param_set_exist <- function(x, df) {
   probe <- x %>%
     tibble::as_tibble() %>% # 1-row tibble with same names as df
     apply_column_types(template_df = df) # ensure types match
-  
+
   final_df <- df %>%
     dplyr::select(tidyselect::all_of(names(probe)))  # select only matching cols
-  
+
   dplyr::semi_join(final_df, probe, by = names(probe)) %>%    # keep rows that match
     nrow() > 0                                          # TRUE if ≥1 match
+}
+
+get_best_agent_run <- function(agent_info) {
+  project_info <- agent_info$project_info
+  
+  combo_best_run_list <- list_files(
+    project_info$storage_object,
+    paste0(
+      project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
+    )
+  )
+  
+  best_run_tbl <- read_file(
+    run_info = project_info,
+    file_list = combo_best_run_list,
+    return_type = "df"
+  )
+  
+  return(best_run_tbl)
+}
+
+get_agent_forecast <- function(agent_info) {
+  
+  best_run_tbl <- get_best_agent_run(agent_info)
+  
+  model_type_list <- best_run_tbl %>%
+    dplyr::pull(model_type) %>%
+    unique()
+  
+  # load global model forecasts
+  if("global" %in% model_type_list) {
+    global_combos <- best_run_tbl %>%
+      dplyr::filter(model_type == "global") %>%
+      dplyr::pull(combo) %>%
+      unique()
+    
+    global_run_name <- best_run_tbl %>%
+      dplyr::filter(model_type == "global") %>%
+      dplyr::pull(best_run_name) %>%
+      unique()
+    
+    run_info <- agent_info$project_info
+    run_info$run_name <- global_run_name
+    
+    global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
+      dplyr::filter(Combo %in% global_combos)
+  } else {
+    global_fcst_tbl <- tibble::tibble()
+  }
+  
+  if("local" %in% model_type_list) {
+    local_run_name_list <- best_run_tbl %>%
+      dplyr::filter(model_type == "local") %>%
+      dplyr::pull(best_run_name) %>%
+      unique()
+    
+    par_info <- par_start(
+      run_info = agent_info$project_info,
+      parallel_processing = NULL,
+      num_cores = NULL,
+      task_length = nrows(local_run_name_list)
+    )
+    
+    cl <- par_info$cl
+    packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
+    
+    # submit tasks
+    local_fcst_tbl <- foreach::foreach(
+      x = local_run_name_list,
+      .combine = "rbind",
+      .packages = packages,
+      .errorhandling = "stop",
+      .verbose = FALSE,
+      .inorder = FALSE,
+      .multicombine = TRUE,
+      .noexport = NULL
+    ) %op%
+      {
+        run_info <- agent_info$project_info
+        run_info$run_name <- x
+        
+        temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
+        
+        return(temp_local_fcst_tbl)
+      } %>%
+      base::suppressPackageStartupMessages()
+    
+    par_end(cl)
+  } else {
+    local_fcst_tbl <- tibble::tibble()
+  }
+  
+  return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
 }

@@ -48,7 +48,7 @@ execute_node <- function(node, ctx, chat) {
       )
       
       if(tool_name == "reason_inputs") {
-        ctx$args$last_error <- ctx$last_error
+        ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
       }
       
       next                                    # loop again with same args
@@ -207,6 +207,8 @@ run_agent <- function(agent_info,
                       inner_parallel = FALSE, 
                       num_cores = NULL) {
   
+  project_info <- agent_info$project_info
+  
   # register tools
   register_tools(agent_info)
   
@@ -217,14 +219,69 @@ run_agent <- function(agent_info,
   
   # optimize global models
   message("[agent] 🌎 Starting Global Model Iteration Workflow")
-  
-  fcst_results <- fcst_agent_workflow(agent_info = agent_info, 
-                                      combo = NULL, 
+
+  fcst_results <- fcst_agent_workflow(agent_info = agent_info,
+                                      combo = NULL,
                                       weighted_mape_goal = weighted_mape_goal,
-                                      parallel_processing = parallel_processing, 
+                                      parallel_processing = parallel_processing,
                                       inner_parallel = inner_parallel,
-                                      num_cores = num_cores, 
+                                      num_cores = num_cores,
                                       max_iter = max_iter)
+  
+  # filter out which time series met the mape goal after global models
+    local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
+    dplyr::filter(weighted_mape > weighted_mape_goal) %>%
+    dplyr::pull(combo) %>%
+    unique()
+  
+  # local_combo_list <- "M2--ID1"
+  
+  # optimize local models
+  if (length(local_combo_list) == 0) {
+    message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
+    return(invisible())
+  } else {
+    
+    message("[agent] 📊 Starting Local Model Iteration Workflow")
+    
+    # parallel setup 
+    par_info <- par_start(
+      run_info            = project_info,
+      parallel_processing = parallel_processing,
+      num_cores           = num_cores,
+      task_length         = length(local_combo_list)
+    )
+    
+    cl        <- par_info$cl
+    packages  <- par_info$packages
+    `%op%`    <- par_info$foreach_operator
+    
+    # foreach over each combo file 
+    foreach::foreach(
+      x               = local_combo_list,
+      .packages       = packages,
+      .errorhandling  = "stop",
+      .inorder        = FALSE,
+      .multicombine   = TRUE
+    ) %op% {
+      
+      message("[agent] 🔄 Running local model optimization for combo: ", x)
+      
+      # run the local model workflow
+      fcst_agent_workflow(
+        agent_info = agent_info,
+        combo = hash_data(x),
+        weighted_mape_goal = weighted_mape_goal,
+        parallel_processing = NULL,
+        inner_parallel = inner_parallel,
+        num_cores = num_cores,
+        max_iter = max_iter
+      )
+    } %>% base::suppressPackageStartupMessages()
+    
+    par_end(cl)
+    
+  }
   
   message("[agent] ✅ Agent run completed successfully.")
 }

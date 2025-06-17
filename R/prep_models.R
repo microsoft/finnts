@@ -451,12 +451,6 @@ model_workflows <- function(run_info,
     # do nothing
   }
 
-  if (is.null(seasonal_period)) {
-    seasonal_period <- get_seasonal_periods(date_type)
-  } else {
-    # do nothing
-  }
-
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
@@ -578,7 +572,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = seasonal_period,
+        "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
         "pca" = pca,
         "multistep" = multistep_horizon,
@@ -589,7 +583,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = seasonal_period,
+        "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
         "pca" = pca,
         "multistep" = FALSE,
