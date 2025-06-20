@@ -1,66 +1,522 @@
-
-# get time series to run
-get_total_combos <- function(agent_info) {
+#' Exploratory Data Analysis Agent Workflow
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
+eda_agent_workflow <- function(agent_info, 
+                               parallel_processing, 
+                               num_cores) {
   
-  # metadata
+  message("[agent] 🔎 Starting Exploratory Data Analysis Workflow")
+  
+  # construct workflow
+  workflow <- list(
+    start = list(
+      fn = "data_profile", 
+      `next` = "acf_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info)
+    ),
+    acf_scan = list(
+      fn = "acf_scan", 
+      `next` = "pacf_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    pacf_scan = list(
+      fn = "pacf_scan", 
+      `next` = "stationarity_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    stationarity_scan = list(
+      fn = "stationarity_scan", 
+      `next` = "missing_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    missing_scan = list(
+      fn = "missing_scan", 
+      `next` = "outlier_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    outlier_scan = list(
+      fn = "outlier_scan", 
+      `next` = "seasonality_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    seasonality_scan = list(
+      fn = "seasonality_scan", 
+      `next` = "hierarchy_detect",
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    hierarchy_detect = list(
+      fn = "hierarchy_detect", 
+      `next` = "xreg_scan", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info)
+    ),
+    xreg_scan = list(
+      fn = "xreg_scan", 
+      `next` = "stop", 
+      retry_mode = "plain",  
+      max_retry = 2, 
+      args = list("agent_info" = agent_info, 
+                  "parallel_processing" = agent_info$parallel_processing, 
+                  "num_cores" = agent_info$num_cores)
+    ),
+    stop  = list(fn = NULL)
+  )
+  
+  # call the agent graph
+  run_graph(agent_info$driver_llm, workflow)
+}
+
+#' Register EDA tools for the agent
+#' 
+#' @param agent_info agent information list
+#' 
+#' @return nothing
+#' @noRd
+register_eda_tools <- function(agent_info) {
+  
+  # workflows
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "eda_agent_workflow",
+    .description = "perform exploratory data analysis on dataframe",
+    .fun = eda_agent_workflow
+  )) 
+  
+  # individual tools
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "data_profile",
+    .description = "profile the data to understand its structure and content",
+    .fun = data_profile
+  )) 
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "acf_scan",
+    .description = "calculate the autocorrelation function for time series data",
+    .fun = acf_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "pacf_scan",
+    .description = "calculate the partial autocorrelation function for time series data",
+    .fun = pacf_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "stationarity_scan",
+    .description = "test for stationarity in time series data using ADF and KPSS tests",
+    .fun = stationarity_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "missing_scan",
+    .description = "scan for missing data in time series and calculate metrics",
+    .fun = missing_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "outlier_scan",
+    .description = "detect outliers in time series data using STL decomposition",
+    .fun = outlier_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "seasonality_scan",
+    .description = "identify additional seasonal patterns in time series data",
+    .fun = seasonality_scan
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "hierarchy_detect",
+    .description = "detect hierarchy structure in time series data based on combo variables",
+    .fun = hierarchy_detect
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "xreg_scan",
+    .description = "scan external regressors for correlation with target variable",
+    .fun = xreg_scan
+  ))
+}
+
+#' Load EDA results for a specific agent run
+#' 
+#' @param agent_info agent information list
+#' @param combo specific combo to load results for (optional)
+#' 
+#' @return list containing EDA results
+#' @noRd
+load_eda_results <- function(agent_info, 
+                             combo = NULL) {
+  # get project info
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   
-  # get time series to run
-  total_combo_list <- list_files(
-    project_info$storage_object,
-    paste0(
-      project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "*.", project_info$data_output
-    )
-  ) %>% 
-    tibble::tibble(
-      Path = .
-    ) %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-    dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Project", "Agent_Run", "Combo"), sep = "-", remove = TRUE) %>%
-    dplyr::pull(Combo) %>%
-    stringr::str_remove_all("\\..*$") %>%
-    unique() %>%
-    suppressWarnings()
+  # read all combos or just one
+  if(is.null(combo)) {
+    combo_value <- "*"
+  } else {
+    combo_value <- combo
+  }
   
-  return(total_combo_list)
+  # data profile
+  data_profile <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/eda/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-data_profile.", project_info$object_output
+    ),
+    return_type = "object"
+  )
+  
+  if(is.null(combo)) {
+    data_profile_prompt <- 
+      glue::glue("Data Profile:
+                - Total Rows: {data_profile$total_rows}
+                - Number of Time Series: {data_profile$n_series}
+                - Min Rows Per Series: {data_profile$rows_min}
+                - Max Rows Per Series: {data_profile$rows_max}
+                - Avg Rows Per Series: {data_profile$rows_avg}
+                - Count of Negative Values: {data_profile$neg_count}
+                - Percent of Negative Values: {data_profile$neg_pct}%
+                - Start Date: {data_profile$date_start}
+                - End Date: {data_profile$date_end}
+                ")
+  } else {
+    data_profile_prompt <- 
+      glue::glue("Data Profile:
+                - Total Rows: {round(data_profile$total_rows/data_profile$n_series, 0)}
+                - Percent of Negative Values: {data_profile$neg_pct}%
+                - Start Date: {data_profile$date_start}
+                - End Date: {data_profile$date_end}
+                ")
+  }
+  
+  # acf scan
+  acf_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-acf.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    # summarize across all combos
+    acf_scan <- acf_scan %>%
+      dplyr::group_by(Lag) %>%
+      dplyr::summarise(
+        Combo_Count = dplyr::n(),
+        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
+        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Lag)
+  } else {
+    acf_scan <- acf_scan %>%
+      dplyr::select(-Combo)
+  }
+  
+  acf_scan_prompt <- 
+    glue::glue("ACF Scan Results:
+                {make_pipe_table(acf_scan)}
+                ")
+  
+  # pacf scan
+  pacf_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-pacf.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    # summarize across all combos
+    pacf_scan <- pacf_scan %>%
+      dplyr::group_by(Lag) %>%
+      dplyr::summarise(
+        Combo_Count = dplyr::n(),
+        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
+        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
+        .groups = "drop"
+      ) %>%
+      dplyr::arrange(Lag)
+  } else {
+    pacf_scan <- pacf_scan %>%
+      dplyr::select(-Combo)
+  }
+  
+  pacf_scan_prompt <- 
+    glue::glue("PACF Scan Results:
+                {make_pipe_table(pacf_scan)}
+                ")
+  
+  # stationarity scan
+  stationarity_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-stationarity.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    stationarity_scan <- stationarity_scan %>%
+      dplyr::mutate(Stationary = ifelse(stationary_adf & stationary_kpss, "Stationary", "Non-Stationary")) %>%
+      dplyr::group_by(Stationary) %>%
+      dplyr::summarise(
+        Count = dplyr::n(),
+        Percent = dplyr::n() / data_profile$n_series * 100,
+        .groups = "drop"
+      )
+  } else {
+    stationarity_scan <- stationarity_scan %>%
+      dplyr::select(-Combo)
+  }
+  
+  stationarity_scan_prompt <- 
+    glue::glue("Stationarity Scan Results:
+                {make_pipe_table(stationarity_scan)}
+                ")
+  
+  # missing data scan
+  missing_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-missing.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    missing_scan <- missing_scan %>%
+      dplyr::group_by() %>%
+      dplyr::summarise(
+        missing_count = sum(missing_count, na.rm = TRUE),
+        missing_pct = mean(missing_pct, na.rm = TRUE),
+        longest_gap = max(longest_gap, na.rm = TRUE),
+        .groups = "drop"
+      )
+  }
+  
+  missing_scan_prompt <- 
+    glue::glue("Missing Data Scan Results:
+                - Missing Count: {missing_scan$missing_count}
+                - Missing Percent: {round(missing_scan$missing_pct)}%
+                - Longest Gap: {missing_scan$longest_gap}
+                ")
+  
+  # outlier scan
+  outlier_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-outliers.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    outlier_scan <- outlier_scan %>%
+      dplyr::group_by() %>%
+      dplyr::summarise(
+        total_rows = sum(total_rows, na.rm = TRUE),
+        outlier_count = sum(outlier_count, na.rm = TRUE),
+        outlier_pct = outlier_count / total_rows * 100,,
+        first_outlier_dt = min(first_outlier_dt, na.rm = TRUE),
+        last_outlier_dt = max(last_outlier_dt, na.rm = TRUE),
+        .groups = "drop"
+      )
+  } else {
+    outlier_scan <- outlier_scan %>%
+      dplyr::select(-Combo)
+  }
+  
+  outlier_scan_prompt <- 
+    glue::glue("Outlier Scan Results:
+                - Outlier Count: {outlier_scan$outlier_count}
+                - Outlier Percent: {round(outlier_scan$outlier_pct)}%
+                - First Outlier Date: {outlier_scan$first_outlier_dt}
+                - Last Outlier Date: {outlier_scan$last_outlier_dt}
+                ")
+  
+  # seasonality scan
+  seasonality_scan <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-", combo_value, "-add_season.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  )
+  
+  if(is.null(combo)) {
+    seasonality_scan <- seasonality_scan %>%
+      dplyr::group_by(Lag) %>%
+      dplyr::summarise(
+        Combo_Count = dplyr::n(),
+        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
+        Avg_ACF_Value   = round(mean(Value, na.rm = TRUE), 2),
+        Mean_Abs_ACF_Value = round(mean(abs(Value), na.rm = TRUE), 2),
+        .groups = "drop"
+      )
+  } else {
+    seasonality_scan <- seasonality_scan %>%
+      dplyr::select(-Combo)
+  }
+  
+  seasonality_scan_prompt <- 
+    glue::glue("Additional Seasonality Scan Results:
+                {make_pipe_table(seasonality_scan)}
+                ")
+  
+  # hierarchy detection
+  hierarchy_detect <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/eda/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-hierarchy.", project_info$object_output
+    ),
+    return_type = "object"
+  )
+  
+  if(is.null(combo)) {
+    hierarchy_detect_prompt <- 
+      glue::glue("Hierarchy Detection Results:
+                - Hierarchy Type: {hierarchy_detect$hierarchy}
+                ")
+  } else {
+    hierarchy_detect_prompt <- 
+      glue::glue("Hierarchy Detection Results:
+                - Hierarchy Type: bottoms_up (single time series)
+                ")
+  }
+  
+  # external regressor scan
+  if(is.null(agent_info$external_regressors)) {
+    xreg_scan_prompt <- "No external regressors set for this agent run."
+  } else {
+    xreg_scan <- read_file(
+      run_info = project_info,
+      file_list = list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-xreg_scan.", project_info$data_output
+        )
+      ),
+      return_type = "df"
+    )
+    
+    if(is.null(combo)) {
+      xreg_scan <- xreg_scan %>%
+        dplyr::group_by(Regressor, Lag) %>%
+        dplyr::summarise(
+          Avg_dCor = round(mean(dCor, na.rm = TRUE), 2),
+          Median_dCor = round(median(dCor, na.rm = TRUE), 2),
+          Max_dCor = round(max(dCor, na.rm = TRUE), 2),
+          .groups = "drop"
+        ) %>%
+        dplyr::arrange(dplyr::desc(Avg_dCor))
+    } else {
+      xreg_scan <- xreg_scan %>%
+        dplyr::select(-Combo)
+    }
+    
+    xreg_scan_prompt <- 
+      glue::glue("External Regressor Scan Results:
+                  {make_pipe_table(xreg_scan)}
+                  ")
+  }
+  
+  # combine all prompts into one overall prompt using glue
+  overall_prompt <- glue::glue(
+    "{data_profile_prompt}
+    
+    {acf_scan_prompt}
+     
+    {pacf_scan_prompt}
+     
+    {stationarity_scan_prompt}
+     
+    {missing_scan_prompt}
+     
+    {outlier_scan_prompt}
+     
+    {seasonality_scan_prompt}
+     
+    {hierarchy_detect_prompt}
+     
+    {xreg_scan_prompt}"
+  )
+  
+  return(overall_prompt)
 }
 
-get_finished_combos <- function(agent_info, 
-                                eda_wildcard) {
-  
-  # metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-  
-  prev_combo_list <- list_files(
-    project_info$storage_object,
-    paste0(
-      project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), eda_wildcard, project_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .
-    ) %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-    dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Project", "Agent_Run", "Combo", "EDA"), sep = "-", remove = TRUE) %>%
-    dplyr::pull(Combo) %>%
-    unique() %>%
-    suppressWarnings()
-  
-  return(prev_combo_list)
-}
-
-# profile data
+#' Data profiling EDA tool
+#' 
+#' @param agent_info agent information list
+#' 
+#' @return summary text of data profile
+#' @noRd
 data_profile <- function(agent_info) {
 
-  # input checks 
+  # get metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   
@@ -167,7 +623,14 @@ data_profile <- function(agent_info) {
   return(summary_text)
 }
 
-# acf
+#' ACF scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 acf_scan <- function(agent_info, 
                      parallel_processing, 
                      num_cores) {
@@ -200,7 +663,7 @@ acf_scan <- function(agent_info,
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = length(combo_list)
+    task_length = length(current_combo_list)
   )
   
   cl <- par_info$cl
@@ -219,7 +682,6 @@ acf_scan <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
-      
       # read data
       input_data <- read_file(
         run_info = project_info,
@@ -288,7 +750,14 @@ acf_scan <- function(agent_info,
   }
 }
 
-# pacf
+#' PACF scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 pacf_scan <- function(agent_info, 
                       parallel_processing, 
                       num_cores) {
@@ -322,7 +791,7 @@ pacf_scan <- function(agent_info,
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = length(combo_list)
+    task_length = length(current_combo_list)
   )
   
   cl <- par_info$cl
@@ -341,7 +810,6 @@ pacf_scan <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
-      
       # read data
       input_data <- read_file(
         run_info = project_info,
@@ -410,7 +878,14 @@ pacf_scan <- function(agent_info,
   }
 }
 
-# stationarity
+#' stationarity scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 stationarity_scan <- function(agent_info, 
                               parallel_processing, 
                               num_cores) {
@@ -524,7 +999,14 @@ stationarity_scan <- function(agent_info,
   }
 }
 
-# missing data 
+#' missing data scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 missing_scan <- function(agent_info, 
                          parallel_processing, 
                          num_cores) {
@@ -640,7 +1122,14 @@ missing_scan <- function(agent_info,
   }
 }
 
-# outlier data (STL) 
+#' Outlier scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 outlier_scan <- function(agent_info, 
                          parallel_processing, 
                          num_cores) {
@@ -807,7 +1296,14 @@ outlier_scan <- function(agent_info,
   }
 }
 
-# multiple seasonality 
+#' Multiple seasonality scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 seasonality_scan <- function(agent_info, 
                              parallel_processing, 
                              num_cores) {
@@ -817,7 +1313,7 @@ seasonality_scan <- function(agent_info,
   project_info$run_name <- agent_info$run_id
   
   hist_end_date <- agent_info$hist_end_date
-  date_type     <- project_info$date_type        # "day" | "week" | "month" | "quarter"
+  date_type     <- project_info$date_type
   
   # identify time-series combos 
   total_combo_list <- get_total_combos(agent_info = agent_info)
@@ -962,10 +1458,15 @@ seasonality_scan <- function(agent_info,
   }
 }
 
-# hierarchy
+#' Hierarchy detection tool
+#' 
+#' @param agent_info agent information list
+#' 
+#' @return summary text of hierarchy detection
+#' @noRd 
 hierarchy_detect <- function(agent_info) {
   
-  # ── metadata / run info 
+  # metadata 
   project_info            <- agent_info$project_info
   project_info$run_name   <- agent_info$run_id
   
@@ -993,7 +1494,7 @@ hierarchy_detect <- function(agent_info) {
     )
     
     cli::cli_alert_info("Only one combo column supplied – hierarchy is 'none'.")
-    return("Hierarchy detection: flat panel (no hierarchy).")
+    return("Hierarchy detection: none (no hierarchy).")
   }
   
   # check if hierarchy detection has already been done
@@ -1014,7 +1515,7 @@ hierarchy_detect <- function(agent_info) {
     return("Hierarchy info already exists for this agent run. Skipping hierarchy step.")
   }
   
-  # load full panel 
+  # load hist data
   input_data_list <- list_files(
     project_info$storage_object,
     paste0(
@@ -1112,12 +1613,19 @@ hierarchy_detect <- function(agent_info) {
   return(summary_text)
 }
 
-# external regresssor scan
+#' External regressor scan tool
+#' 
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#' 
+#' @return nothing
+#' @noRd
 xreg_scan <- function(agent_info,
-                      parallel_processing = NULL,
-                      num_cores           = NULL) {
+                      parallel_processing,
+                      num_cores) {
   
-  # metadata / run info 
+  # metadata
   project_info            <- agent_info$project_info
   project_info$run_name   <- agent_info$run_id
   
@@ -1230,502 +1738,83 @@ xreg_scan <- function(agent_info,
   }
 }
 
-
-# eda tool
-eda_agent_workflow <- function(agent_info, 
-                               parallel_processing, 
-                               num_cores) {
-  
-  message("[agent] 🔎 Starting Exploratory Data Analysis Workflow")
-  
-  # construct workflow
-  workflow <- list(
-    start = list(
-      fn = "data_profile", 
-      `next` = "acf_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info)
-      ),
-    acf_scan = list(
-      fn = "acf_scan", 
-      `next` = "pacf_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    pacf_scan = list(
-      fn = "pacf_scan", 
-      `next` = "stationarity_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    stationarity_scan = list(
-      fn = "stationarity_scan", 
-      `next` = "missing_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    missing_scan = list(
-      fn = "missing_scan", 
-      `next` = "outlier_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    outlier_scan = list(
-      fn = "outlier_scan", 
-      `next` = "seasonality_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    seasonality_scan = list(
-      fn = "seasonality_scan", 
-      `next` = "hierarchy_detect",
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    hierarchy_detect = list(
-      fn = "hierarchy_detect", 
-      `next` = "xreg_scan", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info)
-    ),
-    xreg_scan = list(
-      fn = "xreg_scan", 
-      `next` = "stop", 
-      retry_mode = "plain",  
-      max_retry = 2, 
-      args = list("agent_info" = agent_info, 
-                  "parallel_processing" = agent_info$parallel_processing, 
-                  "num_cores" = agent_info$num_cores)
-    ),
-    stop  = list(fn = NULL)
-  )
-  
-  # call the agent graph
-  results <- run_graph(agent_info$driver_llm, workflow)
-  
-  return(results)
-}
-
-register_eda_tools <- function(agent_info) {
-  
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "eda_agent_workflow",
-    .description = "perform exploratory data analysis on dataframe",
-    .fun = eda_agent_workflow
-  )) 
-  
-  # individual tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "data_profile",
-    .description = "profile the data to understand its structure and content",
-    .fun = data_profile
-  )) 
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "acf_scan",
-    .description = "calculate the autocorrelation function for time series data",
-    .fun = acf_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "pacf_scan",
-    .description = "calculate the partial autocorrelation function for time series data",
-    .fun = pacf_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "stationarity_scan",
-    .description = "test for stationarity in time series data using ADF and KPSS tests",
-    .fun = stationarity_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "missing_scan",
-    .description = "scan for missing data in time series and calculate metrics",
-    .fun = missing_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "outlier_scan",
-    .description = "detect outliers in time series data using STL decomposition",
-    .fun = outlier_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "seasonality_scan",
-    .description = "identify additional seasonal patterns in time series data",
-    .fun = seasonality_scan
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "hierarchy_detect",
-    .description = "detect hierarchy structure in time series data based on combo variables",
-    .fun = hierarchy_detect
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "xreg_scan",
-    .description = "scan external regressors for correlation with target variable",
-    .fun = xreg_scan
-  ))
-}
-
-# make a pipe table for printing
+#' Helper function to create a pipe table from a data frame
+#' 
+#' @param df data frame to convert to pipe table
+#' 
+#' @return string representation of the data frame in pipe table format
+#' @noRd
 make_pipe_table <- function(df) {
   knitr::kable(df, format = "pipe") %>% paste(collapse = "\n")
 }
 
 
-# load eda info for agent
-load_eda_results <- function(agent_info, 
-                             combo = NULL) {
-  # get project info
+#' Get total time series combos
+#' 
+#' @param agent_info agent information list
+#' 
+#' @return list of total time series combos
+#' @noRd
+get_total_combos <- function(agent_info) {
+  
+  # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   
-  # read all combos or just one
-  if(is.null(combo)) {
-    combo_value <- "*"
-  } else {
-    combo_value <- combo
-  }
-  
-  # data profile
-  data_profile <- read_file(
-    run_info = project_info,
-    path = paste0(
-      "/eda/", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-data_profile.", project_info$object_output
-    ),
-    return_type = "object"
-  )
-  
-  if(is.null(combo)) {
-    data_profile_prompt <- 
-      glue::glue("Data Profile:
-                - Total Rows: {data_profile$total_rows}
-                - Number of Time Series: {data_profile$n_series}
-                - Min Rows Per Series: {data_profile$rows_min}
-                - Max Rows Per Series: {data_profile$rows_max}
-                - Avg Rows Per Series: {data_profile$rows_avg}
-                - Count of Negative Values: {data_profile$neg_count}
-                - Percent of Negative Values: {data_profile$neg_pct}%
-                - Start Date: {data_profile$date_start}
-                - End Date: {data_profile$date_end}
-                ")
-  } else {
-    data_profile_prompt <- 
-      glue::glue("Data Profile:
-                - Total Rows: {round(data_profile$total_rows/data_profile$n_series, 0)}
-                - Percent of Negative Values: {data_profile$neg_pct}%
-                - Start Date: {data_profile$date_start}
-                - End Date: {data_profile$date_end}
-                ")
-  }
-  
-  # acf scan
-  acf_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-acf.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-  
-  if(is.null(combo)) {
-    # summarize across all combos
-    acf_scan <- acf_scan %>%
-      dplyr::group_by(Lag) %>%
-      dplyr::summarise(
-        Combo_Count = dplyr::n(),
-        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
-        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
-        .groups = "drop"
-      ) %>%
-      dplyr::arrange(Lag)
-  } else {
-    acf_scan <- acf_scan %>%
-      dplyr::select(-Combo)
-  }
-  
-  acf_scan_prompt <- 
-    glue::glue("ACF Scan Results:
-                {make_pipe_table(acf_scan)}
-                ")
-  
-  # pacf scan
-  pacf_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-pacf.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-  
-  if(is.null(combo)) {
-    # summarize across all combos
-    pacf_scan <- pacf_scan %>%
-      dplyr::group_by(Lag) %>%
-      dplyr::summarise(
-        Combo_Count = dplyr::n(),
-        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_Value   = round(mean(Value, na.rm = TRUE), 2),
-        Mean_Abs_Value = round(mean(abs(Value), na.rm = TRUE), 2),
-        .groups = "drop"
-      ) %>%
-      dplyr::arrange(Lag)
-  } else {
-    pacf_scan <- pacf_scan %>%
-      dplyr::select(-Combo)
-  }
-  
-  pacf_scan_prompt <- 
-    glue::glue("PACF Scan Results:
-                {make_pipe_table(pacf_scan)}
-                ")
-
-  # stationarity scan
-  stationarity_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-stationarity.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-
-  if(is.null(combo)) {
-    stationarity_scan <- stationarity_scan %>%
-      dplyr::mutate(Stationary = ifelse(stationary_adf & stationary_kpss, "Stationary", "Non-Stationary")) %>%
-      dplyr::group_by(Stationary) %>%
-      dplyr::summarise(
-        Count = dplyr::n(),
-        Percent = dplyr::n() / data_profile$n_series * 100,
-        .groups = "drop"
-      )
-  } else {
-    stationarity_scan <- stationarity_scan %>%
-      dplyr::select(-Combo)
-  }
-  
-  stationarity_scan_prompt <- 
-    glue::glue("Stationarity Scan Results:
-                {make_pipe_table(stationarity_scan)}
-                ")
-
-  # missing data scan
-  missing_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-missing.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-  
-  if(is.null(combo)) {
-    missing_scan <- missing_scan %>%
-      dplyr::group_by() %>%
-      dplyr::summarise(
-        missing_count = sum(missing_count, na.rm = TRUE),
-        missing_pct = mean(missing_pct, na.rm = TRUE),
-        longest_gap = max(longest_gap, na.rm = TRUE),
-        .groups = "drop"
-      )
-  }
-  
-  missing_scan_prompt <- 
-    glue::glue("Missing Data Scan Results:
-                - Missing Count: {missing_scan$missing_count}
-                - Missing Percent: {round(missing_scan$missing_pct)}%
-                - Longest Gap: {missing_scan$longest_gap}
-                ")
-
-  # outlier scan
-  outlier_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-outliers.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-  
-  if(is.null(combo)) {
-    outlier_scan <- outlier_scan %>%
-      dplyr::group_by() %>%
-      dplyr::summarise(
-        total_rows = sum(total_rows, na.rm = TRUE),
-        outlier_count = sum(outlier_count, na.rm = TRUE),
-        outlier_pct = outlier_count / total_rows * 100,,
-        first_outlier_dt = min(first_outlier_dt, na.rm = TRUE),
-        last_outlier_dt = max(last_outlier_dt, na.rm = TRUE),
-        .groups = "drop"
-      )
-  } else {
-    outlier_scan <- outlier_scan %>%
-      dplyr::select(-Combo)
-  }
-  
-  outlier_scan_prompt <- 
-    glue::glue("Outlier Scan Results:
-                - Outlier Count: {outlier_scan$outlier_count}
-                - Outlier Percent: {round(outlier_scan$outlier_pct)}%
-                - First Outlier Date: {outlier_scan$first_outlier_dt}
-                - Last Outlier Date: {outlier_scan$last_outlier_dt}
-                ")
-
-  # seasonality scan
-  seasonality_scan <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "-", combo_value, "-add_season.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
-  
-  if(is.null(combo)) {
-    seasonality_scan <- seasonality_scan %>%
-      dplyr::group_by(Lag) %>%
-      dplyr::summarise(
-        Combo_Count = dplyr::n(),
-        Combo_Percent = dplyr::n() / data_profile$n_series * 100,
-        Avg_ACF_Value   = round(mean(Value, na.rm = TRUE), 2),
-        Mean_Abs_ACF_Value = round(mean(abs(Value), na.rm = TRUE), 2),
-        .groups = "drop"
-      )
-  } else {
-    seasonality_scan <- seasonality_scan %>%
-      dplyr::select(-Combo)
-  }
-  
-  seasonality_scan_prompt <- 
-    glue::glue("Additional Seasonality Scan Results:
-                {make_pipe_table(seasonality_scan)}
-                ")
-
-  # hierarchy detection
-  hierarchy_detect <- read_file(
-    run_info = project_info,
-    path = paste0(
-      "/eda/", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-hierarchy.", project_info$object_output
-    ),
-    return_type = "object"
-  )
-  
-  if(is.null(combo)) {
-    hierarchy_detect_prompt <- 
-      glue::glue("Hierarchy Detection Results:
-                - Hierarchy Type: {hierarchy_detect$hierarchy}
-                ")
-  } else {
-    hierarchy_detect_prompt <- 
-      glue::glue("Hierarchy Detection Results:
-                - Hierarchy Type: bottoms_up (single time series)
-                ")
-  }
-
-  # external regressor scan
-  if(is.null(agent_info$external_regressors)) {
-    xreg_scan_prompt <- "No external regressors set for this agent run."
-  } else {
-    xreg_scan <- read_file(
-      run_info = project_info,
-      file_list = list_files(
-        project_info$storage_object,
-        paste0(
-          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", combo_value, "-xreg_scan.", project_info$data_output
-        )
-      ),
-      return_type = "df"
+  # get time series to run
+  total_combo_list <- list_files(
+    project_info$storage_object,
+    paste0(
+      project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "*.", project_info$data_output
     )
-    
-    if(is.null(combo)) {
-      xreg_scan <- xreg_scan %>%
-        dplyr::group_by(Regressor, Lag) %>%
-        dplyr::summarise(
-          Avg_dCor = round(mean(dCor, na.rm = TRUE), 2),
-          Median_dCor = round(median(dCor, na.rm = TRUE), 2),
-          Max_dCor = round(max(dCor, na.rm = TRUE), 2),
-          .groups = "drop"
-        ) %>%
-        dplyr::arrange(dplyr::desc(Avg_dCor))
-    } else {
-      xreg_scan <- xreg_scan %>%
-        dplyr::select(-Combo)
-    }
-    
-    xreg_scan_prompt <- 
-      glue::glue("External Regressor Scan Results:
-                  {make_pipe_table(xreg_scan)}
-                  ")
-  }
+  ) %>% 
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Project", "Agent_Run", "Combo"), sep = "-", remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    stringr::str_remove_all("\\..*$") %>%
+    unique() %>%
+    suppressWarnings()
   
-  # combine all prompts into one overall prompt using glue
-  overall_prompt <- glue::glue(
-    "{data_profile_prompt}
-    
-    {acf_scan_prompt}
-     
-    {pacf_scan_prompt}
-     
-    {stationarity_scan_prompt}
-     
-    {missing_scan_prompt}
-     
-    {outlier_scan_prompt}
-     
-    {seasonality_scan_prompt}
-     
-    {hierarchy_detect_prompt}
-     
-    {xreg_scan_prompt}"
-  )
+  return(total_combo_list)
+}
+
+#' Get finished time series combos for EDA
+#' @param agent_info agent information list
+#' @param eda_wildcard wildcard for EDA files
+#' 
+#' @return list of finished time series combos
+#' @noRd
+get_finished_combos <- function(agent_info, 
+                                eda_wildcard) {
   
-  return(overall_prompt)
+  # metadata
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+  
+  # list of previous combos already ran
+  prev_combo_list <- list_files(
+    project_info$storage_object,
+    paste0(
+      project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), eda_wildcard, project_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Project", "Agent_Run", "Combo", "EDA"), sep = "-", remove = TRUE) %>%
+    dplyr::pull(Combo) %>%
+    unique() %>%
+    suppressWarnings()
+  
+  return(prev_combo_list)
 }

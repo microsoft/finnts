@@ -1,4 +1,21 @@
-
+#' Set up Finn Agent Run Information
+#' 
+#' This function sets up the necessary information for a Finn Agent run, 
+#'  including input data, forecast horizon, and other parameters. 
+#'  It checks for existing runs and allows for overwriting if specified.
+#'  
+#' @param project_info A Finn project from `set_project_info()`
+#' @param driver_llm A Chat LLM object
+#' @param input_data A data frame or tibble containing the input data
+#' @param forecast_horizon The number of periods to forecast
+#' @param external_regressors Optional character vector of external regressors
+#' @param hist_end_date Optional Date object indicating the end of the historical data
+#' @param combo_cleanup_date Optional Date object for combo cleanup
+#' @param reason_llm Optional Chat LLM object for reasoning tasks
+#' @param overwrite Logical indicating whether to overwrite existing agent run info
+#' 
+#' @return A list containing the agent run information
+#' @export
 set_agent_info <- function(project_info, 
                            driver_llm, 
                            input_data, 
@@ -210,6 +227,5 @@ set_agent_info <- function(project_info,
     ))
     
     return(output_list)
-      
-    }
+  }
 }

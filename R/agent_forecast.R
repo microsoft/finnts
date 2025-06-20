@@ -1,43 +1,324 @@
+#' Get the final best forecast for an agent
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#'
+# @return A tibble containing the final forecast for the agent.
+#' @noRd
+get_agent_forecast <- function(agent_info) {
+  
+  # get the best run for the agent
+  best_run_tbl <- get_best_agent_run(agent_info)
+  
+  model_type_list <- best_run_tbl %>%
+    dplyr::pull(model_type) %>%
+    unique()
+  
+  # load global model forecasts
+  if("global" %in% model_type_list) {
+    global_combos <- best_run_tbl %>%
+      dplyr::filter(model_type == "global") %>%
+      dplyr::pull(combo) %>%
+      unique()
+    
+    global_run_name <- best_run_tbl %>%
+      dplyr::filter(model_type == "global") %>%
+      dplyr::pull(best_run_name) %>%
+      unique()
+    
+    run_info <- agent_info$project_info
+    run_info$run_name <- global_run_name
+    
+    global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
+      dplyr::filter(Combo %in% global_combos)
+  } else {
+    global_fcst_tbl <- tibble::tibble()
+  }
+  
+  # load local model forecasts
+  if("local" %in% model_type_list) {
+    local_run_name_list <- best_run_tbl %>%
+      dplyr::filter(model_type == "local") %>%
+      dplyr::pull(best_run_name) %>%
+      unique()
+    
+    par_info <- par_start(
+      run_info = agent_info$project_info,
+      parallel_processing = NULL,
+      num_cores = NULL,
+      task_length = nrows(local_run_name_list)
+    )
+    
+    cl <- par_info$cl
+    packages <- par_info$packages
+    `%op%` <- par_info$foreach_operator
+    
+    # submit tasks
+    local_fcst_tbl <- foreach::foreach(
+      x = local_run_name_list,
+      .combine = "rbind",
+      .packages = packages,
+      .errorhandling = "stop",
+      .verbose = FALSE,
+      .inorder = FALSE,
+      .multicombine = TRUE,
+      .noexport = NULL
+    ) %op%
+      {
+        run_info <- agent_info$project_info
+        run_info$run_name <- x
+        
+        temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
+        
+        return(temp_local_fcst_tbl)
+      } %>%
+      base::suppressPackageStartupMessages()
+    
+    par_end(cl)
+  } else {
+    local_fcst_tbl <- tibble::tibble()
+  }
+  
+  return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
+}
 
-extract_json_object <- function(raw_text) {
-  # sanity check 
-  if (!is.character(raw_text) || length(raw_text) != 1) {
-    stop("`raw_text` must be a single character string.", call. = FALSE)
-  }
+#' Get the best run for an agent
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#'
+# @return A tibble containing the best run information for the agent.
+#' @noRd
+get_best_agent_run <- function(agent_info) {
   
-  # locate the first {...} block 
-  json_block <- raw_text %>% 
-    stringr::str_remove_all("(?s)```json\\s*|```") %>%   # strip code-fences
-    stringr::str_extract("(?s)\\{.*?\\}")                # non-greedy first brace
+  # metadata
+  project_info <- agent_info$project_info
   
-  if (is.na(json_block) || json_block == "") {
-    stop("No JSON object found in `raw_text`.", call. = FALSE)
-  }
-  
-  # parse JSON with error trap 
-  result <- tryCatch(
-    jsonlite::fromJSON(json_block),
-    error = function(e) {
-      stop(
-        sprintf("Failed to parse JSON object: %s", conditionMessage(e)),
-        call. = FALSE
-      )
-    }
+  # get the best run for the agent
+  combo_best_run_list <- list_files(
+    project_info$storage_object,
+    paste0(
+      project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
+    )
   )
   
-  result
+  best_run_tbl <- read_file(
+    run_info = project_info,
+    file_list = combo_best_run_list,
+    return_type = "df"
+  )
+  
+  return(best_run_tbl)
 }
 
-null_converter <- function(x) {
-  if(length(x) > 1) {
-    return(x)
-  } else if(x == "NULL") {
-    return(NULL)
-  } else {
-    return(x)
+#' Forecast Agent Workflow
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param weighted_mape_goal A numeric value representing the goal for the weighted MAPE.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
+#' @param max_iter Maximum number of iterations for the workflow. Default is 3.
+#'
+#' @return A list containing the results of the workflow.
+#' @noRd
+fcst_agent_workflow <- function(agent_info,
+                                combo,
+                                weighted_mape_goal, 
+                                parallel_processing,
+                                inner_parallel,
+                                num_cores,
+                                max_iter = 3
+) {
+  
+  message("[agent] 📈 Starting Forecast Iteration Workflow")
+  
+  # create a fresh session for the reasoning LLM
+  if(!is.null(agent_info$reason_llm)) {
+    agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
+  
+  # construct the workflow 
+  workflow <- list(
+    start = list(
+      fn   = "reason_inputs",
+      `next` = NULL,
+      retry_mode = "plain",  
+      max_retry = 3,
+      args = list(agent_info = agent_info, 
+                  combo = combo, 
+                  weighted_mape_goal = weighted_mape_goal, 
+                  last_error = NULL), 
+      branch = function(ctx) {
+        
+        # extract the results from the current node
+        results <- ctx$results
+        
+        # check if the LLM aborted the run
+        if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
+          return(list(ctx = ctx, `next` = "stop"))
+        } else {
+          return(list(ctx = ctx, `next` = "submit_fcst_run"))
+        }
+      }
+    ),
+    
+    submit_fcst_run = list(
+      fn   = "submit_fcst_run",
+      `next` = "get_fcst_output",
+      retry_mode = "plain",
+      max_retry = 3,
+      args = list(
+        agent_info          = agent_info,
+        inputs              = "{results$reason_inputs}",
+        combo               = combo,
+        parallel_processing = parallel_processing,
+        inner_parallel      = inner_parallel,
+        num_cores           = num_cores
+      )
+    ),
+    
+    get_fcst_output = list(
+      fn   = "get_fcst_output",
+      `next` = "calculate_fcst_metrics",
+      retry_mode = "plain",  
+      max_retry = 3,
+      args = list(run_info = "{results$submit_fcst_run}")
+    ),
+    
+    calculate_fcst_metrics = list(
+      fn   = "calculate_fcst_metrics",
+      `next` = "log_best_run",
+      retry_mode = "plain",  
+      max_retry = 3,
+      args = list(
+        run_info  = "{results$submit_fcst_run}",
+        fcst_tbl  = "{results$get_fcst_output}")
+    ),
+    
+    log_best_run = list(
+      fn   = "log_best_run",
+      `next` = NULL,
+      retry_mode = "plain",  
+      max_retry = 3,
+      args = list(
+        agent_info = agent_info,
+        run_info = "{results$submit_fcst_run}",
+        weighted_mape = "{results$calculate_fcst_metrics}",
+        combo = combo
+      ), 
+      branch = function(ctx) {
+        
+        # test if max run iterations have been reached
+        ctx$iter <- ctx$iter + 1
+        max_runs_reached <- ctx$iter >= ctx$max_iter
+        
+        cli::cli_alert_info(
+          "Forecast Iteration {ctx$iter}/{ctx$max_iter} Complete"
+        )
+        
+        # check if the weighted MAPE is below the goal
+        weighted_mape <- ctx$results$calculate_fcst_metrics
+        
+        if (weighted_mape < weighted_mape_goal) {
+          cli::cli_alert_success(
+            "Weighted MAPE goal of {round(weighted_mape_goal * 100, 2)}% achieved! Latest weighted MAPE is {round(weighted_mape * 100, 2)}%. Stopping iterations."
+          )
+          wmape_goal_reached <- TRUE
+        } else if (max_runs_reached) {
+          cli::cli_alert_info(
+            "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Stopping iterations as max runs is reached."
+          )
+          wmape_goal_reached <- FALSE
+        } else {
+          cli::cli_alert_info(
+            "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Continuing to next iteration."
+          )
+          wmape_goal_reached <- FALSE
+        }
+        
+        # determine next node based on conditions
+        if(wmape_goal_reached || max_runs_reached) {
+          next_node <- "stop"
+        } else {
+          next_node <- "start"
+        }
+        
+        return(list(ctx = ctx, `next` = next_node))
+      }
+    ),
+    
+    stop = list(fn = NULL)
+  )
+  
+  init_ctx <- list(
+    node      = "start",
+    iter      = 0,          # iteration counter
+    max_iter  = max_iter,   # loop limit
+    results   = list(),     # where each tool’s output will be stored
+    attempts  = list()      # retry bookkeeping for execute_node()
+  )
+  
+  # run the graph 
+  run_graph(agent_info$driver_llm, workflow, init_ctx)
 }
 
+#' Register Finn forecasting tools for the agent
+#'
+#' @param agent_info A list containing agent information including driver LLM and project info.
+#'
+#' @return NULL
+#' @noRd
+register_fcst_tools <- function(agent_info) {
+  
+  # workflows
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "fcst_agent_workflow",
+    .description = "Run the Finn forecasting agent workflow",
+    .fun = fcst_agent_workflow
+  )) 
+  
+  # individual tools
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "reason_inputs",
+    .description = "Reason about the best inputs for Finn forecast run",
+    .fun = reason_inputs
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "submit_fcst_run",
+    .description = "Submit a Finn forecasting run with the given inputs",
+    .fun = submit_fcst_run
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "get_fcst_output",
+    .description = "Get the forecast output from a Finn run",
+    .fun = get_fcst_output
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "calculate_fcst_metrics",
+    .description = "Calculate back test accuracy metrics from the forecast output",
+    .fun = calculate_fcst_metrics
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "log_best_run",
+    .description = "Log the best run from a Finn forecasting run",
+    .fun = log_best_run
+  ))
+}
+
+#' Generate Finn run inputs for the reasoning LLM
+#' 
+#' @param agent_info A list containing agent information including LLMs, project info, and other parameters.
+#' @param combo A character string representing the combo variables, or NULL for global model.
+#' @param weighted_mape_goal A numeric value representing the weighted MAPE goal.
+#' @param last_error A character string representing the last error message, or NULL if no errors.
+#' 
+#' @return A list containing the LLM response and the parsed JSON object.
+#' @noRd
 reason_inputs <- function(agent_info, 
                           combo = NULL, 
                           weighted_mape_goal, 
@@ -55,6 +336,7 @@ reason_inputs <- function(agent_info,
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
   xregs_length <- length(agent_info$external_regressors)
   
+  # load EDA and previous run results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
   previous_run_results <- load_run_results(agent_info = agent_info, combo = combo)
   total_runs <- get_total_run_count(agent_info, combo = combo)
@@ -403,7 +685,7 @@ reason_inputs <- function(agent_info,
   
   # extract out json from response and convert to list
   input_list <- extract_json_object(response)
-  print(input_list$reasoning)
+
   # check if the response is an abort schema
   if ("abort" %in% names(input_list) && input_list$abort == "TRUE") {
     cli::cli_alert_info("LLM has aborted the run. Reason: {input_list$reasoning}")
@@ -555,6 +837,7 @@ reason_inputs <- function(agent_info,
       )
     }
     
+    # check if the proposed inputs violate the lag and rolling window change rules
     if(length(unique(c(previous_runs_tbl$lag_periods, check_inputs$lag_periods))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
       stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
@@ -573,6 +856,17 @@ reason_inputs <- function(agent_info,
   return(input_list)
 }
 
+#' Submit a Finn forecasting run
+#' 
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param inputs A list of inputs for the forecasting run.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
+#' 
+#' @return A list containing the run information including project name, run name, storage object, path, data output, and object output.
+#' @noRd
 submit_fcst_run <- function(agent_info,
                             inputs, 
                             combo, 
@@ -695,12 +989,25 @@ submit_fcst_run <- function(agent_info,
   return(run_info)
 }
 
+#' Get forecast output from a Finn run
+#'
+#' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
+#' 
+#' @return A tibble containing the forecast output.
+#' @noRd
 get_fcst_output <- function(run_info) {
   fcst_tbl <- get_forecast_data(run_info)
   
   return(fcst_tbl)
 }
 
+#' Calculate forecast metrics from a Finn run
+#'
+#' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
+#' @param fcst_tbl A tibble containing the forecast output.
+#'
+# @return A numeric value representing the weighted MAPE of the forecast.
+#' @noRd
 calculate_fcst_metrics <- function(run_info, 
                                    fcst_tbl) {
   
@@ -718,11 +1025,21 @@ calculate_fcst_metrics <- function(run_info,
   return(weighted_mape)
 }
 
+#' Log the best run results
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
+#' @param weighted_mape A numeric value representing the weighted MAPE of the forecast.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#'
+#' @return NULL
+#' @noRd
 log_best_run <- function(agent_info, 
                          run_info, 
                          weighted_mape, 
                          combo = NULL) {
   
+  # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   
@@ -822,301 +1139,20 @@ log_best_run <- function(agent_info,
     }
   }
   
-  # log wmape by model for local models
-  # if (!is.null(combo) || combo != "all") {
-  #   
-  #   back_test_tbl <- get_forecast_data(run_info = run_info)
-  #   
-  #   best_model <- back_test_tbl %>%
-  #     dplyr::filter(Best_Model == "Yes") %>%
-  #     dplyr::pull(Model_ID) %>%
-  #     unique() %>%
-  #     stringr::str_split("_")
-  #   print(best_model)
-  #   model_wmape_tbl <- back_test_tbl %>%
-  #     dplyr::filter(Run_Type == "Back_Test", 
-  #                   Recipe_ID != "simple_average") %>%
-  #     dplyr::group_by(Model_ID) %>%
-  #     dplyr::summarise(
-  #       MAPE = round(mean(abs((Forecast - Target) / Target), na.rm = TRUE), digits = 4),
-  #       Total = sum(Target, na.rm = TRUE),
-  #       Weight = (MAPE * Total) / sum(Total, na.rm = TRUE)
-  #     ) %>%
-  #     dplyr::mutate(
-  #       Weighted_MAPE = round(Weight, digits = 4)
-  #     ) %>%
-  #     dplyr::select(Model_ID, Weighted_MAPE) %>%
-  #     dplyr::mutate(
-  #       Best_Model = ifelse(Model_ID %in% best_model[[1]], "Yes", "No")
-  #     )
-  #   
-  #   write_data(
-  #     x = model_wmape_tbl,
-  #     combo = unique(back_test_tbl$Combo),
-  #     run_info = project_info,
-  #     output_type = "log",
-  #     folder = "logs",
-  #     suffix = "-local_model_wmape"
-  #   )
-  # }
-
   return("Run logged successfully.")
 }
 
-fcst_agent_workflow <- function(agent_info,
-                                combo,
-                                weighted_mape_goal, 
-                                parallel_processing,
-                                inner_parallel,
-                                num_cores,
-                                max_iter = 3
-) {
-  
-  message("[agent] 📈 Starting Forecast Iteration Workflow")
-  
-  if(!is.null(agent_info$reason_llm)) {
-    agent_info$reason_llm <- agent_info$reason_llm$clone()
-  }
-  
-  # 1. construct the workflow 
-  workflow <- list(
-    start = list(
-      fn   = "reason_inputs",
-      `next` = "submit_fcst_run",
-      retry_mode = "plain",  
-      max_retry = 3,
-      args = list(agent_info = agent_info, 
-                  combo = combo, 
-                  weighted_mape_goal = weighted_mape_goal, 
-                  last_error = NULL), 
-      branch = function(ctx) {
-        
-        # extract the results from the current node
-        results <- ctx$results
-        
-        # check if the LLM aborted the run
-        if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
-          return(list(ctx = ctx, `next` = "stop"))
-        } else {
-          return(list(ctx = ctx, `next` = "submit_fcst_run"))
-        }
-      }
-    ),
-    
-    submit_fcst_run = list(
-      fn   = "submit_fcst_run",
-      `next` = "get_fcst_output",
-      retry_mode = "plain",
-      max_retry = 3,
-      args = list(
-        agent_info          = agent_info,
-        inputs              = "{results$reason_inputs}",
-        combo               = combo,
-        parallel_processing = parallel_processing,
-        inner_parallel      = inner_parallel,
-        num_cores           = num_cores
-      )
-    ),
-    
-    get_fcst_output = list(
-      fn   = "get_fcst_output",
-      `next` = "calculate_fcst_metrics",
-      retry_mode = "plain",  
-      max_retry = 3,
-      args = list(run_info = "{results$submit_fcst_run}")
-    ),
-    
-    calculate_fcst_metrics = list(
-      fn   = "calculate_fcst_metrics",
-      `next` = "log_best_run",
-      retry_mode = "plain",  
-      max_retry = 3,
-      args = list(
-        run_info  = "{results$submit_fcst_run}",
-        fcst_tbl  = "{results$get_fcst_output}"
-      )#,
-      # branch = function(ctx) {
-      #   
-      #   # test if max run iterations have been reached
-      #   ctx$iter <- ctx$iter + 1
-      #   max_runs_reached <- ctx$iter >= ctx$max_iter
-      #   
-      #   cli::cli_alert_info(
-      #     "Forecast Iteration {ctx$iter}/{ctx$max_iter} Complete"
-      #   )
-      #   
-      #   # check if the weighted MAPE is below the goal
-      #   weighted_mape <- ctx$results$calculate_fcst_metrics
-      #   
-      #   if (weighted_mape < weighted_mape_goal) {
-      #     cli::cli_alert_success(
-      #       "Weighted MAPE goal of {round(weighted_mape_goal * 100, 2)}% achieved! Latest weighted MAPE is {round(weighted_mape * 100, 2)}%. Stopping iterations."
-      #     )
-      #     wmape_goal_reached <- TRUE
-      #   } else if (max_runs_reached) {
-      #     cli::cli_alert_info(
-      #       "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Stopping iterations as max runs is reached."
-      #     )
-      #     wmape_goal_reached <- FALSE
-      #   } else {
-      #     cli::cli_alert_info(
-      #       "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Continuing to next iteration."
-      #     )
-      #     wmape_goal_reached <- FALSE
-      #   }
-      #   
-      #   # check if weighted mape is better than previous runs
-      #   if(!wmape_goal_reached) {
-      #     previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
-      #     
-      #     if (is.data.frame(previous_runs) && nrow(previous_runs) > 0) {
-      #       best_run_mape <- previous_runs %>%
-      #         dplyr::filter(best_run == "yes") %>%
-      #         dplyr::pull(weighted_mape) %>%
-      #         unique()
-      #       
-      #       if (weighted_mape < best_run_mape) {
-      #         cli::cli_alert_success(
-      #           "New run has a better weighted MAPE of {round(weighted_mape * 100, 2)}% than the best previous run of {round(best_run_mape * 100, 2)}%."
-      #         )
-      #       }
-      #       
-      #       log_run <- TRUE
-      #       
-      #     } else {
-      #       log_run <- FALSE
-      #     }
-      #   } else {
-      #     log_run <- FALSE
-      #   }
-      #   
-      #   # determine next node based on conditions
-      #   if(wmape_goal_reached || log_run ) {
-      #     next_node <- "log_best_run"
-      #   } else if (max_runs_reached) {
-      #     next_node <- "stop"
-      #   }
-      #   else {
-      #     next_node <- "start"
-      #   }
-      #   
-      #   return(list(ctx = ctx, `next` = next_node, 
-      #               stop = wmape_goal_reached || max_runs_reached))
-      # }
-    ),
-    
-    log_best_run = list(
-      fn   = "log_best_run",
-      `next` = NULL,
-      retry_mode = "plain",  
-      max_retry = 3,
-      args = list(
-        agent_info = agent_info,
-        run_info = "{results$submit_fcst_run}",
-        weighted_mape = "{results$calculate_fcst_metrics}",
-        combo = combo
-      ), 
-      branch = function(ctx) {
-        
-        # test if max run iterations have been reached
-        ctx$iter <- ctx$iter + 1
-        max_runs_reached <- ctx$iter >= ctx$max_iter
-        
-        cli::cli_alert_info(
-          "Forecast Iteration {ctx$iter}/{ctx$max_iter} Complete"
-        )
-        
-        # check if the weighted MAPE is below the goal
-        weighted_mape <- ctx$results$calculate_fcst_metrics
-        
-        if (weighted_mape < weighted_mape_goal) {
-          cli::cli_alert_success(
-            "Weighted MAPE goal of {round(weighted_mape_goal * 100, 2)}% achieved! Latest weighted MAPE is {round(weighted_mape * 100, 2)}%. Stopping iterations."
-          )
-          wmape_goal_reached <- TRUE
-        } else if (max_runs_reached) {
-          cli::cli_alert_info(
-            "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Stopping iterations as max runs is reached."
-          )
-          wmape_goal_reached <- FALSE
-        } else {
-          cli::cli_alert_info(
-            "Weighted MAPE of {round(weighted_mape * 100, 2)}% is above the goal of {round(weighted_mape_goal * 100, 2)}%. Continuing to next iteration."
-          )
-          wmape_goal_reached <- FALSE
-        }
-        
-        # determine next node based on conditions
-        if(wmape_goal_reached || max_runs_reached) {
-          next_node <- "stop"
-        } else {
-          next_node <- "start"
-        }
-        
-        return(list(ctx = ctx, `next` = next_node))
-      }
-    ),
-    
-    stop = list(fn = NULL)
-  )
-  
-  init_ctx <- list(
-    node      = "start",
-    iter      = 0,          # iteration counter
-    max_iter  = max_iter,   # loop limit
-    results   = list(),     # where each tool’s output will be stored
-    attempts  = list()      # retry bookkeeping for execute_node()
-  )
-  
-  # 4. run the graph 
-  run_graph(agent_info$driver_llm, workflow, init_ctx)
-}
-
-
-register_fcst_tools <- function(agent_info) {
-  
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "fcst_agent_workflow",
-    .description = "Run the Finn forecasting agent workflow",
-    .fun = fcst_agent_workflow
-  )) 
-  
-  # individual tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "reason_inputs",
-    .description = "Reason about the best inputs for Finn forecast run",
-    .fun = reason_inputs
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "submit_fcst_run",
-    .description = "Submit a Finn forecasting run with the given inputs",
-    .fun = submit_fcst_run
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "get_fcst_output",
-    .description = "Get the forecast output from a Finn run",
-    .fun = get_fcst_output
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "calculate_fcst_metrics",
-    .description = "Calculate back test accuracy metrics from the forecast output",
-    .fun = calculate_fcst_metrics
-  ))
-  
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "log_best_run",
-    .description = "Log the best run from a Finn forecasting run",
-    .fun = log_best_run
-  ))
-}
-
+#' Load previous run results for the agent
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#'
+#' @return A tibble containing the previous run results or a message indicating no previous runs.
+#' @noRd
 load_run_results <- function(agent_info, 
                              combo = NULL) {
   
+  # determine the combo value and columns to return
   if(is.null(combo)) {
     combo_value <- hash_data("all")
     
@@ -1136,11 +1172,13 @@ load_run_results <- function(agent_info,
                      "negative_forecast", "weighted_mape")
   }
   
+  # get previous runs
   previous_runs <- get_run_info(project_name = agent_info$project_info$project_name,
                                 run_name = NULL,
                                 storage_object = agent_info$project_info$storage_object,
                                 path = agent_info$project_info$path)
   
+  # filter previous runs based on the combo value and select relevant columns
   if("run_name" %in% names(previous_runs)) {
     
     previous_runs <- previous_runs %>%
@@ -1171,19 +1209,30 @@ load_run_results <- function(agent_info,
   return(run_output)
 }
 
+#' Get the total run count for the agent
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#'
+#' @return A numeric value representing the total run count for the agent.
+#' @noRd
 get_total_run_count <- function(agent_info, 
                                 combo = NULL) {
+  
+  # determine the combo value
   if(is.null(combo)) {
     combo_value <- hash_data("all")
   } else {
     combo_value <- combo
   }
   
+  # get total runs
   total_runs <- get_run_info(project_name = agent_info$project_info$project_name,
                              run_name = NULL,
                              storage_object = agent_info$project_info$storage_object,
                              path = agent_info$project_info$path)
   
+  # filter total runs based on the combo value
   if("run_name" %in% names(total_runs)) {
     total_runs <- total_runs %>%
       dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value)))
@@ -1194,7 +1243,12 @@ get_total_run_count <- function(agent_info,
   return(nrow(total_runs))
 }
 
-# helper: collapse vector unless it is the literal "NULL"
+#' Collapse a vector into a string with "---" as separator, or return NA if the vector is "NULL"
+#'
+#' @param x A character vector to collapse.
+#'
+#' @return A character string with elements collapsed by "---", or NA if the input is "NULL".
+#' @noRd
 collapse_or_na <- function(x) {
   if (length(x) == 1 && identical(x, "NULL")) {
     NA_character_
@@ -1203,13 +1257,24 @@ collapse_or_na <- function(x) {
   }
 }
 
+#' Apply column types from a template dataframe to a target dataframe
+#'
+#' @param target_df The target dataframe to apply types to.
+#' @param template_df The template dataframe containing the desired column types.
+#' @param drop_extra Logical indicating whether to drop columns in the target that are not in the template.
+#' @param reorder Logical indicating whether to reorder columns in the target to match the template.
+#'
+# @return The target dataframe with applied column types.
+#' @noRd
 apply_column_types <- function(target_df,
                                template_df,
                                drop_extra = FALSE,
                                reorder     = FALSE) {
   
+  # get common columns between template and target
   common_cols <- intersect(names(template_df), names(target_df))
   
+  # function to cast a vector to the type of a template column
   cast_col <- function(vec, template) {
     
     if (inherits(template, "factor")) {
@@ -1251,16 +1316,26 @@ apply_column_types <- function(target_df,
 }
 
 
+#' Check if a parameter set exists in a previous run results dataframe
+#'
+#' @param x A list or atomic vector containing the parameter set to check.
+#' @param df A dataframe containing previous run results with named columns.
+#'
+#' @return TRUE if the parameter set exists in the dataframe, FALSE otherwise.
+#' @noRd
 does_param_set_exist <- function(x, df) {
   
-  stopifnot(is.list(x) || is.atomic(x),                 # basic sanity
-            !is.null(names(x)),                         # must be named
-            all(names(x) %in% names(df)))               # cols present
+  # ensure x is a named list or atomic vector
+  stopifnot(is.list(x) || is.atomic(x),
+            !is.null(names(x)),
+            all(names(x) %in% names(df)))
 
+  # transform x into a 1-row tibble with matching column types
   probe <- x %>%
     tibble::as_tibble() %>% # 1-row tibble with same names as df
     apply_column_types(template_df = df) # ensure types match
 
+  # check if the probe matches any row in df
   final_df <- df %>%
     dplyr::select(tidyselect::all_of(names(probe)))  # select only matching cols
 
@@ -1268,97 +1343,54 @@ does_param_set_exist <- function(x, df) {
     nrow() > 0                                          # TRUE if ≥1 match
 }
 
-get_best_agent_run <- function(agent_info) {
-  project_info <- agent_info$project_info
+#' Extract JSON object from raw text
+#' 
+#' @param raw_text A character string containing the raw text with JSON object.
+#' 
+#' @return A parsed JSON object as a list.
+#' @noRd
+extract_json_object <- function(raw_text) {
   
-  combo_best_run_list <- list_files(
-    project_info$storage_object,
-    paste0(
-      project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
-    )
+  # format check 
+  if (!is.character(raw_text) || length(raw_text) != 1) {
+    stop("`raw_text` must be a single character string.", call. = FALSE)
+  }
+  
+  # locate the first {...} block 
+  json_block <- raw_text %>% 
+    stringr::str_remove_all("(?s)```json\\s*|```") %>%   # strip code-fences
+    stringr::str_extract("(?s)\\{.*?\\}")                # non-greedy first brace
+  
+  if (is.na(json_block) || json_block == "") {
+    stop("No JSON object found in `raw_text`.", call. = FALSE)
+  }
+  
+  # parse JSON with error trap 
+  result <- tryCatch(
+    jsonlite::fromJSON(json_block),
+    error = function(e) {
+      stop(
+        sprintf("Failed to parse JSON object: %s", conditionMessage(e)),
+        call. = FALSE
+      )
+    }
   )
   
-  best_run_tbl <- read_file(
-    run_info = project_info,
-    file_list = combo_best_run_list,
-    return_type = "df"
-  )
-  
-  return(best_run_tbl)
+  return(result)
 }
 
-get_agent_forecast <- function(agent_info) {
-  
-  best_run_tbl <- get_best_agent_run(agent_info)
-  
-  model_type_list <- best_run_tbl %>%
-    dplyr::pull(model_type) %>%
-    unique()
-  
-  # load global model forecasts
-  if("global" %in% model_type_list) {
-    global_combos <- best_run_tbl %>%
-      dplyr::filter(model_type == "global") %>%
-      dplyr::pull(combo) %>%
-      unique()
-    
-    global_run_name <- best_run_tbl %>%
-      dplyr::filter(model_type == "global") %>%
-      dplyr::pull(best_run_name) %>%
-      unique()
-    
-    run_info <- agent_info$project_info
-    run_info$run_name <- global_run_name
-    
-    global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
-      dplyr::filter(Combo %in% global_combos)
+#' Convert NULL string to NULL value
+#' 
+#' @param x A character string that may be "NULL" or a vector.
+#' 
+#' @return NULL if "NULL", otherwise returns the input vector.
+#' @noRd
+null_converter <- function(x) {
+  if(length(x) > 1) {
+    return(x)
+  } else if(x == "NULL") {
+    return(NULL)
   } else {
-    global_fcst_tbl <- tibble::tibble()
+    return(x)
   }
-  
-  if("local" %in% model_type_list) {
-    local_run_name_list <- best_run_tbl %>%
-      dplyr::filter(model_type == "local") %>%
-      dplyr::pull(best_run_name) %>%
-      unique()
-    
-    par_info <- par_start(
-      run_info = agent_info$project_info,
-      parallel_processing = NULL,
-      num_cores = NULL,
-      task_length = nrows(local_run_name_list)
-    )
-    
-    cl <- par_info$cl
-    packages <- par_info$packages
-    `%op%` <- par_info$foreach_operator
-    
-    # submit tasks
-    local_fcst_tbl <- foreach::foreach(
-      x = local_run_name_list,
-      .combine = "rbind",
-      .packages = packages,
-      .errorhandling = "stop",
-      .verbose = FALSE,
-      .inorder = FALSE,
-      .multicombine = TRUE,
-      .noexport = NULL
-    ) %op%
-      {
-        run_info <- agent_info$project_info
-        run_info$run_name <- x
-        
-        temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
-        
-        return(temp_local_fcst_tbl)
-      } %>%
-      base::suppressPackageStartupMessages()
-    
-    par_end(cl)
-  } else {
-    local_fcst_tbl <- tibble::tibble()
-  }
-  
-  return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
 }
