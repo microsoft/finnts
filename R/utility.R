@@ -85,7 +85,7 @@ cbind.fill <- function(..., fill = NA) {
 
 get_timestamp <- function() {
   as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
-             format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+    format = "%Y%m%dT%H%M%SZ", tz = "UTC"
   )
 }
 

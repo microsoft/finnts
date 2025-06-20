@@ -5,53 +5,52 @@
 # @return A tibble containing the final forecast for the agent.
 #' @noRd
 get_agent_forecast <- function(agent_info) {
-  
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
-  
+
   model_type_list <- best_run_tbl %>%
     dplyr::pull(model_type) %>%
     unique()
-  
+
   # load global model forecasts
-  if("global" %in% model_type_list) {
+  if ("global" %in% model_type_list) {
     global_combos <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(combo) %>%
       unique()
-    
+
     global_run_name <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(best_run_name) %>%
       unique()
-    
+
     run_info <- agent_info$project_info
     run_info$run_name <- global_run_name
-    
+
     global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
       dplyr::filter(Combo %in% global_combos)
   } else {
     global_fcst_tbl <- tibble::tibble()
   }
-  
+
   # load local model forecasts
-  if("local" %in% model_type_list) {
+  if ("local" %in% model_type_list) {
     local_run_name_list <- best_run_tbl %>%
       dplyr::filter(model_type == "local") %>%
       dplyr::pull(best_run_name) %>%
       unique()
-    
+
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = NULL,
       num_cores = NULL,
       task_length = nrows(local_run_name_list)
     )
-    
+
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
-    
+
     # submit tasks
     local_fcst_tbl <- foreach::foreach(
       x = local_run_name_list,
@@ -66,18 +65,18 @@ get_agent_forecast <- function(agent_info) {
       {
         run_info <- agent_info$project_info
         run_info$run_name <- x
-        
+
         temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
-        
+
         return(temp_local_fcst_tbl)
       } %>%
       base::suppressPackageStartupMessages()
-    
+
     par_end(cl)
   } else {
     local_fcst_tbl <- tibble::tibble()
   }
-  
+
   return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
 }
 
@@ -88,10 +87,9 @@ get_agent_forecast <- function(agent_info) {
 # @return A tibble containing the best run information for the agent.
 #' @noRd
 get_best_agent_run <- function(agent_info) {
-  
   # metadata
   project_info <- agent_info$project_info
-  
+
   # get the best run for the agent
   combo_best_run_list <- list_files(
     project_info$storage_object,
@@ -100,13 +98,13 @@ get_best_agent_run <- function(agent_info) {
       hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
     )
   )
-  
+
   best_run_tbl <- read_file(
     run_info = project_info,
     file_list = combo_best_run_list,
     return_type = "df"
   )
-  
+
   return(best_run_tbl)
 }
 
@@ -124,36 +122,35 @@ get_best_agent_run <- function(agent_info) {
 #' @noRd
 fcst_agent_workflow <- function(agent_info,
                                 combo,
-                                weighted_mape_goal, 
+                                weighted_mape_goal,
                                 parallel_processing,
                                 inner_parallel,
                                 num_cores,
-                                max_iter = 3
-) {
-  
+                                max_iter = 3) {
   message("[agent] 📈 Starting Forecast Iteration Workflow")
-  
+
   # create a fresh session for the reasoning LLM
-  if(!is.null(agent_info$reason_llm)) {
+  if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
-  
-  # construct the workflow 
+
+  # construct the workflow
   workflow <- list(
     start = list(
-      fn   = "reason_inputs",
+      fn = "reason_inputs",
       `next` = NULL,
-      retry_mode = "plain",  
+      retry_mode = "plain",
       max_retry = 3,
-      args = list(agent_info = agent_info, 
-                  combo = combo, 
-                  weighted_mape_goal = weighted_mape_goal, 
-                  last_error = NULL), 
+      args = list(
+        agent_info = agent_info,
+        combo = combo,
+        weighted_mape_goal = weighted_mape_goal,
+        last_error = NULL
+      ),
       branch = function(ctx) {
-        
         # extract the results from the current node
         results <- ctx$results
-        
+
         # check if the LLM aborted the run
         if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
           return(list(ctx = ctx, `next` = "stop"))
@@ -162,9 +159,8 @@ fcst_agent_workflow <- function(agent_info,
         }
       }
     ),
-    
     submit_fcst_run = list(
-      fn   = "submit_fcst_run",
+      fn = "submit_fcst_run",
       `next` = "get_fcst_output",
       retry_mode = "plain",
       max_retry = 3,
@@ -177,49 +173,46 @@ fcst_agent_workflow <- function(agent_info,
         num_cores           = num_cores
       )
     ),
-    
     get_fcst_output = list(
-      fn   = "get_fcst_output",
+      fn = "get_fcst_output",
       `next` = "calculate_fcst_metrics",
-      retry_mode = "plain",  
+      retry_mode = "plain",
       max_retry = 3,
       args = list(run_info = "{results$submit_fcst_run}")
     ),
-    
     calculate_fcst_metrics = list(
-      fn   = "calculate_fcst_metrics",
+      fn = "calculate_fcst_metrics",
       `next` = "log_best_run",
-      retry_mode = "plain",  
+      retry_mode = "plain",
       max_retry = 3,
       args = list(
         run_info  = "{results$submit_fcst_run}",
-        fcst_tbl  = "{results$get_fcst_output}")
+        fcst_tbl  = "{results$get_fcst_output}"
+      )
     ),
-    
     log_best_run = list(
-      fn   = "log_best_run",
+      fn = "log_best_run",
       `next` = NULL,
-      retry_mode = "plain",  
+      retry_mode = "plain",
       max_retry = 3,
       args = list(
         agent_info = agent_info,
         run_info = "{results$submit_fcst_run}",
         weighted_mape = "{results$calculate_fcst_metrics}",
         combo = combo
-      ), 
+      ),
       branch = function(ctx) {
-        
         # test if max run iterations have been reached
         ctx$iter <- ctx$iter + 1
         max_runs_reached <- ctx$iter >= ctx$max_iter
-        
+
         cli::cli_alert_info(
           "Forecast Iteration {ctx$iter}/{ctx$max_iter} Complete"
         )
-        
+
         # check if the weighted MAPE is below the goal
         weighted_mape <- ctx$results$calculate_fcst_metrics
-        
+
         if (weighted_mape < weighted_mape_goal) {
           cli::cli_alert_success(
             "Weighted MAPE goal of {round(weighted_mape_goal * 100, 2)}% achieved! Latest weighted MAPE is {round(weighted_mape * 100, 2)}%. Stopping iterations."
@@ -236,30 +229,29 @@ fcst_agent_workflow <- function(agent_info,
           )
           wmape_goal_reached <- FALSE
         }
-        
+
         # determine next node based on conditions
-        if(wmape_goal_reached || max_runs_reached) {
+        if (wmape_goal_reached || max_runs_reached) {
           next_node <- "stop"
         } else {
           next_node <- "start"
         }
-        
+
         return(list(ctx = ctx, `next` = next_node))
       }
     ),
-    
     stop = list(fn = NULL)
   )
-  
+
   init_ctx <- list(
     node      = "start",
-    iter      = 0,          # iteration counter
-    max_iter  = max_iter,   # loop limit
-    results   = list(),     # where each tool’s output will be stored
-    attempts  = list()      # retry bookkeeping for execute_node()
+    iter      = 0, # iteration counter
+    max_iter  = max_iter, # loop limit
+    results   = list(), # where each tool’s output will be stored
+    attempts  = list() # retry bookkeeping for execute_node()
   )
-  
-  # run the graph 
+
+  # run the graph
   run_graph(agent_info$driver_llm, workflow, init_ctx)
 }
 
@@ -270,39 +262,38 @@ fcst_agent_workflow <- function(agent_info,
 #' @return NULL
 #' @noRd
 register_fcst_tools <- function(agent_info) {
-  
   # workflows
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "fcst_agent_workflow",
     .description = "Run the Finn forecasting agent workflow",
     .fun = fcst_agent_workflow
-  )) 
-  
+  ))
+
   # individual tools
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "reason_inputs",
     .description = "Reason about the best inputs for Finn forecast run",
     .fun = reason_inputs
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "submit_fcst_run",
     .description = "Submit a Finn forecasting run with the given inputs",
     .fun = submit_fcst_run
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "get_fcst_output",
     .description = "Get the forecast output from a Finn run",
     .fun = get_fcst_output
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "calculate_fcst_metrics",
     .description = "Calculate back test accuracy metrics from the forecast output",
     .fun = calculate_fcst_metrics
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "log_best_run",
     .description = "Log the best run from a Finn forecasting run",
@@ -311,62 +302,61 @@ register_fcst_tools <- function(agent_info) {
 }
 
 #' Generate Finn run inputs for the reasoning LLM
-#' 
+#'
 #' @param agent_info A list containing agent information including LLMs, project info, and other parameters.
 #' @param combo A character string representing the combo variables, or NULL for global model.
 #' @param weighted_mape_goal A numeric value representing the weighted MAPE goal.
 #' @param last_error A character string representing the last error message, or NULL if no errors.
-#' 
+#'
 #' @return A list containing the LLM response and the parsed JSON object.
 #' @noRd
-reason_inputs <- function(agent_info, 
-                          combo = NULL, 
-                          weighted_mape_goal, 
+reason_inputs <- function(agent_info,
+                          combo = NULL,
+                          weighted_mape_goal,
                           last_error = NULL) {
-  
   # get metadata
-  if(!is.null(agent_info$reason_llm)) {
+  if (!is.null(agent_info$reason_llm)) {
     llm <- agent_info$reason_llm
   } else {
     llm <- agent_info$driver_llm
   }
-  
+
   project_info <- agent_info$project_info
-  combo_str   <- paste(project_info$combo_variables,   collapse = "---")
+  combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
   xregs_length <- length(agent_info$external_regressors)
-  
+
   # load EDA and previous run results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
   previous_run_results <- load_run_results(agent_info = agent_info, combo = combo)
   total_runs <- get_total_run_count(agent_info, combo = combo)
-  
+
   if (is.data.frame(previous_run_results)) {
     best_mape <- previous_run_results %>%
       dplyr::filter(best_run == "yes") %>%
       dplyr::pull(weighted_mape) %>%
       unique(round(4))
-    
+
     best_run <- previous_run_results %>%
       dplyr::filter(best_run == "yes") %>%
       dplyr::pull(run_number)
-    
+
     lag_period_changes <- previous_run_results %>%
       dplyr::select(lag_periods) %>%
       tidyr::drop_na(lag_periods) %>%
       dplyr::distinct() %>%
       dplyr::pull() %>%
       length()
-    
+
     lag_changes_allowed <- lag_period_changes < 3
-    
+
     rolling_window_changes <- previous_run_results %>%
       dplyr::select(rolling_window_periods) %>%
       tidyr::drop_na(rolling_window_periods) %>%
       dplyr::distinct() %>%
       dplyr::pull() %>%
       length()
-    
+
     rolling_changes_allowed <- rolling_window_changes < 3
   } else {
     best_mape <- "NA"
@@ -376,14 +366,14 @@ reason_inputs <- function(agent_info,
   }
 
   # create final prompt
-  if(is.null(combo)) {
+  if (is.null(combo)) {
     # global model prompt
     final_prompt <- glue::glue(
       '
       -----CONTEXT-----
       You are an autonomous time-series forecasting agent. Your goal is to choose
       Finn-API parameters that **lower weighted MAPE** versus all prior runs.
-      
+
       -----METADATA-----
       • combos : <<combo>>
       • target : <<target>>
@@ -397,35 +387,35 @@ reason_inputs <- function(agent_info,
       • best run number from previous runs : <<best_run>>
       • lag_changes_allowed: <<lag_changes>>
       • rolling_changes_allowed changes: <<rolling_changes>>
-      
+
       -----Exploratory Data Analysis-----
       <<eda>>
-      
+
       -----PREVIOUS RUN RESULTS-----
       <<run_results>>
-      
+
       -----LAST ERROR-----
       <<last_error>>
-      
+
       -----RULES (MUST / MUST NOT)-----
       1.  YOU MUST output exactly one JSON object matching the schema below.
       2.  YOU MUST include a "reasoning" field with ≤ 250 words.
       3.  RUN CHANGE RULES
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
-          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run. 
-          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change. 
-          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT. 
+          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
+          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
+          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary → stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
-          6-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE". 
+          6-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
           6-B.  IF no negative values are present → negative_forecast="FALSE".
       7. HIERARCHICAL RULES
           7-A. IF run_count == 0 → forecast_approach="bottoms_up"
           7-B. IF run_count > 0 AND hiearchy type != "none" → forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
           7-C. IF hiearchy type == "none" → forecast_approach="bottoms_up".
           7-D. You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
-          7-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped. 
+          7-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
           7-F. You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
       8. MISSING VALUES RULES
           8-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
@@ -438,9 +428,9 @@ reason_inputs <- function(agent_info,
       10. EXTERNAL REGRESSOR RULES
           10-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
           10-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
-          10-C  IF adding external regressors AND run_count > 0 AND *Step C is complete*, add ONLY ONE new external regressor variable per run. 
+          10-C  IF adding external regressors AND run_count > 0 AND *Step C is complete*, add ONLY ONE new external regressor variable per run.
           10-D. ALWAYS use "NULL" if no external regressors are needed.
-          10-E. ALWAYS start with the most promising external regressors based on distance correlation results.  
+          10-E. ALWAYS start with the most promising external regressors based on distance correlation results.
           10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used.
           10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
@@ -448,19 +438,19 @@ reason_inputs <- function(agent_info,
           10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       11. FEATURE LAG RULES
           11-A. IF run_count == 0 → lag_periods = "NULL"
-          11-B. IF run_count > 0 AND *Step D is complete* → use ACF and PCF results from EDA to select lag_periods. 
+          11-B. IF run_count > 0 AND *Step D is complete* → use ACF and PCF results from EDA to select lag_periods.
           11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-          11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes. 
+          11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
           11-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
           11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. ROLLING WINDOW LAGS
           12-A. IF run_count == 0 → rolling_window_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step E is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---". 
+          12-B. IF run_count > 0 AND *Step E is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
           12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
           12-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
           12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
-      13. An example value of "NULL|var1---var2" means YOU MUST either 
+      13. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
       14. DECISION TREE RULES
           14-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
@@ -468,18 +458,18 @@ reason_inputs <- function(agent_info,
       15. ABORT RULES
           15-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
           15-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
-         
+
       -----ORDER OF OPERATIONS DECISION TREE (Rule 14)-----
-      Step A (Hierarchy - Rule 7) 
+      Step A (Hierarchy - Rule 7)
       → Step B (Missing Values - Rule 8)
-      → Step C (Outliers - Rule 9) 
+      → Step C (Outliers - Rule 9)
       → Step D (External Regressors - Rule 10)
       → Step E (Feature Lags - Rule 11)
       → Step F (Rolling Window Lags - Rule 12)
-      
+
       -----OUTPUT FORMAT-----
       <scratchpad>
-      …your chain-of-thought, work through the decision tree, cite Rules #, 
+      …your chain-of-thought, work through the decision tree, cite Rules #,
       compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
       </scratchpad>
       ```json
@@ -504,22 +494,22 @@ reason_inputs <- function(agent_info,
       }
       ```
       -----END OUTPUT-----',
-      .open = '<<', .close = '>>',
+      .open = "<<", .close = ">>",
       combo = combo_str,
       target = project_info$target_variable,
       dtype = project_info$date_type,
-      hist_end= agent_info$hist_end_date,
+      hist_end = agent_info$hist_end_date,
       horizon = agent_info$forecast_horizon,
       xregs = xregs_str,
-      eda = eda_results, 
-      run_results = make_pipe_table(previous_run_results), 
-      run_count = total_runs, 
-      weighted_mape_goal = weighted_mape_goal, 
+      eda = eda_results,
+      run_results = make_pipe_table(previous_run_results),
+      run_count = total_runs,
+      weighted_mape_goal = weighted_mape_goal,
       best_mape = best_mape,
-      best_run = best_run, 
-      xregs_length = xregs_length, 
+      best_run = best_run,
+      xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
-      rolling_changes = rolling_changes_allowed, 
+      rolling_changes = rolling_changes_allowed,
       last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
     )
   } else {
@@ -529,7 +519,7 @@ reason_inputs <- function(agent_info,
       -----CONTEXT-----
       You are an autonomous time-series forecasting agent. Your goal is to choose
       Finn-API parameters that **lower weighted MAPE** versus all prior runs.
-      
+
       -----METADATA-----
       • combos : <<combo>>
       • target : <<target>>
@@ -543,28 +533,28 @@ reason_inputs <- function(agent_info,
       • best run number from previous runs : <<best_run>>
       • lag_changes_allowed: <<lag_changes>>
       • rolling_changes_allowed changes: <<rolling_changes>>
-      
+
       -----Exploratory Data Analysis-----
       <<eda>>
-      
+
       -----PREVIOUS RUN RESULTS-----
       <<run_results>>
-      
+
       -----LAST ERROR-----
       <<last_error>>
-      
+
       -----RULES (MUST / MUST NOT)-----
       1.  YOU MUST output exactly one JSON object matching the schema below.
       2.  YOU MUST include a "reasoning" field with ≤ 250 words.
       3.  RUN CHANGE RULES
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
-          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run. 
-          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change. 
-          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT. 
+          3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
+          3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
+          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary → stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
-          8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE". 
+          8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
           8-B.  IF no negative values are present → negative_forecast="FALSE".
       7.  MISSING VALUES RULES
           10-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
@@ -586,9 +576,9 @@ reason_inputs <- function(agent_info,
       11. EXTERNAL REGRESSOR RULES
           11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
           11-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
-          11-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run. 
+          11-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run.
           11-D. ALWAYS use "NULL" if no external regressors are needed.
-          11-E. ALWAYS start with the most promising external regressors based on distance correlation results.  
+          11-E. ALWAYS start with the most promising external regressors based on distance correlation results.
           11-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
           11-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           11-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
@@ -596,7 +586,7 @@ reason_inputs <- function(agent_info,
           11-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       12. FEATURE LAG RULES
           12-A. IF run_count == 0 → lag_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step E is complete* → use ACF and PCF results from EDA to select lag_periods. 
+          12-B. IF run_count > 0 AND *Step E is complete* → use ACF and PCF results from EDA to select lag_periods.
           12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
@@ -604,7 +594,7 @@ reason_inputs <- function(agent_info,
           12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. ROLLING WINDOW LAGS
           13-A. IF run_count == 0 → rolling_window_periods = "NULL"
-          13-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---". 
+          13-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
           13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
           13-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
           13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
@@ -612,7 +602,7 @@ reason_inputs <- function(agent_info,
           14-A. IF run_count == 0 → recipes_to_run = "R1"
           14-B. IF run_count > 0 AND *Step G is complete* → recipes_to_run = "NULL" or "R1"
           14-C. A value of "NULL" means that recipes are automatically selected using fixed logic, not that you are not using recipes for feature engineering.
-      15. An example value of "NULL|var1---var2" means YOU MUST either 
+      15. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
       16. DECISION TREE RULES
           15-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
@@ -620,7 +610,7 @@ reason_inputs <- function(agent_info,
       17. ABORT RULES
           17-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
           17-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
-         
+
       -----ORDER OF OPERATIONS DECISION TREE (Rule 16)-----
       Step A (Missing Values - Rule 7)
       → Step B (Outliers - Rule 8)
@@ -628,12 +618,12 @@ reason_inputs <- function(agent_info,
       → Step D (Full Model Sweep - Rule 10)
       → Step E (External Regressors - Rule 11)
       → Step F (Feature Lags - Rule 12)
-      → Step G (Rolling Window Lags - Rule 13) 
+      → Step G (Rolling Window Lags - Rule 13)
       → Step H (Recipes - Rule 14)
-      
+
       -----OUTPUT FORMAT-----
       <scratchpad>
-      …your chain-of-thought, work through the decision tree, cite Rules #, 
+      …your chain-of-thought, work through the decision tree, cite Rules #,
       compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
       </scratchpad>
       ```json
@@ -660,29 +650,29 @@ reason_inputs <- function(agent_info,
       }
       ```
       -----END OUTPUT-----',
-      .open = '<<', .close = '>>',
+      .open = "<<", .close = ">>",
       combo = combo_str,
       target = project_info$target_variable,
       dtype = project_info$date_type,
-      hist_end= agent_info$hist_end_date,
+      hist_end = agent_info$hist_end_date,
       horizon = agent_info$forecast_horizon,
       xregs = xregs_str,
-      eda = eda_results, 
-      run_results = make_pipe_table(previous_run_results), 
-      run_count = total_runs, 
-      weighted_mape_goal = weighted_mape_goal, 
+      eda = eda_results,
+      run_results = make_pipe_table(previous_run_results),
+      run_count = total_runs,
+      weighted_mape_goal = weighted_mape_goal,
       best_mape = best_mape,
-      best_run = best_run, 
-      xregs_length = xregs_length, 
+      best_run = best_run,
+      xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
-      rolling_changes = rolling_changes_allowed, 
+      rolling_changes = rolling_changes_allowed,
       last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
     )
   }
 
   # send prompt to LLM
   response <- llm$chat(final_prompt, echo = FALSE)
-  
+
   # extract out json from response and convert to list
   input_list <- extract_json_object(response)
 
@@ -691,12 +681,12 @@ reason_inputs <- function(agent_info,
     cli::cli_alert_info("LLM has aborted the run. Reason: {input_list$reasoning}")
     return(input_list)
   }
-  
+
   # force specific inputs if single time series
   if (!is.null(combo)) {
     input_list$forecast_approach <- "bottoms_up"
   }
-  
+
   # check if all required fields are present
   required_fields <- c(
     "models_to_run", "external_regressors", "clean_missing_values",
@@ -705,18 +695,18 @@ reason_inputs <- function(agent_info,
     "seasonal_period", "recipes_to_run", "lag_periods",
     "rolling_window_periods", "reasoning"
   )
-  
+
   missing_fields <- setdiff(required_fields, names(input_list))
-  
+
   # warn if any required fields are missing
   if (length(missing_fields) > 0 & !is.null(combo)) {
     cli::cli_alert_warning(
       "Missing fields in LLM response: {paste(missing_fields, collapse = ', ')}. Using default values."
     )
   }
-  
+
   # fill in missing fields with default values
-  if(is.null(combo)) {
+  if (is.null(combo)) {
     default_values <- list(
       models_to_run = "xgboost",
       external_regressors = "NULL",
@@ -751,16 +741,20 @@ reason_inputs <- function(agent_info,
       reasoning = "no reasoning provided"
     )
   }
-  
+
   for (field in required_fields) {
     if (!(field %in% names(input_list))) {
       input_list[[field]] <- default_values[[field]]
     }
   }
-  
+
   # format the list to ensure correct types
   input_list$models_to_run <- strsplit(input_list$models_to_run, "---")[[1]]
-  input_list$external_regressors <- if(input_list$external_regressors == "NULL") {"NULL"} else {strsplit(input_list$external_regressors, "---")[[1]]}
+  input_list$external_regressors <- if (input_list$external_regressors == "NULL") {
+    "NULL"
+  } else {
+    strsplit(input_list$external_regressors, "---")[[1]]
+  }
   input_list$clean_missing_values <- as.logical(input_list$clean_missing_values)
   input_list$clean_outliers <- as.logical(input_list$clean_outliers)
   input_list$negative_forecast <- as.logical(input_list$negative_forecast)
@@ -768,19 +762,36 @@ reason_inputs <- function(agent_info,
   input_list$stationary <- as.logical(input_list$stationary)
   input_list$feature_selection <- as.logical(input_list$feature_selection)
   input_list$multistep_horizon <- as.logical(input_list$multistep_horizon)
-  input_list$seasonal_period <- if(input_list$seasonal_period == "NULL") {"NULL"} else {as.numeric(strsplit(input_list$seasonal_period, "---")[[1]])}
-  input_list$recipes_to_run <- if(input_list$recipes_to_run == "NULL") {"NULL"} else {strsplit(input_list$recipes_to_run, "---")[[1]]}
-  input_list$lag_periods <- if(input_list$lag_periods == "NULL") {"NULL"} else {as.numeric(strsplit(input_list$lag_periods, "---")[[1]])}
-  input_list$rolling_window_periods <- if(input_list$rolling_window_periods == "NULL") {"NULL"} else {as.numeric(strsplit(input_list$rolling_window_periods, "---")[[1]])}
-  
+  input_list$seasonal_period <- if (input_list$seasonal_period == "NULL") {
+    "NULL"
+  } else {
+    as.numeric(strsplit(input_list$seasonal_period, "---")[[1]])
+  }
+  input_list$recipes_to_run <- if (input_list$recipes_to_run == "NULL") {
+    "NULL"
+  } else {
+    strsplit(input_list$recipes_to_run, "---")[[1]]
+  }
+  input_list$lag_periods <- if (input_list$lag_periods == "NULL") {
+    "NULL"
+  } else {
+    as.numeric(strsplit(input_list$lag_periods, "---")[[1]])
+  }
+  input_list$rolling_window_periods <- if (input_list$rolling_window_periods == "NULL") {
+    "NULL"
+  } else {
+    as.numeric(strsplit(input_list$rolling_window_periods, "---")[[1]])
+  }
+
   # make sure xregs look correct
-  if(length(input_list$external_regressors) > 1) {
-    
+  if (length(input_list$external_regressors) > 1) {
     # check to see if there are any regressors that are not in the project info
     if (any(!input_list$external_regressors %in% agent_info$external_regressors)) {
       stop(
-        sprintf("External regressors %s are not in the agent info.",
-                paste(setdiff(input_list$external_regressors, agent_info$external_regressors), collapse = ", ")),
+        sprintf(
+          "External regressors %s are not in the agent info.",
+          paste(setdiff(input_list$external_regressors, agent_info$external_regressors), collapse = ", ")
+        ),
         call. = FALSE
       )
     }
@@ -788,35 +799,37 @@ reason_inputs <- function(agent_info,
     # if there is only one regressor, check if it is NULL or in the project info
     if (!(input_list$external_regressors %in% c("NULL", agent_info$external_regressors))) {
       stop(
-        sprintf("External regressor %s is not in the agent info.",
-                input_list$external_regressors),
+        sprintf(
+          "External regressor %s is not in the agent info.",
+          input_list$external_regressors
+        ),
         call. = FALSE
       )
     }
   }
-  
+
   # check if these inputs were used before in previous runs
   previous_runs_tbl <- load_run_results(agent_info = agent_info, combo = combo)
 
-  if(is.data.frame(previous_runs_tbl)) {
+  if (is.data.frame(previous_runs_tbl)) {
     check_inputs <- input_list
-    check_inputs$models_to_run          <- collapse_or_na(check_inputs$models_to_run)
-    check_inputs$external_regressors    <- collapse_or_na(check_inputs$external_regressors)
-    check_inputs$recipes_to_run         <- collapse_or_na(check_inputs$recipes_to_run)
-    check_inputs$lag_periods            <- collapse_or_na(check_inputs$lag_periods)
+    check_inputs$models_to_run <- collapse_or_na(check_inputs$models_to_run)
+    check_inputs$external_regressors <- collapse_or_na(check_inputs$external_regressors)
+    check_inputs$recipes_to_run <- collapse_or_na(check_inputs$recipes_to_run)
+    check_inputs$lag_periods <- collapse_or_na(check_inputs$lag_periods)
     check_inputs$rolling_window_periods <- collapse_or_na(check_inputs$rolling_window_periods)
-    check_inputs$seasonal_period        <- collapse_or_na(check_inputs$seasonal_period)
+    check_inputs$seasonal_period <- collapse_or_na(check_inputs$seasonal_period)
     check_inputs <- check_inputs[names(check_inputs) %in% names(previous_runs_tbl)]
-    
+
     cols_to_fix <- c(
       "models_to_run",
       "external_regressors",
       "recipes_to_run",
       "lag_periods",
-      "rolling_window_periods", 
+      "rolling_window_periods",
       "seasonal_period"
     )
-    
+
     previous_runs_tbl <- previous_runs_tbl %>%
       dplyr::mutate(
         dplyr::across(
@@ -824,10 +837,10 @@ reason_inputs <- function(agent_info,
           base::as.character
         )
       )
-    
+
     if (does_param_set_exist(check_inputs, previous_runs_tbl)) {
       cli::cli_alert_info("The proposed input parameters have already been used in a previous run.")
-      
+
       stop(
         sprintf(
           "Duplicate parameter set detected. Please modify the inputs or ABORT. Inputs proposed:\n%s",
@@ -836,16 +849,16 @@ reason_inputs <- function(agent_info,
         call. = FALSE
       )
     }
-    
+
     # check if the proposed inputs violate the lag and rolling window change rules
-    if(length(unique(c(previous_runs_tbl$lag_periods, check_inputs$lag_periods))) > 4) {
+    if (length(unique(c(previous_runs_tbl$lag_periods, check_inputs$lag_periods))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
       stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
         call. = FALSE
       )
     }
-    
-    if(length(unique(c(previous_runs_tbl$rolling_window_periods, check_inputs$rolling_window_periods)))  > 4) {
+
+    if (length(unique(c(previous_runs_tbl$rolling_window_periods, check_inputs$rolling_window_periods))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique rolling window period changes across all runs.")
       stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods or ABORT.",
         call. = FALSE
@@ -857,32 +870,31 @@ reason_inputs <- function(agent_info,
 }
 
 #' Submit a Finn forecasting run
-#' 
+#'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
 #' @param parallel_processing Logical indicating if parallel processing should be used.
 #' @param inner_parallel Logical indicating if inner parallel processing should be used.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
-#' 
+#'
 #' @return A list containing the run information including project name, run name, storage object, path, data output, and object output.
 #' @noRd
 submit_fcst_run <- function(agent_info,
-                            inputs, 
-                            combo, 
-                            parallel_processing = NULL, 
-                            inner_parallel = FALSE, 
+                            inputs,
+                            combo,
+                            parallel_processing = NULL,
+                            inner_parallel = FALSE,
                             num_cores = NULL) {
-
   cli::cli_alert_info(
     "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
   )
-  
+
   # get project info
   project_info <- agent_info$project_info
 
   # read all combos or just one
-  if(is.null(combo)) {
+  if (is.null(combo)) {
     combo_value <- "*"
     global_models <- TRUE
     local_models <- FALSE
@@ -891,7 +903,7 @@ submit_fcst_run <- function(agent_info,
     global_models <- FALSE
     local_models <- TRUE
   }
-  
+
   # get input data
   input_data <- read_file(
     run_info = project_info,
@@ -912,16 +924,18 @@ submit_fcst_run <- function(agent_info,
     ifelse(is.null(combo), hash_data("all"), combo_value), "_",
     format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
   )
-  
+
   # kick off Finn run
-  run_info <- set_run_info(project_name = project_info$project_name,
-                           run_name = run_name,
-                           storage_object = project_info$storage_object,
-                           path = project_info$path,
-                           data_output = project_info$data_output,
-                           object_output = project_info$object_output,
-                           add_unique_id = FALSE)
-  
+  run_info <- set_run_info(
+    project_name = project_info$project_name,
+    run_name = run_name,
+    storage_object = project_info$storage_object,
+    path = project_info$path,
+    data_output = project_info$data_output,
+    object_output = project_info$object_output,
+    add_unique_id = FALSE
+  )
+
   # clean and prepare data for training
   prep_data(
     run_info = run_info,
@@ -961,7 +975,7 @@ submit_fcst_run <- function(agent_info,
     num_hyperparameters = 2,
     seasonal_period = null_converter(inputs$seasonal_period)
   )
-  
+
   # train models
   train_models(
     run_info = run_info,
@@ -974,7 +988,7 @@ submit_fcst_run <- function(agent_info,
     inner_parallel = inner_parallel,
     num_cores = num_cores
   )
-  
+
   # evaluate models
   final_models(
     run_info = run_info,
@@ -985,19 +999,19 @@ submit_fcst_run <- function(agent_info,
     inner_parallel = inner_parallel,
     num_cores = num_cores
   )
-  
+
   return(run_info)
 }
 
 #' Get forecast output from a Finn run
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
-#' 
+#'
 #' @return A tibble containing the forecast output.
 #' @noRd
 get_fcst_output <- function(run_info) {
   fcst_tbl <- get_forecast_data(run_info)
-  
+
   return(fcst_tbl)
 }
 
@@ -1008,20 +1022,20 @@ get_fcst_output <- function(run_info) {
 #'
 # @return A numeric value representing the weighted MAPE of the forecast.
 #' @noRd
-calculate_fcst_metrics <- function(run_info, 
+calculate_fcst_metrics <- function(run_info,
                                    fcst_tbl) {
-  
   # get weighted mape from run logging
   run_log_df <- read_file(run_info,
-                          path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-                          return_type = "df")
-  
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  )
+
   weighted_mape <- run_log_df$weighted_mape
-  
+
   if (is.null(weighted_mape)) {
     stop("No weighted MAPE found in run log. Ensure the run was completed successfully.", call. = FALSE)
   }
-  
+
   return(weighted_mape)
 }
 
@@ -1034,23 +1048,22 @@ calculate_fcst_metrics <- function(run_info,
 #'
 #' @return NULL
 #' @noRd
-log_best_run <- function(agent_info, 
-                         run_info, 
-                         weighted_mape, 
+log_best_run <- function(agent_info,
+                         run_info,
+                         weighted_mape,
                          combo = NULL) {
-  
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
-  
+
   # check if previous best run exists and is more accurate
   previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
-  
+
   if (is.data.frame(previous_runs) && nrow(previous_runs) > 1) {
     # see if latest run was the best run
     last_run <- previous_runs %>%
       dplyr::filter(run_number == max(run_number))
-    
+
     if (last_run$best_run == "yes") {
       log_results <- TRUE
     } else {
@@ -1061,24 +1074,25 @@ log_best_run <- function(agent_info,
   }
 
   # log results if the new run is better or if no previous runs exist
-  if(log_results) {
-    
+  if (log_results) {
     if (is.null(combo)) {
       combo <- "all"
     }
-    
+
     # get back test data
     back_test_tbl <- get_forecast_data(run_info = run_info) %>%
-      dplyr::filter(Best_Model == "Yes", 
-                    Run_Type == "Back_Test")
-    
+      dplyr::filter(
+        Best_Model == "Yes",
+        Run_Type == "Back_Test"
+      )
+
     combo_list <- unique(back_test_tbl$Combo)
-    
+
     # for each combo, filter the back test data, calculate the weighted mape and save to logs
     for (combo_name in combo_list) {
       combo_data <- back_test_tbl %>%
         dplyr::filter(Combo == combo_name)
-      
+
       # calculate mape and weight it by value of target colum
       wmape <- combo_data %>%
         dplyr::mutate(
@@ -1092,27 +1106,29 @@ log_best_run <- function(agent_info,
         dplyr::pull(Weight) %>%
         sum() %>%
         round(digits = 4)
-      
+
       # check if previous log file exists, if so check if mape is better
       prev_log_df <- tryCatch(
         read_file(project_info,
-                  path = paste0("logs/", hash_data(project_name), "-", hash_data(agent$run_id), 
-                                "-",  hash_data(combo_name), "-agent_best_run.csv"),
-                  return_type = "df"
+          path = paste0(
+            "logs/", hash_data(project_name), "-", hash_data(agent$run_id),
+            "-", hash_data(combo_name), "-agent_best_run.csv"
+          ),
+          return_type = "df"
         ),
         error = function(e) {
           tibble::tibble()
         }
       ) %>%
         base::suppressWarnings()
-      
-      if(nrow(prev_log_df) > 0) {
+
+      if (nrow(prev_log_df) > 0) {
         prev_wmape <- as.numeric(prev_log_df$weighted_mape)
       } else {
         prev_wmape <- Inf # if no previous log, assume previous was worse
       }
-      
-      if(wmape < prev_wmape || combo == "all") { # always log the wmape for global models, but check for local models
+
+      if (wmape < prev_wmape || combo == "all") { # always log the wmape for global models, but check for local models
 
         # log the best run
         log_df <- tibble::tibble(
@@ -1123,7 +1139,7 @@ log_best_run <- function(agent_info,
           combo = combo_name,
           weighted_mape = wmape
         )
-        
+
         write_data(
           x = log_df,
           combo = combo_name,
@@ -1132,13 +1148,12 @@ log_best_run <- function(agent_info,
           folder = "logs",
           suffix = "-agent_best_run"
         )
-        
       } else {
         next # don't log if the previous run was better
       }
     }
   }
-  
+
   return("Run logged successfully.")
 }
 
@@ -1149,51 +1164,55 @@ log_best_run <- function(agent_info,
 #'
 #' @return A tibble containing the previous run results or a message indicating no previous runs.
 #' @noRd
-load_run_results <- function(agent_info, 
+load_run_results <- function(agent_info,
                              combo = NULL) {
-  
   # determine the combo value and columns to return
-  if(is.null(combo)) {
+  if (is.null(combo)) {
     combo_value <- hash_data("all")
-    
-    column_list <- c("external_regressors", "clean_missing_values", "clean_outliers", 
-                      "stationary", "forecast_approach", 
-                      "lag_periods", "rolling_window_periods",
-                      "multistep_horizon", "feature_selection", 
-                      "negative_forecast", "weighted_mape")
+
+    column_list <- c(
+      "external_regressors", "clean_missing_values", "clean_outliers",
+      "stationary", "forecast_approach",
+      "lag_periods", "rolling_window_periods",
+      "multistep_horizon", "feature_selection",
+      "negative_forecast", "weighted_mape"
+    )
   } else {
     combo_value <- combo
-    
-    column_list <- c("external_regressors", "clean_missing_values", "clean_outliers", 
-                     "stationary", "box_cox", "forecast_approach", 
-                     "lag_periods", "rolling_window_periods", "recipes_to_run", 
-                     "multistep_horizon", "models_to_run", "pca", 
-                     "seasonal_period", "num_hyperparameters", "feature_selection", 
-                     "negative_forecast", "weighted_mape")
+
+    column_list <- c(
+      "external_regressors", "clean_missing_values", "clean_outliers",
+      "stationary", "box_cox", "forecast_approach",
+      "lag_periods", "rolling_window_periods", "recipes_to_run",
+      "multistep_horizon", "models_to_run", "pca",
+      "seasonal_period", "num_hyperparameters", "feature_selection",
+      "negative_forecast", "weighted_mape"
+    )
   }
-  
+
   # get previous runs
-  previous_runs <- get_run_info(project_name = agent_info$project_info$project_name,
-                                run_name = NULL,
-                                storage_object = agent_info$project_info$storage_object,
-                                path = agent_info$project_info$path)
-  
+  previous_runs <- get_run_info(
+    project_name = agent_info$project_info$project_name,
+    run_name = NULL,
+    storage_object = agent_info$project_info$storage_object,
+    path = agent_info$project_info$path
+  )
+
   # filter previous runs based on the combo value and select relevant columns
-  if("run_name" %in% names(previous_runs)) {
-    
+  if ("run_name" %in% names(previous_runs)) {
     previous_runs <- previous_runs %>%
       dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
-        dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
-        dplyr::arrange(created) %>%
-        dplyr::select(tidyselect::all_of(column_list)) %>%
-        dplyr::filter(!is.na(weighted_mape)) %>%
-        dplyr::mutate(run_number = dplyr::row_number()) %>%
+      dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
+      dplyr::arrange(created) %>%
+      dplyr::select(tidyselect::all_of(column_list)) %>%
+      dplyr::filter(!is.na(weighted_mape)) %>%
+      dplyr::mutate(run_number = dplyr::row_number()) %>%
       dplyr::mutate(
         best_run = dplyr::if_else(
           weighted_mape == min(weighted_mape) &
             cumsum(weighted_mape == min(weighted_mape)) == 1,
-          "yes",                       # first (earliest) min-MAPE row
-          "no"                         # all others
+          "yes", # first (earliest) min-MAPE row
+          "no" # all others
         )
       )
 
@@ -1205,7 +1224,7 @@ load_run_results <- function(agent_info,
   } else {
     run_output <- "No Previous Runs"
   }
-  
+
   return(run_output)
 }
 
@@ -1216,24 +1235,25 @@ load_run_results <- function(agent_info,
 #'
 #' @return A numeric value representing the total run count for the agent.
 #' @noRd
-get_total_run_count <- function(agent_info, 
+get_total_run_count <- function(agent_info,
                                 combo = NULL) {
-  
   # determine the combo value
-  if(is.null(combo)) {
+  if (is.null(combo)) {
     combo_value <- hash_data("all")
   } else {
     combo_value <- combo
   }
-  
+
   # get total runs
-  total_runs <- get_run_info(project_name = agent_info$project_info$project_name,
-                             run_name = NULL,
-                             storage_object = agent_info$project_info$storage_object,
-                             path = agent_info$project_info$path)
-  
+  total_runs <- get_run_info(
+    project_name = agent_info$project_info$project_name,
+    run_name = NULL,
+    storage_object = agent_info$project_info$storage_object,
+    path = agent_info$project_info$path
+  )
+
   # filter total runs based on the combo value
-  if("run_name" %in% names(total_runs)) {
+  if ("run_name" %in% names(total_runs)) {
     total_runs <- total_runs %>%
       dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value)))
   } else {
@@ -1269,14 +1289,12 @@ collapse_or_na <- function(x) {
 apply_column_types <- function(target_df,
                                template_df,
                                drop_extra = FALSE,
-                               reorder     = FALSE) {
-  
+                               reorder = FALSE) {
   # get common columns between template and target
   common_cols <- intersect(names(template_df), names(target_df))
-  
+
   # function to cast a vector to the type of a template column
   cast_col <- function(vec, template) {
-    
     if (inherits(template, "factor")) {
       factor(vec, levels = levels(template))
     } else if (inherits(template, "Date")) {
@@ -1294,24 +1312,25 @@ apply_column_types <- function(target_df,
     } else if (is.character(template)) {
       as.character(vec)
     } else {
-      vec   # leave as is for other classes (lists, df columns, etc.)
+      vec # leave as is for other classes (lists, df columns, etc.)
     }
   }
-  
-  # coerce all common columns 
+
+  # coerce all common columns
   for (col in common_cols) {
     target_df[[col]] <- cast_col(target_df[[col]], template_df[[col]])
   }
-  
-  # drop or reorder columns if requested 
+
+  # drop or reorder columns if requested
   if (drop_extra) {
     target_df <- target_df[common_cols]
   } else if (reorder) {
     target_df <- dplyr::relocate(target_df, tidyselect::all_of(common_cols),
-                                 .after = dplyr::last_col()) %>%
+      .after = dplyr::last_col()
+    ) %>%
       dplyr::relocate(tidyselect::all_of(common_cols), .before = 1)
   }
-  
+
   return(target_df)
 }
 
@@ -1324,11 +1343,12 @@ apply_column_types <- function(target_df,
 #' @return TRUE if the parameter set exists in the dataframe, FALSE otherwise.
 #' @noRd
 does_param_set_exist <- function(x, df) {
-  
   # ensure x is a named list or atomic vector
-  stopifnot(is.list(x) || is.atomic(x),
-            !is.null(names(x)),
-            all(names(x) %in% names(df)))
+  stopifnot(
+    is.list(x) || is.atomic(x),
+    !is.null(names(x)),
+    all(names(x) %in% names(df))
+  )
 
   # transform x into a 1-row tibble with matching column types
   probe <- x %>%
@@ -1337,35 +1357,34 @@ does_param_set_exist <- function(x, df) {
 
   # check if the probe matches any row in df
   final_df <- df %>%
-    dplyr::select(tidyselect::all_of(names(probe)))  # select only matching cols
+    dplyr::select(tidyselect::all_of(names(probe))) # select only matching cols
 
-  dplyr::semi_join(final_df, probe, by = names(probe)) %>%    # keep rows that match
-    nrow() > 0                                          # TRUE if ≥1 match
+  dplyr::semi_join(final_df, probe, by = names(probe)) %>% # keep rows that match
+    nrow() > 0 # TRUE if ≥1 match
 }
 
 #' Extract JSON object from raw text
-#' 
+#'
 #' @param raw_text A character string containing the raw text with JSON object.
-#' 
+#'
 #' @return A parsed JSON object as a list.
 #' @noRd
 extract_json_object <- function(raw_text) {
-  
-  # format check 
+  # format check
   if (!is.character(raw_text) || length(raw_text) != 1) {
     stop("`raw_text` must be a single character string.", call. = FALSE)
   }
-  
-  # locate the first {...} block 
-  json_block <- raw_text %>% 
-    stringr::str_remove_all("(?s)```json\\s*|```") %>%   # strip code-fences
-    stringr::str_extract("(?s)\\{.*?\\}")                # non-greedy first brace
-  
+
+  # locate the first {...} block
+  json_block <- raw_text %>%
+    stringr::str_remove_all("(?s)```json\\s*|```") %>% # strip code-fences
+    stringr::str_extract("(?s)\\{.*?\\}") # non-greedy first brace
+
   if (is.na(json_block) || json_block == "") {
     stop("No JSON object found in `raw_text`.", call. = FALSE)
   }
-  
-  # parse JSON with error trap 
+
+  # parse JSON with error trap
   result <- tryCatch(
     jsonlite::fromJSON(json_block),
     error = function(e) {
@@ -1375,20 +1394,20 @@ extract_json_object <- function(raw_text) {
       )
     }
   )
-  
+
   return(result)
 }
 
 #' Convert NULL string to NULL value
-#' 
+#'
 #' @param x A character string that may be "NULL" or a vector.
-#' 
+#'
 #' @return NULL if "NULL", otherwise returns the input vector.
 #' @noRd
 null_converter <- function(x) {
-  if(length(x) > 1) {
+  if (length(x) > 1) {
     return(x)
-  } else if(x == "NULL") {
+  } else if (x == "NULL") {
     return(NULL)
   } else {
     return(x)

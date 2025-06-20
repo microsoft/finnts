@@ -93,7 +93,6 @@ set_run_info <- function(project_name = "finn_project",
     if (!dir.exists(fs::path(path, forecasts_folder) %>% as.character())) {
       notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, forecasts_folder) %>% as.character())
     }
-
   } else if (is.null(storage_object)) {
     fs::dir_create(path, prep_data_folder)
     fs::dir_create(path, prep_models_folder)

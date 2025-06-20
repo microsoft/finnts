@@ -1,9 +1,9 @@
 #' Set up Finn Agent Run Information
-#' 
-#' This function sets up the necessary information for a Finn Agent run, 
-#'  including input data, forecast horizon, and other parameters. 
+#'
+#' This function sets up the necessary information for a Finn Agent run,
+#'  including input data, forecast horizon, and other parameters.
 #'  It checks for existing runs and allows for overwriting if specified.
-#'  
+#'
 #' @param project_info A Finn project from `set_project_info()`
 #' @param driver_llm A Chat LLM object
 #' @param input_data A data frame or tibble containing the input data
@@ -13,26 +13,25 @@
 #' @param combo_cleanup_date Optional Date object for combo cleanup
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
-#' 
+#'
 #' @return A list containing the agent run information
 #' @export
-set_agent_info <- function(project_info, 
-                           driver_llm, 
-                           input_data, 
-                           forecast_horizon, 
-                           external_regressors = NULL, 
-                           hist_end_date = NULL, 
+set_agent_info <- function(project_info,
+                           driver_llm,
+                           input_data,
+                           forecast_horizon,
+                           external_regressors = NULL,
+                           hist_end_date = NULL,
                            combo_cleanup_date = NULL,
-                           reason_llm = NULL, 
+                           reason_llm = NULL,
                            overwrite = FALSE) {
-  
   # get metadata
   combo_variables <- project_info$combo_variables
   target_variable <- project_info$target_variable
-  date_type       <- project_info$date_type
+  date_type <- project_info$date_type
   fiscal_year_start <- project_info$fiscal_year_start
-  
-  # check inputs 
+
+  # check inputs
   check_input_type("project_info", project_info, "list")
   check_input_type("driver_llm", driver_llm, "Chat")
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame"))
@@ -42,7 +41,7 @@ set_agent_info <- function(project_info,
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
   check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
   check_input_type("overwrite", overwrite, "logical")
-  
+
   check_input_data(
     input_data,
     combo_variables,
@@ -51,8 +50,8 @@ set_agent_info <- function(project_info,
     date_type,
     fiscal_year_start,
     parallel_processing = NULL
-  ) 
-  
+  )
+
   # input data formatting
   if (is.null(hist_end_date)) {
     hist_end_date <- input_data %>%
@@ -67,9 +66,9 @@ set_agent_info <- function(project_info,
 
   final_input_data <- input_data %>%
     tidyr::unite("Combo",
-                 tidyselect::all_of(combo_variables),
-                 sep = "--",
-                 remove = F
+      tidyselect::all_of(combo_variables),
+      sep = "--",
+      remove = F
     ) %>%
     dplyr::rename("Target" = tidyselect::all_of(target_variable)) %>%
     dplyr::select(c(
@@ -82,7 +81,7 @@ set_agent_info <- function(project_info,
       combo_cleanup_date,
       hist_end_date
     )
-  
+
   # check if agent run already exists and isn't finished
   agent_runs_list <- list_files(
     project_info$storage_object,
@@ -92,20 +91,19 @@ set_agent_info <- function(project_info,
     )
   )
 
-  if(length(agent_runs_list)) {
-    
-    agent_runs_tbl <- read_file(run_info = project_info,
-                                file_list = agent_runs_list,
-                                return_type = "df") %>%
+  if (length(agent_runs_list)) {
+    agent_runs_tbl <- read_file(
+      run_info = project_info,
+      file_list = agent_runs_list,
+      return_type = "df"
+    ) %>%
       # get only the latest run
       dplyr::arrange(dplyr::desc(created)) %>%
-      dplyr::slice(1) 
-    
-    
+      dplyr::slice(1)
   } else {
     agent_runs_tbl <- tibble::tibble()
   }
-  
+
   if (nrow(agent_runs_tbl) > 0 & overwrite == FALSE) {
     # check if input values have changed
     current_log_df <- tibble::tibble(
@@ -122,12 +120,12 @@ set_agent_info <- function(project_info,
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'set_agent_info', 
+      stop("Inputs have recently changed in 'set_agent_info',
            please revert back to original inputs or start new agent run with 'overwrite' argument set to TRUE.",
-           call. = FALSE
+        call. = FALSE
       )
     }
-    
+
     output_list <- list(
       run_id = agent_runs_tbl$run_id,
       project_info = project_info,
@@ -138,26 +136,24 @@ set_agent_info <- function(project_info,
       hist_end_date = prev_log_df$hist_end_date,
       combo_cleanup_date = prev_log_df$combo_cleanup_date
     )
-    
+
     cli::cli_bullets(c(
       "Using Existing Finn Agent Run with Previously Uploaded Input Data",
       "*" = paste0("Project Name: ", prev_log_df$project_name),
       "*" = paste0("Agent Run ID: ", agent_runs_tbl$run_id),
       ""
     ))
-    
+
     return(output_list)
-    
   } else {
-    
     # create unique id for agent run
     created_time <- get_timestamp()
-    
+
     agent_run_id <- hash_data(created_time)
-    
+
     # add to project info
     project_info$run_name <- agent_run_id
-    
+
     # write input data to disc
     for (combo_name in unique(final_input_data$Combo)) {
       write_data(
@@ -169,15 +165,15 @@ set_agent_info <- function(project_info,
         suffix = NULL
       )
     }
-    
+
     # write combo info to disc
     combo_tbl <- tibble::tibble(
       Combo = unique(final_input_data$Combo),
-      State = "inactive", 
+      State = "inactive",
       Best_Run = "NA",
       WMAPE = "NA"
     )
-    
+
     write_data(
       x = combo_tbl,
       combo = NULL,
@@ -186,7 +182,7 @@ set_agent_info <- function(project_info,
       folder = "logs",
       suffix = "-agent_leaderboard"
     )
-    
+
     # create agent run metadata
     output_list <- list(
       run_id = agent_run_id,
@@ -198,17 +194,17 @@ set_agent_info <- function(project_info,
       hist_end_date = hist_end_date,
       combo_cleanup_date = combo_cleanup_date
     )
-    
+
     output_tbl <- tibble::tibble(
       run_id = agent_run_id,
       project_name = project_info$project_name,
-      created = created_time, 
+      created = created_time,
       forecast_horizon = forecast_horizon,
       external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
       hist_end_date = ifelse(is.null(hist_end_date), NA, as.character(hist_end_date)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))
     )
-    
+
     # write run info to disc
     write_data(
       x = output_tbl,
@@ -218,14 +214,14 @@ set_agent_info <- function(project_info,
       folder = "logs",
       suffix = "-agent_run"
     )
-    
+
     cli::cli_bullets(c(
       "Created New Finn Agent Run",
       "*" = paste0("Project Name: ", project_info$project_name),
       "*" = paste0("Run ID: ", agent_run_id),
       ""
     ))
-    
+
     return(output_list)
   }
 }

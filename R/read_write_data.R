@@ -364,15 +364,15 @@ write_data <- function(x,
   } else {
     combo_hash <- paste0("-", hash_data(combo))
   }
-  
-  if(is.null(run_info$run_name)) {
+
+  if (is.null(run_info$run_name)) {
     run_name <- NULL
   } else {
     run_name <- hash_data(run_info$run_name)
   }
 
   project_name <- hash_data(run_info$project_name)
-  
+
   # write to temp folder
   temp_path <- NULL
 
