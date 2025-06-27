@@ -27,25 +27,45 @@ run_agent <- function(agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
   )
+  
+  # get total number of time series
+  combo_list <- read_file(
+    run_info = project_info,
+    file_list = list_files(
+      project_info$storage_object,
+      paste0(
+        project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "*.", project_info$data_output
+      )
+    ),
+    return_type = "df"
+  ) %>%
+    dplyr::pull(Combo) %>%
+    unique()
 
   # optimize global models
-  message("[agent] 🌎 Starting Global Model Iteration Workflow")
-
-  fcst_results <- fcst_agent_workflow(
-    agent_info = agent_info,
-    combo = NULL,
-    weighted_mape_goal = weighted_mape_goal,
-    parallel_processing = parallel_processing,
-    inner_parallel = inner_parallel,
-    num_cores = num_cores,
-    max_iter = max_iter
-  )
-
-  # filter out which time series met the mape goal after global models
-  local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
-    dplyr::filter(weighted_mape > weighted_mape_goal) %>%
-    dplyr::pull(combo) %>%
-    unique()
+  if(length(combo_list) > 1) {
+    message("[agent] 🌎 Starting Global Model Iteration Workflow")
+    
+    fcst_results <- fcst_agent_workflow(
+      agent_info = agent_info,
+      combo = NULL,
+      weighted_mape_goal = weighted_mape_goal,
+      parallel_processing = parallel_processing,
+      inner_parallel = inner_parallel,
+      num_cores = num_cores,
+      max_iter = max_iter
+    )
+    
+    # filter out which time series met the mape goal after global models
+    local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
+      dplyr::filter(weighted_mape > weighted_mape_goal) %>%
+      dplyr::pull(combo) %>%
+      unique()
+  } else {
+    message("[agent] 🌎 Only one time series found. Skipping global model optimization.")
+    local_combo_list <- combo_list
+  }
 
   # optimize local models
   if (length(local_combo_list) == 0) {

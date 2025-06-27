@@ -325,6 +325,25 @@ reason_inputs <- function(agent_info,
   combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
   xregs_length <- length(agent_info$external_regressors)
+  
+  # get NULL defaults
+  lag_default <- get_lag_periods(lag_periods = NULL,
+                                 date_type = project_info$date_type,
+                                 forecast_horizon = agent_info$forecast_horizon,
+                                 multistep_horizon = TRUE,
+                                 feature_engineering = TRUE) %>%
+    paste(collapse = "---")
+  
+  rolling_default <- get_rolling_window_periods(rolling_window_periods = NULL,
+                                                date_type = project_info$date_type) %>%
+    paste(collapse = "---")
+  
+  recipe_default <- get_recipes_to_run(recipes_to_run = NULL,
+                                       date_type = project_info$date_type) %>%
+    paste(collapse = "---")
+  
+  seasonal_period_default <- get_seasonal_periods(date_type = project_info$date_type) %>%
+    paste(collapse = "---")
 
   # load EDA and previous run results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
@@ -442,13 +461,13 @@ reason_inputs <- function(agent_info,
           11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          11-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
+          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon. 
           11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. ROLLING WINDOW LAGS
           12-A. IF run_count == 0 → rolling_window_periods = "NULL"
           12-B. IF run_count > 0 AND *Step E is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
           12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          12-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
+          12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
           12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
@@ -510,7 +529,9 @@ reason_inputs <- function(agent_info,
       xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
       rolling_changes = rolling_changes_allowed,
-      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error), 
+      lag_default = lag_default,
+      rolling_default = rolling_default
     )
   } else {
     # local model prompt
@@ -568,7 +589,7 @@ reason_inputs <- function(agent_info,
           9-A. IF run_count == 0 → seasonal_period = "NULL"
           9-B. IF run_count > 0 AND *Step B is complete* → seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal_periods.
           9-C. You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
-          9-D. A value of "NULL" means that seasonal periods are automatically selected using fixed logic, not that you are not using seasonal periods.
+          9-D. A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
           9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
       10. FULL MODEL SWEEP RULES
           10-A. IF run_count == 0 → models_to_run = "arima---tbats---xgboost"
@@ -590,18 +611,18 @@ reason_inputs <- function(agent_info,
           12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          12-F. A value of "NULL" means that lags are automatically selected using fixed logic, not that you are not using lags.
+          12-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
           12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. ROLLING WINDOW LAGS
           13-A. IF run_count == 0 → rolling_window_periods = "NULL"
           13-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
           13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          13-D. A value of "NULL" means that rolling window lags are automatically selected using fixed logic, not that you are not using rolling window calculations.
+          13-D. A value of "NULL" means that rolling window lags are dedaulted to <<rolling_default>>.
           13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       14. RECIPE RULES
           14-A. IF run_count == 0 → recipes_to_run = "R1"
           14-B. IF run_count > 0 AND *Step G is complete* → recipes_to_run = "NULL" or "R1"
-          14-C. A value of "NULL" means that recipes are automatically selected using fixed logic, not that you are not using recipes for feature engineering.
+          14-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
       15. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
       16. DECISION TREE RULES
@@ -666,7 +687,11 @@ reason_inputs <- function(agent_info,
       xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
       rolling_changes = rolling_changes_allowed,
-      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error)
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error), 
+      lag_default = lag_default,
+      rolling_default = rolling_default,
+      recipe_default = recipe_default,
+      seasonal_period_default = seasonal_period_default
     )
   }
 
@@ -890,8 +915,10 @@ submit_fcst_run <- function(agent_info,
     "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
   )
 
-  # get project info
+  # get metadata
   project_info <- agent_info$project_info
+  back_test_scenarios <- agent_info$back_test_scenarios
+  back_test_spacing <- agent_info$back_test_spacing
 
   # read all combos or just one
   if (is.null(combo)) {
@@ -966,8 +993,8 @@ submit_fcst_run <- function(agent_info,
   # prepare models for training
   prep_models(
     run_info = run_info,
-    back_test_scenarios = 3,
-    back_test_spacing = NULL,
+    back_test_scenarios = back_test_scenarios,
+    back_test_spacing = back_test_spacing,
     models_to_run = null_converter(inputs$models_to_run),
     models_not_to_run = NULL,
     run_ensemble_models = FALSE,
@@ -1055,6 +1082,60 @@ log_best_run <- function(agent_info,
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
+  
+  # update the run log file with additional model accuracy information
+  if(!is.null(combo)) {
+    model_back_test_tbl <- get_forecast_data(run_info = run_info) %>%
+      dplyr::filter(
+        Run_Type == "Back_Test", 
+        Recipe_ID != "simple_average"
+      )
+    
+    # calculate weighted mape by Model_ID
+    model_wmape_tbl <- model_back_test_tbl %>%
+      dplyr::mutate(
+        Target = ifelse(Target == 0, 0.1, Target)
+      ) %>%
+      dplyr::group_by(Model_ID) %>%
+      dplyr::mutate(
+        MAPE = round(abs((Forecast - Target) / Target), digits = 4),
+        Total = sum(Target, na.rm = TRUE),
+        Weight = (MAPE * Target) / Total
+      ) %>%
+      dplyr::summarise(weighted_mape = sum(Weight)) %>%
+      dplyr::ungroup()
+    print(model_wmape_tbl)
+    avg_wmape <- model_wmape_tbl %>%
+      dplyr::pull(weighted_mape) %>%
+      mean()
+    
+    median_wmape <- model_wmape_tbl %>%
+      dplyr::pull(weighted_mape) %>%
+      median()
+    
+    std_wmape <- model_wmape_tbl %>%
+      dplyr::pull(weighted_mape) %>%
+      sd()
+    
+    # load log file
+    log_df <- get_run_info(project_name = run_info$project_name,
+                           run_name = run_info$run_name,
+                           storage_object = run_info$storage_object,
+                           path = run_info$path) %>%
+      dplyr::mutate(model_avg_wmape = avg_wmape,
+                    model_median_wmape = median_wmape,
+                    model_std_wmape = std_wmape)
+    
+    # save the log file
+    write_data(
+      x = log_df,
+      combo = NULL,
+      run_info = run_info,
+      output_type = "log",
+      folder = "logs",
+      suffix = NULL
+    )
+  }
 
   # check if previous best run exists and is more accurate
   previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
@@ -1171,22 +1252,24 @@ load_run_results <- function(agent_info,
     combo_value <- hash_data("all")
 
     column_list <- c(
+      "run_number", "best_run", "weighted_mape", 
       "external_regressors", "clean_missing_values", "clean_outliers",
       "stationary", "forecast_approach",
       "lag_periods", "rolling_window_periods",
       "multistep_horizon", "feature_selection",
-      "negative_forecast", "weighted_mape"
+      "negative_forecast"
     )
   } else {
     combo_value <- combo
 
     column_list <- c(
+      "run_number", "best_run", "weighted_mape",
       "external_regressors", "clean_missing_values", "clean_outliers",
       "stationary", "box_cox", "forecast_approach",
       "lag_periods", "rolling_window_periods", "recipes_to_run",
       "multistep_horizon", "models_to_run", "pca",
       "seasonal_period", "num_hyperparameters", "feature_selection",
-      "negative_forecast", "weighted_mape"
+      "negative_forecast"
     )
   }
 
@@ -1200,26 +1283,55 @@ load_run_results <- function(agent_info,
 
   # filter previous runs based on the combo value and select relevant columns
   if ("run_name" %in% names(previous_runs)) {
-    previous_runs <- previous_runs %>%
+    
+    previous_runs_formatted <- previous_runs %>%
       dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
       dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
       dplyr::arrange(created) %>%
-      dplyr::select(tidyselect::all_of(column_list)) %>%
       dplyr::filter(!is.na(weighted_mape)) %>%
-      dplyr::mutate(run_number = dplyr::row_number()) %>%
+      dplyr::mutate(run_number = dplyr::row_number())
+    
+    # earliest row with *global* minimum weighted_mape
+    earliest_min <- previous_runs_formatted %>%
+      dplyr::filter(weighted_mape == min(weighted_mape)) %>%   # all global-mins
+      dplyr::slice(1)                                          # earliest one
+    
+    best_idx   <- earliest_min$run_number
+    best_wmape <- earliest_min$weighted_mape
+    best_model <- earliest_min$model_avg_wmape
+    
+    # look **after** that for runs whose weighted_mape is within ±10 %
+    # of the initial best and pick the *lowest* model_avg_wmape overall
+    cand <- previous_runs_formatted %>%
+      dplyr::filter(
+        run_number  > best_idx,                                # later runs only
+        abs(weighted_mape - best_wmape) <= best_wmape * 0.10   # within ±10 %
+      )
+    
+    if (nrow(cand)) {
+      cand <- cand %>%
+        dplyr::filter(model_avg_wmape == min(model_avg_wmape)) %>%  # lowest avg
+        dplyr::slice(1)                                             # earliest tie
+      if (cand$model_avg_wmape < best_model)       # strictly better than current
+        best_idx <- cand$run_number
+    }
+    
+    # flag the chosen best run
+    previous_runs_formatted <- previous_runs_formatted %>%
       dplyr::mutate(
-        best_run = dplyr::if_else(
-          weighted_mape == min(weighted_mape) &
-            cumsum(weighted_mape == min(weighted_mape)) == 1,
-          "yes", # first (earliest) min-MAPE row
-          "no" # all others
-        )
+        best_run = dplyr::if_else(run_number == best_idx, "yes", "no")
       )
 
-    if (nrow(previous_runs) == 0) {
+    if (nrow(previous_runs_formatted) == 0) {
       run_output <- "No Previous Runs"
+    } else if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
+      run_output <- previous_runs_formatted %>%
+        dplyr::select(tidyselect::all_of(c(column_list, "model_avg_wmape", "model_median_wmape", "model_std_wmape"))) %>%
+        dplyr::relocate(run_number, best_run, weighted_mape, model_avg_wmape, model_median_wmape, model_std_wmape)
     } else {
-      run_output <- previous_runs
+      run_output <- previous_runs_formatted %>%
+        dplyr::select(tidyselect::all_of(column_list)) %>%
+        dplyr::relocate(run_number, best_run, weighted_mape)
     }
   } else {
     run_output <- "No Previous Runs"

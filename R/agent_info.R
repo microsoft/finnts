@@ -10,6 +10,8 @@
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
 #' @param hist_end_date Optional Date object indicating the end of the historical data
+#' @param back_test_scenarios Optional character vector of back test scenarios
+#' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
@@ -22,6 +24,8 @@ set_agent_info <- function(project_info,
                            forecast_horizon,
                            external_regressors = NULL,
                            hist_end_date = NULL,
+                           back_test_scenarios = NULL,
+                           back_test_spacing = NULL,
                            combo_cleanup_date = NULL,
                            reason_llm = NULL,
                            overwrite = FALSE) {
@@ -38,6 +42,8 @@ set_agent_info <- function(project_info,
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
   check_input_type("hist_end_date", hist_end_date, c("Date", "NULL"))
+  check_input_type("back_test_scenarios", back_test_scenarios, c("numeric", "NULL"))
+  check_input_type("back_test_spacing", back_test_spacing, c("numeric", "NULL"))
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
   check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
   check_input_type("overwrite", overwrite, "logical")
@@ -111,6 +117,8 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
       hist_end_date = hist_end_date,
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))
     ) %>%
       data.frame()
@@ -132,8 +140,10 @@ set_agent_info <- function(project_info,
       driver_llm = driver_llm,
       reason_llm = reason_llm,
       forecast_horizon = prev_log_df$forecast_horizon,
-      external_regressors = strsplit(prev_log_df$external_regressors, ", ")[[1]],
+      external_regressors = if(is.na(prev_log_df$external_regressors)) {NULL} else {strsplit(prev_log_df$external_regressors, ", ")[[1]]},
       hist_end_date = prev_log_df$hist_end_date,
+      back_test_scenarios = if(is.na(prev_log_df$back_test_scenarios)) {NULL} else {as.numeric(prev_log_df$back_test_scenarios)},
+      back_test_spacing = if(is.na(prev_log_df$back_test_spacing)) {NULL} else {as.numeric(prev_log_df$back_test_spacing)},
       combo_cleanup_date = prev_log_df$combo_cleanup_date
     )
 
@@ -166,23 +176,6 @@ set_agent_info <- function(project_info,
       )
     }
 
-    # write combo info to disc
-    combo_tbl <- tibble::tibble(
-      Combo = unique(final_input_data$Combo),
-      State = "inactive",
-      Best_Run = "NA",
-      WMAPE = "NA"
-    )
-
-    write_data(
-      x = combo_tbl,
-      combo = NULL,
-      run_info = project_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = "-agent_leaderboard"
-    )
-
     # create agent run metadata
     output_list <- list(
       run_id = agent_run_id,
@@ -192,6 +185,8 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = external_regressors,
       hist_end_date = hist_end_date,
+      back_test_scenarios = back_test_scenarios,
+      back_test_spacing = back_test_spacing,
       combo_cleanup_date = combo_cleanup_date
     )
 
@@ -202,6 +197,8 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
       hist_end_date = ifelse(is.null(hist_end_date), NA, as.character(hist_end_date)),
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))
     )
 
