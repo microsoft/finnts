@@ -98,14 +98,18 @@ get_best_agent_run <- function(agent_info) {
       hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
     )
   )
-
-  best_run_tbl <- read_file(
-    run_info = project_info,
-    file_list = combo_best_run_list,
-    return_type = "df"
-  )
-
-  return(best_run_tbl)
+  
+  if(length(combo_best_run_list) == 0) {
+    return(tibble::tibble())
+  } else {
+    best_run_tbl <- read_file(
+      run_info = project_info,
+      file_list = combo_best_run_list,
+      return_type = "df"
+    )
+    
+    return(best_run_tbl)
+  }
 }
 
 #' Forecast Agent Workflow
@@ -127,7 +131,7 @@ fcst_agent_workflow <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 max_iter = 3) {
-  message("[agent] 📈 Starting Forecast Iteration Workflow")
+  # message("[agent] 📈 Starting Forecast Iteration Workflow")
 
   # create a fresh session for the reasoning LLM
   if (!is.null(agent_info$reason_llm)) {
@@ -578,26 +582,25 @@ reason_inputs <- function(agent_info,
           8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
           8-B.  IF no negative values are present → negative_forecast="FALSE".
       7.  MISSING VALUES RULES
-          10-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
+          10-A. IF missing values are present AND run_count == 0 AND *Step A is complete* → clean_missing_values="FALSE"
           10-B. IF missing values are present AND run_count > 0 → clean_missing_values="TRUE"
           10-C. ALWAYS use "FALSE" if no missing values are detected
       8.  OUTLIER RULES
           11-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
-          11-B. IF outliers are present AND run_count > 0 AND *Step A is complete* → clean_outliers= "TRUE" or "FALSE" based on EDA results.
           11-C. ALWAYS use "FALSE" if no outliers are detected
       9.  SEASONAL PERIOD RULES
           9-A. IF run_count == 0 → seasonal_period = "NULL"
-          9-B. IF run_count > 0 AND *Step B is complete* → seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal_periods.
+          9-B. IF run_count > 0 AND *Step C is complete* → seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
           9-C. You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
           9-D. A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
           9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
       10. FULL MODEL SWEEP RULES
-          10-A. IF run_count == 0 → models_to_run = "arima---tbats---xgboost"
-          10-B. IF run_count > 0 AND *Step C is complete* → models_to_run = "arima---ets---tbats---glmnet---xgboost"
+          10-A. IF run_count == 0 → models_to_run = "arima---stlm-arima---tbats---xgboost"
+          10-B. IF run_count > 0 AND *Step D is complete* → models_to_run = "arima---ets---stlm-arima---tbats---glmnet---xgboost"
       11. EXTERNAL REGRESSOR RULES
           11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
           11-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
-          11-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run.
+          11-C  IF adding external regressors AND run_count > 0 AND *Step E is complete*, add ONLY ONE new external regressor variable per run.
           11-D. ALWAYS use "NULL" if no external regressors are needed.
           11-E. ALWAYS start with the most promising external regressors based on distance correlation results.
           11-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
@@ -607,7 +610,7 @@ reason_inputs <- function(agent_info,
           11-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       12. FEATURE LAG RULES
           12-A. IF run_count == 0 → lag_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step E is complete* → use ACF and PCF results from EDA to select lag_periods.
+          12-B. IF run_count > 0 AND *Step F is complete* → use ACF and PCF results from EDA to select lag_periods.
           12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
@@ -615,32 +618,41 @@ reason_inputs <- function(agent_info,
           12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. ROLLING WINDOW LAGS
           13-A. IF run_count == 0 → rolling_window_periods = "NULL"
-          13-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
+          13-B. IF run_count > 0 AND *Step G is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
           13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
           13-D. A value of "NULL" means that rolling window lags are dedaulted to <<rolling_default>>.
           13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       14. RECIPE RULES
           14-A. IF run_count == 0 → recipes_to_run = "R1"
-          14-B. IF run_count > 0 AND *Step G is complete* → recipes_to_run = "NULL" or "R1"
+          14-B. IF run_count > 0 AND *Step H is complete* → recipes_to_run = "NULL" or "R1"
           14-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
-      15. An example value of "NULL|var1---var2" means YOU MUST either
+      15. PREVIOUS VERSION REPLAY RULES
+          15-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>, 
+          YOU MUST first try the **full input set** from the best run of the most-recent previous agent version. 
+          15-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
+          15-C. AFTER following 15-A AND 15-B, you MUST follow the decision tree below to propose a new set of parameters.
+          15-D. Using the full input set from a previous run counts as ONE parameter change.
+      16. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
-      16. DECISION TREE RULES
-          15-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-          15-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
-      17. ABORT RULES
-          17-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
-          17-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
+      17. DECISION TREE RULES
+          17-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
+          17-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
+          17-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
+          17-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
+      18. ABORT RULES
+          18-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
+          18-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
 
-      -----ORDER OF OPERATIONS DECISION TREE (Rule 16)-----
-      Step A (Missing Values - Rule 7)
-      → Step B (Outliers - Rule 8)
-      → Step C (Seasonal Period - Rule 9)
-      → Step D (Full Model Sweep - Rule 10)
-      → Step E (External Regressors - Rule 11)
-      → Step F (Feature Lags - Rule 12)
-      → Step G (Rolling Window Lags - Rule 13)
-      → Step H (Recipes - Rule 14)
+      -----ORDER OF OPERATIONS DECISION TREE (Rule 17)-----
+      Step A (Previous Version Replay - Rule 15)
+      → Step B (Missing Values - Rule 7)
+      → Step C (Outliers - Rule 8)
+      → Step D (Seasonal Period - Rule 9)
+      → Step E (Full Model Sweep - Rule 10)
+      → Step F (External Regressors - Rule 11)
+      → Step G (Feature Lags - Rule 12)
+      → Step H (Rolling Window Lags - Rule 13)
+      → Step I (Recipes - Rule 14)
 
       -----OUTPUT FORMAT-----
       <scratchpad>
@@ -664,7 +676,7 @@ reason_inputs <- function(agent_info,
         "recipes_to_run"        : "R1|NULL",
         "reasoning"             : "… ≤250 words …"
       }
-      // ---- abort schema (Rule 17) ----
+      // ---- abort schema (Rule 18) ----
       {
         "abort"     : "TRUE",
         "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
@@ -691,10 +703,11 @@ reason_inputs <- function(agent_info,
       lag_default = lag_default,
       rolling_default = rolling_default,
       recipe_default = recipe_default,
-      seasonal_period_default = seasonal_period_default
+      seasonal_period_default = seasonal_period_default, 
+      agent_version = agent_info$agent_version
     )
   }
-
+  # print(final_prompt)
   # send prompt to LLM
   response <- llm$chat(final_prompt, echo = FALSE)
 
@@ -838,6 +851,7 @@ reason_inputs <- function(agent_info,
 
   if (is.data.frame(previous_runs_tbl)) {
     check_inputs <- input_list
+    check_inputs$agent_version <- agent_info$agent_version
     check_inputs$models_to_run <- collapse_or_na(check_inputs$models_to_run)
     check_inputs$external_regressors <- collapse_or_na(check_inputs$external_regressors)
     check_inputs$recipes_to_run <- collapse_or_na(check_inputs$recipes_to_run)
@@ -999,7 +1013,7 @@ submit_fcst_run <- function(agent_info,
     models_not_to_run = NULL,
     run_ensemble_models = FALSE,
     pca = NULL,
-    num_hyperparameters = 2,
+    num_hyperparameters = 10,
     seasonal_period = null_converter(inputs$seasonal_period)
   )
 
@@ -1124,7 +1138,8 @@ log_best_run <- function(agent_info,
                            path = run_info$path) %>%
       dplyr::mutate(model_avg_wmape = avg_wmape,
                     model_median_wmape = median_wmape,
-                    model_std_wmape = std_wmape)
+                    model_std_wmape = std_wmape,  
+                    agent_version = agent_info$agent_version)
     
     # save the log file
     write_data(
@@ -1252,7 +1267,7 @@ load_run_results <- function(agent_info,
     combo_value <- hash_data("all")
 
     column_list <- c(
-      "run_number", "best_run", "weighted_mape", 
+      "agent_version", "run_number", "best_run", "weighted_mape", 
       "external_regressors", "clean_missing_values", "clean_outliers",
       "stationary", "forecast_approach",
       "lag_periods", "rolling_window_periods",
@@ -1263,7 +1278,7 @@ load_run_results <- function(agent_info,
     combo_value <- combo
 
     column_list <- c(
-      "run_number", "best_run", "weighted_mape",
+      "agent_version", "run_number", "best_run", "weighted_mape",
       "external_regressors", "clean_missing_values", "clean_outliers",
       "stationary", "box_cox", "forecast_approach",
       "lag_periods", "rolling_window_periods", "recipes_to_run",
@@ -1284,22 +1299,32 @@ load_run_results <- function(agent_info,
   # filter previous runs based on the combo value and select relevant columns
   if ("run_name" %in% names(previous_runs)) {
     
+    pattern <- sprintf("^agent_[^_]+_%s.*", combo_value)
+    
     previous_runs_formatted <- previous_runs %>%
-      dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
+      dplyr::filter(stringr::str_detect(run_name, pattern)) %>%
       dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
       dplyr::arrange(created) %>%
       dplyr::filter(!is.na(weighted_mape)) %>%
-      dplyr::mutate(run_number = dplyr::row_number())
+      dplyr::mutate(agent_run_id = stringr::str_extract(run_name, "agent_([^_]+)")) %>%
+      dplyr::mutate(
+        run_number = dplyr::row_number()
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::relocate(agent_version, run_number, weighted_mape)
     
-    # earliest row with *global* minimum weighted_mape
+    latest_version <- max(previous_runs_formatted$agent_version, na.rm = TRUE)
+    
+    # earliest row with *global* minimum weighted_mape for latest agent version
     earliest_min <- previous_runs_formatted %>%
+      dplyr::filter(agent_version == max(agent_version)) %>%
       dplyr::filter(weighted_mape == min(weighted_mape)) %>%   # all global-mins
       dplyr::slice(1)                                          # earliest one
-    
+
     best_idx   <- earliest_min$run_number
     best_wmape <- earliest_min$weighted_mape
     best_model <- earliest_min$model_avg_wmape
-    
+
     # look **after** that for runs whose weighted_mape is within ±10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
     cand <- previous_runs_formatted %>%
@@ -1319,7 +1344,7 @@ load_run_results <- function(agent_info,
     # flag the chosen best run
     previous_runs_formatted <- previous_runs_formatted %>%
       dplyr::mutate(
-        best_run = dplyr::if_else(run_number == best_idx, "yes", "no")
+        best_run = dplyr::if_else((run_number == best_idx & agent_version == latest_version), "yes", "no")
       )
 
     if (nrow(previous_runs_formatted) == 0) {
@@ -1327,11 +1352,11 @@ load_run_results <- function(agent_info,
     } else if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
       run_output <- previous_runs_formatted %>%
         dplyr::select(tidyselect::all_of(c(column_list, "model_avg_wmape", "model_median_wmape", "model_std_wmape"))) %>%
-        dplyr::relocate(run_number, best_run, weighted_mape, model_avg_wmape, model_median_wmape, model_std_wmape)
+        dplyr::relocate(agent_version, run_number, best_run, weighted_mape, model_avg_wmape, model_median_wmape, model_std_wmape)
     } else {
       run_output <- previous_runs_formatted %>%
         dplyr::select(tidyselect::all_of(column_list)) %>%
-        dplyr::relocate(run_number, best_run, weighted_mape)
+        dplyr::relocate(agent_version, run_number, best_run, weighted_mape)
     }
   } else {
     run_output <- "No Previous Runs"

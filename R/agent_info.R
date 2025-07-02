@@ -88,7 +88,7 @@ set_agent_info <- function(project_info,
       hist_end_date
     )
 
-  # check if agent run already exists and isn't finished
+  # check if agent run already exists
   agent_runs_list <- list_files(
     project_info$storage_object,
     paste0(
@@ -98,12 +98,12 @@ set_agent_info <- function(project_info,
   )
 
   if (length(agent_runs_list)) {
+    # get the latest agent run info
     agent_runs_tbl <- read_file(
       run_info = project_info,
       file_list = agent_runs_list,
       return_type = "df"
     ) %>%
-      # get only the latest run
       dplyr::arrange(dplyr::desc(created)) %>%
       dplyr::slice(1)
   } else {
@@ -135,6 +135,7 @@ set_agent_info <- function(project_info,
     }
 
     output_list <- list(
+      agent_version = agent_runs_tbl$agent_version,
       run_id = agent_runs_tbl$run_id,
       project_info = project_info,
       driver_llm = driver_llm,
@@ -144,12 +145,14 @@ set_agent_info <- function(project_info,
       hist_end_date = prev_log_df$hist_end_date,
       back_test_scenarios = if(is.na(prev_log_df$back_test_scenarios)) {NULL} else {as.numeric(prev_log_df$back_test_scenarios)},
       back_test_spacing = if(is.na(prev_log_df$back_test_spacing)) {NULL} else {as.numeric(prev_log_df$back_test_spacing)},
-      combo_cleanup_date = prev_log_df$combo_cleanup_date
+      combo_cleanup_date = prev_log_df$combo_cleanup_date, 
+      overwrite = overwrite
     )
 
     cli::cli_bullets(c(
       "Using Existing Finn Agent Run with Previously Uploaded Input Data",
       "*" = paste0("Project Name: ", prev_log_df$project_name),
+      "*" = paste0("Agent Version: ", agent_runs_tbl$agent_version),
       "*" = paste0("Agent Run ID: ", agent_runs_tbl$run_id),
       ""
     ))
@@ -163,6 +166,9 @@ set_agent_info <- function(project_info,
 
     # add to project info
     project_info$run_name <- agent_run_id
+    
+    # create agent version
+    agent_version <- length(agent_runs_list) + 1
 
     # write input data to disc
     for (combo_name in unique(final_input_data$Combo)) {
@@ -178,6 +184,7 @@ set_agent_info <- function(project_info,
 
     # create agent run metadata
     output_list <- list(
+      agent_version = agent_version,
       run_id = agent_run_id,
       project_info = project_info,
       driver_llm = driver_llm,
@@ -187,10 +194,12 @@ set_agent_info <- function(project_info,
       hist_end_date = hist_end_date,
       back_test_scenarios = back_test_scenarios,
       back_test_spacing = back_test_spacing,
-      combo_cleanup_date = combo_cleanup_date
+      combo_cleanup_date = combo_cleanup_date, 
+      overwrite = overwrite
     )
 
     output_tbl <- tibble::tibble(
+      agent_version = agent_version,
       run_id = agent_run_id,
       project_name = project_info$project_name,
       created = created_time,
@@ -215,7 +224,8 @@ set_agent_info <- function(project_info,
     cli::cli_bullets(c(
       "Created New Finn Agent Run",
       "*" = paste0("Project Name: ", project_info$project_name),
-      "*" = paste0("Run ID: ", agent_run_id),
+      "*" = paste0("Agent Version: ", agent_version),
+      "*" = paste0("Agent Run ID: ", agent_run_id),
       ""
     ))
 

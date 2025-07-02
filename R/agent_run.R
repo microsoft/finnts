@@ -15,6 +15,15 @@ run_agent <- function(agent_info,
                       parallel_processing = NULL,
                       inner_parallel = FALSE,
                       num_cores = NULL) {
+  
+  # formatting checks
+  check_agent_info(agent_info = agent_info)
+  check_input_type("max_iter", max_iter, "numeric")
+  check_input_type("weighted_mape_goal", weighted_mape_goal, "numeric")
+  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
+  check_input_type("inner_parallel", inner_parallel, "logical")
+  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+  
   # get project info
   project_info <- agent_info$project_info
 

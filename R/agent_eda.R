@@ -1885,6 +1885,7 @@ get_total_combos <- function(agent_info) {
     dplyr::pull(Combo) %>%
     stringr::str_remove_all("\\..*$") %>%
     unique() %>%
+    sort() %>%
     suppressWarnings()
 
   return(total_combo_list)

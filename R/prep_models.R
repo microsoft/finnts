@@ -179,13 +179,17 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #'   test scenario. Default of NULL moves back 1 period at a time for year,
 #'   quarter, and month data. Moves back 4 for week and 7 for day data.
 #' @param run_ensemble_models If TRUE, prep for ensemble models.
+#' @param model_list List of models to run. Used in agent mode.
+#' @param return If TRUE, returns the train test splits as a tibble
 #'
 #' @return Returns table of train test splits
 #' @noRd
 train_test_split <- function(run_info,
                              back_test_scenarios = NULL,
                              back_test_spacing = NULL,
-                             run_ensemble_models = TRUE) {
+                             run_ensemble_models = TRUE, 
+                             model_list = NULL, 
+                             return = FALSE) {
   cli::cli_progress_step("Creating Train Test Splits")
 
   # get inputs from previous functions
@@ -208,15 +212,19 @@ train_test_split <- function(run_info,
   }
 
   # adjust based on models planned to run
-  model_workflow_list <- read_file(run_info,
-    path = paste0(
-      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-      "-model_workflows.", run_info$object_output
-    ),
-    return_type = "df"
-  ) %>%
-    dplyr::pull(Model_Name) %>%
-    unique()
+  if(is.null(model_list)) {
+    model_workflow_list <- read_file(run_info,
+                                     path = paste0(
+                                       "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+                                       "-model_workflows.", run_info$object_output
+                                     ),
+                                     return_type = "df"
+    ) %>%
+      dplyr::pull(Model_Name) %>%
+      unique()
+  } else {
+    model_workflow_list <- model_list
+  }
 
   # models with hyperparameters to tune
   hyperparam_model_list <- list_hyperparmater_models()
@@ -404,6 +412,12 @@ train_test_split <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
+  
+  if(return) {
+    return(train_test_final)
+  } else {
+    cli::cli_progress_done()
+  }
 }
 
 #' Gets model workflows
