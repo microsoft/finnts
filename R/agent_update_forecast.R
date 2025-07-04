@@ -1,4 +1,37 @@
 
+update_forecast <- function(agent_info,
+                             parallel_processing = NULL,
+                             inner_parallel = FALSE,
+                             num_cores = NULL,
+                             max_iter = 3, 
+                             seed = 123) {
+
+  # check agent info
+  check_agent_info(agent_info)
+  
+  # check parallel processing
+  check_parallel_processing(
+    run_info = agent_info$project_info,
+    parallel_processing = parallel_processing,
+    inner_parallel = inner_parallel
+  )
+  
+  # register tools
+  register_update_fcst_tools(agent_info)
+  
+  # run the workflow
+  results <- update_fcst_agent_workflow(
+    agent_info = agent_info,
+    parallel_processing = parallel_processing,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    max_iter = max_iter, 
+    seed = seed
+  )
+  
+  message("[agent] ✅ Agent run completed successfully.")
+}
+
 update_fcst_agent_workflow <- function(agent_info,
                                        parallel_processing,
                                        inner_parallel,
@@ -10,7 +43,7 @@ update_fcst_agent_workflow <- function(agent_info,
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
-  
+
   # construct the workflow
   workflow <- list(
     start = list(
@@ -24,7 +57,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_global_models = list(
       fn = "update_global_models",
-      `next` = "stop",
+      `next` = "update_local_models",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
@@ -196,50 +229,22 @@ update_global_models <- function(agent_info,
   
   # check if global models are required to run
   previous_best_run_global_tbl <- previous_best_run_tbl %>%
-    dplyr::filter(model_type == "global") %>%
-    print()
+    dplyr::filter(model_type == "global")
   
   if (nrow(previous_best_run_global_tbl) == 0) {
     cli::cli_alert_info("no global models to update")
     return("no global models to update")
   }
   
-  # get combos to run
-  combos_to_run <- unique(previous_best_run_global_tbl$combo)
-  
   # start forecast update process
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = num_cores
-  )
+  results <- update_forecast_combo(agent_info = agent_info, 
+                                   prev_best_run_tbl = previous_best_run_global_tbl,
+                                   parallel_processing = parallel_processing,
+                                   num_cores = num_cores,
+                                   inner_parallel = inner_parallel, 
+                                   seed = seed)
   
-  inner_cl <- par_info$cl
-  inner_packages <- par_info$packages
-  
-  combo_tbl <- foreach::foreach(
-    prev_run = previous_best_run_local_tbl %>%
-      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-    .combine = "rbind",
-    .errorhandling = "stop",
-    .verbose = FALSE,
-    .inorder = FALSE,
-    .multicombine = TRUE,
-    .noexport = NULL
-  ) %do% {
-    
-    results <- update_forecast_combo(agent_info = agent_info, 
-                                     prev_best_run_tbl = prev_run,
-                                     parallel_processing = parallel_processing,
-                                     num_cores = num_cores,
-                                     inner_parallel = inner_parallel, 
-                                     seed = seed)
-    
-    return(results)
-  }
-  
-  par_end(inner_cl)
+  return("done")
 }
 
 update_local_models <- function(agent_info, 
@@ -288,7 +293,7 @@ update_local_models <- function(agent_info,
 
     results <- update_forecast_combo(agent_info = agent_info, 
                                      prev_best_run_tbl = prev_run,
-                                     parallel_processing = parallel_processing,
+                                     parallel_processing = NULL,
                                      num_cores = num_cores,
                                      inner_parallel = inner_parallel, 
                                      seed = seed)
@@ -308,13 +313,18 @@ update_forecast_combo <- function(agent_info,
 
   # get metadata
   project_info <- agent_info$project_info
-  combo <- prev_best_run_tbl$combo[1]
   
-  if(combo == "All-Data") {
+  if(unique(prev_best_run_tbl$model_type) == "global") {
+    combo <- "All-Data"
     combo_value <- "*"
   } else {
+    combo <- prev_best_run_tbl$combo[1]
     combo_value <- hash_data(combo)
   }
+  
+  combo_list <- unique(prev_best_run_tbl$combo)
+  
+  prev_best_wmape <- mean(prev_best_run_tbl$weighted_mape, na.rm = TRUE)
   
   # get run info of previous best run
   prev_run_info <- list(project_name = project_info$project_name, 
@@ -352,6 +362,27 @@ update_forecast_combo <- function(agent_info,
   trained_models_tbl <- get_trained_models(run_info = prev_run_info) %>%
     dplyr::filter(Model_ID %in% model_id_list)
   
+  # get external regressor info from previous run
+  external_regressors <- adjust_inputs(prev_run_log_tbl$external_regressors)
+  
+  if(!is.null(external_regressors)) {
+    # check that regressors from previous run are still present in the new run, if any are missing throw an error
+    missing_xregs <- setdiff(external_regressors, agent_info$external_regressors)
+    if(length(missing_xregs) > 0) {
+      stop("Error in update_forecast(). The following external regressors are missing from the new run: ",
+           paste(missing_xregs, collapse = ", "), ". Please add them back to the agent inputs.",
+           call. = FALSE)
+    }
+  }
+  
+  # adjustments for hts with weekly data
+  if (prev_run_log_tbl$forecast_approach != "bottoms_up" & project_info$date_type == "week") {
+    # turn off daily conversion before hts recon
+    initial_weekly_to_daily <- FALSE
+  } else {
+    initial_weekly_to_daily <- weekly_to_daily
+  }
+  
   # get input data for new run
   input_data <- read_file(
     run_info = project_info,
@@ -369,7 +400,7 @@ update_forecast_combo <- function(agent_info,
   run_name <- paste0(
     "agent_",
     agent_info$run_id, "_",
-    ifelse(is.null(combo), hash_data("all"), combo_value), "_",
+    ifelse(combo == "All-Data", hash_data("all"), combo_value), "_",
     format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
   )
   
@@ -392,14 +423,14 @@ update_forecast_combo <- function(agent_info,
     target_variable = "Target",
     date_type = project_info$date_type,
     forecast_horizon = agent_info$forecast_horizon,
-    external_regressors = agent_info$external_regressors,
+    external_regressors = external_regressors,
     hist_start_date = NULL,
     hist_end_date = agent_info$hist_end_date,
     combo_cleanup_date = agent_info$combo_cleanup_date,
     fiscal_year_start = project_info$fiscal_year_start,
     clean_missing_values = prev_run_log_tbl$clean_missing_values,
     clean_outliers = prev_run_log_tbl$clean_outliers,
-    box_cox = FALSE,
+    box_cox = prev_run_log_tbl$box_cox,
     stationary = prev_run_log_tbl$stationary,
     forecast_approach = prev_run_log_tbl$forecast_approach,
     parallel_processing = parallel_processing,
@@ -419,6 +450,11 @@ update_forecast_combo <- function(agent_info,
                                  ),
                                  return_type = "df"
     )
+    
+    if(combo != "All-Data") {
+      combo_info_tbl <- combo_info_tbl %>%
+        dplyr::filter(Combo == combo)
+    }
   } else {
     combo_info_tbl <- tibble::tibble()
   }
@@ -468,13 +504,15 @@ update_forecast_combo <- function(agent_info,
                                 seed = seed)
   
   # get forecast and calculate wmape
-  refit_fcst_tbl <- adjust_forecast(refit_model_tbl)
+  refit_fcst_tbl <- refit_model_tbl %>%
+    adjust_forecast()
   
-  refit_wmape <- calc_wmape(refit_fcst_tbl) %>%
-    print()
+  refit_wmape <- refit_fcst_tbl %>%
+    dplyr::filter(Combo %in% combo_list) %>%
+    calc_wmape()
   
   # retune hyperparameters if +10% worse than previous best
-  if(refit_wmape > (prev_best_run_tbl$weighted_mape*1.1)) {
+  if(refit_wmape > (prev_best_wmape*1.1)) {
     cli::cli_alert_info("retuning model hyperparameters")
     
     retune_model_tbl <- fit_models(run_info = new_run_info, 
@@ -490,27 +528,32 @@ update_forecast_combo <- function(agent_info,
                                    inner_parallel = inner_parallel,
                                    seed = seed)
     
-    retune_fcst_tbl <- adjust_forecast(refit_model_tbl)
+    retune_fcst_tbl <- retune_model_tbl %>%
+      adjust_forecast()
     
-    retune_wmape <- calc_wmape(retune_fcst_tbl) %>%
-      print()
+    retune_wmape <- retune_fcst_tbl %>%
+      dplyr::filter(Combo %in% combo_list) %>%
+      calc_wmape()
   } else {
     retune_wmape <- Inf
   }
 
+  # choose best results
   if(retune_wmape < refit_wmape) {
     final_wmape <- retune_wmape
     final_model_tbl <- retune_model_tbl
     final_fcst_tbl <- retune_fcst_tbl %>%
-      create_prediction_intervals(model_train_test_tbl)
+      create_prediction_intervals(model_train_test_tbl) %>%
+      convert_weekly_to_daily(project_info$date_type, initial_weekly_to_daily)
   } else {
     final_wmape <- refit_wmape
     final_model_tbl <- refit_model_tbl
     final_fcst_tbl <- refit_fcst_tbl %>%
-      create_prediction_intervals(model_train_test_tbl)
+      create_prediction_intervals(model_train_test_tbl) %>%
+      convert_weekly_to_daily(project_info$date_type, initial_weekly_to_daily)
   }
-  
-  # write outputs
+
+  # write final outputs
   fitted_models <- final_model_tbl %>%
     tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
     dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
@@ -526,7 +569,9 @@ update_forecast_combo <- function(agent_info,
 
   if("simple_average" %in% unique(final_fcst_tbl$Recipe_ID)) {
     write_data(
-      x = final_fcst_tbl %>% dplyr::filter(Recipe_ID != "simple_average"),
+      x = final_fcst_tbl %>% 
+        dplyr::filter(Recipe_ID != "simple_average") %>%
+        dplyr::select(-Run_Type),
       combo = unique(fitted_models$Combo_ID),
       run_info = new_run_info,
       output_type = "data",
@@ -535,7 +580,9 @@ update_forecast_combo <- function(agent_info,
     )
     
     write_data(
-      x = final_fcst_tbl %>% dplyr::filter(Recipe_ID == "simple_average"),
+      x = final_fcst_tbl %>% 
+        dplyr::filter(Recipe_ID == "simple_average") %>%
+        dplyr::select(-Run_Type),
       combo = unique(fitted_models$Combo_ID),
       run_info = new_run_info,
       output_type = "data",
@@ -543,10 +590,12 @@ update_forecast_combo <- function(agent_info,
       suffix = "-average_models"
     )
   } else {
-    if (unique(final_fcst_tbl$Combo_ID) == "All-Data") {
-      for (combo_name in unique(final_fcst_tbl$Combo)) {
+    if (combo == "All-Data") {
+      for (combo_name in combo_list) {
         write_data(
-          x = final_fcst_tbl %>% dplyr::filter(Combo == combo_name),
+          x = final_fcst_tbl %>% 
+            dplyr::filter(Combo == combo_name) %>%
+            dplyr::select(-Run_Type),
           combo = combo_name,
           run_info = new_run_info,
           output_type = "data",
@@ -556,7 +605,8 @@ update_forecast_combo <- function(agent_info,
       }
     } else {
       write_data(
-        x = final_fcst_tbl,
+        x = final_fcst_tbl %>%
+          dplyr::select(-Run_Type),
         combo = unique(fitted_models$Combo_ID),
         run_info = new_run_info,
         output_type = "data",
@@ -565,7 +615,43 @@ update_forecast_combo <- function(agent_info,
       )
     }
   }
+  
+  # log run
+  log_wmape <- final_fcst_tbl %>%
+    dplyr::mutate(Combo = "Placeholder") %>% # calc wmape for a single combo or all combos
+    calc_wmape()
 
+  log_best_run(agent_info = agent_info,
+               run_info = new_run_info,
+               weighted_mape = log_wmape,
+               combo = if(combo=="All-Data") {NULL} else {combo})
+
+  new_log_tbl <- get_run_info(
+    project_name = project_info$project_name,
+    run_name = new_run_info$run_name,
+    storage_object = project_info$storage_object,
+    path = project_info$path
+  ) %>%
+    dplyr::mutate(run_global_models = ifelse(combo == "All-Data", TRUE, FALSE),
+                  run_local_models = ifelse(combo != "All-Data", TRUE, FALSE),
+                  global_model_recipes = prev_run_log_tbl$global_model_recipes,
+                  feature_selection = prev_run_log_tbl$feature_selection,
+                  seed = seed,
+                  negative_forecast = prev_run_log_tbl$negative_forecast,
+                  inner_parallel = inner_parallel, 
+                  average_models = prev_run_log_tbl$average_models,
+                  max_model_average = prev_run_log_tbl$max_model_average,
+                  weighted_mape = log_wmape)
+  
+  write_data(
+    x = new_log_tbl,
+    combo = NULL,
+    run_info = new_run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+  
   return("done")
 }
 
@@ -821,14 +907,14 @@ fit_models <- function(run_info,
 
     # undo box-cox transformation
     if (prev_run_log_tbl$box_cox) {
-      if (combo_hash == "All-Data") {
+      if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
           dplyr::group_split() %>%
           purrr::map(function(x) {
             combo <- unique(x$Combo)
 
-            lambda <- filtered_combo_info_tbl %>%
+            lambda <- combo_info_tbl %>%
               dplyr::filter(Combo == combo) %>%
               dplyr::select(Box_Cox_Lambda) %>%
               dplyr::pull(Box_Cox_Lambda)
@@ -847,7 +933,7 @@ fit_models <- function(run_info,
           }) %>%
           dplyr::bind_rows()
       } else {
-        lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
+        lambda <- combo_info_tbl$Box_Cox_Lambda
 
         if (!is.na(lambda)) {
           final_fcst <- final_fcst %>%
@@ -941,14 +1027,18 @@ calc_wmape <- function(forecast_tbl) {
     dplyr::mutate(
       Target = ifelse(Target == 0, 0.1, Target)
     ) %>%
+    dplyr::group_by(Combo) %>%
     dplyr::mutate(
       MAPE = round(abs((Forecast - Target) / Target), digits = 4),
       Total = sum(Target, na.rm = TRUE),
       Weight = (MAPE * Target) / Total
     ) %>%
-    dplyr::pull(Weight) %>%
-    sum(na.rm = TRUE) %>%
-    round(digits = 4)
+    dplyr::summarise(
+      weighted_mape = round(sum(Weight, na.rm = TRUE), digits = 4),
+      .groups = "drop"
+    ) %>%
+    dplyr::pull(weighted_mape) %>%
+    mean(na.rm = TRUE)
 }
 
 adjust_inputs <- function(x, 
