@@ -1,9 +1,100 @@
 
-update_forecast <- function(agent_info, 
-                            parallel_processing = NULL, 
-                            num_cores = NULL, 
-                            inner_parallel = FALSE, 
-                            seed = 123) {
+update_fcst_agent_workflow <- function(agent_info,
+                                       parallel_processing,
+                                       inner_parallel,
+                                       num_cores,
+                                       max_iter = 3, 
+                                       seed = 123) {
+
+  # create a fresh session for the reasoning LLM
+  if (!is.null(agent_info$reason_llm)) {
+    agent_info$reason_llm <- agent_info$reason_llm$clone()
+  }
+  
+  # construct the workflow
+  workflow <- list(
+    start = list(
+      fn = "initial_checks",
+      `next` = "update_global_models",
+      retry_mode = "plain",
+      max_retry = 3,
+      args = list(
+        agent_info = agent_info
+      )
+    ),
+    update_global_models = list(
+      fn = "update_global_models",
+      `next` = "stop",
+      retry_mode = "plain",
+      max_retry = 3,
+      args = list(
+        agent_info = agent_info, 
+        previous_best_run_tbl = "{results$initial_checks}",
+        parallel_processing = parallel_processing,
+        inner_parallel = inner_parallel,
+        num_cores = num_cores, 
+        seed = seed
+      )
+    ), 
+    update_local_models = list(
+      fn = "update_local_models",
+      `next` = "stop",
+      retry_mode = "plain",
+      max_retry = 3,
+      args = list(
+        agent_info = agent_info, 
+        previous_best_run_tbl = "{results$initial_checks}",
+        parallel_processing = parallel_processing,
+        inner_parallel = inner_parallel,
+        num_cores = num_cores, 
+        seed = seed
+      )
+    ), 
+    stop = list(fn = NULL)
+  )
+  
+  init_ctx <- list(
+    node      = "start",
+    iter      = 0, # iteration counter
+    max_iter  = max_iter, # loop limit
+    results   = list(), # where each tool’s output will be stored
+    attempts  = list() # retry bookkeeping for execute_node()
+  )
+  
+  # run the graph
+  run_graph(agent_info$driver_llm, workflow, init_ctx)
+}
+
+register_update_fcst_tools <- function(agent_info) {
+
+  # workflows
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "update_fcst_agent_workflow",
+    .description = "Run the Finn update forecast agent workflow",
+    .fun = update_fcst_agent_workflow
+  ))
+  
+  # individual tools
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "initial_checks",
+    .description = "Get previous agent information and check formatting of latest data/inputs",
+    .fun = initial_checks
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "update_global_models",
+    .description = "Update global model forecasts across all time series",
+    .fun = update_forecast_combo
+  ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "update_local_models",
+    .description = "Update local mdoel forecasts for each time series",
+    .fun = update_local_models
+  ))
+}
+
+initial_checks <- function(agent_info) {
   
   # get metadata
   project_info <- agent_info$project_info
@@ -60,7 +151,7 @@ update_forecast <- function(agent_info,
       break
     }
   }
-
+  
   # get time series from previous agent run
   prev_run_combos <- get_total_combos(agent_info = prev_agent_info)
   
@@ -83,44 +174,163 @@ update_forecast <- function(agent_info,
   }
   
   # get best runs from previous agent run
-  prev_best_runs_tbl <- get_best_agent_run(agent_info = prev_agent_info) %>%
-    print()
+  prev_best_runs_tbl <- get_best_agent_run(agent_info = prev_agent_info)
   
   if(nrow(prev_best_runs_tbl) == 0) {
     stop("Error in update_forecast(). No best runs found in previous agent run.",
          call. = FALSE)
   }
+
+  return(prev_best_runs_tbl)
+}
+
+update_global_models <- function(agent_info, 
+                                 previous_best_run_tbl, 
+                                 parallel_processing, 
+                                 inner_parallel, 
+                                 num_cores, 
+                                 seed) {
   
-  ################################################################
-  ################################################################
-  # for early dev purposes let's just get one local time series
-  ################################################################
-  ################################################################
-  prev_best_runs_tbl <- prev_best_runs_tbl %>%
-    dplyr::filter(model_type == "local") %>%
-    dplyr::slice(1)
+  # get metadata
+  project_info <- agent_info$project_info
   
-  combo <- prev_best_runs_tbl$combo[1]
-  combo_value <- hash_data(combo)
+  # check if global models are required to run
+  previous_best_run_global_tbl <- previous_best_run_tbl %>%
+    dplyr::filter(model_type == "global") %>%
+    print()
+  
+  if (nrow(previous_best_run_global_tbl) == 0) {
+    cli::cli_alert_info("no global models to update")
+    return("no global models to update")
+  }
+  
+  # get combos to run
+  combos_to_run <- unique(previous_best_run_global_tbl$combo)
+  
+  # start forecast update process
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = num_cores
+  )
+  
+  inner_cl <- par_info$cl
+  inner_packages <- par_info$packages
+  
+  combo_tbl <- foreach::foreach(
+    prev_run = previous_best_run_local_tbl %>%
+      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+    .combine = "rbind",
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %do% {
+    
+    results <- update_forecast_combo(agent_info = agent_info, 
+                                     prev_best_run_tbl = prev_run,
+                                     parallel_processing = parallel_processing,
+                                     num_cores = num_cores,
+                                     inner_parallel = inner_parallel, 
+                                     seed = seed)
+    
+    return(results)
+  }
+  
+  par_end(inner_cl)
+}
+
+update_local_models <- function(agent_info, 
+                                previous_best_run_tbl, 
+                                parallel_processing, 
+                                inner_parallel, 
+                                num_cores, 
+                                seed) {
+  
+  # get metadata
+  project_info <- agent_info$project_info
+  
+  # check if local models are required to run
+  previous_best_run_local_tbl <- previous_best_run_tbl %>%
+    dplyr::filter(model_type == "local")
+  
+  if (nrow(previous_best_run_local_tbl) == 0) {
+    cli::cli_alert_info("no local models to update")
+    return("no local models to update")
+  }
+  
+  # get combos to run
+  combos_to_run <- unique(previous_best_run_local_tbl$combo)
+  
+  # start forecast update process
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = num_cores
+  )
+  
+  inner_cl <- par_info$cl
+  inner_packages <- par_info$packages
+  
+  combo_tbl <- foreach::foreach(
+    prev_run = previous_best_run_local_tbl %>%
+      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+    .combine = "rbind",
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %do% {
+
+    results <- update_forecast_combo(agent_info = agent_info, 
+                                     prev_best_run_tbl = prev_run,
+                                     parallel_processing = parallel_processing,
+                                     num_cores = num_cores,
+                                     inner_parallel = inner_parallel, 
+                                     seed = seed)
+
+    return(results)
+  }
+  
+  par_end(inner_cl)
+}
+
+update_forecast_combo <- function(agent_info, 
+                                  prev_best_run_tbl, 
+                                  parallel_processing = NULL, 
+                                  num_cores = NULL, 
+                                  inner_parallel = FALSE, 
+                                  seed = 123) {
+
+  # get metadata
+  project_info <- agent_info$project_info
+  combo <- prev_best_run_tbl$combo[1]
+  
+  if(combo == "All-Data") {
+    combo_value <- "*"
+  } else {
+    combo_value <- hash_data(combo)
+  }
   
   # get run info of previous best run
-  prev_run_info_list <- list(project_name = project_info$project_name, 
-                             run_name = prev_best_runs_tbl$best_run_name[1],
-                             storage_object = project_info$storage_object,
-                             path = prev_agent_info$project_info$path, 
-                             data_output = project_info$data_output, 
-                             object_output = project_info$object_output)
+  prev_run_info <- list(project_name = project_info$project_name, 
+                        run_name = prev_best_run_tbl$best_run_name[1],
+                        storage_object = project_info$storage_object,
+                        path = project_info$path, 
+                        data_output = project_info$data_output, 
+                        object_output = project_info$object_output)
   
-  
-  prev_run_info <- get_run_info(project_name = project_info$project_name,
-                                run_name = prev_best_runs_tbl$best_run_name[1],
-                                storage_object = project_info$storage_object,
-                                path = prev_agent_info$project_info$path)
-  
-  prev_run_info$stationary <- TRUE
+  prev_run_log_tbl <- get_run_info(project_name = project_info$project_name,
+                                   run_name = prev_best_run_tbl$best_run_name[1],
+                                   storage_object = project_info$storage_object,
+                                   path = project_info$path)
   
   # get previous forecast of best run
-  prev_fcst_tbl <- get_forecast_data(run_info = prev_run_info_list) %>%
+  prev_fcst_tbl <- get_forecast_data(run_info = prev_run_info) %>%
     dplyr::filter(Best_Model == "Yes")
   
   # get best model list from previous run
@@ -139,7 +349,7 @@ update_forecast <- function(agent_info,
     unique()
   
   # get trained models from previous run
-  trained_models_tbl <- get_trained_models(run_info = prev_run_info_list) %>%
+  trained_models_tbl <- get_trained_models(run_info = prev_run_info) %>%
     dplyr::filter(Model_ID %in% model_id_list)
   
   # get input data for new run
@@ -187,21 +397,21 @@ update_forecast <- function(agent_info,
     hist_end_date = agent_info$hist_end_date,
     combo_cleanup_date = agent_info$combo_cleanup_date,
     fiscal_year_start = project_info$fiscal_year_start,
-    clean_missing_values = prev_run_info$clean_missing_values,
-    clean_outliers = prev_run_info$clean_outliers,
+    clean_missing_values = prev_run_log_tbl$clean_missing_values,
+    clean_outliers = prev_run_log_tbl$clean_outliers,
     box_cox = FALSE,
-    stationary = prev_run_info$stationary,
-    forecast_approach = prev_run_info$forecast_approach,
+    stationary = prev_run_log_tbl$stationary,
+    forecast_approach = prev_run_log_tbl$forecast_approach,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
     fourier_periods = NULL,
-    lag_periods = adjust_inputs(prev_run_info$lag_periods, convert_numeric = TRUE),
-    rolling_window_periods = adjust_inputs(prev_run_info$rolling_window_periods, convert_numeric = TRUE),
+    lag_periods = adjust_inputs(prev_run_log_tbl$lag_periods, convert_numeric = TRUE),
+    rolling_window_periods = adjust_inputs(prev_run_log_tbl$rolling_window_periods, convert_numeric = TRUE),
     recipes_to_run = prev_best_recipes,
-    multistep_horizon = prev_run_info$multistep_horizon
+    multistep_horizon = prev_run_log_tbl$multistep_horizon
   )
   
-  if (prev_run_info$box_cox || prev_run_info$stationary) {
+  if (prev_run_log_tbl$box_cox || prev_run_log_tbl$stationary) {
     combo_info_tbl <- read_file(new_run_info,
                                  path = paste0(
                                    "/prep_data/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
@@ -213,30 +423,98 @@ update_forecast <- function(agent_info,
     combo_info_tbl <- tibble::tibble()
   }
   
-  # set train test splits
-  model_train_test_tbl <- train_test_split(run_info = new_run_info,
-                                           back_test_scenarios = agent_info$back_test_scenarios,
-                                           back_test_spacing = agent_info$back_test_spacing,
-                                           run_ensemble_models = FALSE, 
-                                           model_list = prev_best_model_list, 
-                                           return = TRUE)
+  # prep models and train/test splits
+  prep_models(run_info = new_run_info,
+              back_test_scenarios = agent_info$back_test_scenarios,
+              back_test_spacing = agent_info$back_test_spacing,
+              models_to_run = prev_best_model_list,
+              models_not_to_run = NULL,
+              run_ensemble_models = FALSE,
+              pca = prev_run_log_tbl$pca,
+              num_hyperparameters = as.numeric(prev_run_log_tbl$num_hyperparameters),
+              seasonal_period = adjust_inputs(prev_run_log_tbl$seasonal_period, convert_numeric = TRUE),
+              seed = seed)
   
-  # train each model
-  model_tbl <- fit_models(run_info = new_run_info, 
-                          combo = combo, 
-                          combo_info_tbl = combo_info_tbl, 
-                          trained_models_tbl = trained_models_tbl,
-                          model_train_test_tbl = model_train_test_tbl,
-                          parallel_processing = parallel_processing,
-                          num_cores = num_cores,
-                          inner_parallel = inner_parallel,
-                          seed = seed)
+  model_train_test_tbl <- read_file(new_run_info,
+                                    path = paste0(
+                                      "/prep_models/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
+                                      "-train_test_split.", new_run_info$data_output
+                                    ),
+                                    return_type = "df"
+  )
+  
+  model_hyperparameter_tbl <- read_file(new_run_info,
+                                        path = paste0(
+                                          "/prep_models/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
+                                          "-model_hyperparameters.", new_run_info$object_output
+                                        ),
+                                        return_type = "df"
+  )
+
+  # refit each model on previously selected hyperparameters
+  cli::cli_alert_info("refitting models for {combo} with previously selected hyperparameters")
+  
+  refit_model_tbl <- fit_models(run_info = new_run_info, 
+                                combo = combo, 
+                                combo_info_tbl = combo_info_tbl, 
+                                trained_models_tbl = trained_models_tbl,
+                                model_train_test_tbl = model_train_test_tbl,
+                                model_hyperparameter_tbl = model_hyperparameter_tbl,
+                                prev_run_log_tbl = prev_run_log_tbl, 
+                                retune_hyperparameters = FALSE, 
+                                parallel_processing = parallel_processing,
+                                num_cores = num_cores,
+                                inner_parallel = inner_parallel,
+                                seed = seed)
+  
+  # get forecast and calculate wmape
+  refit_fcst_tbl <- adjust_forecast(refit_model_tbl)
+  
+  refit_wmape <- calc_wmape(refit_fcst_tbl) %>%
+    print()
+  
+  # retune hyperparameters if +10% worse than previous best
+  if(refit_wmape > (prev_best_run_tbl$weighted_mape*1.1)) {
+    cli::cli_alert_info("retuning model hyperparameters")
+    
+    retune_model_tbl <- fit_models(run_info = new_run_info, 
+                                   combo = combo, 
+                                   combo_info_tbl = combo_info_tbl, 
+                                   trained_models_tbl = trained_models_tbl,
+                                   model_train_test_tbl = model_train_test_tbl,
+                                   model_hyperparameter_tbl = model_hyperparameter_tbl,
+                                   prev_run_log_tbl = prev_run_log_tbl, 
+                                   retune_hyperparameters = TRUE, 
+                                   parallel_processing = parallel_processing,
+                                   num_cores = num_cores,
+                                   inner_parallel = inner_parallel,
+                                   seed = seed)
+    
+    retune_fcst_tbl <- adjust_forecast(refit_model_tbl)
+    
+    retune_wmape <- calc_wmape(retune_fcst_tbl) %>%
+      print()
+  } else {
+    retune_wmape <- Inf
+  }
+
+  if(retune_wmape < refit_wmape) {
+    final_wmape <- retune_wmape
+    final_model_tbl <- retune_model_tbl
+    final_fcst_tbl <- retune_fcst_tbl %>%
+      create_prediction_intervals(model_train_test_tbl)
+  } else {
+    final_wmape <- refit_wmape
+    final_model_tbl <- refit_model_tbl
+    final_fcst_tbl <- refit_fcst_tbl %>%
+      create_prediction_intervals(model_train_test_tbl)
+  }
   
   # write outputs
-  fitted_models <- model_tbl %>%
+  fitted_models <- final_model_tbl %>%
     tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
     dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
-
+  
   write_data(
     x = fitted_models,
     combo = unique(fitted_models$Combo_ID),
@@ -246,39 +524,49 @@ update_forecast <- function(agent_info,
     suffix = "-single_models"
   )
 
-  final_forecast_tbl <- model_tbl %>%
-    dplyr::select(-Model_Fit) %>%
-    tidyr::unnest(Forecast_Tbl) %>%
-    dplyr::arrange(Train_Test_ID) %>%
-    tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
-    dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
-    dplyr::mutate(Horizon = dplyr::row_number()) %>%
-    dplyr::ungroup()
-
-  if (unique(final_forecast_tbl$Combo_ID) == "All-Data") {
-    for (combo_name in unique(final_forecast_tbl$Combo)) {
-      write_data(
-        x = final_forecast_tbl %>% dplyr::filter(Combo == combo_name),
-        combo = combo_name,
-        run_info = new_run_info,
-        output_type = "data",
-        folder = "forecasts",
-        suffix = "-global_models"
-      )
-    }
-  } else {
+  if("simple_average" %in% unique(final_fcst_tbl$Recipe_ID)) {
     write_data(
-      x = final_forecast_tbl,
+      x = final_fcst_tbl %>% dplyr::filter(Recipe_ID != "simple_average"),
       combo = unique(fitted_models$Combo_ID),
       run_info = new_run_info,
       output_type = "data",
       folder = "forecasts",
       suffix = "-single_models"
     )
+    
+    write_data(
+      x = final_fcst_tbl %>% dplyr::filter(Recipe_ID == "simple_average"),
+      combo = unique(fitted_models$Combo_ID),
+      run_info = new_run_info,
+      output_type = "data",
+      folder = "forecasts",
+      suffix = "-average_models"
+    )
+  } else {
+    if (unique(final_fcst_tbl$Combo_ID) == "All-Data") {
+      for (combo_name in unique(final_fcst_tbl$Combo)) {
+        write_data(
+          x = final_fcst_tbl %>% dplyr::filter(Combo == combo_name),
+          combo = combo_name,
+          run_info = new_run_info,
+          output_type = "data",
+          folder = "forecasts",
+          suffix = "-global_models"
+        )
+      }
+    } else {
+      write_data(
+        x = final_fcst_tbl,
+        combo = unique(fitted_models$Combo_ID),
+        run_info = new_run_info,
+        output_type = "data",
+        folder = "forecasts",
+        suffix = "-single_models"
+      )
+    }
   }
 
-  print(model_tbl)
-  print(final_forecast_tbl)
+  return("done")
 }
 
 fit_models <- function(run_info, 
@@ -286,10 +574,14 @@ fit_models <- function(run_info,
                        combo_info_tbl,
                        trained_models_tbl,
                        model_train_test_tbl,
+                       model_hyperparameter_tbl,
+                       prev_run_log_tbl, 
+                       retune_hyperparameters = FALSE, 
                        parallel_processing = NULL,
                        num_cores = NULL,
                        inner_parallel = FALSE,
                        seed = 123) {
+  
   # train each model
   par_info <- par_start(
     run_info = run_info,
@@ -374,16 +666,16 @@ fit_models <- function(run_info,
     # } else {
     #   empty_workflow_final <- workflow
     # }
-    # 
-    # hyperparameters <- model_hyperparameter_tbl %>%
-    #   dplyr::filter(
-    #     Model == model,
-    #     Recipe == data_prep_recipe
-    #   ) %>%
-    #   dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
-    #   tidyr::unnest(Hyperparameters)
 
-    if (nrow(combo_info_tbl) > 0 & !(model %in% list_multivariate_models())) {
+    hyperparameters <- model_hyperparameter_tbl %>%
+      dplyr::filter(
+        Model == model,
+        Recipe == data_prep_recipe
+      ) %>%
+      dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
+      tidyr::unnest(Hyperparameters)
+
+    if (prev_run_log_tbl$stationary & !(model %in% list_multivariate_models())) {
       # undifference the data for a univariate model
       prep_data <- prep_data %>%
         undifference_recipe(
@@ -393,38 +685,43 @@ fit_models <- function(run_info,
     }
     
     # tune hyperparameters
-    # set.seed(seed)
-    # 
-    # tune_results <- tune::tune_grid(
-    #   object = empty_workflow_final,
-    #   resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
-    #   grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
-    #   control = tune::control_grid(
-    #     allow_par = inner_parallel,
-    #     pkgs = c(inner_packages, "finnts"),
-    #     parallel_over = "everything"
-    #   )
-    # ) %>%
-    #   base::suppressMessages() %>%
-    #   base::suppressWarnings()
-    # 
-    # best_param <- tune::select_best(tune_results, metric = "rmse")
-    # 
-    # if (length(colnames(best_param)) == 1) {
-    #   hyperparameter_id <- 1
-    # } else {
-    #   hyperparameter_id <- hyperparameters %>%
-    #     dplyr::inner_join(best_param) %>%
-    #     dplyr::select(Hyperparameter_Combo) %>%
-    #     dplyr::pull() %>%
-    #     base::suppressMessages()
-    # }
-    # 
-    # finalized_workflow <- tune::finalize_workflow(empty_workflow_final, best_param)
+    if(retune_hyperparameters) {
+      set.seed(seed)
+      
+      tune_results <- tune::tune_grid(
+        object = workflow,
+        resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+        grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
+        control = tune::control_grid(
+          allow_par = inner_parallel,
+          pkgs = c(inner_packages, "finnts"),
+          parallel_over = "everything"
+        )
+      ) %>%
+        base::suppressMessages() %>%
+        base::suppressWarnings()
+      
+      best_param <- tune::select_best(tune_results, metric = "rmse")
+      
+      if (length(colnames(best_param)) == 1) {
+        hyperparameter_id <- 1
+      } else {
+        hyperparameter_id <- hyperparameters %>%
+          dplyr::inner_join(best_param) %>%
+          dplyr::select(Hyperparameter_Combo) %>%
+          dplyr::pull() %>%
+          base::suppressMessages()
+      }
+      
+      finalized_workflow <- tune::finalize_workflow(workflow, best_param)
+    } else {
+      hyperparameter_id <- 1
+      finalized_workflow <- workflow
+    }
     
-    finalized_workflow <- workflow
-    
+    # fit model on entire input data
     set.seed(seed)
+    
     wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
       base::suppressMessages()
     
@@ -446,6 +743,7 @@ fit_models <- function(run_info,
       base::suppressMessages() %>%
       base::suppressWarnings()
     
+    # only predict on test sets, no refitting or tuning
     # splits_tbl <- create_splits(prep_data, model_train_test_tbl)
     # 
     # pred_tbl <- purrr::imap_dfr(
@@ -481,16 +779,21 @@ fit_models <- function(run_info,
           dplyr::select(Combo, Date, .row),
         by = ".row"
       ) %>%
-      # dplyr::mutate(Hyperparameter_ID = hyperparameter_id) %>%
-      dplyr::select(-.row, -.config)
-    
+      dplyr::mutate(Hyperparameter_ID = hyperparameter_id) %>%
+      dplyr::select(-.row, -.config) %>%
+      dplyr::left_join(
+        model_train_test_tbl %>%
+          dplyr::select(Train_Test_ID, Run_Type),
+        by = "Train_Test_ID"
+      )
+  
     # check for future forecast
     if (as.numeric(min(unique(final_fcst$Train_Test_ID))) != 1) {
       stop("model is missing future forecast")
     }
     
     # undo differencing transformation
-    if (nrow(combo_info_tbl) > 0 & model %in% list_multivariate_models()) {
+    if (prev_run_log_tbl$stationary & model %in% list_multivariate_models()) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -516,49 +819,49 @@ fit_models <- function(run_info,
       }
     }
 
-    # # undo box-cox transformation
-    # if (box_cox) {
-    #   if (combo_hash == "All-Data") {
-    #     final_fcst <- final_fcst %>%
-    #       dplyr::group_by(Combo) %>%
-    #       dplyr::group_split() %>%
-    #       purrr::map(function(x) {
-    #         combo <- unique(x$Combo)
-    #         
-    #         lambda <- filtered_combo_info_tbl %>%
-    #           dplyr::filter(Combo == combo) %>%
-    #           dplyr::select(Box_Cox_Lambda) %>%
-    #           dplyr::pull(Box_Cox_Lambda)
-    #         
-    #         if (!is.na(lambda)) {
-    #           final_fcst_return <- x %>%
-    #             dplyr::mutate(
-    #               Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
-    #               Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
-    #             )
-    #         } else {
-    #           final_fcst_return <- x
-    #         }
-    #         
-    #         return(final_fcst_return)
-    #       }) %>%
-    #       dplyr::bind_rows()
-    #   } else {
-    #     lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
-    #     
-    #     if (!is.na(lambda)) {
-    #       final_fcst <- final_fcst %>%
-    #         dplyr::mutate(
-    #           Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
-    #           Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
-    #         )
-    #     }
-    #   }
-    # }
-    # 
-    # # negative forecast adjustment
-    # final_fcst <- final_fcst %>%
-    #   negative_fcst_adj(negative_forecast)
+    # undo box-cox transformation
+    if (prev_run_log_tbl$box_cox) {
+      if (combo_hash == "All-Data") {
+        final_fcst <- final_fcst %>%
+          dplyr::group_by(Combo) %>%
+          dplyr::group_split() %>%
+          purrr::map(function(x) {
+            combo <- unique(x$Combo)
+
+            lambda <- filtered_combo_info_tbl %>%
+              dplyr::filter(Combo == combo) %>%
+              dplyr::select(Box_Cox_Lambda) %>%
+              dplyr::pull(Box_Cox_Lambda)
+
+            if (!is.na(lambda)) {
+              final_fcst_return <- x %>%
+                dplyr::mutate(
+                  Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+                  Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+                )
+            } else {
+              final_fcst_return <- x
+            }
+
+            return(final_fcst_return)
+          }) %>%
+          dplyr::bind_rows()
+      } else {
+        lambda <- filtered_combo_info_tbl$Box_Cox_Lambda
+
+        if (!is.na(lambda)) {
+          final_fcst <- final_fcst %>%
+            dplyr::mutate(
+              Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
+              Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+            )
+        }
+      }
+    }
+
+    # negative forecast adjustment
+    final_fcst <- final_fcst %>%
+      negative_fcst_adj(prev_run_log_tbl$negative_forecast)
     
     # return the forecast
     combo_id <- ifelse(combo == "All-Data", "All-Data", unique(final_fcst$Combo))
@@ -583,6 +886,69 @@ fit_models <- function(run_info,
   }
   
   return(model_tbl)
+}
+
+adjust_forecast <- function(model_tbl) {
+  
+  # check if forecasts should be averaged
+  if(nrow(model_tbl) > 1) {
+    simple_average <- TRUE
+  } else {
+    simple_average <- FALSE
+  }
+  
+  # extract out the forecast table
+  forecast_tbl <- model_tbl %>%
+    dplyr::select(-Model_Fit) %>%
+    tidyr::unnest(Forecast_Tbl) %>%
+    dplyr::arrange(Train_Test_ID) %>%
+    tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
+    dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
+    dplyr::mutate(Horizon = dplyr::row_number()) %>%
+    dplyr::ungroup()
+  
+  if(simple_average) {
+    # average the forecasts
+    avg_forecast_tbl <- forecast_tbl %>%
+      dplyr::group_by(Combo_ID, Combo, Run_Type, Train_Test_ID, Date, Horizon) %>%
+      dplyr::summarise(
+        Forecast = mean(Forecast, na.rm = TRUE),
+        Target = mean(Target, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::mutate(Model_ID = paste(sort(unique(forecast_tbl$Model_ID)), collapse = "_"),
+                    Model_Name = NA,
+                    Model_Type = "local",
+                    Recipe_ID = "simple_average",
+                    Hyperparameter_ID = NA,
+                    Best_Model = "Yes")
+    
+    final_fcst_tbl <- forecast_tbl %>%
+      dplyr::mutate(Best_Model = "No") %>%
+      dplyr::bind_rows(avg_forecast_tbl)
+  } else {
+    final_fcst_tbl <- forecast_tbl %>%
+      dplyr::mutate(Best_Model = "Yes")
+  }
+  
+  return(final_fcst_tbl)
+}
+
+calc_wmape <- function(forecast_tbl) {
+  forecast_tbl %>%
+    dplyr::filter(Run_Type == "Back_Test", 
+                  Best_Model == "Yes") %>%
+    dplyr::mutate(
+      Target = ifelse(Target == 0, 0.1, Target)
+    ) %>%
+    dplyr::mutate(
+      MAPE = round(abs((Forecast - Target) / Target), digits = 4),
+      Total = sum(Target, na.rm = TRUE),
+      Weight = (MAPE * Target) / Total
+    ) %>%
+    dplyr::pull(Weight) %>%
+    sum(na.rm = TRUE) %>%
+    round(digits = 4)
 }
 
 adjust_inputs <- function(x, 

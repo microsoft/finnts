@@ -1139,7 +1139,24 @@ log_best_run <- function(agent_info,
       dplyr::mutate(model_avg_wmape = avg_wmape,
                     model_median_wmape = median_wmape,
                     model_std_wmape = std_wmape,  
-                    agent_version = agent_info$agent_version)
+                    agent_version = as.numeric(agent_info$agent_version))
+    
+    # save the log file
+    write_data(
+      x = log_df,
+      combo = NULL,
+      run_info = run_info,
+      output_type = "log",
+      folder = "logs",
+      suffix = NULL
+    )
+  } else {
+    # load log file
+    log_df <- get_run_info(project_name = run_info$project_name,
+                           run_name = run_info$run_name,
+                           storage_object = run_info$storage_object,
+                           path = run_info$path) %>%
+      dplyr::mutate(agent_version = as.numeric(agent_info$agent_version))
     
     # save the log file
     write_data(
@@ -1312,9 +1329,7 @@ load_run_results <- function(agent_info,
       ) %>%
       dplyr::ungroup() %>%
       dplyr::relocate(agent_version, run_number, weighted_mape)
-    
-    latest_version <- max(previous_runs_formatted$agent_version, na.rm = TRUE)
-    
+
     # earliest row with *global* minimum weighted_mape for latest agent version
     earliest_min <- previous_runs_formatted %>%
       dplyr::filter(agent_version == max(agent_version)) %>%
@@ -1327,24 +1342,28 @@ load_run_results <- function(agent_info,
 
     # look **after** that for runs whose weighted_mape is within ±10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
-    cand <- previous_runs_formatted %>%
-      dplyr::filter(
-        run_number  > best_idx,                                # later runs only
-        abs(weighted_mape - best_wmape) <= best_wmape * 0.10   # within ±10 %
-      )
-    
-    if (nrow(cand)) {
-      cand <- cand %>%
-        dplyr::filter(model_avg_wmape == min(model_avg_wmape)) %>%  # lowest avg
-        dplyr::slice(1)                                             # earliest tie
-      if (cand$model_avg_wmape < best_model)       # strictly better than current
-        best_idx <- cand$run_number
+    if("model_avg_wmape" %in% names(previous_runs_formatted)) {
+      if(nrow(previous_runs_formatted) > 1) {
+        cand <- previous_runs_formatted %>%
+          dplyr::filter(
+            run_number  > best_idx,                                # later runs only
+            abs(weighted_mape - best_wmape) <= best_wmape * 0.10   # within ±10 %
+          ) 
+        
+        if (nrow(cand)) {
+          cand <- cand %>%
+            dplyr::filter(model_avg_wmape == min(model_avg_wmape)) %>%  # lowest avg
+            dplyr::slice(1)                                             # earliest tie
+          if (cand$model_avg_wmape < best_model)       # strictly better than current
+            best_idx <- cand$run_number
+        }
+      }
     }
-    
+
     # flag the chosen best run
     previous_runs_formatted <- previous_runs_formatted %>%
       dplyr::mutate(
-        best_run = dplyr::if_else((run_number == best_idx & agent_version == latest_version), "yes", "no")
+        best_run = dplyr::if_else(run_number == best_idx, "yes", "no")
       )
 
     if (nrow(previous_runs_formatted) == 0) {
