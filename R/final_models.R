@@ -676,6 +676,7 @@ final_models <- function(run_info,
     dplyr::mutate(
       average_models = average_models,
       max_model_average = max_model_average,
+      weekly_to_daily = weekly_to_daily,
       weighted_mape = round(weighted_mape, digits = 4)
     )
 

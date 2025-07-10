@@ -6,6 +6,7 @@
 #' @param parallel_processing Logical indicating whether to use parallel processing.
 #' @param inner_parallel Logical indicating whether to use inner parallel processing.
 #' @param num_cores Number of cores to use for parallel processing.
+#' @param seed Random seed for reproducibility.
 #'
 #' @return NULL
 #' @export
@@ -14,7 +15,10 @@ iterate_forecast <- function(agent_info,
                              weighted_mape_goal = 0.03,
                              parallel_processing = NULL,
                              inner_parallel = FALSE,
-                             num_cores = NULL) {
+                             num_cores = NULL, 
+                             seed = 123) {
+  
+  message("[agent] 🏃‍➡️ Starting Forecast Iteration Process")
   
   # formatting checks
   check_agent_info(agent_info = agent_info)
@@ -63,7 +67,8 @@ iterate_forecast <- function(agent_info,
       parallel_processing = parallel_processing,
       inner_parallel = inner_parallel,
       num_cores = num_cores,
-      max_iter = max_iter
+      max_iter = max_iter, 
+      seed = seed
     )
     
     # filter out which time series met the mape goal after global models
@@ -114,14 +119,15 @@ iterate_forecast <- function(agent_info,
           parallel_processing = NULL,
           inner_parallel = inner_parallel,
           num_cores = num_cores,
-          max_iter = max_iter
+          max_iter = max_iter, 
+          seed = seed
         )
       } %>% base::suppressPackageStartupMessages()
     
     par_end(cl)
   }
   
-  message("[agent] ✅ Agent run completed successfully.")
+  message("[agent] ✅ Forecast Iteration Process Complete")
 }
 
 #' Get the final best forecast for an agent
@@ -247,6 +253,7 @@ get_best_agent_run <- function(agent_info) {
 #' @param inner_parallel Logical indicating if inner parallel processing should be used.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #' @param max_iter Maximum number of iterations for the workflow. Default is 3.
+#' @param seed Random seed for reproducibility. Default is 123.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -256,8 +263,8 @@ fcst_agent_workflow <- function(agent_info,
                                 parallel_processing,
                                 inner_parallel,
                                 num_cores,
-                                max_iter = 3) {
-  # message("[agent] 📈 Starting Forecast Iteration Workflow")
+                                max_iter = 3, 
+                                seed = 123) {
 
   # create a fresh session for the reasoning LLM
   if (!is.null(agent_info$reason_llm)) {
@@ -300,7 +307,8 @@ fcst_agent_workflow <- function(agent_info,
         combo               = combo,
         parallel_processing = parallel_processing,
         inner_parallel      = inner_parallel,
-        num_cores           = num_cores
+        num_cores           = num_cores, 
+        seed                = seed
       )
     ),
     get_fcst_output = list(
@@ -833,7 +841,7 @@ reason_inputs <- function(agent_info,
       agent_version = agent_info$agent_version
     )
   }
-  # print(final_prompt)
+
   # send prompt to LLM
   response <- llm$chat(final_prompt, echo = FALSE)
 
@@ -1042,6 +1050,7 @@ reason_inputs <- function(agent_info,
 #' @param parallel_processing Logical indicating if parallel processing should be used.
 #' @param inner_parallel Logical indicating if inner parallel processing should be used.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
+#' @param seed An integer seed for reproducibility. Default is 123.
 #'
 #' @return A list containing the run information including project name, run name, storage object, path, data output, and object output.
 #' @noRd
@@ -1050,7 +1059,8 @@ submit_fcst_run <- function(agent_info,
                             combo,
                             parallel_processing = NULL,
                             inner_parallel = FALSE,
-                            num_cores = NULL) {
+                            num_cores = NULL, 
+                            seed = 123) {
   cli::cli_alert_info(
     "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
   )
@@ -1153,7 +1163,8 @@ submit_fcst_run <- function(agent_info,
     negative_forecast = inputs$negative_forecast,
     parallel_processing = parallel_processing,
     inner_parallel = inner_parallel,
-    num_cores = num_cores
+    num_cores = num_cores, 
+    seed = seed
   )
 
   # evaluate models
@@ -1244,7 +1255,7 @@ log_best_run <- function(agent_info,
       ) %>%
       dplyr::summarise(weighted_mape = sum(Weight)) %>%
       dplyr::ungroup()
-    print(model_wmape_tbl)
+
     avg_wmape <- model_wmape_tbl %>%
       dplyr::pull(weighted_mape) %>%
       mean()
@@ -1332,6 +1343,7 @@ log_best_run <- function(agent_info,
 
     # for each combo, filter the back test data, calculate the weighted mape and save to logs
     for (combo_name in combo_list) {
+      # filter the back test data for the current combo
       combo_data <- back_test_tbl %>%
         dplyr::filter(Combo == combo_name)
 
@@ -1395,7 +1407,6 @@ log_best_run <- function(agent_info,
       }
     }
   }
-
   return("Run logged successfully.")
 }
 
@@ -1463,7 +1474,8 @@ load_run_results <- function(agent_info,
     earliest_min <- previous_runs_formatted %>%
       dplyr::filter(agent_version == max(agent_version)) %>%
       dplyr::filter(weighted_mape == min(weighted_mape)) %>%   # all global-mins
-      dplyr::slice(1)                                          # earliest one
+      dplyr::slice(1) %>%                                      # earliest one
+      suppressWarnings()
 
     best_idx   <- earliest_min$run_number
     best_wmape <- earliest_min$weighted_mape
