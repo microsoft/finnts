@@ -244,7 +244,7 @@ forecast_backwards_compatibility <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -323,7 +323,7 @@ forecast_backwards_compatibility <- function(run_info,
     # read in unreconciled results
     best_model_tbl <- read_file(run_info,
       path = paste0(
-        "/forecasts/*", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+        "/forecasts/*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
         "*models.", run_info$data_output
       ),
       return_type = "df"

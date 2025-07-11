@@ -4,7 +4,7 @@
 #'   about your entire forecast project.
 #'
 #' @param project_name Name used to group similar runs under a
-#'   single experiment name.
+#'   single project name.
 #' @param storage_object Used to store outputs during the project to other
 #'   storage services in Azure. Could be a storage container object from
 #'   the 'AzureStor' package to connect to ADLS blob storage or a
@@ -21,12 +21,23 @@
 #'   outputs. Default will write object outputs like trained models as
 #'   rds files. The other option of 'qs' will instead serialize R objects
 #'   as qs files by using the 'qs' package.
+#' @param combo_variables Character vector of variables to combine into a
+#'   combo variable.
+#' @param target_variable Character string of the target variable to
+#'   forecast.
+#' @param date_type Character string of the type of date variable
+#' @param fiscal_year_start Numeric value of the month that the fiscal year
+#'   starts in.
+#' @param overwrite Logical value of whether to overwrite existing project
 #'
 #' @return A list of project information
 #' @examples
 #' \donttest{
 #' run_info <- set_project_info(
-#'   project_name = "test_exp"
+#'   project_name = "test_exp", 
+#'   combo_variables = c("Store", "Product"),
+#'   target_variable = "Sales",
+#'   date_type = "month"
 #' )
 #' }
 #' @export
@@ -220,12 +231,12 @@ set_project_info <- function(project_name = "finn_project",
   }
 }
 
-#' Get run info
+#' Get project info
 #'
-#' Lets you get all of the logging associated with a specific experiment or run.
+#' Lets you get all of the logging associated with a specific project or run.
 #'
 #' @param project_name Name used to group similar runs under a
-#'   single experiment name.
+#'   single project name.
 #' @param storage_object Used to store outputs during a run to other
 #'   storage services in Azure. Could be a storage container object from
 #'   the 'AzureStor' package to connect to ADLS blob storage or a
@@ -239,13 +250,15 @@ set_project_info <- function(project_name = "finn_project",
 #' @return Data frame of run log information
 #' @examples
 #' \donttest{
-#' run_info <- set_run_info(
-#'   experiment_name = "finn_forecast",
-#'   run_name = "test_run"
+#' project_info <- set_project_info(
+#'   project_name = "finn_forecast",
+#'   combo_variables = c("Store", "Product"),
+#'   target_variable = "Sales",
+#'   date_type = "month"
 #' )
 #'
-#' run_info_tbl <- get_run_info(
-#'   experiment_name = "finn_forecast"
+#' project_info_tbl <- get_project_info(
+#'   project_name = "finn_forecast"
 #' )
 #' }
 #' @export
@@ -253,8 +266,8 @@ get_project_info <- function(project_name = NULL,
                              storage_object = NULL,
                              path = NULL) {
   # input checks
-  if (!inherits(run_name, c("NULL", "character"))) {
-    stop("`run_name` must either be a NULL or a string")
+  if (!inherits(project_name, c("NULL", "character"))) {
+    stop("`project_name` must either be a NULL or a string")
   }
 
   if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
@@ -270,17 +283,13 @@ get_project_info <- function(project_name = NULL,
   }
 
   # run info formatting
-  if (is.null(experiment_name)) {
-    experiment_name_final <- "*"
+  if (is.null(project_name)) {
+    project_name_final <- "*"
   } else {
-    experiment_name_final <- hash_data(experiment_name)
+    project_name_final <- hash_data(project_name)
   }
 
-  if (is.null(run_name)) {
-    run_name_final <- "*"
-  } else {
-    run_name_final <- hash_data(run_name)
-  }
+  run_name_final <- "*"
 
   info_list <- list(
     storage_object = storage_object,
@@ -289,14 +298,14 @@ get_project_info <- function(project_name = NULL,
 
   # read run metadata
   file_path <- paste0(
-    "/logs/*", experiment_name_final, "-",
+    "/logs/*", project_name_final, "-",
     run_name_final, ".csv"
   )
 
-  run_tbl <- read_file(info_list,
+  project_tbl <- read_file(info_list,
     path = file_path,
     return_type = "df"
   )
 
-  return(run_tbl)
+  return(project_tbl)
 }

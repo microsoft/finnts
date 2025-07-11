@@ -5,7 +5,7 @@
 \title{Set up finnts submission}
 \usage{
 set_run_info(
-  experiment_name = "finn_fcst",
+  project_name = "finn_project",
   run_name = "finn_fcst",
   storage_object = NULL,
   path = NULL,
@@ -15,12 +15,10 @@ set_run_info(
 )
 }
 \arguments{
-\item{experiment_name}{Name used to group similar runs under a
-single experiment name.}
+\item{project_name}{Name used to group similar runs under a
+single project name.}
 
-\item{run_name}{Name to distinguish one run of Finn from another.
-The current time in UTC is appended to the run name to ensure
-a unique run name is created.}
+\item{run_name}{Name to distinguish one run of Finn from another.}
 
 \item{storage_object}{Used to store outputs during a run to other
 storage services in Azure. Could be a storage container object from
@@ -56,7 +54,7 @@ about your run.
 \examples{
 \donttest{
 run_info <- set_run_info(
-  experiment_name = "test_exp",
+  project_name = "test_exp",
   run_name = "test_run_1"
 )
 }

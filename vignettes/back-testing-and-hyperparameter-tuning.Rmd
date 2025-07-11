@@ -30,7 +30,7 @@ hist_data <- timetk::m4_monthly %>%
   dplyr::mutate(id = as.character(id))
 
 run_info <- set_run_info(
-  experiment_name = "finnts_fcst",
+  project_name = "finnts_fcst",
   run_name = "get_prepped_models"
 )
 

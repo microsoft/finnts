@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.5.0.9003
+Version: 0.5.0.9004
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -67,6 +67,9 @@ Suggests:
     AzureStor,
     Boruta,
     corrr,
+    ellmer, 
+    energy,
+    jsonlite, 
     knitr,
     Microsoft365R,
     notebookutils, 
@@ -75,6 +78,7 @@ Suggests:
     rmarkdown,
     sparklyr,
     testthat (>= 3.0.0), 
+    tseries,
     vip
 Config/testthat/edition: 3
 Depends: 

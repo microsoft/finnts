@@ -63,7 +63,7 @@ Before we call the Finn forecast function. Let's first set up some run informati
 
 ```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
 run_info <- set_run_info(
-  experiment_name = "finn_forecast",
+  project_name = "finn_forecast",
   run_name = "test_run"
 )
 ```
