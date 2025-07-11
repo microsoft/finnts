@@ -1,7 +1,23 @@
 
+#' Update Forecast Agent
+#'
+#' This function updates the forecast agent with the latest data and inputs.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param weighted_mape_goal Numeric indicating the goal for the weighted MAPE.
+#' @param max_iter Numeric indicating the maximum number of iterations for the workflow.
+#' @param allow_iterate_forecast Logical indicating if the forecast iteration should be allowed.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
+#' @param seed Numeric seed for reproducibility.
+#'
+#' @return Nothing
+#' @export
 update_forecast <- function(agent_info,
                             weighted_mape_goal = 0.1,
                             max_iter = 3,
+                            allow_iterate_forecast = TRUE,
                             parallel_processing = NULL,
                             inner_parallel = FALSE,
                             num_cores = NULL,
@@ -31,6 +47,7 @@ update_forecast <- function(agent_info,
     inner_parallel = inner_parallel,
     num_cores = num_cores,
     max_iter = max_iter, 
+    allow_iterate_forecast = allow_iterate_forecast,
     weighted_mape_goal = weighted_mape_goal,
     seed = seed
   )
@@ -38,11 +55,27 @@ update_forecast <- function(agent_info,
   message("[agent] ✅ Forecast Update Process Complete")
 }
 
+#' Update Forecast Agent Workflow
+#'
+#' This function defines the workflow for updating the forecast agent.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
+#' @param max_iter Numeric indicating the maximum number of iterations for the workflow.
+#' @param allow_iterate_forecast Logical indicating if the forecast iteration should be allowed.
+#' @param weighted_mape_goal Numeric indicating the goal for the weighted MAPE.
+#' @param seed Numeric seed for reproducibility.
+#'
+# @return A list containing the results of the workflow.
+#' @noRd
 update_fcst_agent_workflow <- function(agent_info,
                                        parallel_processing,
                                        inner_parallel,
                                        num_cores,
                                        max_iter = 3, 
+                                       allow_iterate_forecast = TRUE,
                                        weighted_mape_goal = 0.1,
                                        seed = 123) {
 
@@ -120,7 +153,7 @@ update_fcst_agent_workflow <- function(agent_info,
         perc_worse <- ctx$results$analyze_results
         
         # check if forecast iteration should be ran again
-        if (perc_worse >= 40) {
+        if (perc_worse >= 40 & allow_iterate_forecast) {
           cli::cli_alert_info("Poor performance detected: Running iterate_forecast() to improve results.")
           return(list(ctx = ctx, `next` = "iterate_forecast"))
         } else {
@@ -158,6 +191,14 @@ update_fcst_agent_workflow <- function(agent_info,
   run_graph(agent_info$driver_llm, workflow, init_ctx)
 }
 
+#' Register Update Forecast Tools
+#'
+#' This function registers the tools required for the update forecast agent workflow.
+#'
+#' @param agent_info A list containing the agent information.
+#'
+#' @return Nothing
+#' @noRd
 register_update_fcst_tools <- function(agent_info) {
 
   # workflows
@@ -199,6 +240,14 @@ register_update_fcst_tools <- function(agent_info) {
   ))
 }
 
+#' Initial Checks for Update Forecast
+#'
+#' This function performs initial checks on the agent information and prepares the necessary data for the update process.
+#'
+#' @param agent_info A list containing the agent information.
+#'
+#' @return A data frame containing the previous best run information or a message indicating no updates are required.
+#' @noRd
 initial_checks <- function(agent_info) {
   
   # get metadata
@@ -327,6 +376,19 @@ initial_checks <- function(agent_info) {
   return(prev_best_runs_tbl)
 }
 
+#' Update Global Models
+#'
+#' This function updates the global models based on the previous best runs.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param previous_best_run_tbl A data frame containing the previous best run information.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
+#' @param seed Numeric seed for reproducibility.
+#'
+# @return A character string indicating the completion of the update process.
+#' @noRd
 update_global_models <- function(agent_info, 
                                  previous_best_run_tbl, 
                                  parallel_processing, 
@@ -357,6 +419,19 @@ update_global_models <- function(agent_info,
   return("done")
 }
 
+#' Update Local Models
+#'
+#' This function updates the local models based on the previous best runs.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param previous_best_run_tbl A data frame containing the previous best run information.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
+#' @param seed Numeric seed for reproducibility.
+#'
+#' @return Nothing
+#' @noRd
 update_local_models <- function(agent_info, 
                                 previous_best_run_tbl, 
                                 parallel_processing, 
@@ -414,6 +489,14 @@ update_local_models <- function(agent_info,
   par_end(inner_cl)
 }
 
+#' Analyze Results of Agent Run
+#' 
+#' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
+#'
+#' @param agent_info A list containing the agent information.
+#'
+#' @return A numeric value representing the percentage of time series that had poor performance.
+#' @noRd
 analyze_results <- function(agent_info) {
   
   # get metadata
@@ -503,6 +586,19 @@ analyze_results <- function(agent_info) {
   return(poor_performance_pct)
 }
 
+#' Update Forecast for a Combo
+#'
+#' This function updates the forecast for a specific combo based on the previous best run.
+#' 
+#' @param agent_info A list containing the agent information.
+#' @param prev_best_run_tbl A data frame containing the previous best run information.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param seed Numeric seed for reproducibility.
+#' 
+#' @return A data frame containing the updated forecast results.
+#' @noRd
 update_forecast_combo <- function(agent_info, 
                                   prev_best_run_tbl, 
                                   parallel_processing = NULL, 
@@ -873,6 +969,26 @@ update_forecast_combo <- function(agent_info,
   return("done")
 }
 
+#' Fit models based on previous run information and hyperparameters
+#' 
+#' This function fits models based on the provided run information, combo, and previous run log. It handles model adjustments, feature selection, and hyperparameter tuning if necessary.
+#' 
+#' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
+#' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
+#' @param combo_info_tbl A data frame containing information about the combo, including any necessary adjustments for column types.
+#' @param trained_models_tbl A data frame containing the trained models to be fitted.
+#' @param model_train_test_tbl A data frame containing the train-test split information for the models.
+#' @param model_hyperparameter_tbl A data frame containing the hyperparameters for the models.
+#' @param prev_run_log_tbl A data frame containing the previous run log information, including multistep horizon and forecast horizon.
+#' @param forecast_horizon An integer indicating the forecast horizon to be used for the models.
+#' @param retune_hyperparameters A boolean indicating whether to retune hyperparameters if the initial fit does not meet performance criteria.
+#' @param parallel_processing A string indicating the type of parallel processing to be used (e.g., "local_machine").
+#' @param num_cores An integer indicating the number of cores to be used for parallel processing.
+#' @param inner_parallel A boolean indicating whether to use inner parallel processing.
+#' @param seed An integer seed for reproducibility.
+#' 
+#' @return A data frame containing the fitted models with their respective model IDs, names, types, recipes, and fitted model objects.
+#' @noRd
 fit_models <- function(run_info, 
                        combo, 
                        combo_info_tbl,
@@ -1111,29 +1227,6 @@ fit_models <- function(run_info,
       tune::collect_predictions() %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
-
-    # only predict on test sets, no refitting or tuning
-    # splits_tbl <- create_splits(prep_data, model_train_test_tbl)
-    # 
-    # pred_tbl <- purrr::imap_dfr(
-    #   splits_tbl$splits,
-    #   function(spl, i) {
-    #     
-    #     assess_idx <- spl$out_id
-    #     assess_dat <- rsample::assessment(spl)
-    #     
-    #     set.seed(seed)
-    #     
-    #     tibble::tibble(
-    #       .pred   = predict(finalized_workflow, assess_dat)[[".pred"]],
-    #       id      = splits_tbl$id[i],
-    #       .row    = assess_idx,
-    #       Target  = prep_data$Target[assess_idx],
-    #       .config = "test"
-    #     )
-    #   }
-    # ) %>%
-    #   print(n=100)
     
     # finalize forecast
     final_fcst <- refit_tbl %>%
@@ -1257,6 +1350,17 @@ fit_models <- function(run_info,
   return(model_tbl)
 }
 
+#' Adjust Forecast After Model Fitting
+#' 
+#' This function adjusts the forecast table after model fitting, averaging forecasts if multiple models are present, and reconciling the forecast if hierarchical time series methods are used.
+#' 
+#' @param model_tbl A tibble containing the model fitting results.
+#' @param run_info A list containing run information such as project name, run name, etc.
+#' @param forecast_approach The approach used for forecasting, either "standard_hierarchy" or "grouped_hierarchy".
+#' @param negative_forecast Logical indicating if negative forecasts are allowed.
+#' 
+#' @return A tibble containing the adjusted forecast table.
+#' @noRd
 adjust_forecast <- function(model_tbl,
                             run_info, 
                             forecast_approach, 
@@ -1314,6 +1418,17 @@ adjust_forecast <- function(model_tbl,
   return(final_fcst_tbl)
 }
 
+#' reconcile the forecast 
+#' 
+#' This function reconciles the initial forecast table using hierarchical time series methods.
+#'
+#' @param initial_fcst The initial forecast table to reconcile.
+#' @param run_info The run information list containing project and run details.
+#' @param forecast_approach The approach used for forecasting, either "standard_hierarchy" or "grouped_hierarchy".
+#' @param negative_forecast Logical indicating if negative forecasts are allowed.
+#' 
+#' @return A reconciled forecast table.
+#' @noRd
 reconcile <- function(initial_fcst, 
                       run_info, 
                       forecast_approach, 
@@ -1433,6 +1548,14 @@ reconcile <- function(initial_fcst,
   return(reconciled_tbl)
 }
 
+#' Calculate weighted Mean Absolute Percentage Error (WMAPE)
+#' 
+#' This function calculates the weighted Mean Absolute Percentage Error (WMAPE) for a given forecast table.
+#'
+#' @param forecast_tbl A data frame containing forecast results with columns for Run_Type, Best_Model, Combo, Forecast, and Target.
+#'
+#' @return A numeric value representing the weighted MAPE.
+#' @noRd
 calc_wmape <- function(forecast_tbl) {
   forecast_tbl %>%
     dplyr::filter(Run_Type == "Back_Test", 
@@ -1454,6 +1577,15 @@ calc_wmape <- function(forecast_tbl) {
     mean(na.rm = TRUE)
 }
 
+#' Adjust inputs for model fitting
+#' 
+#' This function adjusts inputs for model fitting, converting character strings to numeric vectors if specified.
+#' 
+#' @param x The input to adjust, can be a character string or numeric vector. 
+#' @param convert_numeric Logical, if TRUE converts character strings to numeric vectors.
+#' 
+#' @return A list of adjusted inputs or NULL if input is NA.
+#' @noRd
 adjust_inputs <- function(x, 
                           convert_numeric = FALSE) {
   if(is.na(x)) {
