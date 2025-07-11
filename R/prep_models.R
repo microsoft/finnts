@@ -187,8 +187,8 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 train_test_split <- function(run_info,
                              back_test_scenarios = NULL,
                              back_test_spacing = NULL,
-                             run_ensemble_models = TRUE, 
-                             model_list = NULL, 
+                             run_ensemble_models = TRUE,
+                             model_list = NULL,
                              return = FALSE) {
   cli::cli_progress_step("Creating Train Test Splits")
 
@@ -212,13 +212,13 @@ train_test_split <- function(run_info,
   }
 
   # adjust based on models planned to run
-  if(is.null(model_list)) {
+  if (is.null(model_list)) {
     model_workflow_list <- read_file(run_info,
-                                     path = paste0(
-                                       "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-                                       "-model_workflows.", run_info$object_output
-                                     ),
-                                     return_type = "df"
+      path = paste0(
+        "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+        "-model_workflows.", run_info$object_output
+      ),
+      return_type = "df"
     ) %>%
       dplyr::pull(Model_Name) %>%
       unique()
@@ -412,8 +412,8 @@ train_test_split <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
-  
-  if(return) {
+
+  if (return) {
     return(train_test_final)
   } else {
     cli::cli_progress_done()

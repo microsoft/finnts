@@ -15,7 +15,6 @@ run_agent <- function(agent_info,
                       parallel_processing = NULL,
                       inner_parallel = FALSE,
                       num_cores = NULL) {
-  
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("max_iter", max_iter, "numeric")
@@ -23,7 +22,7 @@ run_agent <- function(agent_info,
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("inner_parallel", inner_parallel, "logical")
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # get project info
   project_info <- agent_info$project_info
 
@@ -36,7 +35,7 @@ run_agent <- function(agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
   )
-  
+
   # get total number of time series
   combo_list <- read_file(
     run_info = project_info,
@@ -53,9 +52,9 @@ run_agent <- function(agent_info,
     unique()
 
   # optimize global models
-  if(length(combo_list) > 1) {
+  if (length(combo_list) > 1) {
     message("[agent] 🌎 Starting Global Model Iteration Workflow")
-    
+
     fcst_results <- fcst_agent_workflow(
       agent_info = agent_info,
       combo = NULL,
@@ -65,7 +64,7 @@ run_agent <- function(agent_info,
       num_cores = num_cores,
       max_iter = max_iter
     )
-    
+
     # filter out which time series met the mape goal after global models
     local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
       dplyr::filter(weighted_mape > weighted_mape_goal) %>%

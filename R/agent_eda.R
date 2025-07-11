@@ -720,17 +720,16 @@ acf_scan <- function(agent_info,
         )
 
       # calculate maximum lag to use in acf
-      date_type_max_lag <- switch(
-        date_type,
-        "day" = 364*2,
-        "week" = 52*2,
-        "month" = 12*2, 
-        "quarter" = 4*2,
+      date_type_max_lag <- switch(date_type,
+        "day" = 364 * 2,
+        "week" = 52 * 2,
+        "month" = 12 * 2,
+        "quarter" = 4 * 2,
         "year" = 10
       )
-      
-      max_lag <- min(nrow(input_data)-1, date_type_max_lag)
-      
+
+      max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
+
       # calculate acf
       acf_result <- stats::acf(input_data$Target, plot = FALSE, lag.max = max_lag)
 
@@ -862,18 +861,17 @@ pacf_scan <- function(agent_info,
           .by = date_type,
           .date_var = Date
         )
-      
+
       # calculate maximum lag to use in pacf
-      date_type_max_lag <- switch(
-        date_type,
-        "day" = 364*2,
-        "week" = 52*2,
-        "month" = 12*2, 
-        "quarter" = 4*2,
+      date_type_max_lag <- switch(date_type,
+        "day" = 364 * 2,
+        "week" = 52 * 2,
+        "month" = 12 * 2,
+        "quarter" = 4 * 2,
         "year" = 10
       )
-      
-      max_lag <- min(nrow(input_data)-1, date_type_max_lag)
+
+      max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
 
       # calculate pacf
       pacf_result <- stats::pacf(input_data$Target, plot = FALSE, lag.max = max_lag)
@@ -1458,17 +1456,16 @@ seasonality_scan <- function(agent_info,
       # remove primary season via STL
       stl_res <- stats::stl(ts_vec, s.window = "periodic", robust = TRUE)
       resid <- as.numeric(stl_res$time.series[, "remainder"])
-      
+
       # calc maximum lag to use in ACF
-      date_type_max_lag <- switch(
-        date_type,
-        "day" = 364*2,
-        "week" = 52*2,
-        "month" = 12*2, 
-        "quarter" = 4*2,
+      date_type_max_lag <- switch(date_type,
+        "day" = 364 * 2,
+        "week" = 52 * 2,
+        "month" = 12 * 2,
+        "quarter" = 4 * 2,
         "year" = 10
       )
-      
+
       max_lag <- min(length(resid) - 1, date_type_max_lag)
 
       # residual ACF
@@ -1758,31 +1755,32 @@ xreg_scan <- function(agent_info,
         ),
         return_type = "df"
       )
-      
-      # determine future xregs 
-      if(!is.null(regressors)) {
-        future_xregs_list <- get_xregs_future_values_tbl(data_tbl = input_data,
-                                    external_regressors = regressors,
-                                    hist_end_date = hist_end_date) %>%
+
+      # determine future xregs
+      if (!is.null(regressors)) {
+        future_xregs_list <- get_xregs_future_values_tbl(
+          data_tbl = input_data,
+          external_regressors = regressors,
+          hist_end_date = hist_end_date
+        ) %>%
           dplyr::select(-Combo, -Date) %>%
           colnames()
       }
-      
-      # finalize input data 
+
+      # finalize input data
       input_data <- input_data %>%
         dplyr::filter(Date <= hist_end_date) %>%
-        dplyr::arrange(Date) 
+        dplyr::arrange(Date)
 
       combo_name <- unique(input_data$Combo)
-      
+
       # get lags by date type
-      date_type_lags <- switch(
-        date_type,
-        "day"     = 0:365,  # daily data lags
-        "week"    = 0:52,  # weekly data lags
-        "month"   = 0:12,  # monthly data lags
-        "quarter" = 0:4,   # quarterly data lags
-        "year"    = 0:5    # yearly data lags
+      date_type_lags <- switch(date_type,
+        "day"     = 0:365, # daily data lags
+        "week"    = 0:52, # weekly data lags
+        "month"   = 0:12, # monthly data lags
+        "quarter" = 0:4, # quarterly data lags
+        "year"    = 0:5 # yearly data lags
       )
 
       # build lagged regressors
@@ -1803,13 +1801,15 @@ xreg_scan <- function(agent_info,
         ) %>%
         dplyr::mutate(dCor = round(dCor, 2)) %>%
         dplyr::mutate(Combo = combo_name, .before = 1)
-      
+
       # filter out lag 0 values if a regressor does not have future values
-      if(!is.null(future_xregs_list)) {
+      if (!is.null(future_xregs_list)) {
         lag_tbl <- lag_tbl %>%
           # create flag column
-          dplyr::mutate(Has_Future = Regressor %in% future_xregs_list, 
-                        Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)) %>%
+          dplyr::mutate(
+            Has_Future = Regressor %in% future_xregs_list,
+            Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)
+          ) %>%
           dplyr::filter(!Drop) %>%
           dplyr::select(-Has_Future, -Drop)
       }

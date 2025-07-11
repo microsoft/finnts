@@ -141,11 +141,23 @@ set_agent_info <- function(project_info,
       driver_llm = driver_llm,
       reason_llm = reason_llm,
       forecast_horizon = prev_log_df$forecast_horizon,
-      external_regressors = if(is.na(prev_log_df$external_regressors)) {NULL} else {strsplit(prev_log_df$external_regressors, ", ")[[1]]},
+      external_regressors = if (is.na(prev_log_df$external_regressors)) {
+        NULL
+      } else {
+        strsplit(prev_log_df$external_regressors, ", ")[[1]]
+      },
       hist_end_date = prev_log_df$hist_end_date,
-      back_test_scenarios = if(is.na(prev_log_df$back_test_scenarios)) {NULL} else {as.numeric(prev_log_df$back_test_scenarios)},
-      back_test_spacing = if(is.na(prev_log_df$back_test_spacing)) {NULL} else {as.numeric(prev_log_df$back_test_spacing)},
-      combo_cleanup_date = prev_log_df$combo_cleanup_date, 
+      back_test_scenarios = if (is.na(prev_log_df$back_test_scenarios)) {
+        NULL
+      } else {
+        as.numeric(prev_log_df$back_test_scenarios)
+      },
+      back_test_spacing = if (is.na(prev_log_df$back_test_spacing)) {
+        NULL
+      } else {
+        as.numeric(prev_log_df$back_test_spacing)
+      },
+      combo_cleanup_date = prev_log_df$combo_cleanup_date,
       overwrite = overwrite
     )
 
@@ -166,7 +178,7 @@ set_agent_info <- function(project_info,
 
     # add to project info
     project_info$run_name <- agent_run_id
-    
+
     # create agent version
     agent_version <- length(agent_runs_list) + 1
 
@@ -194,7 +206,7 @@ set_agent_info <- function(project_info,
       hist_end_date = hist_end_date,
       back_test_scenarios = back_test_scenarios,
       back_test_spacing = back_test_spacing,
-      combo_cleanup_date = combo_cleanup_date, 
+      combo_cleanup_date = combo_cleanup_date,
       overwrite = overwrite
     )
 

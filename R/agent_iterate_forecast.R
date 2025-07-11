@@ -15,11 +15,10 @@ iterate_forecast <- function(agent_info,
                              weighted_mape_goal = 0.03,
                              parallel_processing = NULL,
                              inner_parallel = FALSE,
-                             num_cores = NULL, 
+                             num_cores = NULL,
                              seed = 123) {
-  
   message("[agent] 🏃‍➡️ Starting Forecast Iteration Process")
-  
+
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("max_iter", max_iter, "numeric")
@@ -27,20 +26,20 @@ iterate_forecast <- function(agent_info,
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("inner_parallel", inner_parallel, "logical")
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # get project info
   project_info <- agent_info$project_info
-  
+
   # register tools
   register_tools(agent_info)
-  
+
   # run exploratory data analysis
   eda_results <- eda_agent_workflow(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
   )
-  
+
   # get total number of time series
   combo_list <- read_file(
     run_info = project_info,
@@ -55,11 +54,11 @@ iterate_forecast <- function(agent_info,
   ) %>%
     dplyr::pull(Combo) %>%
     unique()
-  
+
   # optimize global models
-  if(length(combo_list) > 1) {
+  if (length(combo_list) > 1) {
     message("[agent] 🌎 Starting Global Model Iteration Workflow")
-    
+
     fcst_results <- fcst_agent_workflow(
       agent_info = agent_info,
       combo = NULL,
@@ -67,10 +66,10 @@ iterate_forecast <- function(agent_info,
       parallel_processing = parallel_processing,
       inner_parallel = inner_parallel,
       num_cores = num_cores,
-      max_iter = max_iter, 
+      max_iter = max_iter,
       seed = seed
     )
-    
+
     # filter out which time series met the mape goal after global models
     local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
       dplyr::filter(weighted_mape > weighted_mape_goal) %>%
@@ -80,14 +79,14 @@ iterate_forecast <- function(agent_info,
     message("[agent] 🌎 Only one time series found. Skipping global model optimization.")
     local_combo_list <- combo_list
   }
-  
+
   # optimize local models
   if (length(local_combo_list) == 0) {
     message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
     return(invisible())
   } else {
     message("[agent] 📊 Starting Local Model Iteration Workflow")
-    
+
     # parallel setup
     par_info <- par_start(
       run_info            = project_info,
@@ -95,11 +94,11 @@ iterate_forecast <- function(agent_info,
       num_cores           = num_cores,
       task_length         = length(local_combo_list)
     )
-    
+
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
-    
+
     # foreach over each combo file
     foreach::foreach(
       x               = local_combo_list,
@@ -110,7 +109,7 @@ iterate_forecast <- function(agent_info,
     ) %op%
       {
         message("[agent] 🔄 Running local model optimization for combo: ", x)
-        
+
         # run the local model workflow
         fcst_agent_workflow(
           agent_info = agent_info,
@@ -119,14 +118,14 @@ iterate_forecast <- function(agent_info,
           parallel_processing = NULL,
           inner_parallel = inner_parallel,
           num_cores = num_cores,
-          max_iter = max_iter, 
+          max_iter = max_iter,
           seed = seed
         )
       } %>% base::suppressPackageStartupMessages()
-    
+
     par_end(cl)
   }
-  
+
   message("[agent] ✅ Forecast Iteration Process Complete")
 }
 
@@ -230,8 +229,8 @@ get_best_agent_run <- function(agent_info) {
       hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
     )
   )
-  
-  if(length(combo_best_run_list) == 0) {
+
+  if (length(combo_best_run_list) == 0) {
     return(tibble::tibble())
   } else {
     best_run_tbl <- read_file(
@@ -239,7 +238,7 @@ get_best_agent_run <- function(agent_info) {
       file_list = combo_best_run_list,
       return_type = "df"
     )
-    
+
     return(best_run_tbl)
   }
 }
@@ -263,9 +262,8 @@ fcst_agent_workflow <- function(agent_info,
                                 parallel_processing,
                                 inner_parallel,
                                 num_cores,
-                                max_iter = 3, 
+                                max_iter = 3,
                                 seed = 123) {
-
   # create a fresh session for the reasoning LLM
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
@@ -307,7 +305,7 @@ fcst_agent_workflow <- function(agent_info,
         combo               = combo,
         parallel_processing = parallel_processing,
         inner_parallel      = inner_parallel,
-        num_cores           = num_cores, 
+        num_cores           = num_cores,
         seed                = seed
       )
     ),
@@ -463,23 +461,29 @@ reason_inputs <- function(agent_info,
   combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
   xregs_length <- length(agent_info$external_regressors)
-  
+
   # get NULL defaults
-  lag_default <- get_lag_periods(lag_periods = NULL,
-                                 date_type = project_info$date_type,
-                                 forecast_horizon = agent_info$forecast_horizon,
-                                 multistep_horizon = TRUE,
-                                 feature_engineering = TRUE) %>%
+  lag_default <- get_lag_periods(
+    lag_periods = NULL,
+    date_type = project_info$date_type,
+    forecast_horizon = agent_info$forecast_horizon,
+    multistep_horizon = TRUE,
+    feature_engineering = TRUE
+  ) %>%
     paste(collapse = "---")
-  
-  rolling_default <- get_rolling_window_periods(rolling_window_periods = NULL,
-                                                date_type = project_info$date_type) %>%
+
+  rolling_default <- get_rolling_window_periods(
+    rolling_window_periods = NULL,
+    date_type = project_info$date_type
+  ) %>%
     paste(collapse = "---")
-  
-  recipe_default <- get_recipes_to_run(recipes_to_run = NULL,
-                                       date_type = project_info$date_type) %>%
+
+  recipe_default <- get_recipes_to_run(
+    recipes_to_run = NULL,
+    date_type = project_info$date_type
+  ) %>%
     paste(collapse = "---")
-  
+
   seasonal_period_default <- get_seasonal_periods(date_type = project_info$date_type) %>%
     paste(collapse = "---")
 
@@ -599,7 +603,7 @@ reason_inputs <- function(agent_info,
           11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon. 
+          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
           11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. ROLLING WINDOW LAGS
           12-A. IF run_count == 0 → rolling_window_periods = "NULL"
@@ -608,8 +612,8 @@ reason_inputs <- function(agent_info,
           12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
           12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. PREVIOUS VERSION REPLAY RULES
-          13-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>, 
-          YOU MUST first try the **full input set** from the best run of the most-recent previous agent version. 
+          13-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
+          YOU MUST first try the **full input set** from the best run of the most-recent previous agent version.
           13-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
           13-C. AFTER following 13-A AND 13-B, you MUST follow the decision tree below to propose a new set of parameters.
           13-D. Using the full input set from a previous run counts as ONE parameter change.
@@ -676,9 +680,9 @@ reason_inputs <- function(agent_info,
       xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
       rolling_changes = rolling_changes_allowed,
-      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error), 
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error),
       lag_default = lag_default,
-      rolling_default = rolling_default, 
+      rolling_default = rolling_default,
       agent_version = agent_info$agent_version
     )
   } else {
@@ -773,8 +777,8 @@ reason_inputs <- function(agent_info,
           14-B. IF run_count > 0 AND *Step H is complete* → recipes_to_run = "NULL" or "R1"
           14-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
       15. PREVIOUS VERSION REPLAY RULES
-          15-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>, 
-          YOU MUST first try the **full input set** from the best run of the most-recent previous agent version. 
+          15-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
+          YOU MUST first try the **full input set** from the best run of the most-recent previous agent version.
           15-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
           15-C. AFTER following 15-A AND 15-B, you MUST follow the decision tree below to propose a new set of parameters.
           15-D. Using the full input set from a previous run counts as ONE parameter change.
@@ -845,11 +849,11 @@ reason_inputs <- function(agent_info,
       xregs_length = xregs_length,
       lag_changes = lag_changes_allowed,
       rolling_changes = rolling_changes_allowed,
-      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error), 
+      last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error),
       lag_default = lag_default,
       rolling_default = rolling_default,
       recipe_default = recipe_default,
-      seasonal_period_default = seasonal_period_default, 
+      seasonal_period_default = seasonal_period_default,
       agent_version = agent_info$agent_version
     )
   }
@@ -1071,7 +1075,7 @@ submit_fcst_run <- function(agent_info,
                             combo,
                             parallel_processing = NULL,
                             inner_parallel = FALSE,
-                            num_cores = NULL, 
+                            num_cores = NULL,
                             seed = 123) {
   cli::cli_alert_info(
     "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
@@ -1175,7 +1179,7 @@ submit_fcst_run <- function(agent_info,
     negative_forecast = inputs$negative_forecast,
     parallel_processing = parallel_processing,
     inner_parallel = inner_parallel,
-    num_cores = num_cores, 
+    num_cores = num_cores,
     seed = seed
   )
 
@@ -1247,13 +1251,13 @@ log_best_run <- function(agent_info,
   project_info$run_name <- agent_info$run_id
 
   # update the run log file with additional model accuracy information
-  if(!is.null(combo)) {
+  if (!is.null(combo)) {
     model_back_test_tbl <- get_forecast_data(run_info = run_info) %>%
       dplyr::filter(
-        Run_Type == "Back_Test", 
+        Run_Type == "Back_Test",
         Recipe_ID != "simple_average"
       )
-    
+
     # calculate weighted mape by Model_ID
     model_wmape_tbl <- model_back_test_tbl %>%
       dplyr::mutate(
@@ -1271,25 +1275,29 @@ log_best_run <- function(agent_info,
     avg_wmape <- model_wmape_tbl %>%
       dplyr::pull(weighted_mape) %>%
       mean()
-    
+
     median_wmape <- model_wmape_tbl %>%
       dplyr::pull(weighted_mape) %>%
       median()
-    
+
     std_wmape <- model_wmape_tbl %>%
       dplyr::pull(weighted_mape) %>%
       sd()
-    
+
     # load log file
-    log_df <- get_run_info(project_name = run_info$project_name,
-                           run_name = run_info$run_name,
-                           storage_object = run_info$storage_object,
-                           path = run_info$path) %>%
-      dplyr::mutate(model_avg_wmape = avg_wmape,
-                    model_median_wmape = median_wmape,
-                    model_std_wmape = std_wmape,  
-                    agent_version = as.numeric(agent_info$agent_version))
-    
+    log_df <- get_run_info(
+      project_name = run_info$project_name,
+      run_name = run_info$run_name,
+      storage_object = run_info$storage_object,
+      path = run_info$path
+    ) %>%
+      dplyr::mutate(
+        model_avg_wmape = avg_wmape,
+        model_median_wmape = median_wmape,
+        model_std_wmape = std_wmape,
+        agent_version = as.numeric(agent_info$agent_version)
+      )
+
     # save the log file
     write_data(
       x = log_df,
@@ -1301,15 +1309,19 @@ log_best_run <- function(agent_info,
     )
   } else {
     # load log file
-    log_df <- get_run_info(project_name = run_info$project_name,
-                           run_name = run_info$run_name,
-                           storage_object = run_info$storage_object,
-                           path = run_info$path) %>%
-      dplyr::mutate(model_avg_wmape = weighted_mape,
-                    model_median_wmape = weighted_mape,
-                    model_std_wmape = 0,
-                    agent_version = as.numeric(agent_info$agent_version))
-    
+    log_df <- get_run_info(
+      project_name = run_info$project_name,
+      run_name = run_info$run_name,
+      storage_object = run_info$storage_object,
+      path = run_info$path
+    ) %>%
+      dplyr::mutate(
+        model_avg_wmape = weighted_mape,
+        model_median_wmape = weighted_mape,
+        model_std_wmape = 0,
+        agent_version = as.numeric(agent_info$agent_version)
+      )
+
     # save the log file
     write_data(
       x = log_df,
@@ -1436,7 +1448,7 @@ load_run_results <- function(agent_info,
     combo_value <- hash_data("all")
 
     column_list <- c(
-      "agent_version", "run_number", "best_run", "weighted_mape", 
+      "agent_version", "run_number", "best_run", "weighted_mape",
       "external_regressors", "clean_missing_values", "clean_outliers",
       "stationary", "forecast_approach",
       "lag_periods", "rolling_window_periods",
@@ -1467,9 +1479,8 @@ load_run_results <- function(agent_info,
 
   # filter previous runs based on the combo value and select relevant columns
   if ("run_name" %in% names(previous_runs)) {
-    
     pattern <- sprintf("^agent_[^_]+_%s.*", combo_value)
-    
+
     previous_runs_formatted <- previous_runs %>%
       dplyr::filter(stringr::str_detect(run_name, pattern)) %>%
       dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
@@ -1485,30 +1496,31 @@ load_run_results <- function(agent_info,
     # earliest row with *global* minimum weighted_mape for latest agent version
     earliest_min <- previous_runs_formatted %>%
       dplyr::filter(agent_version == max(agent_version)) %>%
-      dplyr::filter(weighted_mape == min(weighted_mape)) %>%   # all global-mins
-      dplyr::slice(1) %>%                                      # earliest one
+      dplyr::filter(weighted_mape == min(weighted_mape)) %>% # all global-mins
+      dplyr::slice(1) %>% # earliest one
       suppressWarnings()
 
-    best_idx   <- earliest_min$run_number
+    best_idx <- earliest_min$run_number
     best_wmape <- earliest_min$weighted_mape
     best_model <- earliest_min$model_avg_wmape
 
     # look **after** that for runs whose weighted_mape is within ±10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
-    if("model_avg_wmape" %in% names(previous_runs_formatted)) {
-      if(nrow(previous_runs_formatted) > 1) {
+    if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
+      if (nrow(previous_runs_formatted) > 1) {
         cand <- previous_runs_formatted %>%
           dplyr::filter(
-            run_number  > best_idx,                                # later runs only
-            abs(weighted_mape - best_wmape) <= best_wmape * 0.10   # within ±10 %
-          ) 
-        
+            run_number > best_idx, # later runs only
+            abs(weighted_mape - best_wmape) <= best_wmape * 0.10 # within ±10 %
+          )
+
         if (nrow(cand)) {
           cand <- cand %>%
-            dplyr::filter(model_avg_wmape == min(model_avg_wmape)) %>%  # lowest avg
-            dplyr::slice(1)                                             # earliest tie
-          if (cand$model_avg_wmape < best_model)       # strictly better than current
+            dplyr::filter(model_avg_wmape == min(model_avg_wmape)) %>% # lowest avg
+            dplyr::slice(1) # earliest tie
+          if (cand$model_avg_wmape < best_model) { # strictly better than current
             best_idx <- cand$run_number
+          }
         }
       }
     }
