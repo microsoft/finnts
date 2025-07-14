@@ -5,22 +5,9 @@
 #'
 #' @param project_name Name used to group similar runs under a
 #'   single project name.
-#' @param storage_object Used to store outputs during the project to other
-#'   storage services in Azure. Could be a storage container object from
-#'   the 'AzureStor' package to connect to ADLS blob storage or a
-#'   OneDrive/SharePoint object from the 'Microsoft365R' package to connect
-#'   to a OneDrive folder or SharePoint site. Default of NULL will save outputs
-#'   to the local file system.
 #' @param path String showing what file path the outputs should be written to.
 #'   Default of NULL will write the outputs to a temporary directory within R,
 #'   which will delete itself after the R session closes.
-#' @param data_output String value describing the file type for data outputs.
-#'   Default will write data frame outputs as csv files. The other option
-#'   of 'parquet' will instead write parquet files.
-#' @param object_output String value describing the file type for object
-#'   outputs. Default will write object outputs like trained models as
-#'   rds files. The other option of 'qs' will instead serialize R objects
-#'   as qs files by using the 'qs' package.
 #' @param combo_variables Character vector of variables to combine into a
 #'   combo variable.
 #' @param target_variable Character string of the target variable to
@@ -30,6 +17,19 @@
 #'   starts in.
 #' @param weekly_to_daily Logical value of whether to convert weekly data to
 #'   daily data. Default of FALSE will not convert weekly data to daily data.
+#' @param storage_object Used to store outputs during the project to other
+#'   storage services in Azure. Could be a storage container object from
+#'   the 'AzureStor' package to connect to ADLS blob storage or a
+#'   OneDrive/SharePoint object from the 'Microsoft365R' package to connect
+#'   to a OneDrive folder or SharePoint site. Default of NULL will save outputs
+#'   to the local file system.
+#' @param data_output String value describing the file type for data outputs.
+#'   Default will write data frame outputs as csv files. The other option
+#'   of 'parquet' will instead write parquet files.
+#' @param object_output String value describing the file type for object
+#'   outputs. Default will write object outputs like trained models as
+#'   rds files. The other option of 'qs' will instead serialize R objects
+#'   as qs files by using the 'qs' package.
 #' @param overwrite Logical value of whether to overwrite existing project
 #'
 #' @return A list of project information

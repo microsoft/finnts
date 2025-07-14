@@ -133,8 +133,8 @@ iterate_forecast <- function(agent_info,
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #'
-# @return A tibble containing the final forecast for the agent.
-#' @noRd
+#' @return A tibble containing the final forecast for the agent.
+#' @export
 get_agent_forecast <- function(agent_info) {
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
@@ -215,8 +215,8 @@ get_agent_forecast <- function(agent_info) {
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #'
-# @return A tibble containing the best run information for the agent.
-#' @noRd
+#' @return A tibble containing the best run information for the agent.
+#' @export
 get_best_agent_run <- function(agent_info) {
   # metadata
   project_info <- agent_info$project_info

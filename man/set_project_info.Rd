@@ -68,7 +68,7 @@ about your entire forecast project.
 \examples{
 \donttest{
 run_info <- set_project_info(
-  project_name = "test_exp", 
+  project_name = "test_project",
   combo_variables = c("Store", "Product"),
   target_variable = "Sales",
   date_type = "month"
