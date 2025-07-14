@@ -1,4 +1,3 @@
-
 #' Run the agent workflow graph
 #'
 #' @param chat A chat object for interacting with the LLM.

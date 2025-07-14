@@ -28,13 +28,15 @@
 #' @param date_type Character string of the type of date variable
 #' @param fiscal_year_start Numeric value of the month that the fiscal year
 #'   starts in.
+#' @param weekly_to_daily Logical value of whether to convert weekly data to
+#'   daily data. Default of FALSE will not convert weekly data to daily data.
 #' @param overwrite Logical value of whether to overwrite existing project
 #'
 #' @return A list of project information
 #' @examples
 #' \donttest{
 #' run_info <- set_project_info(
-#'   project_name = "test_exp", 
+#'   project_name = "test_project",
 #'   combo_variables = c("Store", "Product"),
 #'   target_variable = "Sales",
 #'   date_type = "month"
@@ -47,6 +49,7 @@ set_project_info <- function(project_name = "finn_project",
                              target_variable,
                              date_type,
                              fiscal_year_start = 1,
+                             weekly_to_daily = TRUE,
                              storage_object = NULL,
                              data_output = "csv",
                              object_output = "rds",
@@ -60,6 +63,7 @@ set_project_info <- function(project_name = "finn_project",
   check_input_type("target_variable", target_variable, "character")
   check_input_type("date_type", date_type, "character", c("year", "quarter", "month", "week", "day"))
   check_input_type("fiscal_year_start", fiscal_year_start, "numeric")
+  check_input_type("weekly_to_daily", weekly_to_daily, "logical")
 
   if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
     stop("`storage_object` must either be a NULL or a Azure Blob Storage,
@@ -120,10 +124,11 @@ set_project_info <- function(project_name = "finn_project",
     path = path,
     data_output = data_output,
     object_output = object_output,
-    combo_variables,
-    target_variable,
-    date_type,
-    fiscal_year_start
+    combo_variables = combo_variables,
+    target_variable = target_variable,
+    date_type = date_type,
+    fiscal_year_start = fiscal_year_start,
+    weekly_to_daily = weekly_to_daily
   )
 
   log_df <- tryCatch(
@@ -147,7 +152,8 @@ set_project_info <- function(project_name = "finn_project",
       combo_variables = paste(combo_variables, collapse = ", "),
       target_variable = target_variable,
       date_type = date_type,
-      fiscal_year_start = fiscal_year_start
+      fiscal_year_start = fiscal_year_start,
+      weekly_to_daily = weekly_to_daily
     ) %>%
       data.frame()
 
@@ -174,7 +180,8 @@ set_project_info <- function(project_name = "finn_project",
       combo_variables = combo_variables,
       target_variable = target_variable,
       date_type = date_type,
-      fiscal_year_start = fiscal_year_start
+      fiscal_year_start = fiscal_year_start,
+      weekly_to_daily = weekly_to_daily
     )
 
     cli::cli_bullets(c(
@@ -197,7 +204,8 @@ set_project_info <- function(project_name = "finn_project",
       combo_variables = combo_variables,
       target_variable = target_variable,
       date_type = date_type,
-      fiscal_year_start = fiscal_year_start
+      fiscal_year_start = fiscal_year_start,
+      weekly_to_daily = weekly_to_daily
     )
 
     output_tbl <- tibble::tibble(
@@ -209,7 +217,8 @@ set_project_info <- function(project_name = "finn_project",
       combo_variables = paste(combo_variables, collapse = ", "),
       target_variable = target_variable,
       date_type = date_type,
-      fiscal_year_start = fiscal_year_start
+      fiscal_year_start = fiscal_year_start,
+      weekly_to_daily = weekly_to_daily
     )
 
     write_data(

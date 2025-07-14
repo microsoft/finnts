@@ -11,6 +11,7 @@ set_agent_info(
   forecast_horizon,
   external_regressors = NULL,
   hist_end_date = NULL,
+  hist_start_date = NULL,
   back_test_scenarios = NULL,
   back_test_spacing = NULL,
   combo_cleanup_date = NULL,
@@ -30,6 +31,8 @@ set_agent_info(
 \item{external_regressors}{Optional character vector of external regressors}
 
 \item{hist_end_date}{Optional Date object indicating the end of the historical data}
+
+\item{hist_start_date}{Optional Date object indicating the start of the historical data}
 
 \item{back_test_scenarios}{Optional character vector of back test scenarios}
 

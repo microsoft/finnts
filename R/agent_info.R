@@ -10,6 +10,7 @@
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
 #' @param hist_end_date Optional Date object indicating the end of the historical data
+#' @param hist_start_date Optional Date object indicating the start of the historical data
 #' @param back_test_scenarios Optional character vector of back test scenarios
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
@@ -24,6 +25,7 @@ set_agent_info <- function(project_info,
                            forecast_horizon,
                            external_regressors = NULL,
                            hist_end_date = NULL,
+                           hist_start_date = NULL,
                            back_test_scenarios = NULL,
                            back_test_spacing = NULL,
                            combo_cleanup_date = NULL,
@@ -42,6 +44,7 @@ set_agent_info <- function(project_info,
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
   check_input_type("hist_end_date", hist_end_date, c("Date", "NULL"))
+  check_input_type("hist_start_date", hist_start_date, c("Date", "NULL"))
   check_input_type("back_test_scenarios", back_test_scenarios, c("numeric", "NULL"))
   check_input_type("back_test_spacing", back_test_spacing, c("numeric", "NULL"))
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
@@ -67,6 +70,17 @@ set_agent_info <- function(project_info,
       dplyr::distinct() %>%
       dplyr::pull(Date) %>%
       max() %>%
+      suppressWarnings()
+  }
+
+  if (is.null(hist_start_date)) {
+    hist_start_date <- input_data %>%
+      dplyr::select(Date) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::filter(Date == min(Date)) %>%
+      dplyr::pull(Date) %>%
       suppressWarnings()
   }
 
@@ -117,6 +131,7 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
       hist_end_date = hist_end_date,
+      hist_start_date = hist_start_date,
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))
@@ -147,6 +162,7 @@ set_agent_info <- function(project_info,
         strsplit(prev_log_df$external_regressors, ", ")[[1]]
       },
       hist_end_date = prev_log_df$hist_end_date,
+      hist_start_date = prev_log_df$hist_start_date,
       back_test_scenarios = if (is.na(prev_log_df$back_test_scenarios)) {
         NULL
       } else {
@@ -157,7 +173,11 @@ set_agent_info <- function(project_info,
       } else {
         as.numeric(prev_log_df$back_test_spacing)
       },
-      combo_cleanup_date = prev_log_df$combo_cleanup_date,
+      combo_cleanup_date = if (is.na(prev_log_df$combo_cleanup_date)) {
+        NULL
+      } else {
+        as.Date(prev_log_df$combo_cleanup_date)
+      },
       overwrite = overwrite
     )
 
@@ -204,6 +224,7 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = external_regressors,
       hist_end_date = hist_end_date,
+      hist_start_date = hist_start_date,
       back_test_scenarios = back_test_scenarios,
       back_test_spacing = back_test_spacing,
       combo_cleanup_date = combo_cleanup_date,
@@ -218,6 +239,7 @@ set_agent_info <- function(project_info,
       forecast_horizon = forecast_horizon,
       external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
       hist_end_date = ifelse(is.null(hist_end_date), NA, as.character(hist_end_date)),
+      hist_start_date = ifelse(is.null(hist_start_date), NA, as.character(hist_start_date)),
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))

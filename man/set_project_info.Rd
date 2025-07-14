@@ -11,6 +11,7 @@ set_project_info(
   target_variable,
   date_type,
   fiscal_year_start = 1,
+  weekly_to_daily = TRUE,
   storage_object = NULL,
   data_output = "csv",
   object_output = "rds",
@@ -35,6 +36,9 @@ forecast.}
 
 \item{fiscal_year_start}{Numeric value of the month that the fiscal year
 starts in.}
+
+\item{weekly_to_daily}{Logical value of whether to convert weekly data to
+daily data. Default of FALSE will not convert weekly data to daily data.}
 
 \item{storage_object}{Used to store outputs during the project to other
 storage services in Azure. Could be a storage container object from
