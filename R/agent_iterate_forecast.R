@@ -113,6 +113,7 @@ iterate_forecast <- function(agent_info,
         # ensure objects get exported
         if (inner_parallel) {
           run_graph <- run_graph
+          execute_node <- execute_node
         }
 
         # run the local model workflow
