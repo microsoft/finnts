@@ -120,6 +120,7 @@ iterate_forecast <- function(agent_info,
           calculate_fcst_metrics <- calculate_fcst_metrics
           log_best_run <- log_best_run
           load_eda_results <- load_eda_results
+          make_pipe_table <- make_pipe_table
         }
 
         # run the local model workflow
