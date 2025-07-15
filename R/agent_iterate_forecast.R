@@ -114,6 +114,11 @@ iterate_forecast <- function(agent_info,
         if (inner_parallel) {
           run_graph <- run_graph
           execute_node <- execute_node
+          reason_inputs <- reason_inputs
+          submit_fcst_run <- submit_fcst_run
+          get_fcst_output <- get_fcst_output
+          calculate_fcst_metrics <- calculate_fcst_metrics
+          log_best_run <- log_best_run
         }
 
         # run the local model workflow
