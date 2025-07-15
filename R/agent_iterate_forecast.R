@@ -1096,6 +1096,18 @@ submit_fcst_run <- function(agent_info,
     global_models <- FALSE
     local_models <- TRUE
   }
+  
+  # adjust parallel processing for combos
+  if(!is.null(combo) & parallel_processing == "spark") {
+    # turn off parallel processing when running single combo
+    parallel_processing <- NULL
+    prep_parallel <- NULL
+  } else if(is.null(combo) & parallel_processing == "spark") {
+    # prep data in parallel locally instead of through spark
+    prep_parallel <- "local_machine"
+  } else {
+    prep_parallel <- parallel_processing
+  }
 
   # get input data
   input_data <- read_file(
@@ -1147,7 +1159,7 @@ submit_fcst_run <- function(agent_info,
     box_cox = FALSE,
     stationary = inputs$stationary,
     forecast_approach = inputs$forecast_approach,
-    parallel_processing = parallel_processing,
+    parallel_processing = prep_parallel,
     num_cores = num_cores,
     fourier_periods = NULL,
     lag_periods = null_converter(inputs$lag_periods),
