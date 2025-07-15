@@ -123,7 +123,7 @@ iterate_forecast <- function(agent_info,
           make_pipe_table <- make_pipe_table
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
-          get_run_info <- get_run_info # check removing later
+          agent_info <- agent_info
         }
 
         # run the local model workflow
