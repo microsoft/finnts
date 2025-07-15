@@ -110,7 +110,7 @@ iterate_forecast <- function(agent_info,
       {
         message("[agent] 🔄 Running local model optimization for combo: ", x)
         
-        # ensure objects get exported
+        # ensure functions are available in the local environment
         if (inner_parallel) {
           run_graph <- run_graph
           execute_node <- execute_node
@@ -123,6 +123,7 @@ iterate_forecast <- function(agent_info,
           make_pipe_table <- make_pipe_table
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
+          get_run_info <- get_run_info # check removing later
         }
 
         # run the local model workflow
