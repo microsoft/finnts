@@ -59,16 +59,16 @@ iterate_forecast <- function(agent_info,
   if (length(combo_list) > 1) {
     message("[agent] 🌎 Starting Global Model Iteration Workflow")
 
-    fcst_results <- fcst_agent_workflow(
-      agent_info = agent_info,
-      combo = NULL,
-      weighted_mape_goal = weighted_mape_goal,
-      parallel_processing = parallel_processing,
-      inner_parallel = inner_parallel,
-      num_cores = num_cores,
-      max_iter = max_iter,
-      seed = seed
-    )
+    # fcst_results <- fcst_agent_workflow(
+    #   agent_info = agent_info,
+    #   combo = NULL,
+    #   weighted_mape_goal = weighted_mape_goal,
+    #   parallel_processing = parallel_processing,
+    #   inner_parallel = inner_parallel,
+    #   num_cores = num_cores,
+    #   max_iter = max_iter,
+    #   seed = seed
+    # )
 
     # filter out which time series met the mape goal after global models
     local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
@@ -96,7 +96,7 @@ iterate_forecast <- function(agent_info,
     )
 
     cl <- par_info$cl
-    packages <- par_info$packages
+    packages <- c(par_info$packages, "finnts")
     `%op%` <- par_info$foreach_operator
 
     # foreach over each combo file
