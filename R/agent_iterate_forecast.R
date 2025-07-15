@@ -1103,7 +1103,8 @@ submit_fcst_run <- function(agent_info,
     parallel_processing <- NULL
     prep_parallel <- NULL
   } else if(is.null(combo) & parallel_processing == "spark") {
-    # prep data in parallel locally instead of through spark
+    # local parallel process instead of spark on global models
+    parallel_processing <- NULL
     prep_parallel <- "local_machine"
   } else {
     prep_parallel <- parallel_processing

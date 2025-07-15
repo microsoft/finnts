@@ -462,6 +462,7 @@ update_local_models <- function(agent_info,
 
   inner_cl <- par_info$cl
   inner_packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
 
   combo_tbl <- foreach::foreach(
     prev_run = previous_best_run_local_tbl %>%
@@ -472,7 +473,7 @@ update_local_models <- function(agent_info,
     .inorder = FALSE,
     .multicombine = TRUE,
     .noexport = NULL
-  ) %do% {
+  ) %op% {
     results <- update_forecast_combo(
       agent_info = agent_info,
       prev_best_run_tbl = prev_run,
@@ -683,6 +684,19 @@ update_forecast_combo <- function(agent_info,
       )
     }
   }
+  
+  # adjust parallel processing for combos
+  if(combo != "All-Data" & parallel_processing == "spark") {
+    # turn off parallel processing when running single combo
+    parallel_processing <- NULL
+    prep_parallel <- NULL
+  } else if(combo == "All-Data" & parallel_processing == "spark") {
+    # local parallel process instead of spark on global models
+    parallel_processing <- NULL
+    prep_parallel <- "local_machine"
+  } else {
+    prep_parallel <- parallel_processing
+  }
 
   # get input data for new run
   input_data <- read_file(
@@ -734,7 +748,7 @@ update_forecast_combo <- function(agent_info,
     box_cox = prev_run_log_tbl$box_cox,
     stationary = prev_run_log_tbl$stationary,
     forecast_approach = prev_run_log_tbl$forecast_approach,
-    parallel_processing = parallel_processing,
+    parallel_processing = prep_parallel,
     num_cores = num_cores,
     fourier_periods = NULL,
     lag_periods = adjust_inputs(prev_run_log_tbl$lag_periods, convert_numeric = TRUE),
