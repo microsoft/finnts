@@ -121,6 +121,8 @@ iterate_forecast <- function(agent_info,
           log_best_run <- log_best_run
           load_eda_results <- load_eda_results
           make_pipe_table <- make_pipe_table
+          load_run_results <- load_run_results
+          get_total_run_count <- get_total_run_count
         }
 
         # run the local model workflow
