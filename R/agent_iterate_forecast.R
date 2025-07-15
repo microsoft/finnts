@@ -109,6 +109,11 @@ iterate_forecast <- function(agent_info,
     ) %op%
       {
         message("[agent] 🔄 Running local model optimization for combo: ", x)
+        
+        # ensure objects get exported
+        if (inner_parallel) {
+          run_graph <- run_graph
+        }
 
         # run the local model workflow
         fcst_agent_workflow(
