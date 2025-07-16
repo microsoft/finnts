@@ -31,7 +31,7 @@ iterate_forecast <- function(agent_info,
   project_info <- agent_info$project_info
 
   # register tools
-  register_tools(agent_info)
+  register_fcst_tools(agent_info)
 
   # run exploratory data analysis
   eda_results <- eda_agent_workflow(
@@ -156,6 +156,9 @@ iterate_forecast <- function(agent_info,
             
             agent_info$reason_llm <- reason_llm
           }
+          
+          # re-register tools
+          register_fcst_tools(agent_info)
         }
 
         # run the local model workflow
