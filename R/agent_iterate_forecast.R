@@ -31,6 +31,7 @@ iterate_forecast <- function(agent_info,
   project_info <- agent_info$project_info
 
   # register tools
+  register_eda_tools(agent_info)
   register_fcst_tools(agent_info)
 
   # run exploratory data analysis
