@@ -1266,6 +1266,8 @@ fit_models <- function(run_info,
       tune::collect_predictions() #%>%
       # base::suppressMessages() %>%
       # base::suppressWarnings()
+    
+    print(show_notes(.Last.tune.result))
 
     # finalize forecast
     final_fcst <- refit_tbl %>%
