@@ -87,6 +87,17 @@ iterate_forecast <- function(agent_info,
   } else {
     message("[agent] 📊 Starting Local Model Iteration Workflow")
 
+    # adjustments for parallel processing
+    if(!is.null(parallel_processing)) {
+      if(!is.null(agent_info$reason_llm)) {
+        llm_info <- agent_info$reason_llm$get_provider()@api_key
+      } else {
+        llm_info <- agent_info$driver_llm$get_provider()@api_key
+      }
+    } else {
+      llm_info <- NULL
+    }
+    
     # parallel setup
     par_info <- par_start(
       run_info            = project_info,
@@ -124,6 +135,27 @@ iterate_forecast <- function(agent_info,
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
           agent_info <- agent_info
+        }
+        
+        # rebuild llms when running on parallel workers
+        if(!is.null(parallel_processing)) {
+          # driver LLM
+          driver_llm <- agent_info$driver_llm
+          driver_provider <- driver_llm$get_provider()
+          driver_provider@api_key <- llm_info
+          driver_llm <- ellmer:::Chat$new(driver_provider)
+          
+          agent_info$driver_llm <- driver_llm
+          
+          # reason LLM
+          if(!is.null(reason_llm)) {
+            reason_llm <- agent_info$reason_llm
+            reason_provider <- reason_llm$get_provider()
+            reason_provider@api_key <- llm_info
+            reason_llm <- ellmer:::Chat$new(reason_provider)
+            
+            agent_info$reason_llm <- reason_llm
+          }
         }
 
         # run the local model workflow
