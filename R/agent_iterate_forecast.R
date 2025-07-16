@@ -1150,14 +1150,18 @@ submit_fcst_run <- function(agent_info,
   }
   
   # adjust parallel processing for combos
-  if(!is.null(combo) & parallel_processing == "spark") {
-    # turn off parallel processing when running single combo
-    parallel_processing <- NULL
-    prep_parallel <- NULL
-  } else if(is.null(combo) & parallel_processing == "spark") {
-    # local parallel process instead of spark on global models
-    parallel_processing <- NULL
-    prep_parallel <- "local_machine"
+  if(!is.null(parallel_processing)) {
+    if(!is.null(combo) & parallel_processing == "spark") {
+      # turn off parallel processing when running single combo
+      parallel_processing <- NULL
+      prep_parallel <- NULL
+    } else if(is.null(combo) & parallel_processing == "spark") {
+      # local parallel process instead of spark on global models
+      parallel_processing <- NULL
+      prep_parallel <- "local_machine"
+    } else {
+      prep_parallel <- parallel_processing
+    }
   } else {
     prep_parallel <- parallel_processing
   }
