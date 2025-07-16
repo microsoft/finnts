@@ -1471,7 +1471,7 @@ log_best_run <- function(agent_info,
 
       if (nrow(prev_log_df) > 0) {
         prev_wmape <- as.numeric(prev_log_df$weighted_mape)
-        pre_model_type <- prev_log_df$model_type
+        prev_model_type <- prev_log_df$model_type
       } else {
         prev_wmape <- Inf # if no previous log, assume previous was worse
         prev_model_type <- "global" # assume global model if no previous log
