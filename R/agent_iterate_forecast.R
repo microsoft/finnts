@@ -1549,7 +1549,7 @@ load_run_results <- function(agent_info,
   )
 
   # filter previous runs based on the combo value and select relevant columns
-  if ("run_name" %in% names(previous_runs)) {
+  if ("run_name" %in% names(previous_runs) & "weighted_mape" %in% names(previous_runs)) {
     pattern <- sprintf("^agent_[^_]+_%s.*", combo_value)
 
     previous_runs_formatted <- previous_runs %>%
