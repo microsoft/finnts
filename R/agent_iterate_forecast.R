@@ -1338,7 +1338,7 @@ log_best_run <- function(agent_info,
         Total = sum(Target, na.rm = TRUE),
         Weight = (MAPE * Target) / Total
       ) %>%
-      dplyr::summarise(weighted_mape = sum(Weight)) %>%
+      dplyr::summarise(weighted_mape = sum(Weight, na.rm = TRUE)) %>%
       dplyr::ungroup()
 
     avg_wmape <- model_wmape_tbl %>%
@@ -1451,7 +1451,7 @@ log_best_run <- function(agent_info,
           Weight = (MAPE * Target) / Total
         ) %>%
         dplyr::pull(Weight) %>%
-        sum() %>%
+        sum(na.rm = TRUE) %>%
         round(digits = 4)
 
       # check if previous log file exists, if so check if mape is better

@@ -665,7 +665,7 @@ final_models <- function(run_info,
       Weight = (MAPE * Target) / Total
     ) %>%
     dplyr::pull(Weight) %>%
-    sum() %>%
+    sum(na.rm = TRUE) %>%
     round(digits = 4)
 
   # update logging file
