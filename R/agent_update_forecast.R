@@ -684,14 +684,14 @@ update_forecast_combo <- function(agent_info,
       )
     }
   }
-  
+
   # adjust parallel processing for combos
-  if(!is.null(parallel_processing)) {
-    if(combo != "All-Data" & parallel_processing == "spark") {
+  if (!is.null(parallel_processing)) {
+    if (combo != "All-Data" & parallel_processing == "spark") {
       # turn off parallel processing when running single combo
       parallel_processing <- NULL
       prep_parallel <- NULL
-    } else if(combo == "All-Data" & parallel_processing == "spark") {
+    } else if (combo == "All-Data" & parallel_processing == "spark") {
       # local parallel process instead of spark on global models
       parallel_processing <- NULL
       prep_parallel <- "local_machine"

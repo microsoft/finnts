@@ -713,11 +713,13 @@ acf_scan <- function(agent_info,
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
         timetk::pad_by_time(
           .pad_value = 0,
           .by = date_type,
           .date_var = Date
-        )
+        ) %>%
+        dplyr::ungroup()
 
       # calculate maximum lag to use in acf
       date_type_max_lag <- switch(date_type,
@@ -856,11 +858,13 @@ pacf_scan <- function(agent_info,
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
         timetk::pad_by_time(
           .pad_value = 0,
           .by = date_type,
           .date_var = Date
-        )
+        ) %>%
+        dplyr::ungroup()
 
       # calculate maximum lag to use in pacf
       date_type_max_lag <- switch(date_type,
@@ -942,6 +946,7 @@ stationarity_scan <- function(agent_info,
   project_info$run_name <- agent_info$run_id
 
   hist_end_date <- agent_info$hist_end_date
+  hist_start_date <- agent_info$hist_start_date
   date_type <- project_info$date_type
 
   # identify time-series combos
@@ -998,7 +1003,16 @@ stationarity_scan <- function(agent_info,
       ) %>%
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
-        dplyr::mutate(Target = as.numeric(Target))
+        dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
+        timetk::pad_by_time(
+          .pad_value = 0,
+          .by = date_type,
+          .date_var = Date,
+          .start_date = hist_start_date,
+          .end_date = hist_end_date
+        ) %>%
+        dplyr::ungroup()
 
       # calculate stationarity
       adf_res <- tseries::adf.test(x = input_data$Target, alternative = "stationary")
@@ -1115,11 +1129,13 @@ missing_scan <- function(agent_info,
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
         timetk::pad_by_time(
           .pad_value = NA_real_,
           .by = date_type,
           .date_var = Date
-        )
+        ) %>%
+        dplyr::ungroup()
 
       # missing-data metrics
       total_rows <- nrow(input_data)
@@ -1249,15 +1265,17 @@ outlier_scan <- function(agent_info,
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
         timetk::pad_by_time(
           .pad_value = 0,
           .by = date_type,
           .date_var = Date
         ) %>%
+        dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
-      # skip series with < 2 * freq observations
-      if (nrow(input_data) < 2 * freq_val) {
+      # skip series with not enough data
+      if (nrow(input_data) <= 2 * freq_val) {
         out_tbl <- tibble::tibble(
           Combo            = x,
           total_rows       = nrow(input_data),
@@ -1275,7 +1293,8 @@ outlier_scan <- function(agent_info,
           folder = "eda",
           suffix = "-outliers"
         )
-        next
+
+        return()
       }
 
       # create ts object
@@ -1424,15 +1443,17 @@ seasonality_scan <- function(agent_info,
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
+        dplyr::group_by(Combo) %>%
         timetk::pad_by_time(
           .pad_value = 0,
           .by = date_type,
           .date_var = Date
         ) %>%
+        dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
       # skip short series
-      if (nrow(input_data) < 2 * primary_freq) {
+      if (nrow(input_data) <= 2 * primary_freq) {
         add_tbl <- tibble::tibble(
           Combo = x,
           Lag   = integer(),
@@ -1447,7 +1468,8 @@ seasonality_scan <- function(agent_info,
           folder = "eda",
           suffix = "-add_season"
         )
-        next
+
+        return()
       }
 
       # create ts object

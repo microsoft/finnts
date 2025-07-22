@@ -134,7 +134,12 @@ set_agent_info <- function(project_info,
       hist_start_date = hist_start_date,
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
-      combo_cleanup_date = if(is.null(combo_cleanup_date)) {NA} else {combo_cleanup_date}) %>%
+      combo_cleanup_date = if (is.null(combo_cleanup_date)) {
+        NA
+      } else {
+        combo_cleanup_date
+      }
+    ) %>%
       data.frame()
 
     prev_log_df <- agent_runs_tbl %>%

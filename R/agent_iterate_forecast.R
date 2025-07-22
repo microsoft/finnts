@@ -89,8 +89,8 @@ iterate_forecast <- function(agent_info,
     message("[agent] 📊 Starting Local Model Iteration Workflow")
 
     # adjustments for parallel processing
-    if(!is.null(parallel_processing)) {
-      if(!is.null(agent_info$reason_llm)) {
+    if (!is.null(parallel_processing)) {
+      if (!is.null(agent_info$reason_llm)) {
         llm_info <- agent_info$reason_llm$get_provider()@api_key
       } else {
         llm_info <- agent_info$driver_llm$get_provider()@api_key
@@ -98,7 +98,7 @@ iterate_forecast <- function(agent_info,
     } else {
       llm_info <- NULL
     }
-    
+
     # parallel setup
     par_info <- par_start(
       run_info            = project_info,
@@ -121,7 +121,7 @@ iterate_forecast <- function(agent_info,
     ) %op%
       {
         message("[agent] 🔄 Running local model optimization for combo: ", x)
-        
+
         # ensure functions are available in the local environment
         if (inner_parallel) {
           run_graph <- run_graph
@@ -137,27 +137,27 @@ iterate_forecast <- function(agent_info,
           get_total_run_count <- get_total_run_count
           agent_info <- agent_info
         }
-        
+
         # rebuild llms when running on parallel workers
-        if(!is.null(parallel_processing)) {
+        if (!is.null(parallel_processing)) {
           # driver LLM
           driver_llm <- agent_info$driver_llm
           driver_provider <- driver_llm$get_provider()
           driver_provider@api_key <- llm_info
           driver_llm <- ellmer:::Chat$new(driver_provider)
-          
+
           agent_info$driver_llm <- driver_llm
-          
+
           # reason LLM
-          if(!is.null(reason_llm)) {
+          if (!is.null(reason_llm)) {
             reason_llm <- agent_info$reason_llm
             reason_provider <- reason_llm$get_provider()
             reason_provider@api_key <- llm_info
             reason_llm <- ellmer:::Chat$new(reason_provider)
-            
+
             agent_info$reason_llm <- reason_llm
           }
-          
+
           # re-register tools
           register_fcst_tools(agent_info)
         }
@@ -1148,14 +1148,14 @@ submit_fcst_run <- function(agent_info,
     global_models <- FALSE
     local_models <- TRUE
   }
-  
+
   # adjust parallel processing for combos
-  if(!is.null(parallel_processing)) {
-    if(!is.null(combo) & parallel_processing == "spark") {
+  if (!is.null(parallel_processing)) {
+    if (!is.null(combo) & parallel_processing == "spark") {
       # turn off parallel processing when running single combo
       parallel_processing <- NULL
       prep_parallel <- NULL
-    } else if(is.null(combo) & parallel_processing == "spark") {
+    } else if (is.null(combo) & parallel_processing == "spark") {
       # local parallel process instead of spark on global models
       parallel_processing <- NULL
       prep_parallel <- "local_machine"
