@@ -4,10 +4,14 @@
 \alias{get_agent_forecast}
 \title{Get the final best forecast for an agent}
 \usage{
-get_agent_forecast(agent_info)
+get_agent_forecast(agent_info, parallel_processing = NULL, num_cores = NULL)
 }
 \arguments{
 \item{agent_info}{A list containing agent information including project info and run ID.}
+
+\item{parallel_processing}{Logical indicating if parallel processing should be used.}
+
+\item{num_cores}{Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.}
 }
 \value{
 A tibble containing the final forecast for the agent.
