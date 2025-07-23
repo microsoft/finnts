@@ -149,7 +149,7 @@ iterate_forecast <- function(agent_info,
           agent_info$driver_llm <- driver_llm
 
           # reason LLM
-          if (!is.null(reason_llm)) {
+          if (!is.null(agent_info$reason_llm)) {
             reason_llm <- agent_info$reason_llm
             reason_provider <- reason_llm$get_provider()
             reason_provider@api_key <- llm_info
@@ -184,10 +184,20 @@ iterate_forecast <- function(agent_info,
 #' Get the final best forecast for an agent
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
+#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #'
 #' @return A tibble containing the final forecast for the agent.
 #' @export
-get_agent_forecast <- function(agent_info) {
+get_agent_forecast <- function(agent_info, 
+                               parallel_processing = NULL,
+                               num_cores = NULL) {
+  
+  # formatting checks
+  check_agent_info(agent_info = agent_info)
+  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
+  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+  
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
 
@@ -225,9 +235,9 @@ get_agent_forecast <- function(agent_info) {
 
     par_info <- par_start(
       run_info = agent_info$project_info,
-      parallel_processing = NULL,
-      num_cores = NULL,
-      task_length = nrows(local_run_name_list)
+      parallel_processing = parallel_processing,
+      num_cores = num_cores,
+      task_length = length(local_run_name_list)
     )
 
     cl <- par_info$cl
