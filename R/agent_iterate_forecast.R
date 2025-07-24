@@ -59,17 +59,41 @@ iterate_forecast <- function(agent_info,
   # optimize global models
   if (length(combo_list) > 1) {
     message("[agent] 🌎 Starting Global Model Iteration Workflow")
-
-    fcst_results <- fcst_agent_workflow(
-      agent_info = agent_info,
-      combo = NULL,
-      weighted_mape_goal = weighted_mape_goal,
-      parallel_processing = parallel_processing,
-      inner_parallel = inner_parallel,
-      num_cores = num_cores,
-      max_iter = max_iter,
-      seed = seed
-    )
+    
+    # adjust max iterations based on previous runs
+    previous_runs <- load_run_results(agent_info = agent_info, 
+                                      combo = NULL)
+    
+    if(!tibble::is_tibble(previous_runs)) {
+      max_iter_adj <- max_iter
+    } else {
+      prev_run_count <- previous_runs %>%
+        dplyr::filter(agent_version == agent_info$agent_version) %>%
+        nrow()
+      
+      max_iter_adj <- max_iter - prev_run_count
+    }
+    
+    if(max_iter_adj > 0) {
+      
+      if(max_iter_adj < max_iter) {
+        cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+      }
+      
+      # run the global model optimization
+      fcst_results <- fcst_agent_workflow(
+        agent_info = agent_info,
+        combo = NULL,
+        weighted_mape_goal = weighted_mape_goal,
+        parallel_processing = parallel_processing,
+        inner_parallel = inner_parallel,
+        num_cores = num_cores,
+        max_iter = max_iter_adj,
+        seed = seed
+      )
+    } else {
+      cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
+    }
 
     # filter out which time series met the mape goal after global models
     local_combo_list <- get_best_agent_run(agent_info = agent_info) %>%
@@ -161,18 +185,41 @@ iterate_forecast <- function(agent_info,
           # re-register tools
           register_fcst_tools(agent_info)
         }
-
-        # run the local model workflow
-        fcst_agent_workflow(
-          agent_info = agent_info,
-          combo = hash_data(x),
-          weighted_mape_goal = weighted_mape_goal,
-          parallel_processing = NULL,
-          inner_parallel = inner_parallel,
-          num_cores = num_cores,
-          max_iter = max_iter,
-          seed = seed
-        )
+        
+        # adjust max iterations based on previous runs
+        previous_runs <- load_run_results(agent_info = agent_info, 
+                                          combo = hash_data(x))
+        
+        if(!tibble::is_tibble(previous_runs)) {
+          max_iter_adj <- max_iter
+        } else {
+          prev_run_count <- previous_runs %>%
+            dplyr::filter(agent_version == agent_info$agent_version) %>%
+            nrow()
+          
+          max_iter_adj <- max_iter - prev_run_count
+        }
+        
+        if(max_iter_adj > 0) {
+          
+          if(max_iter_adj < max_iter) {
+            cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+          }
+          
+          # run the local model workflow
+          fcst_agent_workflow(
+            agent_info = agent_info,
+            combo = hash_data(x),
+            weighted_mape_goal = weighted_mape_goal,
+            parallel_processing = NULL,
+            inner_parallel = inner_parallel,
+            num_cores = num_cores,
+            max_iter = max_iter_adj,
+            seed = seed
+          )
+        } else {
+          cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
+        }
       } %>% base::suppressPackageStartupMessages()
 
     par_end(cl)
