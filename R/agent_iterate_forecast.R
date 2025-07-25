@@ -137,7 +137,7 @@ iterate_forecast <- function(agent_info,
     `%op%` <- par_info$foreach_operator
 
     # foreach over each combo file
-    foreach::foreach(
+    local_models <- foreach::foreach(
       x               = local_combo_list,
       .packages       = packages,
       .errorhandling  = "stop",
@@ -209,7 +209,7 @@ iterate_forecast <- function(agent_info,
           }
 
           # run the local model workflow
-          fcst_agent_workflow(
+          fcst_results <- fcst_agent_workflow(
             agent_info = agent_info,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
@@ -222,6 +222,8 @@ iterate_forecast <- function(agent_info,
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
         }
+        
+        return(data.frame(Combo = x))
       } %>% base::suppressPackageStartupMessages()
 
     par_end(cl)
