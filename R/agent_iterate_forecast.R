@@ -59,27 +59,28 @@ iterate_forecast <- function(agent_info,
   # optimize global models
   if (length(combo_list) > 1) {
     message("[agent] 🌎 Starting Global Model Iteration Workflow")
-    
+
     # adjust max iterations based on previous runs
-    previous_runs <- load_run_results(agent_info = agent_info, 
-                                      combo = NULL)
-    
-    if(!tibble::is_tibble(previous_runs)) {
+    previous_runs <- load_run_results(
+      agent_info = agent_info,
+      combo = NULL
+    )
+
+    if (!tibble::is_tibble(previous_runs)) {
       max_iter_adj <- max_iter
     } else {
       prev_run_count <- previous_runs %>%
         dplyr::filter(agent_version == agent_info$agent_version) %>%
         nrow()
-      
+
       max_iter_adj <- max_iter - prev_run_count
     }
-    
-    if(max_iter_adj > 0) {
-      
-      if(max_iter_adj < max_iter) {
+
+    if (max_iter_adj > 0) {
+      if (max_iter_adj < max_iter) {
         cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
       }
-      
+
       # run the global model optimization
       fcst_results <- fcst_agent_workflow(
         agent_info = agent_info,
@@ -185,27 +186,28 @@ iterate_forecast <- function(agent_info,
           # re-register tools
           register_fcst_tools(agent_info)
         }
-        
+
         # adjust max iterations based on previous runs
-        previous_runs <- load_run_results(agent_info = agent_info, 
-                                          combo = hash_data(x))
-        
-        if(!tibble::is_tibble(previous_runs)) {
+        previous_runs <- load_run_results(
+          agent_info = agent_info,
+          combo = hash_data(x)
+        )
+
+        if (!tibble::is_tibble(previous_runs)) {
           max_iter_adj <- max_iter
         } else {
           prev_run_count <- previous_runs %>%
             dplyr::filter(agent_version == agent_info$agent_version) %>%
             nrow()
-          
+
           max_iter_adj <- max_iter - prev_run_count
         }
-        
-        if(max_iter_adj > 0) {
-          
-          if(max_iter_adj < max_iter) {
+
+        if (max_iter_adj > 0) {
+          if (max_iter_adj < max_iter) {
             cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
           }
-          
+
           # run the local model workflow
           fcst_agent_workflow(
             agent_info = agent_info,
@@ -236,15 +238,14 @@ iterate_forecast <- function(agent_info,
 #'
 #' @return A tibble containing the final forecast for the agent.
 #' @export
-get_agent_forecast <- function(agent_info, 
+get_agent_forecast <- function(agent_info,
                                parallel_processing = NULL,
                                num_cores = NULL) {
-  
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
 
@@ -377,6 +378,9 @@ fcst_agent_workflow <- function(agent_info,
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
+  
+  # create a timestamp for the run
+  timestamp <- format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
 
   # construct the workflow
   workflow <- list(
@@ -412,6 +416,7 @@ fcst_agent_workflow <- function(agent_info,
         agent_info          = agent_info,
         inputs              = "{results$reason_inputs}",
         combo               = combo,
+        timestamp           = paste0(timestamp, "_","{ctx$iter}"), 
         parallel_processing = parallel_processing,
         inner_parallel      = inner_parallel,
         num_cores           = num_cores,
@@ -1172,6 +1177,7 @@ reason_inputs <- function(agent_info,
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param timestamp A timestamp for the run, used to create a unique run name.
 #' @param parallel_processing Logical indicating if parallel processing should be used.
 #' @param inner_parallel Logical indicating if inner parallel processing should be used.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
@@ -1182,6 +1188,7 @@ reason_inputs <- function(agent_info,
 submit_fcst_run <- function(agent_info,
                             inputs,
                             combo,
+                            timestamp, 
                             parallel_processing = NULL,
                             inner_parallel = FALSE,
                             num_cores = NULL,
@@ -1241,7 +1248,7 @@ submit_fcst_run <- function(agent_info,
     "agent_",
     agent_info$run_id, "_",
     ifelse(is.null(combo), hash_data("all"), combo_value), "_",
-    format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
+    timestamp
   )
 
   # kick off Finn run
