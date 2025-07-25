@@ -620,7 +620,7 @@ update_forecast_combo <- function(agent_info,
     combo <- prev_best_run_tbl$combo[1]
     combo_value <- hash_data(combo)
   }
-  
+
   project_name <- paste0(
     agent_info$project_info$project_name,
     "_",

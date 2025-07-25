@@ -387,7 +387,7 @@ fcst_agent_workflow <- function(agent_info,
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
-  
+
   # create a timestamp for the run
   timestamp <- format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
 
@@ -425,7 +425,7 @@ fcst_agent_workflow <- function(agent_info,
         agent_info          = agent_info,
         inputs              = "{results$reason_inputs}",
         combo               = combo,
-        timestamp           = paste0(timestamp, "_","{ctx$iter}"), 
+        timestamp           = paste0(timestamp, "_", "{ctx$iter}"),
         parallel_processing = parallel_processing,
         inner_parallel      = inner_parallel,
         num_cores           = num_cores,
@@ -1197,7 +1197,7 @@ reason_inputs <- function(agent_info,
 submit_fcst_run <- function(agent_info,
                             inputs,
                             combo,
-                            timestamp, 
+                            timestamp,
                             parallel_processing = NULL,
                             inner_parallel = FALSE,
                             num_cores = NULL,
@@ -1259,7 +1259,7 @@ submit_fcst_run <- function(agent_info,
     ifelse(is.null(combo), hash_data("all"), combo_value), "_",
     timestamp
   )
-  
+
   project_name <- paste0(
     agent_info$project_info$project_name,
     "_",
@@ -1625,7 +1625,7 @@ load_run_results <- function(agent_info,
     "_",
     ifelse(is.null(combo), hash_data("all"), combo_value)
   )
-  
+
   previous_runs <- get_run_info(
     project_name = project_name,
     run_name = NULL,
@@ -1727,7 +1727,7 @@ get_total_run_count <- function(agent_info,
     "_",
     ifelse(is.null(combo), hash_data("all"), combo_value)
   )
-  
+
   total_runs <- get_run_info(
     project_name = project_name,
     run_name = NULL,
