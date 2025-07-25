@@ -620,6 +620,12 @@ update_forecast_combo <- function(agent_info,
     combo <- prev_best_run_tbl$combo[1]
     combo_value <- hash_data(combo)
   }
+  
+  project_name <- paste0(
+    agent_info$project_info$project_name,
+    "_",
+    ifelse(combo == "All-Data", hash_data("all"), combo_value)
+  )
 
   combo_list <- unique(prev_best_run_tbl$combo)
 
@@ -629,7 +635,7 @@ update_forecast_combo <- function(agent_info,
 
   # get run info of previous best run
   prev_run_info <- list(
-    project_name = project_info$project_name,
+    project_name = project_name,
     run_name = prev_best_run_tbl$best_run_name[1],
     storage_object = project_info$storage_object,
     path = project_info$path,
@@ -638,7 +644,7 @@ update_forecast_combo <- function(agent_info,
   )
 
   prev_run_log_tbl <- get_run_info(
-    project_name = project_info$project_name,
+    project_name = project_name,
     run_name = prev_best_run_tbl$best_run_name[1],
     storage_object = project_info$storage_object,
     path = project_info$path
@@ -725,7 +731,7 @@ update_forecast_combo <- function(agent_info,
 
   # create new run
   new_run_info <- set_run_info(
-    project_name = project_info$project_name,
+    project_name = project_name,
     run_name = run_name,
     storage_object = project_info$storage_object,
     path = project_info$path,
@@ -979,7 +985,7 @@ update_forecast_combo <- function(agent_info,
   )
 
   new_log_tbl <- get_run_info(
-    project_name = project_info$project_name,
+    project_name = project_name,
     run_name = new_run_info$run_name,
     storage_object = project_info$storage_object,
     path = project_info$path

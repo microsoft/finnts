@@ -266,6 +266,11 @@ get_agent_forecast <- function(agent_info,
       unique()
 
     run_info <- agent_info$project_info
+    run_info$project_name <- paste0(
+      agent_info$project_info$project_name,
+      "_",
+      hash_data("all")
+    )
     run_info$run_name <- global_run_name
 
     global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
@@ -276,16 +281,14 @@ get_agent_forecast <- function(agent_info,
 
   # load local model forecasts
   if ("local" %in% model_type_list) {
-    local_run_name_list <- best_run_tbl %>%
-      dplyr::filter(model_type == "local") %>%
-      dplyr::pull(best_run_name) %>%
-      unique()
+    local_run_tbl <- best_run_tbl %>%
+      dplyr::filter(model_type == "local")
 
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
-      task_length = length(local_run_name_list)
+      task_length = nrow(local_run_tbl)
     )
 
     cl <- par_info$cl
@@ -294,7 +297,8 @@ get_agent_forecast <- function(agent_info,
 
     # submit tasks
     local_fcst_tbl <- foreach::foreach(
-      x = local_run_name_list,
+      x = local_run_tbl %>%
+        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
       .packages = packages,
       .errorhandling = "stop",
@@ -305,7 +309,12 @@ get_agent_forecast <- function(agent_info,
     ) %op%
       {
         run_info <- agent_info$project_info
-        run_info$run_name <- x
+        run_info$project_name <- paste0(
+          agent_info$project_info$project_name,
+          "_",
+          hash_data(x$combo)
+        )
+        run_info$run_name <- x$best_run_name
 
         temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
 
@@ -1243,17 +1252,23 @@ submit_fcst_run <- function(agent_info,
     return_type = "df"
   )
 
-  # create unique run name
+  # create unique run name and project name
   run_name <- paste0(
     "agent_",
     agent_info$run_id, "_",
     ifelse(is.null(combo), hash_data("all"), combo_value), "_",
     timestamp
   )
+  
+  project_name <- paste0(
+    agent_info$project_info$project_name,
+    "_",
+    ifelse(is.null(combo), hash_data("all"), combo_value)
+  )
 
   # kick off Finn run
   run_info <- set_run_info(
-    project_name = project_info$project_name,
+    project_name = project_name,
     run_name = run_name,
     storage_object = project_info$storage_object,
     path = project_info$path,
@@ -1605,8 +1620,14 @@ load_run_results <- function(agent_info,
   }
 
   # get previous runs
+  project_name <- paste0(
+    agent_info$project_info$project_name,
+    "_",
+    ifelse(is.null(combo), hash_data("all"), combo_value)
+  )
+  
   previous_runs <- get_run_info(
-    project_name = agent_info$project_info$project_name,
+    project_name = project_name,
     run_name = NULL,
     storage_object = agent_info$project_info$storage_object,
     path = agent_info$project_info$path
@@ -1701,8 +1722,14 @@ get_total_run_count <- function(agent_info,
   }
 
   # get total runs
+  project_name <- paste0(
+    agent_info$project_info$project_name,
+    "_",
+    ifelse(is.null(combo), hash_data("all"), combo_value)
+  )
+  
   total_runs <- get_run_info(
-    project_name = agent_info$project_info$project_name,
+    project_name = project_name,
     run_name = NULL,
     storage_object = agent_info$project_info$storage_object,
     path = agent_info$project_info$path
