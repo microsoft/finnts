@@ -154,7 +154,15 @@ train_models <- function(run_info,
         "-orig_combo_info.", run_info$data_output
       ),
       return_type = "df"
-    )
+    ) 
+    
+    # fix potential issues when using vroom to read file
+    if(Inf %in% unique(orig_combo_info_tbl$Combo_Hash)) {
+      orig_combo_info_tbl <- orig_combo_info_tbl %>%
+        dplyr::rowwise() %>%
+        dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
+        dplyr::ungroup()
+    }
   }
 
   # get list of tasks to run
@@ -397,7 +405,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "stop",
+        .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
