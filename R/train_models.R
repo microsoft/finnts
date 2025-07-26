@@ -163,6 +163,12 @@ train_models <- function(run_info,
         dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
         dplyr::ungroup()
     }
+    
+    # force combo hash to be a character
+    orig_combo_info_tbl <- orig_combo_info_tbl %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(Combo_Hash = as.character(Combo_Hash)) %>%
+      dplyr::ungroup()
   }
 
   # get list of tasks to run
