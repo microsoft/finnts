@@ -157,7 +157,7 @@ train_models <- function(run_info,
     ) 
     
     # fix potential issues when using vroom to read file
-    if(Inf %in% unique(orig_combo_info_tbl$Combo_Hash)) {
+    if(Inf %in% unique(orig_combo_info_tbl$Combo_Hash) || sum(is.numeric(orig_combo_info_tbl$Combo_Hash)) > 0) {
       orig_combo_info_tbl <- orig_combo_info_tbl %>%
         dplyr::rowwise() %>%
         dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
@@ -307,7 +307,7 @@ train_models <- function(run_info,
           filtered_combo_info_tbl <- orig_combo_info_tbl
         } else {
           filtered_combo_info_tbl <- orig_combo_info_tbl %>%
-            dplyr::filter(Combo_Hash == combo_hash)
+            dplyr::filter(Combo_Hash == as.character(combo_hash))
         }
       }
 
