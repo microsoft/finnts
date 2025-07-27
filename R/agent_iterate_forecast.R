@@ -1644,6 +1644,7 @@ load_run_results <- function(agent_info,
       dplyr::mutate(created = lubridate::ymd_hms(created, tz = "UTC")) %>%
       dplyr::arrange(created) %>%
       dplyr::filter(!is.na(weighted_mape)) %>%
+      dplyr::filter(!is.na(agent_version)) %>%
       dplyr::mutate(agent_run_id = stringr::str_extract(run_name, "agent_([^_]+)")) %>%
       dplyr::mutate(
         run_number = dplyr::row_number()
