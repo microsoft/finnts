@@ -4,10 +4,22 @@
 \alias{get_best_agent_run}
 \title{Get the best run for an agent}
 \usage{
-get_best_agent_run(agent_info)
+get_best_agent_run(
+  agent_info,
+  full_run_info = FALSE,
+  parallel_processing = NULL,
+  num_cores = NULL
+)
 }
 \arguments{
 \item{agent_info}{A list containing agent information including project info and run ID.}
+
+\item{full_run_info}{A logical indicating whether to load all input settings
+from each run into the final output table.}
+
+\item{parallel_processing}{parallel processing}
+
+\item{num_cores}{number of cores}
 }
 \value{
 A tibble containing the best run information for the agent.

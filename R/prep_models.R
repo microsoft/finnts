@@ -569,6 +569,7 @@ model_workflows <- function(run_info,
   }
 
   for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
+    # get initial data
     model <- x %>%
       dplyr::pull(Model)
 
@@ -579,6 +580,12 @@ model_workflows <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
+    
+    # adjust data if outliers have been cleaned
+    if("Target_Original" %in% colnames(recipe_tbl)) {
+      recipe_tbl <- recipe_tbl %>%
+        dplyr::select(-Target_Original)
+    }
 
     # get args to feed into model spec functions
     if (recipe == "R1") {
@@ -783,6 +790,12 @@ model_hyperparameters <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
+    
+    # adjust data if outliers have been cleaned
+    if("Target_Original" %in% names(recipe_features)) {
+      recipe_features <- recipe_features %>%
+        dplyr::select(-Target_Original)
+    }
 
     if (workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
       if (model == "svm-rbf") {

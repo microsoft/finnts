@@ -1131,7 +1131,11 @@ fit_models <- function(run_info,
       summary() %>%
       dplyr::pull(variable)
 
-    missing_cols <- setdiff(workflow_cols, colnames(prep_data))
+    if("Target_Original" %in% colnames(prep_data)) {
+      missing_cols <- setdiff(workflow_cols, colnames(prep_data %>% dplyr::select(-Target_Original)))
+    } else {
+      missing_cols <- setdiff(workflow_cols, colnames(prep_data))
+    }
 
     if (length(missing_cols) > 0 ||
       (as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
@@ -1157,9 +1161,15 @@ fit_models <- function(run_info,
           workflows::extract_spec_parsnip() %>%
           update(selected_features = fs_list)
       } else {
-        fs_list <- prep_data %>%
-          dplyr::select(-Target) %>%
-          colnames()
+        if("Target_Original" %in% colnames(prep_data)) {
+          fs_list <- prep_data %>%
+            dplyr::select(-Target, -Target_Original) %>%
+            colnames()
+        } else {
+          fs_list <- prep_data %>%
+            dplyr::select(-Target) %>%
+            colnames()
+        }
 
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip() %>%
@@ -1350,6 +1360,12 @@ fit_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
+              if("Target_Original" %in% colnames(x)) {
+                final_fcst_return <- final_fcst_return %>%
+                  dplyr::mutate(
+                    Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
+                  )
+              }
             } else {
               final_fcst_return <- x
             }
@@ -1365,6 +1381,12 @@ fit_models <- function(run_info,
             dplyr::mutate(
               Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
               Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
+            )
+        }
+        if("Target_Original" %in% colnames(x)) {
+          final_fcst <- final_fcst %>%
+            dplyr::mutate(
+              Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
             )
         }
       }

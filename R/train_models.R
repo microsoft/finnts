@@ -623,6 +623,12 @@ train_models <- function(run_info,
                       Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                       Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                     )
+                  if("Target_Original" %in% colnames(x)) {
+                    final_fcst_return <- final_fcst_return %>%
+                      dplyr::mutate(
+                        Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
+                      )
+                  }
                 } else {
                   final_fcst_return <- x
                 }
@@ -639,6 +645,12 @@ train_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
+              if("Target_Original" %in% colnames(x)) {
+                final_fcst <- final_fcst %>%
+                  dplyr::mutate(
+                    Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
+                  )
+              }
             }
           }
         }
@@ -859,9 +871,16 @@ create_splits <- function(data, train_test_splits) {
     } else {
       test_indices <- which(data$Date > train_end & data$Date <= test_end)
     }
+    
+    data_mod <- data
+    
+    # use Target_Original for the assessment rows if available 
+    if ("Target_Original" %in% base::colnames(data_mod)) {
+      data_mod[test_indices, "Target"] <- data_mod[test_indices, "Target_Original"]
+    }
 
     # Create the split and add it to the list
-    splits[[i]] <- analysis_split(data, train_indices, test_indices)
+    splits[[i]] <- analysis_split(data_mod, train_indices, test_indices)
 
     # Add the ID to the vector
     ids[i] <- as.character(train_test_splits$Train_Test_ID[i])
@@ -936,15 +955,33 @@ undifference_forecast <- function(forecast_data,
         initial_value <- diff1
       }
 
-      # combine historical data with forecast, then undifference and return forecast
-      combined_data <- filtered_recipe_data %>%
-        dplyr::mutate(Forecast = Target) %>%
-        dplyr::select(Date, Target, Forecast) %>%
-        rbind(
-          fcst_temp_tbl %>%
-            dplyr::select(Date, Target, Forecast)
-        ) %>%
-        dplyr::arrange(Date)
+      # combine historical data with forecast (adjust Target_Originals when needed)
+      # then undifference and return forecast
+      if("Target_Original" %in% colnames(filtered_recipe_data)) {
+        filtered_recipe_data$Target_Original[1] <- NA
+        
+        if (!is.na(diff2)) {
+          filtered_recipe_data$Target_Original[2] <- NA
+        }
+        combined_data <- filtered_recipe_data %>%
+          dplyr::mutate(Forecast = Target) %>% # make sure the cleaned target is combined with forecast
+          dplyr::mutate(Target = Target_Original) %>% # make sure the original target is used
+          dplyr::select(Date, Target, Forecast) %>%
+          rbind(
+            fcst_temp_tbl %>%
+              dplyr::select(Date, Target, Forecast)
+          ) %>%
+          dplyr::arrange(Date)
+      } else {
+        combined_data <- filtered_recipe_data %>%
+          dplyr::mutate(Forecast = Target) %>%
+          dplyr::select(Date, Target, Forecast) %>%
+          rbind(
+            fcst_temp_tbl %>%
+              dplyr::select(Date, Target, Forecast)
+          ) %>%
+          dplyr::arrange(Date)
+      }
 
       if (id == 1) {
         target_tbl <- combined_data %>%
@@ -1014,6 +1051,19 @@ undifference_recipe <- function(recipe_data,
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
 
+  # undifference Target_Original col if it exists
+  if("Target_Original" %in% colnames(undiff_recipe_data)) {
+    undiff_recipe_data$Target_Original[1] <- NA
+    
+    if (!is.na(diff2)) {
+      undiff_recipe_data$Target_Original[2] <- NA
+    }
+    
+    undiff_recipe_data <- undiff_recipe_data %>%
+      dplyr::mutate(Target_Original = timetk::diff_inv_vec(Target_Original, difference = num_diffs, initial_values = initial_value))
+  }
+  
+  # combine with future data and return
   future_data <- recipe_data %>%
     dplyr::filter(Date > hist_end_date)
 

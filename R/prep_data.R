@@ -362,6 +362,12 @@ prep_data <- function(run_info,
             NA,
             Target
           ))
+        
+        # adjust original target col
+        if("Target_Original" %in% colnames(initial_tbl)) {
+          initial_tbl <- initial_tbl %>%
+            dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
+        }
 
         # box-cox transformation
         if (box_cox) {
@@ -535,6 +541,12 @@ prep_data <- function(run_info,
               NA,
               Target
             ))
+          
+          # adjust original target col
+          if("Target_Original" %in% colnames(initial_tbl)) {
+            initial_tbl <- initial_tbl %>%
+              dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
+          }
 
           # box-cox transformation
           if (box_cox) {
@@ -820,18 +832,31 @@ get_xregs_future_values_tbl <- function(data_tbl,
 #' Function to replace outliers and fill in missing values
 #'
 #' @param df data frame
-#' @param clean_outliers clean outliers or not
-#' @param clean_missing_values clean missing values or not
-#' @param frequency_number number of time series frequency
-#' @param external_regressors list of external regressors
+#' @param clean_outliers logical; clean outliers or not
+#' @param clean_missing_values logical; clean missing values or not
+#' @param frequency_number number of time‑series frequency
+#' @param external_regressors character vector of external regressor names
 #'
-#' @return tbl with or without missing/outlier values replaced
+#' @return tbl with or without missing / outlier values replaced
 #' @noRd
 clean_outliers_missing_values <- function(df,
                                           clean_outliers,
                                           clean_missing_values,
                                           frequency_number,
                                           external_regressors) {
+  
+  # Create Target_Original copy only when outlier cleaning is on 
+  if (clean_outliers && "Target" %in% names(df)) {
+    df <- df %>%
+      dplyr::mutate(
+        Target_Original = if (clean_missing_values) {
+          timetk::ts_impute_vec(Target, period = frequency_number)
+        } else {
+          Target
+        }
+      )
+  }
+  
   correct_clean_func <- function(col) {
     if (clean_missing_values & sum(!is.na(col)) < 2) {
       col
@@ -843,15 +868,21 @@ clean_outliers_missing_values <- function(df,
       col
     }
   }
-
-  df %>%
+  
+  df_clean <- df %>%
     dplyr::mutate(
       dplyr::across(
         (where(is.numeric) & c("Target", external_regressors)),
         correct_clean_func
       )
-    ) %>%
-    tibble::tibble()
+    )
+  
+  # Ensure earliest value of Target matches Target_Original 
+  if ("Target_Original" %in% names(df_clean)) {
+    df_clean$Target[1] <- df_clean$Target_Original[1]
+  }
+  
+  tibble::tibble(df_clean)
 }
 
 #' Function to get frequency number of time series
@@ -1028,55 +1059,78 @@ get_date_regex <- function(date_type) {
   return(date_regex)
 }
 
-#' Apply box cox transformation
+#' Apply Box‑Cox transformation
 #'
-#' @param data input data
+#' @param df input data
 #'
-#' @return Returns df of box cox transformed data
+#' @return Returns a list with `$data` (tibble of transformed data)
+#'         and `$diff_info` (tibble with lambda used for Target)
 #' @noRd
 apply_box_cox <- function(df) {
   final_tbl <- df %>% dplyr::select(Date)
-
+  
   diff_info <- tibble::tibble(
-    Combo = unique(df$Combo),
-    Box_Cox_Lambda = NA
+    Combo           = unique(df$Combo),
+    Box_Cox_Lambda  = NA
   )
-
+  
+  # Pre‑compute lambda for Target so Target_Original can reuse it 
+  target_lambda <- NA
+  if ("Target" %in% names(df) &&
+      is.numeric(df$Target) &&
+      length(unique(df$Target)) > 2) {
+    target_lambda <- timetk::auto_lambda(df$Target)
+  }
+  
   for (column_name in names(df)) {
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
         dplyr::select(Date, tidyselect::all_of(column_name)) %>%
         dplyr::rename(Column = tidyselect::all_of(column_name))
-
-      # get lambda value
+      
+      # Choose lambda 
       lambda_value <- timetk::auto_lambda(temp_tbl$Column)
-
+      
+      # Force Target and Target_Original to share the same lambda
+      if (column_name %in% c("Target", "Target_Original") && !is.na(target_lambda)) {
+        lambda_value <- target_lambda
+      }
+      
+      # Record lambda once for Target
       if (column_name == "Target") {
         diff_info <- diff_info %>%
           dplyr::mutate(Box_Cox_Lambda = lambda_value)
       }
-
-      # box cox transformation
+      
+      # Apply Box‑Cox 
       temp_tbl <- temp_tbl %>%
-        dplyr::mutate(Column = timetk::box_cox_vec(Column,
+        dplyr::mutate(Column = timetk::box_cox_vec(
+          Column,
           lambda = lambda_value,
           silent = TRUE
         ))
-
-      # clean up names and add to final df
+      
+      # Clean up names and add to final df
       colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
-
-      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(tidyselect::all_of(column_name)))
+      
+      final_tbl <- cbind(
+        final_tbl,
+        temp_tbl %>% dplyr::select(tidyselect::all_of(column_name))
+      )
     } else {
       if (column_name != "Date") {
-        final_tbl <- cbind(final_tbl, df %>% dplyr::select(tidyselect::all_of(column_name)))
+        final_tbl <- cbind(
+          final_tbl,
+          df %>% dplyr::select(tidyselect::all_of(column_name))
+        )
       }
     }
   }
-
+  
   return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
+
 
 #' Make data stationary
 #'
@@ -1086,53 +1140,69 @@ apply_box_cox <- function(df) {
 #' @noRd
 make_stationary <- function(df) {
   final_tbl <- df %>% dplyr::select(Date)
-
+  
   diff_info <- tibble::tibble(
-    Combo = unique(df$Combo),
+    Combo       = unique(df$Combo),
     Diff_Value1 = NA,
     Diff_Value2 = NA
   )
-
+  
+  # store the number of differences used for Target so we can reuse for Target_Original
+  target_ndiffs <- NA
+  
   for (column_name in names(df)) {
     # Only check numeric columns with more than 2 unique values
     if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
         dplyr::select(Date, tidyselect::all_of(column_name)) %>%
         dplyr::rename(Column = tidyselect::all_of(column_name))
-
-      # check for standard difference
+      
       ndiffs <- temp_tbl %>%
         dplyr::pull(Column) %>%
         feasts::unitroot_ndiffs() %>%
         as.numeric()
-
-      if (ndiffs > 0) {
-        if (column_name == "Target") {
+      
+      # Handle Target and remember its differencing order 
+      if (column_name == "Target") {
+        target_ndiffs <- ndiffs # remember it
+        
+        if (ndiffs > 0) {
           diff_info <- diff_info %>%
             dplyr::mutate(Diff_Value1 = temp_tbl %>% dplyr::slice(1) %>% dplyr::pull(Column))
-
+          
           if (ndiffs > 1) {
             diff_info <- diff_info %>%
               dplyr::mutate(Diff_Value2 = temp_tbl %>% dplyr::slice(2) %>% dplyr::pull(Column))
           }
         }
+      }
+      
+      # If Target_Original exists, force it to use target_ndiffs 
+      if (column_name == "Target_Original" && !is.na(target_ndiffs)) {
+        ndiffs <- target_ndiffs
+      }
+      
+      if (ndiffs > 0) {
         temp_tbl <- temp_tbl %>%
           dplyr::mutate(Column = timetk::diff_vec(Column,
-            difference = ndiffs,
-            silent = TRUE
+                                                  difference = ndiffs,
+                                                  silent = TRUE
           ))
       }
-
+      
       colnames(temp_tbl)[colnames(temp_tbl) == "Column"] <- column_name
-
-      final_tbl <- cbind(final_tbl, temp_tbl %>% dplyr::select(tidyselect::all_of(column_name)))
+      
+      final_tbl <- cbind(
+        final_tbl,
+        temp_tbl %>% dplyr::select(tidyselect::all_of(column_name))
+      )
     } else {
       if (column_name != "Date") {
         final_tbl <- cbind(final_tbl, df %>% dplyr::select(tidyselect::all_of(column_name)))
       }
     }
   }
-
+  
   return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
 
@@ -1199,6 +1269,7 @@ multivariate_prep_recipe_1 <- function(data,
 
   data_lag_window <- df_lag_initial %>%
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
+    dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", lag_periods))) %>% # drop original target cols if found
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
     timetk::tk_augment_slidify( # create rolling windows
       tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
@@ -1334,6 +1405,7 @@ multivariate_prep_recipe_2 <- function(data,
           dplyr::mutate(Final_Col = paste0(col, "_lag", lag_val)) %>%
           dplyr::pull(Final_Col)
       ) %>%
+      dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", unique(c(lag_periods_r2, lag_periods))))) %>% # drop original target cols if found
       tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
       timetk::tk_augment_slidify(
         tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
