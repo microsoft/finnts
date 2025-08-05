@@ -719,7 +719,9 @@ reconcile_agent_forecast <- function(agent_info,
     create_prediction_intervals(model_train_test_tbl) %>%
     convert_weekly_to_daily(project_info$date_type, project_info$weekly_to_daily) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
-    dplyr::left_join(model_train_test_tbl,
+    dplyr::left_join(
+      model_train_test_tbl %>%
+        dplyr::select(Run_Type, Train_Test_ID),
       by = "Train_Test_ID"
     ) %>%
     dplyr::relocate(Run_Type, .before = Train_Test_ID) %>%
