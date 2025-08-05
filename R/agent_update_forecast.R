@@ -99,14 +99,19 @@ update_fcst_agent_workflow <- function(agent_info,
       branch = function(ctx) {
         # extract the results from the current node
         results <- ctx$results$initial_checks
+        forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if initial checks passed
         if (is.data.frame(results)) {
           return(list(ctx = ctx, `next` = "update_global_models"))
-        } else if (results == "no updates required") {
+        } else if (results == "no updates required" & forecast_approach == "bottoms_up") {
           # if no updates required, stop the workflow
-          cli::cli_alert_info("No updates required, stopping workflow.")
+          cli::cli_alert_info("No model updates required, stopping workflow.")
           return(list(ctx = ctx, `next` = "stop"))
+        } else if (results == "no updates required" & forecast_approach != "bottoms_up") {
+          # if no updates required, stop the workflow
+          cli::cli_alert_info("No model updates required, moving to reconcile forecast.")
+          return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
         } else {
           stop("Error in initial checks.", call. = FALSE)
         }
