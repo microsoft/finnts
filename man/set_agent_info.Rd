@@ -15,6 +15,7 @@ set_agent_info(
   back_test_scenarios = NULL,
   back_test_spacing = NULL,
   combo_cleanup_date = NULL,
+  allow_hierarchical_forecast = FALSE,
   reason_llm = NULL,
   overwrite = FALSE
 )
@@ -39,6 +40,8 @@ set_agent_info(
 \item{back_test_spacing}{Optional numeric value for back test spacing}
 
 \item{combo_cleanup_date}{Optional Date object for combo cleanup}
+
+\item{allow_hierarchical_forecast}{Logical indicating whether to allow hierarchical forecasting}
 
 \item{reason_llm}{Optional Chat LLM object for reasoning tasks}
 

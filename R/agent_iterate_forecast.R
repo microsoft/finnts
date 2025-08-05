@@ -29,6 +29,11 @@ iterate_forecast <- function(agent_info,
 
   # get project info
   project_info <- agent_info$project_info
+  
+  # agent info adjustments
+  if(agent_info$forecast_approach != "bottoms_up") {
+    agent_info$project_info$combo_variables <- "ID"
+  }
 
   # register tools
   register_eda_tools(agent_info)
@@ -228,6 +233,16 @@ iterate_forecast <- function(agent_info,
 
     par_end(cl)
   }
+  
+  # reconcile hierarchical forecast
+  if(agent_info$forecast_approach != "bottoms_up") {
+    message("[agent] 🪛 Reconciling Hierarchical Forecast")
+    
+    reconcile_agent_forecast(agent_info = agent_info, 
+                             project_info = project_info, 
+                             parallel_processing = parallel_processing, 
+                             num_cores = num_cores)
+  }
 
   message("[agent] ✅ Forecast Iteration Process Complete")
 }
@@ -247,7 +262,22 @@ get_agent_forecast <- function(agent_info,
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-
+  
+  # check for reconciled forecast
+  if(agent_info$forecast_approach != "bottoms_up" & length(agent_info$project_info$combo_variables) > 1) {
+    
+    project_info <- agent_info$project_info
+    project_info$run_name <- agent_info$run_id
+    
+    fcst_tbl <- read_file(run_info = project_info,
+                          path = paste0(
+                            "/forecasts/", hash_data(project_info$project_name), "-", hash_data(project_info$run_name),
+                            "-", hash_data("Best-Model"), "-reconciled.", project_info$data_output
+                          ))
+    
+    return(fcst_tbl)
+  }
+  
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
 
@@ -1535,7 +1565,8 @@ log_best_run <- function(agent_info,
         model_avg_wmape = avg_wmape,
         model_median_wmape = median_wmape,
         model_std_wmape = std_wmape,
-        agent_version = as.numeric(agent_info$agent_version)
+        agent_version = as.numeric(agent_info$agent_version),
+        agent_forecast_approach = agent_info$forecast_approach
       )
 
     # save the log file
@@ -1559,7 +1590,8 @@ log_best_run <- function(agent_info,
         model_avg_wmape = weighted_mape,
         model_median_wmape = weighted_mape,
         model_std_wmape = 0,
-        agent_version = as.numeric(agent_info$agent_version)
+        agent_version = as.numeric(agent_info$agent_version),
+        agent_forecast_approach = agent_info$forecast_approach
       )
 
     # save the log file
@@ -1607,6 +1639,7 @@ log_best_run <- function(agent_info,
 
     # for each combo, filter the back test data, calculate the weighted mape and save to logs
     for (combo_name in combo_list) {
+
       # filter the back test data for the current combo
       combo_data <- back_test_tbl %>%
         dplyr::filter(Combo == combo_name)
@@ -1629,7 +1662,7 @@ log_best_run <- function(agent_info,
       prev_log_df <- tryCatch(
         read_file(project_info,
           path = paste0(
-            "logs/", hash_data(project_name), "-", hash_data(agent$run_id),
+            "logs/", hash_data(project_info$project_name), "-", hash_data(agent_info$run_id),
             "-", hash_data(combo_name), "-agent_best_run.csv"
           ),
           return_type = "df"
@@ -1735,6 +1768,7 @@ load_run_results <- function(agent_info,
       dplyr::arrange(created) %>%
       dplyr::filter(!is.na(weighted_mape)) %>%
       dplyr::filter(!is.na(agent_version)) %>%
+      dplyr::filter(agent_forecast_approach == agent_info$forecast_approach) %>%
       dplyr::mutate(agent_run_id = stringr::str_extract(run_name, "agent_([^_]+)")) %>%
       dplyr::mutate(
         run_number = dplyr::row_number()

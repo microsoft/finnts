@@ -14,6 +14,7 @@
 #' @param back_test_scenarios Optional character vector of back test scenarios
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
+#' @param allow_hierarchical_forecast Logical indicating whether to allow hierarchical forecasting
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #'
@@ -29,6 +30,7 @@ set_agent_info <- function(project_info,
                            back_test_scenarios = NULL,
                            back_test_spacing = NULL,
                            combo_cleanup_date = NULL,
+                           allow_hierarchical_forecast = FALSE,
                            reason_llm = NULL,
                            overwrite = FALSE) {
   # get metadata
@@ -48,6 +50,7 @@ set_agent_info <- function(project_info,
   check_input_type("back_test_scenarios", back_test_scenarios, c("numeric", "NULL"))
   check_input_type("back_test_spacing", back_test_spacing, c("numeric", "NULL"))
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
+  check_input_type("allow_hierarchical_forecast", allow_hierarchical_forecast, "logical")
   check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
   check_input_type("overwrite", overwrite, "logical")
 
@@ -101,6 +104,22 @@ set_agent_info <- function(project_info,
       combo_cleanup_date,
       hist_end_date
     )
+  
+  # check if a hierarchy exists in the data and should be applied
+  if(allow_hierarchical_forecast) {
+    forecast_approach <- hierarchy_detect(agent_info = list(project_info = project_info, 
+                                                            run_id = 1), 
+                                          input_data = final_input_data,
+                                          write_data = FALSE)
+    
+    if(forecast_approach != "bottoms_up") {
+      cli::cli_alert_info(
+        "Hierarchical data detected. Using '{forecast_approach}' forecast approach in a hierarchical forecast."
+      )
+    }
+  } else {
+    forecast_approach <- "bottoms_up"
+  }
 
   # check if agent run already exists
   agent_runs_list <- list_files(
@@ -138,7 +157,8 @@ set_agent_info <- function(project_info,
         NA
       } else {
         combo_cleanup_date
-      }
+      }, 
+      forecast_approach = forecast_approach
     ) %>%
       data.frame()
 
@@ -182,6 +202,7 @@ set_agent_info <- function(project_info,
       } else {
         as.Date(prev_log_df$combo_cleanup_date)
       },
+      forecast_approach = prev_log_df$forecast_approach,
       overwrite = overwrite
     )
 
@@ -207,6 +228,18 @@ set_agent_info <- function(project_info,
     agent_version <- length(agent_runs_list) + 1
 
     # write input data to disc
+    if(forecast_approach != "bottoms_up") {
+      final_input_data <- final_input_data %>%
+        prep_hierarchical_data(run_info = project_info,
+                               combo_variables = combo_variables,
+                               external_regressors = external_regressors,
+                               forecast_approach = forecast_approach,
+                               frequency_number = get_frequency_number(date_type)
+        ) %>%
+        dplyr::mutate(ID = Combo) %>%
+        dplyr::relocate(ID, .before = Date)
+    }
+    
     for (combo_name in unique(final_input_data$Combo)) {
       write_data(
         x = final_input_data %>% dplyr::filter(Combo == combo_name),
@@ -232,6 +265,7 @@ set_agent_info <- function(project_info,
       back_test_scenarios = back_test_scenarios,
       back_test_spacing = back_test_spacing,
       combo_cleanup_date = combo_cleanup_date,
+      forecast_approach = forecast_approach,
       overwrite = overwrite
     )
 
@@ -246,7 +280,8 @@ set_agent_info <- function(project_info,
       hist_start_date = ifelse(is.null(hist_start_date), NA, as.character(hist_start_date)),
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
-      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date))
+      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date)), 
+      forecast_approach = forecast_approach
     )
 
     # write run info to disc

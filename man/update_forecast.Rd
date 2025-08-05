@@ -7,8 +7,8 @@
 update_forecast(
   agent_info,
   weighted_mape_goal = 0.1,
+  allow_iterate_forecast = FALSE,
   max_iter = 3,
-  allow_iterate_forecast = TRUE,
   parallel_processing = NULL,
   inner_parallel = FALSE,
   num_cores = NULL,
@@ -20,9 +20,9 @@ update_forecast(
 
 \item{weighted_mape_goal}{Numeric indicating the goal for the weighted MAPE.}
 
-\item{max_iter}{Numeric indicating the maximum number of iterations for the workflow.}
-
 \item{allow_iterate_forecast}{Logical indicating if the forecast iteration should be allowed.}
+
+\item{max_iter}{Numeric indicating the maximum number of iterations if iterate_forecast is ran.}
 
 \item{parallel_processing}{Logical indicating if parallel processing should be used.}
 
