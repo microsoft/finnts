@@ -114,7 +114,6 @@ iterate_forecast <- function(agent_info,
   # optimize local models
   if (length(local_combo_list) == 0) {
     message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
-    return(invisible())
   } else {
     message("[agent] 📊 Starting Local Model Iteration Workflow")
 

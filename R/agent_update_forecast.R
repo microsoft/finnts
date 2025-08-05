@@ -662,9 +662,14 @@ reconcile_agent_forecast <- function(agent_info,
   }
 
   # load example train test info
-  single_combo <- run_inputs %>%
-    dplyr::slice(1) %>%
-    dplyr::pull(combo)
+  single_run <- run_inputs %>%
+    dplyr::slice(1)
+
+  if (single_run$model_type == "global") {
+    single_combo <- "all"
+  } else {
+    single_combo <- single_run$combo
+  }
 
   project_name <- paste0(
     agent_info$project_info$project_name,
@@ -672,9 +677,7 @@ reconcile_agent_forecast <- function(agent_info,
     hash_data(single_combo)
   )
 
-  run_name <- run_inputs %>%
-    dplyr::slice(1) %>%
-    dplyr::pull(best_run_name)
+  run_name <- single_run$best_run_name
 
   train_test_file <- list_files(
     project_info$storage_object,
@@ -683,6 +686,12 @@ reconcile_agent_forecast <- function(agent_info,
       hash_data(run_name), "-train_test_split.", project_info$data_output
     )
   )
+
+  if (length(train_test_file) < 1) {
+    stop("Error in reconcile_agent_forecast(). No train test split file found for the best run.",
+      call. = FALSE
+    )
+  }
 
   model_train_test_tbl <- read_file(
     run_info = project_info,
