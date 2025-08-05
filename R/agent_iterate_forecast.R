@@ -29,9 +29,9 @@ iterate_forecast <- function(agent_info,
 
   # get project info
   project_info <- agent_info$project_info
-  
+
   # agent info adjustments
-  if(agent_info$forecast_approach != "bottoms_up") {
+  if (agent_info$forecast_approach != "bottoms_up") {
     agent_info$project_info$combo_variables <- "ID"
   }
 
@@ -227,21 +227,23 @@ iterate_forecast <- function(agent_info,
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
         }
-        
+
         return(data.frame(Combo = x))
       } %>% base::suppressPackageStartupMessages()
 
     par_end(cl)
   }
-  
+
   # reconcile hierarchical forecast
-  if(agent_info$forecast_approach != "bottoms_up") {
+  if (agent_info$forecast_approach != "bottoms_up") {
     message("[agent] 🪛 Reconciling Hierarchical Forecast")
-    
-    reconcile_agent_forecast(agent_info = agent_info, 
-                             project_info = project_info, 
-                             parallel_processing = parallel_processing, 
-                             num_cores = num_cores)
+
+    reconcile_agent_forecast(
+      agent_info = agent_info,
+      project_info = project_info,
+      parallel_processing = parallel_processing,
+      num_cores = num_cores
+    )
   }
 
   message("[agent] ✅ Forecast Iteration Process Complete")
@@ -262,22 +264,23 @@ get_agent_forecast <- function(agent_info,
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # check for reconciled forecast
-  if(agent_info$forecast_approach != "bottoms_up" & length(agent_info$project_info$combo_variables) > 1) {
-    
+  if (agent_info$forecast_approach != "bottoms_up" & length(agent_info$project_info$combo_variables) > 1) {
     project_info <- agent_info$project_info
     project_info$run_name <- agent_info$run_id
-    
-    fcst_tbl <- read_file(run_info = project_info,
-                          path = paste0(
-                            "/forecasts/", hash_data(project_info$project_name), "-", hash_data(project_info$run_name),
-                            "-", hash_data("Best-Model"), "-reconciled.", project_info$data_output
-                          ))
-    
+
+    fcst_tbl <- read_file(
+      run_info = project_info,
+      path = paste0(
+        "/forecasts/", hash_data(project_info$project_name), "-", hash_data(project_info$run_name),
+        "-", hash_data("Best-Model"), "-reconciled.", project_info$data_output
+      )
+    )
+
     return(fcst_tbl)
   }
-  
+
   # get the best run for the agent
   best_run_tbl <- get_best_agent_run(agent_info)
 
@@ -366,15 +369,15 @@ get_agent_forecast <- function(agent_info,
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param full_run_info A logical indicating whether to load all input settings
-#'  from each run into the final output table. 
+#'  from each run into the final output table.
 #' @param parallel_processing parallel processing
 #' @param num_cores number of cores
 #'
 #' @return A tibble containing the best run information for the agent.
 #' @export
-get_best_agent_run <- function(agent_info, 
-                               full_run_info = FALSE, 
-                               parallel_processing = NULL, 
+get_best_agent_run <- function(agent_info,
+                               full_run_info = FALSE,
+                               parallel_processing = NULL,
                                num_cores = NULL) {
   # metadata
   project_info <- agent_info$project_info
@@ -397,53 +400,54 @@ get_best_agent_run <- function(agent_info,
       return_type = "df"
     )
   }
-  
-  if(!full_run_info) {
+
+  if (!full_run_info) {
     return(best_run_tbl)
   }
-  
+
   # read in all run setting data
   model_type_list <- best_run_tbl %>%
     dplyr::pull(model_type) %>%
     unique()
-  
+
   # load global model run
   if ("global" %in% model_type_list) {
-
     global_run_name <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(best_run_name) %>%
       unique()
-    
-    global_run_info <- get_run_info(project_name = paste0(agent_info$project_info$project_name, "_", hash_data("all")),
-                                    run_name = global_run_name,
-                                    storage_object = project_info$storage_object,
-                                    path = project_info$path) %>%
+
+    global_run_info <- get_run_info(
+      project_name = paste0(agent_info$project_info$project_name, "_", hash_data("all")),
+      run_name = global_run_name,
+      storage_object = project_info$storage_object,
+      path = project_info$path
+    ) %>%
       dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-    
+
     global_best_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::left_join(global_run_info, by = dplyr::join_by(best_run_name == run_name))
   } else {
     global_best_run_tbl <- tibble::tibble()
   }
-  
+
   # load local model runs
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-    
+
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
       task_length = nrow(local_run_tbl)
     )
-    
+
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
-    
+
     # submit tasks
     local_best_run_tbl <- foreach::foreach(
       x = local_run_tbl %>%
@@ -457,22 +461,23 @@ get_best_agent_run <- function(agent_info,
       .noexport = NULL
     ) %op%
       {
-        
         temp_local_run_tbl <- tibble::as_tibble(x)
-        
-        temp_local_run_info <- get_run_info(project_name = paste0(agent_info$project_info$project_name, "_", hash_data(x$combo)),
-                                            run_name = x$best_run_name,
-                                            storage_object = project_info$storage_object,
-                                            path = project_info$path) %>%
+
+        temp_local_run_info <- get_run_info(
+          project_name = paste0(agent_info$project_info$project_name, "_", hash_data(x$combo)),
+          run_name = x$best_run_name,
+          storage_object = project_info$storage_object,
+          path = project_info$path
+        ) %>%
           dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-        
+
         temp_local_run_tbl <- temp_local_run_tbl %>%
           dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
-        
+
         return(temp_local_run_tbl)
       } %>%
       base::suppressPackageStartupMessages()
-    
+
     par_end(cl)
   } else {
     local_best_run_tbl <- tibble::tibble()
@@ -480,7 +485,7 @@ get_best_agent_run <- function(agent_info,
 
   final_run_tbl <- global_best_run_tbl %>%
     dplyr::bind_rows(local_best_run_tbl)
-  
+
   return(final_run_tbl)
 }
 
@@ -1639,7 +1644,6 @@ log_best_run <- function(agent_info,
 
     # for each combo, filter the back test data, calculate the weighted mape and save to logs
     for (combo_name in combo_list) {
-
       # filter the back test data for the current combo
       combo_data <- back_test_tbl %>%
         dplyr::filter(Combo == combo_name)

@@ -580,9 +580,9 @@ model_workflows <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
-    
+
     # adjust data if outliers have been cleaned
-    if("Target_Original" %in% colnames(recipe_tbl)) {
+    if ("Target_Original" %in% colnames(recipe_tbl)) {
       recipe_tbl <- recipe_tbl %>%
         dplyr::select(-Target_Original)
     }
@@ -790,9 +790,9 @@ model_hyperparameters <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
-    
+
     # adjust data if outliers have been cleaned
-    if("Target_Original" %in% names(recipe_features)) {
+    if ("Target_Original" %in% names(recipe_features)) {
       recipe_features <- recipe_features %>%
         dplyr::select(-Target_Original)
     }

@@ -154,16 +154,16 @@ train_models <- function(run_info,
         "-orig_combo_info.", run_info$data_output
       ),
       return_type = "df"
-    ) 
-    
+    )
+
     # fix potential issues when using vroom to read file
-    if(Inf %in% unique(orig_combo_info_tbl$Combo_Hash) || sum(is.numeric(orig_combo_info_tbl$Combo_Hash)) > 0) {
+    if (Inf %in% unique(orig_combo_info_tbl$Combo_Hash) || sum(is.numeric(orig_combo_info_tbl$Combo_Hash)) > 0) {
       orig_combo_info_tbl <- orig_combo_info_tbl %>%
         dplyr::rowwise() %>%
         dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
         dplyr::ungroup()
     }
-    
+
     # force combo hash to be a character
     orig_combo_info_tbl <- orig_combo_info_tbl %>%
       dplyr::rowwise() %>%
@@ -623,7 +623,7 @@ train_models <- function(run_info,
                       Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                       Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                     )
-                  if("Target_Original" %in% colnames(x)) {
+                  if ("Target_Original" %in% colnames(x)) {
                     final_fcst_return <- final_fcst_return %>%
                       dplyr::mutate(
                         Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
@@ -645,7 +645,7 @@ train_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
-              if("Target_Original" %in% colnames(x)) {
+              if ("Target_Original" %in% colnames(x)) {
                 final_fcst <- final_fcst %>%
                   dplyr::mutate(
                     Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
@@ -871,10 +871,10 @@ create_splits <- function(data, train_test_splits) {
     } else {
       test_indices <- which(data$Date > train_end & data$Date <= test_end)
     }
-    
+
     data_mod <- data
-    
-    # use Target_Original for the assessment rows if available 
+
+    # use Target_Original for the assessment rows if available
     if ("Target_Original" %in% base::colnames(data_mod)) {
       data_mod[test_indices, "Target"] <- data_mod[test_indices, "Target_Original"]
     }
@@ -957,9 +957,9 @@ undifference_forecast <- function(forecast_data,
 
       # combine historical data with forecast (adjust Target_Originals when needed)
       # then undifference and return forecast
-      if("Target_Original" %in% colnames(filtered_recipe_data)) {
+      if ("Target_Original" %in% colnames(filtered_recipe_data)) {
         filtered_recipe_data$Target_Original[1] <- NA
-        
+
         if (!is.na(diff2)) {
           filtered_recipe_data$Target_Original[2] <- NA
         }
@@ -1052,17 +1052,17 @@ undifference_recipe <- function(recipe_data,
     dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
 
   # undifference Target_Original col if it exists
-  if("Target_Original" %in% colnames(undiff_recipe_data)) {
+  if ("Target_Original" %in% colnames(undiff_recipe_data)) {
     undiff_recipe_data$Target_Original[1] <- NA
-    
+
     if (!is.na(diff2)) {
       undiff_recipe_data$Target_Original[2] <- NA
     }
-    
+
     undiff_recipe_data <- undiff_recipe_data %>%
       dplyr::mutate(Target_Original = timetk::diff_inv_vec(Target_Original, difference = num_diffs, initial_values = initial_value))
   }
-  
+
   # combine with future data and return
   future_data <- recipe_data %>%
     dplyr::filter(Date > hist_end_date)

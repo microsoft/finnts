@@ -104,15 +104,19 @@ set_agent_info <- function(project_info,
       combo_cleanup_date,
       hist_end_date
     )
-  
+
   # check if a hierarchy exists in the data and should be applied
-  if(allow_hierarchical_forecast) {
-    forecast_approach <- hierarchy_detect(agent_info = list(project_info = project_info, 
-                                                            run_id = 1), 
-                                          input_data = final_input_data,
-                                          write_data = FALSE)
-    
-    if(forecast_approach != "bottoms_up") {
+  if (allow_hierarchical_forecast) {
+    forecast_approach <- hierarchy_detect(
+      agent_info = list(
+        project_info = project_info,
+        run_id = 1
+      ),
+      input_data = final_input_data,
+      write_data = FALSE
+    )
+
+    if (forecast_approach != "bottoms_up") {
       cli::cli_alert_info(
         "Hierarchical data detected. Using '{forecast_approach}' forecast approach in a hierarchical forecast."
       )
@@ -157,7 +161,7 @@ set_agent_info <- function(project_info,
         NA
       } else {
         combo_cleanup_date
-      }, 
+      },
       forecast_approach = forecast_approach
     ) %>%
       data.frame()
@@ -228,18 +232,19 @@ set_agent_info <- function(project_info,
     agent_version <- length(agent_runs_list) + 1
 
     # write input data to disc
-    if(forecast_approach != "bottoms_up") {
+    if (forecast_approach != "bottoms_up") {
       final_input_data <- final_input_data %>%
-        prep_hierarchical_data(run_info = project_info,
-                               combo_variables = combo_variables,
-                               external_regressors = external_regressors,
-                               forecast_approach = forecast_approach,
-                               frequency_number = get_frequency_number(date_type)
+        prep_hierarchical_data(
+          run_info = project_info,
+          combo_variables = combo_variables,
+          external_regressors = external_regressors,
+          forecast_approach = forecast_approach,
+          frequency_number = get_frequency_number(date_type)
         ) %>%
         dplyr::mutate(ID = Combo) %>%
         dplyr::relocate(ID, .before = Date)
     }
-    
+
     for (combo_name in unique(final_input_data$Combo)) {
       write_data(
         x = final_input_data %>% dplyr::filter(Combo == combo_name),
@@ -280,7 +285,7 @@ set_agent_info <- function(project_info,
       hist_start_date = ifelse(is.null(hist_start_date), NA, as.character(hist_start_date)),
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
-      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date)), 
+      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date)),
       forecast_approach = forecast_approach
     )
 

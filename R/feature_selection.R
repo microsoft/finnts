@@ -31,9 +31,9 @@ run_feature_selection <- function(input_data,
 
     return(fs_list)
   }
-  
+
   # check if outlier cleaning has been applied
-  if("Target_Original" %in% colnames(input_data)) {
+  if ("Target_Original" %in% colnames(input_data)) {
     input_data <- input_data %>%
       dplyr::select(-Target_Original)
   }

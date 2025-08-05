@@ -1549,7 +1549,7 @@ seasonality_scan <- function(agent_info,
 #'
 #' @return summary text of hierarchy detection
 #' @noRd
-hierarchy_detect <- function(agent_info, 
+hierarchy_detect <- function(agent_info,
                              input_data = NULL,
                              write_data = TRUE) {
   # metadata
@@ -1564,14 +1564,14 @@ hierarchy_detect <- function(agent_info,
 
   # single-column panel → always “none”
   if (length(combo_vars) == 1) {
-    if(write_data) {
+    if (write_data) {
       entry <- list(
         timestamp  = get_timestamp(),
         type       = "HIERARCHY",
         hierarchy  = "none",
         pair_tests = list()
       )
-      
+
       write_data(
         x           = entry,
         combo       = NULL,
@@ -1580,35 +1580,35 @@ hierarchy_detect <- function(agent_info,
         folder      = "eda",
         suffix      = "-hierarchy"
       )
-      
+
       cli::cli_alert_info("Only one combo column supplied – hierarchy is 'none'.")
-      return("Hierarchy detection: none (no hierarchy).") 
+      return("Hierarchy detection: none (no hierarchy).")
     } else {
       return("bottoms_up")
     }
   }
 
-  if(is.null(input_data)) {
+  if (is.null(input_data)) {
     # check if hierarchy detection has already been done
     hier_list <- tryCatch(
       read_file(project_info,
-                path = paste0(
-                  "eda/*", hash_data(project_info$project_name), "-",
-                  hash_data(project_info$run_name), "-hierarchy.", project_info$object_output
-                ),
-                return_type = "object"
+        path = paste0(
+          "eda/*", hash_data(project_info$project_name), "-",
+          hash_data(project_info$run_name), "-hierarchy.", project_info$object_output
+        ),
+        return_type = "object"
       ),
       error = function(e) {
         list()
       }
     ) %>%
       base::suppressWarnings()
-    
+
     if (length(hier_list) > 0) {
       cli::cli_alert_info("Hierarchy Detection Already Ran")
       return("Hierarchy info already exists for this agent run. Skipping hierarchy step.")
     }
-    
+
     # load hist data
     input_data_list <- list_files(
       project_info$storage_object,
@@ -1617,11 +1617,11 @@ hierarchy_detect <- function(agent_info,
         hash_data(agent_info$run_id), "*.", project_info$data_output
       )
     )
-    
+
     if (length(input_data_list) == 0) {
       stop("No input data found for the agent run. Please check the project setup.", call. = FALSE)
     }
-    
+
     df <- read_file(
       run_info = project_info,
       file_list = input_data_list,
@@ -1685,20 +1685,20 @@ hierarchy_detect <- function(agent_info,
     hierarchy_type <- if (chain_found) "standard" else "grouped"
   }
 
-  if(write_data) {
+  if (write_data) {
     # human-readable summary
     header <- switch(hierarchy_type,
-                     none     = "Hierarchy detection: flat panel (no hierarchy).",
-                     standard = "Hierarchy detection: STANDARD tree structure.",
-                     grouped  = "Hierarchy detection: GROUPED / crossed hierarchy."
+      none     = "Hierarchy detection: flat panel (no hierarchy).",
+      standard = "Hierarchy detection: STANDARD tree structure.",
+      grouped  = "Hierarchy detection: GROUPED / crossed hierarchy."
     )
-    
+
     details <- pair_tests %>%
       purrr::imap_chr(\(v, k) sprintf("%s: %s", k, v)) %>%
       paste(collapse = ", ")
-    
+
     summary_text <- paste(header, details, sep = " ")
-    
+
     # log results
     entry <- list(
       timestamp  = get_timestamp(),
@@ -1706,7 +1706,7 @@ hierarchy_detect <- function(agent_info,
       hierarchy  = hierarchy_type,
       pair_tests = pair_tests
     )
-    
+
     write_data(
       x           = entry,
       combo       = NULL,
@@ -1715,16 +1715,16 @@ hierarchy_detect <- function(agent_info,
       folder      = "eda",
       suffix      = "-hierarchy"
     )
-    
+
     return(summary_text)
   } else {
     # return hierarchy type
     final_type <- switch(hierarchy_type,
-                         none     = "bottoms_up",
-                         standard = "standard_hierarchy",
-                         grouped  = "grouped_hierarchy"
+      none     = "bottoms_up",
+      standard = "standard_hierarchy",
+      grouped  = "grouped_hierarchy"
     )
-    
+
     return(final_type)
   }
 }

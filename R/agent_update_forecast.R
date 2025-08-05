@@ -37,9 +37,9 @@ update_forecast <- function(agent_info,
 
   # register tools
   register_update_fcst_tools(agent_info)
-  
+
   # agent info adjustments
-  if(agent_info$forecast_approach != "bottoms_up") {
+  if (agent_info$forecast_approach != "bottoms_up") {
     agent_info$project_info$combo_variables <- "ID"
   }
 
@@ -178,13 +178,12 @@ update_fcst_agent_workflow <- function(agent_info,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
         seed = seed
-      ), 
+      ),
       branch = function(ctx) {
-        
         # get forecast approach and determine next step
         forecast_approach <- ctx$agent_info$forecast_approach
-        
-        if(forecast_approach == "bottoms_up") {
+
+        if (forecast_approach == "bottoms_up") {
           return(list(ctx = ctx, `next` = "stop"))
         } else {
           return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
@@ -207,11 +206,11 @@ update_fcst_agent_workflow <- function(agent_info,
   )
 
   init_ctx <- list(
-    node      = "start",
-    iter      = 0, # iteration counter
-    max_iter  = max_iter, # loop limit
-    results   = list(), # where each tool’s output will be stored
-    attempts  = list(), # retry bookkeeping for execute_node()
+    node = "start",
+    iter = 0, # iteration counter
+    max_iter = max_iter, # loop limit
+    results = list(), # where each tool’s output will be stored
+    attempts = list(), # retry bookkeeping for execute_node()
     agent_info = agent_info # agent information
   )
 
@@ -265,7 +264,7 @@ register_update_fcst_tools <- function(agent_info) {
     .description = "Run the forecast iteration agent skill to improve the forecast results",
     .fun = iterate_forecast
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "reconcile_agent_forecast",
     .description = "Reconcile the hierarchical agent forecast based on the best model runs",
@@ -629,51 +628,52 @@ analyze_results <- function(agent_info) {
 }
 
 #' Reconcile Agent Forecast
-#' 
+#'
 #' This function reconciles the agent forecast based on the best model runs and prepares the final forecast table.
-#' 
+#'
 #' @param agent_info A list containing the agent information.
 #' @param project_info A list containing the project information.
 #' @param parallel_processing A character value indicating the type of parallel processing to use.
 #' @param num_cores Numeric indicating the number of cores to use for parallel processing.
-#' 
+#'
 #' @return Nothing
 #' @noRd
-reconcile_agent_forecast <- function(agent_info, 
-                                     project_info, 
-                                     parallel_processing = NULL, 
+reconcile_agent_forecast <- function(agent_info,
+                                     project_info,
+                                     parallel_processing = NULL,
                                      num_cores = NULL) {
-  
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # load best run settings
-  run_inputs <- get_best_agent_run(agent_info = agent_info, 
-                                   full_run_info = TRUE, 
-                                   parallel_processing = parallel_processing, 
-                                   num_cores = num_cores)
-  
-  if(TRUE %in% unique(run_inputs$negative_forecast)) {
+  run_inputs <- get_best_agent_run(
+    agent_info = agent_info,
+    full_run_info = TRUE,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores
+  )
+
+  if (TRUE %in% unique(run_inputs$negative_forecast)) {
     negative_forecast <- TRUE
   } else {
     negative_forecast <- FALSE
   }
-  
+
   # load example train test info
   single_combo <- run_inputs %>%
-    dplyr::slice(1) %>% 
+    dplyr::slice(1) %>%
     dplyr::pull(combo)
-  
+
   project_name <- paste0(
     agent_info$project_info$project_name,
     "_",
     hash_data(single_combo)
   )
-  
+
   run_name <- run_inputs %>%
-    dplyr::slice(1) %>% 
+    dplyr::slice(1) %>%
     dplyr::pull(best_run_name)
 
   train_test_file <- list_files(
@@ -683,31 +683,35 @@ reconcile_agent_forecast <- function(agent_info,
       hash_data(run_name), "-train_test_split.", project_info$data_output
     )
   )
-  
+
   model_train_test_tbl <- read_file(
     run_info = project_info,
     file_list = train_test_file[1],
     return_type = "df"
   )
-  
+
   # load hierarchical forecast
-  hts_fcst_tbl <- get_agent_forecast(agent_info = agent_info, 
-                                     parallel_processing = parallel_processing, 
-                                     num_cores = num_cores) %>% 
+  hts_fcst_tbl <- get_agent_forecast(
+    agent_info = agent_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores
+  ) %>%
     dplyr::filter(Best_Model == "Yes")
-  
+
   # reconcile the forecast
   project_info$run_name <- agent_info$run_id
-  
-  final_fcst_tbl <- reconcile(initial_fcst = hts_fcst_tbl,
-                              run_info = project_info,
-                              forecast_approach = agent_info$forecast_approach,
-                              negative_forecast = negative_forecast) %>%
-    create_prediction_intervals(model_train_test_tbl) %>% 
+
+  final_fcst_tbl <- reconcile(
+    initial_fcst = hts_fcst_tbl,
+    run_info = project_info,
+    forecast_approach = agent_info$forecast_approach,
+    negative_forecast = negative_forecast
+  ) %>%
+    create_prediction_intervals(model_train_test_tbl) %>%
     convert_weekly_to_daily(project_info$date_type, project_info$weekly_to_daily) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
-                     by = "Train_Test_ID"
+      by = "Train_Test_ID"
     ) %>%
     dplyr::relocate(Run_Type, .before = Train_Test_ID) %>%
     dplyr::select(-Combo_ID, -Hyperparameter_ID) %>%
@@ -720,7 +724,7 @@ reconcile_agent_forecast <- function(agent_info,
       sep = "--"
     ) %>%
     base::suppressWarnings()
-  
+
   write_data(
     x = final_fcst_tbl,
     combo = "Best-Model",
@@ -1141,7 +1145,7 @@ update_forecast_combo <- function(agent_info,
     folder = "logs",
     suffix = NULL
   )
-  
+
   log_best_run(
     agent_info = agent_info,
     run_info = new_run_info,
@@ -1271,7 +1275,7 @@ fit_models <- function(run_info,
       summary() %>%
       dplyr::pull(variable)
 
-    if("Target_Original" %in% colnames(prep_data)) {
+    if ("Target_Original" %in% colnames(prep_data)) {
       missing_cols <- setdiff(workflow_cols, colnames(prep_data %>% dplyr::select(-Target_Original)))
     } else {
       missing_cols <- setdiff(workflow_cols, colnames(prep_data))
@@ -1296,16 +1300,16 @@ fit_models <- function(run_info,
             external_regressors = adjust_inputs(prev_run_log_tbl$external_regressors),
             multistep_horizon = prev_run_log_tbl$multistep_horizon
           )
-        
+
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
-        
-        if(prev_run_log_tbl$multistep_horizon) {
+
+        if (prev_run_log_tbl$multistep_horizon) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = fs_list)
         }
       } else {
-        if("Target_Original" %in% colnames(prep_data)) {
+        if ("Target_Original" %in% colnames(prep_data)) {
           fs_list <- prep_data %>%
             dplyr::select(-Target, -Target_Original) %>%
             colnames()
@@ -1317,8 +1321,8 @@ fit_models <- function(run_info,
 
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
-        
-        if(prev_run_log_tbl$multistep_horizon) {
+
+        if (prev_run_log_tbl$multistep_horizon) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = NULL)
         }
@@ -1339,7 +1343,7 @@ fit_models <- function(run_info,
           workflows::update_model(updated_model_spec) %>%
           workflows::update_recipe(updated_recipe)
       } else {
-        if(prev_run_log_tbl$feature_selection & prev_run_log_tbl$multistep_horizon) {
+        if (prev_run_log_tbl$feature_selection & prev_run_log_tbl$multistep_horizon) {
           final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
           final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
         } else {
@@ -1512,7 +1516,7 @@ fit_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
-              if("Target_Original" %in% colnames(x)) {
+              if ("Target_Original" %in% colnames(x)) {
                 final_fcst_return <- final_fcst_return %>%
                   dplyr::mutate(
                     Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
@@ -1535,7 +1539,7 @@ fit_models <- function(run_info,
               Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
             )
         }
-        if("Target_Original" %in% colnames(x)) {
+        if ("Target_Original" %in% colnames(x)) {
           final_fcst <- final_fcst %>%
             dplyr::mutate(
               Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
