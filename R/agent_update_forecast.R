@@ -524,7 +524,7 @@ update_local_models <- function(agent_info,
       seed = seed
     )
 
-    return(results)
+    return("done")
   }
 
   par_end(inner_cl)
