@@ -486,8 +486,8 @@ update_local_models <- function(agent_info,
     dplyr::filter(model_type == "local")
 
   if (nrow(previous_best_run_local_tbl) == 0) {
-    cli::cli_alert_info("no local models to update")
-    return("no local models to update")
+    cli::cli_alert_info("No local models to update, skipping...")
+    return("No local models to update, skipping...")
   }
 
   # get combos to run
@@ -498,7 +498,7 @@ update_local_models <- function(agent_info,
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = num_cores
+    task_length = nrow(previous_best_run_local_tbl)
   )
 
   inner_cl <- par_info$cl
