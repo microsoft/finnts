@@ -302,17 +302,15 @@ initial_checks <- function(agent_info) {
   current_agent_run_tbl <- get_best_agent_run(agent_info)
 
   if (nrow(current_agent_run_tbl) > 0) {
-    current_agent_run_tbl <- current_agent_run_tbl %>%
+    finished_combos <- current_agent_run_tbl %>%
       dplyr::rowwise() %>%
-      dplyr::mutate(combo_hash = hash_data(combo))
-
-    finished_combos <- unique(current_agent_run_tbl$combo_hash)
+      dplyr::mutate(combo_hash = hash_data(combo)) %>%
+      dplyr::pull(combo_hash) %>%
+      unique()
 
     hash_combo_list <- get_total_combos(agent_info)
 
-    unfinished_combos <- current_agent_run_tbl %>%
-      dplyr::filter(combo_hash %in% setdiff(hash_combo_list, finished_combos)) %>%
-      dplyr::pull(combo)
+    unfinished_combos <- setdiff(hash_combo_list, finished_combos)
 
     if (length(unfinished_combos) == 0) {
       # stop workflow if no updates required
@@ -403,7 +401,11 @@ initial_checks <- function(agent_info) {
 
   if (!is.null(unfinished_combos)) {
     prev_best_runs_tbl <- prev_best_runs_tbl %>%
-      dplyr::filter(combo %in% unfinished_combos)
+      dplyr::rowwise() %>%
+      dplyr::mutate(combo_hash = hash_data(combo)) %>%
+      dplyr::filter(combo_hash %in% unfinished_combos) %>%
+      dplyr::select(-combo_hash) %>% 
+      dplyr::ungroup()
   }
 
   if (nrow(prev_best_runs_tbl) == 0) {
@@ -490,8 +492,29 @@ update_local_models <- function(agent_info,
     return("No local models to update, skipping...")
   }
 
-  # get combos to run
-  combos_to_run <- unique(previous_best_run_local_tbl$combo)
+  # check if forecast update already ran for current agent version
+  current_best_run_local_tbl <- get_best_agent_run(agent_info)
+
+  if (nrow(current_best_run_local_tbl) > 0) {
+    current_best_run_local_tbl <- current_best_run_local_tbl %>%
+      dplyr::filter(model_type == "local")
+  }
+
+  if (nrow(current_best_run_local_tbl) > 0) {
+    finished_combos <- unique(current_best_run_local_tbl$combo)
+
+    total_combos <- unique(previous_best_run_local_tbl$combo)
+
+    previous_best_run_local_tbl <- previous_best_run_local_tbl %>%
+      dplyr::filter(combo %in% setdiff(total_combos, finished_combos))
+
+    if (nrow(previous_best_run_local_tbl) == 0) {
+      # stop if no updates required
+      return("no updates required")
+    }
+  } else {
+    # do nothing
+  }
 
   # start forecast update process
   par_info <- par_start(
@@ -528,6 +551,8 @@ update_local_models <- function(agent_info,
   }
 
   par_end(inner_cl)
+
+  return("done")
 }
 
 #' Analyze Results of Agent Run
