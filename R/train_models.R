@@ -505,6 +505,26 @@ train_models <- function(run_info,
 
         # tune hyperparameters
         set.seed(seed)
+        
+        # 0) Choose one split (Validation only)
+        val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
+        rs <- create_splits(prep_data, val_splits)
+        sp <- rs$splits[[1]]
+        
+        # 1) Raw assessment rows used to index
+        raw_assess <- rsample::assessment(sp)
+        raw_n <- nrow(raw_assess)
+        
+        # 2) Prep/bake with the *same* analysis for this split
+        wf <- empty_workflow_final  # use the same workflow object you pass to tune_grid
+        rec <- workflows::extract_recipe(wf, estimated = FALSE)
+        prepped <- recipes::prep(rec, training = rsample::analysis(sp))
+        
+        baked_assess <- recipes::bake(prepped, new_data = raw_assess)
+        baked_n <- nrow(baked_assess)
+        
+        print(c(raw_assess_n = raw_n, baked_assess_n = baked_n))
+        
 
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
