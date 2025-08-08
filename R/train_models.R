@@ -505,27 +505,7 @@ train_models <- function(run_info,
 
         # tune hyperparameters
         set.seed(seed)
-        
-        # 0) Choose one split (Validation only)
-        val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
-        rs <- create_splits(prep_data, val_splits)
-        sp <- rs$splits[[1]]
-        
-        # 1) Raw assessment rows used to index
-        raw_assess <- rsample::assessment(sp)
-        raw_n <- nrow(raw_assess)
-        
-        # 2) Prep/bake with the *same* analysis for this split
-        wf <- empty_workflow_final  # use the same workflow object you pass to tune_grid
-        rec <- workflows::extract_recipe(wf, estimated = FALSE)
-        prepped <- recipes::prep(rec, training = rsample::analysis(sp))
-        
-        baked_assess <- recipes::bake(prepped, new_data = raw_assess)
-        baked_n <- nrow(baked_assess)
-        
-        print(c(raw_assess_n = raw_n, baked_assess_n = baked_n))
-        
-
+        print(prep_data)
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
           resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
@@ -858,126 +838,63 @@ negative_fcst_adj <- function(data,
 #'
 #' @return tbl with train test splits
 #' @noRd
-# create_splits <- function(data, train_test_splits) {
-#   # Create the rsplit object
-#   analysis_split <- function(data, train_indices, test_indices) {
-#     rsplit_object <- rsample::make_splits(
-#       x = list(analysis = train_indices, assessment = test_indices),
-#       data = data
-#     )
-#   }
-# 
-#   # Create a list to store the splits and a vector to store the IDs
-#   splits <- list()
-#   ids <- character()
-# 
-#   # Loop over the rows of the split data frame
-#   for (i in seq_len(nrow(train_test_splits))) {
-#     # Get the train and test end dates
-#     train_end <- train_test_splits$Train_End[i]
-#     test_end <- train_test_splits$Test_End[i]
-#     train_test_id <- train_test_splits$Train_Test_ID[i]
-# 
-#     # Create the train and test indices
-#     train_indices <- which(data$Date <= train_end)
-# 
-#     if ("Train_Test_ID" %in% colnames(data)) {
-#       test_indices <- which(data$Train_Test_ID == train_test_id)
-#     } else if ("Horizon" %in% colnames(data)) {
-#       # adjust for the horizon in R2 recipe data
-#       train_data <- data %>%
-#         dplyr::filter(
-#           Horizon == 1,
-#           Date <= train_end
-#         )
-# 
-#       test_indices <- which(data$Date > train_end & data$Date <= test_end & data$Origin == max(train_data$Origin) + 1)
-#     } else {
-#       test_indices <- which(data$Date > train_end & data$Date <= test_end)
-#     }
-# 
-#     data_mod <- data
-# 
-#     # use Target_Original for the assessment rows if available
-#     if ("Target_Original" %in% base::colnames(data_mod)) {
-#       data_mod[test_indices, "Target"] <- data_mod[test_indices, "Target_Original"]
-#     }
-# 
-#     # Create the split and add it to the list
-#     splits[[i]] <- analysis_split(data_mod, train_indices, test_indices)
-# 
-#     # Add the ID to the vector
-#     ids[i] <- as.character(train_test_splits$Train_Test_ID[i])
-#   }
-# 
-#   # Create the resamples
-#   resamples <- rsample::manual_rset(splits = splits, ids = ids)
-# 
-#   return(resamples)
-# }
-
 create_splits <- function(data, train_test_splits) {
-  # --- Type coercion to avoid Synapse drift ---
-  if ("Date" %in% names(data) && !inherits(data$Date, "Date")) {
-    data$Date <- as.Date(data$Date)
-  }
-  if (!inherits(train_test_splits$Train_End, "Date"))
-    train_test_splits$Train_End <- as.Date(train_test_splits$Train_End)
-  if (!inherits(train_test_splits$Test_End, "Date"))
-    train_test_splits$Test_End  <- as.Date(train_test_splits$Test_End)
-  
-  # --- If we are NOT including the Future split (id == 1), hide future rows ---
-  if (!"Horizon" %in% names(data)) {
-    if (!any(train_test_splits$Train_Test_ID == 1)) {
-      # validation/back-tests only => trim "future" rows away
-      max_assess_end <- max(train_test_splits$Test_End, na.rm = TRUE)
-      data <- dplyr::filter(data, Date <= max_assess_end)
-    }
-  }
-  
+  # Create the rsplit object
   analysis_split <- function(data, train_indices, test_indices) {
-    rsample::make_splits(
+    rsplit_object <- rsample::make_splits(
       x = list(analysis = train_indices, assessment = test_indices),
       data = data
     )
   }
-  
-  splits <- vector("list", nrow(train_test_splits))
-  ids    <- character(nrow(train_test_splits))
-  
+
+  # Create a list to store the splits and a vector to store the IDs
+  splits <- list()
+  ids <- character()
+
+  # Loop over the rows of the split data frame
   for (i in seq_len(nrow(train_test_splits))) {
-    train_end     <- train_test_splits$Train_End[i]
-    test_end      <- train_test_splits$Test_End[i]
-    id_now        <- train_test_splits$Train_Test_ID[i]
-    
-    if (!"Horizon" %in% names(data)) {
-      # R1 path (global/local): date windows are fine once future rows are trimmed
-      train_indices <- which(data$Date <= train_end)
-      test_indices  <- which(data$Date >  train_end & data$Date <= test_end)
+    # Get the train and test end dates
+    train_end <- train_test_splits$Train_End[i]
+    test_end <- train_test_splits$Test_End[i]
+    train_test_id <- train_test_splits$Train_Test_ID[i]
+
+    # Create the train and test indices
+    train_indices <- which(data$Date <= train_end)
+
+    if ("Train_Test_ID" %in% colnames(data)) {
+      test_indices <- which(data$Train_Test_ID == train_test_id)
+    } else if ("Horizon" %in% colnames(data)) {
+      # adjust for the horizon in R2 recipe data
+      train_data <- data %>%
+        dplyr::filter(
+          Horizon == 1,
+          Date <= train_end
+        )
+
+      test_indices <- which(data$Date > train_end & data$Date <= test_end & data$Origin == max(train_data$Origin) + 1)
     } else {
-      # R2 path unchanged: index by Origin/Horizon
-      last_train_origin <- data %>%
-        dplyr::filter(Horizon == 1, Date <= train_end) %>%
-        dplyr::summarise(last = max(Origin)) %>%
-        dplyr::pull(last)
-      
-      train_indices <- which(data$Origin <= last_train_origin)
-      next_origin   <- last_train_origin + 1
-      test_indices  <- which(data$Origin == next_origin)
+      test_indices <- which(data$Date > train_end & data$Date <= test_end)
     }
-    
+
     data_mod <- data
-    if ("Target_Original" %in% names(data_mod)) {
+
+    # use Target_Original for the assessment rows if available
+    if ("Target_Original" %in% base::colnames(data_mod)) {
       data_mod[test_indices, "Target"] <- data_mod[test_indices, "Target_Original"]
     }
-    
-    splits[[i]] <- analysis_split(data_mod, train_indices, test_indices)
-    ids[i] <- as.character(id_now)
-  }
-  
-  rsample::manual_rset(splits = splits, ids = ids)
-}
 
+    # Create the split and add it to the list
+    splits[[i]] <- analysis_split(data_mod, train_indices, test_indices)
+
+    # Add the ID to the vector
+    ids[i] <- as.character(train_test_splits$Train_Test_ID[i])
+  }
+
+  # Create the resamples
+  resamples <- rsample::manual_rset(splits = splits, ids = ids)
+
+  return(resamples)
+}
 
 #' Function to undifference forecast data
 #'
