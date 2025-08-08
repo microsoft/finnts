@@ -518,6 +518,8 @@ train_models <- function(run_info,
         ) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
+        
+        print(tune::show_notes(.Last.tune.result))
 
         best_param <- tune::select_best(tune_results, metric = "rmse")
 
@@ -554,6 +556,8 @@ train_models <- function(run_info,
           tune::collect_predictions() %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
+        
+        print(tune::show_notes(.Last.tune.result))
 
         # finalize forecast
         final_fcst <- refit_tbl %>%
