@@ -546,7 +546,7 @@ fcst_agent_workflow <- function(agent_info,
       fn = "submit_fcst_run",
       `next` = "get_fcst_output",
       retry_mode = "plain",
-      max_retry = 3,
+      max_retry = 0,
       args = list(
         agent_info          = agent_info,
         inputs              = "{results$reason_inputs}",
