@@ -515,10 +515,10 @@ train_models <- function(run_info,
               parsnip::set_args(
                 # Safe defaults for the probe – tweak as you like
                 trees         = 50,
-                learn_rate    = 0.1,
+                learn_rate    = 0.3,
                 tree_depth    = 6,
                 min_n         = 1,
-                mtry          = 0.8,   # maps to colsample_bynode
+                mtry          = 5,   # maps to colsample_bynode
                 sample_size   = 1,     # <- maps to XGBoost 'subsample' in (0,1]; 1 is fine
                 loss_reduction= 0
                 # NOTE: we DON'T touch your custom args (lag_periods, forecast_horizon, external_regressors)
