@@ -521,7 +521,8 @@ train_models <- function(run_info,
                 mtry          = 0.8,   # maps to colsample_bynode
                 sample_size   = 1,     # <- maps to XGBoost 'subsample' in (0,1]; 1 is fine
                 loss_reduction= 0,
-                stop_iter     = 0
+                stop_iter     = 0, 
+                early_stop    = 2
                 # NOTE: we DON'T touch your custom args (lag_periods, forecast_horizon, external_regressors)
               )
           )
