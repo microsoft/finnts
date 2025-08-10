@@ -506,17 +506,6 @@ train_models <- function(run_info,
         # tune hyperparameters
         set.seed(seed)
         
-        print(prep_data)
-        print(create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")))
-        write_data(
-          x = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
-          combo = "All",
-          run_info = run_info,
-          output_type = "object",
-          folder = "models",
-          suffix = "-splits"
-        )
-        
         prep_data <- prep_data %>% 
           dplyr::arrange(Date)
           
@@ -532,6 +521,8 @@ train_models <- function(run_info,
         ) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
+        
+        print(tune::show_notes(.Last.tune.result))
 
         best_param <- tune::select_best(tune_results, metric = "rmse")
 
