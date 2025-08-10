@@ -1866,9 +1866,11 @@ get_total_run_count <- function(agent_info,
   )
 
   # filter total runs based on the combo value
-  if ("run_name" %in% names(total_runs)) {
+  if ("run_name" %in% names(total_runs) & "weighted_mape" %in% names(total_runs)) {
     total_runs <- total_runs %>%
-      dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value)))
+      dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
+      dplyr::filter(!is.na(weighted_mape)) %>%
+      dplyr::filter(!is.na(agent_version))
   } else {
     total_runs <- tibble::tibble()
   }
