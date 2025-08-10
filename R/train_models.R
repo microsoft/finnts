@@ -509,11 +509,28 @@ train_models <- function(run_info,
         prep_data <- prep_data %>% 
           dplyr::arrange(Date)
         
+        wf_safe <- empty_workflow_final %>%
+          workflows::update_model(
+            workflows::extract_spec_parsnip(.) %>%
+              parsnip::set_args(
+                # Safe defaults for the probe – tweak as you like
+                trees         = 50,
+                learn_rate    = 0.1,
+                tree_depth    = 6,
+                min_n         = 1,
+                mtry          = 0.8,   # maps to colsample_bynode
+                sample_size   = 1,     # <- maps to XGBoost 'subsample' in (0,1]; 1 is fine
+                loss_reduction= 0,
+                stop_iter     = 0
+                # NOTE: we DON'T touch your custom args (lag_periods, forecast_horizon, external_regressors)
+              )
+          )
+        
         val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
         rs   <- create_splits(prep_data, val_splits)
         sp   <- rs$splits[[1]]
         
-        fit  <- generics::fit(empty_workflow_final, rsample::analysis(sp))
+        fit  <- generics::fit(wf_safe, rsample::analysis(sp))
         ass  <- rsample::assessment(sp)
         
         n_assess <- nrow(ass)
