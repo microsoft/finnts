@@ -511,8 +511,7 @@ train_models <- function(run_info,
         
         val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
         rs   <- create_splits(prep_data, val_splits)
-        k    <- which(rs$ids == "1")
-        sp   <- rs$splits[[k]]
+        sp   <- rs$splits[[1]]
         
         fit  <- generics::fit(empty_workflow_final, rsample::analysis(sp))
         ass  <- rsample::assessment(sp)
