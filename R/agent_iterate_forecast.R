@@ -1427,7 +1427,7 @@ submit_fcst_run <- function(agent_info,
     lag_periods = null_converter(inputs$lag_periods),
     rolling_window_periods = null_converter(inputs$rolling_window_periods),
     recipes_to_run = null_converter(inputs$recipes_to_run),
-    multistep_horizon = inputs$multistep_horizon
+    multistep_horizon = FALSE
   )
 
   # prepare models for training
