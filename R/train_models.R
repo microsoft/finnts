@@ -508,6 +508,19 @@ train_models <- function(run_info,
         
         prep_data <- prep_data %>% 
           dplyr::arrange(Date)
+        
+        val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
+        rs   <- create_splits(prep_data, val_splits)
+        k    <- which(rs$ids == "4")
+        sp   <- rs$splits[[k]]
+        
+        fit  <- generics::fit(empty_workflow_final, rsample::analysis(sp))
+        ass  <- rsample::assessment(sp)
+        
+        n_assess <- nrow(ass)
+        n_pred   <- nrow(predict(fit, ass))
+        
+        print(c(assess = n_assess, preds = n_pred))
           
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
