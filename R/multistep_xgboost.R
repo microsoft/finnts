@@ -533,68 +533,148 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 #' @return predictions
 #' @keywords internal
 #' @export
+# xgboost_multistep_predict_impl <- function(object, new_data, ...) {
+#   # Date Mapping Table
+#   date_tbl <- new_data %>%
+#     dplyr::select(Date, Date_index.num) %>%
+#     dplyr::distinct() %>%
+#     dplyr::arrange(Date) %>%
+#     dplyr::mutate(Run_Number = dplyr::row_number())
+# 
+#   # PREPARE INPUTS
+#   xreg_recipe <- object$extras$xreg_recipe
+#   h_horizon <- nrow(new_data)
+# 
+#   # XREG
+#   xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
+#     new_data,
+#     format = "tbl"
+#   ) %>%
+#     dplyr::left_join(date_tbl, by = "Date_index.num") %>%
+#     dplyr::mutate(Row_Num = dplyr::row_number())
+# 
+#   # PREDICTIONS
+#   final_prediction <- tibble::tibble()
+#   start_val <- 1
+# 
+#   for (model_name in names(object$models)) {
+#     if (start_val > nrow(date_tbl)) {
+#       break
+#     }
+# 
+#     lag_number <- stringr::str_extract(model_name, "[0-9]+")
+# 
+#     xgboost_model <- object$models[[model_name]]
+# 
+#     xreg_tbl_temp <- xreg_tbl %>%
+#       dplyr::filter(
+#         Run_Number >= as.numeric(start_val),
+#         Run_Number <= as.numeric(lag_number)
+#       )
+# 
+#     xreg_tbl_final <- xreg_tbl_temp %>%
+#       dplyr::select(tidyselect::any_of(xgboost_model$feature_names))
+# 
+#     if (!is.null(xreg_tbl)) {
+#       preds_xgboost <- modeltime::xgboost_predict(xgboost_model,
+#         newdata = xreg_tbl_final,
+#         ...
+#       )
+#     } else {
+#       preds_xgboost <- rep(0, h_horizon)
+#     }
+# 
+#     preds_xgboost <- tibble::tibble(.pred = preds_xgboost) %>%
+#       dplyr::mutate(Row_Num = xreg_tbl_temp$Row_Num)
+# 
+#     start_val <- as.numeric(lag_number) + 1
+#     final_prediction <- rbind(final_prediction, preds_xgboost)
+#   }
+# 
+#   # Ensure it's sorted correctly for global models
+#   final_prediction <- final_prediction %>%
+#     dplyr::arrange(Row_Num) %>%
+#     dplyr::pull(.pred)
+# 
+#   return(final_prediction)
+# }
 xgboost_multistep_predict_impl <- function(object, new_data, ...) {
-  # Date Mapping Table
+  # 1) Build a per-date timeline for THIS assessment set
   date_tbl <- new_data %>%
     dplyr::select(Date, Date_index.num) %>%
     dplyr::distinct() %>%
     dplyr::arrange(Date) %>%
     dplyr::mutate(Run_Number = dplyr::row_number())
-
-  # PREPARE INPUTS
+  
+  n_dates    <- nrow(date_tbl)          # unique dates in this assessment
+  h_horizon  <- nrow(new_data)          # rows to predict (series x dates)
+  
+  # 2) Bake xregs and attach Run_Number + row order
   xreg_recipe <- object$extras$xreg_recipe
-  h_horizon <- nrow(new_data)
-
-  # XREG
-  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
-    new_data,
-    format = "tbl"
-  ) %>%
+  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, new_data, format = "tbl") %>%
     dplyr::left_join(date_tbl, by = "Date_index.num") %>%
     dplyr::mutate(Row_Num = dplyr::row_number())
-
-  # PREDICTIONS
-  final_prediction <- tibble::tibble()
-  start_val <- 1
-
-  for (model_name in names(object$models)) {
-    if (start_val > nrow(date_tbl)) {
-      break
-    }
-
-    lag_number <- stringr::str_extract(model_name, "[0-9]+")
-
-    xgboost_model <- object$models[[model_name]]
-
-    xreg_tbl_temp <- xreg_tbl %>%
-      dplyr::filter(
-        Run_Number >= as.numeric(start_val),
-        Run_Number <= as.numeric(lag_number)
-      )
-
-    xreg_tbl_final <- xreg_tbl_temp %>%
-      dplyr::select(tidyselect::any_of(xgboost_model$feature_names))
-
-    if (!is.null(xreg_tbl)) {
-      preds_xgboost <- modeltime::xgboost_predict(xgboost_model,
-        newdata = xreg_tbl_final,
-        ...
-      )
-    } else {
-      preds_xgboost <- rep(0, h_horizon)
-    }
-
-    preds_xgboost <- tibble::tibble(.pred = preds_xgboost) %>%
-      dplyr::mutate(Row_Num = xreg_tbl_temp$Row_Num)
-
-    start_val <- as.numeric(lag_number) + 1
-    final_prediction <- rbind(final_prediction, preds_xgboost)
+  
+  # 3) Build a deterministic, bounded lag sequence
+  lag_seq <- names(object$models) %>%
+    purrr::map_dbl(~ as.numeric(stringr::str_extract(.x, "[0-9]+"))) %>%
+    sort() %>% unique() %>%
+    pmin(n_dates)                        # never exceed available dates in THIS split
+  
+  if (length(lag_seq) == 0) lag_seq <- n_dates
+  
+  # Non-overlapping segments: [1..lag1], [lag1+1..lag2], ...
+  seg_ends   <- lag_seq
+  seg_starts <- c(1, head(seg_ends, -1) + 1)
+  
+  # Helper: choose a fitted model for a given segment end
+  choose_model_for <- function(target_end) {
+    avail <- names(object$models) %>%
+      purrr::map_dbl(~ as.numeric(stringr::str_extract(.x, "[0-9]+")))
+    idx <- which(avail >= target_end)
+    chosen <- if (length(idx)) min(avail[idx]) else max(avail)
+    paste0("model_lag_", chosen)
   }
-
-  # Ensure it's sorted correctly for global models
+  
+  final_prediction <- tibble::tibble()
+  
+  for (i in seq_along(seg_ends)) {
+    s <- seg_starts[i]; e <- seg_ends[i]
+    if (s > e || s > n_dates) next
+    
+    xreg_tbl_temp <- xreg_tbl %>% dplyr::filter(Run_Number >= s, Run_Number <= e)
+    if (!nrow(xreg_tbl_temp)) next
+    
+    mdl_name <- choose_model_for(e)
+    mdl      <- object$models[[mdl_name]]
+    
+    preds <- modeltime::xgboost_predict(
+      mdl,
+      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(mdl$feature_names)),
+      ...
+    )
+    
+    final_prediction <- dplyr::bind_rows(
+      final_prediction,
+      tibble::tibble(.pred = preds, Row_Num = xreg_tbl_temp$Row_Num)
+    )
+  }
+  
+  # 4) De-dup (just in case) and enforce 1:1 with input rows
   final_prediction <- final_prediction %>%
     dplyr::arrange(Row_Num) %>%
-    dplyr::pull(.pred)
-
-  return(final_prediction)
+    dplyr::distinct(Row_Num, .keep_all = TRUE)
+  
+  if (nrow(final_prediction) > h_horizon) {
+    final_prediction <- dplyr::slice(final_prediction, 1:h_horizon)
+  } else if (nrow(final_prediction) < h_horizon) {
+    last_val <- if (nrow(final_prediction)) utils::tail(final_prediction$.pred, 1) else 0
+    final_prediction <- dplyr::bind_rows(
+      final_prediction,
+      tibble::tibble(.pred = rep(last_val, h_horizon - nrow(final_prediction)))
+    )
+  }
+  
+  final_prediction$.pred
 }
+
