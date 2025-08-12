@@ -411,7 +411,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "stop",
+        .errorhandling = "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
@@ -419,12 +419,10 @@ train_models <- function(run_info,
       ) %do% {
         # get initial run info
         model <- model_run %>%
-          dplyr::pull(Model_Name) %>% 
-          print()
+          dplyr::pull(Model_Name)
 
         data_prep_recipe <- model_run %>%
-          dplyr::pull(Model_Recipe) %>% 
-          print()
+          dplyr::pull(Model_Recipe)
 
         prep_data <- model_recipe_tbl %>%
           dplyr::filter(Recipe == data_prep_recipe) %>%
@@ -507,37 +505,6 @@ train_models <- function(run_info,
 
         # tune hyperparameters
         set.seed(seed)
-        
-        # prep_data <- prep_data %>% 
-        #   dplyr::arrange(Date)
-        # 
-        # wf_safe <- empty_workflow_final %>%
-        #   workflows::update_model(
-        #     workflows::extract_spec_parsnip(.) %>%
-        #       parsnip::set_args(
-        #         # Safe defaults for the probe – tweak as you like
-        #         trees         = 50,
-        #         learn_rate    = 0.3,
-        #         tree_depth    = 6,
-        #         min_n         = 1,
-        #         mtry          = 5,   # maps to colsample_bynode
-        #         sample_size   = 1,     # <- maps to XGBoost 'subsample' in (0,1]; 1 is fine
-        #         loss_reduction= 0
-        #         # NOTE: we DON'T touch your custom args (lag_periods, forecast_horizon, external_regressors)
-        #       )
-        #   )
-        # 
-        # val_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
-        # rs   <- create_splits(prep_data, val_splits)
-        # sp   <- rs$splits[[1]]
-        # 
-        # fit  <- generics::fit(wf_safe, rsample::analysis(sp))
-        # ass  <- rsample::assessment(sp)
-        # 
-        # n_assess <- nrow(ass)
-        # n_pred   <- nrow(predict(fit, ass))
-        # 
-        # print(c(assess = n_assess, preds = n_pred))
           
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
@@ -551,8 +518,6 @@ train_models <- function(run_info,
         ) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
-        
-        print(tune::show_notes(.Last.tune.result))
 
         best_param <- tune::select_best(tune_results, metric = "rmse")
 
