@@ -1821,7 +1821,7 @@ xreg_scan <- function(agent_info,
 
       # get lags by date type
       date_type_lags <- switch(date_type,
-        "day"     = 0:365, # daily data lags
+        "day"     = c(0:7, seq(14, 364, by = 7)), # daily: 0-7, then weekly steps up to 364
         "week"    = 0:52, # weekly data lags
         "month"   = 0:12, # monthly data lags
         "quarter" = 0:4, # quarterly data lags
