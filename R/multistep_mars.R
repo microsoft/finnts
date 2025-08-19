@@ -318,6 +318,11 @@ mars_multistep_fit_impl <- function(x, y,
 
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
+  
+  # adjust selected features for previously trained model
+  if (rlang::is_quosure(selected_features)) {
+    selected_features <- tryCatch(rlang::eval_tidy(selected_features), error = function(e) NULL)
+  }
 
   # fit multiple models
   models <- list()
