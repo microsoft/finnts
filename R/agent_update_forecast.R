@@ -546,8 +546,8 @@ update_local_models <- function(agent_info,
       inner_parallel = inner_parallel,
       seed = seed
     )
-
-    return("done")
+    
+    return(data.frame(Combo = hash_data(prev_run$combo[1])))
   }
 
   par_end(inner_cl)
