@@ -491,6 +491,8 @@ update_local_models <- function(agent_info,
     cli::cli_alert_info("No local models to update, skipping...")
     return("No local models to update, skipping...")
   }
+  
+  prev_run_id <- unique(previous_best_run_local_tbl$agent_run_id)[[1]]
 
   # check if forecast update already ran for current agent version
   current_best_run_local_tbl <- get_best_agent_run(agent_info)
@@ -515,29 +517,43 @@ update_local_models <- function(agent_info,
   } else {
     # do nothing
   }
+  
+  local_combo_list <- unique(previous_best_run_local_tbl$combo)
 
   # start forecast update process
   par_info <- par_start(
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = nrow(previous_best_run_local_tbl)
+    task_length = length(local_combo_list)
   )
 
-  inner_cl <- par_info$cl
-  inner_packages <- par_info$packages
+  cl <- par_info$cl
+  packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
   combo_tbl <- foreach::foreach(
-    prev_run = previous_best_run_local_tbl %>%
-      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+    combo = local_combo_list,
     .combine = "rbind",
     .errorhandling = "stop",
+    .packages = packages,
     .verbose = FALSE,
     .inorder = FALSE,
     .multicombine = TRUE,
     .noexport = NULL
   ) %op% {
+    
+    # metadata
+    project_info <- agent_info$project_info
+    
+    # get the best run for combo
+    prev_run <- read_file(project_info,
+                          path = paste0("logs/", hash_data(project_info$project_name), "-",
+                                        hash_data(prev_run_id), "-", hash_data(combo), 
+                                        "-agent_best_run.", project_info$data_output),
+                          return_type = "df")
+    
+    # run update forecast for combo
     results <- update_forecast_combo(
       agent_info = agent_info,
       prev_best_run_tbl = prev_run,
@@ -547,10 +563,10 @@ update_local_models <- function(agent_info,
       seed = seed
     )
     
-    return(data.frame(Combo = hash_data(prev_run$combo[1])))
+    return(data.frame(Combo = hash_data(combo)))
   }
 
-  par_end(inner_cl)
+  par_end(cl)
 
   return("done")
 }
