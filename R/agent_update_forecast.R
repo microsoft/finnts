@@ -529,18 +529,15 @@ update_local_models <- function(agent_info,
   )
 
   cl <- par_info$cl
-  packages <- c(par_info$packages, "finnts")
+  packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
   combo_tbl <- foreach::foreach(
     combo = local_combo_list,
-    .combine = "rbind",
-    .errorhandling = "stop",
-    .packages = packages,
-    .verbose = FALSE,
-    .inorder = FALSE,
-    .multicombine = TRUE,
-    .noexport = NULL
+    .packages       = packages,
+    .errorhandling  = "stop",
+    .inorder        = FALSE,
+    .multicombine   = TRUE
   ) %op% {
     
     # metadata
