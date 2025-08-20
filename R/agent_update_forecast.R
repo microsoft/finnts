@@ -249,7 +249,7 @@ register_update_fcst_tools <- function(agent_info) {
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "update_global_models",
     .description = "Update global model forecasts across all time series",
-    .fun = update_forecast_combo
+    .fun = update_global_models
   ))
 
   agent_info$driver_llm$register_tool(ellmer::tool(
@@ -545,10 +545,15 @@ update_local_models <- function(agent_info,
     
     # get the best run for combo
     prev_run <- read_file(project_info,
-                          path = paste0("logs/", hash_data(project_info$project_name), "-",
-                                        hash_data(prev_run_id), "-", hash_data(combo), 
-                                        "-agent_best_run.", project_info$data_output),
-                          return_type = "df")
+                          file_list = list_files(
+                            project_info$storage_object,
+                            paste0(
+                              project_info$path, "/logs/*", 
+                              hash_data(project_info$project_name), "-",
+                              hash_data(prev_run_id), "-", 
+                              hash_data(combo), "-agent_best_run.csv")
+                            )
+    )
     
     # run update forecast for combo
     results <- update_forecast_combo(
