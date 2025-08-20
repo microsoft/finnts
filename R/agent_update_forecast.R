@@ -529,7 +529,7 @@ update_local_models <- function(agent_info,
   )
 
   cl <- par_info$cl
-  packages <- par_info$packages
+  packages <- c(par_info$packages, "finnts")
   `%op%` <- par_info$foreach_operator
 
   combo_tbl <- foreach::foreach(
