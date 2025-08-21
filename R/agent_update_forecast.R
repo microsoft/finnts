@@ -1300,7 +1300,18 @@ fit_models <- function(run_info,
     workflow <- model_run$Model_Fit[[1]]
     
     # convert trained workflow to empty workflow to prevent memory issues
-    workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
+    if(model == "arimax") {
+      workflow_recipe <- prep_data %>%
+        get_recipe_configurable(
+          step_nzv = "zv",
+          dummy_one_hot = TRUE,
+          corr = TRUE,
+          pca = prev_run_log_tbl$pca,
+          lincomb = TRUE
+        )
+    } else {
+      workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
+    }
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
     workflow <- workflows::workflow() %>% 
       workflows::add_recipe(workflow_recipe) %>% 
