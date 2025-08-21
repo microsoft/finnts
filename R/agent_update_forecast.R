@@ -566,7 +566,7 @@ update_local_models <- function(agent_info,
     )
     
     return(data.frame(Combo = hash_data(combo)))
-  }
+  } %>% base::suppressPackageStartupMessages()
 
   par_end(cl)
 
@@ -1292,6 +1292,13 @@ fit_models <- function(run_info,
     )
 
     workflow <- model_run$Model_Fit[[1]]
+    
+    # convert trained workflow to empty workflow to prevent memory issues
+    workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
+    workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
+    workflow <- workflows::workflow() %>% 
+      workflows::add_recipe(workflow_recipe) %>% 
+      workflows::add_model(workflow_spec)
 
     # adjust models based on data
     if (nrow(prep_data) > 500 & model == "xgboost") {
