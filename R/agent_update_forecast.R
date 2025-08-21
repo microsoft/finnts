@@ -1346,7 +1346,7 @@ fit_models <- function(run_info,
       if (prev_run_log_tbl$feature_selection) {
         fs_list <- prep_data %>%
           run_feature_selection(
-            run_info = prev_run_info,
+            run_info = run_info,
             train_test_data = model_train_test_tbl,
             parallel_processing = if (inner_parallel) {
               "local_machine"
@@ -1598,7 +1598,7 @@ fit_models <- function(run_info,
               Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
             )
         }
-        if ("Target_Original" %in% colnames(x)) {
+        if ("Target_Original" %in% colnames(final_fcst)) {
           final_fcst <- final_fcst %>%
             dplyr::mutate(
               Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
