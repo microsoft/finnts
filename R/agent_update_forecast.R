@@ -518,7 +518,13 @@ update_local_models <- function(agent_info,
     # do nothing
   }
   
+  # final list to iterate through
   local_combo_list <- unique(previous_best_run_local_tbl$combo)
+  
+  # agent adjustments to prevent serialization issues
+  agent_info_lean <- agent_info
+  agent_info_lean$driver_llm <- NULL
+  agent_info_lean$reason_llm <- NULL
 
   # start forecast update process
   par_info <- par_start(
@@ -541,7 +547,7 @@ update_local_models <- function(agent_info,
   ) %op% {
     
     # metadata
-    project_info <- agent_info$project_info
+    project_info <- agent_info_lean$project_info
     
     # get the best run for combo
     prev_run <- read_file(project_info,
@@ -557,7 +563,7 @@ update_local_models <- function(agent_info,
     
     # run update forecast for combo
     results <- update_forecast_combo(
-      agent_info = agent_info,
+      agent_info = agent_info_lean,
       prev_best_run_tbl = prev_run,
       parallel_processing = NULL,
       num_cores = num_cores,
