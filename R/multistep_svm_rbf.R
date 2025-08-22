@@ -348,11 +348,17 @@ svm_rbf_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-
+      
+      if(is.list(selected_features)) {
+        selected_features_filtered <- selected_features[[element_name]]
+      } else {
+        selected_features_filtered <- selected_features
+      }
+      
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
-          tidyselect::any_of(selected_features[[element_name]]),
-          tidyselect::contains(setdiff(selected_features[[element_name]], colnames(xreg_tbl_final)))
+          tidyselect::any_of(selected_features_filtered),
+          tidyselect::contains(setdiff(selected_features_filtered, colnames(xreg_tbl_final)))
         )
     }
 
