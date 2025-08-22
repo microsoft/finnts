@@ -1772,7 +1772,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary → stationary="TRUE".
-      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 → multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
           6-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
           6-B.  IF no negative values are present → negative_forecast="FALSE".
@@ -1911,7 +1911,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary → stationary="TRUE".
-      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon → multistep_horizon="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 → multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
           8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
           8-B.  IF no negative values are present → negative_forecast="FALSE".
@@ -1932,7 +1932,7 @@ iterate_forecast_system_prompt <- function(agent_info,
       10. FULL MODEL SWEEP RULES
           10-A. IF run_count == 0 → models_to_run = "arima---meanf---snaive---stlm-arima---tbats---xgboost"
           10-B. IF run_count > 0 AND *Step D is complete* → models_to_run = "arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost"
-          10-C. AFTER applying rule 10-B, if wmape goal was not met → models_to_run = "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---arimax---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
+          10-C. AFTER applying rule 10-B, if wmape goal was not met → models_to_run = "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
       11. EXTERNAL REGRESSOR RULES
           11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
           11-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"

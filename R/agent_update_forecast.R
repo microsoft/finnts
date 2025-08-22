@@ -1287,12 +1287,10 @@ fit_models <- function(run_info,
   ) %do% {
     # get initial run info
     model <- model_run %>%
-      dplyr::pull(Model_Name) %>%
-      print()
+      dplyr::pull(Model_Name)
 
     data_prep_recipe <- model_run %>%
-      dplyr::pull(Recipe_ID) %>%
-      print()
+      dplyr::pull(Recipe_ID)
 
     prep_data <- get_prepped_data(
       run_info = run_info,
@@ -1302,18 +1300,7 @@ fit_models <- function(run_info,
     workflow <- model_run$Model_Fit[[1]]
     
     # convert trained workflow to empty workflow to prevent memory issues
-    if(model == "arimax") {
-      workflow_recipe <- prep_data %>%
-        get_recipe_configurable(
-          step_nzv = "zv",
-          dummy_one_hot = TRUE,
-          corr = TRUE,
-          pca = prev_run_log_tbl$pca,
-          lincomb = TRUE
-        )
-    } else {
-      workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
-    }
+    workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
     workflow <- workflows::workflow() %>% 
       workflows::add_recipe(workflow_recipe) %>% 
@@ -1485,8 +1472,6 @@ fit_models <- function(run_info,
       ) %>%
         base::suppressMessages() %>%
         base::suppressWarnings()
-      
-      print(show_notes(.Last.tune.result))
 
       best_param <- tune::select_best(tune_results, metric = "rmse")
 
@@ -1529,8 +1514,6 @@ fit_models <- function(run_info,
       tune::collect_predictions() %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
-    
-    print(show_notes(.Last.tune.result))
 
     # finalize forecast
     final_fcst <- refit_tbl %>%
