@@ -1287,10 +1287,12 @@ fit_models <- function(run_info,
   ) %do% {
     # get initial run info
     model <- model_run %>%
-      dplyr::pull(Model_Name)
+      dplyr::pull(Model_Name) %>%
+      print()
 
     data_prep_recipe <- model_run %>%
-      dplyr::pull(Recipe_ID)
+      dplyr::pull(Recipe_ID) %>%
+      print()
 
     prep_data <- get_prepped_data(
       run_info = run_info,
@@ -1483,6 +1485,8 @@ fit_models <- function(run_info,
       ) %>%
         base::suppressMessages() %>%
         base::suppressWarnings()
+      
+      print(show_notes(.Last.tune.result))
 
       best_param <- tune::select_best(tune_results, metric = "rmse")
 
@@ -1525,6 +1529,8 @@ fit_models <- function(run_info,
       tune::collect_predictions() %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
+    
+    print(show_notes(.Last.tune.result))
 
     # finalize forecast
     final_fcst <- refit_tbl %>%
