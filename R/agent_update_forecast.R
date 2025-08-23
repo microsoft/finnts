@@ -934,8 +934,7 @@ update_forecast_combo <- function(agent_info,
   run_name <- paste0(
     "agent_",
     agent_info$run_id, "_",
-    ifelse(combo == "All-Data", hash_data("all"), combo_value), "_",
-    format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
+    ifelse(combo == "All-Data", hash_data("all"), combo_value)
   )
 
   # create new run
