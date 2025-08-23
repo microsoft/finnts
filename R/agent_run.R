@@ -146,14 +146,28 @@ execute_node <- function(node, ctx, chat) {
     # result <- try(do.call(tool_fn@name, ctx$args %||% list()), silent = TRUE)
     
     # call the function object directly
-    result <- try(rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())), silent = TRUE)
-
+    # result <- try(rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())), silent = TRUE)
+    
+    # call the function object directly
+    err <- NULL
+    result <- tryCatch(
+      rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
+      error = function(e) { err <<- e; NULL }
+    )
+    
     # success
-    if (!inherits(result, "try-error")) {
-      ctx$results[[tool_name]] <- result
+    if (is.null(err)) {
+      ctx$results[[tool_name]]  <- result
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
+
+    # success
+    # if (!inherits(result, "try-error")) {
+    #   ctx$results[[tool_name]] <- result
+    #   ctx$attempts[[tool_name]] <- 0L
+    #   return(list(ctx = ctx, ok = TRUE))
+    # }
     
     # pause for 5 seconds
     Sys.sleep(5)
