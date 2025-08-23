@@ -139,21 +139,14 @@ execute_node <- function(node, ctx, chat) {
     if (!tool_name %in% names(registry)) {
       stop(sprintf("Tool '%s' not registered.", tool_name), call. = FALSE)
     }
-
-    # get the function object from the S4 tool; ellmer::tool(.fun=) => slot "fun"
-    tool_fun <- if ("fun" %in% methods::slotNames(tool_fn)) tool_fn@fun else {
-      if (".fun" %in% methods::slotNames(tool_fn)) tool_fn@.fun else NULL
-    }
     
-    if (!is.function(tool_fun)) {
-      stop(sprintf("Tool '%s' registry entry lacks a callable function slot.", tool_name), call. = FALSE)
-    }
+    tool_fn <- registry[[tool_name]]
     
     # OLD (fragile; name-string + do.call triggers the bytecode subsetting error)
     # result <- try(do.call(tool_fn@name, ctx$args %||% list()), silent = TRUE)
     
     # call the function object directly
-    result <- try(rlang::exec(tool_fun, !!!(ctx$args %||% list())), silent = TRUE)
+    result <- try(rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())), silent = TRUE)
 
     # success
     if (!inherits(result, "try-error")) {
