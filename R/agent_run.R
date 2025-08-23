@@ -149,6 +149,9 @@ execute_node <- function(node, ctx, chat) {
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
+    
+    # pause for 5 seconds
+    Sys.sleep(5)
 
     # failure bookkeeping
     attempt <- attempt + 1L
@@ -171,8 +174,26 @@ execute_node <- function(node, ctx, chat) {
         )
       )
 
+      # pass LLM error to next run of reason inputs tool call
       if (tool_name == "reason_inputs") {
         ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
+      }
+      
+      # SPECIAL FAILOVER: update_local_models spark -> local_machine on 3rd try
+      # If we've already failed twice (attempt == 2), and we're about to try a 3rd time,
+      # switch parallel_processing from "spark" to "local_machine" and retry once more.
+      if (tool_name == "update_local_models" &&
+          attempt == 2L &&
+          is.character(ctx$args$parallel_processing) &&
+          identical(tolower(ctx$args$parallel_processing), "spark")) {
+        
+        cli::cli_alert_info(
+          "Failover: 'update_local_models' failed twice with Spark. Switching parallel_processing to 'local_machine' for the final retry."
+        )
+        
+        # Flip the arg for the next loop iteration
+        ctx$args$parallel_processing <- "local_machine"
+        ctx$args$inner_parallel <- NULL
       }
 
       next # loop again with same args
