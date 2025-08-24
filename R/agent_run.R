@@ -161,6 +161,7 @@ execute_node <- function(node, ctx, chat) {
       rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
       error = function(e) { err <<- e; NULL }
     )
+    print(err)
     print(result)
     # success
     if (is.null(err)) {

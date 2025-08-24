@@ -458,7 +458,7 @@ update_global_models <- function(agent_info,
     seed = seed
   )
 
-  return("done")
+  return("Finished Global Model Update")
 }
 
 #' Update Local Models
@@ -591,7 +591,7 @@ update_local_models <- function(agent_info,
 
   par_end(cl)
 
-  return("done")
+  return("Finished Local Model Update")
 }
 
 #' Analyze Results of Agent Run
