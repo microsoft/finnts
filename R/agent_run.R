@@ -212,7 +212,7 @@ execute_node <- function(node, ctx, chat) {
         
         # Flip the arg for the next loop iteration
         ctx$args$parallel_processing <- "local_machine"
-        ctx$args$inner_parallel <- NULL
+        ctx$args$inner_parallel <- FALSE
       }
 
       next # loop again with same args
