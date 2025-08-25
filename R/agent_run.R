@@ -164,9 +164,7 @@ execute_node <- function(node, ctx, chat) {
       rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
       error = function(e) { err <<- e; NULL }
     )
-    if (!is.null(err)) {
-      print(err)
-    }
+
     # success
     if (is.null(err)) {
       ctx$results[[tool_name]]  <- result
@@ -185,7 +183,7 @@ execute_node <- function(node, ctx, chat) {
     if (attempt > max_try) {
       stop(sprintf(
         "Tool '%s' failed after %d attempt(s):\n%s",
-        tool_name, attempt, result
+        tool_name, attempt, err
       ), call. = FALSE)
     }
 
@@ -194,7 +192,7 @@ execute_node <- function(node, ctx, chat) {
       cli::cli_alert_info(
         sprintf(
           "Tool '%s' failed (attempt %d/%d). Let's try again…",
-          tool_name, attempt, (max_try+1)
+          tool_name, attempt, max_try+1L
         )
       )
 
@@ -228,7 +226,7 @@ execute_node <- function(node, ctx, chat) {
         tool_name, attempt, max_try + 1L
       ),
       "\nError message:\n",
-      as.character(result)
+      as.character(err)
     )
 
     prompt <- paste0(
