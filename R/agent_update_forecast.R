@@ -587,8 +587,6 @@ update_local_models <- function(agent_info,
     # still propagate the error so execute_node() can trigger failover/retry
     stop(e)
   })
-  
-  par_end(cl)
 
   return("Finished Local Model Update")
 }
