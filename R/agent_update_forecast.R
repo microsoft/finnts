@@ -92,7 +92,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "initial_checks",
       `next` = NULL,
       retry_mode = "plain",
-      max_retry = 3,
+      max_retry = 2,
       args = list(
         agent_info = agent_info
       ),
@@ -135,7 +135,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_local_models",
       `next` = "analyze_results",
       retry_mode = "plain",
-      max_retry = 1,
+      max_retry = 2,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",

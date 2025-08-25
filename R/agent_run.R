@@ -203,7 +203,7 @@ execute_node <- function(node, ctx, chat) {
       
       # SPECIAL FAILOVER: update_local_models spark -> local_machine
       if (tool_name == "update_local_models" &&
-          attempt == 1L &&
+          attempt == 2L &&
           is.character(ctx$args$parallel_processing) &&
           identical(tolower(ctx$args$parallel_processing), "spark")) {
         
