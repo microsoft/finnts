@@ -708,6 +708,16 @@ reconcile_agent_forecast <- function(agent_info,
                                      project_info,
                                      parallel_processing = NULL,
                                      num_cores = NULL) {
+  # test 1  
+  write_data(
+    x = tibble::tibble(),
+    combo = "Best-Model",
+    run_info = project_info,
+    output_type = "data",
+    folder = "logs",
+    suffix = "-test_1"
+  )
+  
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
@@ -719,6 +729,16 @@ reconcile_agent_forecast <- function(agent_info,
     full_run_info = TRUE,
     parallel_processing = parallel_processing,
     num_cores = num_cores
+  )
+  
+  # test 2  
+  write_data(
+    x = tibble::tibble(),
+    combo = "Best-Model",
+    run_info = project_info,
+    output_type = "data",
+    folder = "logs",
+    suffix = "-test_2"
   )
 
   if (TRUE %in% unique(run_inputs$negative_forecast)) {
@@ -772,6 +792,16 @@ reconcile_agent_forecast <- function(agent_info,
     num_cores = num_cores
   ) %>%
     dplyr::filter(Best_Model == "Yes")
+  
+  # test 3
+  write_data(
+    x = tibble::tibble(),
+    combo = "Best-Model",
+    run_info = project_info,
+    output_type = "data",
+    folder = "logs",
+    suffix = "-test_3"
+  )
 
   # reconcile the forecast
   project_info$run_name <- agent_info$run_id
