@@ -582,7 +582,7 @@ update_local_models <- function(agent_info,
     cancel_parallel(par_info)
     
     # prevent on.exit(par_end(...)) from double-stopping a cluster we just killed
-    par_info$cl <- NULL
+    cl <- NULL
     
     # still propagate the error so execute_node() can trigger failover/retry
     stop(e)
