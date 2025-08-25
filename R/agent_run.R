@@ -200,16 +200,14 @@ execute_node <- function(node, ctx, chat) {
         ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
       }
       
-      # SPECIAL FAILOVER: update_local_models spark -> local_machine on 3rd try
-      # If we've already failed twice (attempt == 2), and we're about to try a 3rd time,
-      # switch parallel_processing from "spark" to "local_machine" and retry once more.
+      # SPECIAL FAILOVER: update_local_models spark -> local_machine
       if (tool_name == "update_local_models" &&
-          attempt == 2L &&
+          attempt == 1L &&
           is.character(ctx$args$parallel_processing) &&
           identical(tolower(ctx$args$parallel_processing), "spark")) {
         
         cli::cli_alert_info(
-          "Failover: 'update_local_models' failed twice with Spark. Switching parallel_processing to 'local_machine' for the final retry."
+          "Failover: 'update_local_models' failed with Spark. Switching parallel_processing to 'local_machine' for the final retry."
         )
         
         # Flip the arg for the next loop iteration
