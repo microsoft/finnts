@@ -435,7 +435,15 @@ get_best_agent_run <- function(agent_info,
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-
+    # test
+    write_data(
+      x = tibble::tibble(),
+      combo = "Test",
+      run_info = agent_info$project_info,
+      output_type = "data",
+      folder = "logs",
+      suffix = "-test_1"
+    )
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
