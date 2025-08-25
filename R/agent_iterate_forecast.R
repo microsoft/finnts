@@ -378,15 +378,6 @@ get_best_agent_run <- function(agent_info,
                                full_run_info = FALSE,
                                parallel_processing = NULL,
                                num_cores = NULL) {
-  # test 1
-  write_data(
-    x = tibble::tibble(),
-    combo = "Best-Model",
-    run_info = agent_info$project_info,
-    output_type = "data",
-    folder = "logs",
-    suffix = "-test_1_2"
-  )
   # metadata
   project_info <- agent_info$project_info
 
@@ -444,15 +435,7 @@ get_best_agent_run <- function(agent_info,
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-    # test 2
-    write_data(
-      x = tibble::tibble(),
-      combo = "Best-Model",
-      run_info = agent_info$project_info,
-      output_type = "data",
-      folder = "logs",
-      suffix = "-test_1_3"
-    )
+
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
