@@ -537,58 +537,57 @@ update_local_models <- function(agent_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
+  
+  on.exit(par_end(cl), add = TRUE)
 
-  combo_tbl <- foreach::foreach(
-    combo = local_combo_list,
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .inorder        = FALSE,
-    .multicombine   = TRUE
-  ) %op% {
-    
-    # metadata
-    project_info <- agent_info_lean$project_info
-    
-    # check if current best run exists
-    # current_run_exists <- list_files(
-    #   project_info$storage_object,
-    #   paste0(
-    #     project_info$path, "/logs/*", 
-    #     hash_data(project_info$project_name), "-",
-    #     hash_data(agent_info_lean$run_id), "-", 
-    #     hash_data(combo), "-agent_best_run.csv")
-    # ) %>% 
-    #   length()
-    # 
-    # if(current_run_exists == 1) {
-    #   return(data.frame(Combo = hash_data(combo)))
-    # }
-    
-    # get the previous best run for combo
-    prev_run <- read_file(project_info,
-                          file_list = list_files(
-                            project_info$storage_object,
-                            paste0(
-                              project_info$path, "/logs/*", 
-                              hash_data(project_info$project_name), "-",
-                              hash_data(prev_run_id), "-", 
-                              hash_data(combo), "-agent_best_run.csv")
+  combo_tbl <- tryCatch({
+    foreach::foreach(
+      combo = local_combo_list,
+      .packages       = packages,
+      .errorhandling  = "stop",
+      .inorder        = FALSE,
+      .multicombine   = TRUE
+    ) %op% {
+      
+      # metadata
+      project_info <- agent_info_lean$project_info
+      
+      # get the previous best run for combo
+      prev_run <- read_file(project_info,
+                            file_list = list_files(
+                              project_info$storage_object,
+                              paste0(
+                                project_info$path, "/logs/*", 
+                                hash_data(project_info$project_name), "-",
+                                hash_data(prev_run_id), "-", 
+                                hash_data(combo), "-agent_best_run.csv")
                             )
-    )
+      )
+      
+      # run update forecast for combo
+      results <- update_forecast_combo(
+        agent_info = agent_info_lean,
+        prev_best_run_tbl = prev_run,
+        parallel_processing = NULL,
+        num_cores = num_cores,
+        inner_parallel = inner_parallel,
+        seed = seed
+      )
+      
+      return(data.frame(Combo = hash_data(combo)))
+    } %>% 
+      base::suppressPackageStartupMessages()
+  }, error = function(e) {
+    # hard abort: cancel Spark jobs + stop PSOCK workers immediately
+    cancel_parallel(par_info)
     
-    # run update forecast for combo
-    results <- update_forecast_combo(
-      agent_info = agent_info_lean,
-      prev_best_run_tbl = prev_run,
-      parallel_processing = NULL,
-      num_cores = num_cores,
-      inner_parallel = inner_parallel,
-      seed = seed
-    )
+    # prevent on.exit(par_end(...)) from double-stopping a cluster we just killed
+    par_info$cl <- NULL
     
-    return(data.frame(Combo = hash_data(combo)))
-  } %>% base::suppressPackageStartupMessages()
-
+    # still propagate the error so execute_node() can trigger failover/retry
+    stop(e)
+  })
+  
   par_end(cl)
 
   return("Finished Local Model Update")

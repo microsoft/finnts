@@ -90,7 +90,7 @@ par_start <- function(run_info,
     stop("error")
   }
 
-  return(list(packages = packages, foreach_operator = `%op%`, cl = cl))
+  return(list(packages = packages, foreach_operator = `%op%`, cl = cl, parallel_processing = parallel_processing))
 }
 
 #' Function to clean up after submitting tasks sequentially, in parallel on local machine, or in spark
@@ -103,5 +103,32 @@ par_end <- function(cl) {
 
   if (!is.null(cl)) {
     parallel::stopCluster(cl)
+  }
+}
+
+#' Function to clean up after a foreach error when submitting tasks sequentially, in parallel on local machine, or in spark
+#'
+#' @param par_info parallel info
+#'
+#' @noRd
+cancel_parallel <- function(par_info) {
+  
+  if(is.null(par_info$parallel_processing)) {
+    parallel_processing <- "none"
+  } else {
+    parallel_processing <- par_info$parallel_processing
+  }
+  
+  # Spark: cancel active jobs immediately (best-effort)
+  if (parallel_processing == "spark") {
+    try({
+      sctx <- sparklyr::spark_context(sc)
+      sparklyr::invoke(sctx, "cancelAllJobs")
+    }, silent = TRUE)
+  }
+  
+  # PSOCK: tear down cluster
+  if (parallel_processing == "local_machine") {
+    try(parallel::stopCluster(par_info$cl), silent = TRUE)
   }
 }
