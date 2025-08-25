@@ -102,7 +102,7 @@ par_end <- function(cl) {
   foreach::registerDoSEQ()
 
   if (!is.null(cl)) {
-    parallel::stopCluster(cl)
+    try(parallel::stopCluster(cl), silent = TRUE)
   }
 }
 
