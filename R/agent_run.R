@@ -100,6 +100,9 @@ run_graph <- function(chat,
     ctx$args <- resolve_args(node$args, ctx)
     res <- execute_node(node, ctx, chat)
     ctx <- res$ctx
+    
+    # prevent arg-bleed into the next node’s templates
+    ctx$args <- NULL # clears retry-modified args
 
     # choose next step
     if (!is.null(node$branch)) {
