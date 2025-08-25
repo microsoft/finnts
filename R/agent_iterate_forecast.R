@@ -460,6 +460,16 @@ get_best_agent_run <- function(agent_info,
       .noexport = NULL
     ) %op%
       {
+        # test 1
+        write_data(
+          x = tibble::tibble(),
+          combo = x$combo,
+          run_info = agent_info$project_info,
+          output_type = "data",
+          folder = "logs",
+          suffix = "-test_1"
+        )
+        
         temp_local_run_tbl <- tibble::as_tibble(x)
 
         temp_local_run_info <- get_run_info(
@@ -473,6 +483,16 @@ get_best_agent_run <- function(agent_info,
         temp_local_run_tbl <- temp_local_run_tbl %>%
           dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
 
+        # test 2
+        write_data(
+          x = tibble::tibble(),
+          combo = x$combo,
+          run_info = agent_info$project_info,
+          output_type = "data",
+          folder = "logs",
+          suffix = "-test_2"
+        )
+        
         return(temp_local_run_tbl)
       } %>%
       base::suppressPackageStartupMessages()
