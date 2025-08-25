@@ -194,7 +194,7 @@ execute_node <- function(node, ctx, chat) {
       cli::cli_alert_info(
         sprintf(
           "Tool '%s' failed (attempt %d/%d). Let's try again…",
-          tool_name, attempt, max_try
+          tool_name, attempt, (max_try+1)
         )
       )
 
@@ -210,7 +210,7 @@ execute_node <- function(node, ctx, chat) {
           identical(tolower(ctx$args$parallel_processing), "spark")) {
         
         cli::cli_alert_info(
-          "Failover: 'update_local_models' failed with Spark. Switching parallel_processing to 'local_machine' for the final retry."
+          "Failover: 'update_local_models' failed with Spark. Switching parallel_processing to 'local_machine' for the next retry."
         )
         
         # Flip the arg for the next loop iteration
