@@ -441,7 +441,7 @@ get_best_agent_run <- function(agent_info,
     
     # test
     write_data(
-      x = tibble::tibble(),
+      x = tibble::tibble(Combo = "Test"),
       combo = "Test",
       run_info = agent_info$project_info,
       output_type = "data",
@@ -469,38 +469,36 @@ get_best_agent_run <- function(agent_info,
     # submit tasks
     local_best_run_tbl <- foreach::foreach(
       combo = local_run_combo_list,
-      .combine = "rbind",
       .packages = packages,
       .errorhandling = "stop",
+      .combine = "rbind",
       .inorder = FALSE,
       .multicombine = TRUE
     ) %op%
       {
-        project_info <- agent_info_lean$project_info
         
         # test 1
         write_data(
-          x = tibble::tibble(),
+          x = tibble::tibble(Combo = combo),
           combo = combo,
-          run_info = project_info,
+          run_info = agent_info_lean$project_info,
           output_type = "data",
           folder = "logs",
           suffix = "-test_1"
         )
         
         temp_local_run_tbl <- read_file(
-          run_info = project_info,
+          run_info = agent_info_lean$project_info,
           file_list = list_files(
-            project_info$storage_object,
+            agent_info_lean$project_info$storage_object,
             paste0(
-              project_info$path, "/logs/*", 
-              hash_data(project_info$project_name), "-",
+              agent_info_lean$project_info$path, "/logs/*", 
+              hash_data(agent_info_lean$project_info$project_name), "-",
               hash_data(agent_info_lean$run_id), "-",
               hash_data(combo), "-",
-              "agent_best_run.", project_info$data_output
+              "agent_best_run.csv"
               )
-            ),
-          return_type = "df"
+            )
         )
         
         if(nrow(temp_local_run_tbl) == 0) {
@@ -508,10 +506,10 @@ get_best_agent_run <- function(agent_info,
         }
 
         temp_local_run_info <- get_run_info(
-          project_name = paste0(project_info$project_name, "_", hash_data(combo)),
+          project_name = paste0(agent_info_lean$project_info$project_name, "_", hash_data(combo)),
           run_name = temp_local_run_tbl$best_run_name,
-          storage_object = project_info$storage_object,
-          path = project_info$path
+          storage_object = agent_info_lean$project_info$storage_object,
+          path = agent_info_lean$project_info$path
         ) %>%
           dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
 
@@ -520,9 +518,9 @@ get_best_agent_run <- function(agent_info,
 
         # test 2
         write_data(
-          x = tibble::tibble(),
+          x = tibble::tibble(Combo = combo),
           combo = combo,
-          run_info = project_info,
+          run_info = agent_info_lean$project_info,
           output_type = "data",
           folder = "logs",
           suffix = "-test_2"

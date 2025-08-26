@@ -199,7 +199,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "reconcile_agent_forecast",
       `next` = "stop",
       retry_mode = "plain",
-      max_retry = 2,
+      max_retry = 0,
       args = list(
         agent_info = agent_info,
         project_info = agent_info$project_info,
@@ -545,6 +545,7 @@ update_local_models <- function(agent_info,
       combo = local_combo_list,
       .packages       = packages,
       .errorhandling  = "stop",
+      .combine = "rbind",
       .inorder        = FALSE,
       .multicombine   = TRUE
     ) %op% {
