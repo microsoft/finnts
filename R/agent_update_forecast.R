@@ -543,11 +543,14 @@ update_local_models <- function(agent_info,
   combo_tbl <- tryCatch({
     foreach::foreach(
       combo = local_combo_list,
-      .packages       = packages,
-      .errorhandling  = "stop",
       .combine = "rbind",
-      .inorder        = FALSE,
-      .multicombine   = TRUE
+      .packages = packages,
+      .errorhandling = "stop",
+      .verbose = FALSE,
+      .inorder = FALSE,
+      .multicombine = TRUE,
+      .export = c("list_files"),
+      .noexport = NULL
     ) %op% {
       
       # metadata
