@@ -123,6 +123,7 @@ cancel_parallel <- function(par_info) {
   if (parallel_processing == "spark") {
     # drop foreach backend first
     try(foreach::registerDoSEQ(), silent = TRUE)
+    try(parallel::stopCluster(par_info$cl), silent = TRUE)
     
     # cancel running jobs
     try({
