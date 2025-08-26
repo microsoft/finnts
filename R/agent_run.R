@@ -164,7 +164,9 @@ execute_node <- function(node, ctx, chat) {
       rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
       error = function(e) { err <<- e; NULL }
     )
-
+    if(!is.null(err)) {
+      print(err)
+    }
     # success
     if (is.null(err)) {
       ctx$results[[tool_name]]  <- result
@@ -178,7 +180,7 @@ execute_node <- function(node, ctx, chat) {
     # failure bookkeeping
     attempt <- attempt + 1L
     ctx$attempts[[tool_name]] <- attempt
-    ctx$last_error <- as.character(result)
+    ctx$last_error <- as.character(err)
 
     if (attempt > max_try) {
       stop(sprintf(
