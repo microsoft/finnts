@@ -553,16 +553,13 @@ update_local_models <- function(agent_info,
       .noexport = NULL
     ) %op% {
       
-      # metadata
-      project_info <- agent_info_lean$project_info
-      
       # get the previous best run for combo
-      prev_run <- read_file(project_info,
+      prev_run <- read_file(agent_info_lean$project_info,
                             file_list = list_files(
-                              project_info$storage_object,
+                              agent_info_lean$project_info$storage_object,
                               paste0(
-                                project_info$path, "/logs/*", 
-                                hash_data(project_info$project_name), "-",
+                                agent_info_lean$project_info$path, "/logs/*", 
+                                hash_data(agent_info_lean$project_info$project_name), "-",
                                 hash_data(prev_run_id), "-", 
                                 hash_data(combo), "-agent_best_run.csv")
                             )
