@@ -435,6 +435,10 @@ get_best_agent_run <- function(agent_info,
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
+    
+    local_run_combo_list <- local_run_tbl %>%
+      dplyr::pull(combo)
+    
     # test
     write_data(
       x = tibble::tibble(),
@@ -444,11 +448,18 @@ get_best_agent_run <- function(agent_info,
       folder = "logs",
       suffix = "-test_1"
     )
+    
+    # agent adjustments to prevent serialization issues
+    agent_info_lean <- agent_info
+    agent_info_lean$driver_llm <- NULL
+    agent_info_lean$reason_llm <- NULL
+    
+    # run parallel process
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
-      task_length = nrow(local_run_tbl)
+      task_length = length(local_run_combo_list)
     )
 
     cl <- par_info$cl
@@ -457,8 +468,7 @@ get_best_agent_run <- function(agent_info,
 
     # submit tasks
     local_best_run_tbl <- foreach::foreach(
-      x = local_run_tbl %>%
-        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+      combo = local_run_combo_list,
       .combine = "rbind",
       .packages = packages,
       .errorhandling = "stop",
@@ -466,21 +476,40 @@ get_best_agent_run <- function(agent_info,
       .multicombine = TRUE
     ) %op%
       {
+        project_info <- agent_info_lean$project_info
+        
         # test 1
         write_data(
           x = tibble::tibble(),
-          combo = x$combo,
-          run_info = agent_info$project_info,
+          combo = combo,
+          run_info = project_info,
           output_type = "data",
           folder = "logs",
           suffix = "-test_1"
         )
         
-        temp_local_run_tbl <- tibble::as_tibble(x)
+        temp_local_run_tbl <- read_file(
+          run_info = project_info,
+          file_list = list_files(
+            project_info$storage_object,
+            paste0(
+              project_info$path, "/logs/*", 
+              hash_data(project_info$project_name), "-",
+              hash_data(agent_info_lean$run_id), "-",
+              hash_data(combo), "-",
+              "agent_best_run.", project_info$data_output
+              )
+            ),
+          return_type = "df"
+        )
+        
+        if(nrow(temp_local_run_tbl) == 0) {
+          stop("Can't find previous best run for time series.")
+        }
 
         temp_local_run_info <- get_run_info(
-          project_name = paste0(agent_info$project_info$project_name, "_", hash_data(x$combo)),
-          run_name = x$best_run_name,
+          project_name = paste0(project_info$project_name, "_", hash_data(combo)),
+          run_name = temp_local_run_tbl$best_run_name,
           storage_object = project_info$storage_object,
           path = project_info$path
         ) %>%
@@ -492,8 +521,8 @@ get_best_agent_run <- function(agent_info,
         # test 2
         write_data(
           x = tibble::tibble(),
-          combo = x$combo,
-          run_info = agent_info$project_info,
+          combo = combo,
+          run_info = project_info,
           output_type = "data",
           folder = "logs",
           suffix = "-test_2"
