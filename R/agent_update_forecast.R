@@ -1044,7 +1044,7 @@ update_forecast_combo <- function(agent_info,
   # refit each model on previously selected hyperparameters
   cli::cli_progress_step("Refitting Models with Previously Selected Hyperparameters")
 
-  refit_model_tbl <- fit_models(
+  final_model_tbl <- fit_models(
     run_info = new_run_info,
     combo = combo,
     combo_info_tbl = combo_info_tbl,
@@ -1061,22 +1061,26 @@ update_forecast_combo <- function(agent_info,
   )
 
   # get forecast and calculate wmape
-  refit_fcst_tbl <- refit_model_tbl %>%
+  final_fcst_tbl <- refit_model_tbl %>%
     adjust_forecast(
       run_info = new_run_info,
       forecast_approach = prev_run_log_tbl$forecast_approach,
       negative_forecast = prev_run_log_tbl$negative_forecast
     )
 
-  refit_wmape <- refit_fcst_tbl %>%
+  final_wmape <- refit_fcst_tbl %>%
     dplyr::filter(Combo %in% combo_list) %>%
     calc_wmape()
 
   # retune hyperparameters if +10% worse than previous best
-  if (refit_wmape > (prev_best_wmape * 1.1)) {
+  if (final_wmape > (prev_best_wmape * 1.1)) {
     cli::cli_progress_step("Retuning Model Hyperparameters")
+    
+    rm(final_model_tbl)
+    rm(final_fcst_tbl)
+    rm(final_wmape)
 
-    retune_model_tbl <- fit_models(
+    final_model_tbl <- fit_models(
       run_info = new_run_info,
       combo = combo,
       combo_info_tbl = combo_info_tbl,
@@ -1092,43 +1096,34 @@ update_forecast_combo <- function(agent_info,
       seed = seed
     )
 
-    retune_fcst_tbl <- retune_model_tbl %>%
+    final_fcst_tbl <- retune_model_tbl %>%
       adjust_forecast(
         run_info = new_run_info,
         forecast_approach = prev_run_log_tbl$forecast_approach,
         negative_forecast = prev_run_log_tbl$negative_forecast
       )
 
-    retune_wmape <- retune_fcst_tbl %>%
+    final_wmape <- retune_fcst_tbl %>%
       dplyr::filter(Combo %in% combo_list) %>%
       calc_wmape()
-  } else {
-    retune_wmape <- Inf
   }
 
-  # choose best results
-  if (retune_wmape < refit_wmape) {
-    final_wmape <- retune_wmape
-    final_model_tbl <- retune_model_tbl
-    final_fcst_tbl <- retune_fcst_tbl %>%
-      create_prediction_intervals(model_train_test_tbl)
-  } else {
-    final_wmape <- refit_wmape
-    final_model_tbl <- refit_model_tbl
-    final_fcst_tbl <- refit_fcst_tbl %>%
-      create_prediction_intervals(model_train_test_tbl)
-  }
-
-  # write final outputs
-  cli::cli_progress_step("Logging Forecast Results")
-
-  fitted_models <- final_model_tbl %>%
+  # finalize results
+  final_fcst_tbl <- final_fcst_tbl %>%
+    create_prediction_intervals(model_train_test_tbl)
+  
+  final_model_tbl <- final_model_tbl %>%
     tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
     dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
 
+  # write final outputs
+  cli::cli_progress_step("Logging Forecast Results")
+  
+  combo_id <- unique(final_model_tbl$Combo_ID)
+
   write_data(
-    x = fitted_models,
-    combo = unique(fitted_models$Combo_ID),
+    x = final_model_tbl,
+    combo = combo_id,
     run_info = new_run_info,
     output_type = "object",
     folder = "models",
@@ -1140,7 +1135,7 @@ update_forecast_combo <- function(agent_info,
       x = final_fcst_tbl %>%
         dplyr::filter(Recipe_ID != "simple_average") %>%
         convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-      combo = unique(fitted_models$Combo_ID),
+      combo = combo_id,
       run_info = new_run_info,
       output_type = "data",
       folder = "forecasts",
@@ -1151,7 +1146,7 @@ update_forecast_combo <- function(agent_info,
       x = final_fcst_tbl %>%
         dplyr::filter(Recipe_ID == "simple_average") %>%
         convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-      combo = unique(fitted_models$Combo_ID),
+      combo = combo_id,
       run_info = new_run_info,
       output_type = "data",
       folder = "forecasts",
@@ -1186,7 +1181,7 @@ update_forecast_combo <- function(agent_info,
       write_data(
         x = final_fcst_tbl %>%
           convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-        combo = unique(fitted_models$Combo_ID),
+        combo = combo_id,
         run_info = new_run_info,
         output_type = "data",
         folder = "forecasts",
