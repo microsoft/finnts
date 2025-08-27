@@ -1229,7 +1229,7 @@ update_forecast_combo <- function(agent_info,
     suffix = NULL
   )
 
-  log_best_run(
+  final_log_results <- log_best_run(
     agent_info = agent_info,
     run_info = new_run_info,
     weighted_mape = log_wmape,
