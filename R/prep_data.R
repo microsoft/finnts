@@ -222,8 +222,21 @@ prep_data <- function(run_info,
 
   filtered_initial_prep_tbl <- initial_prep_tbl %>% # filter input data on combos that haven't completed running
     dplyr::filter(Combo %in% current_combo_list_final)
+  
+  cols_check_list <- c("combo_variables", "target_variable", "date_type", 
+                       "forecast_horizon", "external_regressors", "hist_start_date",
+                       "hist_end_date", "combo_cleanup_date", "fiscal_year_start",
+                       "clean_missing_values", "clean_outliers", "forecast_approach",
+                       "parallel_processing", "num_cores", "fourier_periods",
+                       "lag_periods", "rolling_window_periods", "recipes_to_run")
+  
+  prev_log_df <- read_file(run_info,
+                           path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+                           return_type = "df"
+  ) %>%
+    dplyr::select(tidyselect::any_of(cols_check_list))
 
-  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+  if (length(combo_diff) == 0 & length(prev_combo_list) > 0 & length(cols_check_list) == length(colnames(prev_log_df))) {
     # check if input values have changed
     current_log_df <- tibble::tibble(
       combo_variables = paste(combo_variables, collapse = "---"),
@@ -247,10 +260,7 @@ prep_data <- function(run_info,
     ) %>%
       data.frame()
 
-    prev_log_df <- read_file(run_info,
-      path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-      return_type = "df"
-    ) %>%
+    prev_log_df <- prev_log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
 
