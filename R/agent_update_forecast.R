@@ -1061,14 +1061,14 @@ update_forecast_combo <- function(agent_info,
   )
 
   # get forecast and calculate wmape
-  final_fcst_tbl <- refit_model_tbl %>%
+  final_fcst_tbl <- final_model_tbl %>%
     adjust_forecast(
       run_info = new_run_info,
       forecast_approach = prev_run_log_tbl$forecast_approach,
       negative_forecast = prev_run_log_tbl$negative_forecast
     )
 
-  final_wmape <- refit_fcst_tbl %>%
+  final_wmape <- final_fcst_tbl %>%
     dplyr::filter(Combo %in% combo_list) %>%
     calc_wmape()
 
@@ -1096,14 +1096,14 @@ update_forecast_combo <- function(agent_info,
       seed = seed
     )
 
-    final_fcst_tbl <- retune_model_tbl %>%
+    final_fcst_tbl <- final_model_tbl %>%
       adjust_forecast(
         run_info = new_run_info,
         forecast_approach = prev_run_log_tbl$forecast_approach,
         negative_forecast = prev_run_log_tbl$negative_forecast
       )
 
-    final_wmape <- retune_fcst_tbl %>%
+    final_wmape <- final_fcst_tbl %>%
       dplyr::filter(Combo %in% combo_list) %>%
       calc_wmape()
   }
