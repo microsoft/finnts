@@ -711,15 +711,6 @@ reconcile_agent_forecast <- function(agent_info,
                                      project_info,
                                      parallel_processing = NULL,
                                      num_cores = NULL) {
-  # test
-  write_data(
-    x = tibble::tibble(),
-    combo = "Test",
-    run_info = agent_info$project_info,
-    output_type = "data",
-    folder = "logs",
-    suffix = "-test_0"
-  )
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))

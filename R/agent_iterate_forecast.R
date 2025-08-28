@@ -439,16 +439,6 @@ get_best_agent_run <- function(agent_info,
     local_run_combo_list <- local_run_tbl %>%
       dplyr::pull(combo)
     
-    # test
-    write_data(
-      x = tibble::tibble(Combo = "Test"),
-      combo = "Test",
-      run_info = agent_info$project_info,
-      output_type = "data",
-      folder = "logs",
-      suffix = "-test_1"
-    )
-    
     # agent adjustments to prevent serialization issues
     agent_info_lean <- agent_info
     agent_info_lean$driver_llm <- NULL
