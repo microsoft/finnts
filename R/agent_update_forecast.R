@@ -564,14 +564,21 @@ update_local_models <- function(agent_info,
       )
       
       # run update forecast for combo
-      results <- update_forecast_combo(
-        agent_info = agent_info_lean,
-        prev_best_run_tbl = prev_run,
-        parallel_processing = NULL,
-        num_cores = num_cores,
-        inner_parallel = inner_parallel,
-        seed = seed
-      )
+      results <- tryCatch({
+        update_forecast_combo(
+          agent_info = agent_info_lean,
+          prev_best_run_tbl = prev_run,
+          parallel_processing = NULL,
+          num_cores = num_cores,
+          inner_parallel = inner_parallel,
+          seed = seed
+        )
+      }, error = function(e) {
+        stop(sprintf(
+          "Combo '%s' failed. Error Message: %s.",
+          combo, e
+        ))
+      })
       
       return(data.frame(Combo = hash_data(combo)))
     } %>% 

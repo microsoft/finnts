@@ -476,17 +476,6 @@ get_best_agent_run <- function(agent_info,
       .multicombine = TRUE
     ) %op%
       {
-        
-        # test 1
-        write_data(
-          x = tibble::tibble(Combo = combo),
-          combo = combo,
-          run_info = agent_info_lean$project_info,
-          output_type = "data",
-          folder = "logs",
-          suffix = "-test_1"
-        )
-        
         temp_local_run_tbl <- read_file(
           run_info = agent_info_lean$project_info,
           file_list = paste0(
@@ -512,16 +501,6 @@ get_best_agent_run <- function(agent_info,
 
         temp_local_run_tbl <- temp_local_run_tbl %>%
           dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
-
-        # test 2
-        write_data(
-          x = tibble::tibble(Combo = combo),
-          combo = combo,
-          run_info = agent_info_lean$project_info,
-          output_type = "data",
-          folder = "logs",
-          suffix = "-test_2"
-        )
         
         return(temp_local_run_tbl)
       } %>%
