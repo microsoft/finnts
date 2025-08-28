@@ -489,16 +489,13 @@ get_best_agent_run <- function(agent_info,
         
         temp_local_run_tbl <- read_file(
           run_info = agent_info_lean$project_info,
-          file_list = list_files(
-            agent_info_lean$project_info$storage_object,
-            paste0(
-              agent_info_lean$project_info$path, "/logs/*", 
-              hash_data(agent_info_lean$project_info$project_name), "-",
-              hash_data(agent_info_lean$run_id), "-",
-              hash_data(combo), "-",
-              "agent_best_run.csv"
-              )
-            )
+          file_list = paste0(
+            agent_info_lean$project_info$path, "/logs/", 
+            hash_data(agent_info_lean$project_info$project_name), "-",
+            hash_data(agent_info_lean$run_id), "-",
+            hash_data(combo), "-",
+            "agent_best_run.csv"
+          ) %>% fs::path_tidy()
         )
         
         if(nrow(temp_local_run_tbl) == 0) {
