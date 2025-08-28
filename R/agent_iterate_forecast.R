@@ -1392,10 +1392,11 @@ log_best_run <- function(agent_info,
       # check if previous log file exists, if so check if mape is better
       prev_log_df <- tryCatch(
         read_file(project_info,
-          path = paste0(
-            "logs/", hash_data(project_info$project_name), "-", hash_data(agent_info$run_id),
+          file_list = paste0(
+            project_info$path,
+            "/logs/", hash_data(project_info$project_name), "-", hash_data(agent_info$run_id),
             "-", hash_data(combo_name), "-agent_best_run.csv"
-          ),
+          ) %>% fs::path_tidy(),
           return_type = "df"
         ),
         error = function(e) {

@@ -555,14 +555,12 @@ update_local_models <- function(agent_info,
       
       # get the previous best run for combo
       prev_run <- read_file(agent_info_lean$project_info,
-                            file_list = list_files(
-                              agent_info_lean$project_info$storage_object,
-                              paste0(
-                                agent_info_lean$project_info$path, "/logs/*", 
-                                hash_data(agent_info_lean$project_info$project_name), "-",
-                                hash_data(prev_run_id), "-", 
-                                hash_data(combo), "-agent_best_run.csv")
-                            )
+                            file_list = paste0(
+                              agent_info_lean$project_info$path, "/logs/", 
+                              hash_data(agent_info_lean$project_info$project_name), "-",
+                              hash_data(prev_run_id), "-", 
+                              hash_data(combo), "-agent_best_run.csv") %>%
+                              fs::path_tidy()
       )
       
       # run update forecast for combo
@@ -996,10 +994,11 @@ update_forecast_combo <- function(agent_info,
 
   if (prev_run_log_tbl$box_cox || prev_run_log_tbl$stationary) {
     combo_info_tbl <- read_file(new_run_info,
-      path = paste0(
+      file_list = paste0(
+        new_run_info$path, 
         "/prep_data/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
         "-orig_combo_info.", new_run_info$data_output
-      ),
+      ) %>% fs::path_tidy(),
       return_type = "df"
     )
 
@@ -1024,23 +1023,21 @@ update_forecast_combo <- function(agent_info,
     seasonal_period = adjust_inputs(prev_run_log_tbl$seasonal_period, convert_numeric = TRUE),
     seed = seed
   )
+  
+  prepped_model_tbl <- get_prepped_models(new_run_info)
 
-  model_train_test_tbl <- read_file(new_run_info,
-    path = paste0(
-      "/prep_models/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
-      "-train_test_split.", new_run_info$data_output
-    ),
-    return_type = "df"
-  )
+  model_train_test_tbl <- prepped_model_tbl %>%
+    dplyr::filter(Type == "Train_Test_Splits") %>%
+    dplyr::select(Data) %>%
+    tidyr::unnest(Data)
 
-  model_hyperparameter_tbl <- read_file(new_run_info,
-    path = paste0(
-      "/prep_models/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
-      "-model_hyperparameters.", new_run_info$object_output
-    ),
-    return_type = "df"
-  )
+  model_hyperparameter_tbl <- prepped_model_tbl %>%
+    dplyr::filter(Type == "Model_Hyperparameters") %>%
+    dplyr::select(Data) %>%
+    tidyr::unnest(Data)
 
+  rm(prepped_model_tbl)
+  
   # refit each model on previously selected hyperparameters
   cli::cli_progress_step("Refitting Models with Previously Selected Hyperparameters")
 

@@ -232,7 +232,9 @@ get_prepped_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+    file_list = paste0(run_info$path, "/logs/", 
+                       hash_data(run_info$project_name), "-", 
+                       hash_data(run_info$run_name), ".csv") %>% fs::path_tidy(),
     return_type = "df"
   )
 
@@ -300,20 +302,21 @@ get_prepped_models <- function(run_info) {
 
   # get prepped model info
   data_path <- paste0(
-    "/prep_models/*", hash_data(run_info$project_name), "-",
+    run_info$path, 
+    "/prep_models/", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name)
   )
 
   train_test_tbl <- read_file(run_info,
-    path = paste0(data_path, "-train_test_split.", run_info$data_output)
+    file_list = paste0(data_path, "-train_test_split.", run_info$data_output) %>% fs::path_tidy()
   )
 
   model_hyperparameters_tbl <- read_file(run_info,
-    path = paste0(data_path, "-model_hyperparameters.", run_info$object_output)
+    file_list = paste0(data_path, "-model_hyperparameters.", run_info$object_output) %>% fs::path_tidy()
   )
 
   model_workflows_tbl <- read_file(run_info,
-    path = paste0(data_path, "-model_workflows.", run_info$object_output)
+    file_list = paste0(data_path, "-model_workflows.", run_info$object_output) %>% fs::path_tidy()
   )
 
   final_tbl <- tibble::tibble(
