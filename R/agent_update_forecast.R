@@ -135,7 +135,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_local_models",
       `next` = "analyze_results",
       retry_mode = "plain",
-      max_retry = 1,
+      max_retry = 2,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",
@@ -539,7 +539,17 @@ update_local_models <- function(agent_info,
   `%op%` <- par_info$foreach_operator
   
   on.exit(par_end(cl), add = TRUE)
-
+  
+  # test log
+  write_data(
+    x = tibble::tibble(Combo = "Test"),
+    combo = "Best-Model",
+    run_info = project_info,
+    output_type = "data",
+    folder = "logs",
+    suffix = "-Test0"
+  )
+  
   combo_tbl <- tryCatch({
     foreach::foreach(
       combo = local_combo_list,
@@ -552,6 +562,16 @@ update_local_models <- function(agent_info,
       .export = c("list_files"),
       .noexport = NULL
     ) %op% {
+      
+      # test log
+      write_data(
+        x = tibble::tibble(Combo = "Test"),
+        combo = combo,
+        run_info = project_info,
+        output_type = "data",
+        folder = "logs",
+        suffix = "-Test1"
+      )
       
       # get the previous best run for combo
       prev_run <- read_file(agent_info_lean$project_info,
@@ -933,17 +953,28 @@ update_forecast_combo <- function(agent_info,
   }
 
   # get input data for new run
-  input_data <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
+  if(combo == "All-Data") {
+    input_data <- read_file(
+      run_info = project_info,
+      file_list = list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
+        )
+      ),
+      return_type = "df"
+    )
+  } else {
+    input_data <- read_file(
+      run_info = project_info,
+      file_list = paste0(
+        project_info$path, "/input_data/", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  )
+      ) %>% fs::path_tidy(),
+      return_type = "df"
+    )
+  }
 
   # create unique run name
   run_name <- paste0(

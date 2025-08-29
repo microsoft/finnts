@@ -51,8 +51,10 @@ get_forecast_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-    return_type = "df"
+                      file_list = paste0(run_info$path, "/logs/", 
+                                         hash_data(run_info$project_name), "-", 
+                                         hash_data(run_info$run_name), ".csv") %>% fs::path_tidy(),
+                      return_type = "df"
   )
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
@@ -479,7 +481,8 @@ list_files <- function(storage_object,
 
   files <- switch(class(storage_object)[[1]],
     "NULL" = if (grepl("*", file, fixed = TRUE)) {
-      fs::dir_ls(path = dir, glob = file)
+      # fs::dir_ls(path = dir, glob = file)
+      custom_ls(fs::path(dir, file))
     } else {
       path
     },
@@ -782,3 +785,88 @@ condense_data <- function(run_info,
     return(batch)
   }
 }
+
+#' Synapse-aware ls with glob + output style preserved
+#' @param path Character like "/dir/*.csv" or "/synfs/notebook/.../*_models.parquet" or "synfs:/.../*.parquet"
+#' @return character vector of full paths, formatted to match the input's synfs/dbfs style
+#'
+#' @noRd
+custom_ls <- function(path) {
+  stopifnot(is.character(path), length(path) == 1L)
+  
+  dir  <- fs::path_dir(path)
+  glob <- fs::path_file(path)
+  if (!nzchar(glob) || is.na(glob)) glob <- "*"
+  
+  is_synapse_like <- function(p) {
+    grepl("^(synfs:|/synfs|abfss://|dbfs:|/dbfs)", p)
+  }
+  
+  # Non-Synapse: regular local listing
+  if (!is_synapse_like(dir)) {
+    return(fs::dir_ls(path = dir, glob = glob))
+  }
+  
+  # Synapse: list with mssparkutils, then filter client-side
+  res <- try(notebookutils::mssparkutils.fs.ls(dir), silent = TRUE)
+  used_dir <- dir
+  if ((inherits(res, "try-error") || length(res) == 0) && startsWith(dir, "/synfs")) {
+    alt <- sub("^/synfs", "synfs:", dir)
+    res2 <- try(notebookutils::mssparkutils.fs.ls(alt), silent = TRUE)
+    if (!(inherits(res2, "try-error") || length(res2) == 0)) {
+      res <- res2
+      used_dir <- alt
+    }
+  }
+  
+  # Flatten nested list -> tibble -> paths
+  paths <- character(0)
+  if (!(inherits(res, "try-error") || length(res) == 0)) {
+    df <- NULL
+    if (is.list(res)) df <- try(dplyr::bind_rows(res), silent = TRUE)
+    if (is.data.frame(res) && is.null(df)) df <- tibble::as_tibble(res)
+    
+    if (!is.null(df) && nrow(df) > 0) {
+      if ("path" %in% names(df) && any(!is.na(df$path))) {
+        paths <- df$path
+      } else if ("name" %in% names(df)) {
+        paths <- fs::path(used_dir, df$name)
+      }
+    } else if (is.character(res)) {
+      paths <- res
+    }
+  }
+  paths <- as.character(paths)
+  if (!length(paths)) return(paths)
+  
+  # Apply filename glob (wildcards anywhere in the tail)
+  rx <- utils::glob2rx(glob)
+  paths <- paths[grepl(rx, basename(paths))]
+  if (!length(paths)) return(paths)
+  
+  # Restore original synfs/dbfs formatting based on input
+  in_style <- if (grepl("^synfs:", dir)) {
+    "synfs_colon"
+  } else if (grepl("^/synfs", dir)) {
+    "synfs_slash"
+  } else if (grepl("^dbfs:", dir)) {
+    "dbfs_colon"
+  } else if (grepl("^/dbfs", dir)) {
+    "dbfs_slash"
+  } else if (grepl("^abfss://", dir)) {
+    "abfss"
+  } else {
+    "local"
+  }
+  
+  paths <- switch(in_style,
+                  synfs_slash = sub("^synfs:", "/synfs", paths),
+                  synfs_colon = sub("^/synfs", "synfs:", paths),
+                  dbfs_slash  = sub("^dbfs:", "/dbfs", paths),
+                  dbfs_colon  = sub("^/dbfs", "dbfs:", paths),
+                  paths  # abfss/local: no change
+  )
+  
+  paths
+}
+
