@@ -559,7 +559,6 @@ update_local_models <- function(agent_info,
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
-      .export = c("list_files"),
       .noexport = NULL
     ) %op% {
       
