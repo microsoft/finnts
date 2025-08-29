@@ -554,21 +554,14 @@ update_local_models <- function(agent_info,
     foreach::foreach(
       combo = local_combo_list,
       .combine = "rbind",
-      .packages = packages,
+      .packages = unique(packages, "finnts"),
       .errorhandling = "stop",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
     ) %op% {
-      
-      # ensure objects get exported to current environment
-      inner_parallel <- inner_parallel
-      num_cores <- num_cores
-      seed <- seed
-      agent_info_lean <- agent_info_lean
-      prev_run_id <- prev_run_id
-      
+
       # test log
       write_data(
         x = tibble::tibble(Combo = "Test"),
