@@ -567,7 +567,7 @@ update_local_models <- function(agent_info,
       write_data(
         x = tibble::tibble(Combo = "Test"),
         combo = combo,
-        run_info = project_info,
+        run_info = agent_info_lean$project_info,
         output_type = "data",
         folder = "logs",
         suffix = "-Test1"
