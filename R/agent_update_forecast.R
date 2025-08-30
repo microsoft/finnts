@@ -554,7 +554,7 @@ update_local_models <- function(agent_info,
     foreach::foreach(
       combo = local_combo_list,
       .combine = "rbind",
-      .packages = unique(packages, "finnts"),
+      .packages = packages,
       .errorhandling = "stop",
       .verbose = FALSE,
       .inorder = FALSE,
