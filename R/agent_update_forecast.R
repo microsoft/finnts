@@ -533,9 +533,6 @@ update_local_models <- function(agent_info,
     num_cores = num_cores,
     task_length = length(local_combo_list)
   )
-  
-  local_inner_parallel <- inner_parallel
-  local_seed <- seed
 
   cl <- par_info$cl
   packages <- par_info$packages
@@ -592,8 +589,8 @@ update_local_models <- function(agent_info,
           prev_best_run_tbl = prev_run,
           parallel_processing = NULL,
           num_cores = num_cores,
-          inner_parallel = local_inner_parallel,
-          seed = local_seed
+          inner_parallel = inner_parallel,
+          seed = seed
         )
       }, error = function(e) {
         stop(sprintf(
