@@ -121,7 +121,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_global_models",
       `next` = "update_local_models",
       retry_mode = "plain",
-      max_retry = 2,
+      max_retry = 3,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",
@@ -135,7 +135,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_local_models",
       `next` = "analyze_results",
       retry_mode = "plain",
-      max_retry = 0,
+      max_retry = 3,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",
@@ -199,7 +199,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "reconcile_agent_forecast",
       `next` = "stop",
       retry_mode = "plain",
-      max_retry = 0,
+      max_retry = 3,
       args = list(
         agent_info = agent_info,
         project_info = agent_info$project_info,
@@ -539,16 +539,6 @@ update_local_models <- function(agent_info,
   `%op%` <- par_info$foreach_operator
   
   on.exit(par_end(cl), add = TRUE)
-  
-  # test log
-  write_data(
-    x = tibble::tibble(Combo = local_combo_list),
-    combo = "Best-Model",
-    run_info = project_info,
-    output_type = "data",
-    folder = "logs",
-    suffix = "-Test0"
-  )
   
   combo_tbl <- tryCatch({
     foreach::foreach(
