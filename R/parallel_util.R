@@ -23,8 +23,13 @@ par_start <- function(run_info,
                       parallel_processing,
                       num_cores,
                       task_length) {
+  
+  # always drop any previous foreach backend
+  try(foreach::registerDoSEQ(), silent = TRUE)
+  try(doParallel::stopImplicitCluster(), silent = TRUE)  # harmless if none
   cl <- NULL
 
+  # packages to export to cluster
   base_packages <- c(
     "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
     "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
@@ -54,6 +59,7 @@ par_start <- function(run_info,
     add_packages <- c(add_packages, "qs")
   }
 
+  # register cluster
   if (is.null(parallel_processing)) {
     `%op%` <- foreach::`%do%`
 
@@ -66,6 +72,10 @@ par_start <- function(run_info,
     `%op%` <- foreach::`%dopar%`
 
     sparklyr::registerDoSpark(sc, parallelism = task_length)
+    
+    if (!identical(foreach::getDoParName(), "doSpark")) {
+      stop("Failed to register doSpark backend (got: ", foreach::getDoParName(), ")")
+    }
 
     packages <- NULL
   } else if (parallel_processing == "local_machine") {
@@ -99,12 +109,12 @@ par_start <- function(run_info,
 #'
 #' @noRd
 par_end <- function(cl) {
-  foreach::registerDoSEQ()
-
   if (!is.null(cl)) {
     try(parallel::stopCluster(cl), silent = TRUE)
   }
+  foreach::registerDoSEQ()
 }
+
 
 #' Function to clean up after a foreach error when submitting tasks sequentially, in parallel on local machine, or in spark
 #'
@@ -152,4 +162,6 @@ cancel_parallel <- function(par_info) {
   if (parallel_processing == "local_machine") {
     try(parallel::stopCluster(par_info$cl), silent = TRUE)
   }
+  
+  try(foreach::registerDoSEQ(), silent = TRUE)  # final safeguard
 }

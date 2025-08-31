@@ -103,7 +103,7 @@ update_fcst_agent_workflow <- function(agent_info,
 
         # check if initial checks passed
         if (is.data.frame(results)) {
-          return(list(ctx = ctx, `next` = "update_local_models"))
+          return(list(ctx = ctx, `next` = "update_global_models"))
         } else if (results == "no updates required" & forecast_approach == "bottoms_up") {
           # if no updates required, stop the workflow
           cli::cli_alert_info("No model updates required, stopping workflow.")
@@ -119,7 +119,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_global_models = list(
       fn = "update_global_models",
-      `next` = "analyze_results",
+      `next` = "update_local_models",
       retry_mode = "plain",
       max_retry = 2,
       args = list(
@@ -133,7 +133,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_local_models = list(
       fn = "update_local_models",
-      `next` = "update_global_models",
+      `next` = "analyze_results",
       retry_mode = "plain",
       max_retry = 0,
       args = list(
