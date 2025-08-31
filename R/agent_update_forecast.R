@@ -1525,7 +1525,7 @@ fit_models <- function(run_info,
       control = tune::control_resamples(
         allow_par = inner_parallel,
         save_pred = TRUE,
-        pkgs = c(inner_packages, "finnts"),
+        pkgs = inner_packages,
         parallel_over = "everything"
       )
     ) %>%
