@@ -549,61 +549,91 @@ update_local_models <- function(agent_info,
     folder = "logs",
     suffix = "-Test0"
   )
-  print(local_combo_list)
-  print(inner_parallel)
-  print(num_cores)
-  print(seed)
-  stop("stopped")
   
-  combo_tbl <- tryCatch({
-    foreach::foreach(
-      combo = local_combo_list,
-      .combine = "rbind",
-      .packages = packages,
-      .errorhandling = "stop",
-      .verbose = FALSE,
-      .inorder = FALSE,
-      .multicombine = TRUE,
-      .noexport = NULL
-    ) %op% {
-      
-      # get the previous best run for combo
-      prev_run <- read_file(agent_info_lean$project_info,
-                            file_list = paste0(
-                              agent_info_lean$project_info$path, "/logs/", 
-                              hash_data(agent_info_lean$project_info$project_name), "-",
-                              hash_data(prev_run_id), "-", 
-                              hash_data(combo), "-agent_best_run.csv") %>%
-                              fs::path_tidy()
-      )
-      
-      # run update forecast for combo
-      results <- tryCatch({
-        update_forecast_combo(
-          agent_info = agent_info_lean,
-          prev_best_run_tbl = prev_run,
-          parallel_processing = NULL,
-          num_cores = num_cores,
-          inner_parallel = inner_parallel,
-          seed = seed
-        )
-      }, error = function(e) {
-        stop(sprintf(
-          "Combo '%s' failed. Error Message: %s.",
-          combo, e
-        ))
-      })
-      
-      return(data.frame(Combo = hash_data(combo)))
-    } %>% 
-      base::suppressPackageStartupMessages()
-  }, error = function(e) {
-    # hard abort: cancel Spark jobs + stop PSOCK workers immediately
-    cancel_parallel(par_info)
+  # combo_tbl <- tryCatch({
+  #   foreach::foreach(
+  #     combo = local_combo_list,
+  #     .combine = "rbind",
+  #     .packages = packages,
+  #     .errorhandling = "stop",
+  #     .verbose = FALSE,
+  #     .inorder = FALSE,
+  #     .multicombine = TRUE,
+  #     .noexport = NULL
+  #   ) %op% {
+  #     
+  #     # get the previous best run for combo
+  #     prev_run <- read_file(agent_info_lean$project_info,
+  #                           file_list = paste0(
+  #                             agent_info_lean$project_info$path, "/logs/", 
+  #                             hash_data(agent_info_lean$project_info$project_name), "-",
+  #                             hash_data(prev_run_id), "-", 
+  #                             hash_data(combo), "-agent_best_run.csv") %>%
+  #                             fs::path_tidy()
+  #     )
+  #     
+  #     # run update forecast for combo
+  #     results <- tryCatch({
+  #       update_forecast_combo(
+  #         agent_info = agent_info_lean,
+  #         prev_best_run_tbl = prev_run,
+  #         parallel_processing = NULL,
+  #         num_cores = num_cores,
+  #         inner_parallel = inner_parallel,
+  #         seed = seed
+  #       )
+  #     }, error = function(e) {
+  #       stop(sprintf(
+  #         "Combo '%s' failed. Error Message: %s.",
+  #         combo, e
+  #       ))
+  #     })
+  #     
+  #     return(data.frame(Combo = hash_data(combo)))
+  #   } %>% 
+  #     base::suppressPackageStartupMessages()
+  # }, error = function(e) {
+  #   # hard abort: cancel Spark jobs + stop PSOCK workers immediately
+  #   cancel_parallel(par_info)
+  #   
+  #   # still propagate the error so execute_node() can trigger failover/retry
+  #   stop(e)
+  # })
+  
+  combo_tbl <- foreach::foreach(
+    combo = local_combo_list,
+    .combine = "rbind",
+    .packages = packages,
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %op% {
     
-    # still propagate the error so execute_node() can trigger failover/retry
-    stop(e)
-  })
+    # get the previous best run for combo
+    prev_run <- read_file(agent_info_lean$project_info,
+                          file_list = paste0(
+                            agent_info_lean$project_info$path, "/logs/", 
+                            hash_data(agent_info_lean$project_info$project_name), "-",
+                            hash_data(prev_run_id), "-", 
+                            hash_data(combo), "-agent_best_run.csv") %>%
+                            fs::path_tidy()
+    )
+    
+    # run update forecast for combo
+    results <- update_forecast_combo(
+      agent_info = agent_info_lean,
+      prev_best_run_tbl = prev_run,
+      parallel_processing = NULL,
+      num_cores = num_cores,
+      inner_parallel = inner_parallel,
+      seed = seed
+    )
+    
+    return(data.frame(Combo = hash_data(combo)))
+  } %>% 
+    base::suppressPackageStartupMessages()
 
   return("Finished Local Model Update")
 }
