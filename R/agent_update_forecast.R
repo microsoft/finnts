@@ -135,7 +135,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_local_models",
       `next` = "analyze_results",
       retry_mode = "plain",
-      max_retry = 2,
+      max_retry = 0,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",
@@ -542,13 +542,18 @@ update_local_models <- function(agent_info,
   
   # test log
   write_data(
-    x = tibble::tibble(Combo = "Test"),
+    x = tibble::tibble(Combo = local_combo_list),
     combo = "Best-Model",
     run_info = project_info,
     output_type = "data",
     folder = "logs",
     suffix = "-Test0"
   )
+  print(local_combo_list)
+  print(inner_parallel)
+  print(num_cores)
+  print(seed)
+  stop("stopped")
   
   combo_tbl <- tryCatch({
     foreach::foreach(
@@ -561,36 +566,6 @@ update_local_models <- function(agent_info,
       .multicombine = TRUE,
       .noexport = NULL
     ) %op% {
-      
-      # ensure functions are available in the local environment
-      if (inner_parallel) {
-        run_graph <- run_graph
-        execute_node <- execute_node
-        get_run_info <- get_run_info
-        get_forecast_data <- get_forecast_data
-        get_trained_models <- get_trained_models
-        adjust_inputs <- adjust_inputs
-        list_files <- list_files
-        hash_data <- hash_data
-        set_run_info <- set_run_info
-        prep_data <- prep_data
-        prep_models <- prep_models
-        get_prepped_data <- get_prepped_data	
-        get_prepped_models <- get_prepped_models
-        fit_models <- fit_models
-        adjust_forecast <- adjust_forecast
-        log_best_run <- log_best_run
-      }
-
-      # test log
-      write_data(
-        x = tibble::tibble(Combo = "Test"),
-        combo = combo,
-        run_info = agent_info_lean$project_info,
-        output_type = "data",
-        folder = "logs",
-        suffix = "-Test1"
-      )
       
       # get the previous best run for combo
       prev_run <- read_file(agent_info_lean$project_info,
