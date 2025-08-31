@@ -159,7 +159,9 @@ execute_node <- function(node, ctx, chat) {
     # }
     
     # call the function object directly
+    try(doParallel::stopImplicitCluster(), silent = TRUE)
     try(foreach::registerDoSEQ(), silent = TRUE)
+    
     err <- NULL
     result <- tryCatch(
       rlang::exec(tool_fn@fun, !!!(ctx$args %||% list()), .env = .GlobalEnv),
