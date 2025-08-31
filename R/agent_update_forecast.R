@@ -561,6 +561,26 @@ update_local_models <- function(agent_info,
       .multicombine = TRUE,
       .noexport = NULL
     ) %op% {
+      
+      # ensure functions are available in the local environment
+      if (inner_parallel) {
+        run_graph <- run_graph
+        execute_node <- execute_node
+        get_run_info <- get_run_info
+        get_forecast_data <- get_forecast_data
+        get_trained_models <- get_trained_models
+        adjust_inputs <- adjust_inputs
+        list_files <- list_files
+        hash_data <- hash_data
+        set_run_info <- set_run_info
+        prep_data <- prep_data
+        prep_models <- prep_models
+        get_prepped_data <- get_prepped_data	
+        get_prepped_models <- get_prepped_models
+        fit_models <- fit_models
+        adjust_forecast <- adjust_forecast
+        log_best_run <- log_best_run
+      }
 
       # test log
       write_data(
