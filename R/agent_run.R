@@ -164,7 +164,7 @@ execute_node <- function(node, ctx, chat) {
     
     err <- NULL
     result <- tryCatch(
-      rlang::exec(tool_fn@fun, !!!(ctx$args %||% list()), .env = .GlobalEnv),
+      rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
       error = function(e) { err <<- e; NULL }
     )
     if(!is.null(err)) {
