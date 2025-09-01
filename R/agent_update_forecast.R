@@ -543,26 +543,11 @@ update_local_models <- function(agent_info,
   combo_tbl <- tryCatch({
     foreach::foreach(
       combo = local_combo_list,
-      .combine = "rbind",
-      .packages = packages,
-      .errorhandling = "stop",
-      .verbose = FALSE,
-      .inorder = FALSE,
-      .multicombine = TRUE,
-      .noexport = NULL
+      .packages       = packages,
+      .errorhandling  = "stop",
+      .inorder        = FALSE,
+      .multicombine   = TRUE
     ) %op% {
-      
-      object_list <- ls()
-      
-      write_data(
-        x = tibble::tibble(Object = object_list),
-        combo = "Best-Model",
-        run_info = agent_info_lean$project_info,
-        output_type = "data",
-        folder = "logs",
-        suffix = "-objects"
-      )
-      
 
       # get the previous best run for combo
       prev_run <- read_file(agent_info_lean$project_info,
@@ -1077,7 +1062,6 @@ update_forecast_combo <- function(agent_info,
     prev_run_log_tbl = prev_run_log_tbl,
     forecast_horizon = agent_info$forecast_horizon,
     retune_hyperparameters = FALSE,
-    parallel_processing = parallel_processing,
     num_cores = num_cores,
     inner_parallel = inner_parallel,
     seed = seed
@@ -1113,7 +1097,6 @@ update_forecast_combo <- function(agent_info,
       prev_run_log_tbl = prev_run_log_tbl,
       forecast_horizon = agent_info$forecast_horizon,
       retune_hyperparameters = TRUE,
-      parallel_processing = parallel_processing,
       num_cores = num_cores,
       inner_parallel = inner_parallel,
       seed = seed
