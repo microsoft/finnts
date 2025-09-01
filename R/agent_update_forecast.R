@@ -172,7 +172,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     iterate_forecast = list(
       fn = "iterate_forecast",
-      `next` = "stop",
+      `next` = NULL,
       retry_mode = "plain",
       max_retry = 2,
       args = list(
