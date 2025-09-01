@@ -619,6 +619,10 @@ analyze_results <- function(agent_info) {
       call. = FALSE
     )
   }
+  
+  # calculate total time series that should have ran
+  total_combos <- get_total_combos(agent_info) %>%
+    length()
 
   # load previous agent run results (excluding current run)
   prev_agent_run_tbl <- read_file(
@@ -651,8 +655,10 @@ analyze_results <- function(agent_info) {
     temp_run_results <- get_best_agent_run(agent_info = temp_agent_info)
 
     if (nrow(temp_run_results) > 0) {
-      previous_best_run_tbl <- rbind(previous_best_run_tbl, temp_run_results)
-      counter <- counter + 1
+      if(nrow(temp_run_results) == total_combos) { # ensure version finished successfully
+        previous_best_run_tbl <- rbind(previous_best_run_tbl, temp_run_results)
+        counter <- counter + 1
+      }
     }
   }
 
