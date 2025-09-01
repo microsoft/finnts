@@ -457,6 +457,10 @@ update_global_models <- function(agent_info,
     inner_parallel = inner_parallel,
     seed = seed
   )
+  
+  # clean up any clusters
+  try(doParallel::stopImplicitCluster(), silent = TRUE)
+  try(foreach::registerDoSEQ(), silent = TRUE)
 
   return("Finished Global Model Update")
 }
@@ -1657,6 +1661,8 @@ fit_models <- function(run_info,
   }
 
   par_end(inner_cl)
+  try(doParallel::stopImplicitCluster(), silent = TRUE)
+  foreach::registerDoSEQ()
 
   # ensure at least one model ran successfully
   if (is.null(model_tbl)) {

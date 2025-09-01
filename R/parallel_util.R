@@ -25,8 +25,8 @@ par_start <- function(run_info,
                       task_length) {
   
   # always drop any previous foreach backend
-  try(foreach::registerDoSEQ(), silent = TRUE)
   try(doParallel::stopImplicitCluster(), silent = TRUE)  # harmless if none
+  try(foreach::registerDoSEQ(), silent = TRUE)
   cl <- NULL
 
   # packages to export to cluster
