@@ -1664,6 +1664,7 @@ fit_models <- function(run_info,
   }
 
   par_end(inner_cl)
+  rm(inner_cl)
 
   # ensure at least one model ran successfully
   if (is.null(model_tbl)) {
