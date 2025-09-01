@@ -928,7 +928,7 @@ update_forecast_combo <- function(agent_info,
       prep_parallel <- NULL
     } else if (combo == "All-Data" & parallel_processing == "spark") {
       # local parallel process instead of spark on global models
-      parallel_processing <- NULL
+      # parallel_processing <- NULL
       prep_parallel <- "local_machine"
     } else {
       prep_parallel <- parallel_processing
@@ -1664,7 +1664,6 @@ fit_models <- function(run_info,
   }
 
   par_end(inner_cl)
-  rm(inner_cl)
 
   # ensure at least one model ran successfully
   if (is.null(model_tbl)) {
