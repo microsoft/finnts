@@ -68,6 +68,8 @@ par_start <- function(run_info,
     if (!exists("sc")) {
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'")
     }
+    
+    reset_spark()
 
     `%op%` <- foreach::`%dopar%`
 
@@ -142,20 +144,22 @@ cancel_parallel <- function(par_info) {
     }, silent = TRUE)
     
     # reset spark connection
-    conf       <- sc$config
-    master     <- sc$master
-    ver        <- sc$version
-    spark_home <- sc$spark_home
+    # conf       <- sc$config
+    # master     <- sc$master
+    # ver        <- sc$version
+    # spark_home <- sc$spark_home
+    # 
+    # sparklyr::spark_disconnect(sc)
+    # 
+    # assign("sc", sparklyr::spark_connect(master=master, version=ver, spark_home=spark_home, config=conf),
+    #        envir = .GlobalEnv)
+    # 
+    # # check spark session is running
+    # if (!sparklyr::connection_is_open(sc)) {
+    #   stop("Spark session is not open")
+    # }
     
-    sparklyr::spark_disconnect(sc)
-    
-    assign("sc", sparklyr::spark_connect(master=master, version=ver, spark_home=spark_home, config=conf),
-           envir = .GlobalEnv)
-    
-    # check spark session is running
-    if (!sparklyr::connection_is_open(sc)) {
-      stop("Spark session is not open")
-    }
+    reset_spark()
   }
   
   # PSOCK: tear down cluster
@@ -164,4 +168,22 @@ cancel_parallel <- function(par_info) {
   }
   
   try(foreach::registerDoSEQ(), silent = TRUE)  # final safeguard
+}
+
+reset_spark <- function() {
+  # reset spark connection
+  conf       <- sc$config
+  master     <- sc$master
+  ver        <- sc$version
+  spark_home <- sc$spark_home
+  
+  sparklyr::spark_disconnect(sc)
+  
+  assign("sc", sparklyr::spark_connect(master=master, version=ver, spark_home=spark_home, config=conf),
+         envir = .GlobalEnv)
+  
+  # check spark session is running
+  if (!sparklyr::connection_is_open(sc)) {
+    stop("Spark session is not open")
+  }
 }
