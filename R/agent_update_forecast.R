@@ -551,6 +551,18 @@ update_local_models <- function(agent_info,
       .multicombine = TRUE,
       .noexport = NULL
     ) %op% {
+      
+      object_list <- ls()
+      
+      write_data(
+        x = tibble::tibble(Object = object_list),
+        combo = "Best-Model",
+        run_info = agent_info_lean$project_info,
+        output_type = "data",
+        folder = "logs",
+        suffix = "-objects"
+      )
+      
 
       # get the previous best run for combo
       prev_run <- read_file(agent_info_lean$project_info,
@@ -835,10 +847,10 @@ reconcile_agent_forecast <- function(agent_info,
 #' @noRd
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
-                                  parallel_processing = NULL,
-                                  num_cores = NULL,
-                                  inner_parallel = FALSE,
-                                  seed = 123) {
+                                  parallel_processing,
+                                  num_cores,
+                                  inner_parallel,
+                                  seed) {
   # get metadata
   project_info <- agent_info$project_info
 
@@ -928,7 +940,7 @@ update_forecast_combo <- function(agent_info,
       prep_parallel <- NULL
     } else if (combo == "All-Data" & parallel_processing == "spark") {
       # local parallel process instead of spark on global models
-      # parallel_processing <- NULL
+      parallel_processing <- NULL
       prep_parallel <- "local_machine"
     } else {
       prep_parallel <- parallel_processing
@@ -1264,7 +1276,6 @@ update_forecast_combo <- function(agent_info,
 #' @param prev_run_log_tbl A data frame containing the previous run log information, including multistep horizon and forecast horizon.
 #' @param forecast_horizon An integer indicating the forecast horizon to be used for the models.
 #' @param retune_hyperparameters A boolean indicating whether to retune hyperparameters if the initial fit does not meet performance criteria.
-#' @param parallel_processing A string indicating the type of parallel processing to be used (e.g., "local_machine").
 #' @param num_cores An integer indicating the number of cores to be used for parallel processing.
 #' @param inner_parallel A boolean indicating whether to use inner parallel processing.
 #' @param seed An integer seed for reproducibility.
@@ -1279,10 +1290,9 @@ fit_models <- function(run_info,
                        model_hyperparameter_tbl,
                        prev_run_log_tbl,
                        forecast_horizon,
-                       retune_hyperparameters = FALSE,
-                       parallel_processing = NULL,
-                       num_cores = NULL,
-                       inner_parallel = FALSE,
+                       retune_hyperparameters,
+                       num_cores,
+                       inner_parallel,
                        seed = 123) {
   # train each model
   par_info <- par_start(
