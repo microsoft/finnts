@@ -449,41 +449,29 @@ update_global_models <- function(agent_info,
   }
 
   # start forecast update process
-  results <- with_driver_only({
-    update_forecast_combo(
-      agent_info = agent_info,
-      prev_best_run_tbl = previous_best_run_global_tbl,
-      parallel_processing = parallel_processing,
-      num_cores = num_cores,
-      inner_parallel = inner_parallel,
-      seed = seed
-    )
-  })
-  
-  
-  # res <- callr::r(
-  #   function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
-  #     .libPaths(libs)
-  #     # make sure the child has no leftover backend
-  #     try(doParallel::stopImplicitCluster(), silent = TRUE)
-  #     foreach::registerDoSEQ()
-  #     
-  #     # call function
-  #     fn <- getFromNamespace("update_forecast_combo", "finnts")
-  #     
-  #     fn(
-  #       agent_info = agent_info,
-  #       prev_best_run_tbl = previous_best_run_global_tbl,
-  #       parallel_processing = parallel_processing,
-  #       num_cores = num_cores,
-  #       inner_parallel = inner_parallel,
-  #       seed = seed
-  #     )
-  #   },
-  #   args    = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
-  #   libpath = .libPaths(),
-  #   stdout  = "|", stderr = "|", show = TRUE, supervise = TRUE
-  # )
+  results <- callr::r(
+    function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
+      .libPaths(libs)
+      # make sure the child has no leftover backend
+      try(doParallel::stopImplicitCluster(), silent = TRUE)
+      foreach::registerDoSEQ()
+
+      # call function
+      fn <- getFromNamespace("update_forecast_combo", "finnts")
+
+      fn(
+        agent_info = agent_info,
+        prev_best_run_tbl = previous_best_run_global_tbl,
+        parallel_processing = parallel_processing,
+        num_cores = num_cores,
+        inner_parallel = inner_parallel,
+        seed = seed
+      )
+    },
+    args    = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+    libpath = .libPaths(),
+    stdout  = "|", stderr = "|", show = TRUE, supervise = TRUE
+  )
   
   # results <- update_forecast_combo(
   #   agent_info = agent_info,
@@ -1965,27 +1953,4 @@ adjust_inputs <- function(x,
       x
     }
   }
-}
-
-
-with_driver_only <- function(expr) {
-  old_auto <- getOption("foreach.autoexport")
-  old_env  <- Sys.getenv(c("OMP_NUM_THREADS","OPENBLAS_NUM_THREADS","MKL_NUM_THREADS",
-                           "VECLIB_MAXIMUM_THREADS","NUMEXPR_NUM_THREADS"), unset = NA)
-  
-  on.exit({
-    options(foreach.autoexport = old_auto)
-    for (nm in names(old_env)) if (is.na(old_env[[nm]])) Sys.unsetenv(nm) else Sys.setenv(nm = old_env[[nm]])
-    try(doParallel::stopImplicitCluster(), silent = TRUE)
-    foreach::registerDoSEQ()
-  }, add = TRUE)
-  
-  try(doParallel::stopImplicitCluster(), silent = TRUE)
-  foreach::registerDoSEQ()
-  options(foreach.autoexport = FALSE)
-  Sys.setenv(OMP_NUM_THREADS="1", OPENBLAS_NUM_THREADS="1", MKL_NUM_THREADS="1",
-             VECLIB_MAXIMUM_THREADS="1", NUMEXPR_NUM_THREADS="1")
-  if (requireNamespace("RhpcBLASctl", quietly = TRUE)) RhpcBLASctl::blas_set_num_threads(1)
-  
-  force(expr)
 }
