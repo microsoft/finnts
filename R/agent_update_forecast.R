@@ -449,42 +449,54 @@ update_global_models <- function(agent_info,
   }
 
   # start forecast update process
-  results <- callr::r(
-    function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
-      .libPaths(libs)
-      # make sure the child has no leftover backend
-      try(doParallel::stopImplicitCluster(), silent = TRUE)
-      foreach::registerDoSEQ()
-
-      # call function
-      fn <- getFromNamespace("update_forecast_combo", "finnts")
-
-      fn(
-        agent_info = agent_info,
-        prev_best_run_tbl = previous_best_run_global_tbl,
-        parallel_processing = parallel_processing,
-        num_cores = num_cores,
-        inner_parallel = inner_parallel,
-        seed = seed
-      )
-    },
-    args    = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
-    libpath = .libPaths(),
-    stdout  = "|", stderr = "|", show = TRUE, supervise = TRUE
-  )
-  
-  # results <- update_forecast_combo(
-  #   agent_info = agent_info,
-  #   prev_best_run_tbl = previous_best_run_global_tbl,
-  #   parallel_processing = parallel_processing,
-  #   num_cores = num_cores,
-  #   inner_parallel = inner_parallel,
-  #   seed = seed
+  # results <- callr::r(
+  #   function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
+  #     .libPaths(libs)
+  #     # make sure the child has no leftover backend
+  #     try(doParallel::stopImplicitCluster(), silent = TRUE)
+  #     foreach::registerDoSEQ()
+  # 
+  #     # call function
+  #     fn <- getFromNamespace("update_forecast_combo", "finnts")
+  # 
+  #     fn(
+  #       agent_info = agent_info,
+  #       prev_best_run_tbl = previous_best_run_global_tbl,
+  #       parallel_processing = parallel_processing,
+  #       num_cores = num_cores,
+  #       inner_parallel = inner_parallel,
+  #       seed = seed
+  #     )
+  #   },
+  #   args    = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+  #   libpath = .libPaths(),
+  #   stdout  = "|", stderr = "|", show = TRUE, supervise = TRUE
   # )
+  
+  results <- update_forecast_combo(
+    agent_info = agent_info,
+    prev_best_run_tbl = previous_best_run_global_tbl,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    inner_parallel = inner_parallel,
+    seed = seed
+  )
   
   # clean up any clusters
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   try(foreach::registerDoSEQ(), silent = TRUE)
+  
+  # simple foreach loop to reset things
+  dummy_run <- foreach::foreach(
+    x = 1:10,
+    .errorhandling  = "stop",
+    .combine = "rbind",
+    .inorder        = FALSE,
+    .multicombine   = TRUE
+  ) %do% {
+    return(data.frame(Number = x))
+  } %>%
+    base::suppressPackageStartupMessages()
 
   return("Finished Global Model Update")
 }
