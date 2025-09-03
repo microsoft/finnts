@@ -458,7 +458,8 @@ update_global_models <- function(agent_info,
         foreach::registerDoSEQ()
         
         # ensure namespace is fully initialized
-        loadNamespace("finnts", lib.loc = libs)
+        ns <- loadNamespace("finnts", lib.loc = libs)
+        attachNamespace(ns)  # similar effect to library()
         
         # grab function from namespace
         fn <- getFromNamespace("update_forecast_combo", "finnts")
