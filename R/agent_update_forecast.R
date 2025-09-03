@@ -121,7 +121,7 @@ update_fcst_agent_workflow <- function(agent_info,
       fn = "update_global_models",
       `next` = "update_local_models",
       retry_mode = "plain",
-      max_retry = 3,
+      max_retry = 0,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks}",
@@ -456,10 +456,14 @@ update_global_models <- function(agent_info,
         # make sure the child has no leftover backend
         try(doParallel::stopImplicitCluster(), silent = TRUE)
         foreach::registerDoSEQ()
-
-        # call function
+        
+        # ensure namespace is fully initialized
+        loadNamespace("finnts", lib.loc = libs)
+        
+        # grab function from namespace
         fn <- getFromNamespace("update_forecast_combo", "finnts")
-
+        
+        # call function
         fn(
           agent_info = agent_info,
           prev_best_run_tbl = previous_best_run_global_tbl,
