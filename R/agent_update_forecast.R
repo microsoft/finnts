@@ -1558,9 +1558,9 @@ fit_models <- function(run_info,
         parallel_over = "everything"
       )
     ) %>%
-      tune::collect_predictions() %>%
-      base::suppressMessages() %>%
-      base::suppressWarnings()
+      tune::collect_predictions() #%>%
+      # base::suppressMessages() %>%
+      # base::suppressWarnings()
 
     # finalize forecast
     final_fcst <- refit_tbl %>%

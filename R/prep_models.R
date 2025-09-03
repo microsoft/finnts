@@ -477,7 +477,7 @@ model_workflows <- function(run_info,
 
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
-      dplyr::mutate(seasonal_period = ifelse(is.numeric(seasonal_period), as.character(seasonal_period), season_period)) %>%
+      dplyr::mutate(seasonal_period = ifelse(is.numeric(seasonal_period), as.character(seasonal_period), seasonal_period)) %>%
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
