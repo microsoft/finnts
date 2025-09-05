@@ -24,7 +24,7 @@ jobs:
       - uses: r-lib/actions/setup-r@v1
         id: install-r
         with:
-          r-version: '4.1.1'
+          r-version: 'release'
 
       - name: Install dependencies
         run: |
