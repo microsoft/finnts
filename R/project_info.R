@@ -34,8 +34,8 @@
 #'
 #' @return A list of project information
 #' @examples
-#' \donttest{
-#' run_info <- set_project_info(
+#' \dontrun{
+#' project_info <- set_project_info(
 #'   project_name = "test_project",
 #'   combo_variables = c("Store", "Product"),
 #'   target_variable = "Sales",
@@ -238,83 +238,4 @@ set_project_info <- function(project_name = "finn_project",
 
     return(output_list)
   }
-}
-
-#' Get project info
-#'
-#' Lets you get all of the logging associated with a specific project or run.
-#'
-#' @param project_name Name used to group similar runs under a
-#'   single project name.
-#' @param storage_object Used to store outputs during a run to other
-#'   storage services in Azure. Could be a storage container object from
-#'   the 'AzureStor' package to connect to ADLS blob storage or a
-#'   OneDrive/SharePoint object from the 'Microsoft365R' package to connect
-#'   to a OneDrive folder or SharePoint site. Default of NULL will save outputs
-#'   to the local file system.
-#' @param path String showing what file path the outputs should be written to.
-#'   Default of NULL will write the outputs to a temporary directory within R,
-#'   which will delete itself after the R session closes.
-#'
-#' @return Data frame of run log information
-#' @examples
-#' \donttest{
-#' project_info <- set_project_info(
-#'   project_name = "finn_forecast",
-#'   combo_variables = c("Store", "Product"),
-#'   target_variable = "Sales",
-#'   date_type = "month"
-#' )
-#'
-#' project_info_tbl <- get_project_info(
-#'   project_name = "finn_forecast"
-#' )
-#' }
-#' @export
-get_project_info <- function(project_name = NULL,
-                             storage_object = NULL,
-                             path = NULL) {
-  # input checks
-  if (!inherits(project_name, c("NULL", "character"))) {
-    stop("`project_name` must either be a NULL or a string")
-  }
-
-  if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
-    stop("`storage_object` must either be a NULL or a Azure Blob Storage, OneDrive, or SharePoint document library object")
-  }
-
-  if (!inherits(path, c("NULL", "character"))) {
-    stop("`path` must either be a NULL or a string")
-  }
-
-  if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
-    path <- ""
-  }
-
-  # run info formatting
-  if (is.null(project_name)) {
-    project_name_final <- "*"
-  } else {
-    project_name_final <- hash_data(project_name)
-  }
-
-  run_name_final <- "*"
-
-  info_list <- list(
-    storage_object = storage_object,
-    path = path
-  )
-
-  # read run metadata
-  file_path <- paste0(
-    "/logs/*", project_name_final, "-",
-    run_name_final, ".csv"
-  )
-
-  project_tbl <- read_file(info_list,
-    path = file_path,
-    return_type = "df"
-  )
-
-  return(project_tbl)
 }

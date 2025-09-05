@@ -2,7 +2,7 @@
 % Please edit documentation in R/agent_update_forecast.R
 \name{update_forecast}
 \alias{update_forecast}
-\title{Update Forecast Agent}
+\title{Update Forecast with Latest Data and Inputs}
 \usage{
 update_forecast(
   agent_info,
@@ -16,25 +16,88 @@ update_forecast(
 )
 }
 \arguments{
-\item{agent_info}{A list containing the agent information.}
+\item{agent_info}{Agent info from \code{set_agent_info()}}
 
-\item{weighted_mape_goal}{Numeric indicating the goal for the weighted MAPE.}
+\item{weighted_mape_goal}{Weighted MAPE goal the agent is trying to achieve for each time series}
 
-\item{allow_iterate_forecast}{Logical indicating if the forecast iteration should be allowed.}
+\item{allow_iterate_forecast}{Logical indicating if the forecast iteration
+should be allowed if poor performance is detected, meaning >40\% of
+time series with >20\% worse weighted MAPE than previous agent run}
 
-\item{max_iter}{Numeric indicating the maximum number of iterations if iterate_forecast is ran.}
+\item{max_iter}{Numeric indicating the maximum number of iterations
+if iterate_forecast is ran}
 
-\item{parallel_processing}{Logical indicating if parallel processing should be used.}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.}
 
-\item{inner_parallel}{Logical indicating if inner parallel processing should be used.}
+\item{inner_parallel}{Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.}
 
-\item{num_cores}{Numeric indicating the number of cores to use for parallel processing.}
+\item{num_cores}{Number of cores to run when parallel processing is set up.
+Used when running parallel computations on local machine or within Azure.
+Default of NULL uses total amount of cores on machine minus one. Can't be
+greater than number of cores on machine minus 1.}
 
-\item{seed}{Numeric seed for reproducibility.}
+\item{seed}{Set seed for random number generator. Numeric value.}
 }
 \value{
 Nothing
 }
 \description{
 This function updates the forecast agent with the latest data and inputs.
+}
+\examples{
+\dontrun{
+# load example data
+hist_data <- timetk::m4_monthly \%>\%
+  dplyr::filter(date >= "2013-01-01") \%>\%
+  dplyr::rename(Date = date) \%>\%
+  dplyr::mutate(id = as.character(id))
+
+# set up Finn project
+project <- set_project_info(
+  project_name = "Demo_Project",
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month"
+  )
+  
+# set up LLM 
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+  
+# set up agent info
+agent_info <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  input_data = hist_data,
+  forecast_horizon = 6, 
+  hist_end_date = as.Date("2014-12-01")
+ )
+ 
+# run the forecast iteration process
+iterate_forecast(
+  agent_info = agent_info,
+  max_iter = 3,
+  weighted_mape_goal = 0.03
+ )
+ 
+# update the forecast with latest data and inputs
+agent_info <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  input_data = hist_data,
+  forecast_horizon = 6, 
+  hist_end_date = as.Date("2014-12-01"),
+  overwrite = TRUE # required to update the agent for latest data and inputs
+ )
+ 
+update_forecast(
+ agent_info = agent_info,
+ weighted_mape_goal = 0.03
+)
+}
 }

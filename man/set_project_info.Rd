@@ -66,8 +66,8 @@ Creates list object of information helpful in logging information
 about your entire forecast project.
 }
 \examples{
-\donttest{
-run_info <- set_project_info(
+\dontrun{
+project_info <- set_project_info(
   project_name = "test_project",
   combo_variables = c("Store", "Product"),
   target_variable = "Sales",

@@ -15,20 +15,64 @@ iterate_forecast(
 )
 }
 \arguments{
-\item{agent_info}{A list containing the agent information, including project info and LLMs.}
+\item{agent_info}{Agent info from \code{set_agent_info()}}
 
-\item{max_iter}{Maximum number of iterations for the global model optimization.}
+\item{max_iter}{Maximum number of iterations for forecast optimization.}
 
-\item{weighted_mape_goal}{The goal for the weighted MAPE metric.}
+\item{weighted_mape_goal}{Weighted MAPE goal the agent is trying to achieve for each time series}
 
-\item{parallel_processing}{Logical indicating whether to use parallel processing.}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+forecasts each individual time series one after another. 'local_machine'
+leverages all cores on current machine Finn is running on. 'spark'
+runs time series in parallel on a spark cluster in Azure Databricks or
+Azure Synapse.}
 
-\item{inner_parallel}{Logical indicating whether to use inner parallel processing.}
+\item{inner_parallel}{Run components of forecast process inside a specific
+time series in parallel. Can only be used if parallel_processing is
+set to NULL or 'spark'.}
 
-\item{num_cores}{Number of cores to use for parallel processing.}
+\item{num_cores}{Number of cores to run when parallel processing is set up.
+Used when running parallel computations on local machine or within Azure.
+Default of NULL uses total amount of cores on machine minus one. Can't be
+greater than number of cores on machine minus 1.}
 
-\item{seed}{Random seed for reproducibility.}
+\item{seed}{Set seed for random number generator. Numeric value.}
 }
 \description{
-Run the Finn Agent Forecast Iteration Process
+This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
+}
+\examples{
+\dontrun{
+# load example data
+hist_data <- timetk::m4_monthly \%>\%
+  dplyr::filter(date >= "2013-01-01") \%>\%
+  dplyr::rename(Date = date) \%>\%
+  dplyr::mutate(id = as.character(id))
+
+# set up Finn project
+project <- set_project_info(
+  project_name = "Demo_Project",
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month"
+  )
+  
+# set up LLM 
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+  
+# set up agent info
+agent_info <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  input_data = hist_data,
+  forecast_horizon = 6
+ )
+ 
+# run the forecast iteration process
+iterate_forecast(
+  agent_info = agent_info,
+  max_iter = 3,
+  weighted_mape_goal = 0.03
+ )
+}
 }

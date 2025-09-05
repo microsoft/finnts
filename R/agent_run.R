@@ -101,7 +101,7 @@ run_graph <- function(chat,
     res <- execute_node(node, ctx, chat)
     ctx <- res$ctx
     
-    # prevent arg-bleed into the next node’s templates
+    # prevent arg-bleed into the next node's templates
     ctx$args <- NULL # clears retry-modified args
 
     # choose next step
@@ -135,7 +135,7 @@ execute_node <- function(node, ctx, chat) {
   attempt <- 0L
   registry <- chat$get_tools()
 
-  cli::cli_progress_step(sprintf("🔧 Running %s...", tool_name))
+  cli::cli_progress_step(sprintf("Running %s...", tool_name))
 
   repeat {
     # look up tool and call it
@@ -144,19 +144,6 @@ execute_node <- function(node, ctx, chat) {
     }
     
     tool_fn <- registry[[tool_name]]
-    
-    # OLD (fragile; name-string + do.call triggers the bytecode subsetting error)
-    # result <- try(do.call(tool_fn@name, ctx$args %||% list()), silent = TRUE)
-    
-    # call the function object directly
-    # result <- try(rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())), silent = TRUE)
-    # print(result)
-    # # success
-    # if (!inherits(result, "try-error")) {
-    #   ctx$results[[tool_name]] <- result
-    #   ctx$attempts[[tool_name]] <- 0L
-    #   return(list(ctx = ctx, ok = TRUE))
-    # }
     
     # call the function object directly
     try(doParallel::stopImplicitCluster(), silent = TRUE)
@@ -196,7 +183,7 @@ execute_node <- function(node, ctx, chat) {
     if (identical(retry_mode, "plain")) {
       cli::cli_alert_info(
         sprintf(
-          "Tool '%s' failed (attempt %d/%d). Let's try again…",
+          "Tool '%s' failed (attempt %d/%d). Let's try again...",
           tool_name, attempt, max_try+1L
         )
       )

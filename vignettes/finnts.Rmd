@@ -19,7 +19,7 @@ library(finnts)
 
 The finnts package, commonly referred to as "Finn", is a standardized times series forecast framework developed by Microsoft Finance. It's a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.
 
-Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, "forecast_time_series", takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package.
+Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to a an AI agent that can optimize a forecast for you or a few function calls that give you total control over the forecast Finn creates. In order to leverage the best components of Finn, please check out all of the other vignettes within the package.
 
 ```{r, message = FALSE, eval = FALSE}
 library(finnts)
@@ -27,9 +27,9 @@ library(finnts)
 browseVignettes("finnts")
 ```
 
-Getting started with Finn is as simple as 1..2..3
+The easiest way to use Finn is through the built in AI agent. The agent learns about your data and runs experiements to create the most accurate forecast possible. Here's how to get started with the agent. 
 
-## 1. Bring Data
+### 1. Bring Data
 
 Data used in Finn needs to follow a few requirements, called out below.
 
@@ -57,105 +57,90 @@ print(unique(hist_data$id))
 
 The above data set contains 4 individual time series, identified using the "id" column.
 
-## 2. Create Finn Forecast
+### 2. Set Up Agent
 
-Before we call the Finn forecast function. Let's first set up some run information using `set_run_info()`, this helps log all components of our Finn forecast successfully.
+Before any forecasts are created, we need to set up the agent. This is done by setting up a new project with `set_project_info()`, then initialize the agent with `set_agent_info()`. 
 
-```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
-run_info <- set_run_info(
-  project_name = "finn_forecast",
-  run_name = "test_run"
-)
+In order to use the agent, we must first connect it to a LLM using the [ellmer](https://ellmer.tidyverse.org/index.html) package. 
+
+```{r, eval = FALSE}
+# connect to LLM via Azure AI
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 ```
 
-Calling the "forecast_time_series" function is the easiest part. In this example we will be running just two models.
+Now we can use that LLM inside of our agent when setting it up. 
 
-```{r, message = FALSE, eval = hist_data, error=FALSE, warning = FALSE, echo=T, eval = TRUE}
-# no need to assign it to a variable, since all of the outputs are written to disk :)
-forecast_time_series(
-  run_info = run_info,
-  input_data = hist_data,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 3,
-  back_test_scenarios = 6,
-  models_to_run = c("arima", "ets"),
-  return_data = FALSE
-)
+```{r, eval = FALSE}
+# set up new forecast project and agent run
+project <- set_project_info(project_name = "Demo_Project",
+                            combo_variables = c("id"),
+                            target_variable = "value",
+                            date_type = "month")
+                            
+agent <- set_agent_info(project_info = project,
+                        driver_llm = driver_llm,
+                        input_data = hist_data,
+                        forecast_horizon = 12, 
+                        hist_end_date = as.Date("2014-12-01"))
 ```
 
-## 3. Get Forecast Outputs
+### 3. Iterate Forecast
 
-### Initial Finn Outputs
+Once the agent is set up and fed data, we can now have it automatically optimize for the most accurate forecast. The agent will try various combinations of feature engineering techniques, ML algorithms, etc. to create the best forecast. We can give the agent constraints around how many iterations it can try and what accuracy goal it should strive to beat. Let's have it run at most 3 different forecast iterations with an accuracy goal of a 3% weighted MAPE. 
 
-```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
-finn_output_tbl <- get_forecast_data(run_info = run_info)
-
-print(finn_output_tbl)
+```{r, eval = FALSE}
+iterate_forecast(agent_info = agent,
+                 max_iter = 3,
+                 weighted_mape_goal = 0.03)
 ```
 
-### Future Forecast
+### 4. Analyze Forecast Output
 
-```{r, message = FALSE, eval = finn_output, message = FALSE, eval = FALSE, echo=T}
-future_forecast_tbl <- finn_output_tbl %>%
-  dplyr::filter(Run_Type == "Future_Forecast")
+After the agent completes the forecast iteration, we can take a look at the final results. 
 
-print(future_forecast_tbl)
+```{r, eval = FALSE}
+forecast_output <- get_agent_forecast(agent_info = agent)
 ```
 
-### Back Test Results
+Here's a breakdown of the major columns in the Finn forecast output. 
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-back_test_tbl <- finn_output_tbl %>%
-  dplyr::filter(Run_Type == "Back_Test")
+- Combo: Unique identifier of each time series. It's a combination of combo variables defined in `set_project_info()`.
+- Model_ID: Unique identifier of each model used to create the forecast. It's a combination of the columns Model_ID, Model_Type, and Recipe_ID. Multiple models separated by "_" mean that multiple models were averaged together to create the final forecast. 
+- Model_Name: Which model was trained to produce the forecast. 
+- Model_Type: How the model was trained. Models can be trained on a single time series (local), multiple time series (global), or a combination of models via a simple average (simple_average).
+- Recipe_ID: What kind of feature engineering recipe was applied to the data before model training. 
+- Run_Type: Separates what data is the final future forecast (Future_Forecast), historical back testing (Back_Test), and validation used for hyperparameter tuning of specific models (Validation). 
+- Train_Test_ID: Unique ID to separate train test splits during the time series cross-validation process. 
+- Best_Model: Simple flag that shows the most accurate Model_ID per time series. 
+- Horizon: The forecast horizon. 
+- Target: The historical values of the target variable defined in `set_project_info()`.
+- Forecast: Forecast created by the specific Model_ID. 
+- Prediction Intervals: 80% and 95% prediction intervals for the future forecast, created from the back testing results. 
 
-print(back_test_tbl)
+To see which inputs were used by the agent to create the optimal forecast, you can call `get_best_agent_run()`. This allows us to see what kind of feature engineering was applied, as well as what models were chosen to run. More information about the inputs used by the agent in each Finn run iteration can be found in the other vignettes. 
+
+```{r, eval = FALSE}
+agent_run_results <- get_best_agent_run(agent_info = agent, full_run_info = TRUE)
 ```
 
-### Back Test Best Model per Time Series
+### 5. Update Forecast
 
-```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-best_model_tbl <- finn_output_tbl %>%
-  dplyr::filter(Best_Model == "Yes") %>%
-  dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID) %>%
-  dplyr::distinct()
+After the agent runs `iterate_forecast()`, we can use the previously trained models to get updated forecasts with new data. This makes it easy to get updated forecasts fast. 
 
-print(best_model_tbl)
-```
+```{r, eval = FALSE}
+# set up agent with updated data
+# overwrite creates a new version of the agent, which is required when running update_forecast()
+agent <- set_agent_info(project_info = project,
+                        driver_llm = driver_llm,
+                        input_data = hist_data,
+                        forecast_horizon = 6, 
+                        hist_end_date = as.Date("2015-06-01"), 
+                        overwrite = TRUE)
 
-Note: the best model for the "M1" combination is a simple average of "arima" and "ets" models.
+# update forecast
+update_forecast(agent_info = agent,
+                weighted_mape_goal = 0.03)
 
-### Trained Models
-
-```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-trained_model_tbl <- get_trained_models(run_info = run_info)
-
-print(trained_model_tbl)
-```
-
-### Initial Prepped Data
-
-```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-R1_prepped_data_tbl <- get_prepped_data(
-  run_info = run_info,
-  recipe = "R1"
-)
-
-print(R1_prepped_data_tbl)
-
-R2_prepped_data_tbl <- get_prepped_data(
-  run_info = run_info,
-  recipe = "R2"
-)
-
-print(R2_prepped_data_tbl)
-```
-
-### Run Info Metadata
-
-```{r, message = FALSE, eval = finn_output, eval = FALSE, echo=T}
-run_info_tbl <- get_run_info(experiment_name = "finn_forecast")
-
-print(run_info_tbl)
+# get updated forecast output
+updated_forecast_output <- get_agent_forecast(agent_info = agent)
 ```

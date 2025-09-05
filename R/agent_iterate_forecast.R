@@ -1,14 +1,59 @@
 #' Run the Finn Agent Forecast Iteration Process
+#' 
+#' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
 #'
-#' @param agent_info A list containing the agent information, including project info and LLMs.
-#' @param max_iter Maximum number of iterations for the global model optimization.
-#' @param weighted_mape_goal The goal for the weighted MAPE metric.
-#' @param parallel_processing Logical indicating whether to use parallel processing.
-#' @param inner_parallel Logical indicating whether to use inner parallel processing.
-#' @param num_cores Number of cores to use for parallel processing.
-#' @param seed Random seed for reproducibility.
+#' @param agent_info Agent info from `set_agent_info()`
+#' @param max_iter Maximum number of iterations for forecast optimization.
+#' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'   forecasts each individual time series one after another. 'local_machine'
+#'   leverages all cores on current machine Finn is running on. 'spark'
+#'   runs time series in parallel on a spark cluster in Azure Databricks or
+#'   Azure Synapse.
+#' @param inner_parallel Run components of forecast process inside a specific
+#'   time series in parallel. Can only be used if parallel_processing is
+#'   set to NULL or 'spark'.
+#' @param num_cores Number of cores to run when parallel processing is set up.
+#'   Used when running parallel computations on local machine or within Azure.
+#'   Default of NULL uses total amount of cores on machine minus one. Can't be
+#'   greater than number of cores on machine minus 1.
+#' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return NULL
+#' @examples
+#' \dontrun{
+#' # load example data
+#' hist_data <- timetk::m4_monthly %>%
+#'   dplyr::filter(date >= "2013-01-01") %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id))
+#' 
+#' # set up Finn project
+#' project <- set_project_info(
+#'   project_name = "Demo_Project",
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month"
+#'   )
+#'   
+#' # set up LLM 
+#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#'   
+#' # set up agent info
+#' agent_info <- set_agent_info(
+#'   project_info = project,
+#'   driver_llm = driver_llm,
+#'   input_data = hist_data,
+#'   forecast_horizon = 6
+#'  )
+#'  
+#' # run the forecast iteration process
+#' iterate_forecast(
+#'   agent_info = agent_info,
+#'   max_iter = 3,
+#'   weighted_mape_goal = 0.03
+#'  )
+#' }
 #' @export
 iterate_forecast <- function(agent_info,
                              max_iter = 3,
@@ -17,7 +62,7 @@ iterate_forecast <- function(agent_info,
                              inner_parallel = FALSE,
                              num_cores = NULL,
                              seed = 123) {
-  message("[agent] 🏃‍➡️ Starting Forecast Iteration Process")
+  message("[agent] Starting Forecast Iteration Process")
 
   # formatting checks
   check_agent_info(agent_info = agent_info)
@@ -63,7 +108,7 @@ iterate_forecast <- function(agent_info,
 
   # optimize global models
   if (length(combo_list) > 1) {
-    message("[agent] 🌎 Starting Global Model Iteration Workflow")
+    message("[agent] Starting Global Model Iteration Workflow")
 
     # adjust max iterations based on previous runs
     previous_runs <- load_run_results(
@@ -107,7 +152,7 @@ iterate_forecast <- function(agent_info,
       dplyr::pull(combo) %>%
       unique()
   } else {
-    message("[agent] 🌎 Only one time series found. Skipping global model optimization.")
+    message("[agent] Only one time series found. Skipping global model optimization.")
     local_combo_list <- combo_list
   }
 
@@ -115,7 +160,7 @@ iterate_forecast <- function(agent_info,
   if (length(local_combo_list) == 0) {
     message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
   } else {
-    message("[agent] 📊 Starting Local Model Iteration Workflow")
+    message("[agent] Starting Local Model Iteration Workflow")
 
     # adjustments for parallel processing
     if (!is.null(parallel_processing)) {
@@ -149,7 +194,7 @@ iterate_forecast <- function(agent_info,
       .multicombine   = TRUE
     ) %op%
       {
-        message("[agent] 🔄 Running local model optimization for combo: ", x)
+        message("[agent] Running local model optimization for combo: ", x)
 
         # ensure functions are available in the local environment
         if (inner_parallel) {
@@ -235,7 +280,7 @@ iterate_forecast <- function(agent_info,
 
   # reconcile hierarchical forecast
   if (agent_info$forecast_approach != "bottoms_up") {
-    message("[agent] 🪛 Reconciling Hierarchical Forecast")
+    message("[agent] Reconciling Hierarchical Forecast")
 
     reconcile_agent_forecast(
       agent_info = agent_info,
@@ -245,16 +290,58 @@ iterate_forecast <- function(agent_info,
     )
   }
 
-  message("[agent] ✅ Forecast Iteration Process Complete")
+  message("[agent] Forecast Iteration Process Complete")
 }
 
 #' Get the final best forecast for an agent
+#' 
+#' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete.
 #'
-#' @param agent_info A list containing agent information including project info and run ID.
-#' @param parallel_processing Logical indicating if parallel processing should be used.
+#' @param agent_info Agent info from `set_agent_info()`
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'  loads each time series forecast one after another. 'local_machine' leverages
+#'  all cores on current machine Finn is running on. 'spark' runs time series
+#'  in parallel on a spark cluster in Azure Databricks or Azure Synapse.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #'
 #' @return A tibble containing the final forecast for the agent.
+#' @examples
+#' \dontrun{
+#' # load example data
+#' hist_data <- timetk::m4_monthly %>%
+#'   dplyr::filter(date >= "2013-01-01") %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id))
+#' 
+#' # set up Finn project
+#' project <- set_project_info(
+#'   project_name = "Demo_Project",
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month"
+#'   )
+#'   
+#' # set up LLM 
+#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#'   
+#' # set up agent info
+#' agent_info <- set_agent_info(
+#'   project_info = project,
+#'   driver_llm = driver_llm,
+#'   input_data = hist_data,
+#'   forecast_horizon = 6
+#'  )
+#'  
+#' # run the forecast iteration process
+#' iterate_forecast(
+#'   agent_info = agent_info,
+#'   max_iter = 3,
+#'   weighted_mape_goal = 0.03
+#'  )
+#' 
+#' # get the final forecast for the agent
+#' final_forecast <- get_agent_forecast(agent_info = agent_info)
+#' }
 #' @export
 get_agent_forecast <- function(agent_info,
                                parallel_processing = NULL,
@@ -366,13 +453,55 @@ get_agent_forecast <- function(agent_info,
 
 #' Get the best run for an agent
 #'
-#' @param agent_info A list containing agent information including project info and run ID.
+#' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete.
+#' 
+#' @param agent_info Agent info from `set_agent_info()`
 #' @param full_run_info A logical indicating whether to load all input settings
-#'  from each run into the final output table.
-#' @param parallel_processing parallel processing
-#' @param num_cores number of cores
+#'  from each run into the final output table
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'  loads each time series forecast one after another. 'local_machine' leverages
+#'  all cores on current machine Finn is running on. 'spark' runs time series
+#'  in parallel on a spark cluster in Azure Databricks or Azure Synapse.
+#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #'
 #' @return A tibble containing the best run information for the agent.
+#' @examples
+#' \dontrun{
+#' # load example data
+#' hist_data <- timetk::m4_monthly %>%
+#'   dplyr::filter(date >= "2013-01-01") %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id))
+#' 
+#' # set up Finn project
+#' project <- set_project_info(
+#'   project_name = "Demo_Project",
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month"
+#'   )
+#'   
+#' # set up LLM 
+#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#'   
+#' # set up agent info
+#' agent_info <- set_agent_info(
+#'   project_info = project,
+#'   driver_llm = driver_llm,
+#'   input_data = hist_data,
+#'   forecast_horizon = 6
+#'  )
+#'  
+#' # run the forecast iteration process
+#' iterate_forecast(
+#'   agent_info = agent_info,
+#'   max_iter = 3,
+#'   weighted_mape_goal = 0.03
+#'  )
+#' 
+#' # get the best run information for the agent
+#' best_run_info <- get_best_agent_run(agent_info = agent_info, full_run_info = TRUE)
+#' }
 #' @export
 get_best_agent_run <- function(agent_info,
                                full_run_info = FALSE,
@@ -656,7 +785,7 @@ fcst_agent_workflow <- function(agent_info,
     node      = "start",
     iter      = 0, # iteration counter
     max_iter  = max_iter, # loop limit
-    results   = list(), # where each tool’s output will be stored
+    results   = list(), # where each tool's output will be stored
     attempts  = list() # retry bookkeeping for execute_node()
   )
 
@@ -777,11 +906,11 @@ reason_inputs <- function(agent_info,
       Leverage all previous and current info provided to recommend the best inputs to create the most accurate forecast as possible. 
 
       -----LATEST METADATA-----
-      • run count : <<run_count>>
-      • best weighted MAPE from previous runs : <<best_mape>>
-      • best run number from previous runs : <<best_run>>
-      • lag_changes_allowed: <<lag_changes>>
-      • rolling_changes_allowed changes: <<rolling_changes>>
+      - run count : <<run_count>>
+      - best weighted MAPE from previous runs : <<best_mape>>
+      - best run number from previous runs : <<best_run>>
+      - lag_changes_allowed: <<lag_changes>>
+      - rolling_changes_allowed changes: <<rolling_changes>>
 
       -----PREVIOUS RUN RESULTS-----
       <<run_results>>
@@ -1485,14 +1614,14 @@ load_run_results <- function(agent_info,
     best_wmape <- earliest_min$weighted_mape
     best_model <- earliest_min$model_avg_wmape
 
-    # look **after** that for runs whose weighted_mape is within ±10 %
+    # look **after** that for runs whose weighted_mape is within +-10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
     if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
       if (nrow(previous_runs_formatted) > 1) {
         cand <- previous_runs_formatted %>%
           dplyr::filter(
             run_number > best_idx, # later runs only
-            abs(weighted_mape - best_wmape) <= best_wmape * 0.10 # within ±10 %
+            abs(weighted_mape - best_wmape) <= best_wmape * 0.10 # within +-10 %
           )
 
         if (nrow(cand)) {
@@ -1670,7 +1799,7 @@ does_param_set_exist <- function(x, df) {
     dplyr::select(tidyselect::all_of(names(probe))) # select only matching cols
 
   dplyr::semi_join(final_df, probe, by = names(probe)) %>% # keep rows that match
-    nrow() > 0 # TRUE if ≥1 match
+    nrow() > 0 # TRUE if >=1 match
 }
 
 #' Extract JSON object from raw text
@@ -1724,6 +1853,14 @@ null_converter <- function(x) {
   }
 }
 
+#' Create the system prompt for the forecasting agent
+#'
+#' @param agent_info A list containing agent information including project info and run ID.
+#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param weighted_mape_goal A numeric value representing the target weighted MAPE goal for the agent.
+#'
+#' @return A character string containing the system prompt for the agent.
+#' @noRd
 iterate_forecast_system_prompt <- function(agent_info,
                                            combo = NULL,
                                            weighted_mape_goal) {
@@ -1772,48 +1909,48 @@ iterate_forecast_system_prompt <- function(agent_info,
       Finn-API parameters that **lower weighted MAPE** versus all prior runs.
 
       -----INITIAL METADATA-----
-      • combos : <<combo>>
-      • target : <<target>>
-      • date type : <<dtype>>
-      • hist end date : <<hist_end>>
-      • forecast horizon : <<horizon>>
-      • potential external regressors : <<xregs>>
-      • weighted MAPE goal : <<weighted_mape_goal>>
+      - combos : <<combo>>
+      - target : <<target>>
+      - date type : <<dtype>>
+      - hist end date : <<hist_end>>
+      - forecast horizon : <<horizon>>
+      - potential external regressors : <<xregs>>
+      - weighted MAPE goal : <<weighted_mape_goal>>
 
       -----Exploratory Data Analysis-----
       <<eda>>
 
       -----RULES (MUST / MUST NOT)-----
       1.  YOU MUST output exactly one JSON object matching the schema below.
-      2.  YOU MUST include a "reasoning" field with ≤ 250 words.
+      2.  YOU MUST include a "reasoning" field with <= 250 words.
       3.  RUN CHANGE RULES
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
           3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
-      4.  IF data is not stationary → stationary="TRUE".
-      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 → multistep_horizon="TRUE".
+      4.  IF data is not stationary then set stationary="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
-          6-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
-          6-B.  IF no negative values are present → negative_forecast="FALSE".
+          6-A.  IF EDA shows significant amount of negative values then set negative_forecast="TRUE".
+          6-B.  IF no negative values are present then set negative_forecast="FALSE".
       7. HIERARCHICAL RULES
-          7-A. IF run_count == 0 → forecast_approach="bottoms_up"
-          7-B. IF run_count > 0 AND hiearchy type != "none" AND *Step A is complete* → forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-          7-C. IF hiearchy type == "none" → forecast_approach="bottoms_up".
+          7-A. IF run_count == 0 then set forecast_approach="bottoms_up"
+          7-B. IF run_count > 0 AND hiearchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
+          7-C. IF hiearchy type == "none" then set forecast_approach="bottoms_up".
           7-D. You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
           7-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
           7-F. You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
       8. MISSING VALUES RULES
-          8-A. IF missing values are present AND run_count == 0 → clean_missing_values="FALSE"
-          8-B. IF missing values are present AND run_count > 0 AND *Step B is complete* → clean_missing_values="TRUE"
+          8-A. IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
+          8-B. IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
           8-C. ALWAYS use "FALSE" if no missing values are detected
       9. OUTLIER RULES
-          9-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
-          9-B. IF outliers are present AND run_count > 0 AND *Step C is complete* → clean_outliers="TRUE"
+          9-A. IF outliers are present AND run_count == 0 then set clean_outliers="FALSE"
+          9-B. IF outliers are present AND run_count > 0 AND *Step C is complete* then set clean_outliers="TRUE"
           9-C. ALWAYS use "FALSE" if no outliers are detected
       10. EXTERNAL REGRESSOR RULES
           10-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
-          10-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
+          10-B. IF adding external regressors AND run_count == 0 then set external_regressors="NULL"
           10-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run.
           10-D. ALWAYS use "NULL" if no external regressors are needed.
           10-E. ALWAYS start with the most promising external regressors based on distance correlation results.
@@ -1823,16 +1960,16 @@ iterate_forecast_system_prompt <- function(agent_info,
           10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
           10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       11. FEATURE LAG RULES
-          11-A. IF run_count == 0 → lag_periods = "NULL"
-          11-B. IF run_count > 0 AND *Step E is complete* → use ACF and PCF results from EDA to select lag_periods.
+          11-A. IF run_count == 0 then set lag_periods = "NULL"
+          11-B. IF run_count > 0 AND *Step E is complete* -> use ACF and PCF results from EDA to select lag_periods.
           11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
           11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
           11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. ROLLING WINDOW LAGS
-          12-A. IF run_count == 0 → rolling_window_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step F is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
+          12-A. IF run_count == 0 then set rolling_window_periods = "NULL"
+          12-B. IF run_count > 0 AND *Step F is complete* then set rolling_window_periods = "NULL" or a list of periods separated by "---".
           12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
           12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
           12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
@@ -1846,7 +1983,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           include "NULL" or a list of variables separated by "---". NOT both.
       15. DECISION TREE RULES
           15-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-          15-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
+          15-B. YOU MUST stop at the first step where a rule applies that has not been tried.
           15-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
           15-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
       16. ABORT RULES
@@ -1855,16 +1992,16 @@ iterate_forecast_system_prompt <- function(agent_info,
 
       -----ORDER OF OPERATIONS DECISION TREE (Rule 15)-----
       Step A (Previous Version Replay - Rule 13)
-      → Step B (Hierarchy - Rule 7)
-      → Step C (Missing Values - Rule 8)
-      → Step D (Outliers - Rule 9)
-      → Step E (External Regressors - Rule 10)
-      → Step F (Feature Lags - Rule 11)
-      → Step G (Rolling Window Lags - Rule 12)
+      -> Step B (Hierarchy - Rule 7)
+      -> Step C (Missing Values - Rule 8)
+      -> Step D (Outliers - Rule 9)
+      -> Step E (External Regressors - Rule 10)
+      -> Step F (Feature Lags - Rule 11)
+      -> Step G (Rolling Window Lags - Rule 12)
 
       -----OUTPUT FORMAT-----
       <scratchpad>
-      …your chain-of-thought, work through the decision tree, cite Rules #,
+      ...your chain-of-thought, work through the decision tree, cite Rules #,
       compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
       </scratchpad>
       ```json
@@ -1880,12 +2017,12 @@ iterate_forecast_system_prompt <- function(agent_info,
         "multistep_horizon"     : "TRUE|FALSE",
         "lag_periods"           : "NULL|1---2---3",
         "rolling_window_periods" : "NULL|1---2---3",
-        "reasoning"             : "… ≤250 words …"
+        "reasoning"             : "...<=250 words..."
       }
       // ---- abort schema (Rule 16) ----
       {
         "abort"     : "TRUE",
-        "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
+        "reasoning" : "...<=250 words explaining why no further improvement is likely..."
       }
       ```
       -----END OUTPUT-----',
@@ -1911,51 +2048,51 @@ iterate_forecast_system_prompt <- function(agent_info,
       Finn-API parameters that **lower weighted MAPE** versus all prior runs.
 
       -----METADATA-----
-      • combos : <<combo>>
-      • target : <<target>>
-      • date type : <<dtype>>
-      • hist end date : <<hist_end>>
-      • forecast horizon : <<horizon>>
-      • potential external regressors : <<xregs>>
-      • weighted MAPE goal : <<weighted_mape_goal>>
+      - combos : <<combo>>
+      - target : <<target>>
+      - date type : <<dtype>>
+      - hist end date : <<hist_end>>
+      - forecast horizon : <<horizon>>
+      - potential external regressors : <<xregs>>
+      - weighted MAPE goal : <<weighted_mape_goal>>
 
       -----Exploratory Data Analysis-----
       <<eda>>
 
       -----RULES (MUST / MUST NOT)-----
       1.  YOU MUST output exactly one JSON object matching the schema below.
-      2.  YOU MUST include a "reasoning" field with ≤ 250 words.
+      2.  YOU MUST include a "reasoning" field with <= 250 words.
       3.  RUN CHANGE RULES
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
           3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
-      4.  IF data is not stationary → stationary="TRUE".
-      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 → multistep_horizon="TRUE".
+      4.  IF data is not stationary -> stationary="TRUE".
+      5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 -> multistep_horizon="TRUE".
       6.  NEGATIVE FORECAST RULES
-          8-A.  IF EDA shows significant amount of negative values → negative_forecast="TRUE".
-          8-B.  IF no negative values are present → negative_forecast="FALSE".
+          8-A.  IF EDA shows significant amount of negative values -> negative_forecast="TRUE".
+          8-B.  IF no negative values are present -> negative_forecast="FALSE".
       7.  MISSING VALUES RULES
-          10-A. IF missing values are present AND run_count == 0 AND *Step A is complete* → clean_missing_values="FALSE"
-          10-B. IF missing values are present AND run_count > 0 → clean_missing_values="TRUE"
+          10-A. IF missing values are present AND run_count == 0 AND *Step A is complete* -> clean_missing_values="FALSE"
+          10-B. IF missing values are present AND run_count > 0 -> clean_missing_values="TRUE"
           10-C. ALWAYS use "FALSE" if no missing values are detected
       8.  OUTLIER RULES
-          11-A. IF outliers are present AND run_count == 0 → clean_outliers="FALSE"
+          11-A. IF outliers are present AND run_count == 0 -> clean_outliers="FALSE"
           11-C. ALWAYS use "FALSE" if no outliers are detected
       9.  SEASONAL PERIOD RULES
-          9-A. IF run_count == 0 → seasonal_period = "NULL"
-          9-B. IF run_count > 0 AND *Step C is complete* → seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
+          9-A. IF run_count == 0 -> seasonal_period = "NULL"
+          9-B. IF run_count > 0 AND *Step C is complete* -> seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
           9-C. You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
           9-D. A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
           9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
           9-F. Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
       10. FULL MODEL SWEEP RULES
-          10-A. IF run_count == 0 → models_to_run = "arima---meanf---snaive---stlm-arima---tbats---xgboost"
-          10-B. IF run_count > 0 AND *Step D is complete* → models_to_run = "arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost"
-          10-C. AFTER applying rule 10-B, if wmape goal was not met → models_to_run = "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
+          10-A. IF run_count == 0 -> models_to_run = "arima---meanf---snaive---stlm-arima---tbats---xgboost"
+          10-B. IF run_count > 0 AND *Step D is complete* -> models_to_run = "arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost"
+          10-C. AFTER applying rule 10-B, if wmape goal was not met -> models_to_run = "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
       11. EXTERNAL REGRESSOR RULES
           11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
-          11-B. IF adding external regressors AND run_count == 0 → external_regressors="NULL"
+          11-B. IF adding external regressors AND run_count == 0 -> external_regressors="NULL"
           11-C  IF adding external regressors AND run_count > 0 AND *Step E is complete*, add ONLY ONE new external regressor variable per run.
           11-D. ALWAYS use "NULL" if no external regressors are needed.
           11-E. ALWAYS start with the most promising external regressors based on distance correlation results.
@@ -1965,22 +2102,22 @@ iterate_forecast_system_prompt <- function(agent_info,
           11-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
           11-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       12. FEATURE LAG RULES
-          12-A. IF run_count == 0 → lag_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step F is complete* → use ACF and PCF results from EDA to select lag_periods.
+          12-A. IF run_count == 0 -> lag_periods = "NULL"
+          12-B. IF run_count > 0 AND *Step F is complete* -> use ACF and PCF results from EDA to select lag_periods.
           12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
           12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
           12-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
           12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. ROLLING WINDOW LAGS
-          13-A. IF run_count == 0 → rolling_window_periods = "NULL"
-          13-B. IF run_count > 0 AND *Step G is complete* → rolling_window_periods = "NULL" or a list of periods separated by "---".
+          13-A. IF run_count == 0 -> rolling_window_periods = "NULL"
+          13-B. IF run_count > 0 AND *Step G is complete* -> rolling_window_periods = "NULL" or a list of periods separated by "---".
           13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
           13-D. A value of "NULL" means that rolling window lags are dedaulted to <<rolling_default>>.
           13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       14. RECIPE RULES
-          14-A. IF run_count == 0 → recipes_to_run = "R1"
-          14-B. IF run_count > 0 AND *Step H is complete* → recipes_to_run = "NULL" or "R1"
+          14-A. IF run_count == 0 -> recipes_to_run = "R1"
+          14-B. IF run_count > 0 AND *Step H is complete* -> recipes_to_run = "NULL" or "R1"
           14-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
       15. PREVIOUS VERSION REPLAY RULES
           15-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
@@ -1992,7 +2129,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           include "NULL" or a list of variables separated by "---". NOT both.
       17. DECISION TREE RULES
           17-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-          17-B. YOU MUST stop at the first step where a rule applies that hasn’t been tried.
+          17-B. YOU MUST stop at the first step where a rule applies that has not been tried.
           17-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
           17-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
       18. ABORT RULES
@@ -2001,18 +2138,18 @@ iterate_forecast_system_prompt <- function(agent_info,
 
       -----ORDER OF OPERATIONS DECISION TREE (Rule 17)-----
       Step A (Previous Version Replay - Rule 15)
-      → Step B (Missing Values - Rule 7)
-      → Step C (Outliers - Rule 8)
-      → Step D (Seasonal Period - Rule 9)
-      → Step E (Full Model Sweep - Rule 10)
-      → Step F (External Regressors - Rule 11)
-      → Step G (Feature Lags - Rule 12)
-      → Step H (Rolling Window Lags - Rule 13)
-      → Step I (Recipes - Rule 14)
+      -> Step B (Missing Values - Rule 7)
+      -> Step C (Outliers - Rule 8)
+      -> Step D (Seasonal Period - Rule 9)
+      -> Step E (Full Model Sweep - Rule 10)
+      -> Step F (External Regressors - Rule 11)
+      -> Step G (Feature Lags - Rule 12)
+      -> Step H (Rolling Window Lags - Rule 13)
+      -> Step I (Recipes - Rule 14)
 
       -----OUTPUT FORMAT-----
       <scratchpad>
-      …your chain-of-thought, work through the decision tree, cite Rules #,
+      ...your chain-of-thought, work through the decision tree, cite Rules #,
       compare input recommendation to previous runs to prevent duplicates or violate parameter change constraints...
       </scratchpad>
       ```json
@@ -2030,12 +2167,12 @@ iterate_forecast_system_prompt <- function(agent_info,
         "lag_periods"           : "NULL|1---2---3",
         "rolling_window_periods": "NULL|1---2---3",
         "recipes_to_run"        : "R1|NULL",
-        "reasoning"             : "… ≤250 words …"
+        "reasoning"             : "...<=250 words..."
       }
       // ---- abort schema (Rule 18) ----
       {
         "abort"     : "TRUE",
-        "reasoning" : "… ≤250 words explaining why no further improvement is likely …"
+        "reasoning" : "...<=250 words explaining why no further improvement is likely..."
       }
       ```
       -----END OUTPUT-----',

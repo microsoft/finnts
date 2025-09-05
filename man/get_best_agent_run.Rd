@@ -12,18 +12,59 @@ get_best_agent_run(
 )
 }
 \arguments{
-\item{agent_info}{A list containing agent information including project info and run ID.}
+\item{agent_info}{Agent info from \code{set_agent_info()}}
 
 \item{full_run_info}{A logical indicating whether to load all input settings
-from each run into the final output table.}
+from each run into the final output table}
 
-\item{parallel_processing}{parallel processing}
+\item{parallel_processing}{Default of NULL runs no parallel processing and
+loads each time series forecast one after another. 'local_machine' leverages
+all cores on current machine Finn is running on. 'spark' runs time series
+in parallel on a spark cluster in Azure Databricks or Azure Synapse.}
 
-\item{num_cores}{number of cores}
+\item{num_cores}{Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.}
 }
 \value{
 A tibble containing the best run information for the agent.
 }
 \description{
-Get the best run for an agent
+This function retrieves the best run information for a Finn agent after the forecast iteration process is complete.
+}
+\examples{
+\dontrun{
+# load example data
+hist_data <- timetk::m4_monthly \%>\%
+  dplyr::filter(date >= "2013-01-01") \%>\%
+  dplyr::rename(Date = date) \%>\%
+  dplyr::mutate(id = as.character(id))
+
+# set up Finn project
+project <- set_project_info(
+  project_name = "Demo_Project",
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month"
+  )
+  
+# set up LLM 
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+  
+# set up agent info
+agent_info <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  input_data = hist_data,
+  forecast_horizon = 6
+ )
+ 
+# run the forecast iteration process
+iterate_forecast(
+  agent_info = agent_info,
+  max_iter = 3,
+  weighted_mape_goal = 0.03
+ )
+
+# get the best run information for the agent
+best_run_info <- get_best_agent_run(agent_info = agent_info, full_run_info = TRUE)
+}
 }

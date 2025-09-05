@@ -9,7 +9,7 @@
 eda_agent_workflow <- function(agent_info,
                                parallel_processing,
                                num_cores) {
-  message("[agent] 🔎 Starting Exploratory Data Analysis Workflow")
+  message("[agent] Starting Exploratory Data Analysis Workflow")
 
   # construct workflow
   workflow <- list(
@@ -604,12 +604,12 @@ data_profile <- function(agent_info) {
 
   # build summary text
   summary_text <- glue::glue(
-    "Data Profile (≤ {hist_end_date})\n",
+    "Data Profile (up until {hist_end_date})\n",
     "Rows total           : {scales::comma(total_rows)}\n",
     "Distinct series      : {n_series}\n",
     "Rows per series      : min {min_len}, avg {round(avg_len,1)}, max {max_len}\n",
     "Negative Target      : {neg_cnt} rows ({round(neg_pct,2)} %)\n",
-    "Overall date span    : {overall_start} → {overall_end}"
+    "Overall date span    : {overall_start} to {overall_end}"
   )
 
   # log into metadata
@@ -1232,7 +1232,7 @@ outlier_scan <- function(agent_info,
   packages <- par_info$packages # no extra pkgs needed
   `%op%` <- par_info$foreach_operator
 
-  # helper: map date_type → ts() frequency
+  # helper: map date_type to ts() frequency
   freq_map <- c(
     "day"     = 7, # weekly seasonality for daily data
     "week"    = 52,
@@ -1307,7 +1307,7 @@ outlier_scan <- function(agent_info,
       # detect outliers in remainder (MAD-based z > 3)
       med <- stats::median(remainder, na.rm = TRUE)
       madv <- stats::mad(remainder, constant = 1, na.rm = TRUE) # raw MAD
-      z_sc <- abs(remainder - med) / (1.4826 * madv) # 1.4826 ≈ to SD
+      z_sc <- abs(remainder - med) / (1.4826 * madv) # 1.4826 = to SD
       outlier_flag <- z_sc > 3 # 3-sigma rule
 
       # attach flags back to data frame
@@ -1410,7 +1410,7 @@ seasonality_scan <- function(agent_info,
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
-  # helper: map date_type → ts() frequency
+  # helper: map date_type to ts() frequency
   freq_map <- c(
     "day"     = 7, # primary weekly seasonality for daily data
     "week"    = 52,
@@ -1562,7 +1562,7 @@ hierarchy_detect <- function(agent_info,
     return("FAIL: project_info$combo_variables not set.")
   }
 
-  # single-column panel → always “none”
+  # single-column panel = always "none"
   if (length(combo_vars) == 1) {
     if (write_data) {
       entry <- list(
@@ -1581,7 +1581,7 @@ hierarchy_detect <- function(agent_info,
         suffix      = "-hierarchy"
       )
 
-      cli::cli_alert_info("Only one combo column supplied – hierarchy is 'none'.")
+      cli::cli_alert_info("Only one combo column supplied, hierarchy is 'none'.")
       return("Hierarchy detection: none (no hierarchy).")
     } else {
       return("bottoms_up")
