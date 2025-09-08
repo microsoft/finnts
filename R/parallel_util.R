@@ -145,21 +145,6 @@ cancel_parallel <- function(par_info) {
     )
 
     # reset spark connection
-    # conf       <- sc$config
-    # master     <- sc$master
-    # ver        <- sc$version
-    # spark_home <- sc$spark_home
-    #
-    # sparklyr::spark_disconnect(sc)
-    #
-    # assign("sc", sparklyr::spark_connect(master=master, version=ver, spark_home=spark_home, config=conf),
-    #        envir = .GlobalEnv)
-    #
-    # # check spark session is running
-    # if (!sparklyr::connection_is_open(sc)) {
-    #   stop("Spark session is not open")
-    # }
-
     reset_spark()
   }
 

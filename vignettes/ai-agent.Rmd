@@ -14,4 +14,232 @@ knitr::opts_chunk$set(
 )
 ```
 
-To be updated....
+## Why an AI agent in *finnts*?
+
+The AI agent is a **tool-calling orchestration layer** that sits on top of the core *finnts* pipeline. It uses an LLM to:
+
+- run lightweight EDA (missing data, outliers, (P)ACF, seasonality, stationarity),
+- select/adjust **seasonal period**, **feature recipes** (lags, rolling windows, Fourier, date feats),
+- choose **model families** (local vs global; ARIMA/ETS/LM/Tree/GBM/NN, etc.), backtests, and ensembling,
+- optionally **detect and use hierarchies** (bottoms-up, standard, grouped),
+- generate a **reproducible best run** and a consolidated **forecast artifact** you can pull with a single call.
+
+You keep control through a few inputs (data, horizon, optional regressors, performance goal, iteration budget); the agent does the rest.
+
+Core Agent Functions:
+
+- `iterate_forecast()`: Run the agent to iterate toward a best forecast run.
+- `update_forecast()`: Update forecasts with new data, using models trained in previous agent runs, optionally re-invoking the agent if accuracy degrades.
+
+---
+
+## What the agent produces
+
+- A versioned **agent run** (with `agent_version` and `run_id`) and log files.
+- A **best-run table** per time series with metrics.
+- A combined **forecast table** (optionally reconciled if hierarchy is used).
+- Cached EDA outputs to inform later runs.
+
+Use these helpers to retrieve outputs:
+
+- `get_best_agent_run(agent_info, full_run_info = TRUE)`
+- `get_agent_forecast(agent_info, parallel_processing = NULL, num_cores = NULL)`
+
+---
+
+## Prerequisites
+
+- Package: `finnts`  
+- LLM driver: the agent uses an **ellmer** Chat object for tool calling.
+  - Example here shows Azure OpenAI, but any ellmer Chat backend works.
+
+Set up environment variables for Azure OpenAI (example):
+
+```{r eval=FALSE}
+# Sys.setenv(
+#   AZURE_OPENAI_ENDPOINT    = "<your-endpoint>",
+#   AZURE_OPENAI_API_KEY     = "<your-key>",
+#   AZURE_OPENAI_API_VERSION = "<api-version>"
+# )
+```
+
+---
+
+## End-to-end: first run with the AI agent
+
+Below is a complete flow using the built-in M4 monthly sample. 
+
+### 1) Create a project
+
+```{r eval=FALSE}
+library(finnts)
+library(dplyr)
+
+project <- set_project_info(
+  project_name = "ai_agent_demo",
+  path = tempdir(), # or a persistent folder
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month", # day|week|month|quarter|year
+  fiscal_year_start = 1 # fiscal month (1 = Jan)
+)
+```
+
+> Tip: `path` controls where logs/forecasts/EDA artifacts are saved.  
+> Supports local filesystem, Azure Blob (via `AzureStor::blob_container`), or Microsoft 365 drives (`ms365r`) via `storage_object`.
+
+### 2) Bring data
+
+- One row per time series combo/date.
+- A single Date column named `Date` (class `Date`).
+- Target column matches `target_variable`.
+- Optional **external regressors** as extra columns (historical **or historical+future** values, if you want them used in forecasting).
+
+```{r eval=FALSE}
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(date >= as.Date("2013-01-01")) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+```
+
+### 3) Define the LLMs
+
+- `driver_llm`: executes the workflow via tool calling.
+- `reason_llm` (optional): does the chain-of-thought style reasoning / EDA digestion to choose Finn run inputs step-by-step.
+
+```{r eval=FALSE}
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+reason_llm <- ellmer::chat_azure_openai(model = "o4-mini") # can be the same or a more advanced reasoning model
+```
+
+### 4) Create the agent run
+
+```{r eval=FALSE}
+agent <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  reason_llm = reason_llm, # optional but recommended
+  input_data = hist_data,
+  forecast_horizon = 6, # number of future periods
+  external_regressors = NULL, # e.g., c("Price","Promo")
+  allow_hierarchical_forecast = FALSE, # set TRUE to let agent use hierarchies
+  overwrite = TRUE # start a fresh run_id if inputs changed
+)
+```
+
+This writes the versioned inputs into `path/input_data/` (hashed by combo/run) and logs the new `agent_version`/`run_id`.
+
+### 5) Let the agent iterate to a best run
+
+```{r eval=FALSE}
+iterate_forecast(
+  agent_info          = agent,
+  weighted_mape_goal  = 0.05, # your accuracy target of 5%
+  max_iter            = 3, # stop after N iterations if not hitting goal
+)
+```
+
+What happens under the hood:
+
+- Reads cached EDA (or computes it) via the agent’s EDA tools.
+- Chooses **seasonal period**, **missing/outlier** handling, **box-cox/differencing** strategy.
+- Sweeps **models** (local &/or global), backtests, **recipes** (lags/rolling/Fourier/date feats).
+- Optionally enables **external regressors** if they improve WMAPE.
+- Stops early if MWAPE goal met; otherwise iterates (up to `max_iter`).
+
+### 6) Retrieve results
+
+```{r eval=FALSE}
+best_runs <- get_best_agent_run(agent_info = agent, full_run_info = TRUE)
+head(best_runs)
+
+fcst <- get_agent_forecast(agent_info = agent)
+head(fcst)
+```
+
+- `best_runs` summarizes, for each time series combo, the best run inputs when calling the Finn forecast process.
+- `fcst` returns the consolidated forecast table (if hierarchical reconciliation was used, this is the reconciled output).
+
+---
+
+## Updating with new data (production loop)
+
+When you have **new input data**, keep the same project and create a **new agent run** with updated `input_data`. Then call `update_forecast()`:
+
+```{r eval=FALSE}
+# suppose you've appended more months to hist_data:
+hist_data2 <- hist_data %>% dplyr::filter(Date <= as.Date("2016-06-01"))
+
+agent2 <- set_agent_info(
+  project_info = project,
+  driver_llm = driver_llm,
+  reason_llm = reason_llm,
+  input_data = hist_data2,
+  forecast_horizon = 6,
+  overwrite = TRUE # required to create a new agent version when running update_forecast()
+)
+
+update_forecast(
+  agent_info             = agent2,
+  weighted_mape_goal     = 0.05,
+  allow_iterate_forecast = TRUE, # if degradation detected, allow the agent to re-iterate
+  max_iter               = 2 # cap re-iteration cost
+)
+
+updated_fcst <- get_agent_forecast(agent2)
+```
+
+What `update_forecast()` does:
+
+- **Rebuilds global** models first (if used), then updates local series that need it.
+- Compares WMAPE to a trailing baseline of previous runs. If >40% of series are **>20% worse** than the previous run WMAPE, and `allow_iterate_forecast = TRUE`, it will **invoke the iterate loop** (bounded by `max_iter`) to recover accuracy.
+- Re-runs reconciliation if hierarchy is in play.
+
+---
+
+## Hierarchies (optional)
+
+Set `allow_hierarchical_forecast = TRUE` in `set_agent_info()` to let the agent detect:
+
+- *none* → use `bottoms_up` (default),
+- *standard hierarchy* (e.g., Region → Country → SKU),
+- *grouped hierarchy* (crossed dimensions).
+
+When the agent selects a hierarchy, it will:
+- train at the selected aggregate(s),
+- **reconcile** down to the bottom level,
+- produce a **reconciled** `get_agent_forecast()` output.
+
+For background and manual control, see the **“Hierarchical Forecasting”** vignette.
+
+---
+
+## External regressors (xregs)
+
+If you pass `external_regressors = c("Price","Promo", ...)`:
+
+- Provide **historical or historical+future values** (length ≥ horizon) in your `input_data` for the selected columns.
+- The agent will **test** which specific xregs help; if they don’t, it will disable them for that iteration.
+- See the **“External Regressors”** vignette for data prep details.
+
+---
+
+## Parallelism knobs
+
+- `parallel_processing = "local_machine"` runs each time series in parallel across local cores.  
+- `parallel_processing = "spark"` executes combos on an Azure Databricks/Synapse Spark cluster (see **“Parallel Processing”** vignette).  
+- `inner_parallel = TRUE` parallelizes work **inside** a combo (useful when outer parallelism is `NULL` or `"spark"`).  
+- `num_cores = NULL` defaults to *all cores minus one*.
+
+---
+
+## Reading artifacts directly (optional)
+
+You normally won’t need this, but for audits:
+
+- Inputs: `path/input_data/…`
+- EDA:    `path/eda/…`
+- Logs:   `path/logs/…` (includes the hashed `*-agent_run.csv` and `*-agent_best_run.*` for each version)
+- Forecasts: `path/forecasts/…` (condensed, reconciled or per-model outputs)
+
+Use the helpers first; dig into files only if you must.
