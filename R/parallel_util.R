@@ -23,8 +23,12 @@ par_start <- function(run_info,
                       parallel_processing,
                       num_cores,
                       task_length) {
+  # always drop any previous foreach backend
+  try(doParallel::stopImplicitCluster(), silent = TRUE) # harmless if none
+  try(foreach::registerDoSEQ(), silent = TRUE)
   cl <- NULL
 
+  # packages to export to cluster
   base_packages <- c(
     "tibble", "dplyr", "timetk", "hts", "tidyselect", "stringr", "foreach",
     "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
@@ -54,6 +58,7 @@ par_start <- function(run_info,
     add_packages <- c(add_packages, "qs")
   }
 
+  # register cluster
   if (is.null(parallel_processing)) {
     `%op%` <- foreach::`%do%`
 
@@ -63,9 +68,15 @@ par_start <- function(run_info,
       stop("Ensure that you are connected to a spark cluster using an object called 'sc'")
     }
 
+    reset_spark()
+
     `%op%` <- foreach::`%dopar%`
 
     sparklyr::registerDoSpark(sc, parallelism = task_length)
+
+    if (!identical(foreach::getDoParName(), "doSpark")) {
+      stop("Failed to register doSpark backend (got: ", foreach::getDoParName(), ")")
+    }
 
     packages <- NULL
   } else if (parallel_processing == "local_machine") {
@@ -90,7 +101,7 @@ par_start <- function(run_info,
     stop("error")
   }
 
-  return(list(packages = packages, foreach_operator = `%op%`, cl = cl))
+  return(list(packages = packages, foreach_operator = `%op%`, cl = cl, parallel_processing = parallel_processing))
 }
 
 #' Function to clean up after submitting tasks sequentially, in parallel on local machine, or in spark
@@ -99,9 +110,69 @@ par_start <- function(run_info,
 #'
 #' @noRd
 par_end <- function(cl) {
-  foreach::registerDoSEQ()
-
   if (!is.null(cl)) {
-    parallel::stopCluster(cl)
+    try(parallel::stopCluster(cl), silent = TRUE)
+  }
+  foreach::registerDoSEQ()
+}
+
+
+#' Function to clean up after a foreach error when submitting tasks sequentially, in parallel on local machine, or in spark
+#'
+#' @param par_info parallel info
+#'
+#' @noRd
+cancel_parallel <- function(par_info) {
+  if (is.null(par_info$parallel_processing)) {
+    parallel_processing <- "none"
+  } else {
+    parallel_processing <- par_info$parallel_processing
+  }
+
+  # Spark: cancel active jobs immediately (best-effort)
+  if (parallel_processing == "spark") {
+    # drop foreach backend first
+    try(foreach::registerDoSEQ(), silent = TRUE)
+    try(parallel::stopCluster(par_info$cl), silent = TRUE)
+
+    # cancel running jobs
+    try(
+      {
+        sctx <- sparklyr::spark_context(sc)
+        sparklyr::invoke(sctx, "cancelAllJobs")
+      },
+      silent = TRUE
+    )
+
+    # reset spark connection
+    reset_spark()
+  }
+
+  # PSOCK: tear down cluster
+  if (parallel_processing == "local_machine") {
+    try(parallel::stopCluster(par_info$cl), silent = TRUE)
+  }
+
+  try(foreach::registerDoSEQ(), silent = TRUE) # final safeguard
+}
+
+reset_spark <- function() {
+  # reset spark connection
+  conf <- sc$config
+  master <- sc$master
+  ver <- sc$version
+  spark_home <- sc$spark_home
+
+  sparklyr::spark_disconnect(sc)
+
+  fn_env <- .GlobalEnv
+
+  assign("sc", sparklyr::spark_connect(master = master, version = ver, spark_home = spark_home, config = conf),
+    envir = fn_env
+  )
+
+  # check spark session is running
+  if (!sparklyr::connection_is_open(sc)) {
+    stop("Spark session is not open")
   }
 }

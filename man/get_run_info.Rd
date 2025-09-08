@@ -5,15 +5,15 @@
 \title{Get run info}
 \usage{
 get_run_info(
-  experiment_name = NULL,
+  project_name = NULL,
   run_name = NULL,
   storage_object = NULL,
   path = NULL
 )
 }
 \arguments{
-\item{experiment_name}{Name used to group similar runs under a
-single experiment name.}
+\item{project_name}{Name used to group similar runs under a
+single project name.}
 
 \item{run_name}{Name to distinguish one run of Finn from another.
 The current time in UTC is appended to the run name to ensure
@@ -34,17 +34,17 @@ which will delete itself after the R session closes.}
 Data frame of run log information
 }
 \description{
-Lets you get all of the logging associated with a specific experiment or run.
+Lets you get all of the logging associated with a specific project or run.
 }
 \examples{
 \donttest{
 run_info <- set_run_info(
-  experiment_name = "finn_forecast",
+  project_name = "finn_forecast",
   run_name = "test_run"
 )
 
 run_info_tbl <- get_run_info(
-  experiment_name = "finn_forecast"
+  project_name = "finn_forecast"
 )
 }
 }

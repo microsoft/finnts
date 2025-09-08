@@ -82,7 +82,7 @@ train_models <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -110,7 +110,7 @@ train_models <- function(run_info,
   # get model prep info
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = "df"
@@ -118,7 +118,7 @@ train_models <- function(run_info,
 
   model_workflow_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_workflows.", run_info$object_output
     ),
     return_type = "df"
@@ -126,7 +126,7 @@ train_models <- function(run_info,
 
   model_hyperparameter_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_hyperparameters.", run_info$object_output
     ),
     return_type = "df"
@@ -150,11 +150,25 @@ train_models <- function(run_info,
   if (box_cox || stationary) {
     orig_combo_info_tbl <- read_file(run_info,
       path = paste0(
-        "/prep_data/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+        "/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
         "-orig_combo_info.", run_info$data_output
       ),
       return_type = "df"
     )
+
+    # fix potential issues when using vroom to read file
+    if (Inf %in% unique(orig_combo_info_tbl$Combo_Hash) || sum(is.numeric(orig_combo_info_tbl$Combo_Hash)) > 0) {
+      orig_combo_info_tbl <- orig_combo_info_tbl %>%
+        dplyr::rowwise() %>%
+        dplyr::mutate(Combo_Hash = hash_data(Combo)) %>%
+        dplyr::ungroup()
+    }
+
+    # force combo hash to be a character
+    orig_combo_info_tbl <- orig_combo_info_tbl %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(Combo_Hash = as.character(Combo_Hash)) %>%
+      dplyr::ungroup()
   }
 
   # get list of tasks to run
@@ -163,7 +177,7 @@ train_models <- function(run_info,
   all_combo_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -171,7 +185,7 @@ train_models <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::pull(Combo) %>%
     unique()
 
@@ -193,7 +207,7 @@ train_models <- function(run_info,
   prev_combo_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*.", run_info$data_output
     )
   ) %>%
@@ -203,7 +217,7 @@ train_models <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     base::suppressWarnings()
 
   prev_combo_list <- prev_combo_tbl %>%
@@ -293,7 +307,7 @@ train_models <- function(run_info,
           filtered_combo_info_tbl <- orig_combo_info_tbl
         } else {
           filtered_combo_info_tbl <- orig_combo_info_tbl %>%
-            dplyr::filter(Combo_Hash == combo_hash)
+            dplyr::filter(Combo_Hash == as.character(combo_hash))
         }
       }
 
@@ -609,6 +623,12 @@ train_models <- function(run_info,
                       Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                       Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                     )
+                  if ("Target_Original" %in% colnames(x)) {
+                    final_fcst_return <- final_fcst_return %>%
+                      dplyr::mutate(
+                        Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
+                      )
+                  }
                 } else {
                   final_fcst_return <- x
                 }
@@ -625,6 +645,12 @@ train_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
+              if ("Target_Original" %in% colnames(x)) {
+                final_fcst <- final_fcst %>%
+                  dplyr::mutate(
+                    Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)
+                  )
+              }
             }
           }
         }
@@ -711,7 +737,7 @@ train_models <- function(run_info,
   successful_combo_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*.", run_info$data_output
     )
   ) %>%
@@ -721,7 +747,7 @@ train_models <- function(run_info,
     dplyr::rowwise() %>%
     dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
     dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
     base::suppressWarnings()
 
   successful_combos <- 0
@@ -846,8 +872,15 @@ create_splits <- function(data, train_test_splits) {
       test_indices <- which(data$Date > train_end & data$Date <= test_end)
     }
 
+    data_mod <- data
+
+    # use Target_Original for the assessment rows if available
+    if ("Target_Original" %in% base::colnames(data_mod)) {
+      data_mod[test_indices, "Target"] <- data_mod[test_indices, "Target_Original"]
+    }
+
     # Create the split and add it to the list
-    splits[[i]] <- analysis_split(data, train_indices, test_indices)
+    splits[[i]] <- analysis_split(data_mod, train_indices, test_indices)
 
     # Add the ID to the vector
     ids[i] <- as.character(train_test_splits$Train_Test_ID[i])
@@ -922,15 +955,33 @@ undifference_forecast <- function(forecast_data,
         initial_value <- diff1
       }
 
-      # combine historical data with forecast, then undifference and return forecast
-      combined_data <- filtered_recipe_data %>%
-        dplyr::mutate(Forecast = Target) %>%
-        dplyr::select(Date, Target, Forecast) %>%
-        rbind(
-          fcst_temp_tbl %>%
-            dplyr::select(Date, Target, Forecast)
-        ) %>%
-        dplyr::arrange(Date)
+      # combine historical data with forecast (adjust Target_Originals when needed)
+      # then undifference and return forecast
+      if ("Target_Original" %in% colnames(filtered_recipe_data)) {
+        filtered_recipe_data$Target_Original[1] <- NA
+
+        if (!is.na(diff2)) {
+          filtered_recipe_data$Target_Original[2] <- NA
+        }
+        combined_data <- filtered_recipe_data %>%
+          dplyr::mutate(Forecast = Target) %>% # make sure the cleaned target is combined with forecast
+          dplyr::mutate(Target = Target_Original) %>% # make sure the original target is used
+          dplyr::select(Date, Target, Forecast) %>%
+          rbind(
+            fcst_temp_tbl %>%
+              dplyr::select(Date, Target, Forecast)
+          ) %>%
+          dplyr::arrange(Date)
+      } else {
+        combined_data <- filtered_recipe_data %>%
+          dplyr::mutate(Forecast = Target) %>%
+          dplyr::select(Date, Target, Forecast) %>%
+          rbind(
+            fcst_temp_tbl %>%
+              dplyr::select(Date, Target, Forecast)
+          ) %>%
+          dplyr::arrange(Date)
+      }
 
       if (id == 1) {
         target_tbl <- combined_data %>%
@@ -1000,6 +1051,19 @@ undifference_recipe <- function(recipe_data,
     dplyr::filter(Date <= hist_end_date) %>%
     dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
 
+  # undifference Target_Original col if it exists
+  if ("Target_Original" %in% colnames(undiff_recipe_data)) {
+    undiff_recipe_data$Target_Original[1] <- NA
+
+    if (!is.na(diff2)) {
+      undiff_recipe_data$Target_Original[2] <- NA
+    }
+
+    undiff_recipe_data <- undiff_recipe_data %>%
+      dplyr::mutate(Target_Original = timetk::diff_inv_vec(Target_Original, difference = num_diffs, initial_values = initial_value))
+  }
+
+  # combine with future data and return
   future_data <- recipe_data %>%
     dplyr::filter(Date > hist_end_date)
 

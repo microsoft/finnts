@@ -16,7 +16,16 @@ utils::globalVariables(c(
   "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
   "Var_Combo", "regressor", "regressor_tbl", "value_level_iter", ".actual", ".fitted",
   "forecast_horizon", "lag", "new_data", "object", "fit", "Row_Num", "Run_Number", "weight",
-  "Total", "Weight", "batch", "variable", "type"
+  "Total", "Weight", "batch", "variable", "type", "Avg_dCor", "Drop", "Has_Future",
+  "ID", "Lag", "Regressor", "Significant", "Stationary", "Target_Original", "Value",
+  "agent_forecast_approach", "agent_version", "best_run", "best_run_name", "combo",
+  "combo_hash", "created", "dCor", "data_output", "first_outlier_dt", "from",
+  "getFromNamespace", "head", "improvement_pct", "lag_periods", "last_outlier_dt",
+  "latest_weighted_mape", "longest_gap", "missing_count", "missing_pct", "model_avg_wmape",
+  "model_median_wmape", "model_std_wmape", "model_type", "n", "n_parent", "object_output",
+  "outlier_count", "path", "performance_flag", "previous_weighted_mape", "project_name",
+  "rolling_window_periods", "run_name", "run_number", "stationary_adf", "stationary_kpss",
+  "to", "total_rows", "weighted_mape"
 ))
 
 #' @importFrom magrittr %>%
@@ -40,6 +49,8 @@ utils::globalVariables(c(
 #' @importFrom glmnet glmnet
 
 #' @importFrom rules cubist_fit committees max_rules
+
+#' @importFrom stats median
 
 # * cbind.fill custom function ----
 # create function to cbind dataframes that contain different amounts of rows
@@ -81,6 +92,12 @@ cbind.fill <- function(..., fill = NA) {
   maxlength <- max(unlist(lapply(inputs, len)))
   bufferedInputs <- lapply(inputs, buffer, length.out = maxlength, fill, preserveClass = FALSE)
   return(Reduce(cbind.data.frame, bufferedInputs))
+}
+
+get_timestamp <- function() {
+  as.POSIXct(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"),
+    format = "%Y%m%dT%H%M%SZ", tz = "UTC"
+  )
 }
 
 

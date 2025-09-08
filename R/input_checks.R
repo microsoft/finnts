@@ -172,3 +172,29 @@ check_parallel_processing <- function(run_info,
     }
   }
 }
+
+#' Check agent info
+#'
+#' @param agent_info agent info list
+#'
+#' @return nothing
+#' @noRd
+check_agent_info <- function(agent_info) {
+  # check if agent_info is a list
+  if (!is.list(agent_info)) {
+    stop("agent_info should be a list", call. = FALSE)
+  }
+
+  # check if agent_info has required list elements
+  required_elements <- c(
+    "agent_version", "run_id", "project_info", "driver_llm",
+    "reason_llm", "forecast_horizon", "external_regressors",
+    "hist_end_date", "back_test_scenarios", "back_test_spacing",
+    "combo_cleanup_date", "overwrite"
+  )
+  missing_elements <- setdiff(required_elements, names(agent_info))
+
+  if (length(missing_elements) > 0) {
+    stop(paste("agent_info is missing required elements:", paste(missing_elements, collapse = ", ")), call. = FALSE)
+  }
+}

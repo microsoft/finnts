@@ -51,7 +51,11 @@ get_forecast_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    file_list = paste0(
+      run_info$path, "/logs/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), ".csv"
+    ) %>% fs::path_tidy(),
     return_type = "df"
   )
 
@@ -61,7 +65,7 @@ get_forecast_data <- function(run_info,
   # get train test split data
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = return_type
@@ -71,7 +75,7 @@ get_forecast_data <- function(run_info,
 
   # check if data has been condensed
   cond_path <- paste0(
-    run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
 
@@ -86,17 +90,17 @@ get_forecast_data <- function(run_info,
   # get forecast data
   if (forecast_approach != "bottoms_up") {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*reconciled", ".", run_info$data_output
     )
   } else if (condensed) {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
     )
   } else {
     fcst_path <- paste0(
-      "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*models", ".", run_info$data_output
     )
   }
@@ -175,7 +179,7 @@ get_trained_models <- function(run_info) {
 
   # get trained files
   model_path <- paste0(
-    "/models/*", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+    "/models/*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
     "-*_models.", run_info$object_output
   )
 
@@ -232,7 +236,11 @@ get_prepped_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    file_list = paste0(
+      run_info$path, "/logs/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), ".csv"
+    ) %>% fs::path_tidy(),
     return_type = "df"
   )
 
@@ -240,7 +248,7 @@ get_prepped_data <- function(run_info,
 
   # get prepped data
   data_path <- paste0(
-    "/prep_data/*", hash_data(run_info$experiment_name), "-",
+    "/prep_data/*", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
   )
 
@@ -300,20 +308,21 @@ get_prepped_models <- function(run_info) {
 
   # get prepped model info
   data_path <- paste0(
-    "/prep_models/*", hash_data(run_info$experiment_name), "-",
+    run_info$path,
+    "/prep_models/", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name)
   )
 
   train_test_tbl <- read_file(run_info,
-    path = paste0(data_path, "-train_test_split.", run_info$data_output)
+    file_list = paste0(data_path, "-train_test_split.", run_info$data_output) %>% fs::path_tidy()
   )
 
   model_hyperparameters_tbl <- read_file(run_info,
-    path = paste0(data_path, "-model_hyperparameters.", run_info$object_output)
+    file_list = paste0(data_path, "-model_hyperparameters.", run_info$object_output) %>% fs::path_tidy()
   )
 
   model_workflows_tbl <- read_file(run_info,
-    path = paste0(data_path, "-model_workflows.", run_info$object_output)
+    file_list = paste0(data_path, "-model_workflows.", run_info$object_output) %>% fs::path_tidy()
   )
 
   final_tbl <- tibble::tibble(
@@ -365,6 +374,14 @@ write_data <- function(x,
     combo_hash <- paste0("-", hash_data(combo))
   }
 
+  if (is.null(run_info$run_name)) {
+    run_name <- NULL
+  } else {
+    run_name <- hash_data(run_info$run_name)
+  }
+
+  project_name <- hash_data(run_info$project_name)
+
   # write to temp folder
   temp_path <- NULL
 
@@ -372,7 +389,7 @@ write_data <- function(x,
     (inherits(run_info$storage_object, "NULL") & is.null(run_info$path))) {
     fs::dir_create(tempdir(), folder)
 
-    temp_path <- paste0(fs::path(tempdir(), folder), "\\", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), combo_hash, suffix, ".", file_type)
+    temp_path <- paste0(fs::path(tempdir(), folder), "\\", project_name, "-", run_name, combo_hash, suffix, ".", file_type)
 
     write_data_type(x, temp_path, file_type)
   }
@@ -383,7 +400,7 @@ write_data <- function(x,
       fs::dir_create(run_info$path, folder)
     }
 
-    final_path <- paste0(fs::path(run_info$path, folder), "/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), combo_hash, suffix, ".", file_type)
+    final_path <- paste0(fs::path(run_info$path, folder), "/", project_name, "-", run_name, combo_hash, suffix, ".", file_type)
 
     write_data_folder(
       x,
@@ -469,6 +486,7 @@ list_files <- function(storage_object,
   files <- switch(class(storage_object)[[1]],
     "NULL" = if (grepl("*", file, fixed = TRUE)) {
       fs::dir_ls(path = dir, glob = file)
+      # custom_ls(fs::path(dir, file))
     } else {
       path
     },
@@ -644,7 +662,7 @@ get_recipe_data <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -652,7 +670,7 @@ get_recipe_data <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     get_combo(combo) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -662,7 +680,7 @@ get_recipe_data <- function(run_info,
 
     if (nrow(temp_path) > 1) {
       temp_path <- paste0(
-        "/prep_data/*", hash_data(run_info$experiment_name), "-",
+        "/prep_data/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
       )
     } else {
@@ -707,7 +725,7 @@ condense_data <- function(run_info,
   initial_file_list <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*_models.", run_info$data_output
     )
   )
@@ -770,4 +788,92 @@ condense_data <- function(run_info,
 
     return(batch)
   }
+}
+
+#' Synapse-aware ls with glob + output style preserved
+#' @param path Character like "/dir/*.csv" or "/synfs/notebook/.../*_models.parquet" or "synfs:/.../*.parquet"
+#' @return character vector of full paths, formatted to match the input's synfs/dbfs style
+#'
+#' @noRd
+custom_ls <- function(path) {
+  stopifnot(is.character(path), length(path) == 1L)
+
+  dir <- fs::path_dir(path)
+  glob <- fs::path_file(path)
+  if (!nzchar(glob) || is.na(glob)) glob <- "*"
+
+  is_synapse_like <- function(p) {
+    grepl("^(synfs:|/synfs|abfss://|dbfs:|/dbfs)", p)
+  }
+
+  # Non-Synapse: regular local listing
+  if (!is_synapse_like(dir)) {
+    return(fs::dir_ls(path = dir, glob = glob))
+  }
+
+  # Synapse: list with mssparkutils, then filter client-side
+  res <- try(notebookutils::mssparkutils.fs.ls(dir), silent = TRUE)
+  used_dir <- dir
+  if ((inherits(res, "try-error") || length(res) == 0) && startsWith(dir, "/synfs")) {
+    alt <- sub("^/synfs", "synfs:", dir)
+    res2 <- try(notebookutils::mssparkutils.fs.ls(alt), silent = TRUE)
+    if (!(inherits(res2, "try-error") || length(res2) == 0)) {
+      res <- res2
+      used_dir <- alt
+    }
+  }
+
+  # Flatten nested list -> tibble -> paths
+  paths <- character(0)
+  if (!(inherits(res, "try-error") || length(res) == 0)) {
+    df <- NULL
+    if (is.list(res)) df <- try(dplyr::bind_rows(res), silent = TRUE)
+    if (is.data.frame(res) && is.null(df)) df <- tibble::as_tibble(res)
+
+    if (!is.null(df) && nrow(df) > 0) {
+      if ("path" %in% names(df) && any(!is.na(df$path))) {
+        paths <- df$path
+      } else if ("name" %in% names(df)) {
+        paths <- fs::path(used_dir, df$name)
+      }
+    } else if (is.character(res)) {
+      paths <- res
+    }
+  }
+  paths <- as.character(paths)
+  if (!length(paths)) {
+    return(paths)
+  }
+
+  # Apply filename glob (wildcards anywhere in the tail)
+  rx <- utils::glob2rx(glob)
+  paths <- paths[grepl(rx, basename(paths))]
+  if (!length(paths)) {
+    return(paths)
+  }
+
+  # Restore original synfs/dbfs formatting based on input
+  in_style <- if (grepl("^synfs:", dir)) {
+    "synfs_colon"
+  } else if (grepl("^/synfs", dir)) {
+    "synfs_slash"
+  } else if (grepl("^dbfs:", dir)) {
+    "dbfs_colon"
+  } else if (grepl("^/dbfs", dir)) {
+    "dbfs_slash"
+  } else if (grepl("^abfss://", dir)) {
+    "abfss"
+  } else {
+    "local"
+  }
+
+  paths <- switch(in_style,
+    synfs_slash = sub("^synfs:", "/synfs", paths),
+    synfs_colon = sub("^/synfs", "synfs:", paths),
+    dbfs_slash  = sub("^dbfs:", "/dbfs", paths),
+    dbfs_colon  = sub("^/dbfs", "dbfs:", paths),
+    paths # abfss/local: no change
+  )
+
+  paths
 }

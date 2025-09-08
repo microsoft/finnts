@@ -179,18 +179,22 @@ get_back_test_scenario_hist_periods <- function(input_tbl,
 #'   test scenario. Default of NULL moves back 1 period at a time for year,
 #'   quarter, and month data. Moves back 4 for week and 7 for day data.
 #' @param run_ensemble_models If TRUE, prep for ensemble models.
+#' @param model_list List of models to run. Used in agent mode.
+#' @param return If TRUE, returns the train test splits as a tibble
 #'
 #' @return Returns table of train test splits
 #' @noRd
 train_test_split <- function(run_info,
                              back_test_scenarios = NULL,
                              back_test_spacing = NULL,
-                             run_ensemble_models = TRUE) {
+                             run_ensemble_models = TRUE,
+                             model_list = NULL,
+                             return = FALSE) {
   cli::cli_progress_step("Creating Train Test Splits")
 
   # get inputs from previous functions
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -208,15 +212,19 @@ train_test_split <- function(run_info,
   }
 
   # adjust based on models planned to run
-  model_workflow_list <- read_file(run_info,
-    path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
-      "-model_workflows.", run_info$object_output
-    ),
-    return_type = "df"
-  ) %>%
-    dplyr::pull(Model_Name) %>%
-    unique()
+  if (is.null(model_list)) {
+    model_workflow_list <- read_file(run_info,
+      path = paste0(
+        "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+        "-model_workflows.", run_info$object_output
+      ),
+      return_type = "df"
+    ) %>%
+      dplyr::pull(Model_Name) %>%
+      unique()
+  } else {
+    model_workflow_list <- model_list
+  }
 
   # models with hyperparameters to tune
   hyperparam_model_list <- list_hyperparmater_models()
@@ -263,7 +271,7 @@ train_test_split <- function(run_info,
   file_name <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "-*.", run_info$data_output
     )
   )[1]
@@ -387,7 +395,7 @@ train_test_split <- function(run_info,
 
   # update logging file
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   ) %>%
     dplyr::mutate(
@@ -404,6 +412,12 @@ train_test_split <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
+
+  if (return) {
+    return(train_test_final)
+  } else {
+    cli::cli_progress_done()
+  }
 }
 
 #' Gets model workflows
@@ -429,7 +443,7 @@ model_workflows <- function(run_info,
 
   # get inputs
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -451,12 +465,6 @@ model_workflows <- function(run_info,
     # do nothing
   }
 
-  if (is.null(seasonal_period)) {
-    seasonal_period <- get_seasonal_periods(date_type)
-  } else {
-    # do nothing
-  }
-
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
@@ -469,6 +477,7 @@ model_workflows <- function(run_info,
 
     prev_log_df <- log_df %>%
       dplyr::select(colnames(current_log_df)) %>%
+      dplyr::mutate(seasonal_period = ifelse(is.numeric(seasonal_period), as.character(seasonal_period), seasonal_period)) %>%
       data.frame()
 
     if (hash_data(current_log_df) == hash_data(prev_log_df)) {
@@ -487,7 +496,7 @@ model_workflows <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -495,7 +504,7 @@ model_workflows <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -561,6 +570,7 @@ model_workflows <- function(run_info,
   }
 
   for (x in iter_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)) {
+    # get initial data
     model <- x %>%
       dplyr::pull(Model)
 
@@ -572,13 +582,19 @@ model_workflows <- function(run_info,
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
 
+    # adjust data if outliers have been cleaned
+    if ("Target_Original" %in% colnames(recipe_tbl)) {
+      recipe_tbl <- recipe_tbl %>%
+        dplyr::select(-Target_Original)
+    }
+
     # get args to feed into model spec functions
     if (recipe == "R1") {
       avail_arg_list <- list(
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = seasonal_period,
+        "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
         "pca" = pca,
         "multistep" = multistep_horizon,
@@ -589,7 +605,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = seasonal_period,
+        "seasonal_period" = get_seasonal_periods(date_type),
         "model_type" = "single",
         "pca" = pca,
         "multistep" = FALSE,
@@ -672,7 +688,7 @@ model_hyperparameters <- function(run_info,
 
   # check if input values have changed
   log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name), ".csv"),
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
 
@@ -702,7 +718,7 @@ model_hyperparameters <- function(run_info,
   file_name_tbl <- list_files(
     run_info$storage_object,
     paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$experiment_name), "-",
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "*R*.", run_info$data_output
     )
   ) %>%
@@ -710,7 +726,7 @@ model_hyperparameters <- function(run_info,
       Path = .,
       File = fs::path_file(.)
     ) %>%
-    tidyr::separate(File, into = c("Experiment", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
     dplyr::filter(Combo == .$Combo[[1]]) %>%
     dplyr::mutate(Recipe = substr(Recipe, 1, 2))
 
@@ -741,7 +757,7 @@ model_hyperparameters <- function(run_info,
   # get model workflow info
   model_workflow_tbl <- read_file(run_info,
     path = paste0(
-      "/prep_models/", hash_data(run_info$experiment_name), "-", hash_data(run_info$run_name),
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-model_workflows.", run_info$object_output
     ),
     return_type = "df"
@@ -775,6 +791,12 @@ model_hyperparameters <- function(run_info,
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
+
+    # adjust data if outliers have been cleaned
+    if ("Target_Original" %in% names(recipe_features)) {
+      recipe_features <- recipe_features %>%
+        dplyr::select(-Target_Original)
+    }
 
     if (workflows::extract_parameter_set_dials(model_spec) %>% nrow() > 0) {
       if (model == "svm-rbf") {

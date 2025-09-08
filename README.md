@@ -10,6 +10,7 @@
 
 The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is an automated forecasting framework for producing financial forecasts. While it was built for corporate finance activities, it can easily expand to any time series forecasting problem!
 
+-   Built in AI agent that can act as your own virtual data scientist, always optimizing for the most accurate forecast.
 -   Automated feature engineering, feature selection, back testing, and model selection.
 -   Access to 25+ models. Both univariate and multivariate models.
 -   Azure integration to run thousands of time series in parallel within the cloud.
@@ -42,19 +43,28 @@ library(finnts)
 hist_data <- timetk::m4_monthly %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
+  
+# connect LLM
+driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 
-# call main finnts modeling function
-finn_output <- forecast_time_series(
-  input_data = hist_data,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 3,
-  back_test_scenarios = 6, 
-  models_to_run = c("arima", "ets"), 
-  run_global_models = FALSE, 
-  run_model_parallel = FALSE
-)
+# set up new forecast project and agent run
+project <- set_project_info(project_name = "Demo_Project", 
+                            combo_variables = c("id"),
+                            target_variable = "value",
+                            date_type = "month")
+                            
+agent <- set_agent_info(project_info = project,
+                        driver_llm = driver_llm,
+                        input_data = hist_data,
+                        forecast_horizon = 6)
+
+# iterate forecast via agent
+iterate_forecast(agent_info = agent,
+                 max_iter = 3,
+                 weighted_mape_goal = 0.03)
+
+# load final forecast output
+forecast_output <- get_agent_forecast(agent_info = agent)
 ```
 
 ## Contributing

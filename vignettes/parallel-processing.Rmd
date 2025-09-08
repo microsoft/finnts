@@ -49,7 +49,7 @@ hist_data <- timetk::m4_monthly %>%
 data_sdf <- sparklyr::copy_to(sc, hist_data, "data_sdf", overwrite = TRUE)
 
 run_info <- set_run_info(
-  experiment_name = "finn_fcst",
+  project_name = "finn_fcst",
   run_name = "spark_run_1",
   path = "/dbfs/mnt/example/folder" # important that you mount an ADLS path
 )
