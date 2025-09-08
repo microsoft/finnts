@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="feature-selection_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Feature Selection</h1>
@@ -123,7 +126,14 @@
 
     
     
-<p>Finn leverages multiple techniques of feature selection to ensure only the best features are used in individual model training. This speeds up run time while also improving model accuracy. Feature selection can be enabled by setting <code>feature_selection</code> to TRUE in either <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> or <code><a href="../reference/train_models.html">train_models()</a></code>. By default it’s turned off, meaning every feature in each feature engineering recipe will be used in model training.</p>
+<p>Finn leverages multiple techniques of feature selection to ensure
+only the best features are used in individual model training. This
+speeds up run time while also improving model accuracy. Feature
+selection can be enabled by setting <code>feature_selection</code> to
+TRUE in either <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> or
+<code><a href="../reference/train_models.html">train_models()</a></code>. By default it’s turned off, meaning every
+feature in each feature engineering recipe will be used in model
+training.</p>
 <div class="section level2">
 <h2 id="feature-selection-techniques">Feature Selection Techniques<a class="anchor" aria-label="anchor" href="#feature-selection-techniques"></a>
 </h2>
@@ -131,31 +141,62 @@
 <div class="section level3">
 <h3 id="target-correlation">Target Correlation<a class="anchor" aria-label="anchor" href="#target-correlation"></a>
 </h3>
-<p>Removes features that are correlated with the target variable. For daily and weekly data, a correlation filter of 0.2 is applied. For all other date types, a correlation of 0.5 is applied.</p>
+<p>Removes features that are correlated with the target variable. For
+daily and weekly data, a correlation filter of 0.2 is applied. For all
+other date types, a correlation of 0.5 is applied.</p>
 </div>
 <div class="section level3">
 <h3 id="leave-one-feature-out-lofo">Leave One Feature Out (lofo)<a class="anchor" aria-label="anchor" href="#leave-one-feature-out-lofo"></a>
 </h3>
-<p>This is a more complex process where various models (cubist, glmnet, xgboost) are trained on the validation splits of the data. Each round, one feature is held out of the data, and the change in prediction accuracy (RMSE) over the hold out validation data is calculated. If the accuracy gets worse by removing the feature, it gets flagged as an important feature. This is not a recursive feature elimination process, instead only one feature is ever held out at any point in time.</p>
-<p>This technique is used for yearly, quarterly, and monthly data. It’s turned off for daily or weekly data since it would take too long to run properly. If a feature engineering recipe contains more than 250 features, lofo is also turned off to keep runtime low.</p>
+<p>This is a more complex process where various models (cubist, glmnet,
+xgboost) are trained on the validation splits of the data. Each round,
+one feature is held out of the data, and the change in prediction
+accuracy (RMSE) over the hold out validation data is calculated. If the
+accuracy gets worse by removing the feature, it gets flagged as an
+important feature. This is not a recursive feature elimination process,
+instead only one feature is ever held out at any point in time.</p>
+<p>This technique is used for yearly, quarterly, and monthly data. It’s
+turned off for daily or weekly data since it would take too long to run
+properly. If a feature engineering recipe contains more than 250
+features, lofo is also turned off to keep runtime low.</p>
 </div>
 <div class="section level3">
 <h3 id="boruta">Boruta<a class="anchor" aria-label="anchor" href="#boruta"></a>
 </h3>
-<p>Uses the <a href="https://CRAN.R-project.org/package=Boruta" class="external-link">Boruta</a> package. It finds relevant features by comparing original attributes’ importance with importance achievable at random, estimated using their permuted copies (shadows).</p>
-<p>Boruta is not ran for daily or weekly data, in order to save time.</p>
+<p>Uses the <a href="https://CRAN.R-project.org/package=Boruta" class="external-link">Boruta</a> package. It
+finds relevant features by comparing original attributes’ importance
+with importance achievable at random, estimated using their permuted
+copies (shadows).</p>
+<p>Boruta is not ran for daily or weekly data, in order to save
+time.</p>
 </div>
 <div class="section level3">
 <h3 id="model-variable-importance">Model Variable Importance<a class="anchor" aria-label="anchor" href="#model-variable-importance"></a>
 </h3>
-<p>Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the <a href="https://koalaverse.github.io/vip/index.html" class="external-link">vip</a> package. For each model, any feature with a variable importance score above zero is flagged as important.</p>
+<p>Multiple models (cubist, glmnet, ranger) are trained on the entire
+training data. These models are then fed into the variable importance
+function within the <a href="https://koalaverse.github.io/vip/index.html" class="external-link">vip</a> package. For
+each model, any feature with a variable importance score above zero is
+flagged as important.</p>
 </div>
 </div>
 <div class="section level2">
 <h2 id="voting-process">Voting Process<a class="anchor" aria-label="anchor" href="#voting-process"></a>
 </h2>
-<p>Since we use multiple techniques for feature selection, we need to determine how we will use this information to select the final features. This is where the voting process comes in. If a feature gets flagged in one of the above techniques successfully, it gets a vote. If a feature receives enough votes, it is kept and ultimately used when training individual models.</p>
-<p>Daily and weekly data have a voting threshold of 3, meaning a feature needs to get at least 3 votes from 3 separate feature selection techniques in order to be kept. Yearly, quarterly, or monthly data have a voting threshold of 4 (3 if lofo isn’t ran). Each feature needs to get a majority of the votes in order to be kept. This process can reduce up to 50%-95% of features. The final result is keeping all the features that contain the “signal” while discarding all other features that just contain “noise”.</p>
+<p>Since we use multiple techniques for feature selection, we need to
+determine how we will use this information to select the final features.
+This is where the voting process comes in. If a feature gets flagged in
+one of the above techniques successfully, it gets a vote. If a feature
+receives enough votes, it is kept and ultimately used when training
+individual models.</p>
+<p>Daily and weekly data have a voting threshold of 3, meaning a feature
+needs to get at least 3 votes from 3 separate feature selection
+techniques in order to be kept. Yearly, quarterly, or monthly data have
+a voting threshold of 4 (3 if lofo isn’t ran). Each feature needs to get
+a majority of the votes in order to be kept. This process can reduce up
+to 50%-95% of features. The final result is keeping all the features
+that contain the “signal” while discarding all other features that just
+contain “noise”.</p>
 </div>
   </div>
 
@@ -174,7 +215,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

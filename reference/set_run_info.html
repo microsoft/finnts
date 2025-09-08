@@ -24,7 +24,7 @@ about your run."><meta property="og:image" content="https://microsoft.github.io/
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -42,6 +42,9 @@ about your run."><meta property="og:image" content="https://microsoft.github.io/
     <span class="caret"></span>
   </a>
   <ul class="dropdown-menu" role="menu"><li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -102,7 +105,7 @@ about your run.</p>
 
     <div id="ref-usage">
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">set_run_info</span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finn_fcst"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="st">"finn_project"</span>,</span>
 <span>  run_name <span class="op">=</span> <span class="st">"finn_fcst"</span>,</span>
 <span>  storage_object <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  path <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -116,15 +119,13 @@ about your run.</p>
     <h2>Arguments</h2>
 
 
-<dl><dt id="arg-experiment-name">experiment_name<a class="anchor" aria-label="anchor" href="#arg-experiment-name"></a></dt>
+<dl><dt id="arg-project-name">project_name<a class="anchor" aria-label="anchor" href="#arg-project-name"></a></dt>
 <dd><p>Name used to group similar runs under a
-single experiment name.</p></dd>
+single project name.</p></dd>
 
 
 <dt id="arg-run-name">run_name<a class="anchor" aria-label="anchor" href="#arg-run-name"></a></dt>
-<dd><p>Name to distinguish one run of Finn from another.
-The current time in UTC is appended to the run name to ensure
-a unique run name is created.</p></dd>
+<dd><p>Name to distinguish one run of Finn from another.</p></dd>
 
 
 <dt id="arg-storage-object">storage_object<a class="anchor" aria-label="anchor" href="#arg-storage-object"></a></dt>
@@ -170,12 +171,12 @@ multistage ML pipelines.</p></dd>
     <h2>Examples</h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu">set_run_info</span><span class="op">(</span></span></span>
-<span class="r-in"><span>  experiment_name <span class="op">=</span> <span class="st">"test_exp"</span>,</span></span>
+<span class="r-in"><span>  project_name <span class="op">=</span> <span class="st">"test_exp"</span>,</span></span>
 <span class="r-in"><span>  run_name <span class="op">=</span> <span class="st">"test_run_1"</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Experiment Name: test_exp</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: test_run_1-20241029T144928Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: test_exp</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: test_run_1-20250908T181447Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
@@ -192,7 +193,7 @@ multistage ML pipelines.</p></dd>
 </div>
 
 <div class="pkgdown">
-  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer></div>

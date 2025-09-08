@@ -5,6 +5,7 @@
 <url><loc>https://microsoft.github.io/finnts/LICENSE.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/SECURITY.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/SUPPORT.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/articles/ai-agent.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/articles/back-testing-and-hyperparameter-tuning.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/articles/best-model-selection.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/articles/external-regressors.html</loc></url>
@@ -26,6 +27,8 @@
 <url><loc>https://microsoft.github.io/finnts/reference/ensemble_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/final_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/forecast_time_series.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/get_agent_forecast.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/get_best_agent_run.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_forecast_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_models.html</loc></url>
@@ -35,6 +38,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/glmnet_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/glmnet_multistep_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/index.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/iterate_forecast.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/list_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/mars_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/mars_multistep_fit_impl.html</loc></url>
@@ -59,6 +63,8 @@
 <url><loc>https://microsoft.github.io/finnts/reference/print.svm_rbf_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/set_agent_info.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/set_project_info.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/set_run_info.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/svm_poly_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/svm_poly_multistep_fit_impl.html</loc></url>
@@ -79,6 +85,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/update.svm_poly_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.xgboost_multistep.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update_forecast.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_predict_impl.html</loc></url>

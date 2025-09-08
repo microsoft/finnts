@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="models-used-in-finnts_files/accessible-code-block-0.0.1/empty-anchor.js"></script><script src="models-used-in-finnts_files/core-js-2.5.3/shim.min.js"></script><script src="models-used-in-finnts_files/react-18.2.0/react.min.js"></script><script src="models-used-in-finnts_files/react-18.2.0/react-dom.min.js"></script><script src="models-used-in-finnts_files/reactwidget-2.0.0/react-tools.js"></script><link href="models-used-in-finnts_files/htmltools-fill-0.5.8.1/fill.css" rel="stylesheet">
+      </header><script src="models-used-in-finnts_files/core-js-2.5.3/shim.min.js"></script><script src="models-used-in-finnts_files/react-18.2.0/react.min.js"></script><script src="models-used-in-finnts_files/react-18.2.0/react-dom.min.js"></script><script src="models-used-in-finnts_files/reactwidget-2.0.0/react-tools.js"></script><link href="models-used-in-finnts_files/htmltools-fill-0.5.8.1/fill.css" rel="stylesheet">
 <script src="models-used-in-finnts_files/htmlwidgets-1.6.4/htmlwidgets.js"></script><link href="models-used-in-finnts_files/reactable-0.4.4/reactable.css" rel="stylesheet">
 <script src="models-used-in-finnts_files/reactable-binding-0.4.4/reactable.js"></script><div class="row">
   <div class="col-md-9 contents">
@@ -130,27 +133,50 @@
 <h3 id="univariate-vs-multivariate-models">Univariate vs Multivariate Models<a class="anchor" aria-label="anchor" href="#univariate-vs-multivariate-models"></a>
 </h3>
 <ul>
-<li><p><strong>Univariate models</strong> only use the date and target variable values when producing a forecast. They are mostly common on various statistical forecasting models like arima and ets.</p></li>
-<li><p><strong>Multivariate models</strong> leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter “R” followed by a number like “1” or “2”. More info can be found in the feature engineering vignette.</p></li>
+<li><p><strong>Univariate models</strong> only use the date and target
+variable values when producing a forecast. They are mostly common on
+various statistical forecasting models like arima and ets.</p></li>
+<li><p><strong>Multivariate models</strong> leverage many features when
+producing a forecast, provided as input data before model training.
+These features can be automatically created using internal feature
+engineering techniques within the package, or provided as external
+regressors. Most common machine learning models today, like xgboost and
+cubist, are multivariate models. An important thing to note is that
+multivariate models provided in the package can leverage different
+recipes of feature engineering, that contain different techniques of
+creating features. These can be identified by seeing the letter “R”
+followed by a number like “1” or “2”. More info can be found in the
+feature engineering vignette.</p></li>
 </ul>
 </div>
 <div class="section level3">
 <h3 id="global-vs-local-models">Global vs Local Models<a class="anchor" aria-label="anchor" href="#global-vs-local-models"></a>
 </h3>
 <ul>
-<li><p><strong>Global models</strong> take the entire data set across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series.</p></li>
-<li><p><strong>Local models</strong> take each individual time series from the input data and model them separately.</p></li>
+<li><p><strong>Global models</strong> take the entire data set across
+all individual time series and model them all at once within a single
+model. Global models are only ran if the input data contains more than
+one individual time series.</p></li>
+<li><p><strong>Local models</strong> take each individual time series
+from the input data and model them separately.</p></li>
 </ul>
 </div>
 <div class="section level3">
 <h3 id="ensemble-models">Ensemble Models<a class="anchor" aria-label="anchor" href="#ensemble-models"></a>
 </h3>
-<p>Ensemble models are trained on predictions made by individual models. For example, a glmnet ensemble model takes forecasts made by each individual model and feeds them as training data into a glmnet model.</p>
+<p>Ensemble models are trained on predictions made by individual models.
+For example, a glmnet ensemble model takes forecasts made by each
+individual model and feeds them as training data into a glmnet
+model.</p>
 </div>
 <div class="section level3">
 <h3 id="multistep-horizon-models">Multistep Horizon Models<a class="anchor" aria-label="anchor" href="#multistep-horizon-models"></a>
 </h3>
-<p>By default within <code><a href="../reference/prep_models.html">prep_models()</a></code>, the <code>multistep_horizon</code> argument is set to FALSE. If set to TRUE, a multistep horizon approach is taken for specific multivariate models trained on the R1 feature engineering recipe. Below are the models that can run as multistep.</p>
+<p>By default within <code><a href="../reference/prep_models.html">prep_models()</a></code>, the
+<code>multistep_horizon</code> argument is set to FALSE. If set to TRUE,
+a multistep horizon approach is taken for specific multivariate models
+trained on the R1 feature engineering recipe. Below are the models that
+can run as multistep.</p>
 <ul>
 <li>cubist</li>
 <li>glmnet</li>
@@ -159,13 +185,41 @@
 <li>svm-rbf</li>
 <li>xgboost</li>
 </ul>
-<p>A multistep model optimizes for each period in a forecast horizon. Let’s take an example of a monthly data set with a forecast horizon of 3. When creating the features for the R1 recipe, finnts will create lags of 1, 2, 3, 6, 9, 12 months. Then when training a multistep model it will iteratively use specific features to train the model. First it will train a model on the first forecast horizon (H1), where it will use all available feature lags. Then for H2 it will use lags of 2 or more. Finally for H3 it will use lags of 3 or more. So the final model is actually a collection of multiple models that each trained on a specific horizon. This lets the model optimize for using all available data when creating the forecast. So in our example, one glmnet model actually has three separate horizon specific models under the hood.</p>
-<p>A few more things to mention. If <code>multistep_horizon</code> is TRUE then other multivariate models like arima-boost or prophet-xregs will not run a multistep horizon approach. Instead they will use lags that are equal to or greater than the forecast horizon. One set of hyperparameters will be chosen for each multistep model, meaning glmnet will only use one combination of final hyperparameters and apply it to each horizon model. Multistep models are not ran for the R2 recipe, since it has it’s own way of dealing with multiple horizons. Finally if <code>feature_selection</code> is turned on, it will be ran for each horizon specific model, meaning for a 3 month forecast horizon the feature selection process will be ran 3 times. One for each combination of features tied to a specific horizon.</p>
+<p>A multistep model optimizes for each period in a forecast horizon.
+Let’s take an example of a monthly data set with a forecast horizon of
+3. When creating the features for the R1 recipe, finnts will create lags
+of 1, 2, 3, 6, 9, 12 months. Then when training a multistep model it
+will iteratively use specific features to train the model. First it will
+train a model on the first forecast horizon (H1), where it will use all
+available feature lags. Then for H2 it will use lags of 2 or more.
+Finally for H3 it will use lags of 3 or more. So the final model is
+actually a collection of multiple models that each trained on a specific
+horizon. This lets the model optimize for using all available data when
+creating the forecast. So in our example, one glmnet model actually has
+three separate horizon specific models under the hood.</p>
+<p>A few more things to mention. If <code>multistep_horizon</code> is
+TRUE then other multivariate models like arima-boost or prophet-xregs
+will not run a multistep horizon approach. Instead they will use lags
+that are equal to or greater than the forecast horizon. One set of
+hyperparameters will be chosen for each multistep model, meaning glmnet
+will only use one combination of final hyperparameters and apply it to
+each horizon model. Multistep models are not ran for the R2 recipe,
+since it has it’s own way of dealing with multiple horizons. Finally if
+<code>feature_selection</code> is turned on, it will be ran for each
+horizon specific model, meaning for a 3 month forecast horizon the
+feature selection process will be ran 3 times. One for each combination
+of features tied to a specific horizon.</p>
 </div>
 <div class="section level2">
 <h2 id="leveraging-the-tidymodels-framework">Leveraging the Tidymodels Framework<a class="anchor" aria-label="anchor" href="#leveraging-the-tidymodels-framework"></a>
 </h2>
-<p>Most of the models within the package are built on a fantastic time series library called <a href="https://business-science.github.io/modeltime/" class="external-link">modeltime</a>, which was built on top <a href="https://www.tidymodels.org/" class="external-link">tidymodels</a>. Tidymodels is a fantastic series of packages that help in feature engineering (recipes), hyperparameter tuning (tune), model training (parsnip), and back testing (resample). Big shout out to the modeltime and tidymodels teams for being the shoulders this package stands on!</p>
+<p>Most of the models within the package are built on a fantastic time
+series library called <a href="https://business-science.github.io/modeltime/" class="external-link">modeltime</a>,
+which was built on top <a href="https://www.tidymodels.org/" class="external-link">tidymodels</a>. Tidymodels is a
+fantastic series of packages that help in feature engineering (recipes),
+hyperparameter tuning (tune), model training (parsnip), and back testing
+(resample). Big shout out to the modeltime and tidymodels teams for
+being the shoulders this package stands on!</p>
 </div>
   </div>
 
@@ -184,7 +238,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

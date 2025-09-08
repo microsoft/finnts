@@ -24,7 +24,7 @@ splits, creating hyperparameters, etc."><meta property="og:image" content="https
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -42,6 +42,9 @@ splits, creating hyperparameters, etc."><meta property="og:image" content="https
     <span class="caret"></span>
   </a>
   <ul class="dropdown-menu" role="menu"><li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,6 +113,7 @@ splits, creating hyperparameters, etc.</p>
 <span>  run_ensemble_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  pca <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  num_hyperparameters <span class="op">=</span> <span class="fl">10</span>,</span>
+<span>  seasonal_period <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  seed <span class="op">=</span> <span class="fl">123</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -119,7 +123,7 @@ splits, creating hyperparameters, etc.</p>
 
 
 <dl><dt id="arg-run-info">run_info<a class="anchor" aria-label="anchor" href="#arg-run-info"></a></dt>
-<dd><p>run info using the <code><a href="set_run_info.html">set_run_info()</a></code> function.</p></dd>
+<dd><p>Run info using the <code><a href="set_run_info.html">set_run_info()</a></code> function.</p></dd>
 
 
 <dt id="arg-back-test-scenarios">back_test_scenarios<a class="anchor" aria-label="anchor" href="#arg-back-test-scenarios"></a></dt>
@@ -156,8 +160,12 @@ across all date types.</p></dd>
 
 
 <dt id="arg-num-hyperparameters">num_hyperparameters<a class="anchor" aria-label="anchor" href="#arg-num-hyperparameters"></a></dt>
-<dd><p>number of hyperparameter combinations to test
+<dd><p>Number of hyperparameter combinations to test
 out on validation data for model tuning.</p></dd>
+
+
+<dt id="arg-seasonal-period">seasonal_period<a class="anchor" aria-label="anchor" href="#arg-seasonal-period"></a></dt>
+<dd><p>List of numbers to be used for seasonal periods in specific univariate models like tbats.</p></dd>
 
 
 <dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
@@ -172,7 +180,7 @@ out on validation data for model tuning.</p></dd>
     <div id="ref-examples">
     <h2>Examples</h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="co"># \donttest{</span></span></span>
-<span class="r-in"><span><span class="va">data_tbl</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span></span>
+<span class="r-in"><span><span class="va">data_tbl</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span></span>
 <span class="r-in"><span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span></span>
 <span class="r-in"><span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span></span>
 <span class="r-in"><span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span></span></span>
@@ -182,8 +190,8 @@ out on validation data for model tuning.</p></dd>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Experiment Name: finn_fcst</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20241029T144922Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: finn_project</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20250908T181441Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_data.html">prep_data</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -194,20 +202,20 @@ out on validation data for model tuning.</p></dd>
 <span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[3.6s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[3.3s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">prep_models</span><span class="op">(</span><span class="va">run_info</span>,</span></span>
 <span class="r-in"><span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"glmnet"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[244ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[230ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[276ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[248ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[412ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[397ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
@@ -224,7 +232,7 @@ out on validation data for model tuning.</p></dd>
 </div>
 
 <div class="pkgdown">
-  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer></div>

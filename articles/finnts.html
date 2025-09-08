@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="finnts_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Quick Start Guide</h1>
@@ -123,30 +126,61 @@
 
     
     
-<p>The finnts package, commonly referred to as “Finn”, is a standardized times series forecast framework developed by Microsoft Finance. It’s a result of years of effort trying to perfect a centralized forecasting practice that everyone in finance could leverage. Even though it was built for finance like forecasts, it can easily be extended to any type of time series forecast.</p>
-<p>Finn takes years of hard work and thousands of lines of code, and simplifies the forecasting process down to one line of code. A single function, “forecast_time_series”, takes in historical data and applies dozens of models to produce a state of the art forecast. While simplifying the forecasting process down to a single function call might seem limiting, Finn actually allows for a lot of flexibility under the hood. In order to leverage the best components of Finn, please check out all of the other vignettes within the package.</p>
+<p>The finnts package, commonly referred to as “Finn”, is a standardized
+times series forecast framework developed by Microsoft Finance. It’s a
+result of years of effort trying to perfect a centralized forecasting
+practice that everyone in finance could leverage. Even though it was
+built for finance like forecasts, it can easily be extended to any type
+of time series forecast.</p>
+<p>Finn takes years of hard work and thousands of lines of code, and
+simplifies the forecasting process down to a an AI agent that can
+optimize a forecast for you or a few function calls that give you total
+control over the forecast Finn creates. In order to leverage the best
+components of Finn, please check out all of the other vignettes within
+the package.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/browseVignettes.html" class="external-link">browseVignettes</a></span><span class="op">(</span><span class="st">"finnts"</span><span class="op">)</span></span></code></pre></div>
-<p>Getting started with Finn is as simple as 1..2..3</p>
-<div class="section level2">
-<h2 id="bring-data">1. Bring Data<a class="anchor" aria-label="anchor" href="#bring-data"></a>
-</h2>
-<p>Data used in Finn needs to follow a few requirements, called out below.</p>
+<p>The easiest way to use Finn is through the built in AI agent. The
+agent learns about your data and runs experiements to create the most
+accurate forecast possible. Here’s how to get started with the
+agent.</p>
+<div class="section level3">
+<h3 id="bring-data">1. Bring Data<a class="anchor" aria-label="anchor" href="#bring-data"></a>
+</h3>
+<p>Data used in Finn needs to follow a few requirements, called out
+below.</p>
 <ul>
-<li>Data is tabular, formatted as data frame, tibble, or spark data frame.</li>
-<li>Needs a time stamp or date column, which needs to be formatted as a date and labeled as “Date”. The date values need to start at the beginning of the period. For example, a monthly data set needs to have each date period started on the first day of each month. For a quarterly forecast, the first day of the quarter, etc.</li>
-<li>Contains at least one unique label to identify one time series from another. These are sometimes referred to as “data combos” or “combo variables” in Finn. For example, a monthly forecast by country should have a column with country names to help Finn split out each country into separate time series.</li>
+<li>Data is tabular, formatted as data frame, tibble, or spark data
+frame.</li>
+<li>Needs a time stamp or date column, which needs to be formatted as a
+date and labeled as “Date”. The date values need to start at the
+beginning of the period. For example, a monthly data set needs to have
+each date period started on the first day of each month. For a quarterly
+forecast, the first day of the quarter, etc.</li>
+<li>Contains at least one unique label to identify one time series from
+another. These are sometimes referred to as “data combos” or “combo
+variables” in Finn. For example, a monthly forecast by country should
+have a column with country names to help Finn split out each country
+into separate time series.</li>
 <li>No duplicate rows at the intersection of data combos and date.</li>
-<li>Column headers should contain only letters, numbers, and underscores. They should also start with a letter, not a number. These requirements ensure that R/Python handle your data frame correctly without any errors.</li>
-<li>External regressors are optional, they’re not required to produce a Finn forecast. To learn more about how to use them, please check out the vignette on external regressors.</li>
+<li>Column headers should contain only letters, numbers, and
+underscores. They should also start with a letter, not a number. These
+requirements ensure that R/Python handle your data frame correctly
+without any errors.</li>
+<li>External regressors are optional, they’re not required to produce a
+Finn forecast. To learn more about how to use them, please check out the
+vignette on external regressors.</li>
 </ul>
-<p>A good example to use when producing your first Finn forecast is to leverage existing data examples from the <a href="https://business-science.github.io/timetk/" class="external-link">timetk</a> package. Let’s take a monthly example and trim it down to speed up the run time of your first Finn forecast.</p>
+<p>A good example to use when producing your first Finn forecast is to
+leverage existing data examples from the <a href="https://business-science.github.io/timetk/" class="external-link">timetk</a> package.
+Let’s take a monthly example and trim it down to speed up the run time
+of your first Finn forecast.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2013-01-01"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
@@ -169,107 +203,128 @@
 <span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/unique.html" class="external-link">unique</a></span><span class="op">(</span><span class="va">hist_data</span><span class="op">$</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; [1] "M1"    "M2"    "M750"  "M1000"</span></span></code></pre></div>
-<p>The above data set contains 4 individual time series, identified using the “id” column.</p>
+<p>The above data set contains 4 individual time series, identified
+using the “id” column.</p>
 </div>
-<div class="section level2">
-<h2 id="create-finn-forecast">2. Create Finn Forecast<a class="anchor" aria-label="anchor" href="#create-finn-forecast"></a>
-</h2>
-<p>Before we call the Finn forecast function. Let’s first set up some run information using <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, this helps log all components of our Finn forecast successfully.</p>
+<div class="section level3">
+<h3 id="set-up-agent">2. Set Up Agent<a class="anchor" aria-label="anchor" href="#set-up-agent"></a>
+</h3>
+<p>Before any forecasts are created, we need to set up the agent. This
+is done by setting up a new project with
+<code><a href="../reference/set_project_info.html">set_project_info()</a></code>, then initialize the agent with
+<code><a href="../reference/set_agent_info.html">set_agent_info()</a></code>.</p>
+<p>In order to use the agent, we must first connect it to a LLM using
+the <a href="https://ellmer.tidyverse.org/index.html" class="external-link">ellmer</a>
+package.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span>,</span>
-<span>  run_name <span class="op">=</span> <span class="st">"test_run"</span></span>
-<span><span class="op">)</span></span></code></pre></div>
-<p>Calling the “forecast_time_series” function is the easiest part. In this example we will be running just two models.</p>
+<code class="sourceCode R"><span><span class="co"># connect to LLM via Azure AI</span></span>
+<span><span class="va">driver_llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
+<p>Now we can use that LLM inside of our agent when setting it up.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># no need to assign it to a variable, since all of the outputs are written to disk :)</span></span>
-<span><span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span></span>
-<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
-<span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
+<code class="sourceCode R"><span><span class="co"># set up new forecast project and agent run</span></span>
+<span><span class="va">project</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_project_info.html">set_project_info</a></span><span class="op">(</span></span>
+<span>  project_name <span class="op">=</span> <span class="st">"Demo_Project"</span>,</span>
 <span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,</span>
 <span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
-<span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span>
-<span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
-<span>  back_test_scenarios <span class="op">=</span> <span class="fl">6</span>,</span>
-<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span><span class="op">)</span>,</span>
-<span>  return_data <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  date_type <span class="op">=</span> <span class="st">"month"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
+<span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
+<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">12</span>,</span>
+<span>  hist_end_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2014-12-01"</span><span class="op">)</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
-<div class="section level2">
-<h2 id="get-forecast-outputs">3. Get Forecast Outputs<a class="anchor" aria-label="anchor" href="#get-forecast-outputs"></a>
-</h2>
 <div class="section level3">
-<h3 id="initial-finn-outputs">Initial Finn Outputs<a class="anchor" aria-label="anchor" href="#initial-finn-outputs"></a>
+<h3 id="iterate-forecast">3. Iterate Forecast<a class="anchor" aria-label="anchor" href="#iterate-forecast"></a>
 </h3>
+<p>Once the agent is set up and fed data, we can now have it
+automatically optimize for the most accurate forecast. The agent will
+try various combinations of feature engineering techniques, ML
+algorithms, etc. to create the best forecast. We can give the agent
+constraints around how many iterations it can try and what accuracy goal
+it should strive to beat. Let’s have it run at most 3 different forecast
+iterations with an accuracy goal of a 3% weighted MAPE.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">finn_output_tbl</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/iterate_forecast.html">iterate_forecast</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  max_iter <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  weighted_mape_goal <span class="op">=</span> <span class="fl">0.03</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="future-forecast">Future Forecast<a class="anchor" aria-label="anchor" href="#future-forecast"></a>
+<h3 id="analyze-forecast-output">4. Analyze Forecast Output<a class="anchor" aria-label="anchor" href="#analyze-forecast-output"></a>
 </h3>
+<p>After the agent completes the forecast iteration, we can take a look
+at the final results.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">future_forecast_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Future_Forecast"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">future_forecast_tbl</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="back-test-results">Back Test Results<a class="anchor" aria-label="anchor" href="#back-test-results"></a>
-</h3>
+<code class="sourceCode R"><span><span class="va">forecast_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_agent_forecast.html">get_agent_forecast</a></span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent</span><span class="op">)</span></span></code></pre></div>
+<p>Here’s a breakdown of the major columns in the Finn forecast
+output.</p>
+<ul>
+<li>Combo: Unique identifier of each time series. It’s a combination of
+combo variables defined in <code><a href="../reference/set_project_info.html">set_project_info()</a></code>.</li>
+<li>Model_ID: Unique identifier of each model used to create the
+forecast. It’s a combination of the columns Model_ID, Model_Type, and
+Recipe_ID. Multiple models separated by “_” mean that multiple models
+were averaged together to create the final forecast.</li>
+<li>Model_Name: Which model was trained to produce the forecast.</li>
+<li>Model_Type: How the model was trained. Models can be trained on a
+single time series (local), multiple time series (global), or a
+combination of models via a simple average (simple_average).</li>
+<li>Recipe_ID: What kind of feature engineering recipe was applied to
+the data before model training.</li>
+<li>Run_Type: Separates what data is the final future forecast
+(Future_Forecast), historical back testing (Back_Test), and validation
+used for hyperparameter tuning of specific models (Validation).</li>
+<li>Train_Test_ID: Unique ID to separate train test splits during the
+time series cross-validation process.</li>
+<li>Best_Model: Simple flag that shows the most accurate Model_ID per
+time series.</li>
+<li>Horizon: The forecast horizon.</li>
+<li>Target: The historical values of the target variable defined in
+<code><a href="../reference/set_project_info.html">set_project_info()</a></code>.</li>
+<li>Forecast: Forecast created by the specific Model_ID.</li>
+<li>Prediction Intervals: 80% and 95% prediction intervals for the
+future forecast, created from the back testing results.</li>
+</ul>
+<p>To see which inputs were used by the agent to create the optimal
+forecast, you can call <code><a href="../reference/get_best_agent_run.html">get_best_agent_run()</a></code>. This allows us
+to see what kind of feature engineering was applied, as well as what
+models were chosen to run. More information about the inputs used by the
+agent in each Finn run iteration can be found in the other
+vignettes.</p>
 <div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">back_test_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Run_Type</span> <span class="op">==</span> <span class="st">"Back_Test"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">back_test_tbl</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="va">agent_run_results</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_best_agent_run.html">get_best_agent_run</a></span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent</span>, full_run_info <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="back-test-best-model-per-time-series">Back Test Best Model per Time Series<a class="anchor" aria-label="anchor" href="#back-test-best-model-per-time-series"></a>
+<h3 id="update-forecast">5. Update Forecast<a class="anchor" aria-label="anchor" href="#update-forecast"></a>
 </h3>
+<p>After the agent runs <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>, we can use the
+previously trained models to get updated forecasts with new data. This
+makes it easy to get updated forecasts fast.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">best_model_tbl</span> <span class="op">&lt;-</span> <span class="va">finn_output_tbl</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Best_Model</span> <span class="op">==</span> <span class="st">"Yes"</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/select.html" class="external-link">select</a></span><span class="op">(</span><span class="va">Combo</span>, <span class="va">Model_ID</span>, <span class="va">Model_Name</span>, <span class="va">Model_Type</span>, <span class="va">Recipe_ID</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/distinct.html" class="external-link">distinct</a></span><span class="op">(</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">best_model_tbl</span><span class="op">)</span></span></code></pre></div>
-<p>Note: the best model for the “M1” combination is a simple average of “arima” and “ets” models.</p>
-</div>
-<div class="section level3">
-<h3 id="trained-models">Trained Models<a class="anchor" aria-label="anchor" href="#trained-models"></a>
-</h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">trained_model_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_trained_models.html">get_trained_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">trained_model_tbl</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="initial-prepped-data">Initial Prepped Data<a class="anchor" aria-label="anchor" href="#initial-prepped-data"></a>
-</h3>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">R1_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span></span>
-<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
-<span>  recipe <span class="op">=</span> <span class="st">"R1"</span></span>
+<code class="sourceCode R"><span><span class="co"># set up agent with updated data</span></span>
+<span><span class="co"># overwrite creates a new version of the agent, which is required when running update_forecast()</span></span>
+<span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
+<span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
+<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span>,</span>
+<span>  hist_end_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2015-06-01"</span><span class="op">)</span>,</span>
+<span>  overwrite <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R1_prepped_data_tbl</span><span class="op">)</span></span>
-<span></span>
-<span><span class="va">R2_prepped_data_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_prepped_data.html">get_prepped_data</a></span><span class="op">(</span></span>
-<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
-<span>  recipe <span class="op">=</span> <span class="st">"R2"</span></span>
+<span><span class="co"># update forecast</span></span>
+<span><span class="fu"><a href="../reference/update_forecast.html">update_forecast</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  weighted_mape_goal <span class="op">=</span> <span class="fl">0.03</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">R2_prepped_data_tbl</span><span class="op">)</span></span></code></pre></div>
-</div>
-<div class="section level3">
-<h3 id="run-info-metadata">Run Info Metadata<a class="anchor" aria-label="anchor" href="#run-info-metadata"></a>
-</h3>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">run_info_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_run_info.html">get_run_info</a></span><span class="op">(</span>experiment_name <span class="op">=</span> <span class="st">"finn_forecast"</span><span class="op">)</span></span>
-<span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">run_info_tbl</span><span class="op">)</span></span></code></pre></div>
-</div>
+<span><span class="co"># get updated forecast output</span></span>
+<span><span class="va">updated_forecast_output</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_agent_forecast.html">get_agent_forecast</a></span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent</span><span class="op">)</span></span></code></pre></div>
 </div>
   </div>
 
@@ -288,7 +343,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

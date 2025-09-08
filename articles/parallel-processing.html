@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="parallel-processing_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Parallel Processing</h1>
@@ -126,14 +129,40 @@
 <div class="section level2">
 <h2 id="local-machine">Local Machine<a class="anchor" aria-label="anchor" href="#local-machine"></a>
 </h2>
-<p>When <code>parallel_processing</code> within <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to “local_machine”, each time series (including training models on the entire data set) is ran in parallel on the users local machine. Each time series will run on a separate core of the machine. Hyperparameter tuning, model refitting, and model averaging will be ran sequentially, which cannot be done in parallel since a parallel process is already running on the machine for each time series. This works well for data that contains many time series where you might only want to run a few simpler models, and in scenarios where cloud computing is not available.</p>
-<p>If <code>parallel_processing</code> is set to NULL and <code>inner_parallel</code> is set to TRUE within <code>forecast_time_series</code>, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.</p>
+<p>When <code>parallel_processing</code> within
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to “local_machine”, each time
+series (including training models on the entire data set) is ran in
+parallel on the users local machine. Each time series will run on a
+separate core of the machine. Hyperparameter tuning, model refitting,
+and model averaging will be ran sequentially, which cannot be done in
+parallel since a parallel process is already running on the machine for
+each time series. This works well for data that contains many time
+series where you might only want to run a few simpler models, and in
+scenarios where cloud computing is not available.</p>
+<p>If <code>parallel_processing</code> is set to NULL and
+<code>inner_parallel</code> is set to TRUE within
+<code>forecast_time_series</code>, then each time series is ran
+sequentially but the hyperparameter tuning, model refitting, and model
+averaging is ran in parallel. This works great for data that has a
+limited number of time series where you want to run a lot of back
+testing and build dozens of models within Finn.</p>
 </div>
 <div class="section level2">
 <h2 id="within-azure-using-spark">Within Azure using Spark<a class="anchor" aria-label="anchor" href="#within-azure-using-spark"></a>
 </h2>
-<p>To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set <code>parallel_processing</code> to “spark” within <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. This will run each time series in parallel across a spark compute cluster.</p>
-<p><a href="https://spark.posit.co/" class="external-link">Sparklyr</a> is a great R package that allows you to run R code across a spark cluster. A user simply has to connect to a spark cluster then run Finn. Below is an example on how you can run Finn using <a href="https://learn.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr" class="external-link">spark on Azure Databricks</a>. Also check out the growing R support with using <a href="https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-r-language" class="external-link">spark on Azure Synapse</a>.</p>
+<p>To leverage the full power of Finn, running within Azure is the best
+choice in building production ready forecasts that can easily scale. The
+most efficient way to run Finn is to set
+<code>parallel_processing</code> to “spark” within
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. This will run each time series in
+parallel across a spark compute cluster.</p>
+<p><a href="https://spark.posit.co/" class="external-link">Sparklyr</a> is a great R package
+that allows you to run R code across a spark cluster. A user simply has
+to connect to a spark cluster then run Finn. Below is an example on how
+you can run Finn using <a href="https://learn.microsoft.com/en-us/azure/databricks/spark/latest/sparkr/sparklyr" class="external-link">spark
+on Azure Databricks</a>. Also check out the growing R support with using
+<a href="https://learn.microsoft.com/en-us/azure/synapse-analytics/spark/apache-spark-r-language" class="external-link">spark
+on Azure Synapse</a>.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># load CRAN libraries</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
@@ -149,14 +178,14 @@
 <span><span class="va">sc</span> <span class="op">&lt;-</span> <span class="fu">sparklyr</span><span class="fu">::</span><span class="fu">spark_connect</span><span class="op">(</span>method <span class="op">=</span> <span class="st">"databricks"</span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># call Finn with spark parallel processing</span></span>
-<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">data_sdf</span> <span class="op">&lt;-</span> <span class="fu">sparklyr</span><span class="fu">::</span><span class="fu">copy_to</span><span class="op">(</span><span class="va">sc</span>, <span class="va">hist_data</span>, <span class="st">"data_sdf"</span>, overwrite <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finn_fcst"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="st">"finn_fcst"</span>,</span>
 <span>  run_name <span class="op">=</span> <span class="st">"spark_run_1"</span>,</span>
 <span>  path <span class="op">=</span> <span class="st">"/dbfs/mnt/example/folder"</span> <span class="co"># important that you mount an ADLS path</span></span>
 <span><span class="op">)</span></span>
@@ -177,8 +206,30 @@
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
 <span>  return_type <span class="op">=</span> <span class="st">"sdf"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
-<p>The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage all of the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set <code>inner_parallel</code> to TRUE in <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. Also make sure that you adjust the number of spark executor cores to 1, that ensures that only 1 time series runs on an executor at a time. Leverage the “spark.executor.cores” argument when configuring your spark connection. This can be done using <a href="https://spark.posit.co/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below." class="external-link">sparklyr</a> or within the cluster manager itself within the Azure resource. Use the “num_cores” argument in the “forecast_time_series” function to control how many cores should be used within an executor when running things like hyperparameter tuning.</p>
-<p><code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> will be looking for a variable called “sc” to use when submitting tasks to the spark cluster, so make sure you use that as the variable name when connecting to spark. Also it’s important that you mount your spark session to an Azure Data Lake Storage (ADLS) account, and provide the mounted path to where you’d like your Finn results to be written to within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>.</p>
+<p>The above example runs each time series on a separate core on a spark
+cluster. You can also submit multiple time series where each time series
+runs on a separate spark executor (VM) and then leverage all of the
+cores on that executor to run things like hyperparameter tuning or model
+refitting in parallel. This creates two levels of parallelization. One
+at the time series level, then another when doing things like
+hyperparameter tuning within a specific time series. To do that set
+<code>inner_parallel</code> to TRUE in
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. Also make sure that you adjust the
+number of spark executor cores to 1, that ensures that only 1 time
+series runs on an executor at a time. Leverage the
+“spark.executor.cores” argument when configuring your spark connection.
+This can be done using <a href="https://spark.posit.co/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below." class="external-link">sparklyr</a>
+or within the cluster manager itself within the Azure resource. Use the
+“num_cores” argument in the “forecast_time_series” function to control
+how many cores should be used within an executor when running things
+like hyperparameter tuning.</p>
+<p><code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> will be looking for a variable
+called “sc” to use when submitting tasks to the spark cluster, so make
+sure you use that as the variable name when connecting to spark. Also
+it’s important that you mount your spark session to an Azure Data Lake
+Storage (ADLS) account, and provide the mounted path to where you’d like
+your Finn results to be written to within
+<code><a href="../reference/set_run_info.html">set_run_info()</a></code>.</p>
 </div>
   </div>
 
@@ -197,7 +248,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

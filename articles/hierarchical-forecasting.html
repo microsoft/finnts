@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="hierarchical-forecasting_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Hierarchical Forecasting</h1>
@@ -123,11 +126,21 @@
 
     
     
-<p>The finnts package leverages the great work of the <a href="https://pkg.earo.me/hts/" class="external-link">hts</a> package. It’s currently retired but we think old dogs can still learn new tricks! It’s still of great use to finnts and allows for both standard and grouped hierarchical forecasting.</p>
+<p>The finnts package leverages the great work of the <a href="https://pkg.earo.me/hts/" class="external-link">hts</a> package. It’s currently retired
+but we think old dogs can still learn new tricks! It’s still of great
+use to finnts and allows for both standard and grouped hierarchical
+forecasting.</p>
 <div class="section level3">
 <h3 id="standard-hierarchy">Standard Hierarchy<a class="anchor" aria-label="anchor" href="#standard-hierarchy"></a>
 </h3>
-<p>A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.</p>
+<p>A standard hierarchy of data is pretty straight forward. Each combo
+variable can be aggregated into the next combo variable when producing
+forecasts at higher aggregations of the data. This structure resembles a
+pyramid, with the bottom being the lowest granularity of time series and
+the top being a single time series of the grand total of the data. Below
+is a good example with geographical combo variables that can be
+aggregated into one another when building a standard hierarchy
+forecast.</p>
 <pre><code><span><span class="co">#&gt; Standard Hierarchical Time Series Data</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 9 × 5</span></span></span>
 <span><span class="co">#&gt;   Continent     Country       City        Date       Target</span></span>
@@ -141,12 +154,22 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">7</span> North America Mexico        Mexico City 2020-01-01     50</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">8</span> North America Mexico        Mexico City 2020-02-01     80</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">9</span> North America Mexico        Mexico City 2020-03-01    120</span></span></code></pre>
-<p>In the above example, “City” was the lowest level of the hierarchy, which feeds into “Country”, which then feeds into “Continent”. Finn will take this data and will forecast by City, total Country, and total Continent. After each model is ran for every level in the hierarchy, the best model is chosen at each level, then the “Best Model” and every other model is reconciled back down to the lowest level.</p>
+<p>In the above example, “City” was the lowest level of the hierarchy,
+which feeds into “Country”, which then feeds into “Continent”. Finn will
+take this data and will forecast by City, total Country, and total
+Continent. After each model is ran for every level in the hierarchy, the
+best model is chosen at each level, then the “Best Model” and every
+other model is reconciled back down to the lowest level.</p>
 </div>
 <div class="section level3">
 <h3 id="grouped-hierarchy">Grouped Hierarchy<a class="anchor" aria-label="anchor" href="#grouped-hierarchy"></a>
 </h3>
-<p>Grouped hierarchies are very different than the traditional hierarchy approach described above. There are some data sets that can be aggregated in various ways, meaning they need to follow another approach the hts package calls “grouped”. A good example is a data set that contains historical time series by geography, customer segment, and product.</p>
+<p>Grouped hierarchies are very different than the traditional hierarchy
+approach described above. There are some data sets that can be
+aggregated in various ways, meaning they need to follow another approach
+the hts package calls “grouped”. A good example is a data set that
+contains historical time series by geography, customer segment, and
+product.</p>
 <pre><code><span><span class="co">#&gt; Grouped Hierarchical Time Series Data</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 12 × 5</span></span></span>
 <span><span class="co">#&gt;    Country       Segment       Product Date       Target</span></span>
@@ -163,30 +186,77 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> Mexico        Enterprise    Tea     2020-01-01     50</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> Mexico        Enterprise    Tea     2020-02-01     55</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> Mexico        Enterprise    Tea     2020-03-01     60</span></span></code></pre>
-<p>It would be hard to aggregate the above data in a traditional hierarchy. The same products are found in different segments and countries, also the same segments are found in multiple countries. Finn will follow a similar modeling process as the one described for a traditional hierarchy, but instead will create forecasts at the below levels.</p>
+<p>It would be hard to aggregate the above data in a traditional
+hierarchy. The same products are found in different segments and
+countries, also the same segments are found in multiple countries. Finn
+will follow a similar modeling process as the one described for a
+traditional hierarchy, but instead will create forecasts at the below
+levels.</p>
 <ul>
-<li>Grand Total: model “Target” across the sum of “Country”, “Segment”, and “Product”</li>
-<li>Country: model “Target” across the sum of “Country”. Creating forecasts for the grand total of “United States” and “Mexico”</li>
-<li>Segment: model “Target” across the sum of “Segment”. Creating forecasts for the grand total of “Enterprise” and “Public Sector”</li>
-<li>Product: model “Target” across the sum of “Product”. Creating forecasts for the grand total of “Coffee” and “Tea”.</li>
+<li>Grand Total: model “Target” across the sum of “Country”, “Segment”,
+and “Product”</li>
+<li>Country: model “Target” across the sum of “Country”. Creating
+forecasts for the grand total of “United States” and “Mexico”</li>
+<li>Segment: model “Target” across the sum of “Segment”. Creating
+forecasts for the grand total of “Enterprise” and “Public Sector”</li>
+<li>Product: model “Target” across the sum of “Product”. Creating
+forecasts for the grand total of “Coffee” and “Tea”.</li>
 </ul>
 </div>
 <div class="section level3">
 <h3 id="external-regressors">External Regressors<a class="anchor" aria-label="anchor" href="#external-regressors"></a>
 </h3>
-<p>The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one or more combo variables, then the relationship is respected while still being able to aggregate to the total level. Aggregations of drivers are always summed.</p>
-<p>The only limitation is when an external regressor maps to the middle of a standard hierarchy (not at the global level or bottom level), in this case the regressor will be summed at the global level across the hierarchy. This is due to limitations of aggregation naming in the hts package used in finnts.</p>
-<p>Explore the final results of the aggregations by seeing the end result using <code><a href="../reference/get_prepped_data.html">get_prepped_data()</a></code>.</p>
+<p>The aggregation process is automatically calculated for each external
+regressor, depending on how the regressor maps to the combo variables.
+If a regressor is unique for each time series, then the standard
+aggregation process is implemented (same as the process for the target
+variable). If the regressor repeats the same values across all time
+series, then only one global copy is retained and applied to all new
+aggregated time series. If the regressor specifically maps to one or
+more combo variables, then the relationship is respected while still
+being able to aggregate to the total level. Aggregations of drivers are
+always summed.</p>
+<p>The only limitation is when an external regressor maps to the middle
+of a standard hierarchy (not at the global level or bottom level), in
+this case the regressor will be summed at the global level across the
+hierarchy. This is due to limitations of aggregation naming in the hts
+package used in finnts.</p>
+<p>Explore the final results of the aggregations by seeing the end
+result using <code><a href="../reference/get_prepped_data.html">get_prepped_data()</a></code>.</p>
 </div>
 <div class="section level3">
 <h3 id="spark-parallel-processing">Spark Parallel Processing<a class="anchor" aria-label="anchor" href="#spark-parallel-processing"></a>
 </h3>
-<p>There is also a small limitation when doing hierarchical forecasting using spark as the parallel computing back-end. The hts package finnts uses cannot handle spark data frames. So behind the scenes finnts has to bring all of the data into memory on the spark cluster driver node in order to create the hierarchies. Please keep that in mind. If you have a lot of historical data that is greater than the RAM on the spark driver node, please consider using a different VM size with more memory. The same issue holds true when reconciling the hierarchical forecast, where all of the forecasts across all time series for a specific model is loaded into the same executor node to be reconciled. Because of these limitations, we are now exploring other options outside of the hts package, including the building of our own hierarchical forecasting package. Stay tuned.</p>
+<p>There is also a small limitation when doing hierarchical forecasting
+using spark as the parallel computing back-end. The hts package finnts
+uses cannot handle spark data frames. So behind the scenes finnts has to
+bring all of the data into memory on the spark cluster driver node in
+order to create the hierarchies. Please keep that in mind. If you have a
+lot of historical data that is greater than the RAM on the spark driver
+node, please consider using a different VM size with more memory. The
+same issue holds true when reconciling the hierarchical forecast, where
+all of the forecasts across all time series for a specific model is
+loaded into the same executor node to be reconciled. Because of these
+limitations, we are now exploring other options outside of the hts
+package, including the building of our own hierarchical forecasting
+package. Stay tuned.</p>
 </div>
 <div class="section level3">
 <h3 id="corner-cases-in-forecast-reconciliation">Corner Cases in Forecast Reconciliation<a class="anchor" aria-label="anchor" href="#corner-cases-in-forecast-reconciliation"></a>
 </h3>
-<p>Some forecasts can be widely off from the target value. This can cause issues when finnts tries to use historical back testing residuals as the initial weights in hts to reconcile the forecast at various aggregations of your data down to the lowest level. To prevent reconciliation issues, finnts will shrink these residuals to more appropriate numbers that still convey they are considerably off from the initial target values, but not astronomical. For example a residual value of 1,000,000,000,000 compared to a target value of 100 might get shrunk down to 900, since keeping the initial residual will throw the weighted reconciliation process out of whack and cause issues. Most forecasts in finnts will not have this problem, but if your data is very noisy then this fix will help prevent any issues when trying to run hierarchical forecasts in finnts.</p>
+<p>Some forecasts can be widely off from the target value. This can
+cause issues when finnts tries to use historical back testing residuals
+as the initial weights in hts to reconcile the forecast at various
+aggregations of your data down to the lowest level. To prevent
+reconciliation issues, finnts will shrink these residuals to more
+appropriate numbers that still convey they are considerably off from the
+initial target values, but not astronomical. For example a residual
+value of 1,000,000,000,000 compared to a target value of 100 might get
+shrunk down to 900, since keeping the initial residual will throw the
+weighted reconciliation process out of whack and cause issues. Most
+forecasts in finnts will not have this problem, but if your data is very
+noisy then this fix will help prevent any issues when trying to run
+hierarchical forecasts in finnts.</p>
 </div>
   </div>
 
@@ -205,7 +275,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

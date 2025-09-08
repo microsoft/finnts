@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="external-regressors_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>External Regressors</h1>
@@ -131,15 +134,32 @@
 <div class="section level3">
 <h3 id="historical-values-only">Historical Values Only<a class="anchor" aria-label="anchor" href="#historical-values-only"></a>
 </h3>
-<p>If you have an external regressor with just their historical values, finnts will only use lags of those values when creating features to use in a model. That fixes the need to know or predict what these values should be in the future. Forecasting these values into the future, either by simple methods like arima/ets or even using finnts to daisy chain forecasting regressors to then forecast the final target variable, only adds additional layers of uncertainty with the final future forecast. Using forecasts as inputs to another forecast can get out of hand quick, and is something we try to avoid within finnts.</p>
-<p><strong>Note:</strong> This only works for continuous (numeric) external regressors.</p>
+<p>If you have an external regressor with just their historical values,
+finnts will only use lags of those values when creating features to use
+in a model. That fixes the need to know or predict what these values
+should be in the future. Forecasting these values into the future,
+either by simple methods like arima/ets or even using finnts to daisy
+chain forecasting regressors to then forecast the final target variable,
+only adds additional layers of uncertainty with the final future
+forecast. Using forecasts as inputs to another forecast can get out of
+hand quick, and is something we try to avoid within finnts.</p>
+<p><strong>Note:</strong> This only works for continuous (numeric)
+external regressors.</p>
 </div>
 <div class="section level3">
 <h3 id="historical-and-future-values">Historical and Future Values<a class="anchor" aria-label="anchor" href="#historical-and-future-values"></a>
 </h3>
-<p>If you have an external regressor, with both their historical and future values, finnts will then use both current (t-0) and lag (t-n) values when creating features to use in a model. This is required for categorical regressors, but optional for continuous (numeric) regressors.</p>
-<p><strong>Note:</strong> Future values of external regressors need to be provided for the entire forecast horizon. Current (t-0) values of these regressors will also be used as features during the back testing process.</p>
-<p>Below is an example of how you can set up your input_data to leverage future values of external regressors.</p>
+<p>If you have an external regressor, with both their historical and
+future values, finnts will then use both current (t-0) and lag (t-n)
+values when creating features to use in a model. This is required for
+categorical regressors, but optional for continuous (numeric)
+regressors.</p>
+<p><strong>Note:</strong> Future values of external regressors need to
+be provided for the entire forecast horizon. Current (t-0) values of
+these regressors will also be used as features during the back testing
+process.</p>
+<p>Below is an example of how you can set up your input_data to leverage
+future values of external regressors.</p>
 <ul>
 <li>monthly date type</li>
 <li>forecast horizon of 3</li>
@@ -164,7 +184,10 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">13</span> Country_1 2021-01-01     <span style="color: #BB0000;">NA</span> New Years         <span style="color: #BB0000;">NA</span>            220</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">14</span> Country_1 2021-02-01     <span style="color: #BB0000;">NA</span> Valentines Day    <span style="color: #BB0000;">NA</span>            230</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">15</span> Country_1 2021-03-01     <span style="color: #BB0000;">NA</span> None              <span style="color: #BB0000;">NA</span>            240</span></span></code></pre>
-<p>Current and future values of “Holiday” and “Sales_Pipeline” will be used in creating the 3 month future forecast from “2021-01-01” to “2021-03-01”, while only the historical lags of “GDP” will be used to create the future forecast.</p>
+<p>Current and future values of “Holiday” and “Sales_Pipeline” will be
+used in creating the 3 month future forecast from “2021-01-01” to
+“2021-03-01”, while only the historical lags of “GDP” will be used to
+create the future forecast.</p>
 </div>
   </div>
 
@@ -183,7 +206,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

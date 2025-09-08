@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="back-testing-and-hyperparameter-tuning_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Back Testing and Hyperparameter Tuning</h1>
@@ -123,24 +126,30 @@
 
     
     
-<p>Most models automatically included in finnts, including all multivariate models, have various hyperparameters with values that need to be chosen before a model is trained. Finn solves this by leveraging the <a href="https://tune.tidymodels.org/reference/tune.html" class="external-link">tune</a> package within the tidymodels ecosystem.</p>
-<p>When <code><a href="../reference/prep_models.html">prep_models()</a></code> is ran, hyperparameters and back test splits are calculated and written to disk. You can get the results by calling <code><a href="../reference/get_prepped_models.html">get_prepped_models()</a></code>.</p>
+<p>Most models automatically included in finnts, including all
+multivariate models, have various hyperparameters with values that need
+to be chosen before a model is trained. Finn solves this by leveraging
+the <a href="https://tune.tidymodels.org/reference/tune.html" class="external-link">tune</a>
+package within the tidymodels ecosystem.</p>
+<p>When <code><a href="../reference/prep_models.html">prep_models()</a></code> is ran, hyperparameters and back test
+splits are calculated and written to disk. You can get the results by
+calling <code><a href="../reference/get_prepped_models.html">get_prepped_models()</a></code>.</p>
 <pre><code><span><span class="co">#&gt; Loading required package: modeltime</span></span>
 <span><span class="co">#&gt; Finn Submission Info</span></span>
-<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Experiment Name: finnts_fcst</span></span>
-<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20241029T145012Z</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Project Name: finnts_fcst</span></span>
+<span><span class="co">#&gt; <span style="color: #00BBBB;">•</span> Run Name: get_prepped_models-20250908T181546Z</span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Prepping Data</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[1.1s]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[1s]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[123ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[112ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[171ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[152ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span></span>
-<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[412ms]</span></span></span>
+<span><span class="co">#&gt; <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[387ms]</span></span></span>
 <span><span class="co">#&gt; </span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 31 × 4</span></span></span>
 <span><span class="co">#&gt;    Run_Type        Train_Test_ID Train_End  Test_End  </span></span>
@@ -178,7 +187,18 @@
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">10</span> xgboost R1                        8 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">11</span> xgboost R1                        9 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">12</span> xgboost R1                       10 <span style="color: #949494;">&lt;tibble [1 × 4]&gt;</span></span></span></code></pre>
-<p>The above outputs allow a Finn user to understand what hyperparameters are chosen for tuning and how the model refitting process will work. When tuning hyperparameters, Finn uses the “Validation” train/test splits, with the final parameters chosen using RMSE. For some models like ARIMA that don’t follow a traditional hyperparameter tuning process, the model is fit from scratch across all train/test splits. After hyperparameters are chosen, the model is refit across the “Back_Test” and “Future_Forecast” splits. The “Back_Test” splits are the true testing data that will be used when selecting the final “Best-Model”. “Ensemble” splits are also created as ensemble training data if ensemble models are chosen to run. Ensemble models follow a similar tuning process.</p>
+<p>The above outputs allow a Finn user to understand what
+hyperparameters are chosen for tuning and how the model refitting
+process will work. When tuning hyperparameters, Finn uses the
+“Validation” train/test splits, with the final parameters chosen using
+RMSE. For some models like ARIMA that don’t follow a traditional
+hyperparameter tuning process, the model is fit from scratch across all
+train/test splits. After hyperparameters are chosen, the model is refit
+across the “Back_Test” and “Future_Forecast” splits. The “Back_Test”
+splits are the true testing data that will be used when selecting the
+final “Best-Model”. “Ensemble” splits are also created as ensemble
+training data if ensemble models are chosen to run. Ensemble models
+follow a similar tuning process.</p>
   </div>
 
   <div class="col-md-3 hidden-xs hidden-sm" id="pkgdown-sidebar">
@@ -196,7 +216,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

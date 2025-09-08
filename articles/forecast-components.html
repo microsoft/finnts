@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="forecast-components_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Using Individual finnts Forecast Components</h1>
@@ -123,7 +126,12 @@
 
     
     
-<p>The easiest way to use the finnts package is through the function <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>, but instead of calling that function you can also call the sub components of the Finn forecast process. This could enable you to break out your time series forecast process into separate steps in a production pipeline, or even give you more control over how you use Finn.</p>
+<p>The easiest way to use the finnts package is through the function
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>, but instead of calling that
+function you can also call the sub components of the Finn forecast
+process. This could enable you to break out your time series forecast
+process into separate steps in a production pipeline, or even give you
+more control over how you use Finn.</p>
 <p>Below is an example workflow of using the sub components of Finn.</p>
 <div class="section level2">
 <h2 id="get-data-and-set-run-info">Get Data and Set Run Info<a class="anchor" aria-label="anchor" href="#get-data-and-set-run-info"></a>
@@ -132,7 +140,7 @@
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span></span>
 <span>    <span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2013-01-01"</span>,</span>
 <span>    <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span></span>
@@ -141,14 +149,16 @@
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
 <span>  run_name <span class="op">=</span> <span class="st">"finn_sub_component_run"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="prep-the-data">Prep the Data<a class="anchor" aria-label="anchor" href="#prep-the-data"></a>
 </h2>
-<p>Clean and prepare our data before training models. We can even pull out our prepped data to see the features and transformations applied before models are trained.</p>
+<p>Clean and prepare our data before training models. We can even pull
+out our prepped data to see the features and transformations applied
+before models are trained.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_data.html">prep_data</a></span><span class="op">(</span></span>
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
@@ -216,7 +226,10 @@
 <div class="section level2">
 <h2 id="train-individual-models">Train Individual Models<a class="anchor" aria-label="anchor" href="#train-individual-models"></a>
 </h2>
-<p>Now that our data is prepared for modeling, let’s now train some models. First we need to create the model workflows, determine our back testing process, and how many hyperparameter combinations to try during the validation process.</p>
+<p>Now that our data is prepared for modeling, let’s now train some
+models. First we need to create the model workflows, determine our back
+testing process, and how many hyperparameter combinations to try during
+the validation process.</p>
 <p>Then we can kick off training each model on our data.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span></span>
@@ -233,21 +246,24 @@
 <div class="section level2">
 <h2 id="train-ensemble-models">Train Ensemble Models<a class="anchor" aria-label="anchor" href="#train-ensemble-models"></a>
 </h2>
-<p>After each individual model is trained, we can feed those predictions into ensemble models.</p>
+<p>After each individual model is trained, we can feed those predictions
+into ensemble models.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/ensemble_models.html">ensemble_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="final-models">Final Models<a class="anchor" aria-label="anchor" href="#final-models"></a>
 </h2>
-<p>The last step is to create the final simple model averages and select the best models.</p>
+<p>The last step is to create the final simple model averages and select
+the best models.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/final_models.html">final_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="get-forecast-results">Get Forecast Results<a class="anchor" aria-label="anchor" href="#get-forecast-results"></a>
 </h2>
-<p>Finally we can now retrieve the forecast results from this Finn run.</p>
+<p>Finally we can now retrieve the forecast results from this Finn
+run.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
 <span></span>
@@ -287,7 +303,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="feature-engineering_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Feature Engineering</h1>
@@ -123,38 +126,76 @@
 
     
     
-<p>Automated feature engineering is a cornerstone of the package. Below are some of the techniques we use in multivariate machine learning models, and the outside packages that make it possible.</p>
+<p>Automated feature engineering is a cornerstone of the package. Below
+are some of the techniques we use in multivariate machine learning
+models, and the outside packages that make it possible.</p>
 <div class="section level2">
 <h2 id="missing-data-and-outliers">Missing Data and Outliers<a class="anchor" aria-label="anchor" href="#missing-data-and-outliers"></a>
 </h2>
-<p>Missing data is filled in using the <a href="https://business-science.github.io/timetk/reference/pad_by_time.html" class="external-link">pad_by_time</a> function from the timetk package. First, each time series is grouped and padded using their existing start and end dates. Missing values are padded using NA. Then the same process is ran again, this time padding data from the <code>hist_start_date</code> from <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>, with missing values being filled in with zero. This ensures that missing data before a time series starts are all zeroes, but missing periods within the existing time series data are identified to be inputted with new values in the next step.</p>
-<p>After missing data is padded, the <a href="https://business-science.github.io/timetk/reference/ts_impute_vec.html" class="external-link">ts_impute_vec</a> function from the timetk package is called to impute any NA values. This only happens if the <code>clean_missing_values</code> input from <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to TRUE, otherwise NA values are replaced with zero.</p>
-<p>Outliers are handled using the <a href="https://business-science.github.io/timetk/reference/ts_clean_vec.html" class="external-link">ts_clean_vec</a> function from the timetk package. Outliers are replaced after the missing data process, and only runs if the <code>clean_outliers</code> input from <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to TRUE.</p>
-<p><strong>Important Note:</strong> Missing values and outliers are replaced for the target variable and any numeric external regressors.</p>
+<p>Missing data is filled in using the <a href="https://business-science.github.io/timetk/reference/pad_by_time.html" class="external-link">pad_by_time</a>
+function from the timetk package. First, each time series is grouped and
+padded using their existing start and end dates. Missing values are
+padded using NA. Then the same process is ran again, this time padding
+data from the <code>hist_start_date</code> from
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>, with missing values being filled in
+with zero. This ensures that missing data before a time series starts
+are all zeroes, but missing periods within the existing time series data
+are identified to be inputted with new values in the next step.</p>
+<p>After missing data is padded, the <a href="https://business-science.github.io/timetk/reference/ts_impute_vec.html" class="external-link">ts_impute_vec</a>
+function from the timetk package is called to impute any NA values. This
+only happens if the <code>clean_missing_values</code> input from
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to TRUE, otherwise NA values
+are replaced with zero.</p>
+<p>Outliers are handled using the <a href="https://business-science.github.io/timetk/reference/ts_clean_vec.html" class="external-link">ts_clean_vec</a>
+function from the timetk package. Outliers are replaced after the
+missing data process, and only runs if the <code>clean_outliers</code>
+input from <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> is set to TRUE.</p>
+<p><strong>Important Note:</strong> Missing values and outliers are
+replaced for the target variable and any numeric external
+regressors.</p>
 </div>
 <div class="section level2">
 <h2 id="box-cox">Box-Cox<a class="anchor" aria-label="anchor" href="#box-cox"></a>
 </h2>
-<p>Stabilizes the variance in each time series using the <a href="https://business-science.github.io/timetk/reference/box_cox_vec.html" class="external-link">box_cox_vec</a> function from the timetk package. Applied to both the target variable and any external regressor before other transformations like differencing. You can control this within <code><a href="../reference/prep_models.html">prep_models()</a></code>.</p>
+<p>Stabilizes the variance in each time series using the <a href="https://business-science.github.io/timetk/reference/box_cox_vec.html" class="external-link">box_cox_vec</a>
+function from the timetk package. Applied to both the target variable
+and any external regressor before other transformations like
+differencing. You can control this within
+<code><a href="../reference/prep_models.html">prep_models()</a></code>.</p>
 </div>
 <div class="section level2">
 <h2 id="differencing">Differencing<a class="anchor" aria-label="anchor" href="#differencing"></a>
 </h2>
-<p>Uses the <a href="https://feasts.tidyverts.org/reference/unitroot_ndiffs.html" class="external-link">feasts</a> package to check if each time series is stationary and applies the differencing required (up to two standard differences with lag one) in order to make the time series stationary. Uses the <a href="https://business-science.github.io/timetk/reference/diff_vec.html" class="external-link">diff_vec</a> function from the timetk package to do the differencing. This is applied to the target variable and any external regressor before other features are created. Data is undifferenced before training for univariate models like arima, but differenced data is used for all multivariate models. You can control the differencing done within <code><a href="../reference/prep_models.html">prep_models()</a></code>.</p>
+<p>Uses the <a href="https://feasts.tidyverts.org/reference/unitroot_ndiffs.html" class="external-link">feasts</a>
+package to check if each time series is stationary and applies the
+differencing required (up to two standard differences with lag one) in
+order to make the time series stationary. Uses the <a href="https://business-science.github.io/timetk/reference/diff_vec.html" class="external-link">diff_vec</a>
+function from the timetk package to do the differencing. This is applied
+to the target variable and any external regressor before other features
+are created. Data is undifferenced before training for univariate models
+like arima, but differenced data is used for all multivariate models.
+You can control the differencing done within
+<code><a href="../reference/prep_models.html">prep_models()</a></code>.</p>
 </div>
 <div class="section level2">
 <h2 id="date-features">Date Features<a class="anchor" aria-label="anchor" href="#date-features"></a>
 </h2>
-<p>The <a href="https://business-science.github.io/timetk/reference/tk_augment_timeseries.html" class="external-link">tk_augment_timeseries_signature</a> function from the timetk package easily extracts out various date features from the time stamp. The function doesn’t differentiate between date type, so features need to be removed depending on the date type. For example, features related to week and day for a monthly forecast are automatically removed.</p>
-<p>Fourier series are also added using the <a href="https://business-science.github.io/timetk/reference/tk_augment_fourier.html" class="external-link">tk_augment_fourier</a> function from timetk.</p>
+<p>The <a href="https://business-science.github.io/timetk/reference/tk_augment_timeseries.html" class="external-link">tk_augment_timeseries_signature</a>
+function from the timetk package easily extracts out various date
+features from the time stamp. The function doesn’t differentiate between
+date type, so features need to be removed depending on the date type.
+For example, features related to week and day for a monthly forecast are
+automatically removed.</p>
+<p>Fourier series are also added using the <a href="https://business-science.github.io/timetk/reference/tk_augment_fourier.html" class="external-link">tk_augment_fourier</a>
+function from timetk.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dplyr.tidyverse.org" class="external-link">dplyr</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/business-science/timetk" class="external-link">timetk</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">m4_monthly</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/timetk/man/tk_augment_timeseries.html" class="external-link">tk_augment_timeseries_signature</a></span><span class="op">(</span><span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://business-science.github.io/timetk/reference/tk_augment_timeseries.html" class="external-link">tk_augment_timeseries_signature</a></span><span class="op">(</span><span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html" class="external-link">group_by</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
-<span>  <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://rdrr.io/pkg/timetk/man/tk_augment_fourier.html" class="external-link">tk_augment_fourier</a></span><span class="op">(</span><span class="va">date</span>, .periods <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">6</span>, <span class="fl">12</span><span class="op">)</span>, .K <span class="op">=</span> <span class="fl">1</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">timetk</span><span class="fu">::</span><span class="fu"><a href="https://business-science.github.io/timetk/reference/tk_augment_fourier.html" class="external-link">tk_augment_fourier</a></span><span class="op">(</span><span class="va">date</span>, .periods <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">3</span>, <span class="fl">6</span>, <span class="fl">12</span><span class="op">)</span>, .K <span class="op">=</span> <span class="fl">1</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/group_by.html" class="external-link">ungroup</a></span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #949494;"># A tibble: 1,574 × 37</span></span></span>
 <span><span class="co">#&gt;    id    date       value index.num    diff  year year.iso  half quarter month</span></span>
@@ -180,14 +221,21 @@
 <div class="section level2">
 <h2 id="lags-rolling-windows-and-polynomial-transformations">Lags, Rolling Windows, and Polynomial Transformations<a class="anchor" aria-label="anchor" href="#lags-rolling-windows-and-polynomial-transformations"></a>
 </h2>
-<p>Lags of the target variable and external regressors are created using the <a href="https://business-science.github.io/timetk/reference/tk_augment_lags.html" class="external-link">tk_augment_lags</a> function from timetk.</p>
-<p>Rolling window calculations of the target variable are created using the <a href="https://business-science.github.io/timetk/reference/tk_augment_slidify.html" class="external-link">tk_augment_slidify</a> function from timetk. The below calculations are created over various window values.</p>
+<p>Lags of the target variable and external regressors are created using
+the <a href="https://business-science.github.io/timetk/reference/tk_augment_lags.html" class="external-link">tk_augment_lags</a>
+function from timetk.</p>
+<p>Rolling window calculations of the target variable are created using
+the <a href="https://business-science.github.io/timetk/reference/tk_augment_slidify.html" class="external-link">tk_augment_slidify</a>
+function from timetk. The below calculations are created over various
+window values.</p>
 <ul>
 <li>sum</li>
 <li>mean</li>
 <li>standard deviation</li>
 </ul>
-<p>Polynomial transformations are created for the target variable, and lags are then created on top of them. The below transformations are created.</p>
+<p>Polynomial transformations are created for the target variable, and
+lags are then created on top of them. The below transformations are
+created.</p>
 <ul>
 <li>squared</li>
 <li>cubed</li>
@@ -197,12 +245,31 @@
 <div class="section level2">
 <h2 id="custom-approaches">Custom Approaches<a class="anchor" aria-label="anchor" href="#custom-approaches"></a>
 </h2>
-<p>In addition to the standard approaches above, finnts also does two different ways of preparing features to be created for a multivariate machine learning model.</p>
-<p>In the first recipe, referred to as “R1” in default finnts models, by default takes a single step horizon approach. Meaning all of the engineered target and external regressor features are used but the lags cannot be less than the forecast horizon. For example, a monthly data set with a forecast horizon of 3, finnts will take engineered features like lags and rolling window features but only use those lags that are for periods equal to or greater than 3. You can also run a multistep horizon approach by setting <code>multistep_horizon</code> to TRUE in <code><a href="../reference/prep_models.html">prep_models()</a></code>. The multistep approach will create features that can be used by specific multivariate models that optimize for each period in a forecast horizon. More on this in the “models used in finnts” vignette. Recursive forecasting is not supported in finnts multivariate machine learning models, since feeding forecast outputs as features to create another forecast adds complex layers of uncertainty that can easily spiral out of control and produce poor forecasts. NA values created by generating lag features are filled “up”. This results in the first initial periods of a time series having some data leakage but the effect should be small if the time series is long enough.</p>
+<p>In addition to the standard approaches above, finnts also does two
+different ways of preparing features to be created for a multivariate
+machine learning model.</p>
+<p>In the first recipe, referred to as “R1” in default finnts models, by
+default takes a single step horizon approach. Meaning all of the
+engineered target and external regressor features are used but the lags
+cannot be less than the forecast horizon. For example, a monthly data
+set with a forecast horizon of 3, finnts will take engineered features
+like lags and rolling window features but only use those lags that are
+for periods equal to or greater than 3. You can also run a multistep
+horizon approach by setting <code>multistep_horizon</code> to TRUE in
+<code><a href="../reference/prep_models.html">prep_models()</a></code>. The multistep approach will create features
+that can be used by specific multivariate models that optimize for each
+period in a forecast horizon. More on this in the “models used in
+finnts” vignette. Recursive forecasting is not supported in finnts
+multivariate machine learning models, since feeding forecast outputs as
+features to create another forecast adds complex layers of uncertainty
+that can easily spiral out of control and produce poor forecasts. NA
+values created by generating lag features are filled “up”. This results
+in the first initial periods of a time series having some data leakage
+but the effect should be small if the time series is long enough.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span></span>
 <span>    <span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2012-01-01"</span>,</span>
 <span>    <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span></span>
@@ -211,7 +278,7 @@
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
 <span>  run_name <span class="op">=</span> <span class="st">"R1_run"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
@@ -252,11 +319,21 @@
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll3_Avg &lt;dbl&gt;, Target_lag9_roll3_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag12_roll3_Avg &lt;dbl&gt;, Target_lag3_roll6_Avg &lt;dbl&gt;,</span></span></span>
 <span><span class="co">#&gt; <span style="color: #949494;">#   Target_lag6_roll6_Avg &lt;dbl&gt;, Target_lag9_roll6_Avg &lt;dbl&gt;, …</span></span></span></code></pre></div>
-<p>The second recipe is referred to as “R2” in default finnts models. It takes a very different approach than the “R1” recipe. For a 3 month forecast horizon on a monthly dataset, target and rolling window features are created depending on the horizon period. They are also constrained to be equal or less than the forecast horizon. In the below example, “Origin” and “Horizon” features are created for each time period. This results in duplicating rows in the original data set to create new features that are now specific to each horizon period. This helps the default finnts models find new unique relationships to model, when compared to a more formal approach in “R1”. NA values created by generating lag features are filled “up”.</p>
+<p>The second recipe is referred to as “R2” in default finnts models. It
+takes a very different approach than the “R1” recipe. For a 3 month
+forecast horizon on a monthly dataset, target and rolling window
+features are created depending on the horizon period. They are also
+constrained to be equal or less than the forecast horizon. In the below
+example, “Origin” and “Horizon” features are created for each time
+period. This results in duplicating rows in the original data set to
+create new features that are now specific to each horizon period. This
+helps the default finnts models find new unique relationships to model,
+when compared to a more formal approach in “R1”. NA values created by
+generating lag features are filled “up”.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://rdrr.io/pkg/timetk/man/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span></span>
 <span>    <span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2012-01-01"</span>,</span>
 <span>    <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span></span>
@@ -265,7 +342,7 @@
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
 <span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
-<span>  experiment_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
+<span>  project_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
 <span>  run_name <span class="op">=</span> <span class="st">"R2_run"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
@@ -309,7 +386,15 @@
 <div class="section level2">
 <h2 id="model-specific-preprocessing">Model Specific Preprocessing<a class="anchor" aria-label="anchor" href="#model-specific-preprocessing"></a>
 </h2>
-<p>In addition to everything called out above, some models have their own specific transformations that need to be applied before training a model. For example, the “glmnet” model needs to transform categorical variables into continuous variables and center/scale the data before training. Each default model in finnts has their own preprocessing steps that ensure the data fed into the model has the best chance of producing a high quality forecast. The <a href="https://recipes.tidymodels.org/" class="external-link">recipes</a> package is used to easily apply various preprocessing transformations needed before training a model.</p>
+<p>In addition to everything called out above, some models have their
+own specific transformations that need to be applied before training a
+model. For example, the “glmnet” model needs to transform categorical
+variables into continuous variables and center/scale the data before
+training. Each default model in finnts has their own preprocessing steps
+that ensure the data fed into the model has the best chance of producing
+a high quality forecast. The <a href="https://recipes.tidymodels.org/" class="external-link">recipes</a> package is used to
+easily apply various preprocessing transformations needed before
+training a model.</p>
 </div>
   </div>
 
@@ -328,7 +413,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>

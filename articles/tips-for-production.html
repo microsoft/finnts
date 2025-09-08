@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.5.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9000</span>
       </span>
     </div>
 
@@ -58,6 +58,9 @@
   </a>
   <ul class="dropdown-menu" role="menu">
 <li>
+      <a href="../articles/ai-agent.html">AI Agent Capabilities</a>
+    </li>
+    <li>
       <a href="../articles/back-testing-and-hyperparameter-tuning.html">Back Testing and Hyperparameter Tuning</a>
     </li>
     <li>
@@ -110,7 +113,7 @@
 
 
 
-      </header><script src="tips-for-production_files/accessible-code-block-0.0.1/empty-anchor.js"></script><div class="row">
+      </header><div class="row">
   <div class="col-md-9 contents">
     <div class="page-header toc-ignore">
       <h1 data-toc-skip>Tips for Production</h1>
@@ -126,21 +129,55 @@
 <div class="section level2">
 <h2 id="manage-dependencies">Manage Dependencies<a class="anchor" aria-label="anchor" href="#manage-dependencies"></a>
 </h2>
-<p>Finn continues to get updated on a regular basis. A best practice is to ensure you are using a specific version of Finn for your production forecast. This can be done through the use of the <a href="https://rstudio.github.io/renv/" class="external-link">renv package</a> while using Finn on your local machine, or using <a href="https://colinfay.me/docker-r-reproducibility/" class="external-link">docker containers</a> for running Finn in the cloud.</p>
+<p>Finn continues to get updated on a regular basis. A best practice is
+to ensure you are using a specific version of Finn for your production
+forecast. This can be done through the use of the <a href="https://rstudio.github.io/renv/" class="external-link">renv package</a> while using Finn
+on your local machine, or using <a href="https://colinfay.me/docker-r-reproducibility/" class="external-link">docker
+containers</a> for running Finn in the cloud.</p>
 </div>
 <div class="section level2">
 <h2 id="azure-ml-pipelines">Azure ML Pipelines<a class="anchor" aria-label="anchor" href="#azure-ml-pipelines"></a>
 </h2>
-<p>Finn was built to run at scale in Azure, leveraging spark as the parallel back end. Check out the parallel processing vignette to learn how to get Finn running on Azure services like Databricks. The best way to run Finn in production is through the use of <a href="https://learn.microsoft.com/en-us/azure/machine-learning/" class="external-link">Azure Machine Learning</a>, specifically Azure ML Pipelines.</p>
+<p>Finn was built to run at scale in Azure, leveraging spark as the
+parallel back end. Check out the parallel processing vignette to learn
+how to get Finn running on Azure services like Databricks. The best way
+to run Finn in production is through the use of <a href="https://learn.microsoft.com/en-us/azure/machine-learning/" class="external-link">Azure
+Machine Learning</a>, specifically Azure ML Pipelines.</p>
 <p>Below are a few tips for leveraging Azure ML Pipelines</p>
 <ul>
-<li>Leverage the Azure ML CLI v2 interface to submit R scripts in a pipeline.</li>
-<li>Use the sub components of Finn instead of <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> so you can have different pipeline steps ran for each step of the Finn forecast process.</li>
-<li>If you do use the sub components of Finn, then definitely set <code>add_unique_id</code> to FALSE within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>. That will let you call the exact same run info in each separate pipeline step. Make sure that you are using your own unique <code>run_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, one that is different than previous Finn runs but the same name when using <code><a href="../reference/set_run_info.html">set_run_info()</a></code> in each pipeline step.</li>
-<li>Connect your Azure ML Pipeline to a spark compute cluster and mount an Azure Data Lake Storage connection. Either through Azure Databricks or Azure Synapse. Also consider using different spark cluster configurations depending on the Finn forecast sub component you are running in each pipeline step.
+<li>Leverage the Azure ML CLI v2 interface to submit R scripts in a
+pipeline.</li>
+<li>Use the sub components of Finn instead of
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> so you can have different pipeline
+steps ran for each step of the Finn forecast process.</li>
+<li>If you do use the sub components of Finn, then definitely set
+<code>add_unique_id</code> to FALSE within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>.
+That will let you call the exact same run info in each separate pipeline
+step. Make sure that you are using your own unique <code>run_name</code>
+within <code><a href="../reference/set_run_info.html">set_run_info()</a></code>, one that is different than previous
+Finn runs but the same name when using <code><a href="../reference/set_run_info.html">set_run_info()</a></code> in
+each pipeline step.</li>
+<li>Connect your Azure ML Pipeline to a spark compute cluster and mount
+an Azure Data Lake Storage connection. Either through Azure Databricks
+or Azure Synapse. Also consider using different spark cluster
+configurations depending on the Finn forecast sub component you are
+running in each pipeline step.
 <ul>
-<li>For <code><a href="../reference/prep_data.html">prep_data()</a></code> and <code><a href="../reference/prep_models.html">prep_models()</a></code>, use the default spark cluster settings. Where each spark task gets sent to a specific core on an executor.</li>
-<li>For all other functions like <code><a href="../reference/train_models.html">train_models()</a></code>, <code><a href="../reference/ensemble_models.html">ensemble_models()</a></code>, and <code><a href="../reference/final_models.html">final_models()</a></code> consider adjusting the spark cluster settings like “spark.executor.cores” equal to 1 and set <code>inner_parallel</code> to TRUE within each function. That way only a single task/time series gets sent to each spark executor node, and all cores within that node can be used during the modeling process for that task/time series. Use <code>num_cores</code> within each function to control how many cores on the executor to use, with the default being all available cores minus one. This can significantly speed up run time, but if you have many time series and want to run all of the models within Finn ensure that you have a spark cluster that can scale to many VM’s.</li>
+<li>For <code><a href="../reference/prep_data.html">prep_data()</a></code> and <code><a href="../reference/prep_models.html">prep_models()</a></code>, use the
+default spark cluster settings. Where each spark task gets sent to a
+specific core on an executor.</li>
+<li>For all other functions like <code><a href="../reference/train_models.html">train_models()</a></code>,
+<code><a href="../reference/ensemble_models.html">ensemble_models()</a></code>, and <code><a href="../reference/final_models.html">final_models()</a></code> consider
+adjusting the spark cluster settings like “spark.executor.cores” equal
+to 1 and set <code>inner_parallel</code> to TRUE within each function.
+That way only a single task/time series gets sent to each spark executor
+node, and all cores within that node can be used during the modeling
+process for that task/time series. Use <code>num_cores</code> within
+each function to control how many cores on the executor to use, with the
+default being all available cores minus one. This can significantly
+speed up run time, but if you have many time series and want to run all
+of the models within Finn ensure that you have a spark cluster that can
+scale to many VM’s.</li>
 </ul>
 </li>
 </ul>
@@ -162,7 +199,7 @@
 
 <div class="pkgdown">
   <p></p>
-<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.1.</p>
+<p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.1.3.</p>
 </div>
 
       </footer>
