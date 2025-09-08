@@ -44,25 +44,25 @@ project <- set_project_info(
   combo_variables = c("id"),
   target_variable = "value",
   date_type = "month"
-  )
-  
-# set up LLM 
+)
+
+# set up LLM
 driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-  
+
 # set up agent info
 agent_info <- set_agent_info(
   project_info = project,
   driver_llm = driver_llm,
   input_data = hist_data,
   forecast_horizon = 6
- )
- 
+)
+
 # run the forecast iteration process
 iterate_forecast(
   agent_info = agent_info,
   max_iter = 3,
   weighted_mape_goal = 0.03
- )
+)
 
 # get the best run information for the agent
 best_run_info <- get_best_agent_run(agent_info = agent_info, full_run_info = TRUE)
