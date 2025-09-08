@@ -313,7 +313,7 @@ cubist_multistep_fit_impl <- function(x, y,
 
   # See if external regressors have future values
   future_xregs <- multi_future_xreg_check(xreg_tbl, external_regressors)
-  
+
   # adjust selected features for previously trained model
   selected_features <- tryCatch(rlang::eval_tidy(selected_features), error = function(e) NULL)
 
@@ -332,13 +332,13 @@ cubist_multistep_fit_impl <- function(x, y,
 
     if (!is.null(selected_features)) {
       element_name <- paste0("model_lag_", lag)
-      
-      if(is.list(selected_features)) {
+
+      if (is.list(selected_features)) {
         selected_features_filtered <- selected_features[[element_name]]
       } else {
         selected_features_filtered <- selected_features
       }
-      
+
       xreg_tbl_final <- xreg_tbl_final %>%
         dplyr::select(
           tidyselect::any_of(selected_features_filtered),

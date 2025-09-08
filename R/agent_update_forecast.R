@@ -2,12 +2,12 @@
 #'
 #' This function updates the forecast agent with the latest data and inputs.
 #'
-#' @param agent_info Agent info from `set_agent_info()` 
+#' @param agent_info Agent info from `set_agent_info()`
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
-#' @param allow_iterate_forecast Logical indicating if the forecast iteration 
-#'   should be allowed if poor performance is detected, meaning >40% of 
+#' @param allow_iterate_forecast Logical indicating if the forecast iteration
+#'   should be allowed if poor performance is detected, meaning >40% of
 #'   time series with >20% worse weighted MAPE than previous agent run
-#' @param max_iter Numeric indicating the maximum number of iterations 
+#' @param max_iter Numeric indicating the maximum number of iterations
 #'   if iterate_forecast is ran
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
@@ -31,47 +31,47 @@
 #'   dplyr::filter(date >= "2013-01-01") %>%
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id))
-#' 
+#'
 #' # set up Finn project
 #' project <- set_project_info(
 #'   project_name = "Demo_Project",
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month"
-#'   )
-#'   
-#' # set up LLM 
+#' )
+#'
+#' # set up LLM
 #' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-#'   
+#'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
 #'   driver_llm = driver_llm,
 #'   input_data = hist_data,
-#'   forecast_horizon = 6, 
+#'   forecast_horizon = 6,
 #'   hist_end_date = as.Date("2014-12-01")
-#'  )
-#'  
+#' )
+#'
 #' # run the forecast iteration process
 #' iterate_forecast(
 #'   agent_info = agent_info,
 #'   max_iter = 3,
 #'   weighted_mape_goal = 0.03
-#'  )
-#'  
+#' )
+#'
 #' # update the forecast with latest data and inputs
 #' agent_info <- set_agent_info(
 #'   project_info = project,
 #'   driver_llm = driver_llm,
 #'   input_data = hist_data,
-#'   forecast_horizon = 6, 
+#'   forecast_horizon = 6,
 #'   hist_end_date = as.Date("2014-12-01"),
 #'   overwrite = TRUE # required to update the agent for latest data and inputs
-#'  )
-#'  
+#' )
+#'
 #' update_forecast(
-#'  agent_info = agent_info,
-#'  weighted_mape_goal = 0.03
+#'   agent_info = agent_info,
+#'   weighted_mape_goal = 0.03
 #' )
 #' }
 #' @export
@@ -466,7 +466,7 @@ initial_checks <- function(agent_info) {
       dplyr::rowwise() %>%
       dplyr::mutate(combo_hash = hash_data(combo)) %>%
       dplyr::filter(combo_hash %in% unfinished_combos) %>%
-      dplyr::select(-combo_hash) %>% 
+      dplyr::select(-combo_hash) %>%
       dplyr::ungroup()
   }
 
@@ -511,21 +511,21 @@ update_global_models <- function(agent_info,
   }
 
   # start forecast update process
-  if(identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
+  if (identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
     results <- callr::r(
       function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
         .libPaths(libs)
         # make sure the child has no leftover backend
         try(doParallel::stopImplicitCluster(), silent = TRUE)
         foreach::registerDoSEQ()
-        
+
         # ensure namespace is fully initialized
         ns <- loadNamespace("finnts", lib.loc = libs)
-        attachNamespace(ns)  # similar effect to library()
-        
+        attachNamespace(ns) # similar effect to library()
+
         # grab function from namespace
         fn <- getFromNamespace("update_forecast_combo", "finnts")
-        
+
         # call function
         fn(
           agent_info = agent_info,
@@ -536,9 +536,9 @@ update_global_models <- function(agent_info,
           seed = seed
         )
       },
-      args    = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+      args = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
       libpath = .libPaths(),
-      stdout  = "|", stderr = "|", show = TRUE, supervise = TRUE
+      stdout = "|", stderr = "|", show = TRUE, supervise = TRUE
     )
   } else {
     results <- update_forecast_combo(
@@ -550,7 +550,7 @@ update_global_models <- function(agent_info,
       seed = seed
     )
   }
-  
+
   # clean up any clusters
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   try(foreach::registerDoSEQ(), silent = TRUE)
@@ -588,7 +588,7 @@ update_local_models <- function(agent_info,
     cli::cli_alert_info("No local models to update, skipping...")
     return("No local models to update, skipping...")
   }
-  
+
   prev_run_id <- unique(previous_best_run_local_tbl$agent_run_id)[[1]]
 
   # check if forecast update already ran for current agent version
@@ -614,10 +614,10 @@ update_local_models <- function(agent_info,
   } else {
     # do nothing
   }
-  
+
   # final list to iterate through
   local_combo_list <- unique(previous_best_run_local_tbl$combo)
-  
+
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
   agent_info_lean$driver_llm <- NULL
@@ -634,55 +634,62 @@ update_local_models <- function(agent_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
-  
+
   on.exit(par_end(cl), add = TRUE)
-  
-  combo_tbl <- tryCatch({
-    foreach::foreach(
-      combo = local_combo_list,
-      .packages       = packages,
-      .errorhandling  = "stop",
-      .inorder        = FALSE,
-      .multicombine   = TRUE
-    ) %op% {
 
-      # get the previous best run for combo
-      prev_run <- read_file(agent_info_lean$project_info,
-                            file_list = paste0(
-                              agent_info_lean$project_info$path, "/logs/",
-                              hash_data(agent_info_lean$project_info$project_name), "-",
-                              hash_data(prev_run_id), "-",
-                              hash_data(combo), "-agent_best_run.csv") %>%
-                              fs::path_tidy()
-      )
+  combo_tbl <- tryCatch(
+    {
+      foreach::foreach(
+        combo = local_combo_list,
+        .packages = packages,
+        .errorhandling = "stop",
+        .inorder = FALSE,
+        .multicombine = TRUE
+      ) %op%
+        {
+          # get the previous best run for combo
+          prev_run <- read_file(agent_info_lean$project_info,
+            file_list = paste0(
+              agent_info_lean$project_info$path, "/logs/",
+              hash_data(agent_info_lean$project_info$project_name), "-",
+              hash_data(prev_run_id), "-",
+              hash_data(combo), "-agent_best_run.csv"
+            ) %>%
+              fs::path_tidy()
+          )
 
-      # run update forecast for combo
-      results <- tryCatch({
-        update_forecast_combo(
-          agent_info = agent_info_lean,
-          prev_best_run_tbl = prev_run,
-          parallel_processing = NULL,
-          num_cores = num_cores,
-          inner_parallel = inner_parallel,
-          seed = seed
-        )
-      }, error = function(e) {
-        stop(sprintf(
-          "Combo '%s' failed. Error Message: %s.",
-          combo, e
-        ))
-      })
+          # run update forecast for combo
+          results <- tryCatch(
+            {
+              update_forecast_combo(
+                agent_info = agent_info_lean,
+                prev_best_run_tbl = prev_run,
+                parallel_processing = NULL,
+                num_cores = num_cores,
+                inner_parallel = inner_parallel,
+                seed = seed
+              )
+            },
+            error = function(e) {
+              stop(sprintf(
+                "Combo '%s' failed. Error Message: %s.",
+                combo, e
+              ))
+            }
+          )
 
-      return(data.frame(Combo = hash_data(combo)))
-    } %>%
-      base::suppressPackageStartupMessages()
-  }, error = function(e) {
-    # hard abort: cancel Spark jobs + stop PSOCK workers immediately
-    cancel_parallel(par_info)
+          return(data.frame(Combo = hash_data(combo)))
+        } %>%
+        base::suppressPackageStartupMessages()
+    },
+    error = function(e) {
+      # hard abort: cancel Spark jobs + stop PSOCK workers immediately
+      cancel_parallel(par_info)
 
-    # still propagate the error so execute_node() can trigger failover/retry
-    stop(e)
-  })
+      # still propagate the error so execute_node() can trigger failover/retry
+      stop(e)
+    }
+  )
 
   return("Finished Local Model Update")
 }
@@ -713,7 +720,7 @@ analyze_results <- function(agent_info) {
       call. = FALSE
     )
   }
-  
+
   # calculate total time series that should have ran
   total_combos <- get_total_combos(agent_info) %>%
     length()
@@ -749,7 +756,7 @@ analyze_results <- function(agent_info) {
     temp_run_results <- get_best_agent_run(agent_info = temp_agent_info)
 
     if (nrow(temp_run_results) > 0) {
-      if(nrow(temp_run_results) == total_combos) { # ensure version finished successfully
+      if (nrow(temp_run_results) == total_combos) { # ensure version finished successfully
         previous_best_run_tbl <- rbind(previous_best_run_tbl, temp_run_results)
         counter <- counter + 1
       }
@@ -1032,7 +1039,7 @@ update_forecast_combo <- function(agent_info,
   }
 
   # get input data for new run
-  if(combo == "All-Data") {
+  if (combo == "All-Data") {
     input_data <- read_file(
       run_info = project_info,
       file_list = list_files(
@@ -1103,7 +1110,7 @@ update_forecast_combo <- function(agent_info,
   if (prev_run_log_tbl$box_cox || prev_run_log_tbl$stationary) {
     combo_info_tbl <- read_file(new_run_info,
       file_list = paste0(
-        new_run_info$path, 
+        new_run_info$path,
         "/prep_data/", hash_data(new_run_info$project_name), "-", hash_data(new_run_info$run_name),
         "-orig_combo_info.", new_run_info$data_output
       ) %>% fs::path_tidy(),
@@ -1131,7 +1138,7 @@ update_forecast_combo <- function(agent_info,
     seasonal_period = adjust_inputs(prev_run_log_tbl$seasonal_period, convert_numeric = TRUE),
     seed = seed
   )
-  
+
   prepped_model_tbl <- get_prepped_models(new_run_info)
 
   model_train_test_tbl <- prepped_model_tbl %>%
@@ -1145,7 +1152,7 @@ update_forecast_combo <- function(agent_info,
     tidyr::unnest(Data)
 
   rm(prepped_model_tbl)
-  
+
   # refit each model on previously selected hyperparameters
   cli::cli_progress_step("Refitting Models with Previously Selected Hyperparameters")
 
@@ -1179,7 +1186,7 @@ update_forecast_combo <- function(agent_info,
   # retune hyperparameters if +10% worse than previous best
   if (final_wmape > (prev_best_wmape * 1.1)) {
     cli::cli_progress_step("Retuning Model Hyperparameters")
-    
+
     rm(final_model_tbl)
     rm(final_fcst_tbl)
     rm(final_wmape)
@@ -1214,14 +1221,14 @@ update_forecast_combo <- function(agent_info,
   # finalize results
   final_fcst_tbl <- final_fcst_tbl %>%
     create_prediction_intervals(model_train_test_tbl)
-  
+
   final_model_tbl <- final_model_tbl %>%
     tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
     dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
 
   # write final outputs
   cli::cli_progress_step("Logging Forecast Results")
-  
+
   combo_id <- unique(final_model_tbl$Combo_ID)
 
   write_data(
@@ -1412,12 +1419,12 @@ fit_models <- function(run_info,
     )
 
     workflow <- model_run$Model_Fit[[1]]
-    
+
     # convert trained workflow to empty workflow to prevent memory issues
     workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
-    workflow <- workflows::workflow() %>% 
-      workflows::add_recipe(workflow_recipe) %>% 
+    workflow <- workflows::workflow() %>%
+      workflows::add_recipe(workflow_recipe) %>%
       workflows::add_model(workflow_spec)
 
     # adjust models based on data
@@ -1628,7 +1635,7 @@ fit_models <- function(run_info,
       tune::collect_predictions() %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
-    
+
     # finalize forecast
     final_fcst <- refit_tbl %>%
       dplyr::rename(

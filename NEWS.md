@@ -6,6 +6,7 @@
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.
   - Helper functions `set_project_info()` and `set_agent_info` to assist in iterating and updating forecasts. 
+- Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
   
 ## Breaking Changes
 

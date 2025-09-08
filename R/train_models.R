@@ -505,7 +505,7 @@ train_models <- function(run_info,
 
         # tune hyperparameters
         set.seed(seed)
-          
+
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
           resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),

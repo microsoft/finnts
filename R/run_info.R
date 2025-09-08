@@ -287,29 +287,29 @@ get_run_info <- function(project_name = NULL,
   )
 
   # read run metadata
-  if(!is.null(project_name) & !is.null(run_name) & !is.null(path)) {
+  if (!is.null(project_name) & !is.null(run_name) & !is.null(path)) {
     # read specific file path
     file_path <- paste0(
-      path, 
+      path,
       "/logs/", project_name_final, "-",
       run_name_final, ".csv"
     ) %>%
       fs::path_tidy()
-    
+
     run_tbl <- read_file(info_list,
-                         file_list = file_path,
-                         return_type = "df"
+      file_list = file_path,
+      return_type = "df"
     )
   } else {
     # read relative file path that contains wildcards
     file_path <- paste0(
       "/logs/*", project_name_final, "-",
       run_name_final, ".csv"
-    ) 
-    
+    )
+
     run_tbl <- read_file(info_list,
-                         path = file_path,
-                         return_type = "df"
+      path = file_path,
+      return_type = "df"
     )
   }
 

@@ -26,25 +26,25 @@
 #'   dplyr::filter(date >= "2013-01-01") %>%
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id))
-#' 
+#'
 #' # set up Finn project
 #' project <- set_project_info(
 #'   project_name = "Demo_Project",
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month"
-#'   )
-#'   
-#' # set up LLM 
+#' )
+#'
+#' # set up LLM
 #' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-#'   
+#'
 #' # set up agent info
 #' agent_info <- set_agent_info(
-#'  project_info = project,
-#'  driver_llm = driver_llm,
-#'  input_data = hist_data,
-#'  forecast_horizon = 6
-#'  )
+#'   project_info = project,
+#'   driver_llm = driver_llm,
+#'   input_data = hist_data,
+#'   forecast_horizon = 6
+#' )
 #' }
 #' @export
 set_agent_info <- function(project_info,

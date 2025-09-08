@@ -1,5 +1,5 @@
 #' Run the Finn Agent Forecast Iteration Process
-#' 
+#'
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
 #'
 #' @param agent_info Agent info from `set_agent_info()`
@@ -27,32 +27,32 @@
 #'   dplyr::filter(date >= "2013-01-01") %>%
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id))
-#' 
+#'
 #' # set up Finn project
 #' project <- set_project_info(
 #'   project_name = "Demo_Project",
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month"
-#'   )
-#'   
-#' # set up LLM 
+#' )
+#'
+#' # set up LLM
 #' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-#'   
+#'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
 #'   driver_llm = driver_llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
-#'  )
-#'  
+#' )
+#'
 #' # run the forecast iteration process
 #' iterate_forecast(
 #'   agent_info = agent_info,
 #'   max_iter = 3,
 #'   weighted_mape_goal = 0.03
-#'  )
+#' )
 #' }
 #' @export
 iterate_forecast <- function(agent_info,
@@ -294,7 +294,7 @@ iterate_forecast <- function(agent_info,
 }
 
 #' Get the final best forecast for an agent
-#' 
+#'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
@@ -312,33 +312,33 @@ iterate_forecast <- function(agent_info,
 #'   dplyr::filter(date >= "2013-01-01") %>%
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id))
-#' 
+#'
 #' # set up Finn project
 #' project <- set_project_info(
 #'   project_name = "Demo_Project",
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month"
-#'   )
-#'   
-#' # set up LLM 
+#' )
+#'
+#' # set up LLM
 #' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-#'   
+#'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
 #'   driver_llm = driver_llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
-#'  )
-#'  
+#' )
+#'
 #' # run the forecast iteration process
 #' iterate_forecast(
 #'   agent_info = agent_info,
 #'   max_iter = 3,
 #'   weighted_mape_goal = 0.03
-#'  )
-#' 
+#' )
+#'
 #' # get the final forecast for the agent
 #' final_forecast <- get_agent_forecast(agent_info = agent_info)
 #' }
@@ -454,7 +454,7 @@ get_agent_forecast <- function(agent_info,
 #' Get the best run for an agent
 #'
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete.
-#' 
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param full_run_info A logical indicating whether to load all input settings
 #'  from each run into the final output table
@@ -472,33 +472,33 @@ get_agent_forecast <- function(agent_info,
 #'   dplyr::filter(date >= "2013-01-01") %>%
 #'   dplyr::rename(Date = date) %>%
 #'   dplyr::mutate(id = as.character(id))
-#' 
+#'
 #' # set up Finn project
 #' project <- set_project_info(
 #'   project_name = "Demo_Project",
 #'   combo_variables = c("id"),
 #'   target_variable = "value",
 #'   date_type = "month"
-#'   )
-#'   
-#' # set up LLM 
+#' )
+#'
+#' # set up LLM
 #' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
-#'   
+#'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
 #'   driver_llm = driver_llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
-#'  )
-#'  
+#' )
+#'
 #' # run the forecast iteration process
 #' iterate_forecast(
 #'   agent_info = agent_info,
 #'   max_iter = 3,
 #'   weighted_mape_goal = 0.03
-#'  )
-#' 
+#' )
+#'
 #' # get the best run information for the agent
 #' best_run_info <- get_best_agent_run(agent_info = agent_info, full_run_info = TRUE)
 #' }
@@ -564,15 +564,15 @@ get_best_agent_run <- function(agent_info,
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-    
+
     local_run_combo_list <- local_run_tbl %>%
       dplyr::pull(combo)
-    
+
     # agent adjustments to prevent serialization issues
     agent_info_lean <- agent_info
     agent_info_lean$driver_llm <- NULL
     agent_info_lean$reason_llm <- NULL
-    
+
     # run parallel process
     par_info <- par_start(
       run_info = agent_info$project_info,
@@ -598,15 +598,15 @@ get_best_agent_run <- function(agent_info,
         temp_local_run_tbl <- read_file(
           run_info = agent_info_lean$project_info,
           file_list = paste0(
-            agent_info_lean$project_info$path, "/logs/", 
+            agent_info_lean$project_info$path, "/logs/",
             hash_data(agent_info_lean$project_info$project_name), "-",
             hash_data(agent_info_lean$run_id), "-",
             hash_data(combo), "-",
             "agent_best_run.csv"
           ) %>% fs::path_tidy()
         )
-        
-        if(nrow(temp_local_run_tbl) == 0) {
+
+        if (nrow(temp_local_run_tbl) == 0) {
           stop("Can't find previous best run for time series.")
         }
 
@@ -620,7 +620,7 @@ get_best_agent_run <- function(agent_info,
 
         temp_local_run_tbl <- temp_local_run_tbl %>%
           dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
-        
+
         return(temp_local_run_tbl)
       } %>%
       base::suppressPackageStartupMessages()
@@ -661,11 +661,13 @@ fcst_agent_workflow <- function(agent_info,
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
   }
-  
+
   # add LLM system prompt for EDA info
-  agent_info$reason_llm <- agent_info$reason_llm$set_system_prompt(iterate_forecast_system_prompt(agent_info = agent_info,
-                                                                                                  combo = combo,
-                                                                                                  weighted_mape_goal = weighted_mape_goal))
+  agent_info$reason_llm <- agent_info$reason_llm$set_system_prompt(iterate_forecast_system_prompt(
+    agent_info = agent_info,
+    combo = combo,
+    weighted_mape_goal = weighted_mape_goal
+  ))
 
   # create a timestamp for the run
   timestamp <- format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
@@ -901,9 +903,9 @@ reason_inputs <- function(agent_info,
 
   # create final prompt
   final_prompt <- glue::glue(
-    '
+    "
       -----LATEST CONTEXT-----
-      Leverage all previous and current info provided to recommend the best inputs to create the most accurate forecast as possible. 
+      Leverage all previous and current info provided to recommend the best inputs to create the most accurate forecast as possible.
 
       -----LATEST METADATA-----
       - run count : <<run_count>>
@@ -918,7 +920,7 @@ reason_inputs <- function(agent_info,
       -----LAST ERROR-----
       <<last_error>>
 
-      -----END OUTPUT-----',
+      -----END OUTPUT-----",
     .open = "<<", .close = ">>",
     run_results = make_pipe_table(previous_run_results),
     run_count = total_runs,
@@ -1864,13 +1866,12 @@ null_converter <- function(x) {
 iterate_forecast_system_prompt <- function(agent_info,
                                            combo = NULL,
                                            weighted_mape_goal) {
-  
   # get metadata
   project_info <- agent_info$project_info
   combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
   xregs_length <- length(agent_info$external_regressors)
-  
+
   # get NULL defaults
   lag_default <- get_lag_periods(
     lag_periods = NULL,
@@ -1880,25 +1881,25 @@ iterate_forecast_system_prompt <- function(agent_info,
     feature_engineering = TRUE
   ) %>%
     paste(collapse = "---")
-  
+
   rolling_default <- get_rolling_window_periods(
     rolling_window_periods = NULL,
     date_type = project_info$date_type
   ) %>%
     paste(collapse = "---")
-  
+
   recipe_default <- get_recipes_to_run(
     recipes_to_run = NULL,
     date_type = project_info$date_type
   ) %>%
     paste(collapse = "---")
-  
+
   seasonal_period_default <- get_seasonal_periods(date_type = project_info$date_type) %>%
     paste(collapse = "---")
-  
+
   # load EDA results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
-  
+
   # create final prompt
   if (is.null(combo)) {
     # global model prompt
@@ -2193,6 +2194,6 @@ iterate_forecast_system_prompt <- function(agent_info,
       agent_version = agent_info$agent_version
     )
   }
-  
+
   return(final_prompt)
 }

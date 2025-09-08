@@ -100,7 +100,7 @@ run_graph <- function(chat,
     ctx$args <- resolve_args(node$args, ctx)
     res <- execute_node(node, ctx, chat)
     ctx <- res$ctx
-    
+
     # prevent arg-bleed into the next node's templates
     ctx$args <- NULL # clears retry-modified args
 
@@ -142,28 +142,31 @@ execute_node <- function(node, ctx, chat) {
     if (!tool_name %in% names(registry)) {
       stop(sprintf("Tool '%s' not registered.", tool_name), call. = FALSE)
     }
-    
+
     tool_fn <- registry[[tool_name]]
-    
+
     # call the function object directly
     try(doParallel::stopImplicitCluster(), silent = TRUE)
     try(foreach::registerDoSEQ(), silent = TRUE)
-    
+
     err <- NULL
     result <- tryCatch(
       rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
-      error = function(e) { err <<- e; NULL }
+      error = function(e) {
+        err <<- e
+        NULL
+      }
     )
-    if(!is.null(err)) {
+    if (!is.null(err)) {
       print(err)
     }
     # success
     if (is.null(err)) {
-      ctx$results[[tool_name]]  <- result
+      ctx$results[[tool_name]] <- result
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
-    
+
     # pause for 5 seconds
     Sys.sleep(5)
 
@@ -184,7 +187,7 @@ execute_node <- function(node, ctx, chat) {
       cli::cli_alert_info(
         sprintf(
           "Tool '%s' failed (attempt %d/%d). Let's try again...",
-          tool_name, attempt, max_try+1L
+          tool_name, attempt, max_try + 1L
         )
       )
 
@@ -192,17 +195,16 @@ execute_node <- function(node, ctx, chat) {
       if (tool_name == "reason_inputs") {
         ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
       }
-      
+
       # SPECIAL FAILOVER: update_local_models spark -> local_machine
       if (tool_name == "update_local_models" &&
-          attempt == 3L &&
-          is.character(ctx$args$parallel_processing) &&
-          identical(tolower(ctx$args$parallel_processing), "spark")) {
-        
+        attempt == 3L &&
+        is.character(ctx$args$parallel_processing) &&
+        identical(tolower(ctx$args$parallel_processing), "spark")) {
         cli::cli_alert_info(
           "Failover: 'update_local_models' failed with Spark. Switching parallel_processing to 'local_machine' for the next retry."
         )
-        
+
         # Flip the arg for the next loop iteration
         ctx$args$parallel_processing <- "local_machine"
         ctx$args$inner_parallel <- FALSE

@@ -51,10 +51,12 @@ get_forecast_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-                      file_list = paste0(run_info$path, "/logs/", 
-                                         hash_data(run_info$project_name), "-", 
-                                         hash_data(run_info$run_name), ".csv") %>% fs::path_tidy(),
-                      return_type = "df"
+    file_list = paste0(
+      run_info$path, "/logs/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), ".csv"
+    ) %>% fs::path_tidy(),
+    return_type = "df"
   )
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
@@ -234,9 +236,11 @@ get_prepped_data <- function(run_info,
 
   # get input values
   log_df <- read_file(run_info,
-    file_list = paste0(run_info$path, "/logs/", 
-                       hash_data(run_info$project_name), "-", 
-                       hash_data(run_info$run_name), ".csv") %>% fs::path_tidy(),
+    file_list = paste0(
+      run_info$path, "/logs/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), ".csv"
+    ) %>% fs::path_tidy(),
     return_type = "df"
   )
 
@@ -304,7 +308,7 @@ get_prepped_models <- function(run_info) {
 
   # get prepped model info
   data_path <- paste0(
-    run_info$path, 
+    run_info$path,
     "/prep_models/", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name)
   )
@@ -793,20 +797,20 @@ condense_data <- function(run_info,
 #' @noRd
 custom_ls <- function(path) {
   stopifnot(is.character(path), length(path) == 1L)
-  
-  dir  <- fs::path_dir(path)
+
+  dir <- fs::path_dir(path)
   glob <- fs::path_file(path)
   if (!nzchar(glob) || is.na(glob)) glob <- "*"
-  
+
   is_synapse_like <- function(p) {
     grepl("^(synfs:|/synfs|abfss://|dbfs:|/dbfs)", p)
   }
-  
+
   # Non-Synapse: regular local listing
   if (!is_synapse_like(dir)) {
     return(fs::dir_ls(path = dir, glob = glob))
   }
-  
+
   # Synapse: list with mssparkutils, then filter client-side
   res <- try(notebookutils::mssparkutils.fs.ls(dir), silent = TRUE)
   used_dir <- dir
@@ -818,14 +822,14 @@ custom_ls <- function(path) {
       used_dir <- alt
     }
   }
-  
+
   # Flatten nested list -> tibble -> paths
   paths <- character(0)
   if (!(inherits(res, "try-error") || length(res) == 0)) {
     df <- NULL
     if (is.list(res)) df <- try(dplyr::bind_rows(res), silent = TRUE)
     if (is.data.frame(res) && is.null(df)) df <- tibble::as_tibble(res)
-    
+
     if (!is.null(df) && nrow(df) > 0) {
       if ("path" %in% names(df) && any(!is.na(df$path))) {
         paths <- df$path
@@ -837,13 +841,17 @@ custom_ls <- function(path) {
     }
   }
   paths <- as.character(paths)
-  if (!length(paths)) return(paths)
-  
+  if (!length(paths)) {
+    return(paths)
+  }
+
   # Apply filename glob (wildcards anywhere in the tail)
   rx <- utils::glob2rx(glob)
   paths <- paths[grepl(rx, basename(paths))]
-  if (!length(paths)) return(paths)
-  
+  if (!length(paths)) {
+    return(paths)
+  }
+
   # Restore original synfs/dbfs formatting based on input
   in_style <- if (grepl("^synfs:", dir)) {
     "synfs_colon"
@@ -858,15 +866,14 @@ custom_ls <- function(path) {
   } else {
     "local"
   }
-  
+
   paths <- switch(in_style,
-                  synfs_slash = sub("^synfs:", "/synfs", paths),
-                  synfs_colon = sub("^/synfs", "synfs:", paths),
-                  dbfs_slash  = sub("^dbfs:", "/dbfs", paths),
-                  dbfs_colon  = sub("^/dbfs", "dbfs:", paths),
-                  paths  # abfss/local: no change
+    synfs_slash = sub("^synfs:", "/synfs", paths),
+    synfs_colon = sub("^/synfs", "synfs:", paths),
+    dbfs_slash  = sub("^dbfs:", "/dbfs", paths),
+    dbfs_colon  = sub("^/dbfs", "dbfs:", paths),
+    paths # abfss/local: no change
   )
-  
+
   paths
 }
-
