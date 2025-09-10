@@ -27,8 +27,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     pacf_scan = list(
@@ -38,8 +38,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     stationarity_scan = list(
@@ -49,8 +49,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     missing_scan = list(
@@ -60,8 +60,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     outlier_scan = list(
@@ -71,8 +71,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     seasonality_scan = list(
@@ -82,8 +82,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     hierarchy_detect = list(
@@ -100,8 +100,8 @@ eda_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         "agent_info" = agent_info,
-        "parallel_processing" = agent_info$parallel_processing,
-        "num_cores" = agent_info$num_cores
+        "parallel_processing" = parallel_processing,
+        "num_cores" = num_cores
       )
     ),
     stop = list(fn = NULL)
@@ -662,7 +662,7 @@ acf_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # check if a previous run already has necessary outputs
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info = agent_info,
     eda_wildcard = "*-acf."
   )
@@ -734,11 +734,11 @@ acf_scan <- function(agent_info,
 
       # calculate acf
       acf_result <- stats::acf(input_data$Target, plot = FALSE, lag.max = max_lag)
-
+      
       # calculate critical value for significance
       n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
       crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
-
+      
       # convert to table and filter
       acf_tbl <- tibble::tibble(
         Combo = x,
@@ -768,7 +768,7 @@ acf_scan <- function(agent_info,
   par_end(cl)
 
   # check if all time series combos ran correctly
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info = agent_info,
     eda_wildcard = "*-acf."
   )
@@ -807,7 +807,7 @@ pacf_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # check if a previous run already has necessary outputs
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info = agent_info,
     eda_wildcard = "*-pacf."
   )
@@ -877,25 +877,34 @@ pacf_scan <- function(agent_info,
 
       max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
 
-      # calculate pacf
-      pacf_result <- stats::pacf(input_data$Target, plot = FALSE, lag.max = max_lag)
-
-      # calculate critical value for significance
-      n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
-      crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
-
-      # convert to table and filter
-      pacf_tbl <- tibble::tibble(
-        Combo = x,
-        Lag = drop(pacf_result$lag),
-        Value = drop(pacf_result$acf)
-      ) %>%
-        dplyr::mutate(Value = round(Value, 2)) %>%
-        dplyr::rowwise() %>%
-        dplyr::mutate(Significant = abs(Value) > crit) %>% # flag spikes beyond band
-        dplyr::ungroup() %>%
-        dplyr::filter(Significant, Lag > 0) %>%
-        dplyr::select(-Significant)
+      if(max_lag > 0) {
+        # calculate pacf
+        pacf_result <- stats::pacf(input_data$Target, plot = FALSE, lag.max = max_lag)
+        
+        # calculate critical value for significance
+        n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
+        crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
+        
+        # convert to table and filter
+        pacf_tbl <- tibble::tibble(
+          Combo = x,
+          Lag = drop(pacf_result$lag),
+          Value = drop(pacf_result$acf)
+        ) %>%
+          dplyr::mutate(Value = round(Value, 2)) %>%
+          dplyr::rowwise() %>%
+          dplyr::mutate(Significant = abs(Value) > crit) %>% # flag spikes beyond band
+          dplyr::ungroup() %>%
+          dplyr::filter(Significant, Lag > 0) %>%
+          dplyr::select(-Significant)
+      } else {
+        pacf_tbl <- tibble::tibble(
+          Combo = x, 
+          Lag = 1, 
+          Value = 0
+        ) %>%
+          dplyr::filter(Value > 0)
+      }
 
       # save results to disc
       write_data(
@@ -913,7 +922,7 @@ pacf_scan <- function(agent_info,
   par_end(cl)
 
   # check if all time series combos ran correctly
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info = agent_info,
     eda_wildcard = "*-pacf."
   )
@@ -953,7 +962,7 @@ stationarity_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # detect previously completed combos
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-stationarity."
   )
@@ -1043,7 +1052,7 @@ stationarity_scan <- function(agent_info,
   par_end(cl)
 
   # sanity check
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-stationarity."
   )
@@ -1082,7 +1091,7 @@ missing_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # detect previously completed combos
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-missing."
   )
@@ -1169,7 +1178,7 @@ missing_scan <- function(agent_info,
   par_end(cl)
 
   # sanity check
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-missing."
   )
@@ -1208,7 +1217,7 @@ outlier_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # detect previously completed combos
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-outliers."
   )
@@ -1347,7 +1356,7 @@ outlier_scan <- function(agent_info,
   par_end(cl)
 
   # sanity check
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-outliers."
   )
@@ -1386,7 +1395,7 @@ seasonality_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # detect previously completed combos
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-add_season."
   )
@@ -1524,7 +1533,7 @@ seasonality_scan <- function(agent_info,
   par_end(cl)
 
   # sanity check
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-add_season."
   )
@@ -1758,7 +1767,7 @@ xreg_scan <- function(agent_info,
   total_combo_list <- get_total_combos(agent_info = agent_info)
 
   # detect previously completed combos
-  prev_combo_list <- get_finished_combos(
+  prev_combo_list <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-xreg_scan."
   )
@@ -1873,7 +1882,7 @@ xreg_scan <- function(agent_info,
   par_end(cl)
 
   # sanity check
-  successful_combos <- get_finished_combos(
+  successful_combos <- get_finished_eda_combos(
     agent_info   = agent_info,
     eda_wildcard = "*-xreg_scan."
   )
@@ -1942,8 +1951,8 @@ get_total_combos <- function(agent_info) {
 #'
 #' @return list of finished time series combos
 #' @noRd
-get_finished_combos <- function(agent_info,
-                                eda_wildcard) {
+get_finished_eda_combos <- function(agent_info,
+                                    eda_wildcard) {
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
