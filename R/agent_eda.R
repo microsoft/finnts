@@ -734,11 +734,11 @@ acf_scan <- function(agent_info,
 
       # calculate acf
       acf_result <- stats::acf(input_data$Target, plot = FALSE, lag.max = max_lag)
-      
+
       # calculate critical value for significance
       n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
       crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
-      
+
       # convert to table and filter
       acf_tbl <- tibble::tibble(
         Combo = x,
@@ -877,14 +877,14 @@ pacf_scan <- function(agent_info,
 
       max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
 
-      if(max_lag > 0) {
+      if (max_lag > 0) {
         # calculate pacf
         pacf_result <- stats::pacf(input_data$Target, plot = FALSE, lag.max = max_lag)
-        
+
         # calculate critical value for significance
         n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
         crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
-        
+
         # convert to table and filter
         pacf_tbl <- tibble::tibble(
           Combo = x,
@@ -899,8 +899,8 @@ pacf_scan <- function(agent_info,
           dplyr::select(-Significant)
       } else {
         pacf_tbl <- tibble::tibble(
-          Combo = x, 
-          Lag = 1, 
+          Combo = x,
+          Lag = 1,
           Value = 0
         ) %>%
           dplyr::filter(Value > 0)
