@@ -38,63 +38,60 @@ run_graph <- function(chat,
 
     # normal tool node
     resolve_args <- function(arg_template, ctx) {
-      # if no args, return empty list
-      if (is.null(arg_template)) {
-        return(list())
-      }
-
-      # Build a data-mask so rlang/glue can safely evaluate curly expressions.
-      # flatten_ctx() makes every nested element of `ctx` accessible by name.
+      if (is.null(arg_template)) return(list())
+      
       mask_env <- rlang::env(parent = emptyenv())
-
+      
+      # expose the whole context explicitly
+      assign("ctx", ctx, envir = mask_env)
+      
+      # optionally expose top-level named fields for convenience
+      top_nms <- names(ctx)
+      if (!is.null(top_nms)) {
+        for (i in seq_along(top_nms)) {
+          nm <- top_nms[i]
+          if (!is.na(nm) && nzchar(nm)) assign(nm, ctx[[i]], envir = mask_env)
+        }
+      }
+      
+      # only assign named elements; skip unnamed (e.g., list arrays)
       flatten_ctx <- function(x, env) {
         if (is.list(x)) {
           purrr::imap(x, function(val, nm) {
-            assign(nm, val, envir = env)
-            flatten_ctx(val, env) # recurse so results$foo -> foo
+            if (is.character(nm) && !is.na(nm) && nzchar(nm)) {
+              assign(nm, val, envir = env)
+            }
+            # keep recursing but continue to skip unnamed keys
+            flatten_ctx(val, env)
           })
         }
       }
       flatten_ctx(ctx, mask_env)
-      mask <- rlang::new_data_mask(mask_env) # << key line (no warning)
-
-      # walk through the template and resolve expressions
+      
+      mask <- rlang::new_data_mask(mask_env)
+      
       walk_template <- function(x) {
-        # recurse into sub-lists first
-        if (is.list(x)) {
-          return(purrr::modify(x, walk_template))
-        }
-        if (!is.character(x) || length(x) != 1) {
-          return(x)
-        }
-
-        # eval simple expressions
+        if (is.list(x)) return(purrr::modify(x, walk_template))
+        if (!is.character(x) || length(x) != 1) return(x)
+        
         if (stringr::str_detect(x, "^\\{[^{}]+\\}$")) {
-          expr <- stringr::str_sub(x, 2, -2) # remove outer braces
+          expr <- stringr::str_sub(x, 2, -2)
           out <- tryCatch(
             rlang::eval_tidy(rlang::parse_expr(expr), mask),
             error = function(e) {
-              stop(
-                sprintf("Failed to eval '%s': %s", expr, conditionMessage(e)),
-                call. = FALSE
-              )
+              stop(sprintf("Failed to eval '%s': %s", expr, conditionMessage(e)), call. = FALSE)
             }
           )
           return(out)
         }
-
-        # mixed glue string
-        val <- glue::glue_data(
-          mask,
-          x,
-          .open  = "{",
-          .close = "}"
-        )
+        
+        val <- glue::glue_data(mask, x, .open = "{", .close = "}")
         if (identical(val, "NULL")) NULL else as.character(val)
       }
-
+      
       purrr::modify(arg_template, walk_template)
     }
+    
 
     # run the node
     ctx$args <- resolve_args(node$args, ctx)
@@ -131,10 +128,9 @@ execute_node <- function(node, ctx, chat) {
   # get tool name and retry settings
   tool_name <- node$fn
   max_try <- node$max_retry %||% 0L
-  retry_mode <- node$retry_mode %||% "llm" # "llm" (default) or "plain"
+  retry_mode <- node$retry_mode %||% "plain" # "llm" (default) or "plain"
   attempt <- 0L
   registry <- chat$get_tools()
-
   cli::cli_progress_step(sprintf("Running %s...", tool_name))
 
   repeat {
