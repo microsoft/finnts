@@ -986,7 +986,7 @@ stationarity_scan <- function(agent_info,
   )
 
   cl <- par_info$cl
-  packages <- c(par_info$packages, "tseries") # add tseries for adf.test
+  packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
   # submit tasks
