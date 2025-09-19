@@ -103,10 +103,45 @@ ask_agent_workflow <- function(agent_info,
                                    paste(agent_info$external_regressors, collapse = ', '))}
 
     Available data sources:
-    - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns forecast data with columns like Combo, Date, Forecast, Target, Run_Type, lo_80, hi_80, lo_95, hi_95
-    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Returns best model runs with columns like combo, weighted_mape, model_type, models_to_run, recipes_to_run
+    - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns final forecast data with the following columns:
+      - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
+      - Model_ID: unique identifier of the specific model trained, which is a combination of Model_Name, Model_Type, and Recipe_ID columns, separated by '_'
+      - Model_Name: name of the model (e.g., 'arima', 'ets', 'cubist', etc.)
+      - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2')
+      - Run_Type: distinguishes between 'Back_Test' and 'Final_Forecast'
+      - Train_Test_ID: identifies each fold of time series cross-validation (e.g., 1 for future forecast, 2 for the first back test fold, etc.)
+      - Best_Model: indicates if this model was selected as the best model for the time series (Yes, No)
+      - Horizon: forecast horizon step (1, 2, ..., n)
+      - Date: timestamp of the forecast
+      - Target: actual value, only available for back test periods
+      - Forecast: forecasted value
+      - lo_95: lower bound of the 95% prediction interval (future forecasts only)
+      - hi_95: upper bound of the 95% prediction interval (future forecasts only)
+      - lo_80: lower bound of the 80% prediction interval (future forecasts only)
+      - hi_80: upper bound of the 80% prediction interval (future forecasts only)
+    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Returns the best agent run metadata inputs for each time series with the following columns:
+      - combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
+      - model_type: how the model was trained, local for individual time series, global for all time series
+      - weighted_mape: weighted mean absolute percentage error across all back test periods
+      - clean_missing_values: indicates if missing values were cleaned (TRUE, FALSE)
+      - clean_outliers: indicates if outliers were cleaned (TRUE, FALSE)
+      - stationary: indicates if the time series was made stationary (TRUE, FALSE)
+      - box_cox: indicates if a Box-Cox transformation was applied (TRUE, FALSE)
+      - fourier_periods: number of Fourier terms used (NA uses default values)
+      - lag_periods: lag periods used in feature engineering recipe, combined as a string using '---' (e.g., '1---12---24'), value of NA means default lags were used
+      - rolling_window_periods: rolling window periods used in feature engineering recipe, combined as a string using '---' (e.g., '3---7---30'), value of NA means default windows were used
+      - recipes_to_run: recipes used in the model (e.g., 'R1', 'R2')
+      - multistep_horizon: indicates if multistep horizon forecasting was used (TRUE, FALSE)
+      - models_to_run: models trained and evaluated, combined as a string using '---' (e.g., 'arima---ets---cubist'), value of NA means all models were used
+      - pca: indicates if PCA was applied in the recipe (TRUE, FALSE)
+      - seasonal_period: seasonal periods used in models that can handle multiple seasonalities, combined as a string using '---' (e.g., '12---24'), value of NA means default seasonality was used
+      - back_test_scenarios: number of folds used in time series cross-validation, value of NA means default number of folds was used
+      - back_test_spacing: spacing between back test folds, value of NA means default spacing was used
+      - feature_selection: indicates if feature selection was applied in the recipe (TRUE, FALSE)
+      - negative_forecast: indicates if negative forecasts were allowed (TRUE, FALSE)
+      - average_model: indicates if an average ensemble model was created (TRUE, FALSE)
 
-    Always use the dplyr package for data manipulation.
+    ALWAYS use the dplyr package for data manipulation.
     Be precise and efficient in your code generation."
   )
 
@@ -427,6 +462,7 @@ execute_r_code <- function(code,
                            parallel_processing = NULL,
                            num_cores = NULL,
                            previous_results = list()) {
+  print(code)
   # Create execution environment with necessary objects
   exec_env <- new.env(parent = globalenv())
   exec_env$agent_info <- agent_info
