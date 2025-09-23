@@ -105,10 +105,10 @@ ask_agent_workflow <- function(agent_info,
     Available data sources:
     - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
-      - Model_ID: unique identifier of the specific model trained, which is a combination of Model_Name, Model_Type, and Recipe_ID columns, separated by '_'
+      - Model_ID: unique identifier of the specific model trained, which is a combination of Model_Name, Model_Type, and Recipe_ID columns, separated by '--'
       - Model_Name: name of the model (e.g., 'arima', 'ets', 'cubist', etc.)
       - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2')
-      - Run_Type: distinguishes between 'Back_Test' and 'Final_Forecast'
+      - Run_Type: distinguishes between 'Back_Test' and 'Future_Forecast'
       - Train_Test_ID: identifies each fold of time series cross-validation (e.g., 1 for future forecast, 2 for the first back test fold, etc.)
       - Best_Model: indicates if this model was selected as the best model for the time series (Yes, No)
       - Horizon: forecast horizon step (1, 2, ..., n)
@@ -190,7 +190,8 @@ ask_agent_workflow <- function(agent_info,
         agent_info = agent_info,
         analysis_plan = "{ctx$analysis_plan}",
         step_index = "{ctx$step_index}",
-        previous_results = "{ctx$analysis_results}"
+        previous_results = "{ctx$analysis_results}", 
+        last_error = NULL
       ), 
       branch = function(ctx) {
         # Store the result from the last step execution
@@ -293,27 +294,53 @@ create_analysis_plan <- function(agent_info, question) {
     "Create a plan to answer this question using R code: '{question}'
 
     Available data sources:
-    - get_agent_forecast(agent_info, parallel_processing, num_cores): Forecast data with Combo, Date, Forecast, Target, Run_Type, confidence intervals
-    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Model run info with combo, weighted_mape, model_type, models_to_run, recipes_to_run
+    
+    1. get_agent_forecast(agent_info, parallel_processing, num_cores): 
+       USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons
+       Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model, 
+                       Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
+       
+    2. get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores):
+       USE FOR: model configurations, feature engineering settings
+       Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run, 
+                       clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
+                       lag_periods, rolling_window_periods, pca, feature_selection, etc.
+    
+    Decision Rules:
+    - Questions about accuracy/WMAPE/errors → use get_agent_forecast()
+    - Questions about forecasts/predictions/future values → use get_agent_forecast()
+    - Questions about models used → check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
+    - Questions about feature engineering/transformations → use get_best_agent_run()
+    - Questions needing both forecast values AND run settings → use BOTH sources in separate steps
+    
+    Keywords to Data Source Mapping:
+    - WMAPE, MAPE, accuracy, error, performance → get_agent_forecast()
+    - forecast, prediction, future, back test, next month/year → get_agent_forecast()
+    - confidence interval, prediction interval → get_agent_forecast()
+    - outliers, missing values, transformations → get_best_agent_run()
+    - best model → get_agent_forecast()
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
-    - data_source: Which function to call for data (if needed)
+    - data_source: Which function to call for data (MUST be one of the two listed above)
     - analysis: Brief description of the R code analysis to perform
+    - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data')
 
     Examples:
-    For 'What is the average WMAPE?':
+    For 'What is the average WMAPE across all time series?':
     [{{
-      \"description\": \"Get accuracy metrics and calculate average WMAPE\",
+      \"description\": \"Get accuracy metrics from best agent runs\",
       \"data_source\": \"get_best_agent_run\",
-      \"analysis\": \"Calculate mean of weighted_mape column\"
+      \"analysis\": \"Calculate mean of weighted_mape column\",
+      \"output_name\": \"avg_wmape\"
     }}]
 
-    For 'Show forecast for next 3 months for product X':
+    For 'Show forecast vs actuals for the last 3 months':
     [{{
-      \"description\": \"Get forecast data and filter for product X\",
+      \"description\": \"Get forecast data including back-test results\",
       \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for specific product and future dates\"
+      \"analysis\": \"Filter for Run_Type == 'Back_Test' and compare Forecast vs Target\",
+      \"output_name\": \"backtest_comparison\"
     }}]
 
     Return ONLY the JSON array."
@@ -356,13 +383,15 @@ create_analysis_plan <- function(agent_info, question) {
 #' @param analysis_plan The full analysis plan
 #' @param step_index Current step index
 #' @param previous_results Results from previous steps
+#' @param last_error Last error message (if any)
 #'
 #' @return Result of the R code execution
 #' @noRd
 execute_analysis_step <- function(agent_info,
                                   analysis_plan,
                                   step_index,
-                                  previous_results = list()) {
+                                  previous_results = list(), 
+                                  last_error = NULL) {
   if (step_index > length(analysis_plan)) return(NULL)
   
   current_step <- analysis_plan[[step_index]]
@@ -385,7 +414,7 @@ execute_analysis_step <- function(agent_info,
   }, error = function(...) {
     "get_agent_forecast(agent_info, parallel_processing, num_cores)"
   })
-  
+
   # Generate R code for this step
   code_prompt <- glue::glue(
     "You are writing R code that will be executed inside an R environment that ALREADY contains:
@@ -396,6 +425,7 @@ execute_analysis_step <- function(agent_info,
 
     Task: {current_step$analysis}
     Step description: {current_step$description}
+    Last error: {ifelse(is.null(last_error), 'None', last_error)}
 
     HARD RULES:
     - NEVER write placeholder values like \"your_agent_info\".
@@ -403,6 +433,7 @@ execute_analysis_step <- function(agent_info,
     - Do NOT call library(); always attach the package to the function using ::.
     - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools, 
       lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
+    - If last error is not none, it contains the error message from the last attempt to run R code, YOU MUST fix the code accordingly
     - FIRST LINE MUST load data exactly like:
       data <- {ds_call}
     - Use dplyr verbs for manipulation.

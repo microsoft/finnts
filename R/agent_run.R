@@ -187,8 +187,8 @@ execute_node <- function(node, ctx, chat) {
         )
       )
 
-      # pass LLM error to next run of reason inputs tool call
-      if (tool_name == "reason_inputs") {
+      # pass LLM error to next run of specific tool call
+      if (tool_name %in% c("reason_inputs", "execute_analysis_step")) {
         ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
       }
 
