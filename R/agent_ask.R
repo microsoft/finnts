@@ -103,11 +103,16 @@ ask_agent_workflow <- function(agent_info,
                                    paste(agent_info$external_regressors, collapse = ', '))}
 
     Available data sources:
-    - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns final forecast data with the following columns:
+    - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
-      - Model_ID: unique identifier of the specific model trained, which is a combination of Model_Name, Model_Type, and Recipe_ID columns, separated by '--'
-      - Model_Name: name of the model (e.g., 'arima', 'ets', 'cubist', etc.)
-      - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2')
+      - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained. 
+        * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
+        * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
+        * ALWAYS USE Model_ID to identify which model(s) were used
+      - Model_Name: name of the model type (e.g., 'arima', 'ets', 'cubist')
+        * IMPORTANT: When Model_Name is NA, this indicates a SIMPLE AVERAGE model - check Model_ID for the actual models used
+      - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
+      - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2', 'simple_average')
       - Run_Type: distinguishes between 'Back_Test' and 'Future_Forecast'
       - Train_Test_ID: identifies each fold of time series cross-validation (e.g., 1 for future forecast, 2 for the first back test fold, etc.)
       - Best_Model: indicates if this model was selected as the best model for the time series (Yes, No)
@@ -119,7 +124,7 @@ ask_agent_workflow <- function(agent_info,
       - hi_95: upper bound of the 95% prediction interval (future forecasts only)
       - lo_80: lower bound of the 80% prediction interval (future forecasts only)
       - hi_80: upper bound of the 80% prediction interval (future forecasts only)
-    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Returns the best agent run metadata inputs for each time series with the following columns:
+    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Returns a df of the best agent run metadata inputs for each time series with the following columns:
       - combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
       - model_type: how the model was trained, local for individual time series, global for all time series
       - weighted_mape: weighted mean absolute percentage error across all back test periods
@@ -139,7 +144,26 @@ ask_agent_workflow <- function(agent_info,
       - back_test_spacing: spacing between back test folds, value of NA means default spacing was used
       - feature_selection: indicates if feature selection was applied in the recipe (TRUE, FALSE)
       - negative_forecast: indicates if negative forecasts were allowed (TRUE, FALSE)
-      - average_model: indicates if an average ensemble model was created (TRUE, FALSE)
+      - average_models: indicates if an average ensemble model was created (TRUE, FALSE)
+    - get_eda_data(agent_info): Returns a data frame containing all exploratory data analysis results with columns:
+      - Combo: time series identifier ('All' for aggregate metrics across all series, or specific combo like 'Product_A--Region_1')
+      - Analysis_Type: type of EDA analysis performed
+      - Metric: specific metric name within each analysis type
+      - Value: numeric or character value of the metric
+      
+      Analysis types and their metrics include:
+      - Data_Profile: Total_Rows, Number_Series, Min_Rows_Per_Series, Max_Rows_Per_Series, Avg_Rows_Per_Series, Negative_Count, Negative_Percent, Start_Date, End_Date
+      - ACF: Lag_0, Lag_1, Lag_2, etc. (autocorrelation values at different lags)
+      - PACF: Lag_0, Lag_1, Lag_2, etc. (partial autocorrelation values at different lags)
+      - Stationarity: is_stationary (TRUE/FALSE indicating if series is stationary based on ADF and KPSS tests)
+      - Missing_Data: total_rows, missing_count, missing_pct, longest_gap
+      - Outliers: total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt
+      - Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
+      - Hierarchy: hierarchy_type (none, standard, or grouped)
+      - External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
+      
+      To filter for specific analysis or combo:
+      eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
 
     ALWAYS use the dplyr package for data manipulation.
     Be precise and efficient in your code generation."
@@ -233,7 +257,9 @@ ask_agent_workflow <- function(agent_info,
     attempts = list(), # retry bookkeeping for execute_node()
     analysis_plan = list(), # full plan of analysis steps
     step_index = 1, # current step index
-    analysis_results = list() # collected results from each step
+    analysis_results = list(), # collected results from each step
+    agent_info = agent_info, # pass agent_info to all tools
+    question = question # pass question to all tools
   )
 
   # Run the workflow
@@ -253,6 +279,14 @@ ask_agent_workflow <- function(agent_info,
 #' @return NULL
 #' @noRd
 register_ask_tools <- function(agent_info) {
+  
+  # workflows
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "ask_agent_workflow",
+    .description = "Run the Finn ask agent workflow to answer questions",
+    .fun = ask_agent_workflow
+  ))
+  
   # Register the workflow orchestration tools
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "create_analysis_plan",
@@ -296,7 +330,7 @@ create_analysis_plan <- function(agent_info, question) {
     Available data sources:
     
     1. get_agent_forecast(agent_info, parallel_processing, num_cores): 
-       USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons
+       USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons, identifying which models were used
        Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model, 
                        Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
        
@@ -306,25 +340,44 @@ create_analysis_plan <- function(agent_info, question) {
                        clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
                        lag_periods, rolling_window_periods, pca, feature_selection, etc.
     
+    3. get_eda_data(agent_info):
+       USE FOR: data quality issues, time series characteristics, seasonality analysis, stationarity tests
+       Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
+       - Filter by Analysis_Type to get specific EDA results (e.g., 'ACF', 'PACF', 'Stationarity', 'Missing_Data', 'Outliers', etc.)
+       - Filter by Combo to get results for specific time series
+       - Value column contains the metric values (numeric or character)
+    
+    4. previous step results:
+       USE FOR: Working with results from earlier steps in the analysis
+       Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
+    
     Decision Rules:
-    - Questions about accuracy/WMAPE/errors → use get_agent_forecast()
+    - Questions about accuracy/WMAPE/errors → use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
+    - Questions about which specific models were used → use get_agent_forecast() and analyze Model_ID column
     - Questions about forecasts/predictions/future values → use get_agent_forecast()
     - Questions about models used → check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
     - Questions about feature engineering/transformations → use get_best_agent_run()
+    - Questions about data quality/patterns/seasonality → use get_eda_data()
+    - Questions about stationarity/ACF/PACF → use get_eda_data() with Analysis_Type filter
+    - Questions about outliers in the data → use get_eda_data() with Analysis_Type == 'Outliers'
+    - Questions about missing data patterns → use get_eda_data() with Analysis_Type == 'Missing_Data'
     - Questions needing both forecast values AND run settings → use BOTH sources in separate steps
     
     Keywords to Data Source Mapping:
     - WMAPE, MAPE, accuracy, error, performance → get_agent_forecast()
     - forecast, prediction, future, back test, next month/year → get_agent_forecast()
     - confidence interval, prediction interval → get_agent_forecast()
-    - outliers, missing values, transformations → get_best_agent_run()
+    - outliers, missing values, transformations → get_best_agent_run() for settings, get_eda_data() for actual counts
     - best model → get_agent_forecast()
+    - data quality, seasonality, stationarity, ACF, PACF → get_eda_data()
+    - time series characteristics, patterns → get_eda_data()
+    - external regressor correlations → get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
-    - data_source: Which function to call for data (MUST be one of the two listed above)
+    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"none\", or \"previous\")
     - analysis: Brief description of the R code analysis to perform
-    - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data')
+    - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data') - THIS WILL BE AVAILABLE IN SUBSEQUENT STEPS
 
     Examples:
     For 'What is the average WMAPE across all time series?':
@@ -335,15 +388,35 @@ create_analysis_plan <- function(agent_info, question) {
       \"output_name\": \"avg_wmape\"
     }}]
 
-    For 'Show forecast vs actuals for the last 3 months':
+    For 'Which models were used for each time series?':
     [{{
-      \"description\": \"Get forecast data including back-test results\",
+      \"description\": \"Get forecast data with model information\",
       \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for Run_Type == 'Back_Test' and compare Forecast vs Target\",
-      \"output_name\": \"backtest_comparison\"
+      \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo and Model_ID combinations\",
+      \"output_name\": \"models_used\"
+    }}]
+    
+    For 'Analyze forecast bias and recommend adjustments':
+    [{{
+      \"description\": \"Get back-test results\",
+      \"data_source\": \"get_agent_forecast\",
+      \"analysis\": \"Filter for Run_Type == 'Back_Test'\",
+      \"output_name\": \"backtest_data\"
+    }},
+    {{
+      \"description\": \"Calculate errors\",
+      \"data_source\": \"none\",
+      \"analysis\": \"Using backtest_data, calculate error = Forecast - Target and pct_error = (Forecast - Target) / Target * 100\",
+      \"output_name\": \"error_data\"
+    }},
+    {{
+      \"description\": \"Summarize bias by series\",
+      \"data_source\": \"none\",
+      \"analysis\": \"Using error_data, group by Combo and calculate mean percentage error\",
+      \"output_name\": \"series_bias\"
     }}]
 
-    Return ONLY the JSON array."
+    DO NOT call any tools. Return ONLY the JSON array."
   )
 
   response <- llm$chat(planning_prompt, echo = FALSE)
@@ -354,7 +427,7 @@ create_analysis_plan <- function(agent_info, question) {
   } else {
     plan_text <- as.character(response)
   }
-
+  print(plan_text)
   # Parse JSON
   plan_text <- gsub("```json|```", "", plan_text)
   plan_text <- trimws(plan_text)
@@ -407,6 +480,11 @@ execute_analysis_step <- function(agent_info,
       "get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores)"
     } else if (identical(src, "get_agent_forecast")) {
       "get_agent_forecast(agent_info, parallel_processing, num_cores)"
+    } else if (identical(src, "get_eda_data")) {
+      "get_eda_data(agent_info)"
+    } else if (identical(src, "none") || identical(src, "previous")) {
+      # Working with previous results
+      NULL
     } else {
       # Fallback: treat as a function name taking the standard args
       sprintf("%s(agent_info, parallel_processing, num_cores)", src)
@@ -414,17 +492,35 @@ execute_analysis_step <- function(agent_info,
   }, error = function(...) {
     "get_agent_forecast(agent_info, parallel_processing, num_cores)"
   })
+  
+  # Build context about available previous results
+  previous_context <- ""
+  if (length(previous_results) > 0 && step_index > 1) {
+    # Map step names to output names from the plan
+    available_objects <- c()
+    for (i in 1:(step_index - 1)) {
+      if (i <= length(analysis_plan) && !is.null(previous_results[[paste0("step_", i)]])) {
+        output_name <- analysis_plan[[i]]$output_name
+        available_objects <- c(available_objects, paste0(output_name, " (from step ", i, ")"))
+      }
+    }
+    if (length(available_objects) > 0) {
+      previous_context <- paste0("\n\nAvailable objects from previous steps:\n", 
+                                 paste("- ", available_objects, collapse = "\n"))
+    }
+  }
 
   # Generate R code for this step
   code_prompt <- glue::glue(
     "You are writing R code that will be executed inside an R environment that ALREADY contains:
     - agent_info (list-like)  [DO NOT create or modify it]
     - parallel_processing, num_cores  [DO NOT reassign]
-    - functions: get_agent_forecast(), get_best_agent_run()
-    - any previous step objects (if present)
+    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data()
+    {previous_context}
 
     Task: {current_step$analysis}
     Step description: {current_step$description}
+    Expected output name: {current_step$output_name}
     Last error: {ifelse(is.null(last_error), 'None', last_error)}
 
     HARD RULES:
@@ -434,11 +530,22 @@ execute_analysis_step <- function(agent_info,
     - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools, 
       lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
     - If last error is not none, it contains the error message from the last attempt to run R code, YOU MUST fix the code accordingly
-    - FIRST LINE MUST load data exactly like:
-      data <- {ds_call}
+    - NEVER call any tools, just generate the R code
+    
+    Data Loading Rules:
+    {ifelse(!is.null(ds_call), paste0('- FIRST LINE MUST load data exactly like:\n      data <- ', ds_call), paste0('- This step uses data from a previous step named \"', ifelse(step_index > 1 && (step_index - 1) <= length(analysis_plan), analysis_plan[[step_index - 1]]$output_name, 'previous_result'), '\"\n- Access it directly by its name (it\\'s already in the environment)'))}
+    
     - Use dplyr verbs for manipulation.
     - Put your final output in a variable named result.
-    - Output ONLY raw R code (no backticks, no prose)."
+    - Output ONLY raw R code (no backticks, no prose).
+    
+    Special notes:
+    - For get_eda_data(): Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
+    - For get_agent_forecast(): 
+      * Model_ID is the PRIMARY model identifier - ALWAYS include it in your results
+      * When Model_Name is NA, it indicates an ensemble/average model
+      * Model_ID for ensembles contains multiple models separated by '_'
+    - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
   )
   
   code_response <- llm$chat(code_prompt, echo = FALSE)
@@ -466,7 +573,9 @@ execute_analysis_step <- function(agent_info,
     agent_info = agent_info,
     parallel_processing = agent_info$workflow_params$parallel_processing,
     num_cores = agent_info$workflow_params$num_cores,
-    previous_results = previous_results
+    previous_results = previous_results,
+    analysis_plan = analysis_plan,
+    step_index = step_index
   )
   
   if (is.null(result)) {
@@ -477,7 +586,6 @@ execute_analysis_step <- function(agent_info,
   return(result)
 }
 
-
 #' Execute R code safely
 #'
 #' @param code R code to execute
@@ -485,6 +593,8 @@ execute_analysis_step <- function(agent_info,
 #' @param parallel_processing Parallel processing option
 #' @param num_cores Number of cores
 #' @param previous_results Previous step results
+#' @param analysis_plan The full analysis plan (optional)
+#' @param step_index Current step index (optional)
 #'
 #' @return Result of code execution
 #' @noRd
@@ -492,7 +602,9 @@ execute_r_code <- function(code,
                            agent_info,
                            parallel_processing = NULL,
                            num_cores = NULL,
-                           previous_results = list()) {
+                           previous_results = list(),
+                           analysis_plan = NULL,
+                           step_index = NULL) {
   print(code)
   # Create execution environment with necessary objects
   exec_env <- new.env(parent = globalenv())
@@ -501,10 +613,25 @@ execute_r_code <- function(code,
   exec_env$num_cores <- num_cores
   exec_env$get_agent_forecast <- get_agent_forecast
   exec_env$get_best_agent_run <- get_best_agent_run
+  exec_env$get_eda_data <- get_eda_data
 
-  # Add previous results to environment
-  for (name in names(previous_results)) {
-    exec_env[[name]] <- previous_results[[name]]
+  # Add previous results to environment with their proper names
+  if (!is.null(analysis_plan) && !is.null(step_index) && length(previous_results) > 0) {
+    # Map step_X results to their output_name from the plan
+    for (i in 1:(step_index - 1)) {
+      step_name <- paste0("step_", i)
+      if (step_name %in% names(previous_results) && i <= length(analysis_plan)) {
+        output_name <- analysis_plan[[i]]$output_name
+        if (!is.null(output_name)) {
+          exec_env[[output_name]] <- previous_results[[step_name]]
+        }
+      }
+    }
+  } else {
+    # Fallback: add all previous results as-is
+    for (name in names(previous_results)) {
+      exec_env[[name]] <- previous_results[[name]]
+    }
   }
 
   # Load required packages in the environment
