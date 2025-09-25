@@ -38,13 +38,15 @@ run_graph <- function(chat,
 
     # normal tool node
     resolve_args <- function(arg_template, ctx) {
-      if (is.null(arg_template)) return(list())
-      
+      if (is.null(arg_template)) {
+        return(list())
+      }
+
       mask_env <- rlang::env(parent = emptyenv())
-      
+
       # expose the whole context explicitly
       assign("ctx", ctx, envir = mask_env)
-      
+
       # optionally expose top-level named fields for convenience
       top_nms <- names(ctx)
       if (!is.null(top_nms)) {
@@ -53,7 +55,7 @@ run_graph <- function(chat,
           if (!is.na(nm) && nzchar(nm)) assign(nm, ctx[[i]], envir = mask_env)
         }
       }
-      
+
       # only assign named elements; skip unnamed (e.g., list arrays)
       flatten_ctx <- function(x, env) {
         if (is.list(x)) {
@@ -67,13 +69,17 @@ run_graph <- function(chat,
         }
       }
       flatten_ctx(ctx, mask_env)
-      
+
       mask <- rlang::new_data_mask(mask_env)
-      
+
       walk_template <- function(x) {
-        if (is.list(x)) return(purrr::modify(x, walk_template))
-        if (!is.character(x) || length(x) != 1) return(x)
-        
+        if (is.list(x)) {
+          return(purrr::modify(x, walk_template))
+        }
+        if (!is.character(x) || length(x) != 1) {
+          return(x)
+        }
+
         if (stringr::str_detect(x, "^\\{[^{}]+\\}$")) {
           expr <- stringr::str_sub(x, 2, -2)
           out <- tryCatch(
@@ -84,14 +90,14 @@ run_graph <- function(chat,
           )
           return(out)
         }
-        
+
         val <- glue::glue_data(mask, x, .open = "{", .close = "}")
         if (identical(val, "NULL")) NULL else as.character(val)
       }
-      
+
       purrr::modify(arg_template, walk_template)
     }
-    
+
 
     # run the node
     ctx$args <- resolve_args(node$args, ctx)

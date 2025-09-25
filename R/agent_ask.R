@@ -105,7 +105,7 @@ ask_agent_workflow <- function(agent_info,
     Available data sources:
     - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
-      - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained. 
+      - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained.
         * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
         * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
         * ALWAYS USE Model_ID to identify which model(s) were used
@@ -150,7 +150,7 @@ ask_agent_workflow <- function(agent_info,
       - Analysis_Type: type of EDA analysis performed
       - Metric: specific metric name within each analysis type
       - Value: numeric or character value of the metric
-      
+
       Analysis types and their metrics include:
       - Data_Profile: Total_Rows, Number_Series, Min_Rows_Per_Series, Max_Rows_Per_Series, Avg_Rows_Per_Series, Negative_Count, Negative_Percent, Start_Date, End_Date
       - ACF: Lag_0, Lag_1, Lag_2, etc. (autocorrelation values at different lags)
@@ -161,7 +161,7 @@ ask_agent_workflow <- function(agent_info,
       - Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
       - Hierarchy: hierarchy_type (none, standard, or grouped)
       - External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
-      
+
       To filter for specific analysis or combo:
       eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
 
@@ -214,19 +214,19 @@ ask_agent_workflow <- function(agent_info,
         agent_info = agent_info,
         analysis_plan = "{ctx$analysis_plan}",
         step_index = "{ctx$step_index}",
-        previous_results = "{ctx$analysis_results}", 
+        previous_results = "{ctx$analysis_results}",
         last_error = NULL
-      ), 
+      ),
       branch = function(ctx) {
         # Store the result from the last step execution
         if (!is.null(ctx$results$execute_analysis_step)) {
           step_name <- paste0("step_", ctx$step_index)
           ctx$analysis_results[[step_name]] <- ctx$results$execute_analysis_step
         }
-        
+
         # Check if there are more steps to execute
         ctx$step_index <- ctx$step_index + 1
-        
+
         if (ctx$step_index <= length(ctx$analysis_plan)) {
           cli::cli_alert_info(paste0("Executing step ", ctx$step_index, "/", length(ctx$analysis_plan)))
           return(list(ctx = ctx, `next` = "execute_analysis_step"))
@@ -243,7 +243,7 @@ ask_agent_workflow <- function(agent_info,
       max_retry = 2,
       args = list(
         agent_info = agent_info,
-        question = question ,
+        question = question,
         analysis_results = "{ctx$analysis_results}"
       )
     ),
@@ -279,14 +279,13 @@ ask_agent_workflow <- function(agent_info,
 #' @return NULL
 #' @noRd
 register_ask_tools <- function(agent_info) {
-  
   # workflows
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "ask_agent_workflow",
     .description = "Run the Finn ask agent workflow to answer questions",
     .fun = ask_agent_workflow
   ))
-  
+
   # Register the workflow orchestration tools
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "create_analysis_plan",
@@ -328,29 +327,29 @@ create_analysis_plan <- function(agent_info, question) {
     "Create a plan to answer this question using R code: '{question}'
 
     Available data sources:
-    
-    1. get_agent_forecast(agent_info): 
+
+    1. get_agent_forecast(agent_info):
        USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons, identifying which models were used
-       Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model, 
+       Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model,
                        Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
-       
+
     2. get_best_agent_run(agent_info):
        USE FOR: model configurations, feature engineering settings
-       Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run, 
+       Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run,
                        clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
                        lag_periods, rolling_window_periods, pca, feature_selection, etc.
-    
+
     3. get_eda_data(agent_info):
        USE FOR: data quality issues, time series characteristics, seasonality analysis, stationarity tests
        Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
        - Filter by Analysis_Type to get specific EDA results (e.g., 'ACF', 'PACF', 'Stationarity', 'Missing_Data', 'Outliers', etc.)
        - Filter by Combo to get results for specific time series
        - Value column contains the metric values (numeric or character)
-    
+
     4. previous step results:
        USE FOR: Working with results from earlier steps in the analysis
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
-    
+
     Decision Rules:
     - Questions about accuracy/WMAPE/errors → use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
     - Questions about which specific models were used → use get_agent_forecast() and analyze Model_ID column
@@ -362,7 +361,7 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about outliers in the data → use get_eda_data() with Analysis_Type == 'Outliers'
     - Questions about missing data patterns → use get_eda_data() with Analysis_Type == 'Missing_Data'
     - Questions needing both forecast values AND run settings → use BOTH sources in separate steps
-    
+
     Keywords to Data Source Mapping:
     - WMAPE, MAPE, accuracy, error, performance → get_agent_forecast()
     - forecast, prediction, future, back test, next month/year → get_agent_forecast()
@@ -395,7 +394,7 @@ create_analysis_plan <- function(agent_info, question) {
       \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo and Model_ID combinations\",
       \"output_name\": \"models_used\"
     }}]
-    
+
     For 'Analyze forecast bias and recommend adjustments':
     [{{
       \"description\": \"Get back-test results\",
@@ -463,36 +462,41 @@ create_analysis_plan <- function(agent_info, question) {
 execute_analysis_step <- function(agent_info,
                                   analysis_plan,
                                   step_index,
-                                  previous_results = list(), 
+                                  previous_results = list(),
                                   last_error = NULL) {
-  if (step_index > length(analysis_plan)) return(NULL)
-  
+  if (step_index > length(analysis_plan)) {
+    return(NULL)
+  }
+
   current_step <- analysis_plan[[step_index]]
   llm <- agent_info$driver_llm
-  
+
   cli::cli_progress_step("Executing: {current_step$description}")
-  
+
   # Build an explicit first-line data source call the LLM must use
-  ds_call <- tryCatch({
-    src <- as.character(current_step$data_source %||% "get_agent_forecast")
-    if (identical(src, "get_best_agent_run")) {
-      # Often we want full_run_info for accuracy fields
-      "get_best_agent_run(agent_info)"
-    } else if (identical(src, "get_agent_forecast")) {
+  ds_call <- tryCatch(
+    {
+      src <- as.character(current_step$data_source %||% "get_agent_forecast")
+      if (identical(src, "get_best_agent_run")) {
+        # Often we want full_run_info for accuracy fields
+        "get_best_agent_run(agent_info)"
+      } else if (identical(src, "get_agent_forecast")) {
+        "get_agent_forecast(agent_info)"
+      } else if (identical(src, "get_eda_data")) {
+        "get_eda_data(agent_info)"
+      } else if (identical(src, "none") || identical(src, "previous")) {
+        # Working with previous results
+        NULL
+      } else {
+        # Fallback: treat as a function name taking the standard args
+        sprintf("%s(agent_info)", src)
+      }
+    },
+    error = function(...) {
       "get_agent_forecast(agent_info)"
-    } else if (identical(src, "get_eda_data")) {
-      "get_eda_data(agent_info)"
-    } else if (identical(src, "none") || identical(src, "previous")) {
-      # Working with previous results
-      NULL
-    } else {
-      # Fallback: treat as a function name taking the standard args
-      sprintf("%s(agent_info)", src)
     }
-  }, error = function(...) {
-    "get_agent_forecast(agent_info)"
-  })
-  
+  )
+
   # Build context about available previous results
   previous_context <- ""
   if (length(previous_results) > 0 && step_index > 1) {
@@ -505,8 +509,10 @@ execute_analysis_step <- function(agent_info,
       }
     }
     if (length(available_objects) > 0) {
-      previous_context <- paste0("\n\nAvailable objects from previous steps:\n", 
-                                 paste("- ", available_objects, collapse = "\n"))
+      previous_context <- paste0(
+        "\n\nAvailable objects from previous steps:\n",
+        paste("- ", available_objects, collapse = "\n")
+      )
     }
   }
 
@@ -527,36 +533,36 @@ execute_analysis_step <- function(agent_info,
     - NEVER write placeholder values like \"your_agent_info\".
     - NEVER assign to agent_info, parallel_processing, or num_cores.
     - Do NOT call library(); always attach the package to the function using ::.
-    - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools, 
+    - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools,
       lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
     - If last error is not none, it contains the error message from the last attempt to run R code, YOU MUST fix the code accordingly
     - NEVER call any tools, just generate the R code
-    
+
     Data Loading Rules:
     {ifelse(!is.null(ds_call), paste0('- FIRST LINE MUST load data exactly like:\n      data <- ', ds_call), paste0('- This step uses data from a previous step named \"', ifelse(step_index > 1 && (step_index - 1) <= length(analysis_plan), analysis_plan[[step_index - 1]]$output_name, 'previous_result'), '\"\n- Access it directly by its name (it\\'s already in the environment)'))}
-    
+
     - Use dplyr verbs for manipulation.
     - Put your final output in a variable named result.
     - Output ONLY raw R code (no backticks, no prose).
-    
+
     Special notes:
     - For get_eda_data(): Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
-    - For get_agent_forecast(): 
+    - For get_agent_forecast():
       * Model_ID is the PRIMARY model identifier - ALWAYS include it in your results
       * When Model_Name is NA, it indicates an ensemble/average model
       * Model_ID for ensembles contains multiple models separated by '_'
     - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
   )
-  
+
   code_response <- llm$chat(code_prompt, echo = FALSE)
-  
+
   # Extract raw code
   r_code <- if (inherits(code_response, "list") && !is.null(code_response$content)) {
     code_response$content
   } else {
     as.character(code_response)
   }
-  
+
   # Clean up and apply guardrails against placeholders / reassignments
   r_code <- gsub("```r|```R|```", "", r_code)
   r_code <- trimws(r_code)
@@ -577,11 +583,11 @@ execute_analysis_step <- function(agent_info,
     analysis_plan = analysis_plan,
     step_index = step_index
   )
-  
+
   if (is.null(result)) {
     stop("code execution failed, stopping workflow.", call. = FALSE)
   }
-  
+
   cli::cli_progress_done()
   return(result)
 }
@@ -725,7 +731,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
     {full_context}
 
     Instructions:
-    - Provide a clear, concise answer using plain text. Explain everything at a middle school level. 
+    - Provide a clear, concise answer using plain text. Explain everything at a middle school level.
     - Reference specific numbers and findings from the analysis
     - Format numbers appropriately (e.g., percentages, decimals)
     - If the analysis shows a table, describe the key findings

@@ -277,10 +277,10 @@ iterate_forecast <- function(agent_info,
 
     par_end(cl)
   }
-  
+
   # save the best run for the agent
   message("[agent] Saving Best Run Metadata")
-  
+
   save_best_agent_run(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
@@ -298,16 +298,16 @@ iterate_forecast <- function(agent_info,
       num_cores = num_cores
     )
   }
-  
+
   # save the final forecast for the agent
   message("[agent] Saving Final Forecast")
-  
+
   save_agent_forecast(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
   )
-  
+
   # finish up
   message("[agent] Forecast Iteration Process Complete")
 }
@@ -358,13 +358,12 @@ iterate_forecast <- function(agent_info,
 #' }
 #' @export
 get_agent_forecast <- function(agent_info) {
-  
   # formatting checks
   check_agent_info(agent_info = agent_info)
 
   # metadata
   project_info <- agent_info$project_info
-  
+
   # load the final forecast for the agent
   final_fcst_tbl <- read_file(
     run_info = project_info,
@@ -373,7 +372,7 @@ get_agent_forecast <- function(agent_info) {
       hash_data(agent_info$run_id), "-forecast.", project_info$data_output
     )
   )
-  
+
   return(final_fcst_tbl)
 }
 
@@ -423,13 +422,12 @@ get_agent_forecast <- function(agent_info) {
 #' }
 #' @export
 get_best_agent_run <- function(agent_info) {
-  
   # check inputs
   check_agent_info(agent_info = agent_info)
-  
+
   # metadata
   project_info <- agent_info$project_info
-  
+
   # get the best run for the agent
   final_run_tbl <- read_file(
     run_info = project_info,
@@ -459,18 +457,18 @@ get_best_agent_run <- function(agent_info) {
 #' @noRd
 load_agent_forecast <- function(agent_info,
                                 parallel_processing = NULL,
-                                num_cores = NULL, 
+                                num_cores = NULL,
                                 final_output = FALSE) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # check for reconciled forecast
   if (agent_info$forecast_approach != "bottoms_up" & final_output) {
     project_info <- agent_info$project_info
     project_info$run_name <- agent_info$run_id
-    
+
     fcst_tbl <- read_file(
       run_info = project_info,
       path = paste0(
@@ -478,29 +476,29 @@ load_agent_forecast <- function(agent_info,
         "-", hash_data("Best-Model"), "-reconciled.", project_info$data_output
       )
     )
-    
+
     return(fcst_tbl)
   }
-  
+
   # get the best run for the agent
   best_run_tbl <- load_best_agent_run(agent_info)
-  
+
   model_type_list <- best_run_tbl %>%
     dplyr::pull(model_type) %>%
     unique()
-  
+
   # load global model forecasts
   if ("global" %in% model_type_list) {
     global_combos <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(combo) %>%
       unique()
-    
+
     global_run_name <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(best_run_name) %>%
       unique()
-    
+
     run_info <- agent_info$project_info
     run_info$project_name <- paste0(
       agent_info$project_info$project_name,
@@ -508,29 +506,29 @@ load_agent_forecast <- function(agent_info,
       hash_data("all")
     )
     run_info$run_name <- global_run_name
-    
+
     global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
       dplyr::filter(Combo %in% global_combos)
   } else {
     global_fcst_tbl <- tibble::tibble()
   }
-  
+
   # load local model forecasts
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-    
+
     par_info <- par_start(
       run_info = agent_info$project_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
       task_length = nrow(local_run_tbl)
     )
-    
+
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
-    
+
     # submit tasks
     local_fcst_tbl <- foreach::foreach(
       x = local_run_tbl %>%
@@ -551,59 +549,58 @@ load_agent_forecast <- function(agent_info,
           hash_data(x$combo)
         )
         run_info$run_name <- x$best_run_name
-        
+
         temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
-        
+
         return(temp_local_fcst_tbl)
       } %>%
       base::suppressPackageStartupMessages()
-    
+
     par_end(cl)
   } else {
     local_fcst_tbl <- tibble::tibble()
   }
-  
+
   return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
 }
 
 #' Save the final best forecast for an agent
-#' 
+#'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and saves to disk.
-#' 
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #' loads each time series forecast one after another. 'local_machine' leverages
 #' all cores on current machine Finn is running on. 'spark' runs time series
 #' in parallel on a spark cluster in Azure Databricks or Azure Synapse.
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
-#' 
+#'
 #' @return Nothing
 #' @noRd
 save_agent_forecast <- function(agent_info,
                                 parallel_processing = NULL,
                                 num_cores = NULL) {
-  
   # formatting checks
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
-  
+
   # load the final forecast for the agent
   final_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
-    num_cores = num_cores, 
+    num_cores = num_cores,
     final_output = TRUE
   )
-  
+
   if (nrow(final_fcst_tbl) == 0) {
     stop("Error in save_agent_forecast(). No final forecast found for agent.", call. = FALSE)
   }
-  
+
   # save the final forecast for the agent
   write_data(
     x = final_fcst_tbl,
@@ -613,7 +610,7 @@ save_agent_forecast <- function(agent_info,
     folder = "final_output",
     suffix = "-forecast"
   )
-  
+
   return(invisible(NULL))
 }
 
@@ -622,7 +619,7 @@ save_agent_forecast <- function(agent_info,
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' 
+#'
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'  loads each time series forecast one after another. 'local_machine' leverages
 #'  all cores on current machine Finn is running on. 'spark' runs time series
@@ -637,7 +634,7 @@ load_best_agent_run <- function(agent_info,
                                 num_cores = NULL) {
   # metadata
   project_info <- agent_info$project_info
-  
+
   # get the best run for the agent
   combo_best_run_list <- list_files(
     project_info$storage_object,
@@ -646,7 +643,7 @@ load_best_agent_run <- function(agent_info,
       hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
     )
   )
-  
+
   if (length(combo_best_run_list) == 0) {
     best_run_tbl <- tibble::tibble()
   } else {
@@ -656,23 +653,23 @@ load_best_agent_run <- function(agent_info,
       return_type = "df"
     )
   }
-  
-  if(!full_info) {
+
+  if (!full_info) {
     return(best_run_tbl)
   }
-  
+
   # read in all run setting data
   model_type_list <- best_run_tbl %>%
     dplyr::pull(model_type) %>%
     unique()
-  
+
   # load global model run
   if ("global" %in% model_type_list) {
     global_run_name <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::pull(best_run_name) %>%
       unique()
-    
+
     global_run_info <- get_run_info(
       project_name = paste0(agent_info$project_info$project_name, "_", hash_data("all")),
       run_name = global_run_name,
@@ -680,27 +677,27 @@ load_best_agent_run <- function(agent_info,
       path = project_info$path
     ) %>%
       dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-    
+
     global_best_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "global") %>%
       dplyr::left_join(global_run_info, by = dplyr::join_by(best_run_name == run_name))
   } else {
     global_best_run_tbl <- tibble::tibble()
   }
-  
+
   # load local model runs
   if ("local" %in% model_type_list) {
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
-    
+
     local_run_combo_list <- local_run_tbl %>%
       dplyr::pull(combo)
-    
+
     # agent adjustments to prevent serialization issues
     agent_info_lean <- agent_info
     agent_info_lean$driver_llm <- NULL
     agent_info_lean$reason_llm <- NULL
-    
+
     # run parallel process
     par_info <- par_start(
       run_info = agent_info$project_info,
@@ -708,11 +705,11 @@ load_best_agent_run <- function(agent_info,
       num_cores = num_cores,
       task_length = length(local_run_combo_list)
     )
-    
+
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
-    
+
     # submit tasks
     local_best_run_tbl <- foreach::foreach(
       combo = local_run_combo_list,
@@ -733,11 +730,11 @@ load_best_agent_run <- function(agent_info,
             "agent_best_run.csv"
           ) %>% fs::path_tidy()
         )
-        
+
         if (nrow(temp_local_run_tbl) == 0) {
           stop("Can't find previous best run for time series.")
         }
-        
+
         temp_local_run_info <- get_run_info(
           project_name = paste0(agent_info_lean$project_info$project_name, "_", hash_data(combo)),
           run_name = temp_local_run_tbl$best_run_name,
@@ -745,29 +742,29 @@ load_best_agent_run <- function(agent_info,
           path = agent_info_lean$project_info$path
         ) %>%
           dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-        
+
         temp_local_run_tbl <- temp_local_run_tbl %>%
           dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
-        
+
         return(temp_local_run_tbl)
       } %>%
       base::suppressPackageStartupMessages()
-    
+
     par_end(cl)
   } else {
     local_best_run_tbl <- tibble::tibble()
   }
-  
+
   final_run_tbl <- global_best_run_tbl %>%
     dplyr::bind_rows(local_best_run_tbl)
-  
+
   return(final_run_tbl)
 }
 
 #' Save the best run for an agent
-#' 
+#'
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete and saves to disk.
-#' 
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #' loads each time series forecast one after another. 'local_machine' leverages
@@ -775,7 +772,7 @@ load_best_agent_run <- function(agent_info,
 #' in parallel on a spark cluster in Azure Databricks or Azure Synapse.
 #' @param num_cores Number of cores to use for parallel processing. If NULL,
 #' defaults to the number of available cores.
-#' 
+#'
 #' @return Nothing
 #' @noRd
 save_best_agent_run <- function(agent_info,
@@ -785,11 +782,11 @@ save_best_agent_run <- function(agent_info,
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
-  
+
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
-  
+
   # load the best run for the agent
   final_run_tbl <- load_best_agent_run(
     agent_info = agent_info,
@@ -797,11 +794,11 @@ save_best_agent_run <- function(agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
   )
-  
+
   if (nrow(final_run_tbl) == 0) {
     stop("Error in save_best_agent_run(). No best run found for agent.", call. = FALSE)
   }
-  
+
   # save the best run for the agent
   write_data(
     x = final_run_tbl,
@@ -811,7 +808,7 @@ save_best_agent_run <- function(agent_info,
     folder = "final_output",
     suffix = "-run_metadata"
   )
-  
+
   return(invisible(NULL))
 }
 

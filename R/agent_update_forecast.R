@@ -284,7 +284,7 @@ update_fcst_agent_workflow <- function(agent_info,
       retry_mode = "plain",
       max_retry = 2,
       args = list(
-        agent_info = agent_info, 
+        agent_info = agent_info,
         parallel_processing = parallel_processing,
         num_cores = num_cores
       )
@@ -357,13 +357,13 @@ register_update_fcst_tools <- function(agent_info) {
     .description = "Reconcile the hierarchical agent forecast based on the best model runs",
     .fun = reconcile_agent_forecast
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "save_agent_forecast",
     .description = "Save the final agent forecast to the project storage",
     .fun = save_agent_forecast
   ))
-  
+
   agent_info$driver_llm$register_tool(ellmer::tool(
     .name = "save_best_agent_run",
     .description = "Save the best agent run results to the project storage",
@@ -385,7 +385,7 @@ initial_checks <- function(agent_info) {
 
   # formatting checks
   check_agent_info(agent_info = agent_info)
-  
+
   if (!agent_info$overwrite) {
     stop("Error in agent_info(). Set overwrite = TRUE to update the agent with latest data and inputs.",
       call. = FALSE
@@ -449,7 +449,7 @@ initial_checks <- function(agent_info) {
       project_info = agent_info$project_info,
       run_id = temp_agent_tbl$run_id[1],
       storage_object = project_info$storage_object,
-      path = project_info$path, 
+      path = project_info$path,
       forecast_approach = temp_agent_tbl$forecast_approach,
       driver_llm = agent_info$driver_llm,
       reason_llm = agent_info$reason_llm,
