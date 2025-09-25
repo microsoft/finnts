@@ -32,6 +32,35 @@ get_eda_data <- function(agent_info) {
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   
+  # read eda data
+  eda_results <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/final_output/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-eda.", project_info$data_output
+    ),
+    return_type = "df"
+  )
+  
+  return(eda_results)
+}
+
+#' Save EDA Data
+#'
+#' Consolidate exploratory data analysis results from a Finn Agent run and write to disk
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#' 
+#' @return Nothing, writes consolidated EDA results to disk
+#' @noRd
+save_eda_data <- function(agent_info) {
+  # Check inputs
+  check_agent_info(agent_info)
+  
+  # Get project info
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+  
   # Initialize results data frame
   eda_results <- tibble::tibble()
   
@@ -56,8 +85,8 @@ get_eda_data <- function(agent_info) {
       Metric = c("Total_Rows", "Number_Series", "Min_Rows_Per_Series", "Max_Rows_Per_Series", 
                  "Avg_Rows_Per_Series", "Negative_Count", "Negative_Percent", "Start_Date", "End_Date"),
       Value = as.character(c(data_profile$total_rows, data_profile$n_series, data_profile$rows_min,
-                            data_profile$rows_max, data_profile$rows_avg, data_profile$neg_count,
-                            data_profile$neg_pct, data_profile$date_start, data_profile$date_end))
+                             data_profile$rows_max, data_profile$rows_avg, data_profile$neg_count,
+                             data_profile$neg_pct, data_profile$date_start, data_profile$date_end))
     )
     
     eda_results <- dplyr::bind_rows(eda_results, profile_df)
@@ -333,8 +362,20 @@ get_eda_data <- function(agent_info) {
     ) %>%
     dplyr::select(-Value_Numeric)
   
-  return(eda_results)
+  # write the final eda results
+  write_data(
+    x = eda_results,
+    combo = NULL,
+    run_info = project_info,
+    output_type = "data",
+    folder = "final_output",
+    suffix = "-eda"
+  )
+  
+  # return nothing
+  invisible(NULL)
 }
+
 
 #' Exploratory Data Analysis Agent Workflow
 #'
@@ -433,7 +474,7 @@ eda_agent_workflow <- function(agent_info,
     ),
     xreg_scan = list(
       fn = "xreg_scan",
-      `next` = "stop",
+      `next` = "save_eda_data",
       retry_mode = "plain",
       max_retry = 2,
       args = list(
@@ -441,6 +482,13 @@ eda_agent_workflow <- function(agent_info,
         "parallel_processing" = agent_info$parallel_processing,
         "num_cores" = agent_info$num_cores
       )
+    ),
+    save_eda_data = list(
+      fn = "save_eda_data",
+      `next` = "stop",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list("agent_info" = agent_info)
     ),
     stop = list(fn = NULL)
   )
@@ -517,9 +565,15 @@ register_eda_tools <- function(agent_info) {
     .description = "scan external regressors for correlation with target variable",
     .fun = xreg_scan
   ))
+  
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "save_eda_data",
+    .description = "save eda results for a specific agent run",
+    .fun = save_eda_data
+  ))
 }
 
-#' Load EDA results for a specific agent run
+#' Load EDA results for a specific agent run for iterate forecast reasoning
 #'
 #' @param agent_info agent information list
 #' @param combo specific combo to load results for (optional)
@@ -1919,7 +1973,7 @@ hierarchy_detect <- function(agent_info,
       entry <- list(
         timestamp  = get_timestamp(),
         type       = "HIERARCHY",
-        hist_end_date  = as.character(hist_end_date),
+        hist_end_date  = as.character(agent_info$hist_end_date),
         hierarchy  = "none",
         pair_tests = list()
       )

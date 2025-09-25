@@ -103,7 +103,7 @@ ask_agent_workflow <- function(agent_info,
                                    paste(agent_info$external_regressors, collapse = ', '))}
 
     Available data sources:
-    - get_agent_forecast(agent_info, parallel_processing, num_cores): Returns a df of the final forecast data with the following columns:
+    - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
       - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained. 
         * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
@@ -124,7 +124,7 @@ ask_agent_workflow <- function(agent_info,
       - hi_95: upper bound of the 95% prediction interval (future forecasts only)
       - lo_80: lower bound of the 80% prediction interval (future forecasts only)
       - hi_80: upper bound of the 80% prediction interval (future forecasts only)
-    - get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores): Returns a df of the best agent run metadata inputs for each time series with the following columns:
+    - get_best_agent_run(agent_info): Returns a df of the best agent run metadata inputs for each time series with the following columns:
       - combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
       - model_type: how the model was trained, local for individual time series, global for all time series
       - weighted_mape: weighted mean absolute percentage error across all back test periods
@@ -329,12 +329,12 @@ create_analysis_plan <- function(agent_info, question) {
 
     Available data sources:
     
-    1. get_agent_forecast(agent_info, parallel_processing, num_cores): 
+    1. get_agent_forecast(agent_info): 
        USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons, identifying which models were used
        Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model, 
                        Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
        
-    2. get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores):
+    2. get_best_agent_run(agent_info):
        USE FOR: model configurations, feature engineering settings
        Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run, 
                        clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
@@ -477,9 +477,9 @@ execute_analysis_step <- function(agent_info,
     src <- as.character(current_step$data_source %||% "get_agent_forecast")
     if (identical(src, "get_best_agent_run")) {
       # Often we want full_run_info for accuracy fields
-      "get_best_agent_run(agent_info, full_run_info = TRUE, parallel_processing, num_cores)"
+      "get_best_agent_run(agent_info)"
     } else if (identical(src, "get_agent_forecast")) {
-      "get_agent_forecast(agent_info, parallel_processing, num_cores)"
+      "get_agent_forecast(agent_info)"
     } else if (identical(src, "get_eda_data")) {
       "get_eda_data(agent_info)"
     } else if (identical(src, "none") || identical(src, "previous")) {
@@ -487,10 +487,10 @@ execute_analysis_step <- function(agent_info,
       NULL
     } else {
       # Fallback: treat as a function name taking the standard args
-      sprintf("%s(agent_info, parallel_processing, num_cores)", src)
+      sprintf("%s(agent_info)", src)
     }
   }, error = function(...) {
-    "get_agent_forecast(agent_info, parallel_processing, num_cores)"
+    "get_agent_forecast(agent_info)"
   })
   
   # Build context about available previous results
