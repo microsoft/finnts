@@ -21,6 +21,7 @@
 <url><loc>https://microsoft.github.io/finnts/authors.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/index.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/news/index.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/ask_agent.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_predict_impl.html</loc></url>
@@ -29,6 +30,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/forecast_time_series.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_agent_forecast.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_best_agent_run.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/get_eda_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_forecast_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_models.html</loc></url>

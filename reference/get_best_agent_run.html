@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9002</span>
       </span>
     </div>
 
@@ -102,12 +102,7 @@
     </div>
 
     <div id="ref-usage">
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">get_best_agent_run</span><span class="op">(</span></span>
-<span>  <span class="va">agent_info</span>,</span>
-<span>  full_run_info <span class="op">=</span> <span class="cn">FALSE</span>,</span>
-<span>  parallel_processing <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  num_cores <span class="op">=</span> <span class="cn">NULL</span></span>
-<span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">get_best_agent_run</span><span class="op">(</span><span class="va">agent_info</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div id="arguments">
@@ -116,22 +111,6 @@
 
 <dl><dt id="arg-agent-info">agent_info<a class="anchor" aria-label="anchor" href="#arg-agent-info"></a></dt>
 <dd><p>Agent info from <code><a href="set_agent_info.html">set_agent_info()</a></code></p></dd>
-
-
-<dt id="arg-full-run-info">full_run_info<a class="anchor" aria-label="anchor" href="#arg-full-run-info"></a></dt>
-<dd><p>A logical indicating whether to load all input settings
-from each run into the final output table</p></dd>
-
-
-<dt id="arg-parallel-processing">parallel_processing<a class="anchor" aria-label="anchor" href="#arg-parallel-processing"></a></dt>
-<dd><p>Default of NULL runs no parallel processing and
-loads each time series forecast one after another. 'local_machine' leverages
-all cores on current machine Finn is running on. 'spark' runs time series
-in parallel on a spark cluster in Azure Databricks or Azure Synapse.</p></dd>
-
-
-<dt id="arg-num-cores">num_cores<a class="anchor" aria-label="anchor" href="#arg-num-cores"></a></dt>
-<dd><p>Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.</p></dd>
 
 </dl></div>
     <div id="value">
@@ -175,7 +154,7 @@ in parallel on a spark cluster in Azure Databricks or Azure Synapse.</p></dd>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># get the best run information for the agent</span></span></span>
-<span class="r-in"><span><span class="va">best_run_info</span> <span class="op">&lt;-</span> <span class="fu">get_best_agent_run</span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent_info</span>, full_run_info <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">best_run_info</span> <span class="op">&lt;-</span> <span class="fu">get_best_agent_run</span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent_info</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">}</span> <span class="co"># }</span></span></span>
 </code></pre></div>
     </div>

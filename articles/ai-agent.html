@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9001</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9002</span>
       </span>
     </div>
 
@@ -135,8 +135,8 @@ to:</p>
 <ul>
 <li>run lightweight EDA (missing data, outliers, (P)ACF, seasonality,
 stationarity),</li>
-<li>select/adjust <strong>seasonal period</strong>, <strong>feature
-recipes</strong> (lags, rolling windows, Fourier, date feats),</li>
+<li>select/adjust <strong>feature recipes</strong> (lags, rolling
+windows, Fourier, date feats),</li>
 <li>choose <strong>model families</strong> (local vs global;
 ARIMA/ETS/LM/Tree/GBM/NN, etc.), backtests, and ensembling,</li>
 <li>optionally <strong>detect and use hierarchies</strong> (bottoms-up,
@@ -156,6 +156,9 @@ best forecast run.</li>
 <code><a href="../reference/update_forecast.html">update_forecast()</a></code>: Update forecasts with new data,
 using models trained in previous agent runs, optionally re-invoking the
 agent if accuracy degrades.</li>
+<li>
+<code><a href="../reference/ask_agent.html">ask_agent()</a></code>: Ask natural language questions about your
+forecast results and get data-driven answers.</li>
 </ul>
 <hr>
 </div>
@@ -172,8 +175,9 @@ hierarchy is used).</li>
 </ul>
 <p>Use these helpers to retrieve outputs:</p>
 <ul>
-<li><code>get_best_agent_run(agent_info, full_run_info = TRUE)</code></li>
-<li><code>get_agent_forecast(agent_info, parallel_processing = NULL, num_cores = NULL)</code></li>
+<li><code>get_best_agent_run(agent_info)</code></li>
+<li><code>get_agent_forecast(agent_info)</code></li>
+<li><code>ask_agent(agent_info, question)</code></li>
 </ul>
 <hr>
 </div>
@@ -323,12 +327,102 @@ output).</li>
 </div>
 </div>
 <div class="section level2">
+<h2 id="ask-questions-about-your-forecast-results">Ask questions about your forecast results<a class="anchor" aria-label="anchor" href="#ask-questions-about-your-forecast-results"></a>
+</h2>
+<p>After running <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> or
+<code><a href="../reference/update_forecast.html">update_forecast()</a></code>, you can use <code><a href="../reference/ask_agent.html">ask_agent()</a></code> to
+ask natural language questions about your results. The agent analyzes
+your forecast data, model configurations, and EDA outputs to provide
+data-driven answers.</p>
+<div class="section level3">
+<h3 id="how-it-works">How it works<a class="anchor" aria-label="anchor" href="#how-it-works"></a>
+</h3>
+<p><code><a href="../reference/ask_agent.html">ask_agent()</a></code> creates an LLM-driven workflow that: 1.
+<strong>Plans</strong> the analysis steps needed to answer your question
+2. <strong>Executes</strong> R code to analyze the relevant data 3.
+<strong>Generates</strong> a natural language answer based on the
+results</p>
+</div>
+<div class="section level3">
+<h3 id="example-questions">Example questions<a class="anchor" aria-label="anchor" href="#example-questions"></a>
+</h3>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Ask about forecast accuracy</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"What is the average weighted MAPE across all time series?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask about models used</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"Which models were selected as best for each time series?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask about data quality</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"Were there any missing values or outliers in the data?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask about specific forecasts</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"What are the forecasted values for M750 for the next 3 months?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask about time series characteristics</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"Which time series show strong seasonality patterns?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask comparative questions</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"Which time series have the highest forecast uncertainty?"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="what-data-sources-are-available">What data sources are available<a class="anchor" aria-label="anchor" href="#what-data-sources-are-available"></a>
+</h3>
+<p><code><a href="../reference/ask_agent.html">ask_agent()</a></code> has access to three main data sources:</p>
+<ol style="list-style-type: decimal">
+<li>
+<strong>Forecast results</strong>
+(<code><a href="../reference/get_agent_forecast.html">get_agent_forecast()</a></code>): Future predictions, back-test
+results, model selections, confidence intervals</li>
+<li>
+<strong>Model configurations</strong>
+(<code><a href="../reference/get_best_agent_run.html">get_best_agent_run()</a></code>): Feature engineering settings,
+transformations applied, model hyperparameters</li>
+<li>
+<strong>EDA results</strong> (<code><a href="../reference/get_eda_data.html">get_eda_data()</a></code>): Time
+series characteristics, seasonality, stationarity tests, data quality
+metrics</li>
+</ol>
+<p>The agent automatically determines which data sources to use based on
+your question.</p>
+</div>
+<div class="section level3">
+<h3 id="tips-for-effective-questions">Tips for effective questions<a class="anchor" aria-label="anchor" href="#tips-for-effective-questions"></a>
+</h3>
+<ul>
+<li>Be specific about what you want to know</li>
+<li>Reference specific time series by their combo ID if needed</li>
+<li>Ask about metrics, patterns, or comparisons</li>
+<li>The agent can perform calculations and aggregations on the fly</li>
+</ul>
+<hr>
+</div>
+</div>
+<div class="section level2">
 <h2 id="updating-with-new-data-production-loop">Updating with new data (production loop)<a class="anchor" aria-label="anchor" href="#updating-with-new-data-production-loop"></a>
 </h2>
 <p>When you have <strong>new input data</strong>, keep the same project
 and create a <strong>new agent run</strong> with updated
 <code>input_data</code>. Then call <code><a href="../reference/update_forecast.html">update_forecast()</a></code>:</p>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># suppose you've appended more months to hist_data:</span></span>
 <span><span class="va">hist_data2</span> <span class="op">&lt;-</span> <span class="va">hist_data</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Date</span> <span class="op">&lt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2016-06-01"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
@@ -348,7 +442,13 @@ and create a <strong>new agent run</strong> with updated
 <span>  max_iter               <span class="op">=</span> <span class="fl">2</span> <span class="co"># cap re-iteration cost</span></span>
 <span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">updated_fcst</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_agent_forecast.html">get_agent_forecast</a></span><span class="op">(</span><span class="va">agent2</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">updated_fcst</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_agent_forecast.html">get_agent_forecast</a></span><span class="op">(</span><span class="va">agent2</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># Ask questions about the updated forecast</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent2</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"Summarize the forecast accuracy."</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 <p>What <code><a href="../reference/update_forecast.html">update_forecast()</a></code> does:</p>
 <ul>
 <li>
