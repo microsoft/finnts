@@ -4,17 +4,10 @@
 \alias{get_agent_forecast}
 \title{Get the final best forecast for an agent}
 \usage{
-get_agent_forecast(agent_info, parallel_processing = NULL, num_cores = NULL)
+get_agent_forecast(agent_info)
 }
 \arguments{
 \item{agent_info}{Agent info from \code{set_agent_info()}}
-
-\item{parallel_processing}{Default of NULL runs no parallel processing and
-loads each time series forecast one after another. 'local_machine' leverages
-all cores on current machine Finn is running on. 'spark' runs time series
-in parallel on a spark cluster in Azure Databricks or Azure Synapse.}
-
-\item{num_cores}{Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.}
 }
 \value{
 A tibble containing the final forecast for the agent.

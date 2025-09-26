@@ -1,3 +1,413 @@
+#' Get EDA Data
+#'
+#' Load exploratory data analysis results from a Finn Agent run and return as a single data frame
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#'
+#' @return A data frame containing all EDA results with columns:
+#'   - Combo: Time series identifier
+#'   - Analysis_Type: Type of EDA analysis (e.g., "ACF", "PACF", "Stationarity", etc.)
+#'   - Metric: Specific metric or measure within each analysis type
+#'   - Value: Numeric or character value of the metric
+#'
+#' @examples
+#' \dontrun{
+#' # Get EDA results for all time series
+#' eda_df <- get_eda_data(agent_info)
+#'
+#' # Filter for specific analysis types
+#' acf_results <- eda_df %>%
+#'   dplyr::filter(Analysis_Type == "ACF")
+#'
+#' # Filter for specific time series
+#' ts_results <- eda_df %>%
+#'   dplyr::filter(Combo == "Product_A--Region_1")
+#' }
+#' @export
+get_eda_data <- function(agent_info) {
+  # Check inputs
+  check_agent_info(agent_info)
+
+  # Get project info
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+
+  # read eda data
+  eda_results <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/final_output/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-eda.", project_info$data_output
+    ),
+    return_type = "df"
+  )
+
+  return(eda_results)
+}
+
+#' Save EDA Data
+#'
+#' Consolidate exploratory data analysis results from a Finn Agent run and write to disk
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#'
+#' @return Nothing, writes consolidated EDA results to disk
+#' @noRd
+save_eda_data <- function(agent_info) {
+  # Check inputs
+  check_agent_info(agent_info)
+
+  # Get project info
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+
+  # Initialize results data frame
+  eda_results <- tibble::tibble()
+
+  # Always get all combos
+  combo_value <- "*"
+  combo_list <- get_total_combos(agent_info)
+
+  # 1. Data Profile
+  tryCatch(
+    {
+      data_profile <- read_file(
+        run_info = project_info,
+        path = paste0(
+          "/eda/", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-data_profile.", project_info$object_output
+        ),
+        return_type = "object"
+      )
+
+      profile_df <- tibble::tibble(
+        Combo = "All",
+        Analysis_Type = "Data_Profile",
+        Metric = c(
+          "Total_Rows", "Number_Series", "Min_Rows_Per_Series", "Max_Rows_Per_Series",
+          "Avg_Rows_Per_Series", "Negative_Count", "Negative_Percent", "Start_Date", "End_Date"
+        ),
+        Value = as.character(c(
+          data_profile$total_rows, data_profile$n_series, data_profile$rows_min,
+          data_profile$rows_max, data_profile$rows_avg, data_profile$neg_count,
+          data_profile$neg_pct, data_profile$date_start, data_profile$date_end
+        ))
+      )
+
+      eda_results <- dplyr::bind_rows(eda_results, profile_df)
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Data profile not found")
+    }
+  )
+
+  # 2. ACF Results
+  tryCatch(
+    {
+      acf_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-acf.", project_info$data_output
+        )
+      )
+
+      if (length(acf_files) > 0) {
+        acf_data <- read_file(
+          run_info = project_info,
+          file_list = acf_files,
+          return_type = "df"
+        )
+
+        acf_df <- acf_data %>%
+          dplyr::mutate(
+            Analysis_Type = "ACF",
+            Metric = paste0("Lag_", Lag),
+            Value = as.character(Value)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, acf_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning("ACF results not found")
+    }
+  )
+
+  # 3. PACF Results
+  tryCatch(
+    {
+      pacf_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-pacf.", project_info$data_output
+        )
+      )
+
+      if (length(pacf_files) > 0) {
+        pacf_data <- read_file(
+          run_info = project_info,
+          file_list = pacf_files,
+          return_type = "df"
+        )
+
+        pacf_df <- pacf_data %>%
+          dplyr::mutate(
+            Analysis_Type = "PACF",
+            Metric = paste0("Lag_", Lag),
+            Value = as.character(Value)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, pacf_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning("PACF results not found")
+    }
+  )
+
+  # 4. Stationarity Results
+  tryCatch(
+    {
+      stat_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-stationarity.", project_info$data_output
+        )
+      )
+
+      if (length(stat_files) > 0) {
+        stat_data <- read_file(
+          run_info = project_info,
+          file_list = stat_files,
+          return_type = "df"
+        )
+
+        stat_df <- stat_data %>%
+          dplyr::mutate(
+            # Data is stationary if both tests agree (ADF rejects null, KPSS fails to reject null)
+            is_stationary = stationary_adf & stationary_kpss,
+            Analysis_Type = "Stationarity",
+            Metric = "is_stationary",
+            Value = as.character(is_stationary)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, stat_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Stationarity results not found")
+    }
+  )
+
+  # 5. Missing Data Results
+  tryCatch(
+    {
+      miss_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-missing.", project_info$data_output
+        )
+      )
+
+      if (length(miss_files) > 0) {
+        miss_data <- read_file(
+          run_info = project_info,
+          file_list = miss_files,
+          return_type = "df"
+        )
+
+        miss_df <- miss_data %>%
+          tidyr::pivot_longer(
+            cols = c(total_rows, missing_count, missing_pct, longest_gap),
+            names_to = "Metric",
+            values_to = "Value"
+          ) %>%
+          dplyr::mutate(
+            Analysis_Type = "Missing_Data",
+            Value = as.character(Value)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, miss_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Missing data results not found")
+    }
+  )
+
+  # 6. Outlier Results
+  tryCatch(
+    {
+      outlier_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-outliers.", project_info$data_output
+        )
+      )
+
+      if (length(outlier_files) > 0) {
+        outlier_data <- read_file(
+          run_info = project_info,
+          file_list = outlier_files,
+          return_type = "df"
+        )
+
+        # Convert dates to character before pivoting
+        outlier_df <- outlier_data %>%
+          dplyr::mutate(
+            total_rows = as.character(total_rows),
+            outlier_count = as.character(outlier_count),
+            outlier_pct = as.character(round(outlier_pct, 2)),
+            first_outlier_dt = as.character(first_outlier_dt),
+            last_outlier_dt = as.character(last_outlier_dt)
+          ) %>%
+          tidyr::pivot_longer(
+            cols = c(total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt),
+            names_to = "Metric",
+            values_to = "Value"
+          ) %>%
+          dplyr::mutate(
+            Analysis_Type = "Outliers",
+            Value = as.character(Value)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, outlier_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("Outlier results not found. Error: ", e$message))
+    }
+  )
+
+  # 7. Additional Seasonality Results
+  tryCatch(
+    {
+      season_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", combo_value, "-add_season.", project_info$data_output
+        )
+      )
+
+      if (length(season_files) > 0) {
+        season_data <- read_file(
+          run_info = project_info,
+          file_list = season_files,
+          return_type = "df"
+        )
+
+        season_df <- season_data %>%
+          dplyr::mutate(
+            Analysis_Type = "Additional_Seasonality",
+            Metric = paste0("Lag_", Lag),
+            Value = as.character(Value)
+          ) %>%
+          dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+        eda_results <- dplyr::bind_rows(eda_results, season_df)
+      }
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Additional seasonality results not found")
+    }
+  )
+
+  # 8. Hierarchy Detection
+  tryCatch(
+    {
+      hier_data <- read_file(
+        run_info = project_info,
+        path = paste0(
+          "/eda/", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-hierarchy.", project_info$object_output
+        ),
+        return_type = "object"
+      )
+
+      hier_df <- tibble::tibble(
+        Combo = "All",
+        Analysis_Type = "Hierarchy",
+        Metric = "hierarchy_type",
+        Value = hier_data$hierarchy
+      )
+
+      eda_results <- dplyr::bind_rows(eda_results, hier_df)
+    },
+    error = function(e) {
+      cli::cli_alert_warning("Hierarchy detection results not found")
+    }
+  )
+
+  # 9. External Regressor Results
+  if (!is.null(agent_info$external_regressors)) {
+    tryCatch(
+      {
+        xreg_files <- list_files(
+          project_info$storage_object,
+          paste0(
+            project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
+            hash_data(agent_info$run_id), "-", combo_value, "-xreg_scan.", project_info$data_output
+          )
+        )
+
+        if (length(xreg_files) > 0) {
+          xreg_data <- read_file(
+            run_info = project_info,
+            file_list = xreg_files,
+            return_type = "df"
+          )
+
+          xreg_df <- xreg_data %>%
+            dplyr::mutate(
+              Analysis_Type = "External_Regressor_Distance_Correlation",
+              Metric = paste0(Regressor, "_Lag_", Lag),
+              Value = as.character(dCor)
+            ) %>%
+            dplyr::select(Combo, Analysis_Type, Metric, Value)
+
+          eda_results <- dplyr::bind_rows(eda_results, xreg_df)
+        }
+      },
+      error = function(e) {
+        cli::cli_alert_warning(paste0("External regressor results not found. Error: ", e$message))
+      }
+    )
+  }
+
+  # Convert Value column to appropriate type where possible
+  eda_results <- eda_results %>%
+    dplyr::mutate(
+      Value_Numeric = suppressWarnings(as.numeric(Value)),
+      Value = dplyr::coalesce(as.character(Value_Numeric), Value)
+    ) %>%
+    dplyr::select(-Value_Numeric)
+
+  # write the final eda results
+  write_data(
+    x = eda_results,
+    combo = NULL,
+    run_info = project_info,
+    output_type = "data",
+    folder = "final_output",
+    suffix = "-eda"
+  )
+
+  # return nothing
+  invisible(NULL)
+}
+
+
 #' Exploratory Data Analysis Agent Workflow
 #'
 #' @param agent_info agent information list
@@ -95,7 +505,7 @@ eda_agent_workflow <- function(agent_info,
     ),
     xreg_scan = list(
       fn = "xreg_scan",
-      `next` = "stop",
+      `next` = "save_eda_data",
       retry_mode = "plain",
       max_retry = 2,
       args = list(
@@ -103,6 +513,13 @@ eda_agent_workflow <- function(agent_info,
         "parallel_processing" = parallel_processing,
         "num_cores" = num_cores
       )
+    ),
+    save_eda_data = list(
+      fn = "save_eda_data",
+      `next` = "stop",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list("agent_info" = agent_info)
     ),
     stop = list(fn = NULL)
   )
@@ -179,9 +596,15 @@ register_eda_tools <- function(agent_info) {
     .description = "scan external regressors for correlation with target variable",
     .fun = xreg_scan
   ))
+
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "save_eda_data",
+    .description = "save eda results for a specific agent run",
+    .fun = save_eda_data
+  ))
 }
 
-#' Load EDA results for a specific agent run
+#' Load EDA results for a specific agent run for iterate forecast reasoning
 #'
 #' @param agent_info agent information list
 #' @param combo specific combo to load results for (optional)
@@ -426,7 +849,8 @@ load_eda_results <- function(agent_info,
         Avg_ACF_Value = round(mean(Value, na.rm = TRUE), 2),
         Mean_Abs_ACF_Value = round(mean(abs(Value), na.rm = TRUE), 2),
         .groups = "drop"
-      )
+      ) %>%
+      dplyr::arrange(Lag)
   } else {
     seasonality_scan <- seasonality_scan %>%
       dplyr::select(-Combo)
@@ -721,6 +1145,8 @@ acf_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
+      combo_name <- unique(input_data$Combo)
+
       # calculate maximum lag to use in acf
       date_type_max_lag <- switch(date_type,
         "day" = 364 * 2,
@@ -741,7 +1167,7 @@ acf_scan <- function(agent_info,
 
       # convert to table and filter
       acf_tbl <- tibble::tibble(
-        Combo = x,
+        Combo = combo_name,
         Lag = drop(acf_result$lag),
         Value = drop(acf_result$acf)
       ) %>%
@@ -755,7 +1181,7 @@ acf_scan <- function(agent_info,
       # save results to disc
       write_data(
         x = acf_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -866,6 +1292,8 @@ pacf_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
+      combo_name <- unique(input_data$Combo)
+
       # calculate maximum lag to use in pacf
       date_type_max_lag <- switch(date_type,
         "day" = 364 * 2,
@@ -887,7 +1315,7 @@ pacf_scan <- function(agent_info,
 
         # convert to table and filter
         pacf_tbl <- tibble::tibble(
-          Combo = x,
+          Combo = combo_name,
           Lag = drop(pacf_result$lag),
           Value = drop(pacf_result$acf)
         ) %>%
@@ -899,7 +1327,7 @@ pacf_scan <- function(agent_info,
           dplyr::select(-Significant)
       } else {
         pacf_tbl <- tibble::tibble(
-          Combo = x,
+          Combo = combo_name,
           Lag = 1,
           Value = 0
         ) %>%
@@ -909,7 +1337,7 @@ pacf_scan <- function(agent_info,
       # save results to disc
       write_data(
         x = pacf_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -1023,13 +1451,15 @@ stationarity_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
+      combo_name <- unique(input_data$Combo)
+
       # calculate stationarity
       adf_res <- tseries::adf.test(x = input_data$Target, alternative = "stationary")
       kpss_res <- tseries::kpss.test(input_data$Target, null = "Level")
 
       # build results table
       stat_tbl <- tibble::tibble(
-        Combo = x,
+        Combo = combo_name,
         p_value_adf = round(adf_res$p.value, 2),
         stationary_adf = adf_res$p.value < 0.05,
         p_value_kpss = round(kpss_res$p.value, 2),
@@ -1039,7 +1469,7 @@ stationarity_scan <- function(agent_info,
       # save results to disc
       write_data(
         x = stat_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -1146,6 +1576,8 @@ missing_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
+      combo_name <- unique(input_data$Combo)
+
       # missing-data metrics
       total_rows <- nrow(input_data)
       missing_count <- sum(is.na(input_data$Target))
@@ -1156,7 +1588,7 @@ missing_scan <- function(agent_info,
       longest_gap <- if (any(rle_na$values)) max(rle_na$lengths[rle_na$values]) else 0L
 
       miss_tbl <- tibble::tibble(
-        Combo           = x,
+        Combo           = combo_name,
         total_rows      = total_rows,
         missing_count   = missing_count,
         missing_pct     = missing_pct,
@@ -1166,7 +1598,7 @@ missing_scan <- function(agent_info,
       # save results
       write_data(
         x = miss_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -1283,10 +1715,12 @@ outlier_scan <- function(agent_info,
         dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
+      combo_name <- unique(input_data$Combo)
+
       # skip series with not enough data
       if (nrow(input_data) <= 2 * freq_val) {
         out_tbl <- tibble::tibble(
-          Combo            = x,
+          Combo            = combo_name,
           total_rows       = nrow(input_data),
           outlier_count    = NA_integer_,
           outlier_pct      = NA_real_,
@@ -1296,7 +1730,7 @@ outlier_scan <- function(agent_info,
 
         write_data(
           x = out_tbl,
-          combo = unique(input_data$Combo),
+          combo = combo_name,
           run_info = project_info,
           output_type = "data",
           folder = "eda",
@@ -1333,7 +1767,7 @@ outlier_scan <- function(agent_info,
       last_outlier <- if (length(outlier_dates)) max(outlier_dates) else as.Date(NA)
 
       out_tbl <- tibble::tibble(
-        Combo            = x,
+        Combo            = combo_name,
         total_rows       = total_rows,
         outlier_count    = outlier_count,
         outlier_pct      = round(outlier_pct, 2),
@@ -1344,7 +1778,7 @@ outlier_scan <- function(agent_info,
       # save results
       write_data(
         x = out_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -1461,17 +1895,19 @@ seasonality_scan <- function(agent_info,
         dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
+      combo_name <- unique(input_data$Combo)
+
       # skip short series
       if (nrow(input_data) <= 2 * primary_freq) {
         add_tbl <- tibble::tibble(
-          Combo = x,
+          Combo = combo_name,
           Lag   = integer(),
           Value = numeric()
         )
 
         write_data(
           x = add_tbl,
-          combo = unique(input_data$Combo),
+          combo = combo_name,
           run_info = project_info,
           output_type = "data",
           folder = "eda",
@@ -1507,7 +1943,7 @@ seasonality_scan <- function(agent_info,
       crit <- 1.96 / sqrt(n_obs)
 
       add_tbl <- tibble::tibble(
-        Combo = x,
+        Combo = combo_name,
         Lag   = drop(acf_res$lag),
         Value = drop(acf_res$acf)
       ) %>%
@@ -1521,7 +1957,7 @@ seasonality_scan <- function(agent_info,
       # save results
       write_data(
         x = add_tbl,
-        combo = unique(input_data$Combo),
+        combo = combo_name,
         run_info = project_info,
         output_type = "data",
         folder = "eda",
@@ -1575,9 +2011,10 @@ hierarchy_detect <- function(agent_info,
   if (length(combo_vars) == 1) {
     if (write_data) {
       entry <- list(
-        timestamp  = get_timestamp(),
-        type       = "HIERARCHY",
-        hierarchy  = "none",
+        timestamp = get_timestamp(),
+        type = "HIERARCHY",
+        hist_end_date = as.character(agent_info$hist_end_date),
+        hierarchy = "none",
         pair_tests = list()
       )
 
@@ -1780,6 +2217,7 @@ xreg_scan <- function(agent_info,
   }
 
   # parallel setup
+
   par_info <- par_start(
     run_info            = project_info,
     parallel_processing = parallel_processing,
@@ -1810,6 +2248,8 @@ xreg_scan <- function(agent_info,
         return_type = "df"
       )
 
+      combo_name <- unique(input_data$Combo)
+
       # determine future xregs
       if (!is.null(regressors)) {
         future_xregs_list <- get_xregs_future_values_tbl(
@@ -1825,8 +2265,6 @@ xreg_scan <- function(agent_info,
       input_data <- input_data %>%
         dplyr::filter(Date <= hist_end_date) %>%
         dplyr::arrange(Date)
-
-      combo_name <- unique(input_data$Combo)
 
       # get lags by date type
       date_type_lags <- switch(date_type,

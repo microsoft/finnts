@@ -25,7 +25,8 @@ utils::globalVariables(c(
   "model_median_wmape", "model_std_wmape", "model_type", "n", "n_parent", "object_output",
   "outlier_count", "path", "performance_flag", "previous_weighted_mape", "project_name",
   "rolling_window_periods", "run_name", "run_number", "stationary_adf", "stationary_kpss",
-  "to", "total_rows", "weighted_mape"
+  "to", "total_rows", "weighted_mape", "Analysis_Type", "Metric", "Value_Numeric",
+  "is_stationary", "outlier_pct"
 ))
 
 #' @importFrom magrittr %>%

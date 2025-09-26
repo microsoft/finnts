@@ -99,6 +99,7 @@ update_forecast <- function(agent_info,
 
   # register tools
   register_update_fcst_tools(agent_info)
+  register_eda_tools(agent_info)
 
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
@@ -195,7 +196,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_local_models = list(
       fn = "update_local_models",
-      `next` = "analyze_results",
+      `next` = "save_best_agent_run",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
@@ -205,6 +206,15 @@ update_fcst_agent_workflow <- function(agent_info,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
         seed = seed
+      )
+    ),
+    save_best_agent_run = list(
+      fn = "save_best_agent_run",
+      `next` = "analyze_results",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info
       )
     ),
     analyze_results = list(
@@ -228,7 +238,7 @@ update_fcst_agent_workflow <- function(agent_info,
         } else if (forecast_approach != "bottoms_up") {
           return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
         } else {
-          return(list(ctx = ctx, `next` = "stop"))
+          return(list(ctx = ctx, `next` = "save_agent_forecast"))
         }
       }
     ),
@@ -251,7 +261,7 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         if (forecast_approach == "bottoms_up") {
-          return(list(ctx = ctx, `next` = "stop"))
+          return(list(ctx = ctx, `next` = "save_agent_forecast"))
         } else {
           return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
         }
@@ -259,12 +269,34 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     reconcile_agent_forecast = list(
       fn = "reconcile_agent_forecast",
-      `next` = "stop",
+      `next` = "save_agent_forecast",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
         agent_info = agent_info,
         project_info = agent_info$project_info,
+        parallel_processing = parallel_processing,
+        num_cores = num_cores
+      )
+    ),
+    save_agent_forecast = list(
+      fn = "save_agent_forecast",
+      `next` = "eda_agent_workflow",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info,
+        parallel_processing = parallel_processing,
+        num_cores = num_cores
+      )
+    ),
+    eda_agent_workflow = list(
+      fn = "eda_agent_workflow",
+      `next` = "stop",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info,
         parallel_processing = parallel_processing,
         num_cores = num_cores
       )
@@ -337,6 +369,24 @@ register_update_fcst_tools <- function(agent_info) {
     .description = "Reconcile the hierarchical agent forecast based on the best model runs",
     .fun = reconcile_agent_forecast
   ))
+
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "save_agent_forecast",
+    .description = "Save the final agent forecast to the project storage",
+    .fun = save_agent_forecast
+  ))
+
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "save_best_agent_run",
+    .description = "Save the best agent run results to the project storage",
+    .fun = save_best_agent_run
+  ))
+
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "eda_agent_workflow",
+    .description = "Run the EDA analysis agent workflow on the final forecast results",
+    .fun = eda_agent_workflow
+  ))
 }
 
 #' Initial Checks for Update Forecast
@@ -361,7 +411,7 @@ initial_checks <- function(agent_info) {
   }
 
   # check if forecast update already run for current agent version
-  current_agent_run_tbl <- get_best_agent_run(agent_info)
+  current_agent_run_tbl <- load_best_agent_run(agent_info)
 
   if (nrow(current_agent_run_tbl) > 0) {
     finished_combos <- current_agent_run_tbl %>%
@@ -413,14 +463,25 @@ initial_checks <- function(agent_info) {
       dplyr::filter(agent_version == version)
 
     temp_agent_info <- list(
+      agent_version = temp_agent_tbl$agent_version,
       project_info = agent_info$project_info,
       run_id = temp_agent_tbl$run_id[1],
       storage_object = project_info$storage_object,
-      path = project_info$path
+      path = project_info$path,
+      forecast_approach = temp_agent_tbl$forecast_approach,
+      driver_llm = agent_info$driver_llm,
+      reason_llm = agent_info$reason_llm,
+      forecast_horizon = temp_agent_tbl$forecast_horizon,
+      external_regressors = temp_agent_tbl$external_regressors,
+      hist_end_date = temp_agent_tbl$hist_end_date,
+      back_test_scenarios = temp_agent_tbl$back_test_scenarios,
+      back_test_spacing = temp_agent_tbl$back_test_spacing,
+      combo_cleanup_date = temp_agent_tbl$combo_cleanup_date,
+      overwrite = agent_info$overwrite
     )
 
     # get best run results for version
-    temp_run_results <- get_best_agent_run(agent_info = temp_agent_info)
+    temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
 
     # get number of time series from previous agent run
     temp_combo_list <- get_total_combos(agent_info = temp_agent_info)
@@ -592,7 +653,7 @@ update_local_models <- function(agent_info,
   prev_run_id <- unique(previous_best_run_local_tbl$agent_run_id)[[1]]
 
   # check if forecast update already ran for current agent version
-  current_best_run_local_tbl <- get_best_agent_run(agent_info)
+  current_best_run_local_tbl <- load_best_agent_run(agent_info)
 
   if (nrow(current_best_run_local_tbl) > 0) {
     current_best_run_local_tbl <- current_best_run_local_tbl %>%
@@ -753,7 +814,7 @@ analyze_results <- function(agent_info) {
     )
 
     # get best run results for version
-    temp_run_results <- get_best_agent_run(agent_info = temp_agent_info)
+    temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
 
     if (nrow(temp_run_results) > 0) {
       if (nrow(temp_run_results) == total_combos) { # ensure version finished successfully
@@ -824,10 +885,7 @@ reconcile_agent_forecast <- function(agent_info,
 
   # load best run settings
   run_inputs <- get_best_agent_run(
-    agent_info = agent_info,
-    full_run_info = TRUE,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   )
 
   if (TRUE %in% unique(run_inputs$negative_forecast)) {
@@ -875,7 +933,7 @@ reconcile_agent_forecast <- function(agent_info,
   )
 
   # load hierarchical forecast
-  hts_fcst_tbl <- get_agent_forecast(
+  hts_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores

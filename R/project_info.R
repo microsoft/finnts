@@ -83,6 +83,7 @@ set_project_info <- function(project_name = "finn_project",
   eda_folder <- "eda"
   input_data_folder <- "input_data"
   logs_folder <- "logs"
+  final_output_folder <- "final_output"
 
   if (is.null(path)) {
     path <- fs::path(tempdir())
@@ -90,6 +91,7 @@ set_project_info <- function(project_name = "finn_project",
     fs::dir_create(tempdir(), eda_folder)
     fs::dir_create(tempdir(), input_data_folder)
     fs::dir_create(tempdir(), logs_folder)
+    fs::dir_create(tempdir(), final_output_folder)
   } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
@@ -101,21 +103,28 @@ set_project_info <- function(project_name = "finn_project",
       notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, input_data_folder) %>% as.character())
     }
 
-    if (!dir.exists(fs::path(path, logs_folder) %>% as.character())) {
+    if (!dir.exists(fs::path(temp_path, logs_folder) %>% as.character())) {
       notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, logs_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(temp_path, final_output_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, final_output_folder) %>% as.character())
     }
   } else if (is.null(storage_object)) {
     fs::dir_create(path, eda_folder)
     fs::dir_create(path, input_data_folder)
     fs::dir_create(path, logs_folder)
+    fs::dir_create(path, final_output_folder)
   } else if (inherits(storage_object, "blob_container")) {
     AzureStor::create_storage_dir(storage_object, fs::path(path, eda_folder))
     AzureStor::create_storage_dir(storage_object, fs::path(path, input_data_folder))
     AzureStor::create_storage_dir(storage_object, fs::path(path, logs_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, final_output_folder))
   } else if (inherits(storage_object, "ms_drive")) {
     try(storage_object$create_folder(fs::path(path, eda_folder)), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, input_data_folder)), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, logs_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, final_output_folder)), silent = TRUE)
   }
 
   temp_project_info <- list(
