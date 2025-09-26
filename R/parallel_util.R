@@ -34,7 +34,7 @@ par_start <- function(run_info,
     "doParallel", "parallel", "lubridate", "parsnip", "tune", "dials", "workflows",
     "Cubist", "earth", "glmnet", "kernlab", "purrr",
     "recipes", "rules", "modeltime", "fs", "digest", "tidyr",
-    "vroom", "utils", "cli"
+    "vroom", "utils", "cli", "tseries"
   )
 
   parallel_packages <- c(
