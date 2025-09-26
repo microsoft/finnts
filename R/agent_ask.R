@@ -339,26 +339,26 @@ create_analysis_plan <- function(agent_info, question) {
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
 
     Decision Rules:
-    - Questions about accuracy/WMAPE/errors → use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
-    - Questions about which specific models were used → use get_agent_forecast() and analyze Model_ID column
-    - Questions about forecasts/predictions/future values → use get_agent_forecast()
-    - Questions about models used → check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
-    - Questions about feature engineering/transformations → use get_best_agent_run()
-    - Questions about data quality/patterns/seasonality → use get_eda_data()
-    - Questions about stationarity/ACF/PACF → use get_eda_data() with Analysis_Type filter
-    - Questions about outliers in the data → use get_eda_data() with Analysis_Type == 'Outliers'
-    - Questions about missing data patterns → use get_eda_data() with Analysis_Type == 'Missing_Data'
-    - Questions needing both forecast values AND run settings → use BOTH sources in separate steps
+    - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
+    - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
+    - Questions about forecasts/predictions/future values -> use get_agent_forecast()
+    - Questions about models used -> check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
+    - Questions about feature engineering/transformations -> use get_best_agent_run()
+    - Questions about data quality/patterns/seasonality -> use get_eda_data()
+    - Questions about stationarity/ACF/PACF -> use get_eda_data() with Analysis_Type filter
+    - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
+    - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
+    - Questions needing both forecast values AND run settings -> use BOTH sources in separate steps
 
     Keywords to Data Source Mapping:
-    - WMAPE, MAPE, accuracy, error, performance → get_agent_forecast()
-    - forecast, prediction, future, back test, next month/year → get_agent_forecast()
-    - confidence interval, prediction interval → get_agent_forecast()
-    - outliers, missing values, transformations → get_best_agent_run() for settings, get_eda_data() for actual counts
-    - best model → get_agent_forecast()
-    - data quality, seasonality, stationarity, ACF, PACF → get_eda_data()
-    - time series characteristics, patterns → get_eda_data()
-    - external regressor correlations → get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
+    - WMAPE, MAPE, accuracy, error, performance -> get_agent_forecast()
+    - forecast, prediction, future, back test, next month/year -> get_agent_forecast()
+    - confidence interval, prediction interval -> get_agent_forecast()
+    - outliers, missing values, transformations -> get_best_agent_run() for settings, get_eda_data() for actual counts
+    - best model -> get_agent_forecast()
+    - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
+    - time series characteristics, patterns -> get_eda_data()
+    - external regressor correlations -> get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
@@ -619,8 +619,8 @@ execute_r_code <- function(code,
   }
 
   # Load required packages in the environment
-  eval(quote(suppressPackageStartupMessages(library(dplyr))), envir = exec_env)
-  eval(quote(suppressPackageStartupMessages(library(tidyr))), envir = exec_env)
+  eval(quote(suppressPackageStartupMessages(requireNamespace(dplyr))), envir = exec_env)
+  eval(quote(suppressPackageStartupMessages(requireNamespace(tidyr))), envir = exec_env)
 
   cli::cli_alert_info("Executing R code...")
 
@@ -673,14 +673,14 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
       # Format data frames as tables
       context_parts[[name]] <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        capture.output(print(head(result, 20))) %>%
+        utils::capture.output(print(head(result, 20))) %>%
           paste(collapse = "\n")
       )
     } else if (is.list(result)) {
       # Format lists
       context_parts[[name]] <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        capture.output(str(result)) %>%
+        utils::capture.output(utils::str(result)) %>%
           paste(collapse = "\n")
       )
     } else if (is.numeric(result) || is.character(result)) {
@@ -693,7 +693,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
       # Default formatting
       context_parts[[name]] <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        capture.output(print(result)) %>%
+        utils::capture.output(print(result)) %>%
           paste(collapse = "\n")
       )
     }

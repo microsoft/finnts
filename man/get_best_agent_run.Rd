@@ -4,25 +4,10 @@
 \alias{get_best_agent_run}
 \title{Get the best run for an agent}
 \usage{
-get_best_agent_run(
-  agent_info,
-  full_run_info = FALSE,
-  parallel_processing = NULL,
-  num_cores = NULL
-)
+get_best_agent_run(agent_info)
 }
 \arguments{
 \item{agent_info}{Agent info from \code{set_agent_info()}}
-
-\item{full_run_info}{A logical indicating whether to load all input settings
-from each run into the final output table}
-
-\item{parallel_processing}{Default of NULL runs no parallel processing and
-loads each time series forecast one after another. 'local_machine' leverages
-all cores on current machine Finn is running on. 'spark' runs time series
-in parallel on a spark cluster in Azure Databricks or Azure Synapse.}
-
-\item{num_cores}{Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.}
 }
 \value{
 A tibble containing the best run information for the agent.
@@ -65,6 +50,6 @@ iterate_forecast(
 )
 
 # get the best run information for the agent
-best_run_info <- get_best_agent_run(agent_info = agent_info, full_run_info = TRUE)
+best_run_info <- get_best_agent_run(agent_info = agent_info)
 }
 }
