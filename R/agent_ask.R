@@ -619,8 +619,8 @@ execute_r_code <- function(code,
   }
 
   # Load required packages in the environment
-  eval(quote(suppressPackageStartupMessages(requireNamespace(dplyr))), envir = exec_env)
-  eval(quote(suppressPackageStartupMessages(requireNamespace(tidyr))), envir = exec_env)
+  eval(quote(suppressPackageStartupMessages(requireNamespace("dplyr"))), envir = exec_env)
+  eval(quote(suppressPackageStartupMessages(requireNamespace("tidyr"))), envir = exec_env)
 
   cli::cli_alert_info("Executing R code...")
 
