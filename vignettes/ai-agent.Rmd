@@ -19,7 +19,7 @@ knitr::opts_chunk$set(
 The AI agent is a **tool-calling orchestration layer** that sits on top of the core *finnts* pipeline. It uses an LLM to:
 
 - run lightweight EDA (missing data, outliers, (P)ACF, seasonality, stationarity),
-- select/adjust **seasonal period**, **feature recipes** (lags, rolling windows, Fourier, date feats),
+- select/adjust **feature recipes** (lags, rolling windows, Fourier, date feats),
 - choose **model families** (local vs global; ARIMA/ETS/LM/Tree/GBM/NN, etc.), backtests, and ensembling,
 - optionally **detect and use hierarchies** (bottoms-up, standard, grouped),
 - generate a **reproducible best run** and a consolidated **forecast artifact** you can pull with a single call.
@@ -30,6 +30,7 @@ Core Agent Functions:
 
 - `iterate_forecast()`: Run the agent to iterate toward a best forecast run.
 - `update_forecast()`: Update forecasts with new data, using models trained in previous agent runs, optionally re-invoking the agent if accuracy degrades.
+- `ask_agent()`: Ask natural language questions about your forecast results and get data-driven answers.
 
 ---
 
@@ -42,8 +43,9 @@ Core Agent Functions:
 
 Use these helpers to retrieve outputs:
 
-- `get_best_agent_run(agent_info, full_run_info = TRUE)`
-- `get_agent_forecast(agent_info, parallel_processing = NULL, num_cores = NULL)`
+- `get_best_agent_run(agent_info)`
+- `get_agent_forecast(agent_info)`
+- `ask_agent(agent_info, question)`
 
 ---
 
@@ -141,7 +143,7 @@ iterate_forecast(
 
 What happens under the hood:
 
-- Reads cached EDA (or computes it) via the agent’s EDA tools.
+- Reads cached EDA (or computes it) via the agent's EDA tools.
 - Chooses **seasonal period**, **missing/outlier** handling, **box-cox/differencing** strategy.
 - Sweeps **models** (local &/or global), backtests, **recipes** (lags/rolling/Fourier/date feats).
 - Optionally enables **external regressors** if they improve WMAPE.
@@ -159,6 +161,76 @@ head(fcst)
 
 - `best_runs` summarizes, for each time series combo, the best run inputs when calling the Finn forecast process.
 - `fcst` returns the consolidated forecast table (if hierarchical reconciliation was used, this is the reconciled output).
+
+---
+
+## Ask questions about your forecast results
+
+After running `iterate_forecast()` or `update_forecast()`, you can use `ask_agent()` to ask natural language questions about your results. The agent analyzes your forecast data, model configurations, and EDA outputs to provide data-driven answers.
+
+### How it works
+
+`ask_agent()` creates an LLM-driven workflow that:
+1. **Plans** the analysis steps needed to answer your question
+2. **Executes** R code to analyze the relevant data
+3. **Generates** a natural language answer based on the results
+
+### Example questions
+
+```{r eval=FALSE}
+# Ask about forecast accuracy
+answer <- ask_agent(
+  agent_info = agent,
+  question = "What is the average weighted MAPE across all time series?"
+)
+
+# Ask about models used
+answer <- ask_agent(
+  agent_info = agent,
+  question = "Which models were selected as best for each time series?"
+)
+
+# Ask about data quality
+answer <- ask_agent(
+  agent_info = agent,
+  question = "Were there any missing values or outliers in the data?"
+)
+
+# Ask about specific forecasts
+answer <- ask_agent(
+  agent_info = agent,
+  question = "What are the forecasted values for M750 for the next 3 months?"
+)
+
+# Ask about time series characteristics
+answer <- ask_agent(
+  agent_info = agent,
+  question = "Which time series show strong seasonality patterns?"
+)
+
+# Ask comparative questions
+answer <- ask_agent(
+  agent_info = agent,
+  question = "Which time series have the highest forecast uncertainty?"
+)
+```
+
+### What data sources are available
+
+`ask_agent()` has access to three main data sources:
+
+1. **Forecast results** (`get_agent_forecast()`): Future predictions, back-test results, model selections, confidence intervals
+2. **Model configurations** (`get_best_agent_run()`): Feature engineering settings, transformations applied, model hyperparameters
+3. **EDA results** (`get_eda_data()`): Time series characteristics, seasonality, stationarity tests, data quality metrics
+
+The agent automatically determines which data sources to use based on your question.
+
+### Tips for effective questions
+
+- Be specific about what you want to know
+- Reference specific time series by their combo ID if needed
+- Ask about metrics, patterns, or comparisons
+- The agent can perform calculations and aggregations on the fly
 
 ---
 
@@ -187,6 +259,12 @@ update_forecast(
 )
 
 updated_fcst <- get_agent_forecast(agent2)
+
+# Ask questions about the updated forecast
+answer <- ask_agent(
+  agent_info = agent2,
+  question = "Summarize the forecast accuracy."
+)
 ```
 
 What `update_forecast()` does:
@@ -210,7 +288,7 @@ When the agent selects a hierarchy, it will:
 - **reconcile** down to the bottom level,
 - produce a **reconciled** `get_agent_forecast()` output.
 
-For background and manual control, see the **“Hierarchical Forecasting”** vignette.
+For background and manual control, see the **"Hierarchical Forecasting"** vignette.
 
 ---
 
@@ -219,15 +297,15 @@ For background and manual control, see the **“Hierarchical Forecasting”** vi
 If you pass `external_regressors = c("Price","Promo", ...)`:
 
 - Provide **historical or historical+future values** (length ≥ horizon) in your `input_data` for the selected columns.
-- The agent will **test** which specific xregs help; if they don’t, it will disable them for that iteration.
-- See the **“External Regressors”** vignette for data prep details.
+- The agent will **test** which specific xregs help; if they don't, it will disable them for that iteration.
+- See the **"External Regressors"** vignette for data prep details.
 
 ---
 
 ## Parallelism knobs
 
 - `parallel_processing = "local_machine"` runs each time series in parallel across local cores.  
-- `parallel_processing = "spark"` executes combos on an Azure Databricks/Synapse Spark cluster (see **“Parallel Processing”** vignette).  
+- `parallel_processing = "spark"` executes combos on an Azure Databricks/Synapse Spark cluster (see **"Parallel Processing"** vignette).  
 - `inner_parallel = TRUE` parallelizes work **inside** a combo (useful when outer parallelism is `NULL` or `"spark"`).  
 - `num_cores = NULL` defaults to *all cores minus one*.
 
@@ -235,7 +313,7 @@ If you pass `external_regressors = c("Price","Promo", ...)`:
 
 ## Reading artifacts directly (optional)
 
-You normally won’t need this, but for audits:
+You normally won't need this, but for audits:
 
 - Inputs: `path/input_data/…`
 - EDA:    `path/eda/…`

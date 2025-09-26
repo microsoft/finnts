@@ -65,6 +65,16 @@ iterate_forecast(agent_info = agent,
 
 # load final forecast output
 forecast_output <- get_agent_forecast(agent_info = agent)
+
+# ask agent to explain the forecast results
+eda_answer <- ask_agent(agent_info = agent,
+                        question = "Summarize the exploratory data analysis, what stands out?")
+                        
+accuracy_answer <- ask_agent(agent_info = agent,
+                             question = "What's the best model accuracy?")
+                             
+model_answer <- ask_agent(agent_info = agent,
+                          question = "Explain why the best model was selected.")
 ```
 
 ## Contributing

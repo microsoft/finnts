@@ -7,14 +7,17 @@
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param question A character string containing the question to ask about the forecast
-#' @param parallel_processing Default of NULL runs no parallel processing. 'local_machine'
-#'   leverages all cores on current machine. 'spark' runs in parallel on a spark cluster.
-#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to available cores.
 #'
 #' @return A character string containing the answer to the question
 #' @examples
 #' \dontrun{
 #' # After running iterate_forecast() or update_forecast()
+#'
+#' # Ask about exploratory data analysis
+#' answer <- ask_agent(
+#'   agent_info = agent_info,
+#'   question = "Were there any missing values in the data?"
+#' )
 #'
 #' # Ask about forecast accuracy
 #' answer <- ask_agent(
@@ -31,22 +34,15 @@
 #' # Ask about specific time series
 #' answer <- ask_agent(
 #'   agent_info = agent_info,
-#'   question = "What is the forecast for product ID M1 for the next 3 months?"
+#'   question = "What is the forecast for product XYZ for the next 3 months?"
 #' )
 #' }
 #' @export
 ask_agent <- function(agent_info,
-                      question,
-                      parallel_processing = NULL,
-                      num_cores = NULL) {
+                      question) {
   # Input validation
   check_agent_info(agent_info)
   check_input_type("question", question, "character")
-  check_input_type(
-    "parallel_processing", parallel_processing, c("character", "NULL"),
-    c("NULL", "local_machine", "spark")
-  )
-  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   # Get LLM from agent_info
   if (is.null(agent_info$driver_llm)) {
@@ -61,9 +57,7 @@ ask_agent <- function(agent_info,
   # Create and run the workflow
   result <- ask_agent_workflow(
     agent_info = agent_info,
-    question = question,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    question = question
   )
 
   # Display the formatted answer
@@ -76,15 +70,11 @@ ask_agent <- function(agent_info,
 #'
 #' @param agent_info Agent info object
 #' @param question The user's question
-#' @param parallel_processing Parallel processing option
-#' @param num_cores Number of cores
 #'
 #' @return List with answer and collected data
 #' @noRd
 ask_agent_workflow <- function(agent_info,
-                               question,
-                               parallel_processing = NULL,
-                               num_cores = NULL) {
+                               question) {
   # Clone the LLM for this workflow
   agent_info$driver_llm <- agent_info$driver_llm$clone()
 
@@ -173,8 +163,6 @@ ask_agent_workflow <- function(agent_info,
 
   # Store workflow parameters in agent_info for tool access
   agent_info$workflow_params <- list(
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
     question = question
   )
 
@@ -426,7 +414,7 @@ create_analysis_plan <- function(agent_info, question) {
   } else {
     plan_text <- as.character(response)
   }
-  print(plan_text)
+
   # Parse JSON
   plan_text <- gsub("```json|```", "", plan_text)
   plan_text <- trimws(plan_text)
@@ -520,7 +508,6 @@ execute_analysis_step <- function(agent_info,
   code_prompt <- glue::glue(
     "You are writing R code that will be executed inside an R environment that ALREADY contains:
     - agent_info (list-like)  [DO NOT create or modify it]
-    - parallel_processing, num_cores  [DO NOT reassign]
     - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data()
     {previous_context}
 
@@ -531,7 +518,7 @@ execute_analysis_step <- function(agent_info,
 
     HARD RULES:
     - NEVER write placeholder values like \"your_agent_info\".
-    - NEVER assign to agent_info, parallel_processing, or num_cores.
+    - NEVER assign to agent_info.
     - Do NOT call library(); always attach the package to the function using ::.
     - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools,
       lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
@@ -567,7 +554,7 @@ execute_analysis_step <- function(agent_info,
   r_code <- gsub("```r|```R|```", "", r_code)
   r_code <- trimws(r_code)
   # Strip any illegal reassignments to pre-bound variables
-  r_code <- gsub("(?m)^\\s*(agent_info|parallel_processing|num_cores)\\s*<-.*$", "", r_code, perl = TRUE)
+  r_code <- gsub("(?m)^\\s*(agent_info)\\s*<-.*$", "", r_code, perl = TRUE)
   # Replace any explicit placeholders that slipped through
   r_code <- gsub('"your_agent_info"|\'your_agent_info\'', "agent_info", r_code)
   # Normalize spacing
@@ -577,8 +564,6 @@ execute_analysis_step <- function(agent_info,
   result <- execute_r_code(
     code = r_code,
     agent_info = agent_info,
-    parallel_processing = agent_info$workflow_params$parallel_processing,
-    num_cores = agent_info$workflow_params$num_cores,
     previous_results = previous_results,
     analysis_plan = analysis_plan,
     step_index = step_index
@@ -596,8 +581,6 @@ execute_analysis_step <- function(agent_info,
 #'
 #' @param code R code to execute
 #' @param agent_info Agent info object
-#' @param parallel_processing Parallel processing option
-#' @param num_cores Number of cores
 #' @param previous_results Previous step results
 #' @param analysis_plan The full analysis plan (optional)
 #' @param step_index Current step index (optional)
@@ -606,17 +589,12 @@ execute_analysis_step <- function(agent_info,
 #' @noRd
 execute_r_code <- function(code,
                            agent_info,
-                           parallel_processing = NULL,
-                           num_cores = NULL,
                            previous_results = list(),
                            analysis_plan = NULL,
                            step_index = NULL) {
-  print(code)
   # Create execution environment with necessary objects
   exec_env <- new.env(parent = globalenv())
   exec_env$agent_info <- agent_info
-  exec_env$parallel_processing <- parallel_processing
-  exec_env$num_cores <- num_cores
   exec_env$get_agent_forecast <- get_agent_forecast
   exec_env$get_best_agent_run <- get_best_agent_run
   exec_env$get_eda_data <- get_eda_data
