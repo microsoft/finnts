@@ -99,6 +99,7 @@ update_forecast <- function(agent_info,
 
   # register tools
   register_update_fcst_tools(agent_info)
+  register_eda_tools(agent_info)
 
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
@@ -280,6 +281,17 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     save_agent_forecast = list(
       fn = "save_agent_forecast",
+      `next` = "eda_agent_workflow",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info,
+        parallel_processing = parallel_processing,
+        num_cores = num_cores
+      )
+    ),
+    eda_agent_workflow = list(
+      fn = "eda_agent_workflow",
       `next` = "stop",
       retry_mode = "plain",
       max_retry = 2,
@@ -368,6 +380,12 @@ register_update_fcst_tools <- function(agent_info) {
     .name = "save_best_agent_run",
     .description = "Save the best agent run results to the project storage",
     .fun = save_best_agent_run
+  ))
+
+  agent_info$driver_llm$register_tool(ellmer::tool(
+    .name = "eda_agent_workflow",
+    .description = "Run the EDA analysis agent workflow on the final forecast results",
+    .fun = eda_agent_workflow
   ))
 }
 
