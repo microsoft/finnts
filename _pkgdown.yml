@@ -12,3 +12,33 @@ authors:
 template:
   params:
     ganalytics: G-6X0DS5856B
+
+reference:
+  - title: "Finn Agent"
+    desc: Allows you to create and run the Finn agent for time series forecasting.
+    contents:
+      - starts_with("set_project_info")
+      - starts_with("set_agent_info")
+      - starts_with("iterate_forecast")
+      - starts_with("update_forecast")
+      - starts_with("ask_agent")
+      - starts_with("get_agent_forecast")
+      - starts_with("get_best_agent_run")
+      - starts_with("get_eda_data")
+
+  - title: "Standard Finn Runs"
+    desc: Run the standard Finn process without the agent, allowing for more manual control.
+    contents:
+      - starts_with("set_run_info")
+      - starts_with("get_run_info")
+      - starts_with("forecast_time_series")
+      - starts_with("get_forecast_data")
+      - starts_with("get_trained_models")
+      - starts_with("get_prepped_data")
+      - starts_with("get_prepped_models")
+      - starts_with("prep_data")
+      - starts_with("prep_models")
+      - starts_with("train_models")
+      - starts_with("ensemble_models")
+      - starts_with("final_models")
+      - starts_with("list_models")
