@@ -1327,7 +1327,7 @@ pacf_scan <- function(agent_info,
           dplyr::select(-Significant)
       } else {
         pacf_tbl <- tibble::tibble(
-          Combo = x,
+          Combo = combo_name,
           Lag = 1,
           Value = 0
         ) %>%
