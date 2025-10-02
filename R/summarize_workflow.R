@@ -166,6 +166,12 @@ summarize_workflow_arima <- function(wf) {
     if (isTRUE(add_diagnostics)) {
       resids <- try(arima_obj$residuals, silent = TRUE)
       if (!inherits(resids, "try-error") && !is.null(resids)) {
+        # Check for external regressors first
+        xreg_names <- try(names(arima_obj$xreg), silent = TRUE)
+        if (inherits(xreg_names, "try-error") || is.null(xreg_names)) {
+          xreg_names <- character(0)
+        }
+        
         lb_lag <- 24L
         
         if (is.finite(m) && !is.na(m)) lb_lag <- min(24L, max(8L, 2L * as.integer(m)))
@@ -195,31 +201,30 @@ summarize_workflow_arima <- function(wf) {
           .kv("engine_param", "residuals.sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
         )
         
-        # Check for external regressors if any
-        xreg_names <- try(names(croston_obj$xreg), silent = TRUE)
-        if (!inherits(xreg_names, "try-error") && !is.null(xreg_names)) {
+        # Add external regressors info if any
+        if (length(xreg_names) > 0) {
           # Add the names of external regressors
           for (xreg_name in xreg_names) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                   .kv("engine_param", paste0("xreg_", xreg_name), "included"))
+                                        .kv("engine_param", paste0("xreg_", xreg_name), "included"))
           }
         }
-
+        
         # Durbin-Watson test for autocorrelation (useful for regression)
-        if (length(xreg_names) > 0 && !inherits(xreg_names, "try-error") && 
-            !is.null(croston_obj$residuals) && length(croston_obj$residuals) > 3) {
+        if (length(xreg_names) > 0 && 
+            !is.null(arima_obj$residuals) && length(arima_obj$residuals) > 3) {
           # Only run Durbin-Watson if we have external regressors and sufficient residuals
-          dw_test <- try(stats::dwtest(croston_obj$residuals ~ 1), silent = TRUE)
+          dw_test <- try(stats::dwtest(arima_obj$residuals ~ 1), silent = TRUE)
           if (!inherits(dw_test, "try-error") && !is.null(dw_test)) {
             dw_stat <- dw_test$statistic
             dw_pval <- dw_test$p.value
             
             if (is.finite(dw_stat) && is.finite(dw_pval)) {
               eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                     .kv("engine_param", "dw_statistic", 
-                                         as.character(signif(dw_stat, digits))),
-                                     .kv("engine_param", "dw_pvalue", 
-                                         as.character(signif(dw_pval, digits))))
+                                          .kv("engine_param", "dw_statistic", 
+                                              as.character(signif(dw_stat, digits))),
+                                          .kv("engine_param", "dw_pvalue", 
+                                              as.character(signif(dw_pval, digits))))
             }
           }
         }
@@ -492,6 +497,12 @@ summarize_workflow_arimax <- function(wf) {
     if (isTRUE(add_diagnostics)) {
       resids <- try(arima_obj$residuals, silent = TRUE)
       if (!inherits(resids, "try-error") && !is.null(resids)) {
+        # Check for external regressors first
+        xreg_names <- try(names(arima_obj$xreg), silent = TRUE)
+        if (inherits(xreg_names, "try-error") || is.null(xreg_names)) {
+          xreg_names <- character(0)
+        }
+        
         lb_lag <- 24L
         
         if (is.finite(m) && !is.na(m)) lb_lag <- min(24L, max(8L, 2L * as.integer(m)))
@@ -521,9 +532,8 @@ summarize_workflow_arimax <- function(wf) {
           .kv("engine_param", "residuals.sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
         )
         
-        # Check for external regressors if any
-        xreg_names <- try(names(croston_obj$xreg), silent = TRUE)
-        if (!inherits(xreg_names, "try-error") && !is.null(xreg_names)) {
+        # Add external regressors info if any
+        if (length(xreg_names) > 0) {
           # Add the names of external regressors
           for (xreg_name in xreg_names) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, 
@@ -532,10 +542,10 @@ summarize_workflow_arimax <- function(wf) {
         }
 
         # Durbin-Watson test for autocorrelation (useful for regression)
-        if (length(xreg_names) > 0 && !inherits(xreg_names, "try-error") && 
-            !is.null(croston_obj$residuals) && length(croston_obj$residuals) > 3) {
+        if (length(xreg_names) > 0 && 
+            !is.null(arima_obj$residuals) && length(arima_obj$residuals) > 3) {
           # Only run Durbin-Watson if we have external regressors and sufficient residuals
-          dw_test <- try(stats::dwtest(croston_obj$residuals ~ 1), silent = TRUE)
+          dw_test <- try(stats::dwtest(arima_obj$residuals ~ 1), silent = TRUE)
           if (!inherits(dw_test, "try-error") && !is.null(dw_test)) {
             dw_stat <- dw_test$statistic
             dw_pval <- dw_test$p.value
@@ -878,7 +888,8 @@ summarize_workflow_croston <- function(wf) {
   }
   
   # Return the combined table
-  dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl)
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl, 
+                   class(fit$fit)[1], engine, unquote_values = FALSE, digits = digits)
 }
 
 summarize_workflow_ets <- function(wf) {
@@ -984,8 +995,50 @@ summarize_workflow_ets <- function(wf) {
         param_val <- ets_obj[[param]]
         if (is.numeric(param_val) && length(param_val) == 1 && is.finite(param_val)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                     .kv("engine_param", param, 
-                                         as.character(signif(param_val, digits))))
+                                      .kv("engine_param", param, 
+                                          as.character(signif(param_val, digits))))
+        }
+      }
+    }
+    
+    # Also try extracting from $par if not found above
+    if (!is.null(ets_obj$par) && is.numeric(ets_obj$par)) {
+      par_vec <- ets_obj$par
+      par_names <- names(par_vec)
+      
+      # If no names, try to infer based on model components
+      if (is.null(par_names) && !is.null(ets_obj$components)) {
+        # Create names based on components
+        components <- ets_obj$components
+        expected_names <- character()
+        if (length(components) >= 1 && components[1] != "N") expected_names <- c(expected_names, "alpha")
+        if (length(components) >= 2 && components[2] != "N") expected_names <- c(expected_names, "beta")
+        if (length(components) >= 3 && components[3] != "N") expected_names <- c(expected_names, "gamma")
+        if (length(components) >= 2 && grepl("d", components[2], ignore.case = TRUE)) expected_names <- c(expected_names, "phi")
+        
+        if (length(expected_names) == length(par_vec)) {
+          par_names <- expected_names
+        }
+      }
+      
+      # Add parameters that weren't already added
+      if (!is.null(par_names)) {
+        for (i in seq_along(par_vec)) {
+          param_name <- par_names[i]
+          if (!any(eng_tbl$name == param_name) && is.finite(par_vec[i])) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                        .kv("engine_param", param_name,
+                                            as.character(signif(par_vec[i], digits))))
+          }
+        }
+      } else {
+        # Fallback: add as par[1], par[2], etc.
+        for (i in seq_along(par_vec)) {
+          if (is.finite(par_vec[i])) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                        .kv("engine_param", paste0("par[", i, "]"),
+                                            as.character(signif(par_vec[i], digits))))
+          }
         }
       }
     }
@@ -1034,71 +1087,35 @@ summarize_workflow_ets <- function(wf) {
       if (i > 100) break
     }
     
-    # 4. Fitted values and residuals
-    if (!is.null(ets_obj$fitted)) {
-      fitted_vals <- ets_obj$fitted
-      if (is.numeric(fitted_vals) && length(fitted_vals) > 0) {
-        fitted_mean <- mean(fitted_vals, na.rm = TRUE)
-        fitted_min <- min(fitted_vals, na.rm = TRUE)
-        fitted_max <- max(fitted_vals, na.rm = TRUE)
-        
-        eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                   .kv("engine_param", "fitted_mean", 
-                                       as.character(signif(fitted_mean, digits))),
-                                   .kv("engine_param", "fitted_min", 
-                                       as.character(signif(fitted_min, digits))),
-                                   .kv("engine_param", "fitted_max", 
-                                       as.character(signif(fitted_max, digits))))
+    # 4. Error variance (sigma2) - most important for ETS
+    if (!is.null(ets_obj$sigma2)) {
+      sigma_val <- ets_obj$sigma2
+      if (is.numeric(sigma_val) && length(sigma_val) == 1 && is.finite(sigma_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                    .kv("engine_param", "sigma2",
+                                        as.character(signif(sigma_val, digits))))
       }
     }
     
+    # 5. MAE - single most interpretable accuracy metric
     if (!is.null(ets_obj$residuals)) {
       resids <- ets_obj$residuals
       if (is.numeric(resids) && length(resids) > 0) {
-        resid_mean <- mean(resids, na.rm = TRUE)
-        resid_min <- min(resids, na.rm = TRUE)
-        resid_max <- max(resids, na.rm = TRUE)
-        resid_sd <- stats::sd(resids, na.rm = TRUE)
-        
-        eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                   .kv("engine_param", "residuals.mean", 
-                                       as.character(signif(resid_mean, digits))),
-                                   .kv("engine_param", "residuals.min", 
-                                       as.character(signif(resid_min, digits))),
-                                   .kv("engine_param", "residuals.max", 
-                                       as.character(signif(resid_max, digits))),
-                                   .kv("engine_param", "residuals.sd", 
-                                       as.character(signif(resid_sd, digits))))
-      }
-    }
-    
-    # 5. Error metrics
-    if (!is.null(ets_obj$residuals)) {
-      resids <- ets_obj$residuals
-      if (is.numeric(resids) && length(resids) > 0) {
-        # RMSE
-        rmse <- sqrt(mean(resids^2, na.rm = TRUE))
-        eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                   .kv("engine_param", "rmse", 
-                                       as.character(signif(rmse, digits))))
-        
-        # MAE
         mae <- mean(abs(resids), na.rm = TRUE)
         eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                   .kv("engine_param", "mae", 
-                                       as.character(signif(mae, digits))))
+                                    .kv("engine_param", "mae", 
+                                        as.character(signif(mae, digits))))
       }
     }
     
-    # 6. AIC, BIC, AICc
-    info_criteria <- c("aic", "bic", "aicc")
-    for (criterion in info_criteria) {
+    # 6. Information criteria and model fit statistics
+    for (criterion in c("aic", "aicc", "bic", "loglik")) {
       if (!is.null(ets_obj[[criterion]])) {
         criterion_val <- ets_obj[[criterion]]
         if (is.numeric(criterion_val) && length(criterion_val) == 1 && is.finite(criterion_val)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                     .kv("engine_param", toupper(criterion), 
-                                         as.character(signif(criterion_val, digits))))
+                                      .kv("engine_param", criterion, 
+                                          as.character(signif(criterion_val, digits))))
         }
       }
     }
@@ -1205,7 +1222,8 @@ summarize_workflow_ets <- function(wf) {
   }
   
   # Return the combined table
-  dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl)
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+                   class(fit$fit)[1], engine, unquote_values = FALSE, digits = digits)
 }
 
 summarize_workflow_meanf <- function(wf) {
@@ -1444,19 +1462,6 @@ summarize_workflow_nnetar <- function(wf) {
       }
     }
     
-    # 5. Scaling parameters
-    if (!is.null(nnetar_obj$scalex)) {
-      scale_info <- nnetar_obj$scalex
-      if (is.list(scale_info)) {
-        if (!is.null(scale_info$center)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scale_center", as.character(signif(scale_info$center, digits))))
-        }
-        if (!is.null(scale_info$scale)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scale_sd", as.character(signif(scale_info$scale, digits))))
-        }
-      }
-    }
-    
     # 6. Lags used
     if (!is.null(nnetar_obj$lags)) {
       lags_str <- paste(nnetar_obj$lags, collapse = ", ")
@@ -1480,63 +1485,33 @@ summarize_workflow_nnetar <- function(wf) {
       }
     }
     
-    # 8. Fitted values and residuals
-    if (!is.null(nnetar_obj$fitted)) {
-      fitted_vals <- nnetar_obj$fitted
-      if (is.numeric(fitted_vals) && length(fitted_vals) > 0) {
-        fitted_mean <- mean(fitted_vals, na.rm = TRUE)
-        fitted_min <- min(fitted_vals, na.rm = TRUE)
-        fitted_max <- max(fitted_vals, na.rm = TRUE)
-        
-        eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                    .kv("engine_param", "fitted_mean", 
-                                        as.character(signif(fitted_mean, digits))),
-                                    .kv("engine_param", "fitted_min", 
-                                        as.character(signif(fitted_min, digits))),
-                                    .kv("engine_param", "fitted_max", 
-                                        as.character(signif(fitted_max, digits))))
-      }
-    }
-    
+    # 8. Fitted values and residuals - SIMPLIFIED to top metrics only
     if (!is.null(nnetar_obj$residuals)) {
       resids <- nnetar_obj$residuals
       if (is.numeric(resids) && length(resids) > 0) {
-        resid_mean <- mean(resids, na.rm = TRUE)
-        resid_min <- min(resids, na.rm = TRUE)
-        resid_max <- max(resids, na.rm = TRUE)
-        resid_sd <- stats::sd(resids, na.rm = TRUE)
+        # Top 3 accuracy metrics for understanding model fit
         
+        # 1. MAE - most interpretable, same units as target
+        mae <- mean(abs(resids), na.rm = TRUE)
         eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                    .kv("engine_param", "residuals.mean", 
-                                        as.character(signif(resid_mean, digits))),
-                                    .kv("engine_param", "residuals.min", 
-                                        as.character(signif(resid_min, digits))),
-                                    .kv("engine_param", "residuals.max", 
-                                        as.character(signif(resid_max, digits))),
-                                    .kv("engine_param", "residuals.sd", 
-                                        as.character(signif(resid_sd, digits))))
-      }
-    }
-    
-    # 9. Error metrics
-    if (!is.null(nnetar_obj$residuals)) {
-      resids <- nnetar_obj$residuals
-      if (is.numeric(resids) && length(resids) > 0) {
-        # RMSE
+                                    .kv("engine_param", "mae", 
+                                        as.character(signif(mae, digits))))
+        
+        # 2. RMSE - penalizes larger errors
         rmse <- sqrt(mean(resids^2, na.rm = TRUE))
         eng_tbl <- dplyr::bind_rows(eng_tbl, 
                                     .kv("engine_param", "rmse", 
                                         as.character(signif(rmse, digits))))
         
-        # MAE
-        mae <- mean(abs(resids), na.rm = TRUE)
+        # 3. Residual SD - shows error variability
+        resid_sd <- stats::sd(resids, na.rm = TRUE)
         eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                    .kv("engine_param", "mae", 
-                                        as.character(signif(mae, digits))))
+                                    .kv("engine_param", "residuals.sd", 
+                                        as.character(signif(resid_sd, digits))))
       }
     }
     
-    # 10. Number of observations - from x field or series field
+    # 9. Number of observations - from x field or series field
     n_obs <- NULL
     if (!is.null(nnetar_obj$x)) {
       n_obs <- length(nnetar_obj$x)
@@ -1549,16 +1524,11 @@ summarize_workflow_nnetar <- function(wf) {
     if (!is.null(n_obs) && is.numeric(n_obs)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(n_obs)))
     }
-    
-    # 11. Extract forecast value from the model
-    # Note: NNETAR models might not store forecast directly in the object
-    # The forecast is typically generated on-demand using the predict method
-    # We can indicate that forecast generation is available
-    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "forecast_available", "on-demand"))
   }
   
   # Return the combined table
-  dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl)
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+                   class(fit$fit)[1], engine, unquote_values = FALSE, digits = digits)
 }
 
 summarize_workflow_prophet <- function(wf) {
@@ -2050,7 +2020,7 @@ summarize_workflow_stlm_arima <- function(wf) {
       d <- mold$predictors[[which(is_date)[1]]]
       diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
       mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
-      cadence_days <- if (is.finite(mdiff)) mdiff : NA_real_
+      cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
       freq_label <- if (is.finite(mdiff)) {
         if (mdiff >= 360) "yearly" 
         else if (mdiff >= 85) "quarterly" 
@@ -2669,7 +2639,7 @@ summarize_workflow_tbats <- function(wf) {
       d <- mold$predictors[[which(is_date)[1]]]
       diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
       mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
-      cadence_days <- if (is.finite(mdiff)) mdiff : NA_real_
+      cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
       freq_label <- if (is.finite(mdiff)) {
         if (mdiff >= 360) "yearly" 
         else if (mdiff >= 85) "quarterly" 
