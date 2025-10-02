@@ -709,8 +709,9 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
     {full_context}
 
     Instructions:
-    - Provide a clear, concise answer using plain text. Explain everything at a middle school level.
-    - Reference specific numbers and findings from the analysis
+    - Provide a clear, concise answer using plain text.
+    - Assume the user has no technical background. So avoid jargon and explain concepts simply.
+    - Reference specific numbers and findings from the analysis.
     - Format numbers appropriately (e.g., percentages, decimals)
     - If the analysis shows a table, describe the key findings
     - No markdown formatting"
