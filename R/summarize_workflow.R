@@ -2307,6 +2307,333 @@ summarize_workflow_stlm_arima <- function(wf) {
   out
 }
 
+summarize_workflow_stlm_ets <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  include_coefficients <- TRUE
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_stlm_ets() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec   <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "stlm_ets"))
+    stop("summarize_workflow_stlm_ets() only supports seasonal_reg() with set_engine('stlm_ets').")
+  
+  # Specific predicates for this function
+  is_stlm  <- function(o) inherits(o, "stlm") || (is.list(o) && !is.null(o$call) && identical(as.character(o$call[[1]]), "stlm"))
+  is_ets <- function(o) inherits(o, "ets") || (is.list(o) && !is.null(o$method) && grepl("ETS", o$method))
+  is_series <- function(o) inherits(o, "msts") || stats::is.ts(o)
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl  <- .extract_outcomes(mold)
+  
+  # Get cadence info for fallback
+  cadence_days <- NA_real_
+  freq_label   <- ""
+  
+  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date","POSIXct","POSIXt")), logical(1))
+    if (any(is_date)) {
+      d <- mold$predictors[[which(is_date)[1]]]
+      diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
+      mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
+      cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
+      freq_label <- if (is.finite(mdiff)) {
+        if (mdiff >= 360) "yearly" 
+        else if (mdiff >= 85) "quarterly" 
+        else if (mdiff >= 25) "monthly" 
+        else if (mdiff >= 6) "weekly" 
+        else "daily"
+      } else ""
+    }
+  }
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # Find STLM and series objects
+  engine_fit <- fit$fit
+  stlm_obj   <- .find_obj(engine_fit, is_stlm, scan_depth)
+  
+  # Find series for periods
+  series_candidates <- list()
+  if (!is.null(stlm_obj)) {
+    series_candidates <- list(
+      try(if (!is.null(stlm_obj$x))     stlm_obj$x     else NULL, silent = TRUE),
+      try(if (!is.null(stlm_obj$origx)) stlm_obj$origx else NULL, silent = TRUE),
+      try(if (!is.null(stlm_obj$series))stlm_obj$series else NULL, silent = TRUE),
+      try(if (!is.null(stlm_obj$y))     stlm_obj$y     else NULL, silent = TRUE)
+    )
+  }
+  series_candidates <- series_candidates[vapply(series_candidates, function(z) !inherits(z, "try-error") && !is.null(z), logical(1))]
+  series_obj <- NULL
+  if (length(series_candidates)) {
+    for (s in series_candidates) if (is_series(s)) { series_obj <- s; break }
+    if (is.null(series_obj) && length(series_candidates) > 0) series_obj <- series_candidates[[1]]
+  }
+  if (is.null(series_obj)) series_obj <- .find_obj(engine_fit, is_series, scan_depth)
+  
+  # Extract periods
+  get_periods <- function(s) {
+    out <- numeric(0)
+    if (is.null(s)) return(out)
+    m1 <- suppressWarnings(attr(s, "msts", exact = TRUE))
+    if (!is.null(m1)) {
+      if (is.list(m1) && !is.null(m1$seasonal.periods)) out <- c(out, as.numeric(m1$seasonal.periods))
+      else if (is.atomic(m1)) out <- c(out, as.numeric(m1))
+    }
+    m2 <- suppressWarnings(attr(s, "seasonal.periods", exact = TRUE))
+    if (!is.null(m2)) out <- c(out, as.numeric(m2))
+    if (stats::is.ts(s)) {
+      fr <- suppressWarnings(stats::frequency(s))
+      if (is.finite(fr) && fr > 1) out <- c(out, as.numeric(fr))
+    }
+    unique(out[is.finite(out) & out > 0])
+  }
+  periods <- get_periods(series_obj)
+  
+  # Fallback period inference - fixed to avoid NA issues
+  if (!length(periods) && is.finite(cadence_days) && nzchar(freq_label)) {
+    periods <- switch(freq_label,
+                      "yearly"    = 1,
+                      "quarterly" = 4,
+                      "monthly"   = 12,
+                      "weekly"    = 52,
+                      "daily"     = 7,
+                      numeric(0))
+  }
+  
+  # Model args from periods
+  args_tbl <- if (length(periods)) {
+    k <- min(3L, length(periods))
+    tibble::tibble(
+      section = "model_arg",
+      name    = paste0("seasonal_period_", seq_len(k)),
+      value   = as.character(periods[seq_len(k)])
+    )
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # STLM args
+  if (!is.null(stlm_obj)) {
+    # Extract method used first
+    method_val <- try(stlm_obj$method, silent = TRUE)
+    if (!inherits(method_val, "try-error") && !is.null(method_val)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", .chr1(method_val)))
+    } else {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "ets"))
+    }
+    
+    # Number of observations
+    nobs <- try(length(stlm_obj$x), silent = TRUE)
+    if (!inherits(nobs, "try-error") && is.finite(nobs) && nobs > 0) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
+    }
+    
+    # Extract lambda (Box-Cox transformation parameter)
+    lambda_val <- try(stlm_obj$lambda, silent = TRUE)
+    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda", as.character(signif(lambda_val, digits))))
+    }
+    
+    # Extract biasadj
+    biasadj_val <- try(stlm_obj$biasadj, silent = TRUE)
+    if (!inherits(biasadj_val, "try-error") && !is.null(biasadj_val)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "biasadj", as.character(biasadj_val)))
+    }
+    
+    # Extract STL decomposition parameters
+    if (!is.null(stlm_obj$stl)) {
+      stl_obj <- stlm_obj$stl
+      
+      # STL window parameters
+      for (param in c("s.window", "t.window", "l.window", "s.degree", "t.degree", "l.degree")) {
+        val <- try(stl_obj[[param]], silent = TRUE)
+        if (!inherits(val, "try-error") && !is.null(val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stl.", param), .chr1(val)))
+        }
+      }
+      
+      # Check if robust STL was used
+      robust_val <- try(stl_obj$robust, silent = TRUE)
+      if (!inherits(robust_val, "try-error") && !is.null(robust_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stl.robust", as.character(robust_val)))
+      }
+    }
+    
+    # Extract call arguments
+    if (!is.null(stlm_obj$call)) {
+      stlm_args <- as.list(stlm_obj$call)[-1]
+      drop <- c("x","y","data","xreg","series","ts","...")
+      stlm_args <- stlm_args[setdiff(names(stlm_args), drop)]
+      stlm_args <- stlm_args[names(stlm_args) != ""]
+      for (nm in names(stlm_args)) {
+        val <- stlm_args[[nm]]
+        if (!is.list(val) && !any(eng_tbl$name == paste0("stlm.", nm))) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stlm.", nm), .chr1(val)))
+        }
+      }
+    }
+  } else {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "ets"))
+  }
+  
+  # ETS remainder model
+  ets_obj <- .find_obj(engine_fit, is_ets, scan_depth)
+  
+  # Also check within stlm_obj for the model component
+  if (is.null(ets_obj) && !is.null(stlm_obj) && !is.null(stlm_obj$model)) {
+    if (is_ets(stlm_obj$model)) {
+      ets_obj <- stlm_obj$model
+    }
+  }
+  
+  if (!is.null(ets_obj)) {
+    # 1. ETS Model Type and Components
+    if (!is.null(ets_obj$method)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.method", as.character(ets_obj$method)))
+      
+      # Parse the method string
+      method_match <- regexpr("\\(([^)]+)\\)", ets_obj$method)
+      if (method_match > 0) {
+        components_str <- substr(ets_obj$method, method_match + 1, 
+                                 method_match + attr(method_match, "match.length") - 2)
+        components <- strsplit(components_str, ",")[[1]]
+        
+        if (length(components) >= 3) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                      .kv("engine_param", "remainder.error", trimws(components[1])),
+                                      .kv("engine_param", "remainder.trend", trimws(components[2])),
+                                      .kv("engine_param", "remainder.seasonal", trimws(components[3])))
+          
+          # Check for damping
+          if (length(components) >= 2 && grepl("d$", components[2])) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.damped", "TRUE"))
+          }
+        }
+      }
+    }
+    
+    # 2. Smoothing parameters
+    param_names <- c("alpha", "beta", "gamma", "phi")
+    for (param in param_names) {
+      if (!is.null(ets_obj[[param]])) {
+        param_val <- ets_obj[[param]]
+        if (is.numeric(param_val) && length(param_val) == 1 && is.finite(param_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", paste0("remainder.", param), 
+                                          as.character(signif(param_val, digits))))
+        }
+      }
+    }
+    
+    # 3. Initial states
+    state_names <- c("l", "b", "s")
+    for (state_name in state_names) {
+      if (!is.null(ets_obj[[state_name]])) {
+        state_val <- ets_obj[[state_name]]
+        if (is.numeric(state_val) && length(state_val) == 1 && is.finite(state_val)) {
+          display_name <- switch(state_name,
+                                 "l" = "remainder.initial_level",
+                                 "b" = "remainder.initial_trend",
+                                 "remainder.initial_seasonal")
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", display_name, 
+                                          as.character(signif(state_val, digits))))
+        }
+      }
+    }
+    
+    # 4. Information criteria
+    for (nm in c("aic", "bic", "aicc", "sigma2", "loglik")) {
+      val <- try(ets_obj[[nm]], silent = TRUE)
+      if (!inherits(val, "try-error") && !is.null(val)) {
+        v <- if (is.numeric(val)) as.character(signif(val, digits)) else .chr1(val)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("remainder.", nm), v))
+      }
+    }
+    
+    # 5. Coefficients if requested (final states)
+    if (isTRUE(include_coefficients) && !is.null(ets_obj$states)) {
+      states <- ets_obj$states
+      if (is.matrix(states) && nrow(states) > 0) {
+        final_states <- states[nrow(states), ]
+        state_names <- colnames(states)
+        
+        for (i in seq_along(final_states)) {
+          state_val <- final_states[i]
+          
+          if (!is.null(state_names) && length(state_names) >= i) {
+            state_name <- state_names[i]
+          } else {
+            state_name <- if (i == 1) "l" else if (i == 2) "b" else paste0("s", i-2)
+          }
+          
+          if (is.numeric(state_val) && is.finite(state_val)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("coefficient", paste0("remainder.final_", state_name), 
+                                            as.character(signif(state_val, digits))))
+          }
+        }
+      }
+    }
+    
+    # 6. Residual diagnostics (at the end, like other functions)
+    resids <- try(ets_obj$residuals, silent = TRUE)
+    if (!inherits(resids, "try-error") && !is.null(resids) && length(resids) > 0) {
+      # Basic statistics
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "residuals.mean", as.character(signif(mean(resids, na.rm = TRUE), digits))),
+        .kv("engine_param", "residuals.sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
+      )
+      
+      # Error metrics
+      rmse <- sqrt(mean(resids^2, na.rm = TRUE))
+      mae <- mean(abs(resids), na.rm = TRUE)
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "rmse", as.character(signif(rmse, digits))),
+        .kv("engine_param", "mae", as.character(signif(mae, digits)))
+      )
+      
+      # Ljung-Box test
+      m <- if (length(periods) > 0) max(periods) else 12
+      lb_lag <- min(24L, max(8L, 2L * as.integer(m)))
+      lb <- try(stats::Box.test(resids, lag = lb_lag, type = "Ljung-Box"), silent = TRUE)
+      if (!inherits(lb, "try-error") && !is.null(lb$p.value)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "ljung_box.lag", as.character(lb_lag)),
+          .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value)),
+          .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+        )
+      }
+    }
+  }
+  
+  out <- .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+                          class(fit$fit)[1], engine, unquote_values = TRUE, digits = digits)
+  
+  # Additional numeric formatting for this function
+  out$value <- .signif_chr(out$value, digits)
+  out
+}
+
 summarize_workflow_tbats <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -2627,6 +2954,388 @@ summarize_workflow_tbats <- function(wf) {
   # Additional numeric formatting
   out$value <- .signif_chr(out$value, digits)
   out
+}
+
+summarize_workflow_theta <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_theta() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec   <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "theta")) {
+    stop("summarize_workflow_theta() only supports modeltime::exp_smoothing() with set_engine('theta').")
+  }
+  
+  # Specific predicates for Theta
+  is_theta <- function(o) {
+    inherits(o, "forecast") || 
+      inherits(o, "Theta") ||
+      (is.list(o) && !is.null(o$method) && grepl("[Tt]heta", o$method)) ||
+      (is.list(o) && !is.null(o$call) && grepl("thetaf", as.character(o$call[[1]])))
+  }
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl  <- .extract_outcomes(mold)
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # Model args - Theta specific (in proper order)
+  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # Find the Theta model object first to get actual values
+  engine_fit <- fit$fit
+  theta_obj <- .find_obj(engine_fit, is_theta, scan_depth)
+  
+  # Also check if the fit itself is a Theta object
+  if (is.null(theta_obj) && is_theta(engine_fit)) {
+    theta_obj <- engine_fit
+  }
+  
+  # Look for the models$model_1 structure (common in modeltime objects)
+  if (is.null(theta_obj)) {
+    if (!is.null(engine_fit$models) && !is.null(engine_fit$models$model_1)) {
+      if (is_theta(engine_fit$models$model_1)) {
+        theta_obj <- engine_fit$models$model_1
+      }
+    }
+  }
+  
+  # Extract alpha and theta coefficient for trend detection
+  alpha_val <- NULL
+  theta_coef <- NULL
+  
+  # Try to get alpha value
+  if (!is.null(theta_obj$alpha)) {
+    alpha_val <- theta_obj$alpha
+  } else if (!is.null(theta_obj$model) && !is.null(theta_obj$model$alpha)) {
+    alpha_val <- theta_obj$model$alpha
+  } else if (!is.null(theta_obj$par) && !is.null(theta_obj$par$alpha)) {
+    alpha_val <- theta_obj$par$alpha
+  }
+  
+  # Try to get theta coefficient
+  if (!is.null(theta_obj$theta)) {
+    theta_coef <- theta_obj$theta
+  }
+  
+  # Check for Theta-specific arguments from parsnip spec - maintain order
+  # But try to get actual values from the fitted model when they show as "auto"
+  theta_args <- c("seasonal_period", "error", "trend", "season", "damped")
+  for (arg_name in theta_args) {
+    if (!is.null(spec$args[[arg_name]])) {
+      arg_val <- .chr1(spec$args[[arg_name]])
+      
+      # If the value is "auto", try to get the actual value from the fitted model
+      if (arg_val == "auto" && !is.null(theta_obj)) {
+        actual_val <- NULL
+        
+        if (arg_name == "error") {
+          # Theta models typically use additive errors
+          actual_val <- "additive"
+        } else if (arg_name == "trend") {
+          # Check if trend was fitted
+          # Theta models with theta != 0 include a trend component
+          # Classic Theta (theta=2) combines SES with a linear trend line
+          if (!is.null(theta_obj$drift) || !is.null(theta_obj$b)) {
+            # Explicit drift parameter found
+            actual_val <- "additive"
+          } else if (!is.null(theta_coef) && is.numeric(theta_coef) && theta_coef != 0) {
+            # Theta coefficient != 0 implies trend component
+            # Classic Theta (theta=2) uses linear regression trend
+            actual_val <- "additive"
+          } else if (!is.null(alpha_val) && is.numeric(alpha_val) && alpha_val > 0.9) {
+            # High alpha (>0.9) in Theta models typically indicates drift/trend
+            actual_val <- "additive"
+          } else {
+            actual_val <- "none"
+          }
+        } else if (arg_name == "season") {
+          # Check if seasonal component exists
+          if (!is.null(theta_obj$season)) {
+            actual_val <- as.character(theta_obj$season)
+          } else if (!is.null(theta_obj$m) && theta_obj$m > 1) {
+            actual_val <- "additive"
+          } else {
+            actual_val <- "none"
+          }
+        } else if (arg_name == "seasonal_period") {
+          # Try to get actual frequency from the model
+          if (!is.null(theta_obj$m)) {
+            actual_val <- as.character(theta_obj$m)
+          } else if (!is.null(theta_obj$frequency)) {
+            actual_val <- as.character(theta_obj$frequency)
+          } else if (!is.null(theta_obj$x) && stats::is.ts(theta_obj$x)) {
+            actual_val <- as.character(stats::frequency(theta_obj$x))
+          }
+        } else if (arg_name == "damped") {
+          # Theta models typically don't use damping
+          actual_val <- "FALSE"
+        }
+        
+        if (!is.null(actual_val)) {
+          arg_val <- actual_val
+        }
+      }
+      
+      args_tbl <- dplyr::bind_rows(
+        args_tbl,
+        .kv("model_arg", arg_name, arg_val)
+      )
+    }
+  }
+  
+  # Check for actual seasonal period value if "frequency" was used
+  if (any(args_tbl$name == "seasonal_period" & args_tbl$value == "frequency")) {
+    # Try to get actual frequency from the model object
+    actual_freq <- NULL
+    
+    if (!is.null(theta_obj)) {
+      if (!is.null(theta_obj$m)) {
+        actual_freq <- theta_obj$m
+      } else if (!is.null(theta_obj$frequency)) {
+        actual_freq <- theta_obj$frequency
+      } else if (!is.null(theta_obj$x) && stats::is.ts(theta_obj$x)) {
+        actual_freq <- stats::frequency(theta_obj$x)
+      }
+    }
+    
+    if (!is.null(actual_freq) && is.numeric(actual_freq) && is.finite(actual_freq)) {
+      args_tbl$value[args_tbl$name == "seasonal_period"] <- as.character(actual_freq)
+    }
+  }
+  
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  if (!is.null(theta_obj)) {
+    # 1. Model Variant (instead of method string)
+    if (!is.null(theta_obj$method)) {
+      method_str <- as.character(theta_obj$method)
+      
+      # Parse theta variant from method string
+      if (grepl("STM", method_str, ignore.case = TRUE)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Standard Theta Method"))
+        # Standard Theta typically uses theta=2
+        if (is.null(theta_obj$theta)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "theta_coefficient", "2"))
+        }
+      } else if (grepl("OTM", method_str, ignore.case = TRUE)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Optimized Theta Method"))
+      } else if (grepl("DSTM", method_str, ignore.case = TRUE)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Dynamic Standard Theta Method"))
+      } else if (grepl("DOTM", method_str, ignore.case = TRUE)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Dynamic Optimized Theta Method"))
+      } else {
+        # Default/Classic Theta method
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Classic Theta"))
+        
+        # Classic Theta uses theta=2 by default
+        if (is.null(theta_obj$theta)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "theta_coefficient", "2"))
+        }
+      }
+    }
+    
+    # 2. Theta parameter value (the main theta coefficient)
+    if (!is.null(theta_obj$theta)) {
+      theta_val <- theta_obj$theta
+      if (is.numeric(theta_val) && is.finite(theta_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "theta_coefficient", 
+                                                 as.character(signif(theta_val, digits))))
+      }
+    }
+    
+    # 3. Alpha (smoothing parameter for SES component) - Try multiple locations
+    # (alpha_val already extracted above)
+    
+    if (!is.null(alpha_val) && is.numeric(alpha_val) && is.finite(alpha_val)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha", 
+                                               as.character(signif(alpha_val, digits))))
+      
+      # Interpret alpha value
+      if (alpha_val > 0.99) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Drift extrapolation"))
+      } else if (alpha_val > 0.5) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Recent observations weighted"))
+      } else {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Historical average weighted"))
+      }
+    }
+    
+    # 4. Drift/Linear trend component
+    if (!is.null(theta_obj$drift)) {
+      drift_val <- theta_obj$drift
+      if (is.numeric(drift_val) && is.finite(drift_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "drift", 
+                                                 as.character(signif(drift_val, digits))))
+      }
+    } else if (!is.null(theta_obj$b)) {
+      b_val <- theta_obj$b
+      if (is.numeric(b_val) && is.finite(b_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "drift", 
+                                                 as.character(signif(b_val, digits))))
+      }
+    }
+    
+    # 5. Decomposition method if used
+    if (!is.null(theta_obj$decomp)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "decomposition", 
+                                               as.character(theta_obj$decomp)))
+    }
+    
+    # 6. Seasonal component info
+    if (!is.null(theta_obj$season)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal", 
+                                               as.character(theta_obj$season)))
+    }
+    
+    # 7. Seasonal period/frequency (actual value used)
+    if (!is.null(theta_obj$m) || !is.null(theta_obj$frequency)) {
+      freq_val <- if (!is.null(theta_obj$m)) theta_obj$m else theta_obj$frequency
+      if (is.numeric(freq_val) && is.finite(freq_val) && freq_val > 1) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_period_actual", 
+                                                 as.character(freq_val)))
+      }
+    }
+    
+    # 8. Initial level (a0 or l0)
+    if (!is.null(theta_obj$a0)) {
+      a0_val <- theta_obj$a0
+      if (is.numeric(a0_val) && is.finite(a0_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "initial_level", 
+                                                 as.character(signif(a0_val, digits))))
+      }
+    } else if (!is.null(theta_obj$l0)) {
+      l0_val <- theta_obj$l0
+      if (is.numeric(l0_val) && is.finite(l0_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "initial_level", 
+                                                 as.character(signif(l0_val, digits))))
+      }
+    }
+    
+    # 9. Initial trend (b0)
+    if (!is.null(theta_obj$b0)) {
+      b0_val <- theta_obj$b0
+      if (is.numeric(b0_val) && is.finite(b0_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "initial_trend", 
+                                                 as.character(signif(b0_val, digits))))
+      }
+    }
+    
+    # 10. Residuals statistics - SIMPLIFIED TO ONLY KEY METRICS
+    if (!is.null(theta_obj$residuals)) {
+      resids <- theta_obj$residuals
+      if (is.numeric(resids) && length(resids) > 0) {
+        # Calculate RMSE
+        rmse <- sqrt(mean(resids^2, na.rm = TRUE))
+        if (is.finite(rmse)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", "rmse", 
+                                          as.character(signif(rmse, digits))))
+        }
+        
+        # Calculate MAE
+        mae <- mean(abs(resids), na.rm = TRUE)
+        if (is.finite(mae)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", "mae", 
+                                          as.character(signif(mae, digits))))
+        }
+        
+        # Calculate MAPE if original series is available
+        if (!is.null(theta_obj$x)) {
+          x_vals <- theta_obj$x
+          if (is.numeric(x_vals) && length(x_vals) == length(resids)) {
+            # Only calculate MAPE where actual values are not zero
+            non_zero_idx <- abs(x_vals) > 1e-10
+            if (sum(non_zero_idx) > 0) {
+              mape <- mean(abs(resids[non_zero_idx] / x_vals[non_zero_idx]), na.rm = TRUE) * 100
+              if (is.finite(mape)) {
+                eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                            .kv("engine_param", "mape", 
+                                                as.character(signif(mape, digits))))
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    # 11. Number of observations only
+    if (!is.null(theta_obj$x)) {
+      x_vals <- theta_obj$x
+      if (is.numeric(x_vals) && length(x_vals) > 0) {
+        # Number of observations
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "nobs", 
+                                        as.character(length(x_vals))))
+      }
+    }
+    
+    # 12. Model selection criteria (if available)
+    info_criteria <- c("aic", "bic", "aicc", "loglik")
+    for (criterion in info_criteria) {
+      if (!is.null(theta_obj[[criterion]])) {
+        criterion_val <- theta_obj[[criterion]]
+        if (is.numeric(criterion_val) && length(criterion_val) == 1 && is.finite(criterion_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", toupper(criterion), 
+                                          as.character(signif(criterion_val, digits))))
+        }
+      }
+    }
+    
+    # 13. Sigma (standard error of residuals)
+    if (!is.null(theta_obj$sigma) || !is.null(theta_obj$sigma2)) {
+      sigma_val <- if (!is.null(theta_obj$sigma)) {
+        theta_obj$sigma
+      } else {
+        sqrt(theta_obj$sigma2)
+      }
+      
+      if (is.numeric(sigma_val) && is.finite(sigma_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "sigma", 
+                                        as.character(signif(sigma_val, digits))))
+      }
+    }
+  }
+  
+  # Reorder model args to maintain consistent order
+  if (nrow(args_tbl) > 0) {
+    preferred_order <- c("seasonal_period", "error", "trend", "season", "damped")
+    args_tbl <- args_tbl[order(match(args_tbl$name, preferred_order, nomatch = 1000)), ]
+  }
+  
+  # Sort engine parameters for consistent output
+  if (nrow(eng_tbl) > 0) {
+    # Define preferred order for engine params (removed unnecessary ones)
+    param_order <- c("variant", "theta_coefficient", "alpha", "alpha_interpretation", 
+                     "drift", "initial_level", "initial_trend", "decomposition", "seasonal", 
+                     "seasonal_period_actual",
+                     "rmse", "mae", "mape",
+                     "nobs",
+                     "AIC", "BIC", "AICC", "LOGLIK", "sigma")
+    
+    eng_tbl <- eng_tbl[order(match(eng_tbl$name, param_order, nomatch = 1000)), ]
+  }
+  
+  # Assemble output
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+                   class(fit$fit)[1], engine, unquote_values = FALSE, digits = digits)
 }
 
 #' Convert various R objects to a single character string
