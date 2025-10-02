@@ -758,8 +758,7 @@ summarize_workflow_croston <- function(wf) {
         resid_max <- max(resids, na.rm = TRUE)
         resid_sd <- stats::sd(resids, na.rm = TRUE)
         
-        if (is.finite(resid_mean) && is.finite(resid_min) && 
-            is.finite(resid_max) && is.finite(resid_sd)) {
+        if (is.finite(resid_mean) && is.finite(resid_min) && is.finite(resid_max) && is.finite(resid_sd)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, 
                                       .kv("engine_param", "residuals.mean", 
                                           as.character(signif(resid_mean, digits))),
@@ -1316,6 +1315,547 @@ summarize_workflow_meanf <- function(wf) {
   
   .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
                    class(fit$fit)[1], engine, unquote_values = TRUE, digits = digits)
+}
+
+summarize_workflow_nnetar <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_nnetar() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec   <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "nnetar")) {
+    stop("summarize_workflow_nnetar() only supports modeltime::nnetar_reg() with set_engine('nnetar').")
+  }
+  
+  # Specific predicates for NNETAR
+  is_nnetar <- function(o) {
+    inherits(o, "nnetar") || 
+      (is.list(o) && !is.null(o$method) && grepl("NNAR", o$method)) ||
+      (is.list(o) && !is.null(o$call) && grepl("nnetar", as.character(o$call[[1]])))
+  }
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl  <- .extract_outcomes(mold)
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # Model args - NNETAR specific
+  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # Check for NNETAR-specific arguments
+  nnetar_args <- c("non_seasonal_ar", "seasonal_ar", "hidden_units", "epochs", "penalty")
+  for (arg_name in nnetar_args) {
+    if (!is.null(spec$args[[arg_name]])) {
+      args_tbl <- dplyr::bind_rows(
+        args_tbl,
+        .kv("model_arg", arg_name, .chr1(spec$args[[arg_name]]))
+      )
+    }
+  }
+  
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # Find the NNETAR model object - try multiple approaches
+  engine_fit <- fit$fit
+  nnetar_obj <- .find_obj(engine_fit, is_nnetar, scan_depth)
+  
+  # Also check if the fit itself is an NNETAR object
+  if (is.null(nnetar_obj) && is_nnetar(engine_fit)) {
+    nnetar_obj <- engine_fit
+  }
+  
+  # Look for the models$model_1 structure (common in modeltime objects)
+  if (is.null(nnetar_obj)) {
+    if (!is.null(engine_fit$models) && !is.null(engine_fit$models$model_1)) {
+      if (is_nnetar(engine_fit$models$model_1)) {
+        nnetar_obj <- engine_fit$models$model_1
+      }
+    }
+  }
+  
+  if (!is.null(nnetar_obj)) {
+    # 1. Model Architecture/Type from method field
+    if (!is.null(nnetar_obj$method)) {
+      method_str <- as.character(nnetar_obj$method)
+      
+      # Check if we need to add seasonal period to the method string
+      if (!grepl("\\[", method_str) && !is.null(nnetar_obj$m)) {
+        # Add the seasonal period in brackets if not already present
+        method_str <- paste0(method_str, "[", nnetar_obj$m, "]")
+      }
+      
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "method", method_str))
+    }
+    
+    # 2. Extract p, P, and size (hidden units) directly from the object
+    if (!is.null(nnetar_obj$p)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "non_seasonal_ar", as.character(nnetar_obj$p)))
+    }
+    
+    if (!is.null(nnetar_obj$P)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_ar", as.character(nnetar_obj$P)))
+    }
+    
+    if (!is.null(nnetar_obj$size)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "hidden_units", as.character(nnetar_obj$size)))
+    }
+    
+    # 3. Seasonal period from m field
+    if (!is.null(nnetar_obj$m)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_period", as.character(nnetar_obj$m)))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_frequency", as.character(nnetar_obj$m)))
+    }
+    
+    # 4. Number of networks/models
+    if (!is.null(nnetar_obj$model)) {
+      # The model field contains the neural networks
+      if (is.list(nnetar_obj$model)) {
+        num_networks <- length(nnetar_obj$model)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_networks", as.character(num_networks)))
+        
+        # Get network architecture from first network
+        if (num_networks > 0 && !is.null(nnetar_obj$model[[1]])) {
+          first_nn <- nnetar_obj$model[[1]]
+          
+          # Extract weights count if available
+          if (!is.null(first_nn$wts)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_weights", as.character(length(first_nn$wts))))
+          }
+          
+          # Extract decay parameter if available
+          if (!is.null(first_nn$decay)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "decay", as.character(signif(first_nn$decay, digits))))
+          }
+        }
+      }
+    }
+    
+    # 5. Scaling parameters
+    if (!is.null(nnetar_obj$scalex)) {
+      scale_info <- nnetar_obj$scalex
+      if (is.list(scale_info)) {
+        if (!is.null(scale_info$center)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scale_center", as.character(signif(scale_info$center, digits))))
+        }
+        if (!is.null(scale_info$scale)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scale_sd", as.character(signif(scale_info$scale, digits))))
+        }
+      }
+    }
+    
+    # 6. Lags used
+    if (!is.null(nnetar_obj$lags)) {
+      lags_str <- paste(nnetar_obj$lags, collapse = ", ")
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lags_used", lags_str))
+    }
+    
+    # 7. External regressors - Simplified to just show count
+    # Check from mold first to identify which predictors are external regressors
+    xreg_names <- character()
+    if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+      is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+      xreg_names <- names(mold$predictors)[!is_date]
+      
+      # Update predictor types to indicate which are external regressors
+      if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
+        preds_tbl$value[preds_tbl$name %in% xreg_names] <- 
+          paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [xreg]")
+      }
+    }
+    
+    # Add count of external regressors if found
+    if (length(xreg_names) > 0) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_xregs", as.character(length(xreg_names))))
+    }
+    
+    # 8. Fitted values and residuals
+    if (!is.null(nnetar_obj$fitted)) {
+      fitted_vals <- nnetar_obj$fitted
+      if (is.numeric(fitted_vals) && length(fitted_vals) > 0) {
+        fitted_mean <- mean(fitted_vals, na.rm = TRUE)
+        fitted_min <- min(fitted_vals, na.rm = TRUE)
+        fitted_max <- max(fitted_vals, na.rm = TRUE)
+        
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "fitted_mean", 
+                                        as.character(signif(fitted_mean, digits))),
+                                    .kv("engine_param", "fitted_min", 
+                                        as.character(signif(fitted_min, digits))),
+                                    .kv("engine_param", "fitted_max", 
+                                        as.character(signif(fitted_max, digits))))
+      }
+    }
+    
+    if (!is.null(nnetar_obj$residuals)) {
+      resids <- nnetar_obj$residuals
+      if (is.numeric(resids) && length(resids) > 0) {
+        resid_mean <- mean(resids, na.rm = TRUE)
+        resid_min <- min(resids, na.rm = TRUE)
+        resid_max <- max(resids, na.rm = TRUE)
+        resid_sd <- stats::sd(resids, na.rm = TRUE)
+        
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "residuals.mean", 
+                                        as.character(signif(resid_mean, digits))),
+                                    .kv("engine_param", "residuals.min", 
+                                        as.character(signif(resid_min, digits))),
+                                    .kv("engine_param", "residuals.max", 
+                                        as.character(signif(resid_max, digits))),
+                                    .kv("engine_param", "residuals.sd", 
+                                        as.character(signif(resid_sd, digits))))
+      }
+    }
+    
+    # 9. Error metrics
+    if (!is.null(nnetar_obj$residuals)) {
+      resids <- nnetar_obj$residuals
+      if (is.numeric(resids) && length(resids) > 0) {
+        # RMSE
+        rmse <- sqrt(mean(resids^2, na.rm = TRUE))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "rmse", 
+                                        as.character(signif(rmse, digits))))
+        
+        # MAE
+        mae <- mean(abs(resids), na.rm = TRUE)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                    .kv("engine_param", "mae", 
+                                        as.character(signif(mae, digits))))
+      }
+    }
+    
+    # 10. Number of observations - from x field or series field
+    n_obs <- NULL
+    if (!is.null(nnetar_obj$x)) {
+      n_obs <- length(nnetar_obj$x)
+    } else if (!is.null(nnetar_obj$series)) {
+      n_obs <- length(nnetar_obj$series)
+    } else if (!is.null(nnetar_obj$fitted)) {
+      n_obs <- length(nnetar_obj$fitted)
+    }
+    
+    if (!is.null(n_obs) && is.numeric(n_obs)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(n_obs)))
+    }
+    
+    # 11. Extract forecast value from the model
+    # Note: NNETAR models might not store forecast directly in the object
+    # The forecast is typically generated on-demand using the predict method
+    # We can indicate that forecast generation is available
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "forecast_available", "on-demand"))
+  }
+  
+  # Return the combined table
+  dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl)
+}
+
+summarize_workflow_prophet <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_prophet() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec   <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "prophet")) {
+    stop("summarize_workflow_prophet() only supports modeltime::prophet_reg() with set_engine('prophet').")
+  }
+  
+  # Specific predicates for Prophet
+  is_prophet <- function(o) {
+    inherits(o, "prophet") || 
+      (is.list(o) && !is.null(o$growth)) ||
+      (is.list(o) && !is.null(o$changepoints)) ||
+      (is.list(o) && !is.null(o$seasonalities))
+  }
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl  <- .extract_outcomes(mold)
+  
+  # Check for regressors (non-date predictors)
+  xreg_names <- character()
+  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    xreg_names <- names(mold$predictors)[!is_date]
+    
+    # Update predictor types to indicate which are external regressors
+    if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
+      preds_tbl$value[preds_tbl$name %in% xreg_names] <- 
+        paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [regressor]")
+    }
+  }
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # Model args - Prophet specific from parsnip spec
+  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # Check for Prophet-specific arguments in the spec
+  prophet_args <- c("growth", "changepoint_num", "changepoint_range", "seasonality_yearly", 
+                    "seasonality_weekly", "seasonality_daily", "season", "prior_scale_changepoints",
+                    "prior_scale_seasonality", "prior_scale_holidays", "logistic_cap", "logistic_floor")
+  
+  for (arg_name in prophet_args) {
+    if (!is.null(spec$args[[arg_name]])) {
+      args_tbl <- dplyr::bind_rows(
+        args_tbl,
+        .kv("model_arg", arg_name, .chr1(spec$args[[arg_name]]))
+      )
+    }
+  }
+  
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  # Find the Prophet model object
+  engine_fit <- fit$fit
+  prophet_obj <- .find_obj(engine_fit, is_prophet, scan_depth)
+  
+  # Also check if the fit itself is a Prophet object
+  if (is.null(prophet_obj) && is_prophet(engine_fit)) {
+    prophet_obj <- engine_fit
+  }
+  
+  # Look for the models$model_1 structure (common in modeltime objects)
+  if (is.null(prophet_obj)) {
+    if (!is.null(engine_fit$models) && !is.null(engine_fit$models$model_1)) {
+      if (is_prophet(engine_fit$models$model_1)) {
+        prophet_obj <- engine_fit$models$model_1
+      }
+    }
+  }
+  
+  if (!is.null(prophet_obj)) {
+    # 1. Growth type
+    if (!is.null(prophet_obj$growth)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "growth", as.character(prophet_obj$growth)))
+    }
+    
+    # 2. Changepoints
+    if (!is.null(prophet_obj$changepoints)) {
+      n_changepoints <- length(prophet_obj$changepoints)
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_changepoints", as.character(n_changepoints)))
+      
+      # Show first few changepoints if any
+      if (n_changepoints > 0) {
+        cp_to_show <- min(3, n_changepoints)
+        for (i in 1:cp_to_show) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                      .kv("engine_param", paste0("changepoint_", i), 
+                                          as.character(prophet_obj$changepoints[i])))
+        }
+      }
+    }
+    
+    # 3. Changepoint range
+    if (!is.null(prophet_obj$changepoint.range)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "changepoint_range", 
+                                               as.character(prophet_obj$changepoint.range)))
+    }
+    
+    # 4. Changepoint prior scale
+    if (!is.null(prophet_obj$changepoint.prior.scale)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "changepoint_prior_scale", 
+                                               as.character(signif(prophet_obj$changepoint.prior.scale, digits))))
+    }
+    
+    # 5. Seasonalities
+    if (!is.null(prophet_obj$seasonalities)) {
+      seasons <- prophet_obj$seasonalities
+      if (is.data.frame(seasons) && nrow(seasons) > 0) {
+        for (i in 1:nrow(seasons)) {
+          season_name <- seasons$name[i]
+          season_period <- seasons$period[i]
+          season_fourier <- seasons$fourier.order[i]
+          season_prior <- seasons$prior.scale[i]
+          
+          eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                      .kv("engine_param", paste0("seasonality_", season_name, "_period"), 
+                                          as.character(signif(season_period, digits))),
+                                      .kv("engine_param", paste0("seasonality_", season_name, "_fourier_order"), 
+                                          as.character(season_fourier)),
+                                      .kv("engine_param", paste0("seasonality_", season_name, "_prior_scale"), 
+                                          as.character(signif(season_prior, digits))))
+        }
+      }
+    }
+    
+    # 6. Seasonality prior scale (global)
+    if (!is.null(prophet_obj$seasonality.prior.scale)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonality_prior_scale", 
+                                               as.character(signif(prophet_obj$seasonality.prior.scale, digits))))
+    }
+    
+    # 7. Holidays
+    if (!is.null(prophet_obj$holidays)) {
+      holidays_df <- prophet_obj$holidays
+      if (is.data.frame(holidays_df) && nrow(holidays_df) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_holidays", 
+                                                 as.character(nrow(holidays_df))))
+        
+        # Show unique holiday names
+        unique_holidays <- unique(holidays_df$holiday)
+        if (length(unique_holidays) > 0) {
+          holiday_list <- paste(head(unique_holidays, 5), collapse = ", ")
+          if (length(unique_holidays) > 5) {
+            holiday_list <- paste0(holiday_list, ", ...")
+          }
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "holidays", holiday_list))
+        }
+      }
+    }
+    
+    # 8. Holidays prior scale
+    if (!is.null(prophet_obj$holidays.prior.scale)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "holidays_prior_scale", 
+                                               as.character(signif(prophet_obj$holidays.prior.scale, digits))))
+    }
+    
+    # 9. Extra regressors
+    if (!is.null(prophet_obj$extra_regressors)) {
+      extra_regs <- prophet_obj$extra_regressors
+      if (is.list(extra_regs) && length(extra_regs) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_extra_regressors", 
+                                                 as.character(length(extra_regs))))
+        
+        for (reg_name in names(extra_regs)) {
+          reg_info <- extra_regs[[reg_name]]
+          if (!is.null(reg_info$prior.scale)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("engine_param", paste0("regressor_", reg_name, "_prior_scale"), 
+                                            as.character(signif(reg_info$prior.scale, digits))))
+          }
+          if (!is.null(reg_info$standardize)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("engine_param", paste0("regressor_", reg_name, "_standardize"), 
+                                            as.character(reg_info$standardize)))
+          }
+          if (!is.null(reg_info$mode)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("engine_param", paste0("regressor_", reg_name, "_mode"), 
+                                            as.character(reg_info$mode)))
+          }
+        }
+      }
+    }
+    
+    # 10. MCMC samples (for uncertainty intervals)
+    if (!is.null(prophet_obj$mcmc.samples)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "mcmc_samples", 
+                                               as.character(prophet_obj$mcmc.samples)))
+    }
+    
+    # 11. Interval width
+    if (!is.null(prophet_obj$interval.width)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "interval_width", 
+                                               as.character(prophet_obj$interval.width)))
+    }
+    
+    # 12. Uncertainty samples
+    if (!is.null(prophet_obj$uncertainty.samples)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "uncertainty_samples", 
+                                               as.character(prophet_obj$uncertainty.samples)))
+    }
+    
+    # 13. Logistic cap and floor (for logistic growth)
+    if (!is.null(prophet_obj$logistic.floor) && prophet_obj$logistic.floor) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "logistic_floor_enabled", "TRUE"))
+    }
+    
+    # 14. History size
+    if (!is.null(prophet_obj$history)) {
+      history_df <- prophet_obj$history
+      if (is.data.frame(history_df) && nrow(history_df) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_historical_points", 
+                                                 as.character(nrow(history_df))))
+        
+        # Date range
+        if ("ds" %in% names(history_df)) {
+          date_min <- min(history_df$ds, na.rm = TRUE)
+          date_max <- max(history_df$ds, na.rm = TRUE)
+          eng_tbl <- dplyr::bind_rows(eng_tbl,
+                                      .kv("engine_param", "history_start", as.character(date_min)),
+                                      .kv("engine_param", "history_end", as.character(date_max)))
+        }
+      }
+    }
+    
+    # 15. Training metrics (if available)
+    if (!is.null(prophet_obj$params)) {
+      params <- prophet_obj$params
+      
+      # Extract beta coefficients for regressors
+      if (!is.null(params$beta)) {
+        beta_vals <- params$beta
+        if (is.numeric(beta_vals) && length(beta_vals) > 0) {
+          for (i in seq_along(beta_vals)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("coefficient", paste0("beta_", i), 
+                                            as.character(signif(beta_vals[i], digits))))
+          }
+        }
+      }
+      
+      # Extract trend parameters
+      if (!is.null(params$k)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "trend_k", 
+                                                 as.character(signif(params$k, digits))))
+      }
+      if (!is.null(params$m)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "trend_m", 
+                                                 as.character(signif(params$m, digits))))
+      }
+      if (!is.null(params$delta)) {
+        delta_vals <- params$delta
+        if (is.numeric(delta_vals) && length(delta_vals) > 0) {
+          non_zero_deltas <- sum(abs(delta_vals) > 1e-10)
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_trend_changes", 
+                                                   as.character(non_zero_deltas)))
+        }
+      }
+      
+      # Extract sigma_obs (observation noise)
+      if (!is.null(params$sigma_obs)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "sigma_obs", 
+                                                 as.character(signif(params$sigma_obs, digits))))
+      }
+    }
+    
+    # 16. Training time (if stored)
+    if (!is.null(prophet_obj$train.time)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "train_time_seconds", 
+                                               as.character(signif(prophet_obj$train.time, digits))))
+    }
+  }
+  
+  # Return the combined table
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+                   class(fit$fit)[1], engine, unquote_values = FALSE, digits = digits)
 }
 
 summarize_workflow_snaive <- function(wf) {
