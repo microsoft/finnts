@@ -1463,23 +1463,21 @@ summarize_workflow_nnetar <- function(wf) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lags_used", lags_str))
     }
     
-    # 7. External regressors - Simplified to just show count
-    # Check from mold first to identify which predictors are external regressors
-    xreg_names <- character()
-    if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
-      is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
-      xreg_names <- names(mold$predictors)[!is_date]
+    # 7. External regressors - summarized version for better readability
+    if (!is.null(nnetar_obj$xreg)) {
+      n_xregs <- ncol(nnetar_obj$xreg)
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_xregs", as.character(n_xregs)))
       
-      # Update predictor types to indicate which are external regressors
-      if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
-        preds_tbl$value[preds_tbl$name %in% xreg_names] <- 
-          paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [xreg]")
+      if (n_xregs > 0) {
+        xreg_coefs <- names(nnetar_obj$coef)[grepl("^xreg", names(nnetar_obj$coef))]
+        
+        if (length(xreg_coefs) > 0) {
+          for (i in seq_along(xreg_coefs)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("xreg_coefficient", xreg_coefs[i], 
+                                                     as.character(signif(as.numeric(nnetar_obj$coef[xreg_coefs[i]]), digits))))
+          }
+        }
       }
-    }
-    
-    # Add count of external regressors if found
-    if (length(xreg_names) > 0) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_xregs", as.character(length(xreg_names))))
     }
     
     # 8. Fitted values and residuals
@@ -1622,9 +1620,24 @@ summarize_workflow_prophet <- function(wf) {
   
   for (arg_name in prophet_args) {
     if (!is.null(spec$args[[arg_name]])) {
+      arg_val <- .chr1(spec$args[[arg_name]])
+      
+      # Format numeric values to reasonable precision
+      num_val <- suppressWarnings(as.numeric(arg_val))
+      if (!is.na(num_val) && is.finite(num_val)) {
+        # Use different precision based on the scale of the value
+        if (abs(num_val) < 0.01 || abs(num_val) > 100) {
+          # For very small or large values, use scientific notation with fewer digits
+          arg_val <- as.character(signif(num_val, 4))
+        } else {
+          # For regular values, round to reasonable decimal places
+          arg_val <- as.character(round(num_val, 4))
+        }
+      }
+      
       args_tbl <- dplyr::bind_rows(
         args_tbl,
-        .kv("model_arg", arg_name, .chr1(spec$args[[arg_name]]))
+        .kv("model_arg", arg_name, arg_val)
       )
     }
   }
@@ -1651,6 +1664,48 @@ summarize_workflow_prophet <- function(wf) {
   }
   
   if (!is.null(prophet_obj)) {
+    # Override "auto" values in args_tbl with actual fitted values
+    
+    # prior_scale_holidays - get actual value used
+    if (any(args_tbl$name == "prior_scale_holidays" & args_tbl$value == "auto")) {
+      actual_holiday_prior <- prophet_obj$holidays.prior.scale
+      if (!is.null(actual_holiday_prior) && is.numeric(actual_holiday_prior)) {
+        args_tbl$value[args_tbl$name == "prior_scale_holidays"] <- as.character(signif(actual_holiday_prior, 4))
+      }
+    }
+    
+    # season - get actual season mode used
+    if (any(args_tbl$name == "season" & args_tbl$value == "auto")) {
+      # Prophet uses "additive" or "multiplicative" for seasonality mode
+      actual_season_mode <- prophet_obj$seasonality.mode
+      if (!is.null(actual_season_mode)) {
+        args_tbl$value[args_tbl$name == "season"] <- as.character(actual_season_mode)
+      }
+    }
+    
+    # logistic_cap and logistic_floor - only relevant for logistic growth
+    if (prophet_obj$growth == "logistic") {
+      # Check for cap and floor in the history data
+      if (!is.null(prophet_obj$history)) {
+        if ("cap" %in% names(prophet_obj$history)) {
+          cap_val <- unique(prophet_obj$history$cap)
+          if (length(cap_val) == 1 && is.finite(cap_val)) {
+            args_tbl$value[args_tbl$name == "logistic_cap"] <- as.character(signif(cap_val, 4))
+          }
+        }
+        if ("floor" %in% names(prophet_obj$history)) {
+          floor_val <- unique(prophet_obj$history$floor)
+          if (length(floor_val) == 1 && is.finite(floor_val)) {
+            args_tbl$value[args_tbl$name == "logistic_floor"] <- as.character(signif(floor_val, 4))
+          }
+        }
+      }
+    } else {
+      # For non-logistic growth, these aren't used
+      args_tbl$value[args_tbl$name == "logistic_cap"] <- "not_used"
+      args_tbl$value[args_tbl$name == "logistic_floor"] <- "not_used"
+    }
+    
     # 1. Growth type
     if (!is.null(prophet_obj$growth)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "growth", as.character(prophet_obj$growth)))
@@ -1661,21 +1716,34 @@ summarize_workflow_prophet <- function(wf) {
       n_changepoints <- length(prophet_obj$changepoints)
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_changepoints", as.character(n_changepoints)))
       
-      # Show first few changepoints if any
+      # Show last few changepoints if any (most recent are most relevant for forecasting)
       if (n_changepoints > 0) {
         cp_to_show <- min(3, n_changepoints)
-        for (i in 1:cp_to_show) {
+        cp_start_idx <- n_changepoints - cp_to_show + 1
+        
+        for (i in seq_len(cp_to_show)) {
+          actual_idx <- cp_start_idx + i - 1
+          label <- if (n_changepoints <= 3) {
+            paste0("changepoint_", i)
+          } else {
+            paste0("changepoint_last_", i)  # Makes it clear these are the most recent
+          }
           eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                      .kv("engine_param", paste0("changepoint_", i), 
-                                          as.character(prophet_obj$changepoints[i])))
+                                  .kv("engine_param", label, 
+                                      as.character(prophet_obj$changepoints[actual_idx])))
         }
       }
     }
     
     # 3. Changepoint range
     if (!is.null(prophet_obj$changepoint.range)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "changepoint_range", 
-                                               as.character(prophet_obj$changepoint.range)))
+      cp_range_val <- prophet_obj$changepoint.range
+      if (is.numeric(cp_range_val) && is.finite(cp_range_val)) {
+        cp_range_val <- as.character(round(cp_range_val, 4))
+      } else {
+        cp_range_val <- as.character(cp_range_val)
+      }
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "changepoint_range", cp_range_val))
     }
     
     # 4. Changepoint prior scale
@@ -1684,7 +1752,7 @@ summarize_workflow_prophet <- function(wf) {
                                                as.character(signif(prophet_obj$changepoint.prior.scale, digits))))
     }
     
-    # 5. Seasonalities
+    # 5. Seasonalities - Enhanced with more details
     if (!is.null(prophet_obj$seasonalities)) {
       seasons <- prophet_obj$seasonalities
       if (is.data.frame(seasons) && nrow(seasons) > 0) {
@@ -1736,30 +1804,66 @@ summarize_workflow_prophet <- function(wf) {
                                                as.character(signif(prophet_obj$holidays.prior.scale, digits))))
     }
     
-    # 9. Extra regressors
+    # 9. Extra regressors - simplified: just count them without details
     if (!is.null(prophet_obj$extra_regressors)) {
       extra_regs <- prophet_obj$extra_regressors
       if (is.list(extra_regs) && length(extra_regs) > 0) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_extra_regressors", 
-                                                 as.character(length(extra_regs))))
+        n_regressors <- length(extra_regs)
         
-        for (reg_name in names(extra_regs)) {
-          reg_info <- extra_regs[[reg_name]]
-          if (!is.null(reg_info$prior.scale)) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                        .kv("engine_param", paste0("regressor_", reg_name, "_prior_scale"), 
-                                            as.character(signif(reg_info$prior.scale, digits))))
+        # Only show details if there are a reasonable number of regressors (5 or fewer)
+        if (n_regressors <= 5) {
+          # Still show the count for small numbers
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_extra_regressors", 
+                                                   as.character(n_regressors)))
+          
+          for (reg_name in names(extra_regs)) {
+            reg_info <- extra_regs[[reg_name]]
+            if (!is.null(reg_info$prior.scale)) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                          .kv("engine_param", paste0("regressor_", reg_name, "_prior_scale"), 
+                                              as.character(signif(reg_info$prior.scale, digits))))
+            }
+            if (!is.null(reg_info$standardize)) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                          .kv("engine_param", paste0("regressor_", reg_name, "_standardize"), 
+                                              as.character(reg_info$standardize)))
+            }
+            if (!is.null(reg_info$mode)) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                          .kv("engine_param", paste0("regressor_", reg_name, "_mode"), 
+                                              as.character(reg_info$mode)))
+            }
           }
-          if (!is.null(reg_info$standardize)) {
+        } else {
+          # For many regressors, just show summary statistics without count or examples
+          prior_scales <- sapply(extra_regs, function(x) x$prior.scale)
+          modes <- sapply(extra_regs, function(x) x$mode)
+          
+          # Count unique settings
+          unique_prior_scales <- unique(prior_scales[!is.na(prior_scales)])
+          unique_modes <- unique(modes[!is.na(modes)])
+          
+          if (length(unique_prior_scales) == 1) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                        .kv("engine_param", paste0("regressor_", reg_name, "_standardize"), 
-                                            as.character(reg_info$standardize)))
-          }
-          if (!is.null(reg_info$mode)) {
+                                        .kv("engine_param", "regressors_prior_scale_all", 
+                                            as.character(signif(unique_prior_scales, digits))))
+          } else {
             eng_tbl <- dplyr::bind_rows(eng_tbl, 
-                                        .kv("engine_param", paste0("regressor_", reg_name, "_mode"), 
-                                            as.character(reg_info$mode)))
+                                        .kv("engine_param", "regressors_prior_scale_range", 
+                                            paste0(signif(min(prior_scales, na.rm=TRUE), 3), " to ", 
+                                                   signif(max(prior_scales, na.rm=TRUE), 3))))
           }
+          
+          if (length(unique_modes) == 1) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("engine_param", "regressors_mode_all", 
+                                            as.character(unique_modes)))
+          } else {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, 
+                                        .kv("engine_param", "regressors_modes", 
+                                            paste(unique_modes, collapse = ", ")))
+          }
+
         }
       }
     }
@@ -1770,42 +1874,27 @@ summarize_workflow_prophet <- function(wf) {
                                                as.character(prophet_obj$mcmc.samples)))
     }
     
-    # 11. Interval width
-    if (!is.null(prophet_obj$interval.width)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "interval_width", 
-                                               as.character(prophet_obj$interval.width)))
-    }
-    
-    # 12. Uncertainty samples
+    # 11. Uncertainty samples - removed interval_width section
     if (!is.null(prophet_obj$uncertainty.samples)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "uncertainty_samples", 
                                                as.character(prophet_obj$uncertainty.samples)))
     }
     
-    # 13. Logistic cap and floor (for logistic growth)
+    # 12. Logistic cap and floor (for logistic growth)
     if (!is.null(prophet_obj$logistic.floor) && prophet_obj$logistic.floor) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "logistic_floor_enabled", "TRUE"))
     }
     
-    # 14. History size
+    # 13. History size
     if (!is.null(prophet_obj$history)) {
       history_df <- prophet_obj$history
       if (is.data.frame(history_df) && nrow(history_df) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_historical_points", 
                                                  as.character(nrow(history_df))))
-        
-        # Date range
-        if ("ds" %in% names(history_df)) {
-          date_min <- min(history_df$ds, na.rm = TRUE)
-          date_max <- max(history_df$ds, na.rm = TRUE)
-          eng_tbl <- dplyr::bind_rows(eng_tbl,
-                                      .kv("engine_param", "history_start", as.character(date_min)),
-                                      .kv("engine_param", "history_end", as.character(date_max)))
-        }
       }
     }
     
-    # 15. Training metrics (if available)
+    # 14. Training metrics (if available)
     if (!is.null(prophet_obj$params)) {
       params <- prophet_obj$params
       
@@ -1846,7 +1935,7 @@ summarize_workflow_prophet <- function(wf) {
       }
     }
     
-    # 16. Training time (if stored)
+    # 15. Training time (if stored)
     if (!is.null(prophet_obj$train.time)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "train_time_seconds", 
                                                as.character(signif(prophet_obj$train.time, digits))))
