@@ -1432,6 +1432,250 @@ summarize_workflow_ets <- function(wf) {
   )
 }
 
+#' Summarize a GLMNET Linear Regression Workflow
+#'
+#' Extracts and summarizes key information from a fitted GLMNET linear
+#' regression workflow, including regularization parameters (mixture, penalty),
+#' coefficients, and model diagnostics.
+#'
+#' @param wf A fitted tidymodels workflow containing a parsnip::linear_reg()
+#'   model with engine 'glmnet'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_workflow_glmnet <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_glmnet() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "glmnet")) {
+    stop("summarize_workflow_glmnet() only supports parsnip::linear_reg() with set_engine('glmnet').")
+  }
+
+  # Find the glmnet object
+  find_glmnet <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "glmnet") || inherits(x, "elnet") ||
+        (is.list(x) && !is.null(x$lambda) && !is.null(x$beta))
+    }, depth)
+  }
+
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  # parsnip glmnet args
+  arg_names <- c("penalty", "mixture")
+  arg_vals <- vapply(arg_names, function(nm) .chr1(spec$args[[nm]]), FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Find the glmnet model object
+  glmnet_obj <- find_glmnet(fit$fit, scan_depth)
+
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  if (!is.null(glmnet_obj)) {
+    # Alpha (mixture) value - extract first for penalty type interpretation
+    alpha_val <- try(glmnet_obj$a0, silent = TRUE)
+    if (inherits(alpha_val, "try-error") || is.null(alpha_val)) {
+      alpha_val <- try(glmnet_obj$alpha, silent = TRUE)
+    }
+
+    if (!inherits(alpha_val, "try-error") && !is.null(alpha_val)) {
+      # Handle case where alpha might be in a0 or a different location
+      if (length(alpha_val) > 1 || !is.finite(alpha_val)) {
+        alpha_val <- try(glmnet_obj$alpha, silent = TRUE)
+      }
+
+      if (!inherits(alpha_val, "try-error") && !is.null(alpha_val) && length(alpha_val) == 1 && is.finite(alpha_val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha", as.character(signif(alpha_val, digits))))
+        # Update args_tbl with actual alpha if it was "auto"
+        if (args_tbl$value[args_tbl$name == "mixture"] == "auto") {
+          args_tbl$value[args_tbl$name == "mixture"] <- as.character(signif(alpha_val, digits))
+        }
+        # Add interpretation
+        if (alpha_val == 0) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "penalty_type", "Ridge (L2)"))
+        } else if (alpha_val == 1) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "penalty_type", "Lasso (L1)"))
+        } else {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "penalty_type", "Elastic Net"))
+        }
+      }
+    }
+
+    # Lambda (penalty) value used
+    lambda_val <- try(glmnet_obj$lambda, silent = TRUE)
+    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val)) {
+      if (length(lambda_val) == 1) {
+        # Single lambda value
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda", as.character(signif(lambda_val, digits))))
+        # Update args_tbl with actual lambda if it was "auto"
+        if (args_tbl$value[args_tbl$name == "penalty"] == "auto") {
+          args_tbl$value[args_tbl$name == "penalty"] <- as.character(signif(lambda_val, digits))
+        }
+      } else if (length(lambda_val) > 1) {
+        # Multiple lambda values - report range
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_lambda", as.character(length(lambda_val))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda_min", as.character(signif(min(lambda_val), digits))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda_max", as.character(signif(max(lambda_val), digits))))
+      }
+    }
+
+    # Number of observations
+    nobs <- try(glmnet_obj$nobs, silent = TRUE)
+    if (!inherits(nobs, "try-error") && !is.null(nobs) && is.finite(nobs)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
+    }
+
+    # Number of passes
+    npasses <- try(glmnet_obj$npasses, silent = TRUE)
+    if (!inherits(npasses, "try-error") && !is.null(npasses) && is.finite(npasses)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "npasses", as.character(npasses)))
+    }
+
+    # Degrees of freedom (number of non-zero coefficients)
+    df <- try(glmnet_obj$df, silent = TRUE)
+    if (!inherits(df, "try-error") && !is.null(df)) {
+      if (length(df) == 1 && is.finite(df)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "df", as.character(df)))
+      } else if (length(df) > 1) {
+        # If multiple df values (one per lambda), report the last one
+        df_final <- df[length(df)]
+        if (is.finite(df_final)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "df", as.character(df_final)))
+        }
+      }
+    }
+
+    # Deviance explained (R-squared equivalent)
+    dev_ratio <- try(glmnet_obj$dev.ratio, silent = TRUE)
+    if (!inherits(dev_ratio, "try-error") && !is.null(dev_ratio)) {
+      if (length(dev_ratio) == 1 && is.finite(dev_ratio)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "dev_ratio", as.character(signif(dev_ratio, digits))))
+      } else if (length(dev_ratio) > 1) {
+        # Report the last dev.ratio (corresponds to selected lambda)
+        dev_final <- dev_ratio[length(dev_ratio)]
+        if (is.finite(dev_final)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "dev_ratio", as.character(signif(dev_final, digits))))
+        }
+      }
+    }
+
+    # Null deviance
+    nulldev <- try(glmnet_obj$nulldev, silent = TRUE)
+    if (!inherits(nulldev, "try-error") && !is.null(nulldev) && is.finite(nulldev)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nulldev", as.character(signif(nulldev, digits))))
+    }
+
+    # Offset (if used)
+    offset <- try(glmnet_obj$offset, silent = TRUE)
+    if (!inherits(offset, "try-error") && !is.null(offset) && isTRUE(offset)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "offset", "TRUE"))
+    }
+
+    # Intercept - add to eng_tbl first as a coefficient
+    a0 <- try(glmnet_obj$a0, silent = TRUE)
+    intercept_val <- NULL
+    if (!inherits(a0, "try-error") && !is.null(a0)) {
+      if (length(a0) == 1 && is.finite(a0)) {
+        intercept_val <- a0
+      } else if (length(a0) > 1) {
+        # Multiple intercepts (one per lambda), use the last one
+        a0_final <- a0[length(a0)]
+        if (is.finite(a0_final)) {
+          intercept_val <- a0_final
+        }
+      }
+    }
+
+    # Coefficients (beta)
+    beta <- try(glmnet_obj$beta, silent = TRUE)
+    coef_list <- list()
+
+    if (!inherits(beta, "try-error") && !is.null(beta)) {
+      # beta can be a sparse matrix or dgCMatrix
+      if (inherits(beta, "dgCMatrix") || is.matrix(beta)) {
+        # Convert to regular matrix if sparse
+        beta_mat <- as.matrix(beta)
+
+        # If multiple lambda values, take the last column (corresponds to selected lambda)
+        if (ncol(beta_mat) > 1) {
+          beta_vec <- beta_mat[, ncol(beta_mat)]
+        } else {
+          beta_vec <- beta_mat[, 1]
+        }
+
+        # Get coefficient names
+        coef_names <- rownames(beta_mat)
+        if (is.null(coef_names)) {
+          coef_names <- paste0("V", seq_along(beta_vec))
+        }
+
+        # Only report non-zero coefficients
+        nonzero_idx <- which(abs(beta_vec) > 1e-10)
+
+        if (length(nonzero_idx) > 0) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_nonzero_coefs", as.character(length(nonzero_idx))))
+
+          # Sort by absolute value (descending) to show most important features
+          beta_sorted <- sort(abs(beta_vec[nonzero_idx]), decreasing = TRUE, index.return = TRUE)
+          sorted_idx <- nonzero_idx[beta_sorted$ix]
+
+          # Build coefficient list with proper ordering
+          if (!is.null(intercept_val)) {
+            coef_list[[length(coef_list) + 1]] <- .kv("coefficient", "(Intercept)", as.character(signif(intercept_val, digits)))
+          }
+
+          # Show ALL coefficients (no limit)
+          for (i in seq_along(sorted_idx)) {
+            idx <- sorted_idx[i]
+            coef_list[[length(coef_list) + 1]] <- .kv("coefficient", coef_names[idx], as.character(signif(beta_vec[idx], digits)))
+          }
+        } else {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_nonzero_coefs", "0"))
+          if (!is.null(intercept_val)) {
+            coef_list[[length(coef_list) + 1]] <- .kv("coefficient", "(Intercept)", as.character(signif(intercept_val, digits)))
+          }
+        }
+      }
+    } else {
+      # No beta found, but still add intercept if we have it
+      if (!is.null(intercept_val)) {
+        coef_list[[length(coef_list) + 1]] <- .kv("coefficient", "(Intercept)", as.character(signif(intercept_val, digits)))
+      }
+    }
+
+    # Combine all coefficient rows
+    if (length(coef_list) > 0) {
+      coef_tbl <- dplyr::bind_rows(coef_list)
+      eng_tbl <- dplyr::bind_rows(eng_tbl, coef_tbl)
+    }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
 #' Summarize a Mean Forecast (MEANF) Workflow
 #'
 #' Extracts and summarizes key information from a fitted mean forecast workflow.
