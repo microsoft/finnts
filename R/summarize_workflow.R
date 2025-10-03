@@ -998,6 +998,288 @@ summarize_workflow_croston <- function(wf) {
   )
 }
 
+#' Summarize a Cubist Workflow
+#'
+#' Extracts and summarizes key information from a fitted Cubist workflow,
+#' including model arguments, engine parameters, and variable importance.
+#' Supports both standard cubist models and multistep horizon models.
+#'
+#' @param wf A fitted tidymodels workflow containing a parsnip::cubist_rules()
+#'   model with engine 'Cubist' or cubist_multistep with engine 'cubist_multistep_horizon'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_workflow_cubist <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6 # Filter out negligible importance values
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_cubist() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  
+  # Check if it's standard cubist or multistep
+  is_multistep <- identical(engine, "cubist_multistep_horizon")
+  
+  if (!engine %in% c("Cubist", "cubist_multistep_horizon")) {
+    stop("summarize_workflow_cubist() only supports parsnip::cubist_rules() with engine 'Cubist' or cubist_multistep with engine 'cubist_multistep_horizon'.")
+  }
+  
+  # Find the cubist object(s)
+  find_cubist <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "cubist") ||
+        inherits(x, "cubist_multistep_fit_impl") ||
+        (is.list(x) && !is.null(x$model) && inherits(x$model, "C5.0"))
+    }, depth)
+  }
+  
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # parsnip cubist args
+  arg_names <- c("committees", "neighbors", "max_rules")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    .format_numeric(val)
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+  
+  # Find the cubist model object
+  cubist_obj <- find_cubist(fit$fit, scan_depth)
+  
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  if (!is.null(cubist_obj)) {
+    # Handle multistep vs standard cubist differently
+    if (is_multistep && inherits(cubist_obj, "cubist_multistep_fit_impl")) {
+      # MULTISTEP CUBIST
+      
+      # Extract individual models from $models list
+      model_list <- cubist_obj$models
+      n_models <- length(model_list)
+      
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
+      
+      # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
+      lag_names <- names(model_list)
+      if (!is.null(lag_names) && length(lag_names) > 0) {
+        lags <- stringr::str_extract(lag_names, "[0-9]+")
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
+      }
+      
+      # Aggregate metrics across all models
+      all_nrules <- c()
+      all_nfeatures <- c()
+      
+      # Collect importance from all models using vip
+      all_importance <- list()
+      
+      for (model_name in names(model_list)) {
+        cubist_model <- model_list[[model_name]]
+        
+        # The cubist model object is the result of rules::cubist_fit()
+        inner_cubist <- NULL
+        
+        if (inherits(cubist_model, "cubist")) {
+          inner_cubist <- cubist_model
+        }
+        
+        if (!is.null(inner_cubist) && inherits(inner_cubist, "cubist")) {
+          # Number of rules
+          if (!is.null(inner_cubist$output)) {
+            rules_output <- inner_cubist$output
+            n_rules <- stringr::str_count(rules_output, "\\nRule ")
+            if (is.finite(n_rules) && n_rules > 0) {
+              all_nrules <- c(all_nrules, n_rules)
+            }
+          }
+          
+          # Number of features (variables used)
+          if (!is.null(inner_cubist$vars)) {
+            vars_used <- inner_cubist$vars$used
+            if (!is.null(vars_used) && length(vars_used) > 0) {
+              all_nfeatures <- c(all_nfeatures, length(vars_used))
+            }
+          }
+          
+          # Variable importance using vip::vi()
+          importance <- try(vip::vi(inner_cubist), silent = TRUE)
+          
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
+            
+            if (nrow(importance) > 0) {
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
+                
+                # Accumulate importance across models
+                if (is.null(all_importance[[feat_name]])) {
+                  all_importance[[feat_name]] <- c()
+                }
+                all_importance[[feat_name]] <- c(all_importance[[feat_name]], importance_val)
+              }
+            }
+          }
+        }
+      }
+      
+      # Add aggregated metrics
+      if (length(all_nrules) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_rules", .format_numeric(mean(all_nrules))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_rules", as.character(sum(all_nrules))))
+      }
+      
+      # Aggregate importance - average across all models (negligible values already excluded)
+      importance_list <- list()
+      
+      if (length(all_importance) > 0) {
+        # Calculate average importance for each feature
+        avg_importance <- sapply(all_importance, mean)
+        
+        # Sort by importance (descending)
+        sorted_idx <- order(avg_importance, decreasing = TRUE)
+        sorted_names <- names(avg_importance)[sorted_idx]
+        sorted_vals <- avg_importance[sorted_idx]
+        
+        # Add all averaged importance values with consistent formatting
+        for (i in seq_along(sorted_names)) {
+          importance_list[[length(importance_list) + 1]] <- .kv(
+            "importance",
+            sorted_names[i],
+            .format_numeric(sorted_vals[i])
+          )
+        }
+      }
+      
+      # Combine engine params and importance
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    } else {
+      # STANDARD CUBIST
+      
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
+      
+      # Extract cubist object if wrapped
+      if (!inherits(cubist_obj, "cubist")) {
+        inner_cubist <- try(cubist_obj$fit, silent = TRUE)
+        if (!inherits(inner_cubist, "try-error") && inherits(inner_cubist, "cubist")) {
+          cubist_obj <- inner_cubist
+        }
+      }
+      
+      if (inherits(cubist_obj, "cubist")) {
+        # Number of rules
+        if (!is.null(cubist_obj$output)) {
+          rules_output <- cubist_obj$output
+          n_rules <- stringr::str_count(rules_output, "\\nRule ")
+          if (is.finite(n_rules) && n_rules > 0) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_rules", as.character(n_rules)))
+          }
+        }
+        
+        # Number of committees (from model structure)
+        if (!is.null(cubist_obj$coefficients)) {
+          n_committees <- length(cubist_obj$coefficients)
+          if (is.finite(n_committees) && n_committees > 0) {
+            # Update args_tbl if committees was tuned
+            if (args_tbl$value[args_tbl$name == "committees"] == "") {
+              args_tbl$value[args_tbl$name == "committees"] <- as.character(n_committees)
+            }
+          }
+        }
+        
+        # Variable importance using vip::vi()
+        importance <- try(vip::vi(cubist_obj), silent = TRUE)
+        importance_list <- list()
+        
+        if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+          # Filter out features with negligible importance
+          importance <- importance[importance$Importance > importance_threshold, ]
+          
+          if (nrow(importance) > 0) {
+            # vip::vi already returns sorted by Importance (descending)
+            for (i in seq_len(nrow(importance))) {
+              feat_name <- importance$Variable[i]
+              importance_val <- importance$Importance[i]
+              
+              importance_list[[length(importance_list) + 1]] <- .kv(
+                "importance",
+                feat_name,
+                .format_numeric(importance_val)
+              )
+            }
+          }
+        }
+        
+        if (length(importance_list) > 0) {
+          importance_tbl <- dplyr::bind_rows(importance_list)
+          eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+        }
+        
+        # Sample coefficient information (from first committee)
+        if (!is.null(cubist_obj$coefficients) && length(cubist_obj$coefficients) > 0) {
+          first_coef <- cubist_obj$coefficients[[1]]
+          if (!is.null(first_coef) && is.matrix(first_coef)) {
+            n_predictors <- ncol(first_coef) - 1  # Exclude intercept
+            if (n_predictors > 0) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_linear_predictors", as.character(n_predictors)))
+            }
+          }
+        }
+        
+        # Model size information
+        if (!is.null(cubist_obj$size)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_size_bytes", as.character(cubist_obj$size)))
+        }
+      }
+    }
+  }
+  
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
 #' Summarize an ETS Workflow
 #'
 #' Extracts and summarizes key information from a fitted ETS (Error, Trend, Seasonal)
