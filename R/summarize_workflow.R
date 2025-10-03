@@ -1,3 +1,14 @@
+#' Summarize an ARIMA Workflow
+#'
+#' Extracts and summarizes key information from a fitted ARIMA workflow,
+#' including model arguments, engine parameters, coefficients, and diagnostics.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::arima_reg()
+#'   model with engine 'auto_arima' or 'arima'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
 summarize_workflow_arima <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -223,31 +234,6 @@ summarize_workflow_arima <- function(wf) {
             )
           }
         }
-
-        # Durbin-Watson test for autocorrelation (useful for regression)
-        if (length(xreg_names) > 0 &&
-          !is.null(arima_obj$residuals) && length(arima_obj$residuals) > 3) {
-          # Only run Durbin-Watson if we have external regressors and sufficient residuals
-          dw_test <- try(stats::dwtest(arima_obj$residuals ~ 1), silent = TRUE)
-          if (!inherits(dw_test, "try-error") && !is.null(dw_test)) {
-            dw_stat <- dw_test$statistic
-            dw_pval <- dw_test$p.value
-
-            if (is.finite(dw_stat) && is.finite(dw_pval)) {
-              eng_tbl <- dplyr::bind_rows(
-                eng_tbl,
-                .kv(
-                  "engine_param", "dw_statistic",
-                  as.character(signif(dw_stat, digits))
-                ),
-                .kv(
-                  "engine_param", "dw_pvalue",
-                  as.character(signif(dw_pval, digits))
-                )
-              )
-            }
-          }
-        }
       }
     }
   }
@@ -264,6 +250,19 @@ summarize_workflow_arima <- function(wf) {
   )
 }
 
+#' Summarize an ARIMAX Workflow
+#'
+#' Extracts and summarizes key information from a fitted ARIMAX workflow,
+#' including model arguments, engine parameters, coefficients (both ARIMA and
+#' external regressors), and diagnostics.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::arima_reg()
+#'   model with engines 'auto_arima', 'auto_arima_xregs', 'arima', or 'arima_xregs'.
+#'
+#' @return A tibble with columns: model_class, engine, section, name, value
+#'   containing model details including external regressor information.
+#'
+#' @noRd
 summarize_workflow_arimax <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -279,9 +278,6 @@ summarize_workflow_arimax <- function(wf) {
   if (!engine %in% c("auto_arima", "auto_arima_xregs", "arima", "arima_xregs")) {
     stop("summarize_workflow_arimax() only supports modeltime::arima_reg() with engines 'auto_arima', 'auto_arima_xregs', 'arima', or 'arima_xregs'.")
   }
-
-  # Check if this is actually an ARIMAX model (has external regressors)
-  has_xregs <- grepl("xregs", engine) || !is.null(spec$eng_args$xreg)
 
   # Vectorized: TRUE for bare symbol-like tokens
   is_symbolish_vec <- function(x) {
@@ -536,7 +532,6 @@ summarize_workflow_arimax <- function(wf) {
       resids <- try(arima_obj$residuals, silent = TRUE)
       if (!inherits(resids, "try-error") && !is.null(resids)) {
         # Check for external regressors first
-        xreg_names <- try(names(arima_obj$xreg), silent = TRUE)
         if (inherits(xreg_names, "try-error") || is.null(xreg_names)) {
           xreg_names <- character(0)
         }
@@ -544,8 +539,8 @@ summarize_workflow_arimax <- function(wf) {
         lb_lag <- 24L
 
         if (is.finite(m) && !is.na(m)) lb_lag <- min(24L, max(8L, 2L * as.integer(m)))
-        # Conservative df (lags consumed by AR + seasonal AR + xreg)
-        # Make sure fitdf doesn't exceed lag
+        # Calculate degrees of freedom for Ljung-Box test
+        # df = AR terms + seasonal AR terms + external regressors
         fitdf <- sum(is.finite(c(p, P))) + length(xreg_names)
         fitdf <- min(fitdf, lb_lag - 1) # Ensure at least 1 df remains
 
@@ -578,31 +573,6 @@ summarize_workflow_arimax <- function(wf) {
               eng_tbl,
               .kv("engine_param", paste0("xreg_", xreg_name), "included")
             )
-          }
-        }
-
-        # Durbin-Watson test for autocorrelation (useful for regression)
-        if (length(xreg_names) > 0 &&
-          !is.null(arima_obj$residuals) && length(arima_obj$residuals) > 3) {
-          # Only run Durbin-Watson if we have external regressors and sufficient residuals
-          dw_test <- try(stats::dwtest(arima_obj$residuals ~ 1), silent = TRUE)
-          if (!inherits(dw_test, "try-error") && !is.null(dw_test)) {
-            dw_stat <- dw_test$statistic
-            dw_pval <- dw_test$p.value
-
-            if (is.finite(dw_stat) && is.finite(dw_pval)) {
-              eng_tbl <- dplyr::bind_rows(
-                eng_tbl,
-                .kv(
-                  "engine_param", "dw_statistic",
-                  as.character(signif(dw_stat, digits))
-                ),
-                .kv(
-                  "engine_param", "dw_pvalue",
-                  as.character(signif(dw_pval, digits))
-                )
-              )
-            }
           }
         }
       }
@@ -640,6 +610,19 @@ summarize_workflow_arimax <- function(wf) {
   out
 }
 
+#' Summarize a Croston Workflow
+#'
+#' Extracts and summarizes key information from a fitted Croston model workflow,
+#' designed specifically for intermittent demand forecasting. Includes detailed
+#' analysis of zero/non-zero patterns, demand intervals, and forecast performance.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::exp_smoothing()
+#'   model with engine 'croston'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including intermittent demand statistics, smoothing parameters, and diagnostics.
+#'
+#' @noRd
 summarize_workflow_croston <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -658,7 +641,7 @@ summarize_workflow_croston <- function(wf) {
   # Specific predicates for Croston
   is_croston <- function(o) {
     inherits(o, "forecast") || inherits(o, "croston") ||
-      (is.list(o) && !is.null(o$method) && grepl("croston", tolower(o$method), fixed = TRUE))
+      (is.list(o) && !is.null(o$method) && grepl("croston", o$method, ignore.case = TRUE))
   }
 
   # Extract predictors & outcomes
@@ -883,6 +866,11 @@ summarize_workflow_croston <- function(wf) {
     }
 
     # Extract series data for intermittent demand analysis
+    # Croston's method is specifically designed for intermittent/sparse demand patterns
+    # Key metrics:
+    #   - Zero proportion: frequency of zero demand periods
+    #   - Non-zero demand stats: average size and variability of actual demands
+    #   - Interval stats: time between demands (CV² > 0.49 indicates high variability)
     if (!is.null(croston_obj$x)) {
       x_vals <- croston_obj$x
       if (is.numeric(x_vals) && length(x_vals) > 0) {
@@ -899,7 +887,7 @@ summarize_workflow_croston <- function(wf) {
           nonzero_vals <- x_vals[x_vals != 0]
           avg_nonzero <- mean(nonzero_vals, na.rm = TRUE)
           sd_nonzero <- stats::sd(nonzero_vals, na.rm = TRUE)
-          cv_nonzero <- sd_nonzero / avg_nonzero
+          cv_nonzero <- if (avg_nonzero != 0) sd_nonzero / avg_nonzero else NA_real_
 
           # Add all these statistics
           eng_tbl <- dplyr::bind_rows(
@@ -945,10 +933,12 @@ summarize_workflow_croston <- function(wf) {
           zero_lengths <- zero_runs$lengths[zero_runs$values == 0]
 
           if (length(zero_lengths) > 0) {
-            avg_interval <- mean(zero_lengths, na.rm = TRUE) + 1 # +1 because intervals include the demand point
+            # Calculate average interval between demands
+            # +1 to include the demand point itself in the interval
+            avg_interval <- mean(zero_lengths, na.rm = TRUE) + 1
             sd_interval <- stats::sd(zero_lengths, na.rm = TRUE)
             max_interval <- max(zero_lengths, na.rm = TRUE) + 1
-            cv2_interval <- (sd_interval / avg_interval)^2
+            cv2_interval <- if (avg_interval != 0) (sd_interval / avg_interval)^2 else NA_real_
 
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
@@ -1008,6 +998,20 @@ summarize_workflow_croston <- function(wf) {
   )
 }
 
+#' Summarize an ETS Workflow
+#'
+#' Extracts and summarizes key information from a fitted ETS (Error, Trend, Seasonal)
+#' exponential smoothing workflow. Includes model components, smoothing parameters,
+#' initial and final states, and model fit statistics.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::exp_smoothing()
+#'   model with engine 'ets'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including ETS components, smoothing parameters (alpha, beta, gamma, phi),
+#'   states, and information criteria.
+#'
+#' @noRd
 summarize_workflow_ets <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -1079,6 +1083,9 @@ summarize_workflow_ets <- function(wf) {
   }
 
   if (!is.null(ets_obj)) {
+    # Store parsed components for later reuse
+    parsed_components <- NULL
+
     # 1. Model Type and Components
     if (!is.null(ets_obj$method)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "method", as.character(ets_obj$method)))
@@ -1091,18 +1098,27 @@ summarize_workflow_ets <- function(wf) {
           method_match + attr(method_match, "match.length") - 2
         )
         components <- strsplit(components_str, ",")[[1]]
+        parsed_components <- components # Store for later use
 
+        # Add components individually (handle variable length)
+        if (length(components) >= 1) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "error_component", trimws(components[1])))
+        }
+        if (length(components) >= 2) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "trend_component", trimws(components[2])))
+        }
         if (length(components) >= 3) {
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv("engine_param", "error_component", components[1]),
-            .kv("engine_param", "trend_component", components[2]),
-            .kv("engine_param", "seasonal_component", components[3])
-          )
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_component", trimws(components[3])))
+        }
 
-          # Check for damping (sometimes indicated by "Ad" notation)
-          if (grepl("d$", components[2])) {
+        # Check for damping in trend component (indicated by "Ad", "Md", etc.)
+        if (length(components) >= 2) {
+          trend_comp <- trimws(components[2])
+          if (grepl("[AMN]d$", trend_comp, ignore.case = TRUE)) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "damped", "TRUE"))
+          } else if (trend_comp != "N") {
+            # Has trend but no damping
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "damped", "FALSE"))
           }
         }
       }
@@ -1116,29 +1132,33 @@ summarize_workflow_ets <- function(wf) {
         if (is.numeric(param_val) && length(param_val) == 1 && is.finite(param_val)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", param,
-              as.character(signif(param_val, digits))
-            )
+            .kv("engine_param", param, as.character(signif(param_val, digits)))
           )
         }
       }
     }
 
-    # Also try extracting from $par if not found above
+    # Also try extracting from $par if parameters not found above
     if (!is.null(ets_obj$par) && is.numeric(ets_obj$par)) {
       par_vec <- ets_obj$par
       par_names <- names(par_vec)
 
-      # If no names, try to infer based on model components
-      if (is.null(par_names) && !is.null(ets_obj$components)) {
-        # Create names based on components
-        components <- ets_obj$components
+      # If no names, try to infer based on parsed method components
+      if (is.null(par_names) && !is.null(parsed_components) && length(parsed_components) >= 3) {
+        # Create expected parameter names based on ETS components
         expected_names <- character()
-        if (length(components) >= 1 && components[1] != "N") expected_names <- c(expected_names, "alpha")
-        if (length(components) >= 2 && components[2] != "N") expected_names <- c(expected_names, "beta")
-        if (length(components) >= 3 && components[3] != "N") expected_names <- c(expected_names, "gamma")
-        if (length(components) >= 2 && grepl("d", components[2], ignore.case = TRUE)) expected_names <- c(expected_names, "phi")
+        error_comp <- trimws(parsed_components[1])
+        trend_comp <- trimws(parsed_components[2])
+        season_comp <- trimws(parsed_components[3])
+
+        # Alpha always present for error component
+        if (error_comp != "N") expected_names <- c(expected_names, "alpha")
+        # Beta present if trend component exists
+        if (trend_comp != "N") expected_names <- c(expected_names, "beta")
+        # Gamma present if seasonal component exists
+        if (season_comp != "N") expected_names <- c(expected_names, "gamma")
+        # Phi present if trend is damped
+        if (grepl("d$", trend_comp, ignore.case = TRUE)) expected_names <- c(expected_names, "phi")
 
         if (length(expected_names) == length(par_vec)) {
           par_names <- expected_names
@@ -1152,10 +1172,7 @@ summarize_workflow_ets <- function(wf) {
           if (!any(eng_tbl$name == param_name) && is.finite(par_vec[i])) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
-              .kv(
-                "engine_param", param_name,
-                as.character(signif(par_vec[i], digits))
-              )
+              .kv("engine_param", param_name, as.character(signif(par_vec[i], digits)))
             )
           }
         }
@@ -1165,22 +1182,19 @@ summarize_workflow_ets <- function(wf) {
           if (is.finite(par_vec[i])) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
-              .kv(
-                "engine_param", paste0("par[", i, "]"),
-                as.character(signif(par_vec[i], digits))
-              )
+              .kv("engine_param", paste0("par[", i, "]"), as.character(signif(par_vec[i], digits)))
             )
           }
         }
       }
     }
 
-    # 3. Initial states - using cleaner approach than before
-    state_names <- c("l", "b", "s") # level, trend, seasonal states
+    # 3. Initial states (level, trend, seasonal)
+    state_names <- c("l", "b", "s") # level, trend, seasonal
     seen_states <- character(0)
 
+    # Handle direct state access (single values)
     for (state_name in state_names) {
-      # Direct access to states like 'l', 'b', 's1', 's2', etc.
       if (!is.null(ets_obj[[state_name]])) {
         state_val <- ets_obj[[state_name]]
         if (is.numeric(state_val) && length(state_val) == 1 && is.finite(state_val)) {
@@ -1188,71 +1202,110 @@ summarize_workflow_ets <- function(wf) {
             display_name <- "initial_level"
           } else if (state_name == "b") {
             display_name <- "initial_trend"
-          } else {
-            display_name <- paste0("initial_seasonal", gsub("s", "", state_name))
+          } else if (state_name == "s") {
+            display_name <- "initial_seasonal1"
           }
 
           seen_states <- c(seen_states, state_name)
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", display_name,
-              as.character(signif(state_val, digits))
-            )
+            .kv("engine_param", display_name, as.character(signif(state_val, digits)))
           )
         }
       }
     }
 
-    # Handle seasonal states with numeric indices (s0, s1, s2, etc.)
-    i <- 0
-    while (!is.null(ets_obj[[paste0("s", i)]])) {
-      state_name <- paste0("s", i)
-      if (!(state_name %in% seen_states)) {
-        state_val <- ets_obj[[state_name]]
-        if (is.numeric(state_val) && length(state_val) == 1 && is.finite(state_val)) {
-          display_name <- paste0("initial_seasonal", i + 1) # 1-indexed for user display
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", display_name,
-              as.character(signif(state_val, digits))
+    # Handle indexed seasonal states (try both 0-indexed and 1-indexed patterns)
+    # ETS models can use s0, s1, s2, ... or s1, s2, s3, ... depending on implementation
+    seasonal_states_found <- FALSE
+
+    for (start_idx in 0:1) {
+      if (seasonal_states_found) break
+
+      i <- start_idx
+      temp_states <- character(0)
+
+      # Try to find sequential seasonal states
+      while (i < 100) { # Safety limit to prevent infinite loop
+        state_name <- paste0("s", i)
+
+        if (is.null(ets_obj[[state_name]])) {
+          # If we found at least one state, we're done with this pattern
+          if (length(temp_states) > 0) {
+            seasonal_states_found <- TRUE
+            break
+          }
+          # If this is the first attempt and we found nothing, try next pattern
+          if (i == start_idx) {
+            break
+          }
+        } else {
+          state_val <- ets_obj[[state_name]]
+          if (is.numeric(state_val) && length(state_val) == 1 && is.finite(state_val) &&
+            !(state_name %in% seen_states)) {
+            # Display as 1-indexed for user-friendly output
+            display_idx <- if (start_idx == 0) i + 1 else i
+            display_name <- paste0("initial_seasonal", display_idx)
+
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv("engine_param", display_name, as.character(signif(state_val, digits)))
             )
-          )
+
+            temp_states <- c(temp_states, state_name)
+            seen_states <- c(seen_states, state_name)
+          }
         }
-        seen_states <- c(seen_states, state_name)
+        i <- i + 1
       }
-      i <- i + 1
-      # Safety check to prevent infinite loop
-      if (i > 100) break
     }
 
-    # 4. Error variance (sigma2) - most important for ETS
+    # 4. Error variance (sigma2) - fundamental to ETS models
     if (!is.null(ets_obj$sigma2)) {
       sigma_val <- ets_obj$sigma2
       if (is.numeric(sigma_val) && length(sigma_val) == 1 && is.finite(sigma_val)) {
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
-          .kv(
-            "engine_param", "sigma2",
-            as.character(signif(sigma_val, digits))
-          )
+          .kv("engine_param", "sigma2", as.character(signif(sigma_val, digits)))
         )
       }
     }
 
-    # 5. MAE - single most interpretable accuracy metric
+    # 5. Residual statistics and accuracy metrics
     if (!is.null(ets_obj$residuals)) {
       resids <- ets_obj$residuals
       if (is.numeric(resids) && length(resids) > 0) {
+        # Calculate key metrics
         mae <- mean(abs(resids), na.rm = TRUE)
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv(
-            "engine_param", "mae",
-            as.character(signif(mae, digits))
+        rmse <- sqrt(mean(resids^2, na.rm = TRUE))
+        resid_mean <- mean(resids, na.rm = TRUE)
+        resid_sd <- sd(resids, na.rm = TRUE)
+
+        # Add all metrics if they're valid
+        if (is.finite(mae)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "mae", as.character(signif(mae, digits)))
           )
-        )
+        }
+        if (is.finite(rmse)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "rmse", as.character(signif(rmse, digits)))
+          )
+        }
+        if (is.finite(resid_mean)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "residuals.mean", as.character(signif(resid_mean, digits)))
+          )
+        }
+        if (is.finite(resid_sd)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "residuals.sd", as.character(signif(resid_sd, digits)))
+          )
+        }
       }
     }
 
@@ -1263,10 +1316,7 @@ summarize_workflow_ets <- function(wf) {
         if (is.numeric(criterion_val) && length(criterion_val) == 1 && is.finite(criterion_val)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", criterion,
-              as.character(signif(criterion_val, digits))
-            )
+            .kv("engine_param", criterion, as.character(signif(criterion_val, digits)))
           )
         }
       }
@@ -1278,61 +1328,38 @@ summarize_workflow_ets <- function(wf) {
       if (is.numeric(freq_val) && is.finite(freq_val)) {
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
-          .kv(
-            "engine_param", "seasonal_frequency",
-            as.character(freq_val)
-          )
+          .kv("engine_param", "seasonal_frequency", as.character(freq_val))
         )
       }
     }
 
     # 8. Forecast values - look in multiple places
-    forecast_found <- FALSE
+    forecast_val <- NULL
 
     # Try 'mean' field first (common in forecast objects)
-    if (!forecast_found && !is.null(ets_obj$mean)) {
+    if (is.null(forecast_val) && !is.null(ets_obj$mean)) {
       if (is.numeric(ets_obj$mean) && length(ets_obj$mean) > 0) {
         forecast_val <- ets_obj$mean[1]
-        if (is.finite(forecast_val)) {
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", "forecast_value",
-              as.character(signif(forecast_val, digits))
-            )
-          )
-          forecast_found <- TRUE
-        }
       }
     }
 
     # Try 'forecast' field
-    if (!forecast_found && !is.null(ets_obj$forecast)) {
+    if (is.null(forecast_val) && !is.null(ets_obj$forecast)) {
       if (is.numeric(ets_obj$forecast) && length(ets_obj$forecast) > 0) {
         forecast_val <- ets_obj$forecast[1]
-        if (is.finite(forecast_val)) {
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", "forecast_value",
-              as.character(signif(forecast_val, digits))
-            )
-          )
-          forecast_found <- TRUE
-        }
       } else if (is.list(ets_obj$forecast) && !is.null(ets_obj$forecast$mean)) {
-        forecast_val <- ets_obj$forecast$mean[1]
-        if (is.numeric(forecast_val) && is.finite(forecast_val)) {
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", "forecast_value",
-              as.character(signif(forecast_val, digits))
-            )
-          )
-          forecast_found <- TRUE
+        if (is.numeric(ets_obj$forecast$mean) && length(ets_obj$forecast$mean) > 0) {
+          forecast_val <- ets_obj$forecast$mean[1]
         }
       }
+    }
+
+    # Add forecast value if found and valid
+    if (!is.null(forecast_val) && is.numeric(forecast_val) && is.finite(forecast_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "forecast_value", as.character(signif(forecast_val, digits)))
+      )
     }
 
     # 9. Number of observations
@@ -1341,10 +1368,7 @@ summarize_workflow_ets <- function(wf) {
       if (is.numeric(n_obs) && is.finite(n_obs)) {
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
-          .kv(
-            "engine_param", "nobs",
-            as.character(n_obs)
-          )
+          .kv("engine_param", "nobs", as.character(n_obs))
         )
       }
     }
@@ -1354,14 +1378,14 @@ summarize_workflow_ets <- function(wf) {
       states <- ets_obj$states
       if (is.matrix(states) && nrow(states) > 0) {
         final_states <- states[nrow(states), ]
-        state_names <- colnames(states)
+        state_names_matrix <- colnames(states)
 
         for (i in seq_along(final_states)) {
           state_val <- final_states[i]
 
-          # Determine state name based on position or column name
-          if (!is.null(state_names) && length(state_names) >= i) {
-            state_name <- state_names[i]
+          # Determine state name based on column name or position
+          if (!is.null(state_names_matrix) && length(state_names_matrix) >= i) {
+            state_name <- state_names_matrix[i]
           } else if (i == 1) {
             state_name <- "l" # level
           } else if (i == 2) {
@@ -1372,13 +1396,20 @@ summarize_workflow_ets <- function(wf) {
 
           # Format the state name for display
           if (state_name == "l") {
-            display_name <- "final_l" # level
+            display_name <- "final_level"
           } else if (state_name == "b") {
-            display_name <- "final_b" # trend
+            display_name <- "final_trend"
           } else if (grepl("^s", state_name)) {
-            # Extract the number from seasonal component (s1, s2, etc.)
-            s_num <- as.numeric(gsub("s", "", state_name))
-            display_name <- paste0("final_s", s_num + 1) # 1-indexed for user display
+            # Extract the number from seasonal component (s0, s1, s2, etc.)
+            s_num <- gsub("^s", "", state_name)
+            if (grepl("^[0-9]+$", s_num)) {
+              s_num <- as.numeric(s_num)
+              # Display as 1-indexed for user-friendly output
+              display_name <- paste0("final_seasonal", s_num + 1)
+            } else {
+              # If it's not a number (e.g., "s"), just use generic naming
+              display_name <- paste0("final_", state_name)
+            }
           } else {
             display_name <- paste0("final_", state_name)
           }
@@ -1386,10 +1417,7 @@ summarize_workflow_ets <- function(wf) {
           if (is.numeric(state_val) && is.finite(state_val)) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
-              .kv(
-                "engine_param", display_name,
-                as.character(signif(state_val, digits))
-              )
+              .kv("engine_param", display_name, as.character(signif(state_val, digits)))
             )
           }
         }
@@ -1404,6 +1432,19 @@ summarize_workflow_ets <- function(wf) {
   )
 }
 
+#' Summarize a Mean Forecast (MEANF) Workflow
+#'
+#' Extracts and summarizes key information from a fitted mean forecast workflow.
+#' This is a simple benchmark model that uses the mean of a window of historical
+#' values for forecasting.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::window_reg()
+#'   model with engine 'window_function'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including window size, window values, and number of observations.
+#'
+#' @noRd
 summarize_workflow_meanf <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -1416,7 +1457,7 @@ summarize_workflow_meanf <- function(wf) {
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "window_function")) {
-    stop("This function expects modeltime::window_reg() with set_engine('window_function').")
+    stop("summarize_workflow_meanf() expects modeltime::window_reg() with set_engine('window_function').")
   }
 
   # Extract predictors & outcomes
@@ -1454,7 +1495,7 @@ summarize_workflow_meanf <- function(wf) {
 
   engine_fit <- fit$fit
 
-  # Find window values
+  # Find window values in the fitted object
   find_first_tbl_with_cols <- function(o, cols, depth = scan_depth) {
     .find_obj(o, function(x) {
       inherits(x, "data.frame") && all(cols %in% names(x))
@@ -1464,35 +1505,53 @@ summarize_workflow_meanf <- function(wf) {
   value_tbl <- find_first_tbl_with_cols(engine_fit, c("value"))
   if (!is.null(value_tbl)) {
     if ("id" %in% names(value_tbl)) {
-      vt <- tibble::tibble(
-        section = "engine_param",
-        name    = paste0("window_value[", as.character(value_tbl$id), "]"),
-        value   = as.character(signif(as.numeric(value_tbl$value), digits))
-      )
-      eng_tbl <- dplyr::bind_rows(eng_tbl, vt)
+      # Multiple window values with IDs
+      numeric_vals <- as.numeric(value_tbl$value)
+      valid_rows <- is.finite(numeric_vals)
+
+      if (any(valid_rows)) {
+        vt <- tibble::tibble(
+          section = "engine_param",
+          name    = paste0("window_value[", as.character(value_tbl$id[valid_rows]), "]"),
+          value   = as.character(signif(numeric_vals[valid_rows], digits))
+        )
+        eng_tbl <- dplyr::bind_rows(eng_tbl, vt)
+      }
     } else if (nrow(value_tbl) >= 1) {
-      eng_tbl <- dplyr::bind_rows(
-        eng_tbl,
-        .kv("engine_param", "window_value", as.character(signif(as.numeric(value_tbl$value[[1]]), digits)))
-      )
+      # Single window value
+      val <- as.numeric(value_tbl$value[[1]])
+      if (is.finite(val)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "window_value", as.character(signif(val, digits)))
+        )
+      }
     }
   }
 
-  # Find window size
+  # Recursively search for window size parameter in the fit object
+  # Looks for common window-related keys like "window_size", "window.length", etc.
   find_window_numeric <- function(o, depth = scan_depth, path = character()) {
+    # Stop if we've exceeded depth limit or hit NULL
     if (depth < 0 || is.null(o)) {
       return(NULL)
     }
+
+    # If we found a single numeric value, return it with its path
     if (is.numeric(o) && length(o) == 1) {
       return(list(name = paste(path, collapse = "."), value = o))
     }
+
+    # Recursively search through list structures
     if (is.list(o) && length(o)) {
       nm <- names(o)
       if (is.null(nm)) nm <- as.character(seq_along(o))
+
       for (i in seq_along(o)) {
         res <- find_window_numeric(o[[i]], depth - 1, c(path, nm[i]))
         if (!is.null(res)) {
           key <- tolower(res$name)
+          # Check if the path suggests this is a window size parameter
           if (grepl("window_size|window.length|window_length|^size$|frequency|period", key)) {
             return(res)
           }
@@ -1502,23 +1561,41 @@ summarize_workflow_meanf <- function(wf) {
     NULL
   }
 
+  # Try to find window size, fall back to inferring from dates
   ws <- find_window_numeric(engine_fit, scan_depth)
   ws_val <- if (!is.null(ws)) as.character(ws$value) else .infer_period_from_dates(mold)
 
-  if (!is.na(ws_val) && nzchar(ws_val)) {
+  # Update window_size in args_tbl if we found a valid value
+  if (!is.null(ws_val) && !is.na(ws_val) && nzchar(ws_val)) {
     args_tbl$value[args_tbl$name == "window_size"] <- ws_val
   }
 
+  # Add number of observations
   if (is.finite(nobs)) {
     eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
   }
 
+  # Use unquote_values = TRUE for window_function engine to display raw window size
   .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
   )
 }
 
+#' Summarize an NNETAR Workflow
+#'
+#' Extracts and summarizes key information from a fitted NNETAR (Neural Network
+#' AutoRegression) workflow. NNETAR is a feed-forward neural network with lagged
+#' inputs for time series forecasting.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::nnetar_reg()
+#'   model with engine 'nnetar'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including network architecture (p, P, hidden units), seasonal period,
+#'   number of networks, lags used, and accuracy metrics.
+#'
+#' @noRd
 summarize_workflow_nnetar <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -1591,12 +1668,13 @@ summarize_workflow_nnetar <- function(wf) {
 
   if (!is.null(nnetar_obj)) {
     # 1. Model Architecture/Type from method field
+    # Format is typically "NNAR(p,P,k)" or "NNAR(p,k)" where:
+    #   p = non-seasonal AR lags, P = seasonal AR lags, k = hidden units
     if (!is.null(nnetar_obj$method)) {
       method_str <- as.character(nnetar_obj$method)
 
-      # Check if we need to add seasonal period to the method string
-      if (!grepl("\\[", method_str) && !is.null(nnetar_obj$m)) {
-        # Add the seasonal period in brackets if not already present
+      # Add seasonal period in brackets if not already present and seasonal period exists
+      if (!grepl("\\[", method_str) && !is.null(nnetar_obj$m) && is.finite(nnetar_obj$m)) {
         method_str <- paste0(method_str, "[", nnetar_obj$m, "]")
       }
 
@@ -1604,112 +1682,126 @@ summarize_workflow_nnetar <- function(wf) {
     }
 
     # 2. Extract p, P, and size (hidden units) directly from the object
-    if (!is.null(nnetar_obj$p)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "non_seasonal_ar", as.character(nnetar_obj$p)))
+    if (!is.null(nnetar_obj$p) && is.finite(nnetar_obj$p)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "non_seasonal_ar", as.character(nnetar_obj$p))
+      )
     }
 
-    if (!is.null(nnetar_obj$P)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_ar", as.character(nnetar_obj$P)))
+    if (!is.null(nnetar_obj$P) && is.finite(nnetar_obj$P)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "seasonal_ar", as.character(nnetar_obj$P))
+      )
     }
 
-    if (!is.null(nnetar_obj$size)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "hidden_units", as.character(nnetar_obj$size)))
+    if (!is.null(nnetar_obj$size) && is.finite(nnetar_obj$size)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "hidden_units", as.character(nnetar_obj$size))
+      )
     }
 
     # 3. Seasonal period from m field
-    if (!is.null(nnetar_obj$m)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_period", as.character(nnetar_obj$m)))
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seasonal_frequency", as.character(nnetar_obj$m)))
+    if (!is.null(nnetar_obj$m) && is.finite(nnetar_obj$m)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "seasonal_period", as.character(nnetar_obj$m)),
+        .kv("engine_param", "seasonal_frequency", as.character(nnetar_obj$m))
+      )
     }
 
-    # 4. Number of networks/models
-    if (!is.null(nnetar_obj$model)) {
-      # The model field contains the neural networks
-      if (is.list(nnetar_obj$model)) {
-        num_networks <- length(nnetar_obj$model)
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_networks", as.character(num_networks)))
+    # 4. Number of networks/models (NNETAR typically uses ensemble of networks)
+    if (!is.null(nnetar_obj$model) && is.list(nnetar_obj$model)) {
+      num_networks <- length(nnetar_obj$model)
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "num_networks", as.character(num_networks))
+      )
 
-        # Get network architecture from first network
-        if (num_networks > 0 && !is.null(nnetar_obj$model[[1]])) {
-          first_nn <- nnetar_obj$model[[1]]
+      # Extract details from first network for architecture information
+      if (num_networks > 0 && !is.null(nnetar_obj$model[[1]])) {
+        first_nn <- nnetar_obj$model[[1]]
 
-          # Extract weights count if available
-          if (!is.null(first_nn$wts)) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_weights", as.character(length(first_nn$wts))))
-          }
+        # Number of weights in the network
+        if (!is.null(first_nn$wts) && is.numeric(first_nn$wts)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "num_weights", as.character(length(first_nn$wts)))
+          )
+        }
 
-          # Extract decay parameter if available
-          if (!is.null(first_nn$decay)) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "decay", as.character(signif(first_nn$decay, digits))))
-          }
+        # Weight decay parameter (regularization)
+        if (!is.null(first_nn$decay) && is.numeric(first_nn$decay) && is.finite(first_nn$decay)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "decay", as.character(signif(first_nn$decay, digits)))
+          )
+        }
+
+        # Network convergence value
+        if (!is.null(first_nn$value) && is.numeric(first_nn$value) && is.finite(first_nn$value)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "convergence_value", as.character(signif(first_nn$value, digits)))
+          )
         }
       }
     }
 
-    # 6. Lags used
-    if (!is.null(nnetar_obj$lags)) {
+    # 5. Lags used in the model
+    if (!is.null(nnetar_obj$lags) && length(nnetar_obj$lags) > 0) {
       lags_str <- paste(nnetar_obj$lags, collapse = ", ")
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lags_used", lags_str))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "lags_used", lags_str)
+      )
     }
 
-    # 7. External regressors - summarized version for better readability
+    # 6. External regressors - count only
     if (!is.null(nnetar_obj$xreg)) {
       n_xregs <- ncol(nnetar_obj$xreg)
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "num_xregs", as.character(n_xregs)))
-
-      if (n_xregs > 0) {
-        xreg_coefs <- names(nnetar_obj$coef)[grepl("^xreg", names(nnetar_obj$coef))]
-
-        if (length(xreg_coefs) > 0) {
-          for (i in seq_along(xreg_coefs)) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-              "xreg_coefficient", xreg_coefs[i],
-              as.character(signif(as.numeric(nnetar_obj$coef[xreg_coefs[i]]), digits))
-            ))
-          }
-        }
-      }
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "num_xregs", as.character(n_xregs))
+      )
     }
 
-    # 8. Fitted values and residuals - SIMPLIFIED to top metrics only
+    # 7. Fitted values and residuals - key accuracy metrics
     if (!is.null(nnetar_obj$residuals)) {
       resids <- nnetar_obj$residuals
       if (is.numeric(resids) && length(resids) > 0) {
-        # Top 3 accuracy metrics for understanding model fit
-
-        # 1. MAE - most interpretable, same units as target
+        # MAE - most interpretable, same units as target
         mae <- mean(abs(resids), na.rm = TRUE)
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv(
-            "engine_param", "mae",
-            as.character(signif(mae, digits))
+        if (is.finite(mae)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "mae", as.character(signif(mae, digits)))
           )
-        )
+        }
 
-        # 2. RMSE - penalizes larger errors
+        # RMSE - penalizes larger errors
         rmse <- sqrt(mean(resids^2, na.rm = TRUE))
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv(
-            "engine_param", "rmse",
-            as.character(signif(rmse, digits))
+        if (is.finite(rmse)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "rmse", as.character(signif(rmse, digits)))
           )
-        )
+        }
 
-        # 3. Residual SD - shows error variability
-        resid_sd <- stats::sd(resids, na.rm = TRUE)
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv(
-            "engine_param", "residuals.sd",
-            as.character(signif(resid_sd, digits))
+        # Residual SD - shows error variability
+        resid_sd <- sd(resids, na.rm = TRUE)
+        if (is.finite(resid_sd)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "residuals.sd", as.character(signif(resid_sd, digits)))
           )
-        )
+        }
       }
     }
 
-    # 9. Number of observations - from x field or series field
+    # 8. Number of observations - from x field or series field
     n_obs <- NULL
     if (!is.null(nnetar_obj$x)) {
       n_obs <- length(nnetar_obj$x)
@@ -1719,8 +1811,36 @@ summarize_workflow_nnetar <- function(wf) {
       n_obs <- length(nnetar_obj$fitted)
     }
 
-    if (!is.null(n_obs) && is.numeric(n_obs)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(n_obs)))
+    if (!is.null(n_obs) && is.numeric(n_obs) && is.finite(n_obs)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "nobs", as.character(n_obs))
+      )
+    }
+
+    # 9. Scale parameter (if the series was scaled during training)
+    if (!is.null(nnetar_obj$scale)) {
+      scale_vals <- nnetar_obj$scale
+      if (is.list(scale_vals)) {
+        # Extract center and scale if available
+        if (!is.null(scale_vals$center) && is.finite(scale_vals$center)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "scale_center", as.character(signif(scale_vals$center, digits)))
+          )
+        }
+        if (!is.null(scale_vals$scale) && is.finite(scale_vals$scale)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "scale_value", as.character(signif(scale_vals$scale, digits)))
+          )
+        }
+      } else if (is.numeric(scale_vals) && length(scale_vals) > 0 && is.finite(scale_vals[1])) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "scale", as.character(signif(scale_vals[1], digits)))
+        )
+      }
     }
   }
 
@@ -1731,10 +1851,29 @@ summarize_workflow_nnetar <- function(wf) {
   )
 }
 
+#' Summarize a Prophet Workflow
+#'
+#' Extracts and summarizes key information from a fitted Prophet workflow.
+#' Prophet is Facebook's time series forecasting tool that uses an additive
+#' model with trend, seasonality, holidays, and optional regressors.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::prophet_reg()
+#'   model with engine 'prophet'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including growth type, changepoints, seasonalities, holidays, regressors,
+#'   and fitted parameters.
+#'
+#' @noRd
 summarize_workflow_prophet <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
+
+  # Numeric formatting constants
+  NUM_FORMAT_SMALL_THRESHOLD <- 0.01
+  NUM_FORMAT_LARGE_THRESHOLD <- 100
+  NUM_FORMAT_PRECISION <- 4
 
   if (!inherits(wf, "workflow")) stop("summarize_workflow_prophet() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -1798,12 +1937,12 @@ summarize_workflow_prophet <- function(wf) {
       num_val <- suppressWarnings(as.numeric(arg_val))
       if (!is.na(num_val) && is.finite(num_val)) {
         # Use different precision based on the scale of the value
-        if (abs(num_val) < 0.01 || abs(num_val) > 100) {
+        if (abs(num_val) < NUM_FORMAT_SMALL_THRESHOLD || abs(num_val) > NUM_FORMAT_LARGE_THRESHOLD) {
           # For very small or large values, use scientific notation with fewer digits
-          arg_val <- as.character(signif(num_val, 4))
+          arg_val <- as.character(signif(num_val, NUM_FORMAT_PRECISION))
         } else {
           # For regular values, round to reasonable decimal places
-          arg_val <- as.character(round(num_val, 4))
+          arg_val <- as.character(round(num_val, NUM_FORMAT_PRECISION))
         }
       }
 
@@ -1841,8 +1980,8 @@ summarize_workflow_prophet <- function(wf) {
     # prior_scale_holidays - get actual value used
     if (any(args_tbl$name == "prior_scale_holidays" & args_tbl$value == "auto")) {
       actual_holiday_prior <- prophet_obj$holidays.prior.scale
-      if (!is.null(actual_holiday_prior) && is.numeric(actual_holiday_prior)) {
-        args_tbl$value[args_tbl$name == "prior_scale_holidays"] <- as.character(signif(actual_holiday_prior, 4))
+      if (!is.null(actual_holiday_prior) && is.numeric(actual_holiday_prior) && is.finite(actual_holiday_prior)) {
+        args_tbl$value[args_tbl$name == "prior_scale_holidays"] <- as.character(signif(actual_holiday_prior, NUM_FORMAT_PRECISION))
       }
     }
 
@@ -1856,26 +1995,30 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # logistic_cap and logistic_floor - only relevant for logistic growth
-    if (prophet_obj$growth == "logistic") {
+    if (!is.null(prophet_obj$growth) && prophet_obj$growth == "logistic") {
       # Check for cap and floor in the history data
       if (!is.null(prophet_obj$history)) {
         if ("cap" %in% names(prophet_obj$history)) {
-          cap_val <- unique(prophet_obj$history$cap)
-          if (length(cap_val) == 1 && is.finite(cap_val)) {
-            args_tbl$value[args_tbl$name == "logistic_cap"] <- as.character(signif(cap_val, 4))
+          cap_vals <- unique(prophet_obj$history$cap)
+          if (length(cap_vals) == 1 && is.finite(cap_vals)) {
+            args_tbl$value[args_tbl$name == "logistic_cap"] <- as.character(signif(cap_vals, NUM_FORMAT_PRECISION))
           }
         }
         if ("floor" %in% names(prophet_obj$history)) {
-          floor_val <- unique(prophet_obj$history$floor)
-          if (length(floor_val) == 1 && is.finite(floor_val)) {
-            args_tbl$value[args_tbl$name == "logistic_floor"] <- as.character(signif(floor_val, 4))
+          floor_vals <- unique(prophet_obj$history$floor)
+          if (length(floor_vals) == 1 && is.finite(floor_vals)) {
+            args_tbl$value[args_tbl$name == "logistic_floor"] <- as.character(signif(floor_vals, NUM_FORMAT_PRECISION))
           }
         }
       }
     } else {
       # For non-logistic growth, these aren't used
-      args_tbl$value[args_tbl$name == "logistic_cap"] <- "not_used"
-      args_tbl$value[args_tbl$name == "logistic_floor"] <- "not_used"
+      if (any(args_tbl$name == "logistic_cap")) {
+        args_tbl$value[args_tbl$name == "logistic_cap"] <- "not_used"
+      }
+      if (any(args_tbl$name == "logistic_floor")) {
+        args_tbl$value[args_tbl$name == "logistic_floor"] <- "not_used"
+      }
     }
 
     # 1. Growth type
@@ -1884,30 +2027,25 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # 2. Changepoints
-    if (!is.null(prophet_obj$changepoints)) {
+    if (!is.null(prophet_obj$changepoints) && length(prophet_obj$changepoints) > 0) {
       n_changepoints <- length(prophet_obj$changepoints)
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_changepoints", as.character(n_changepoints)))
 
-      # Show last few changepoints if any (most recent are most relevant for forecasting)
-      if (n_changepoints > 0) {
-        cp_to_show <- min(3, n_changepoints)
-        cp_start_idx <- n_changepoints - cp_to_show + 1
+      # Show last few changepoints (most recent are most relevant for forecasting)
+      cp_to_show <- min(3, n_changepoints)
+      cp_start_idx <- n_changepoints - cp_to_show + 1
 
-        for (i in seq_len(cp_to_show)) {
-          actual_idx <- cp_start_idx + i - 1
-          label <- if (n_changepoints <= 3) {
-            paste0("changepoint_", i)
-          } else {
-            paste0("changepoint_last_", i) # Makes it clear these are the most recent
-          }
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", label,
-              as.character(prophet_obj$changepoints[actual_idx])
-            )
-          )
+      for (i in seq_len(cp_to_show)) {
+        actual_idx <- cp_start_idx + i - 1
+        label <- if (n_changepoints <= 3) {
+          paste0("changepoint_", i)
+        } else {
+          paste0("changepoint_last_", i) # Makes it clear these are the most recent
         }
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", label, as.character(prophet_obj$changepoints[actual_idx]))
+        )
       }
     }
 
@@ -1915,7 +2053,7 @@ summarize_workflow_prophet <- function(wf) {
     if (!is.null(prophet_obj$changepoint.range)) {
       cp_range_val <- prophet_obj$changepoint.range
       if (is.numeric(cp_range_val) && is.finite(cp_range_val)) {
-        cp_range_val <- as.character(round(cp_range_val, 4))
+        cp_range_val <- as.character(round(cp_range_val, NUM_FORMAT_PRECISION))
       } else {
         cp_range_val <- as.character(cp_range_val)
       }
@@ -1923,14 +2061,16 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # 4. Changepoint prior scale
-    if (!is.null(prophet_obj$changepoint.prior.scale)) {
+    if (!is.null(prophet_obj$changepoint.prior.scale) &&
+      is.numeric(prophet_obj$changepoint.prior.scale) &&
+      is.finite(prophet_obj$changepoint.prior.scale)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "changepoint_prior_scale",
         as.character(signif(prophet_obj$changepoint.prior.scale, digits))
       ))
     }
 
-    # 5. Seasonalities - Enhanced with more details
+    # 5. Seasonalities - detailed information
     if (!is.null(prophet_obj$seasonalities)) {
       seasons <- prophet_obj$seasonalities
       if (is.data.frame(seasons) && nrow(seasons) > 0) {
@@ -1940,27 +2080,43 @@ summarize_workflow_prophet <- function(wf) {
           season_fourier <- seasons$fourier.order[i]
           season_prior <- seasons$prior.scale[i]
 
-          eng_tbl <- dplyr::bind_rows(
-            eng_tbl,
-            .kv(
-              "engine_param", paste0("seasonality_", season_name, "_period"),
-              as.character(signif(season_period, digits))
-            ),
-            .kv(
-              "engine_param", paste0("seasonality_", season_name, "_fourier_order"),
-              as.character(season_fourier)
-            ),
-            .kv(
-              "engine_param", paste0("seasonality_", season_name, "_prior_scale"),
-              as.character(signif(season_prior, digits))
+          if (is.finite(season_period)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv(
+                "engine_param", paste0("seasonality_", season_name, "_period"),
+                as.character(signif(season_period, digits))
+              )
             )
-          )
+          }
+
+          if (is.finite(season_fourier)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv(
+                "engine_param", paste0("seasonality_", season_name, "_fourier_order"),
+                as.character(season_fourier)
+              )
+            )
+          }
+
+          if (is.finite(season_prior)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv(
+                "engine_param", paste0("seasonality_", season_name, "_prior_scale"),
+                as.character(signif(season_prior, digits))
+              )
+            )
+          }
         }
       }
     }
 
     # 6. Seasonality prior scale (global)
-    if (!is.null(prophet_obj$seasonality.prior.scale)) {
+    if (!is.null(prophet_obj$seasonality.prior.scale) &&
+      is.numeric(prophet_obj$seasonality.prior.scale) &&
+      is.finite(prophet_obj$seasonality.prior.scale)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "seasonality_prior_scale",
         as.character(signif(prophet_obj$seasonality.prior.scale, digits))
@@ -1989,30 +2145,27 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # 8. Holidays prior scale
-    if (!is.null(prophet_obj$holidays.prior.scale)) {
+    if (!is.null(prophet_obj$holidays.prior.scale) &&
+      is.numeric(prophet_obj$holidays.prior.scale) &&
+      is.finite(prophet_obj$holidays.prior.scale)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "holidays_prior_scale",
         as.character(signif(prophet_obj$holidays.prior.scale, digits))
       ))
     }
 
-    # 9. Extra regressors - simplified: just count them without details
+    # 9. Extra regressors - simplified summary
     if (!is.null(prophet_obj$extra_regressors)) {
       extra_regs <- prophet_obj$extra_regressors
       if (is.list(extra_regs) && length(extra_regs) > 0) {
         n_regressors <- length(extra_regs)
 
-        # Only show details if there are a reasonable number of regressors (5 or fewer)
+        # Show individual details only if there are 5 or fewer regressors
         if (n_regressors <= 5) {
-          # Still show the count for small numbers
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-            "engine_param", "n_extra_regressors",
-            as.character(n_regressors)
-          ))
-
           for (reg_name in names(extra_regs)) {
             reg_info <- extra_regs[[reg_name]]
-            if (!is.null(reg_info$prior.scale)) {
+
+            if (!is.null(reg_info$prior.scale) && is.finite(reg_info$prior.scale)) {
               eng_tbl <- dplyr::bind_rows(
                 eng_tbl,
                 .kv(
@@ -2041,12 +2194,12 @@ summarize_workflow_prophet <- function(wf) {
             }
           }
         } else {
-          # For many regressors, just show summary statistics without count or examples
+          # For many regressors, show summary statistics only
           prior_scales <- sapply(extra_regs, function(x) x$prior.scale)
           modes <- sapply(extra_regs, function(x) x$mode)
 
           # Count unique settings
-          unique_prior_scales <- unique(prior_scales[!is.na(prior_scales)])
+          unique_prior_scales <- unique(prior_scales[!is.na(prior_scales) & is.finite(prior_scales)])
           unique_modes <- unique(modes[!is.na(modes)])
 
           if (length(unique_prior_scales) == 1) {
@@ -2057,7 +2210,7 @@ summarize_workflow_prophet <- function(wf) {
                 as.character(signif(unique_prior_scales, digits))
               )
             )
-          } else {
+          } else if (length(prior_scales[is.finite(prior_scales)]) > 0) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
               .kv(
@@ -2078,7 +2231,7 @@ summarize_workflow_prophet <- function(wf) {
                 as.character(unique_modes)
               )
             )
-          } else {
+          } else if (length(unique_modes) > 0) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
               .kv(
@@ -2092,23 +2245,23 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # 10. MCMC samples (for uncertainty intervals)
-    if (!is.null(prophet_obj$mcmc.samples)) {
+    if (!is.null(prophet_obj$mcmc.samples) && is.numeric(prophet_obj$mcmc.samples)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "mcmc_samples",
         as.character(prophet_obj$mcmc.samples)
       ))
     }
 
-    # 11. Uncertainty samples - removed interval_width section
-    if (!is.null(prophet_obj$uncertainty.samples)) {
+    # 11. Uncertainty samples
+    if (!is.null(prophet_obj$uncertainty.samples) && is.numeric(prophet_obj$uncertainty.samples)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "uncertainty_samples",
         as.character(prophet_obj$uncertainty.samples)
       ))
     }
 
-    # 12. Logistic cap and floor (for logistic growth)
-    if (!is.null(prophet_obj$logistic.floor) && prophet_obj$logistic.floor) {
+    # 12. Logistic floor enabled flag
+    if (!is.null(prophet_obj$logistic.floor) && isTRUE(prophet_obj$logistic.floor)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "logistic_floor_enabled", "TRUE"))
     }
 
@@ -2123,15 +2276,18 @@ summarize_workflow_prophet <- function(wf) {
       }
     }
 
-    # 14. Training metrics (if available)
+    # 14. Training parameters and coefficients
     if (!is.null(prophet_obj$params)) {
       params <- prophet_obj$params
 
       # Extract beta coefficients for regressors
-      if (!is.null(params$beta)) {
+      # Note: Prophet may expand regressors (e.g., one-hot encoding categoricals),
+      # so we use generic beta_1, beta_2, etc. naming
+      if (!is.null(params$beta) && is.numeric(params$beta) && length(params$beta) > 0) {
         beta_vals <- params$beta
-        if (is.numeric(beta_vals) && length(beta_vals) > 0) {
-          for (i in seq_along(beta_vals)) {
+
+        for (i in seq_along(beta_vals)) {
+          if (is.finite(beta_vals[i])) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
               .kv(
@@ -2144,31 +2300,32 @@ summarize_workflow_prophet <- function(wf) {
       }
 
       # Extract trend parameters
-      if (!is.null(params$k)) {
+      if (!is.null(params$k) && is.numeric(params$k) && is.finite(params$k)) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
           "engine_param", "trend_k",
           as.character(signif(params$k, digits))
         ))
       }
-      if (!is.null(params$m)) {
+
+      if (!is.null(params$m) && is.numeric(params$m) && is.finite(params$m)) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
           "engine_param", "trend_m",
           as.character(signif(params$m, digits))
         ))
       }
-      if (!is.null(params$delta)) {
+
+      # Count non-zero trend changes
+      if (!is.null(params$delta) && is.numeric(params$delta) && length(params$delta) > 0) {
         delta_vals <- params$delta
-        if (is.numeric(delta_vals) && length(delta_vals) > 0) {
-          non_zero_deltas <- sum(abs(delta_vals) > 1e-10)
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-            "engine_param", "n_trend_changes",
-            as.character(non_zero_deltas)
-          ))
-        }
+        non_zero_deltas <- sum(abs(delta_vals) > 1e-10, na.rm = TRUE)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
+          "engine_param", "n_trend_changes",
+          as.character(non_zero_deltas)
+        ))
       }
 
       # Extract sigma_obs (observation noise)
-      if (!is.null(params$sigma_obs)) {
+      if (!is.null(params$sigma_obs) && is.numeric(params$sigma_obs) && is.finite(params$sigma_obs)) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
           "engine_param", "sigma_obs",
           as.character(signif(params$sigma_obs, digits))
@@ -2177,7 +2334,7 @@ summarize_workflow_prophet <- function(wf) {
     }
 
     # 15. Training time (if stored)
-    if (!is.null(prophet_obj$train.time)) {
+    if (!is.null(prophet_obj$train.time) && is.numeric(prophet_obj$train.time) && is.finite(prophet_obj$train.time)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
         "engine_param", "train_time_seconds",
         as.character(signif(prophet_obj$train.time, digits))
@@ -2192,6 +2349,19 @@ summarize_workflow_prophet <- function(wf) {
   )
 }
 
+#' Summarize a Seasonal Naive (SNAIVE) Workflow
+#'
+#' Extracts and summarizes key information from a fitted seasonal naive workflow.
+#' SNAIVE is a simple benchmark forecasting method that uses the last observed
+#' value from the same season (e.g., same month last year) as the forecast.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::naive_reg()
+#'   model with engine 'snaive'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including seasonal period and number of observations.
+#'
+#' @noRd
 summarize_workflow_snaive <- function(wf) {
   # Set fixed defaults
   digits <- 6
@@ -2227,22 +2397,29 @@ summarize_workflow_snaive <- function(wf) {
     value   = .chr1(spec$args[["seasonal_period"]])
   )
 
-  # Resolve seasonal period
+  # Recursively search for seasonal period parameter in the fit object
   engine_fit <- fit$fit
   find_period_numeric <- function(o, depth = scan_depth, path = character()) {
+    # Stop if we've exceeded depth limit or hit NULL
     if (depth < 0 || is.null(o)) {
       return(NULL)
     }
+
+    # If we found a single numeric value, return it with its path
     if (is.numeric(o) && length(o) == 1) {
       return(list(name = paste(path, collapse = "."), value = o))
     }
+
+    # Recursively search through list structures
     if (is.list(o) && length(o)) {
       nm <- names(o)
       if (is.null(nm)) nm <- as.character(seq_along(o))
+
       for (i in seq_along(o)) {
         res <- find_period_numeric(o[[i]], depth - 1, c(path, nm[i]))
         if (!is.null(res)) {
           key <- tolower(res$name)
+          # Check if the path suggests this is a seasonal period parameter
           if (grepl("seasonal_period|season.period|frequency|period|freq|m\\b", key)) {
             return(res)
           }
@@ -2252,26 +2429,62 @@ summarize_workflow_snaive <- function(wf) {
     NULL
   }
 
+  # Try to find seasonal period, fall back to inferring from dates
   sp <- find_period_numeric(engine_fit, scan_depth)
   sp_val <- if (!is.null(sp)) as.character(sp$value) else .infer_period_from_dates(mold)
 
-  if (!is.na(sp_val) && nzchar(sp_val)) {
+  # Update seasonal_period in args_tbl if we found a valid value
+  if (!is.null(sp_val) && !is.na(sp_val) && nzchar(sp_val)) {
     args_tbl$value[args_tbl$name == "seasonal_period"] <- sp_val
   }
 
+  # Engine params (minimal for snaive - it's a simple benchmark method)
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 
+  # Add number of observations if available
+  nobs <- if (!inherits(mold, "try-error") && !is.null(mold$outcomes)) {
+    nrow(mold$outcomes)
+  } else {
+    NA_integer_
+  }
+
+  if (is.finite(nobs)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
+  }
+
+  # Use unquote_values = TRUE for snaive to display raw seasonal period
   .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
   )
 }
 
+#' Summarize an STLM-ARIMA Workflow
+#'
+#' Extracts and summarizes key information from a fitted STLM-ARIMA workflow.
+#' STLM (Seasonal and Trend decomposition using Loess with ARIMA modeling)
+#' first decomposes the time series using STL, then fits an ARIMA model to
+#' the seasonally adjusted (remainder) series.
+#'
+#' @param wf A fitted tidymodels workflow containing a seasonal_reg()
+#'   model with engine 'stlm_arima'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including STL decomposition parameters, ARIMA remainder model specification,
+#'   coefficients, and diagnostics.
+#'
+#' @noRd
 summarize_workflow_stlm_arima <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   include_coefficients <- TRUE
+
+  # Cadence thresholds in days
+  CADENCE_YEARLY <- 360
+  CADENCE_QUARTERLY <- 85
+  CADENCE_MONTHLY <- 25
+  CADENCE_WEEKLY <- 6
 
   if (!inherits(wf, "workflow")) stop("summarize_workflow_stlm_arima() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -2284,35 +2497,47 @@ summarize_workflow_stlm_arima <- function(wf) {
   }
 
   # Specific predicates for this function
-  is_stlm <- function(o) inherits(o, "stlm") || (is.list(o) && !is.null(o$call) && identical(as.character(o$call[[1]]), "stlm"))
-  is_arima <- function(o) inherits(o, "Arima") || (is.list(o) && !is.null(o$arma) && !is.null(o$coef))
-  is_series <- function(o) inherits(o, "msts") || stats::is.ts(o)
-  is_stl <- function(o) inherits(o, "stl") || inherits(o, "stlm")
+  is_stlm <- function(o) {
+    inherits(o, "stlm") ||
+      (is.list(o) && !is.null(o$call) && identical(as.character(o$call[[1]]), "stlm"))
+  }
+
+  is_arima <- function(o) {
+    inherits(o, "Arima") || (is.list(o) && !is.null(o$arma) && !is.null(o$coef))
+  }
+
+  is_series <- function(o) {
+    inherits(o, "msts") || stats::is.ts(o)
+  }
 
   # Extract predictors & outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
 
-  # Get cadence info for fallback
+  # Infer cadence from date predictors for fallback period estimation
   cadence_days <- NA_real_
   freq_label <- ""
 
   if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
-    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    is_date <- vapply(mold$predictors, function(col) {
+      inherits(col, c("Date", "POSIXct", "POSIXt"))
+    }, logical(1))
+
     if (any(is_date)) {
       d <- mold$predictors[[which(is_date)[1]]]
       diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
       mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
       cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
+
       freq_label <- if (is.finite(mdiff)) {
-        if (mdiff >= 360) {
+        if (mdiff >= CADENCE_YEARLY) {
           "yearly"
-        } else if (mdiff >= 85) {
+        } else if (mdiff >= CADENCE_QUARTERLY) {
           "quarterly"
-        } else if (mdiff >= 25) {
+        } else if (mdiff >= CADENCE_MONTHLY) {
           "monthly"
-        } else if (mdiff >= 6) {
+        } else if (mdiff >= CADENCE_WEEKLY) {
           "weekly"
         } else {
           "daily"
@@ -2335,14 +2560,18 @@ summarize_workflow_stlm_arima <- function(wf) {
   engine_fit <- fit$fit
   stlm_obj <- .find_obj(engine_fit, is_stlm, scan_depth)
 
-  # Find series for periods
+  # Find series object for extracting seasonal periods
   series_candidates <- list(
     try(if (!is.null(stlm_obj$x)) stlm_obj$x, silent = TRUE),
     try(if (!is.null(stlm_obj$origx)) stlm_obj$origx, silent = TRUE),
     try(if (!is.null(stlm_obj$series)) stlm_obj$series, silent = TRUE),
     try(if (!is.null(stlm_obj$y)) stlm_obj$y, silent = TRUE)
   )
-  series_candidates <- series_candidates[vapply(series_candidates, function(z) !inherits(z, "try-error") && !is.null(z), logical(1))]
+
+  series_candidates <- series_candidates[vapply(series_candidates, function(z) {
+    !inherits(z, "try-error") && !is.null(z)
+  }, logical(1))]
+
   series_obj <- NULL
   if (length(series_candidates)) {
     for (s in series_candidates) {
@@ -2355,29 +2584,39 @@ summarize_workflow_stlm_arima <- function(wf) {
   }
   if (is.null(series_obj)) series_obj <- .find_obj(engine_fit, is_series, scan_depth)
 
-  # Extract periods
+  # Extract seasonal periods from series object
   get_periods <- function(s) {
     out <- numeric(0)
     if (is.null(s)) {
       return(out)
     }
+
+    # Check for msts attribute
     m1 <- suppressWarnings(attr(s, "msts", exact = TRUE))
     if (!is.null(m1)) {
       if (is.list(m1) && !is.null(m1$seasonal.periods)) {
         out <- c(out, as.numeric(m1$seasonal.periods))
-      } else if (is.atomic(m1)) out <- c(out, as.numeric(m1))
+      } else if (is.atomic(m1)) {
+        out <- c(out, as.numeric(m1))
+      }
     }
+
+    # Check for seasonal.periods attribute
     m2 <- suppressWarnings(attr(s, "seasonal.periods", exact = TRUE))
     if (!is.null(m2)) out <- c(out, as.numeric(m2))
+
+    # Check ts frequency
     if (stats::is.ts(s)) {
       fr <- suppressWarnings(stats::frequency(s))
       if (is.finite(fr) && fr > 1) out <- c(out, as.numeric(fr))
     }
+
     unique(out[is.finite(out) & out > 0])
   }
+
   periods <- get_periods(series_obj)
 
-  # Fallback period inference
+  # Fallback period inference from cadence
   if (!length(periods) && is.finite(cadence_days)) {
     periods <- switch(freq_label,
       "yearly"    = 1,
@@ -2389,7 +2628,7 @@ summarize_workflow_stlm_arima <- function(wf) {
     )
   }
 
-  # Model args from periods
+  # Model args from periods (show up to 3 periods)
   args_tbl <- if (length(periods)) {
     k <- min(3L, length(periods))
     tibble::tibble(
@@ -2404,7 +2643,7 @@ summarize_workflow_stlm_arima <- function(wf) {
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 
-  # STLM args - enhanced extraction
+  # Extract STLM parameters
   if (!is.null(stlm_obj)) {
     # Extract call arguments
     if (!is.null(stlm_obj$call)) {
@@ -2412,10 +2651,14 @@ summarize_workflow_stlm_arima <- function(wf) {
       drop <- c("x", "y", "data", "xreg", "series", "ts", "...")
       stlm_args <- stlm_args[setdiff(names(stlm_args), drop)]
       stlm_args <- stlm_args[names(stlm_args) != ""]
+
       for (nm in names(stlm_args)) {
         val <- stlm_args[[nm]]
         if (!is.list(val)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stlm.", nm), .chr1(val)))
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("stlm.", nm), .chr1(val))
+          )
         }
       }
     }
@@ -2428,49 +2671,77 @@ summarize_workflow_stlm_arima <- function(wf) {
       for (param in c("s.window", "t.window", "l.window", "s.degree", "t.degree", "l.degree")) {
         val <- try(stl_obj[[param]], silent = TRUE)
         if (!inherits(val, "try-error") && !is.null(val)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stl.", param), .chr1(val)))
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("stl.", param), .chr1(val))
+          )
         }
       }
 
       # Check if robust STL was used
       robust_val <- try(stl_obj$robust, silent = TRUE)
       if (!inherits(robust_val, "try-error") && !is.null(robust_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stl.robust", as.character(robust_val)))
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "stl.robust", as.character(robust_val))
+        )
       }
     }
 
     # Extract lambda (Box-Cox transformation parameter)
     lambda_val <- try(stlm_obj$lambda, silent = TRUE)
-    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda", as.character(signif(lambda_val, digits))))
+    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val) &&
+      is.numeric(lambda_val) && is.finite(lambda_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "lambda", as.character(signif(lambda_val, digits)))
+      )
     }
 
     # Extract biasadj
     biasadj_val <- try(stlm_obj$biasadj, silent = TRUE)
     if (!inherits(biasadj_val, "try-error") && !is.null(biasadj_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "biasadj", as.character(biasadj_val)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "biasadj", as.character(biasadj_val))
+      )
     }
 
     # Extract method used
     method_val <- try(stlm_obj$method, silent = TRUE)
     if (!inherits(method_val, "try-error") && !is.null(method_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", .chr1(method_val)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "stlm.method", .chr1(method_val))
+      )
     } else if (!any(eng_tbl$name == "stlm.method")) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "arima"))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "stlm.method", "arima")
+      )
     }
 
     # Number of observations
     nobs <- try(length(stlm_obj$x), silent = TRUE)
-    if (!inherits(nobs, "try-error") && is.finite(nobs) && nobs > 0) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
+    if (!inherits(nobs, "try-error") && is.numeric(nobs) && is.finite(nobs) && nobs > 0) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "nobs", as.character(nobs))
+      )
     }
   } else {
-    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "arima"))
+    # If no STLM object found, set default method
+    eng_tbl <- dplyr::bind_rows(
+      eng_tbl,
+      .kv("engine_param", "stlm.method", "arima")
+    )
   }
 
-  # ARIMA remainder - enhanced extraction
+  # Extract ARIMA remainder model parameters
   arima_obj <- .find_obj(engine_fit, is_arima, scan_depth)
+
   if (!is.null(arima_obj)) {
+    # Extract ARMA order
     arma <- try(arima_obj$arma, silent = TRUE)
     if (!inherits(arma, "try-error") && length(arma) >= 7) {
       p <- arma[1]
@@ -2483,17 +2754,27 @@ summarize_workflow_stlm_arima <- function(wf) {
 
       # Non-seasonal order
       if (is.finite(p) && is.finite(d) && is.finite(q)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.order", sprintf("(%d,%d,%d)", p, d, q)))
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "remainder.order", sprintf("(%d,%d,%d)", p, d, q))
+        )
       }
 
       # Seasonal order
       if (is.finite(P) && is.finite(D) && is.finite(Q) && is.finite(m) && m > 1) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.seasonal_order", sprintf("(%d,%d,%d)[%d]", P, D, Q, m)))
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "remainder.seasonal_order", sprintf("(%d,%d,%d)[%d]", P, D, Q, m))
+        )
       }
 
-      # Include mean/drift flags
-      include_mean <- !is.null(arima_obj$mask) && any(grepl("intercept|mean", names(arima_obj$coef), ignore.case = TRUE))
-      include_drift <- !is.null(arima_obj$mask) && any(grepl("drift", names(arima_obj$coef), ignore.case = TRUE))
+      # Check for mean/drift in coefficients
+      coef_names <- names(arima_obj$coef)
+      include_mean <- !is.null(coef_names) &&
+        any(grepl("intercept|mean", coef_names, ignore.case = TRUE))
+      include_drift <- !is.null(coef_names) &&
+        any(grepl("drift", coef_names, ignore.case = TRUE))
+
       eng_tbl <- dplyr::bind_rows(
         eng_tbl,
         .kv("engine_param", "remainder.include.mean", as.character(include_mean)),
@@ -2504,19 +2785,24 @@ summarize_workflow_stlm_arima <- function(wf) {
     # Information criteria and fit statistics
     for (nm in c("aic", "aicc", "bic", "sigma2", "loglik")) {
       val <- try(arima_obj[[nm]], silent = TRUE)
-      if (!inherits(val, "try-error") && !is.null(val)) {
-        v <- if (is.numeric(val)) as.character(signif(val, digits)) else .chr1(val)
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("remainder.", nm), v))
+      if (!inherits(val, "try-error") && !is.null(val) && is.numeric(val) && is.finite(val)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", paste0("remainder.", nm), as.character(signif(val, digits)))
+        )
       }
     }
 
     # Extract ARIMA method
     arima_method <- try(arima_obj$method, silent = TRUE)
     if (!inherits(arima_method, "try-error") && !is.null(arima_method)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.method", .chr1(arima_method)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "remainder.method", .chr1(arima_method))
+      )
     }
 
-    # Coefficients with standard errors if available
+    # Extract coefficients with standard errors if available
     if (isTRUE(include_coefficients)) {
       coefs <- try(arima_obj$coef, silent = TRUE)
       if (!inherits(coefs, "try-error") && !is.null(coefs) && length(coefs)) {
@@ -2525,72 +2811,123 @@ summarize_workflow_stlm_arima <- function(wf) {
 
         # Try to get standard errors
         var_coef <- try(arima_obj$var.coef, silent = TRUE)
-        if (!inherits(var_coef, "try-error") && !is.null(var_coef)) {
+        if (!inherits(var_coef, "try-error") && !is.null(var_coef) && is.matrix(var_coef)) {
           se <- sqrt(diag(var_coef))
+
           for (i in seq_along(coefs)) {
-            coef_val <- signif(as.numeric(coefs[i]), digits)
-            if (i <= length(se) && is.finite(se[i])) {
-              se_val <- signif(se[i], digits)
+            coef_val <- as.numeric(coefs[i])
+            if (is.finite(coef_val)) {
               eng_tbl <- dplyr::bind_rows(
                 eng_tbl,
-                .kv("coefficient", cn[i], as.character(coef_val)),
-                .kv("coefficient", paste0(cn[i], ".se"), as.character(se_val))
+                .kv("coefficient", cn[i], as.character(signif(coef_val, digits)))
               )
-            } else {
-              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("coefficient", cn[i], as.character(coef_val)))
+
+              # Add standard error if available and finite
+              if (i <= length(se) && is.finite(se[i])) {
+                eng_tbl <- dplyr::bind_rows(
+                  eng_tbl,
+                  .kv("coefficient", paste0(cn[i], ".se"), as.character(signif(se[i], digits)))
+                )
+              }
             }
           }
         } else {
-          coef_tbl <- tibble::tibble(
-            section = "coefficient",
-            name    = cn,
-            value   = as.character(signif(as.numeric(coefs), digits))
-          )
-          eng_tbl <- dplyr::bind_rows(eng_tbl, coef_tbl)
+          # No standard errors available, just add coefficients
+          for (i in seq_along(coefs)) {
+            coef_val <- as.numeric(coefs[i])
+            if (is.finite(coef_val)) {
+              eng_tbl <- dplyr::bind_rows(
+                eng_tbl,
+                .kv("coefficient", cn[i], as.character(signif(coef_val, digits)))
+              )
+            }
+          }
         }
       }
     }
 
     # Residual diagnostics
     resids <- try(arima_obj$residuals, silent = TRUE)
-    if (!inherits(resids, "try-error") && !is.null(resids) && length(resids) > 0) {
-      # Ljung-Box test
-      lb_lag <- min(24L, max(8L, 2L * if (is.finite(m)) as.integer(m) else 12L))
-      fitdf <- sum(is.finite(c(p, q, P, Q)))
+    if (!inherits(resids, "try-error") && !is.null(resids) &&
+      is.numeric(resids) && length(resids) > 0) {
+      # Ljung-Box test for residual autocorrelation
+      lb_lag <- min(24L, max(8L, 2L * if (exists("m") && is.finite(m)) as.integer(m) else 12L))
+      fitdf <- if (exists("p") && exists("q") && exists("P") && exists("Q")) {
+        sum(is.finite(c(p, q, P, Q)))
+      } else {
+        0
+      }
+      fitdf <- min(fitdf, lb_lag - 1) # Ensure at least 1 df remains
+
       lb <- try(stats::Box.test(resids, lag = lb_lag, type = "Ljung-Box", fitdf = fitdf), silent = TRUE)
-      if (!inherits(lb, "try-error") && !is.null(lb$p.value)) {
+      if (!inherits(lb, "try-error") && !is.null(lb$p.value) && is.finite(lb$p.value)) {
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
           .kv("engine_param", "ljung_box.lag", as.character(lb_lag)),
-          .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value)),
-          .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+          .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value))
         )
+
+        if (!is.null(lb$statistic) && is.finite(lb$statistic)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+          )
+        }
       }
 
       # Basic residual statistics
-      eng_tbl <- dplyr::bind_rows(
-        eng_tbl,
-        .kv("engine_param", "residuals.mean", as.character(signif(mean(resids, na.rm = TRUE), digits))),
-        .kv("engine_param", "residuals.sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
-      )
+      resid_mean <- mean(resids, na.rm = TRUE)
+      resid_sd <- sd(resids, na.rm = TRUE)
+
+      if (is.finite(resid_mean)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "residuals.mean", as.character(signif(resid_mean, digits)))
+        )
+      }
+
+      if (is.finite(resid_sd)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "residuals.sd", as.character(signif(resid_sd, digits)))
+        )
+      }
     }
   }
 
-  out <- .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+  # Assemble and return output
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
   )
-
-  # Additional numeric formatting for this function
-  out$value <- .signif_chr(out$value, digits)
-  out
 }
 
+#' Summarize an STLM-ETS Workflow
+#'
+#' Extracts and summarizes key information from a fitted STLM-ETS workflow.
+#' STLM (Seasonal and Trend decomposition using Loess with ETS modeling)
+#' first decomposes the time series using STL, then fits an ETS model to
+#' the seasonally adjusted (remainder) series.
+#'
+#' @param wf A fitted tidymodels workflow containing a seasonal_reg()
+#'   model with engine 'stlm_ets'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including STL decomposition parameters, ETS remainder model specification,
+#'   smoothing parameters, and diagnostics.
+#'
+#' @noRd
 summarize_workflow_stlm_ets <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   include_coefficients <- TRUE
+
+  # Cadence thresholds in days
+  CADENCE_YEARLY <- 360
+  CADENCE_QUARTERLY <- 85
+  CADENCE_MONTHLY <- 25
+  CADENCE_WEEKLY <- 6
 
   if (!inherits(wf, "workflow")) stop("summarize_workflow_stlm_ets() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -2603,34 +2940,47 @@ summarize_workflow_stlm_ets <- function(wf) {
   }
 
   # Specific predicates for this function
-  is_stlm <- function(o) inherits(o, "stlm") || (is.list(o) && !is.null(o$call) && identical(as.character(o$call[[1]]), "stlm"))
-  is_ets <- function(o) inherits(o, "ets") || (is.list(o) && !is.null(o$method) && grepl("ETS", o$method))
-  is_series <- function(o) inherits(o, "msts") || stats::is.ts(o)
+  is_stlm <- function(o) {
+    inherits(o, "stlm") ||
+      (is.list(o) && !is.null(o$call) && identical(as.character(o$call[[1]]), "stlm"))
+  }
+
+  is_ets <- function(o) {
+    inherits(o, "ets") || (is.list(o) && !is.null(o$method) && grepl("ETS", o$method))
+  }
+
+  is_series <- function(o) {
+    inherits(o, "msts") || stats::is.ts(o)
+  }
 
   # Extract predictors & outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
 
-  # Get cadence info for fallback
+  # Infer cadence from date predictors for fallback period estimation
   cadence_days <- NA_real_
   freq_label <- ""
 
   if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
-    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    is_date <- vapply(mold$predictors, function(col) {
+      inherits(col, c("Date", "POSIXct", "POSIXt"))
+    }, logical(1))
+
     if (any(is_date)) {
       d <- mold$predictors[[which(is_date)[1]]]
       diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
       mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
       cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
+
       freq_label <- if (is.finite(mdiff)) {
-        if (mdiff >= 360) {
+        if (mdiff >= CADENCE_YEARLY) {
           "yearly"
-        } else if (mdiff >= 85) {
+        } else if (mdiff >= CADENCE_QUARTERLY) {
           "quarterly"
-        } else if (mdiff >= 25) {
+        } else if (mdiff >= CADENCE_MONTHLY) {
           "monthly"
-        } else if (mdiff >= 6) {
+        } else if (mdiff >= CADENCE_WEEKLY) {
           "weekly"
         } else {
           "daily"
@@ -2653,7 +3003,7 @@ summarize_workflow_stlm_ets <- function(wf) {
   engine_fit <- fit$fit
   stlm_obj <- .find_obj(engine_fit, is_stlm, scan_depth)
 
-  # Find series for periods
+  # Find series object for extracting seasonal periods
   series_candidates <- list()
   if (!is.null(stlm_obj)) {
     series_candidates <- list(
@@ -2663,7 +3013,11 @@ summarize_workflow_stlm_ets <- function(wf) {
       try(if (!is.null(stlm_obj$y)) stlm_obj$y else NULL, silent = TRUE)
     )
   }
-  series_candidates <- series_candidates[vapply(series_candidates, function(z) !inherits(z, "try-error") && !is.null(z), logical(1))]
+
+  series_candidates <- series_candidates[vapply(series_candidates, function(z) {
+    !inherits(z, "try-error") && !is.null(z)
+  }, logical(1))]
+
   series_obj <- NULL
   if (length(series_candidates)) {
     for (s in series_candidates) {
@@ -2672,33 +3026,45 @@ summarize_workflow_stlm_ets <- function(wf) {
         break
       }
     }
-    if (is.null(series_obj) && length(series_candidates) > 0) series_obj <- series_candidates[[1]]
+    if (is.null(series_obj) && length(series_candidates) > 0) {
+      series_obj <- series_candidates[[1]]
+    }
   }
   if (is.null(series_obj)) series_obj <- .find_obj(engine_fit, is_series, scan_depth)
 
-  # Extract periods
+  # Extract seasonal periods from series object
   get_periods <- function(s) {
     out <- numeric(0)
     if (is.null(s)) {
       return(out)
     }
+
+    # Check for msts attribute
     m1 <- suppressWarnings(attr(s, "msts", exact = TRUE))
     if (!is.null(m1)) {
       if (is.list(m1) && !is.null(m1$seasonal.periods)) {
         out <- c(out, as.numeric(m1$seasonal.periods))
-      } else if (is.atomic(m1)) out <- c(out, as.numeric(m1))
+      } else if (is.atomic(m1)) {
+        out <- c(out, as.numeric(m1))
+      }
     }
+
+    # Check for seasonal.periods attribute
     m2 <- suppressWarnings(attr(s, "seasonal.periods", exact = TRUE))
     if (!is.null(m2)) out <- c(out, as.numeric(m2))
+
+    # Check ts frequency
     if (stats::is.ts(s)) {
       fr <- suppressWarnings(stats::frequency(s))
       if (is.finite(fr) && fr > 1) out <- c(out, as.numeric(fr))
     }
+
     unique(out[is.finite(out) & out > 0])
   }
+
   periods <- get_periods(series_obj)
 
-  # Fallback period inference - fixed to avoid NA issues
+  # Fallback period inference from cadence
   if (!length(periods) && is.finite(cadence_days) && nzchar(freq_label)) {
     periods <- switch(freq_label,
       "yearly"    = 1,
@@ -2710,7 +3076,7 @@ summarize_workflow_stlm_ets <- function(wf) {
     )
   }
 
-  # Model args from periods
+  # Model args from periods (show up to 3 periods)
   args_tbl <- if (length(periods)) {
     k <- min(3L, length(periods))
     tibble::tibble(
@@ -2725,32 +3091,48 @@ summarize_workflow_stlm_ets <- function(wf) {
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 
-  # STLM args
+  # Extract STLM parameters
   if (!is.null(stlm_obj)) {
     # Extract method used first
     method_val <- try(stlm_obj$method, silent = TRUE)
     if (!inherits(method_val, "try-error") && !is.null(method_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", .chr1(method_val)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "stlm.method", .chr1(method_val))
+      )
     } else {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "ets"))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "stlm.method", "ets")
+      )
     }
 
     # Number of observations
     nobs <- try(length(stlm_obj$x), silent = TRUE)
-    if (!inherits(nobs, "try-error") && is.finite(nobs) && nobs > 0) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
+    if (!inherits(nobs, "try-error") && is.numeric(nobs) && is.finite(nobs) && nobs > 0) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "nobs", as.character(nobs))
+      )
     }
 
     # Extract lambda (Box-Cox transformation parameter)
     lambda_val <- try(stlm_obj$lambda, silent = TRUE)
-    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda", as.character(signif(lambda_val, digits))))
+    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val) &&
+      is.numeric(lambda_val) && is.finite(lambda_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "lambda", as.character(signif(lambda_val, digits)))
+      )
     }
 
     # Extract biasadj
     biasadj_val <- try(stlm_obj$biasadj, silent = TRUE)
     if (!inherits(biasadj_val, "try-error") && !is.null(biasadj_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "biasadj", as.character(biasadj_val)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "biasadj", as.character(biasadj_val))
+      )
     }
 
     # Extract STL decomposition parameters
@@ -2761,14 +3143,20 @@ summarize_workflow_stlm_ets <- function(wf) {
       for (param in c("s.window", "t.window", "l.window", "s.degree", "t.degree", "l.degree")) {
         val <- try(stl_obj[[param]], silent = TRUE)
         if (!inherits(val, "try-error") && !is.null(val)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stl.", param), .chr1(val)))
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("stl.", param), .chr1(val))
+          )
         }
       }
 
       # Check if robust STL was used
       robust_val <- try(stl_obj$robust, silent = TRUE)
       if (!inherits(robust_val, "try-error") && !is.null(robust_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stl.robust", as.character(robust_val)))
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "stl.robust", as.character(robust_val))
+        )
       }
     }
 
@@ -2778,18 +3166,26 @@ summarize_workflow_stlm_ets <- function(wf) {
       drop <- c("x", "y", "data", "xreg", "series", "ts", "...")
       stlm_args <- stlm_args[setdiff(names(stlm_args), drop)]
       stlm_args <- stlm_args[names(stlm_args) != ""]
+
       for (nm in names(stlm_args)) {
         val <- stlm_args[[nm]]
         if (!is.list(val) && !any(eng_tbl$name == paste0("stlm.", nm))) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("stlm.", nm), .chr1(val)))
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("stlm.", nm), .chr1(val))
+          )
         }
       }
     }
   } else {
-    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "stlm.method", "ets"))
+    # If no STLM object found, set default method
+    eng_tbl <- dplyr::bind_rows(
+      eng_tbl,
+      .kv("engine_param", "stlm.method", "ets")
+    )
   }
 
-  # ETS remainder model
+  # Extract ETS remainder model parameters
   ets_obj <- .find_obj(engine_fit, is_ets, scan_depth)
 
   # Also check within stlm_obj for the model component
@@ -2802,9 +3198,12 @@ summarize_workflow_stlm_ets <- function(wf) {
   if (!is.null(ets_obj)) {
     # 1. ETS Model Type and Components
     if (!is.null(ets_obj$method)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.method", as.character(ets_obj$method)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "remainder.method", as.character(ets_obj$method))
+      )
 
-      # Parse the method string
+      # Parse the method string (format: "ETS(A,A,A)")
       method_match <- regexpr("\\(([^)]+)\\)", ets_obj$method)
       if (method_match > 0) {
         components_str <- substr(
@@ -2813,23 +3212,36 @@ summarize_workflow_stlm_ets <- function(wf) {
         )
         components <- strsplit(components_str, ",")[[1]]
 
+        if (length(components) >= 1) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "remainder.error", trimws(components[1]))
+          )
+        }
+        if (length(components) >= 2) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "remainder.trend", trimws(components[2]))
+          )
+        }
         if (length(components) >= 3) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv("engine_param", "remainder.error", trimws(components[1])),
-            .kv("engine_param", "remainder.trend", trimws(components[2])),
             .kv("engine_param", "remainder.seasonal", trimws(components[3]))
           )
+        }
 
-          # Check for damping
-          if (length(components) >= 2 && grepl("d$", components[2])) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "remainder.damped", "TRUE"))
-          }
+        # Check for damping in trend component
+        if (length(components) >= 2 && grepl("d$", trimws(components[2]), ignore.case = TRUE)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "remainder.damped", "TRUE")
+          )
         }
       }
     }
 
-    # 2. Smoothing parameters
+    # 2. Smoothing parameters (alpha, beta, gamma, phi)
     param_names <- c("alpha", "beta", "gamma", "phi")
     for (param in param_names) {
       if (!is.null(ets_obj[[param]])) {
@@ -2837,16 +3249,13 @@ summarize_workflow_stlm_ets <- function(wf) {
         if (is.numeric(param_val) && length(param_val) == 1 && is.finite(param_val)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", paste0("remainder.", param),
-              as.character(signif(param_val, digits))
-            )
+            .kv("engine_param", paste0("remainder.", param), as.character(signif(param_val, digits)))
           )
         }
       }
     }
 
-    # 3. Initial states
+    # 3. Initial states (level, trend, seasonal)
     state_names <- c("l", "b", "s")
     for (state_name in state_names) {
       if (!is.null(ets_obj[[state_name]])) {
@@ -2859,36 +3268,36 @@ summarize_workflow_stlm_ets <- function(wf) {
           )
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", display_name,
-              as.character(signif(state_val, digits))
-            )
+            .kv("engine_param", display_name, as.character(signif(state_val, digits)))
           )
         }
       }
     }
 
-    # 4. Information criteria
-    for (nm in c("aic", "bic", "aicc", "sigma2", "loglik")) {
+    # 4. Information criteria and fit statistics
+    for (nm in c("aic", "aicc", "bic", "sigma2", "loglik")) {
       val <- try(ets_obj[[nm]], silent = TRUE)
-      if (!inherits(val, "try-error") && !is.null(val)) {
-        v <- if (is.numeric(val)) as.character(signif(val, digits)) else .chr1(val)
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("remainder.", nm), v))
+      if (!inherits(val, "try-error") && !is.null(val) && is.numeric(val) && is.finite(val)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", paste0("remainder.", nm), as.character(signif(val, digits)))
+        )
       }
     }
 
-    # 5. Coefficients if requested (final states)
+    # 5. Final states (coefficients) from states matrix
     if (isTRUE(include_coefficients) && !is.null(ets_obj$states)) {
       states <- ets_obj$states
       if (is.matrix(states) && nrow(states) > 0) {
         final_states <- states[nrow(states), ]
-        state_names <- colnames(states)
+        state_names_matrix <- colnames(states)
 
         for (i in seq_along(final_states)) {
           state_val <- final_states[i]
 
-          if (!is.null(state_names) && length(state_names) >= i) {
-            state_name <- state_names[i]
+          # Determine state name
+          if (!is.null(state_names_matrix) && length(state_names_matrix) >= i) {
+            state_name <- state_names_matrix[i]
           } else {
             state_name <- if (i == 1) "l" else if (i == 2) "b" else paste0("s", i - 2)
           }
@@ -2896,65 +3305,108 @@ summarize_workflow_stlm_ets <- function(wf) {
           if (is.numeric(state_val) && is.finite(state_val)) {
             eng_tbl <- dplyr::bind_rows(
               eng_tbl,
-              .kv(
-                "coefficient", paste0("remainder.final_", state_name),
-                as.character(signif(state_val, digits))
-              )
+              .kv("coefficient", paste0("remainder.final_", state_name), as.character(signif(state_val, digits)))
             )
           }
         }
       }
     }
 
-    # 6. Residual diagnostics (at the end, like other functions)
+    # 6. Residual diagnostics
     resids <- try(ets_obj$residuals, silent = TRUE)
-    if (!inherits(resids, "try-error") && !is.null(resids) && length(resids) > 0) {
-      # Basic statistics
-      eng_tbl <- dplyr::bind_rows(
-        eng_tbl,
-        .kv("engine_param", "residuals.mean", as.character(signif(mean(resids, na.rm = TRUE), digits))),
-        .kv("engine_param", "residuals.sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
-      )
+    if (!inherits(resids, "try-error") && !is.null(resids) &&
+      is.numeric(resids) && length(resids) > 0) {
+      # Basic residual statistics
+      resid_mean <- mean(resids, na.rm = TRUE)
+      resid_sd <- sd(resids, na.rm = TRUE)
+
+      if (is.finite(resid_mean)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "residuals.mean", as.character(signif(resid_mean, digits)))
+        )
+      }
+
+      if (is.finite(resid_sd)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "residuals.sd", as.character(signif(resid_sd, digits)))
+        )
+      }
 
       # Error metrics
       rmse <- sqrt(mean(resids^2, na.rm = TRUE))
       mae <- mean(abs(resids), na.rm = TRUE)
-      eng_tbl <- dplyr::bind_rows(
-        eng_tbl,
-        .kv("engine_param", "rmse", as.character(signif(rmse, digits))),
-        .kv("engine_param", "mae", as.character(signif(mae, digits)))
-      )
 
-      # Ljung-Box test
+      if (is.finite(rmse)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "rmse", as.character(signif(rmse, digits)))
+        )
+      }
+
+      if (is.finite(mae)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "mae", as.character(signif(mae, digits)))
+        )
+      }
+
+      # Ljung-Box test for residual autocorrelation
       m <- if (length(periods) > 0) max(periods) else 12
       lb_lag <- min(24L, max(8L, 2L * as.integer(m)))
+
       lb <- try(stats::Box.test(resids, lag = lb_lag, type = "Ljung-Box"), silent = TRUE)
-      if (!inherits(lb, "try-error") && !is.null(lb$p.value)) {
+      if (!inherits(lb, "try-error") && !is.null(lb$p.value) && is.finite(lb$p.value)) {
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
           .kv("engine_param", "ljung_box.lag", as.character(lb_lag)),
-          .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value)),
-          .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+          .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value))
         )
+
+        if (!is.null(lb$statistic) && is.finite(lb$statistic)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+          )
+        }
       }
     }
   }
 
-  out <- .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+  # Assemble and return output
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
   )
-
-  # Additional numeric formatting for this function
-  out$value <- .signif_chr(out$value, digits)
-  out
 }
 
+#' Summarize a TBATS Workflow
+#'
+#' Extracts and summarizes key information from a fitted TBATS workflow.
+#' TBATS (Trigonometric seasonality, Box-Cox transformation, ARMA errors,
+#' Trend, and Seasonal components) handles complex seasonal patterns including
+#' multiple seasonalities and non-integer seasonal periods.
+#'
+#' @param wf A fitted tidymodels workflow containing a seasonal_reg()
+#'   model with engine 'tbats'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including TBATS components, smoothing parameters, ARMA errors, seasonal
+#'   harmonics, and diagnostics.
+#'
+#' @noRd
 summarize_workflow_tbats <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   include_coefficients <- TRUE
+
+  # Cadence thresholds in days
+  CADENCE_YEARLY <- 360
+  CADENCE_QUARTERLY <- 85
+  CADENCE_MONTHLY <- 25
+  CADENCE_WEEKLY <- 6
 
   if (!inherits(wf, "workflow")) stop("summarize_workflow_tbats() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -2971,32 +3423,39 @@ summarize_workflow_tbats <- function(wf) {
     inherits(o, "tbats") || inherits(o, "bats") ||
       (is.list(o) && !is.null(o$call) && grepl("tbats|bats", as.character(o$call[[1]])))
   }
-  is_series <- function(o) inherits(o, "msts") || stats::is.ts(o)
+
+  is_series <- function(o) {
+    inherits(o, "msts") || stats::is.ts(o)
+  }
 
   # Extract predictors & outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
 
-  # Get cadence info for fallback
+  # Infer cadence from date predictors for fallback period estimation
   cadence_days <- NA_real_
   freq_label <- ""
 
   if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
-    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    is_date <- vapply(mold$predictors, function(col) {
+      inherits(col, c("Date", "POSIXct", "POSIXt"))
+    }, logical(1))
+
     if (any(is_date)) {
       d <- mold$predictors[[which(is_date)[1]]]
       diffs <- suppressWarnings(as.numeric(diff(sort(unique(as.Date(d)))), units = "days"))
       mdiff <- suppressWarnings(stats::median(diffs, na.rm = TRUE))
       cadence_days <- if (is.finite(mdiff)) mdiff else NA_real_
+
       freq_label <- if (is.finite(mdiff)) {
-        if (mdiff >= 360) {
+        if (mdiff >= CADENCE_YEARLY) {
           "yearly"
-        } else if (mdiff >= 85) {
+        } else if (mdiff >= CADENCE_QUARTERLY) {
           "quarterly"
-        } else if (mdiff >= 25) {
+        } else if (mdiff >= CADENCE_MONTHLY) {
           "monthly"
-        } else if (mdiff >= 6) {
+        } else if (mdiff >= CADENCE_WEEKLY) {
           "weekly"
         } else {
           "daily"
@@ -3019,7 +3478,7 @@ summarize_workflow_tbats <- function(wf) {
   engine_fit <- fit$fit
   tbats_obj <- .find_obj(engine_fit, is_tbats, scan_depth)
 
-  # Find series for periods
+  # Find series object for extracting seasonal periods
   series_candidates <- list()
   if (!is.null(tbats_obj)) {
     series_candidates <- list(
@@ -3028,7 +3487,11 @@ summarize_workflow_tbats <- function(wf) {
       try(if (!is.null(tbats_obj$series)) tbats_obj$series, silent = TRUE)
     )
   }
-  series_candidates <- series_candidates[vapply(series_candidates, function(z) !inherits(z, "try-error") && !is.null(z), logical(1))]
+
+  series_candidates <- series_candidates[vapply(series_candidates, function(z) {
+    !inherits(z, "try-error") && !is.null(z)
+  }, logical(1))]
+
   series_obj <- NULL
   if (length(series_candidates)) {
     for (s in series_candidates) {
@@ -3041,32 +3504,41 @@ summarize_workflow_tbats <- function(wf) {
   }
   if (is.null(series_obj)) series_obj <- .find_obj(engine_fit, is_series, scan_depth)
 
-  # Extract periods
+  # Extract seasonal periods from series object
   get_periods <- function(s) {
     out <- numeric(0)
     if (is.null(s)) {
       return(out)
     }
+
+    # Check for msts attribute
     m1 <- suppressWarnings(attr(s, "msts", exact = TRUE))
     if (!is.null(m1)) {
       if (is.list(m1) && !is.null(m1$seasonal.periods)) {
         out <- c(out, as.numeric(m1$seasonal.periods))
-      } else if (is.atomic(m1)) out <- c(out, as.numeric(m1))
+      } else if (is.atomic(m1)) {
+        out <- c(out, as.numeric(m1))
+      }
     }
+
+    # Check for seasonal.periods attribute
     m2 <- suppressWarnings(attr(s, "seasonal.periods", exact = TRUE))
     if (!is.null(m2)) out <- c(out, as.numeric(m2))
+
+    # Check ts frequency
     if (stats::is.ts(s)) {
       fr <- suppressWarnings(stats::frequency(s))
       if (is.finite(fr) && fr > 1) out <- c(out, as.numeric(fr))
     }
+
     unique(out[is.finite(out) & out > 0])
   }
 
   periods <- numeric(0)
 
-  # Try to get periods from TBATS object first
+  # Try to get periods from TBATS object first (most reliable)
   if (!is.null(tbats_obj)) {
-    # TBATS stores seasonal periods differently
+    # TBATS stores seasonal periods directly
     if (!is.null(tbats_obj$seasonal.periods)) {
       periods <- as.numeric(tbats_obj$seasonal.periods)
     } else if (!is.null(tbats_obj$seasonal)) {
@@ -3083,7 +3555,7 @@ summarize_workflow_tbats <- function(wf) {
   }
 
   # Final fallback to date inference
-  if (!length(periods) && is.finite(cadence_days)) {
+  if (!length(periods) && is.finite(cadence_days) && nzchar(freq_label)) {
     periods <- switch(freq_label,
       "yearly"    = 1,
       "quarterly" = 4,
@@ -3094,7 +3566,7 @@ summarize_workflow_tbats <- function(wf) {
     )
   }
 
-  # Model args from periods
+  # Model args from periods (show up to 3 periods)
   args_tbl <- if (length(periods)) {
     k <- min(3L, length(periods))
     tibble::tibble(
@@ -3109,7 +3581,7 @@ summarize_workflow_tbats <- function(wf) {
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 
-  # TBATS-specific parameters
+  # Extract TBATS-specific parameters
   if (!is.null(tbats_obj)) {
     # Model type (BATS vs TBATS)
     model_type <- if (inherits(tbats_obj, "bats")) "BATS" else "TBATS"
@@ -3117,111 +3589,159 @@ summarize_workflow_tbats <- function(wf) {
 
     # Lambda (Box-Cox parameter)
     lambda_val <- try(tbats_obj$lambda, silent = TRUE)
-    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lambda", as.character(signif(lambda_val, digits))))
+    if (!inherits(lambda_val, "try-error") && !is.null(lambda_val) &&
+      is.numeric(lambda_val) && is.finite(lambda_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "lambda", as.character(signif(lambda_val, digits)))
+      )
     }
 
     # Alpha (smoothing parameter for level)
     alpha_val <- try(tbats_obj$alpha, silent = TRUE)
-    if (!inherits(alpha_val, "try-error") && !is.null(alpha_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha", as.character(signif(alpha_val, digits))))
+    if (!inherits(alpha_val, "try-error") && !is.null(alpha_val) &&
+      is.numeric(alpha_val) && is.finite(alpha_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "alpha", as.character(signif(alpha_val, digits)))
+      )
     }
 
     # Beta (smoothing parameter for trend)
     beta_val <- try(tbats_obj$beta, silent = TRUE)
-    if (!inherits(beta_val, "try-error") && !is.null(beta_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "beta", as.character(signif(beta_val, digits))))
+    if (!inherits(beta_val, "try-error") && !is.null(beta_val) &&
+      is.numeric(beta_val) && is.finite(beta_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "beta", as.character(signif(beta_val, digits)))
+      )
     }
 
-    # Damping parameter
+    # Damping parameter (phi)
     damping_val <- try(tbats_obj$damping.parameter, silent = TRUE)
-    if (!inherits(damping_val, "try-error") && !is.null(damping_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "damping_parameter", as.character(signif(damping_val, digits))))
+    if (!inherits(damping_val, "try-error") && !is.null(damping_val) &&
+      is.numeric(damping_val) && is.finite(damping_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "damping_parameter", as.character(signif(damping_val, digits)))
+      )
     } else {
       phi_val <- try(tbats_obj$phi, silent = TRUE)
-      if (!inherits(phi_val, "try-error") && !is.null(phi_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "phi", as.character(signif(phi_val, digits))))
+      if (!inherits(phi_val, "try-error") && !is.null(phi_val) &&
+        is.numeric(phi_val) && is.finite(phi_val)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "phi", as.character(signif(phi_val, digits)))
+        )
       }
     }
 
     # ARMA errors parameters
-    if (!is.null(tbats_obj$ar.coefficients)) {
+    if (!is.null(tbats_obj$ar.coefficients) && length(tbats_obj$ar.coefficients) > 0) {
       ar_coefs <- tbats_obj$ar.coefficients
-      if (length(ar_coefs) > 0) {
-        for (i in seq_along(ar_coefs)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("ar", i), as.character(signif(ar_coefs[i], digits))))
+      for (i in seq_along(ar_coefs)) {
+        if (is.finite(ar_coefs[i])) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("ar", i), as.character(signif(ar_coefs[i], digits)))
+          )
         }
       }
     }
 
-    if (!is.null(tbats_obj$ma.coefficients)) {
+    if (!is.null(tbats_obj$ma.coefficients) && length(tbats_obj$ma.coefficients) > 0) {
       ma_coefs <- tbats_obj$ma.coefficients
-      if (length(ma_coefs) > 0) {
-        for (i in seq_along(ma_coefs)) {
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("ma", i), as.character(signif(ma_coefs[i], digits))))
+      for (i in seq_along(ma_coefs)) {
+        if (is.finite(ma_coefs[i])) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("ma", i), as.character(signif(ma_coefs[i], digits)))
+          )
         }
       }
     }
 
     # P and Q (ARMA order)
     p_val <- try(tbats_obj$p, silent = TRUE)
-    if (!inherits(p_val, "try-error") && !is.null(p_val)) {
+    if (!inherits(p_val, "try-error") && !is.null(p_val) && is.numeric(p_val) && is.finite(p_val)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arma_p", as.character(p_val)))
     }
 
     q_val <- try(tbats_obj$q, silent = TRUE)
-    if (!inherits(q_val, "try-error") && !is.null(q_val)) {
+    if (!inherits(q_val, "try-error") && !is.null(q_val) && is.numeric(q_val) && is.finite(q_val)) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arma_q", as.character(q_val)))
     }
 
     # Seasonal parameters (gamma values for each seasonal period)
-    if (!is.null(tbats_obj$gamma.one.values)) {
+    if (!is.null(tbats_obj$gamma.one.values) && length(tbats_obj$gamma.one.values) > 0) {
       gamma1 <- tbats_obj$gamma.one.values
       for (i in seq_along(gamma1)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("gamma1_", i), as.character(signif(gamma1[i], digits))))
+        if (is.finite(gamma1[i])) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("gamma1_", i), as.character(signif(gamma1[i], digits)))
+          )
+        }
       }
     }
 
-    if (!is.null(tbats_obj$gamma.two.values)) {
+    if (!is.null(tbats_obj$gamma.two.values) && length(tbats_obj$gamma.two.values) > 0) {
       gamma2 <- tbats_obj$gamma.two.values
       for (i in seq_along(gamma2)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("gamma2_", i), as.character(signif(gamma2[i], digits))))
+        if (is.finite(gamma2[i])) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("gamma2_", i), as.character(signif(gamma2[i], digits)))
+          )
+        }
       }
     }
 
     # K values (number of harmonics for each seasonal period)
-    if (!is.null(tbats_obj$k.vector)) {
+    if (!is.null(tbats_obj$k.vector) && length(tbats_obj$k.vector) > 0) {
       k_vec <- tbats_obj$k.vector
       for (i in seq_along(k_vec)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("k_harmonics_", i), as.character(k_vec[i])))
+        if (is.finite(k_vec[i])) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", paste0("k_harmonics_", i), as.character(k_vec[i]))
+          )
+        }
       }
     }
 
-    # Seed states
-    if (!is.null(tbats_obj$seed.states)) {
-      seed_states <- tbats_obj$seed.states
-      # Just report the length/dimension
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "seed_states_length", as.character(length(seed_states))))
+    # Seed states dimension
+    if (!is.null(tbats_obj$seed.states) && length(tbats_obj$seed.states) > 0) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "seed_states_length", as.character(length(tbats_obj$seed.states)))
+      )
     }
 
     # Information criteria
     for (nm in c("AIC", "BIC", "AICc", "likelihood", "loglik")) {
       val <- try(tbats_obj[[nm]], silent = TRUE)
-      if (!inherits(val, "try-error") && !is.null(val)) {
-        v <- if (is.numeric(val)) as.character(signif(val, digits)) else .chr1(val)
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", tolower(nm), v))
+      if (!inherits(val, "try-error") && !is.null(val) && is.numeric(val) && is.finite(val)) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", tolower(nm), as.character(signif(val, digits)))
+        )
       }
     }
 
     # Variance/sigma
     variance_val <- try(tbats_obj$variance, silent = TRUE)
-    if (!inherits(variance_val, "try-error") && !is.null(variance_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variance", as.character(signif(variance_val, digits))))
+    if (!inherits(variance_val, "try-error") && !is.null(variance_val) &&
+      is.numeric(variance_val) && is.finite(variance_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "variance", as.character(signif(variance_val, digits)))
+      )
     }
 
     # Number of observations
     nobs <- try(length(tbats_obj$y), silent = TRUE)
-    if (!inherits(nobs, "try-error") && is.finite(nobs) && nobs > 0) {
+    if (!inherits(nobs, "try-error") && is.numeric(nobs) && is.finite(nobs) && nobs > 0) {
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(nobs)))
     }
 
@@ -3234,11 +3754,9 @@ summarize_workflow_tbats <- function(wf) {
 
       for (nm in names(tbats_args)) {
         val <- tbats_args[[nm]]
-        if (!is.list(val)) {
-          # Don't duplicate values we've already extracted
-          if (!any(eng_tbl$name == nm)) {
-            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", nm, .chr1(val)))
-          }
+        # Don't duplicate values we've already extracted
+        if (!is.list(val) && !any(eng_tbl$name == nm)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", nm, .chr1(val)))
         }
       }
     }
@@ -3246,62 +3764,117 @@ summarize_workflow_tbats <- function(wf) {
     # Biasadj
     biasadj_val <- try(tbats_obj$biasadj, silent = TRUE)
     if (!inherits(biasadj_val, "try-error") && !is.null(biasadj_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "biasadj", as.character(biasadj_val)))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "biasadj", as.character(biasadj_val))
+      )
     }
 
     # Fitted values and residuals statistics
     if (isTRUE(include_coefficients)) {
       # Extract x (fitted states) if available
       x_states <- try(tbats_obj$x, silent = TRUE)
-      if (!inherits(x_states, "try-error") && !is.null(x_states)) {
-        if (is.matrix(x_states)) {
-          # Report dimensions
-          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "state_space_dim", paste0(nrow(x_states), "x", ncol(x_states))))
-        }
+      if (!inherits(x_states, "try-error") && !is.null(x_states) && is.matrix(x_states)) {
+        # Report state space dimensions
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "state_space_dim", paste0(nrow(x_states), "x", ncol(x_states)))
+        )
       }
 
       # Errors/residuals
       errors <- try(tbats_obj$errors, silent = TRUE)
-      if (!inherits(errors, "try-error") && !is.null(errors) && length(errors) > 0) {
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv("engine_param", "residuals.mean", as.character(signif(mean(errors, na.rm = TRUE), digits))),
-          .kv("engine_param", "residuals.sd", as.character(signif(sd(errors, na.rm = TRUE), digits)))
-        )
+      if (!inherits(errors, "try-error") && !is.null(errors) &&
+        is.numeric(errors) && length(errors) > 0) {
+        # Basic residual statistics
+        resid_mean <- mean(errors, na.rm = TRUE)
+        resid_sd <- sd(errors, na.rm = TRUE)
+
+        if (is.finite(resid_mean)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "residuals.mean", as.character(signif(resid_mean, digits)))
+          )
+        }
+
+        if (is.finite(resid_sd)) {
+          eng_tbl <- dplyr::bind_rows(
+            eng_tbl,
+            .kv("engine_param", "residuals.sd", as.character(signif(resid_sd, digits)))
+          )
+        }
 
         # Ljung-Box test on residuals
-        lb_lag <- min(24L, max(8L, 2L * max(periods, 12)))
+        lb_lag <- if (length(periods) > 0) {
+          min(24L, max(8L, 2L * max(periods)))
+        } else {
+          24L
+        }
+
         lb <- try(stats::Box.test(errors, lag = lb_lag, type = "Ljung-Box"), silent = TRUE)
-        if (!inherits(lb, "try-error") && !is.null(lb$p.value)) {
+        if (!inherits(lb, "try-error") && !is.null(lb$p.value) && is.finite(lb$p.value)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
             .kv("engine_param", "ljung_box.lag", as.character(lb_lag)),
-            .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value)),
-            .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+            .kv("engine_param", "ljung_box_p_value", sprintf("%.4g", lb$p.value))
           )
+
+          if (!is.null(lb$statistic) && is.finite(lb$statistic)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv("engine_param", "ljung_box.statistic", sprintf("%.4g", lb$statistic))
+            )
+          }
         }
       }
     }
   }
 
-  out <- .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+  # Assemble and return output
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
   )
-
-  # Additional numeric formatting
-  out$value <- .signif_chr(out$value, digits)
-  out
 }
 
+#' Summarize a Theta Workflow
+#'
+#' Extracts and summarizes key information from a fitted Theta workflow.
+#' The Theta method combines exponential smoothing with a linear regression
+#' component, with variants including Standard (STM), Optimized (OTM),
+#' and Dynamic methods.
+#'
+#' @param wf A fitted tidymodels workflow containing an exp_smoothing()
+#'   model with engine 'theta'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including Theta variant, theta coefficient, smoothing parameters,
+#'   trend/seasonal components, and diagnostics.
+#'
+#' @noRd
 summarize_workflow_theta <- function(wf) {
   # Set fixed defaults
-  digits <- 6
-  scan_depth <- 6
+  DIGITS <- 6
+  SCAN_DEPTH <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_theta() expects a tidymodels workflow.")
+  # Cadence thresholds (in days)
+  CADENCE_YEARLY <- 360
+  CADENCE_QUARTERLY <- 85
+  CADENCE_MONTHLY <- 25
+  CADENCE_WEEKLY <- 6
+
+  # Alpha interpretation thresholds
+  ALPHA_DRIFT_THRESHOLD <- 0.99
+  ALPHA_RECENT_THRESHOLD <- 0.5
+
+  if (!inherits(wf, "workflow")) {
+    stop("summarize_workflow_theta() expects a tidymodels workflow.")
+  }
+
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
-  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  if (inherits(fit, "try-error") || is.null(fit$fit)) {
+    stop("Workflow appears untrained. Fit it first.")
+  }
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
@@ -3330,12 +3903,9 @@ summarize_workflow_theta <- function(wf) {
     tibble::tibble(section = character(), name = character(), value = character())
   }
 
-  # Model args - Theta specific (in proper order)
-  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-
-  # Find the Theta model object first to get actual values
+  # Find the Theta model object
   engine_fit <- fit$fit
-  theta_obj <- .find_obj(engine_fit, is_theta, scan_depth)
+  theta_obj <- .find_obj(engine_fit, is_theta, SCAN_DEPTH)
 
   # Also check if the fit itself is a Theta object
   if (is.null(theta_obj) && is_theta(engine_fit)) {
@@ -3356,22 +3926,25 @@ summarize_workflow_theta <- function(wf) {
   theta_coef <- NULL
 
   # Try to get alpha value
-  if (!is.null(theta_obj$alpha)) {
-    alpha_val <- theta_obj$alpha
-  } else if (!is.null(theta_obj$model) && !is.null(theta_obj$model$alpha)) {
-    alpha_val <- theta_obj$model$alpha
-  } else if (!is.null(theta_obj$par) && !is.null(theta_obj$par$alpha)) {
-    alpha_val <- theta_obj$par$alpha
+  if (!is.null(theta_obj)) {
+    if (!is.null(theta_obj$alpha)) {
+      alpha_val <- theta_obj$alpha
+    } else if (!is.null(theta_obj$model) && !is.null(theta_obj$model$alpha)) {
+      alpha_val <- theta_obj$model$alpha
+    } else if (!is.null(theta_obj$par) && !is.null(theta_obj$par$alpha)) {
+      alpha_val <- theta_obj$par$alpha
+    }
+
+    # Try to get theta coefficient
+    if (!is.null(theta_obj$theta)) {
+      theta_coef <- theta_obj$theta
+    }
   }
 
-  # Try to get theta coefficient
-  if (!is.null(theta_obj$theta)) {
-    theta_coef <- theta_obj$theta
-  }
-
-  # Check for Theta-specific arguments from parsnip spec - maintain order
-  # But try to get actual values from the fitted model when they show as "auto"
+  # Model args - maintain order
+  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
   theta_args <- c("seasonal_period", "error", "trend", "season", "damped")
+
   for (arg_name in theta_args) {
     if (!is.null(spec$args[[arg_name]])) {
       arg_val <- .chr1(spec$args[[arg_name]])
@@ -3385,17 +3958,11 @@ summarize_workflow_theta <- function(wf) {
           actual_val <- "additive"
         } else if (arg_name == "trend") {
           # Check if trend was fitted
-          # Theta models with theta != 0 include a trend component
-          # Classic Theta (theta=2) combines SES with a linear trend line
           if (!is.null(theta_obj$drift) || !is.null(theta_obj$b)) {
-            # Explicit drift parameter found
             actual_val <- "additive"
-          } else if (!is.null(theta_coef) && is.numeric(theta_coef) && theta_coef != 0) {
-            # Theta coefficient != 0 implies trend component
-            # Classic Theta (theta=2) uses linear regression trend
+          } else if (!is.null(theta_coef) && is.numeric(theta_coef) && is.finite(theta_coef) && theta_coef != 0) {
             actual_val <- "additive"
-          } else if (!is.null(alpha_val) && is.numeric(alpha_val) && alpha_val > 0.9) {
-            # High alpha (>0.9) in Theta models typically indicates drift/trend
+          } else if (!is.null(alpha_val) && is.numeric(alpha_val) && is.finite(alpha_val) && alpha_val > 0.9) {
             actual_val <- "additive"
           } else {
             actual_val <- "none"
@@ -3404,19 +3971,22 @@ summarize_workflow_theta <- function(wf) {
           # Check if seasonal component exists
           if (!is.null(theta_obj$season)) {
             actual_val <- as.character(theta_obj$season)
-          } else if (!is.null(theta_obj$m) && theta_obj$m > 1) {
+          } else if (!is.null(theta_obj$m) && is.numeric(theta_obj$m) && is.finite(theta_obj$m) && theta_obj$m > 1) {
             actual_val <- "additive"
           } else {
             actual_val <- "none"
           }
         } else if (arg_name == "seasonal_period") {
           # Try to get actual frequency from the model
-          if (!is.null(theta_obj$m)) {
+          if (!is.null(theta_obj$m) && is.numeric(theta_obj$m) && is.finite(theta_obj$m)) {
             actual_val <- as.character(theta_obj$m)
-          } else if (!is.null(theta_obj$frequency)) {
+          } else if (!is.null(theta_obj$frequency) && is.numeric(theta_obj$frequency) && is.finite(theta_obj$frequency)) {
             actual_val <- as.character(theta_obj$frequency)
           } else if (!is.null(theta_obj$x) && stats::is.ts(theta_obj$x)) {
-            actual_val <- as.character(stats::frequency(theta_obj$x))
+            freq <- stats::frequency(theta_obj$x)
+            if (is.numeric(freq) && is.finite(freq)) {
+              actual_val <- as.character(freq)
+            }
           }
         } else if (arg_name == "damped") {
           # Theta models typically don't use damping
@@ -3436,21 +4006,24 @@ summarize_workflow_theta <- function(wf) {
   }
 
   # Check for actual seasonal period value if "frequency" was used
-  if (any(args_tbl$name == "seasonal_period" & args_tbl$value == "frequency")) {
+  if (nrow(args_tbl) > 0 && any(args_tbl$name == "seasonal_period" & args_tbl$value == "frequency")) {
     # Try to get actual frequency from the model object
     actual_freq <- NULL
 
     if (!is.null(theta_obj)) {
-      if (!is.null(theta_obj$m)) {
+      if (!is.null(theta_obj$m) && is.numeric(theta_obj$m) && is.finite(theta_obj$m)) {
         actual_freq <- theta_obj$m
-      } else if (!is.null(theta_obj$frequency)) {
+      } else if (!is.null(theta_obj$frequency) && is.numeric(theta_obj$frequency) && is.finite(theta_obj$frequency)) {
         actual_freq <- theta_obj$frequency
       } else if (!is.null(theta_obj$x) && stats::is.ts(theta_obj$x)) {
-        actual_freq <- stats::frequency(theta_obj$x)
+        freq <- stats::frequency(theta_obj$x)
+        if (is.numeric(freq) && is.finite(freq)) {
+          actual_freq <- freq
+        }
       }
     }
 
-    if (!is.null(actual_freq) && is.numeric(actual_freq) && is.finite(actual_freq)) {
+    if (!is.null(actual_freq)) {
       args_tbl$value[args_tbl$name == "seasonal_period"] <- as.character(actual_freq)
     }
   }
@@ -3459,7 +4032,7 @@ summarize_workflow_theta <- function(wf) {
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 
   if (!is.null(theta_obj)) {
-    # 1. Model Variant (instead of method string)
+    # 1. Model Variant
     if (!is.null(theta_obj$method)) {
       method_str <- as.character(theta_obj$method)
 
@@ -3479,7 +4052,6 @@ summarize_workflow_theta <- function(wf) {
       } else {
         # Default/Classic Theta method
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "variant", "Classic Theta"))
-
         # Classic Theta uses theta=2 by default
         if (is.null(theta_obj$theta)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "theta_coefficient", "2"))
@@ -3487,30 +4059,25 @@ summarize_workflow_theta <- function(wf) {
       }
     }
 
-    # 2. Theta parameter value (the main theta coefficient)
-    if (!is.null(theta_obj$theta)) {
-      theta_val <- theta_obj$theta
-      if (is.numeric(theta_val) && is.finite(theta_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "theta_coefficient",
-          as.character(signif(theta_val, digits))
-        ))
-      }
+    # 2. Theta parameter value
+    if (!is.null(theta_obj$theta) && is.numeric(theta_obj$theta) && is.finite(theta_obj$theta)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "theta_coefficient", as.character(signif(theta_obj$theta, DIGITS)))
+      )
     }
 
-    # 3. Alpha (smoothing parameter for SES component) - Try multiple locations
-    # (alpha_val already extracted above)
-
+    # 3. Alpha (smoothing parameter for SES component)
     if (!is.null(alpha_val) && is.numeric(alpha_val) && is.finite(alpha_val)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-        "engine_param", "alpha",
-        as.character(signif(alpha_val, digits))
-      ))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "alpha", as.character(signif(alpha_val, DIGITS)))
+      )
 
       # Interpret alpha value
-      if (alpha_val > 0.99) {
+      if (alpha_val > ALPHA_DRIFT_THRESHOLD) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Drift extrapolation"))
-      } else if (alpha_val > 0.5) {
+      } else if (alpha_val > ALPHA_RECENT_THRESHOLD) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Recent observations weighted"))
       } else {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "alpha_interpretation", "Historical average weighted"))
@@ -3518,82 +4085,71 @@ summarize_workflow_theta <- function(wf) {
     }
 
     # 4. Drift/Linear trend component
-    if (!is.null(theta_obj$drift)) {
-      drift_val <- theta_obj$drift
-      if (is.numeric(drift_val) && is.finite(drift_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "drift",
-          as.character(signif(drift_val, digits))
-        ))
-      }
-    } else if (!is.null(theta_obj$b)) {
-      b_val <- theta_obj$b
-      if (is.numeric(b_val) && is.finite(b_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "drift",
-          as.character(signif(b_val, digits))
-        ))
-      }
+    if (!is.null(theta_obj$drift) && is.numeric(theta_obj$drift) && is.finite(theta_obj$drift)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "drift", as.character(signif(theta_obj$drift, DIGITS)))
+      )
+    } else if (!is.null(theta_obj$b) && is.numeric(theta_obj$b) && is.finite(theta_obj$b)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "drift", as.character(signif(theta_obj$b, DIGITS)))
+      )
     }
 
     # 5. Decomposition method if used
     if (!is.null(theta_obj$decomp)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-        "engine_param", "decomposition",
-        as.character(theta_obj$decomp)
-      ))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "decomposition", as.character(theta_obj$decomp))
+      )
     }
 
     # 6. Seasonal component info
     if (!is.null(theta_obj$season)) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-        "engine_param", "seasonal",
-        as.character(theta_obj$season)
-      ))
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "seasonal", as.character(theta_obj$season))
+      )
     }
 
     # 7. Seasonal period/frequency (actual value used)
-    if (!is.null(theta_obj$m) || !is.null(theta_obj$frequency)) {
-      freq_val <- if (!is.null(theta_obj$m)) theta_obj$m else theta_obj$frequency
-      if (is.numeric(freq_val) && is.finite(freq_val) && freq_val > 1) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "seasonal_period_actual",
-          as.character(freq_val)
-        ))
-      }
+    freq_val <- NULL
+    if (!is.null(theta_obj$m)) {
+      freq_val <- theta_obj$m
+    } else if (!is.null(theta_obj$frequency)) {
+      freq_val <- theta_obj$frequency
+    }
+
+    if (!is.null(freq_val) && is.numeric(freq_val) && is.finite(freq_val) && freq_val > 1) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "seasonal_period_actual", as.character(freq_val))
+      )
     }
 
     # 8. Initial level (a0 or l0)
-    if (!is.null(theta_obj$a0)) {
-      a0_val <- theta_obj$a0
-      if (is.numeric(a0_val) && is.finite(a0_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "initial_level",
-          as.character(signif(a0_val, digits))
-        ))
-      }
-    } else if (!is.null(theta_obj$l0)) {
-      l0_val <- theta_obj$l0
-      if (is.numeric(l0_val) && is.finite(l0_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "initial_level",
-          as.character(signif(l0_val, digits))
-        ))
-      }
+    if (!is.null(theta_obj$a0) && is.numeric(theta_obj$a0) && is.finite(theta_obj$a0)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "initial_level", as.character(signif(theta_obj$a0, DIGITS)))
+      )
+    } else if (!is.null(theta_obj$l0) && is.numeric(theta_obj$l0) && is.finite(theta_obj$l0)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "initial_level", as.character(signif(theta_obj$l0, DIGITS)))
+      )
     }
 
     # 9. Initial trend (b0)
-    if (!is.null(theta_obj$b0)) {
-      b0_val <- theta_obj$b0
-      if (is.numeric(b0_val) && is.finite(b0_val)) {
-        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
-          "engine_param", "initial_trend",
-          as.character(signif(b0_val, digits))
-        ))
-      }
+    if (!is.null(theta_obj$b0) && is.numeric(theta_obj$b0) && is.finite(theta_obj$b0)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "initial_trend", as.character(signif(theta_obj$b0, DIGITS)))
+      )
     }
 
-    # 10. Residuals statistics - SIMPLIFIED TO ONLY KEY METRICS
+    # 10. Residuals statistics - key metrics only
     if (!is.null(theta_obj$residuals)) {
       resids <- theta_obj$residuals
       if (is.numeric(resids) && length(resids) > 0) {
@@ -3602,10 +4158,7 @@ summarize_workflow_theta <- function(wf) {
         if (is.finite(rmse)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", "rmse",
-              as.character(signif(rmse, digits))
-            )
+            .kv("engine_param", "rmse", as.character(signif(rmse, DIGITS)))
           )
         }
 
@@ -3614,10 +4167,7 @@ summarize_workflow_theta <- function(wf) {
         if (is.finite(mae)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", "mae",
-              as.character(signif(mae, digits))
-            )
+            .kv("engine_param", "mae", as.character(signif(mae, DIGITS)))
           )
         }
 
@@ -3632,10 +4182,7 @@ summarize_workflow_theta <- function(wf) {
               if (is.finite(mape)) {
                 eng_tbl <- dplyr::bind_rows(
                   eng_tbl,
-                  .kv(
-                    "engine_param", "mape",
-                    as.character(signif(mape, digits))
-                  )
+                  .kv("engine_param", "mape", as.character(signif(mape, DIGITS)))
                 )
               }
             }
@@ -3644,22 +4191,18 @@ summarize_workflow_theta <- function(wf) {
       }
     }
 
-    # 11. Number of observations only
+    # 11. Number of observations
     if (!is.null(theta_obj$x)) {
       x_vals <- theta_obj$x
       if (is.numeric(x_vals) && length(x_vals) > 0) {
-        # Number of observations
         eng_tbl <- dplyr::bind_rows(
           eng_tbl,
-          .kv(
-            "engine_param", "nobs",
-            as.character(length(x_vals))
-          )
+          .kv("engine_param", "nobs", as.character(length(x_vals)))
         )
       }
     }
 
-    # 12. Model selection criteria (if available)
+    # 12. Model selection criteria
     info_criteria <- c("aic", "bic", "aicc", "loglik")
     for (criterion in info_criteria) {
       if (!is.null(theta_obj[[criterion]])) {
@@ -3667,32 +4210,25 @@ summarize_workflow_theta <- function(wf) {
         if (is.numeric(criterion_val) && length(criterion_val) == 1 && is.finite(criterion_val)) {
           eng_tbl <- dplyr::bind_rows(
             eng_tbl,
-            .kv(
-              "engine_param", toupper(criterion),
-              as.character(signif(criterion_val, digits))
-            )
+            .kv("engine_param", toupper(criterion), as.character(signif(criterion_val, DIGITS)))
           )
         }
       }
     }
 
     # 13. Sigma (standard error of residuals)
-    if (!is.null(theta_obj$sigma) || !is.null(theta_obj$sigma2)) {
-      sigma_val <- if (!is.null(theta_obj$sigma)) {
-        theta_obj$sigma
-      } else {
-        sqrt(theta_obj$sigma2)
-      }
+    sigma_val <- NULL
+    if (!is.null(theta_obj$sigma)) {
+      sigma_val <- theta_obj$sigma
+    } else if (!is.null(theta_obj$sigma2) && is.numeric(theta_obj$sigma2) && is.finite(theta_obj$sigma2)) {
+      sigma_val <- sqrt(theta_obj$sigma2)
+    }
 
-      if (is.numeric(sigma_val) && is.finite(sigma_val)) {
-        eng_tbl <- dplyr::bind_rows(
-          eng_tbl,
-          .kv(
-            "engine_param", "sigma",
-            as.character(signif(sigma_val, digits))
-          )
-        )
-      }
+    if (!is.null(sigma_val) && is.numeric(sigma_val) && is.finite(sigma_val)) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "sigma", as.character(signif(sigma_val, DIGITS)))
+      )
     }
   }
 
@@ -3704,7 +4240,6 @@ summarize_workflow_theta <- function(wf) {
 
   # Sort engine parameters for consistent output
   if (nrow(eng_tbl) > 0) {
-    # Define preferred order for engine params (removed unnecessary ones)
     param_order <- c(
       "variant", "theta_coefficient", "alpha", "alpha_interpretation",
       "drift", "initial_level", "initial_trend", "decomposition", "seasonal",
@@ -3713,14 +4248,14 @@ summarize_workflow_theta <- function(wf) {
       "nobs",
       "AIC", "BIC", "AICC", "LOGLIK", "sigma"
     )
-
     eng_tbl <- eng_tbl[order(match(eng_tbl$name, param_order, nomatch = 1000)), ]
   }
 
   # Assemble output
-  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
-    unquote_values = FALSE, digits = digits
+    unquote_values = FALSE, digits = DIGITS
   )
 }
 
