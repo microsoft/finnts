@@ -1015,21 +1015,21 @@ summarize_workflow_cubist <- function(wf) {
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
-  
+
   if (!inherits(wf, "workflow")) stop("summarize_workflow_cubist() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
-  
+
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
-  
+
   # Check if it's standard cubist or multistep
   is_multistep <- identical(engine, "cubist_multistep_horizon")
-  
+
   if (!engine %in% c("Cubist", "cubist_multistep_horizon")) {
     stop("summarize_workflow_cubist() only supports parsnip::cubist_rules() with engine 'Cubist' or cubist_multistep with engine 'cubist_multistep_horizon'.")
   }
-  
+
   # Find the cubist object(s)
   find_cubist <- function(o, depth = scan_depth) {
     .find_obj(o, function(x) {
@@ -1038,7 +1038,7 @@ summarize_workflow_cubist <- function(wf) {
         (is.list(x) && !is.null(x$model) && inherits(x$model, "C5.0"))
     }, depth)
   }
-  
+
   # Helper function to format numeric values
   .format_numeric <- function(x) {
     if (is.character(x) && (x == "auto" || x == "")) {
@@ -1055,12 +1055,12 @@ summarize_workflow_cubist <- function(wf) {
     }
     return(as.character(x))
   }
-  
+
   # Extract predictors & outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
-  
+
   # Extract recipe steps
   preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
   steps_tbl <- if (!inherits(preproc, "try-error")) {
@@ -1068,7 +1068,7 @@ summarize_workflow_cubist <- function(wf) {
   } else {
     tibble::tibble(section = character(), name = character(), value = character())
   }
-  
+
   # parsnip cubist args
   arg_names <- c("committees", "neighbors", "max_rules")
   arg_vals <- vapply(arg_names, function(nm) {
@@ -1076,48 +1076,48 @@ summarize_workflow_cubist <- function(wf) {
     .format_numeric(val)
   }, FUN.VALUE = character(1))
   args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
-  
+
   # Find the cubist model object
   cubist_obj <- find_cubist(fit$fit, scan_depth)
-  
+
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-  
+
   if (!is.null(cubist_obj)) {
     # Handle multistep vs standard cubist differently
     if (is_multistep && inherits(cubist_obj, "cubist_multistep_fit_impl")) {
       # MULTISTEP CUBIST
-      
+
       # Extract individual models from $models list
       model_list <- cubist_obj$models
       n_models <- length(model_list)
-      
+
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
-      
+
       # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
       lag_names <- names(model_list)
       if (!is.null(lag_names) && length(lag_names) > 0) {
         lags <- stringr::str_extract(lag_names, "[0-9]+")
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
       }
-      
+
       # Aggregate metrics across all models
       all_nrules <- c()
       all_nfeatures <- c()
-      
+
       # Collect importance from all models using vip
       all_importance <- list()
-      
+
       for (model_name in names(model_list)) {
         cubist_model <- model_list[[model_name]]
-        
+
         # The cubist model object is the result of rules::cubist_fit()
         inner_cubist <- NULL
-        
+
         if (inherits(cubist_model, "cubist")) {
           inner_cubist <- cubist_model
         }
-        
+
         if (!is.null(inner_cubist) && inherits(inner_cubist, "cubist")) {
           # Number of rules
           if (!is.null(inner_cubist$output)) {
@@ -1127,7 +1127,7 @@ summarize_workflow_cubist <- function(wf) {
               all_nrules <- c(all_nrules, n_rules)
             }
           }
-          
+
           # Number of features (variables used)
           if (!is.null(inner_cubist$vars)) {
             vars_used <- inner_cubist$vars$used
@@ -1135,19 +1135,19 @@ summarize_workflow_cubist <- function(wf) {
               all_nfeatures <- c(all_nfeatures, length(vars_used))
             }
           }
-          
+
           # Variable importance using vip::vi()
           importance <- try(vip::vi(inner_cubist), silent = TRUE)
-          
+
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
             importance <- importance[importance$Importance > importance_threshold, ]
-            
+
             if (nrow(importance) > 0) {
               for (i in seq_len(nrow(importance))) {
                 feat_name <- importance$Variable[i]
                 importance_val <- importance$Importance[i]
-                
+
                 # Accumulate importance across models
                 if (is.null(all_importance[[feat_name]])) {
                   all_importance[[feat_name]] <- c()
@@ -1158,25 +1158,25 @@ summarize_workflow_cubist <- function(wf) {
           }
         }
       }
-      
+
       # Add aggregated metrics
       if (length(all_nrules) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_rules", .format_numeric(mean(all_nrules))))
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_rules", as.character(sum(all_nrules))))
       }
-      
+
       # Aggregate importance - average across all models (negligible values already excluded)
       importance_list <- list()
-      
+
       if (length(all_importance) > 0) {
         # Calculate average importance for each feature
         avg_importance <- sapply(all_importance, mean)
-        
+
         # Sort by importance (descending)
         sorted_idx <- order(avg_importance, decreasing = TRUE)
         sorted_names <- names(avg_importance)[sorted_idx]
         sorted_vals <- avg_importance[sorted_idx]
-        
+
         # Add all averaged importance values with consistent formatting
         for (i in seq_along(sorted_names)) {
           importance_list[[length(importance_list) + 1]] <- .kv(
@@ -1186,7 +1186,7 @@ summarize_workflow_cubist <- function(wf) {
           )
         }
       }
-      
+
       # Combine engine params and importance
       if (length(importance_list) > 0) {
         importance_tbl <- dplyr::bind_rows(importance_list)
@@ -1194,9 +1194,9 @@ summarize_workflow_cubist <- function(wf) {
       }
     } else {
       # STANDARD CUBIST
-      
+
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
-      
+
       # Extract cubist object if wrapped
       if (!inherits(cubist_obj, "cubist")) {
         inner_cubist <- try(cubist_obj$fit, silent = TRUE)
@@ -1204,7 +1204,7 @@ summarize_workflow_cubist <- function(wf) {
           cubist_obj <- inner_cubist
         }
       }
-      
+
       if (inherits(cubist_obj, "cubist")) {
         # Number of rules
         if (!is.null(cubist_obj$output)) {
@@ -1214,7 +1214,7 @@ summarize_workflow_cubist <- function(wf) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_rules", as.character(n_rules)))
           }
         }
-        
+
         # Number of committees (from model structure)
         if (!is.null(cubist_obj$coefficients)) {
           n_committees <- length(cubist_obj$coefficients)
@@ -1225,21 +1225,21 @@ summarize_workflow_cubist <- function(wf) {
             }
           }
         }
-        
+
         # Variable importance using vip::vi()
         importance <- try(vip::vi(cubist_obj), silent = TRUE)
         importance_list <- list()
-        
+
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
           # Filter out features with negligible importance
           importance <- importance[importance$Importance > importance_threshold, ]
-          
+
           if (nrow(importance) > 0) {
             # vip::vi already returns sorted by Importance (descending)
             for (i in seq_len(nrow(importance))) {
               feat_name <- importance$Variable[i]
               importance_val <- importance$Importance[i]
-              
+
               importance_list[[length(importance_list) + 1]] <- .kv(
                 "importance",
                 feat_name,
@@ -1248,23 +1248,23 @@ summarize_workflow_cubist <- function(wf) {
             }
           }
         }
-        
+
         if (length(importance_list) > 0) {
           importance_tbl <- dplyr::bind_rows(importance_list)
           eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
         }
-        
+
         # Sample coefficient information (from first committee)
         if (!is.null(cubist_obj$coefficients) && length(cubist_obj$coefficients) > 0) {
           first_coef <- cubist_obj$coefficients[[1]]
           if (!is.null(first_coef) && is.matrix(first_coef)) {
-            n_predictors <- ncol(first_coef) - 1  # Exclude intercept
+            n_predictors <- ncol(first_coef) - 1 # Exclude intercept
             if (n_predictors > 0) {
               eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_linear_predictors", as.character(n_predictors)))
             }
           }
         }
-        
+
         # Model size information
         if (!is.null(cubist_obj$size)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_size_bytes", as.character(cubist_obj$size)))
@@ -1272,7 +1272,7 @@ summarize_workflow_cubist <- function(wf) {
       }
     }
   }
-  
+
   .assemble_output(
     preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
@@ -2165,21 +2165,21 @@ summarize_workflow_mars <- function(wf) {
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
-  
+
   if (!inherits(wf, "workflow")) stop("summarize_workflow_mars() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
-  
+
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
-  
+
   # Check if it's standard mars or multistep
   is_multistep <- identical(engine, "mars_multistep_horizon")
-  
+
   if (!engine %in% c("earth", "mars_multistep_horizon")) {
     stop("summarize_workflow_mars() only supports parsnip::mars() with engine 'earth' or mars_multistep with engine 'mars_multistep_horizon'.")
   }
-  
+
   # Find the mars/earth object(s)
   find_mars <- function(o, depth = scan_depth) {
     .find_obj(o, function(x) {
@@ -2188,7 +2188,7 @@ summarize_workflow_mars <- function(wf) {
         (is.list(x) && !is.null(x$coefficients) && !is.null(x$selected.terms))
     }, depth)
   }
-  
+
   # Helper function to format numeric values
   .format_numeric <- function(x) {
     if (is.character(x) && (x == "auto" || x == "")) {
@@ -2205,12 +2205,12 @@ summarize_workflow_mars <- function(wf) {
     }
     return(as.character(x))
   }
-  
+
   # Extract predictors & outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
-  
+
   # Extract recipe steps
   preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
   steps_tbl <- if (!inherits(preproc, "try-error")) {
@@ -2218,7 +2218,7 @@ summarize_workflow_mars <- function(wf) {
   } else {
     tibble::tibble(section = character(), name = character(), value = character())
   }
-  
+
   # parsnip mars args
   arg_names <- c("num_terms", "prod_degree", "prune_method")
   arg_vals <- vapply(arg_names, function(nm) {
@@ -2226,53 +2226,53 @@ summarize_workflow_mars <- function(wf) {
     .format_numeric(val)
   }, FUN.VALUE = character(1))
   args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
-  
+
   # Find the mars model object
   mars_obj <- find_mars(fit$fit, scan_depth)
-  
+
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-  
+
   if (!is.null(mars_obj)) {
     # Handle multistep vs standard mars differently
     if (is_multistep && inherits(mars_obj, "mars_multistep_fit_impl")) {
       # MULTISTEP MARS
-      
+
       # Extract individual models from $models list
       model_list <- mars_obj$models
       n_models <- length(model_list)
-      
+
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
-      
+
       # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
       lag_names <- names(model_list)
       if (!is.null(lag_names) && length(lag_names) > 0) {
         lags <- stringr::str_extract(lag_names, "[0-9]+")
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
       }
-      
+
       # Aggregate metrics across all models
       all_nterms <- c()
       all_nsubsets <- c()
       all_rsq <- c()
       all_gcv <- c()
-      
+
       # Collect importance from all models
       all_importance <- list()
-      
+
       for (model_name in names(model_list)) {
         mars_model <- model_list[[model_name]]
-        
+
         # The mars model is wrapped in a parsnip fit object
         inner_mars <- NULL
-        
+
         if (inherits(mars_model, "model_fit")) {
           inner_mars <- try(mars_model$fit, silent = TRUE)
           if (inherits(inner_mars, "try-error")) inner_mars <- NULL
         } else if (inherits(mars_model, "earth")) {
           inner_mars <- mars_model
         }
-        
+
         if (!is.null(inner_mars) && inherits(inner_mars, "earth")) {
           # Number of terms (including intercept)
           if (!is.null(inner_mars$selected.terms)) {
@@ -2281,34 +2281,34 @@ summarize_workflow_mars <- function(wf) {
               all_nterms <- c(all_nterms, n_terms)
             }
           }
-          
+
           # Number of subsets evaluated during pruning
           if (!is.null(inner_mars$nsubsets)) {
             all_nsubsets <- c(all_nsubsets, inner_mars$nsubsets)
           }
-          
+
           # R-squared
           if (!is.null(inner_mars$rsq)) {
             all_rsq <- c(all_rsq, inner_mars$rsq)
           }
-          
+
           # GCV (Generalized Cross-Validation)
           if (!is.null(inner_mars$gcv)) {
             all_gcv <- c(all_gcv, inner_mars$gcv)
           }
-          
+
           # Variable importance using vip::vi()
           importance <- try(vip::vi(inner_mars), silent = TRUE)
-          
+
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
             importance <- importance[importance$Importance > importance_threshold, ]
-            
+
             if (nrow(importance) > 0) {
               for (i in seq_len(nrow(importance))) {
                 feat_name <- importance$Variable[i]
                 importance_val <- importance$Importance[i]
-                
+
                 # Accumulate importance across models
                 if (is.null(all_importance[[feat_name]])) {
                   all_importance[[feat_name]] <- c()
@@ -2319,37 +2319,37 @@ summarize_workflow_mars <- function(wf) {
           }
         }
       }
-      
+
       # Add aggregated metrics
       if (length(all_nterms) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_terms", .format_numeric(mean(all_nterms))))
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_terms", as.character(sum(all_nterms))))
       }
-      
+
       if (length(all_nsubsets) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_nsubsets", .format_numeric(mean(all_nsubsets))))
       }
-      
+
       if (length(all_rsq) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_rsq", .format_numeric(mean(all_rsq))))
       }
-      
+
       if (length(all_gcv) > 0) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_gcv", .format_numeric(mean(all_gcv))))
       }
-      
+
       # Aggregate importance - average across all models (negligible values already excluded)
       importance_list <- list()
-      
+
       if (length(all_importance) > 0) {
         # Calculate average importance for each feature
         avg_importance <- sapply(all_importance, mean)
-        
+
         # Sort by importance (descending)
         sorted_idx <- order(avg_importance, decreasing = TRUE)
         sorted_names <- names(avg_importance)[sorted_idx]
         sorted_vals <- avg_importance[sorted_idx]
-        
+
         # Add all averaged importance values with consistent formatting
         for (i in seq_along(sorted_names)) {
           importance_list[[length(importance_list) + 1]] <- .kv(
@@ -2359,7 +2359,7 @@ summarize_workflow_mars <- function(wf) {
           )
         }
       }
-      
+
       # Combine engine params and importance
       if (length(importance_list) > 0) {
         importance_tbl <- dplyr::bind_rows(importance_list)
@@ -2367,9 +2367,9 @@ summarize_workflow_mars <- function(wf) {
       }
     } else {
       # STANDARD MARS
-      
+
       eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
-      
+
       # Extract earth object if wrapped
       if (!inherits(mars_obj, "earth")) {
         inner_mars <- try(mars_obj$fit, silent = TRUE)
@@ -2377,7 +2377,7 @@ summarize_workflow_mars <- function(wf) {
           mars_obj <- inner_mars
         }
       }
-      
+
       if (inherits(mars_obj, "earth")) {
         # Update args_tbl if num_terms was tuned
         if (!is.null(mars_obj$selected.terms)) {
@@ -2388,7 +2388,7 @@ summarize_workflow_mars <- function(wf) {
             }
           }
         }
-        
+
         # Number of basis functions in full model (before pruning)
         if (!is.null(mars_obj$dirs)) {
           n_basis <- nrow(mars_obj$dirs)
@@ -2396,7 +2396,7 @@ summarize_workflow_mars <- function(wf) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_basis_functions", as.character(n_basis)))
           }
         }
-        
+
         # Maximum degree of interaction actually used
         if (!is.null(mars_obj$degree.used)) {
           degree_used <- mars_obj$degree.used
@@ -2404,32 +2404,32 @@ summarize_workflow_mars <- function(wf) {
             eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "degree_used", as.character(degree_used)))
           }
         }
-        
+
         # Penalty parameter
         if (!is.null(mars_obj$penalty)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "penalty", .format_numeric(mars_obj$penalty)))
         }
-        
+
         # Number of subsets evaluated during pruning
         if (!is.null(mars_obj$nsubsets)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_subsets_evaluated", as.character(mars_obj$nsubsets)))
         }
-        
+
         # R-squared
         if (!is.null(mars_obj$rsq)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "rsq", .format_numeric(mars_obj$rsq)))
         }
-        
+
         # GCV (Generalized Cross-Validation)
         if (!is.null(mars_obj$gcv)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "gcv", .format_numeric(mars_obj$gcv)))
         }
-        
+
         # Number of observations
         if (!is.null(mars_obj$nobs)) {
           eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_obs", as.character(mars_obj$nobs)))
         }
-        
+
         # Pruning method used
         if (!is.null(mars_obj$pmethod)) {
           pmethod <- mars_obj$pmethod
@@ -2437,21 +2437,21 @@ summarize_workflow_mars <- function(wf) {
             args_tbl$value[args_tbl$name == "prune_method"] <- as.character(pmethod)
           }
         }
-        
+
         # Variable importance using vip::vi()
         importance <- try(vip::vi(mars_obj), silent = TRUE)
         importance_list <- list()
-        
+
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
           # Filter out features with negligible importance
           importance <- importance[importance$Importance > importance_threshold, ]
-          
+
           if (nrow(importance) > 0) {
             # vip::vi already returns sorted by Importance (descending)
             for (i in seq_len(nrow(importance))) {
               feat_name <- importance$Variable[i]
               importance_val <- importance$Importance[i]
-              
+
               importance_list[[length(importance_list) + 1]] <- .kv(
                 "importance",
                 feat_name,
@@ -2460,12 +2460,12 @@ summarize_workflow_mars <- function(wf) {
             }
           }
         }
-        
+
         if (length(importance_list) > 0) {
           importance_tbl <- dplyr::bind_rows(importance_list)
           eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
         }
-        
+
         # Basis function information (sample of terms)
         if (!is.null(mars_obj$cuts) && length(mars_obj$cuts) > 0) {
           # Number of unique knots/cuts used
@@ -2477,7 +2477,7 @@ summarize_workflow_mars <- function(wf) {
       }
     }
   }
-  
+
   .assemble_output(
     preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
@@ -3512,6 +3512,8 @@ summarize_workflow_snaive <- function(wf) {
   )
 }
 
+
+
 #' Summarize an STLM-ARIMA Workflow
 #'
 #' Extracts and summarizes key information from a fitted STLM-ARIMA workflow.
@@ -4431,6 +4433,825 @@ summarize_workflow_stlm_ets <- function(wf) {
   .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = TRUE, digits = digits
+  )
+}
+
+#' Summarize an SVM-Poly Workflow
+#'
+#' Extracts and summarizes key information from a fitted SVM-Poly workflow.
+#' SVM (Support Vector Machine) with polynomial kernel is a powerful method
+#' for capturing polynomial relationships in data. Supports both standard
+#' kernlab models and multistep horizon models.
+#'
+#' @param wf A fitted tidymodels workflow containing a parsnip::svm_poly()
+#'   model with engine 'kernlab' or svm_poly_multistep with engine 'svm_poly_multistep_horizon'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including kernel parameters, support vectors, training error, and variable importance.
+#'
+#' @noRd
+summarize_workflow_svm_poly <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6 # Filter out negligible importance values
+
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_svm_poly() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+
+  # Check if it's standard svm_poly or multistep
+  is_multistep <- identical(engine, "svm_poly_multistep_horizon")
+
+  if (!engine %in% c("kernlab", "svm_poly_multistep_horizon")) {
+    stop("summarize_workflow_svm_poly() only supports parsnip::svm_poly() with engine 'kernlab' or svm_poly_multistep with engine 'svm_poly_multistep_horizon'.")
+  }
+
+  # Find the ksvm object(s)
+  find_ksvm <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "ksvm") ||
+        inherits(x, "svm_poly_multistep_fit_impl")
+    }, depth)
+  }
+
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  # parsnip svm_poly args
+  arg_names <- c("cost", "degree", "scale_factor", "margin")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    .format_numeric(val)
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Find the ksvm model object
+  svm_obj <- find_ksvm(fit$fit, scan_depth)
+
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  if (!is.null(svm_obj)) {
+    # Handle multistep vs standard svm_poly differently
+    if (is_multistep && inherits(svm_obj, "svm_poly_multistep_fit_impl")) {
+      # MULTISTEP SVM-POLY
+
+      # Extract individual models from $models list
+      model_list <- svm_obj$models
+      n_models <- length(model_list)
+
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
+
+      # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
+      lag_names <- names(model_list)
+      if (!is.null(lag_names) && length(lag_names) > 0) {
+        lags <- stringr::str_extract(lag_names, "[0-9]+")
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
+      }
+
+      # Aggregate metrics across all models
+      all_n_sv <- c()
+      all_training_error <- c()
+      all_obj_function <- c()
+
+      # Collect importance from all models using vip::vi_permute
+      all_importance <- list()
+
+      for (model_name in names(model_list)) {
+        svm_model <- model_list[[model_name]]
+
+        # Extract the ksvm object from the parsnip model
+        inner_ksvm <- NULL
+
+        # For parsnip svm_poly, the ksvm object is typically at $fit
+        if (inherits(svm_model, "model_fit")) {
+          inner_ksvm <- try(svm_model$fit, silent = TRUE)
+          if (inherits(inner_ksvm, "try-error") || !inherits(inner_ksvm, "ksvm")) {
+            inner_ksvm <- NULL
+          }
+        } else if (inherits(svm_model, "ksvm")) {
+          inner_ksvm <- svm_model
+        }
+
+        if (!is.null(inner_ksvm) && inherits(inner_ksvm, "ksvm")) {
+          # Number of support vectors
+          n_sv <- try(kernlab::nSV(inner_ksvm), silent = TRUE)
+          if (!inherits(n_sv, "try-error") && !is.null(n_sv) && is.finite(n_sv)) {
+            all_n_sv <- c(all_n_sv, n_sv)
+          }
+
+          # Training error
+          train_error <- try(kernlab::error(inner_ksvm), silent = TRUE)
+          if (!inherits(train_error, "try-error") && !is.null(train_error) && is.finite(train_error)) {
+            all_training_error <- c(all_training_error, train_error)
+          }
+
+          # Objective function value
+          obj_val <- try(kernlab::obj(inner_ksvm), silent = TRUE)
+          if (!inherits(obj_val, "try-error") && !is.null(obj_val) && is.finite(obj_val)) {
+            all_obj_function <- c(all_obj_function, obj_val)
+          }
+
+          # Variable importance using vip::vi_permute (requires training data from mold)
+          if (!inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
+            # Prepare training data
+            train_x <- as.data.frame(mold$predictors)
+            train_y <- as.numeric(mold$outcomes[[1]]) # Extract the outcome vector
+
+            # Create predict function for vi_permute that returns a simple numeric vector
+            pred_wrapper <- function(object, newdata) {
+              pred <- try(kernlab::predict(object, as.data.frame(newdata)), silent = TRUE)
+              if (inherits(pred, "try-error")) {
+                return(rep(NA_real_, nrow(newdata)))
+              }
+              # Ensure we return a simple numeric vector
+              result <- c(pred) # c() strips attributes and ensures vector
+              return(as.vector(result))
+            }
+
+            importance <- try(
+              vip::vi_permute(
+                object = inner_ksvm,
+                train = train_x,
+                target = train_y,
+                metric = "rmse",
+                pred_wrapper = pred_wrapper,
+                nsim = 5 # Reduced for speed (5 permutations per feature)
+              ),
+              silent = TRUE
+            )
+
+            if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+              # Filter out features with negligible importance
+              importance <- importance[importance$Importance > importance_threshold, ]
+
+              if (nrow(importance) > 0) {
+                for (i in seq_len(nrow(importance))) {
+                  feat_name <- importance$Variable[i]
+                  importance_val <- importance$Importance[i]
+
+                  # Accumulate importance across models
+                  if (is.null(all_importance[[feat_name]])) {
+                    all_importance[[feat_name]] <- c()
+                  }
+                  all_importance[[feat_name]] <- c(all_importance[[feat_name]], importance_val)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      # Add aggregated metrics
+      if (length(all_n_sv) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_support_vectors", .format_numeric(mean(all_n_sv))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_support_vectors", as.character(sum(all_n_sv))))
+      }
+
+      if (length(all_training_error) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_training_error", .format_numeric(mean(all_training_error))))
+      }
+
+      if (length(all_obj_function) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_objective_value", .format_numeric(mean(all_obj_function))))
+      }
+
+      # Aggregate importance - average across all models (negligible values already excluded)
+      importance_list <- list()
+
+      if (length(all_importance) > 0) {
+        # Calculate average importance for each feature
+        avg_importance <- sapply(all_importance, mean)
+
+        # Sort by importance (descending)
+        sorted_idx <- order(avg_importance, decreasing = TRUE)
+        sorted_names <- names(avg_importance)[sorted_idx]
+        sorted_vals <- avg_importance[sorted_idx]
+
+        # Add all averaged importance values with consistent formatting
+        for (i in seq_along(sorted_names)) {
+          importance_list[[length(importance_list) + 1]] <- .kv(
+            "importance",
+            sorted_names[i],
+            .format_numeric(sorted_vals[i])
+          )
+        }
+      }
+
+      # Combine engine params and importance
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    } else {
+      # STANDARD SVM-POLY
+
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
+
+      # Extract ksvm object if wrapped
+      if (!inherits(svm_obj, "ksvm")) {
+        inner_ksvm <- try(svm_obj$fit, silent = TRUE)
+        if (!inherits(inner_ksvm, "try-error") && inherits(inner_ksvm, "ksvm")) {
+          svm_obj <- inner_ksvm
+        }
+      }
+
+      if (inherits(svm_obj, "ksvm")) {
+        # Kernel type
+        kernel_type <- try(kernlab::kernelf(svm_obj), silent = TRUE)
+        if (!inherits(kernel_type, "try-error") && !is.null(kernel_type)) {
+          kernel_name <- try(class(kernel_type)[1], silent = TRUE)
+          if (!inherits(kernel_name, "try-error")) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "kernel", kernel_name))
+          }
+        }
+
+        # Number of support vectors
+        n_sv <- try(kernlab::nSV(svm_obj), silent = TRUE)
+        if (!inherits(n_sv, "try-error") && !is.null(n_sv) && is.finite(n_sv)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_support_vectors", as.character(n_sv)))
+        }
+
+        # Number of features
+        n_features <- try(svm_obj@nvar, silent = TRUE)
+        if (!inherits(n_features, "try-error") && !is.null(n_features) && is.finite(n_features)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_features", as.character(n_features)))
+        }
+
+        # Training error
+        train_error <- try(kernlab::error(svm_obj), silent = TRUE)
+        if (!inherits(train_error, "try-error") && !is.null(train_error) && is.finite(train_error)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "training_error", .format_numeric(train_error)))
+        }
+
+        # Objective function value (primal or dual)
+        obj_val <- try(kernlab::obj(svm_obj), silent = TRUE)
+        if (!inherits(obj_val, "try-error") && !is.null(obj_val) && is.finite(obj_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "objective_value", .format_numeric(obj_val)))
+        }
+
+        # Cross validation error if available
+        cross_val <- try(kernlab::cross(svm_obj), silent = TRUE)
+        if (!inherits(cross_val, "try-error") && !is.null(cross_val) && is.finite(cross_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "cross_validation_error", .format_numeric(cross_val)))
+        }
+
+        # Get actual parameter values from the model
+        # Cost (C)
+        cost_val <- try(svm_obj@param$C, silent = TRUE)
+        if (!inherits(cost_val, "try-error") && !is.null(cost_val) && is.finite(cost_val)) {
+          if (args_tbl$value[args_tbl$name == "cost"] == "") {
+            args_tbl$value[args_tbl$name == "cost"] <- .format_numeric(cost_val)
+          }
+        }
+
+        # Polynomial kernel parameters (degree, scale, offset)
+        kpar_vals <- try(kernlab::kpar(svm_obj), silent = TRUE)
+        if (!inherits(kpar_vals, "try-error") && !is.null(kpar_vals) && is.list(kpar_vals)) {
+          # Degree
+          if (!is.null(kpar_vals$degree) && is.finite(kpar_vals$degree)) {
+            if (args_tbl$value[args_tbl$name == "degree"] == "") {
+              args_tbl$value[args_tbl$name == "degree"] <- .format_numeric(kpar_vals$degree)
+            }
+          }
+
+          # Scale factor
+          if (!is.null(kpar_vals$scale) && is.finite(kpar_vals$scale)) {
+            if (args_tbl$value[args_tbl$name == "scale_factor"] == "") {
+              args_tbl$value[args_tbl$name == "scale_factor"] <- .format_numeric(kpar_vals$scale)
+            }
+          }
+
+          # Offset (additional kernel parameter)
+          if (!is.null(kpar_vals$offset) && is.finite(kpar_vals$offset)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "offset", .format_numeric(kpar_vals$offset)))
+          }
+        }
+
+        # Epsilon/Margin
+        epsilon_val <- try(svm_obj@param$epsilon, silent = TRUE)
+        if (!inherits(epsilon_val, "try-error") && !is.null(epsilon_val) && is.finite(epsilon_val)) {
+          if (args_tbl$value[args_tbl$name == "margin"] == "") {
+            args_tbl$value[args_tbl$name == "margin"] <- .format_numeric(epsilon_val)
+          }
+        }
+
+        # Number of training instances (alternative method using xmatrix)
+        n_train <- try(nrow(svm_obj@xmatrix), silent = TRUE)
+        if (!inherits(n_train, "try-error") && !is.null(n_train) && is.finite(n_train) && n_train > 0) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(n_train)))
+        }
+
+        # SVM type
+        svm_type <- try(svm_obj@type, silent = TRUE)
+        if (!inherits(svm_type, "try-error") && !is.null(svm_type)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "svm_type", as.character(svm_type)))
+        }
+
+        # Scaling information
+        scaling_info <- try(svm_obj@scaling, silent = TRUE)
+        if (!inherits(scaling_info, "try-error") && !is.null(scaling_info)) {
+          if (is.list(scaling_info) && !is.null(scaling_info$scaled)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scaled", as.character(scaling_info$scaled)))
+          }
+        }
+
+        # Variable importance using vip::vi_permute (requires training data from mold)
+        if (!inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
+          # Prepare training data
+          train_x <- as.data.frame(mold$predictors)
+          train_y <- as.numeric(mold$outcomes[[1]]) # Extract the outcome vector
+
+          # Create predict function for vi_permute that returns a simple numeric vector
+          pred_wrapper <- function(object, newdata) {
+            pred <- try(kernlab::predict(object, as.data.frame(newdata)), silent = TRUE)
+            if (inherits(pred, "try-error")) {
+              return(rep(NA_real_, nrow(newdata)))
+            }
+            # Ensure we return a simple numeric vector
+            result <- c(pred) # c() strips attributes and ensures vector
+            return(as.vector(result))
+          }
+
+          importance <- try(
+            vip::vi_permute(
+              object = svm_obj,
+              train = train_x,
+              target = train_y,
+              metric = "rmse",
+              pred_wrapper = pred_wrapper,
+              nsim = 5 # Reduced for speed (5 permutations per feature)
+            ),
+            silent = TRUE
+          )
+
+          importance_list <- list()
+
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
+
+            if (nrow(importance) > 0) {
+              # vi_permute returns sorted by Importance (descending)
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
+
+                importance_list[[length(importance_list) + 1]] <- .kv(
+                  "importance",
+                  feat_name,
+                  .format_numeric(importance_val)
+                )
+              }
+            }
+          }
+
+          if (length(importance_list) > 0) {
+            importance_tbl <- dplyr::bind_rows(importance_list)
+            eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+          }
+        }
+      }
+    }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize an SVM-RBF Workflow
+#'
+#' Extracts and summarizes key information from a fitted SVM-RBF workflow.
+#' SVM (Support Vector Machine) with RBF (Radial Basis Function) kernel is a
+#' powerful non-linear regression method. Supports both standard kernlab models
+#' and multistep horizon models.
+#'
+#' @param wf A fitted tidymodels workflow containing a parsnip::svm_rbf()
+#'   model with engine 'kernlab' or svm_rbf_multistep with engine 'svm_rbf_multistep_horizon'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including kernel parameters, support vectors, training error, and variable importance.
+#'
+#' @noRd
+summarize_workflow_svm_rbf <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6 # Filter out negligible importance values
+
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_svm_rbf() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+
+  # Check if it's standard svm_rbf or multistep
+  is_multistep <- identical(engine, "svm_rbf_multistep_horizon")
+
+  if (!engine %in% c("kernlab", "svm_rbf_multistep_horizon")) {
+    stop("summarize_workflow_svm_rbf() only supports parsnip::svm_rbf() with engine 'kernlab' or svm_rbf_multistep with engine 'svm_rbf_multistep_horizon'.")
+  }
+
+  # Find the ksvm object(s)
+  find_ksvm <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "ksvm") ||
+        inherits(x, "svm_rbf_multistep_fit_impl")
+    }, depth)
+  }
+
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  # parsnip svm_rbf args
+  arg_names <- c("cost", "rbf_sigma", "margin")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    .format_numeric(val)
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Find the ksvm model object
+  svm_obj <- find_ksvm(fit$fit, scan_depth)
+
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  if (!is.null(svm_obj)) {
+    # Handle multistep vs standard svm_rbf differently
+    if (is_multistep && inherits(svm_obj, "svm_rbf_multistep_fit_impl")) {
+      # MULTISTEP SVM-RBF
+
+      # Extract individual models from $models list
+      model_list <- svm_obj$models
+      n_models <- length(model_list)
+
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
+
+      # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
+      lag_names <- names(model_list)
+      if (!is.null(lag_names) && length(lag_names) > 0) {
+        lags <- stringr::str_extract(lag_names, "[0-9]+")
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
+      }
+
+      # Aggregate metrics across all models
+      all_n_sv <- c()
+      all_training_error <- c()
+      all_obj_function <- c()
+
+      # Collect importance from all models using vip::vi_permute
+      all_importance <- list()
+
+      for (model_name in names(model_list)) {
+        svm_model <- model_list[[model_name]]
+
+        # Extract the ksvm object from the parsnip model
+        inner_ksvm <- NULL
+
+        # For parsnip svm_rbf, the ksvm object is typically at $fit
+        if (inherits(svm_model, "model_fit")) {
+          inner_ksvm <- try(svm_model$fit, silent = TRUE)
+          if (inherits(inner_ksvm, "try-error") || !inherits(inner_ksvm, "ksvm")) {
+            inner_ksvm <- NULL
+          }
+        } else if (inherits(svm_model, "ksvm")) {
+          inner_ksvm <- svm_model
+        }
+
+        if (!is.null(inner_ksvm) && inherits(inner_ksvm, "ksvm")) {
+          # Number of support vectors
+          n_sv <- try(kernlab::nSV(inner_ksvm), silent = TRUE)
+          if (!inherits(n_sv, "try-error") && !is.null(n_sv) && is.finite(n_sv)) {
+            all_n_sv <- c(all_n_sv, n_sv)
+          }
+
+          # Training error
+          train_error <- try(kernlab::error(inner_ksvm), silent = TRUE)
+          if (!inherits(train_error, "try-error") && !is.null(train_error) && is.finite(train_error)) {
+            all_training_error <- c(all_training_error, train_error)
+          }
+
+          # Objective function value
+          obj_val <- try(kernlab::obj(inner_ksvm), silent = TRUE)
+          if (!inherits(obj_val, "try-error") && !is.null(obj_val) && is.finite(obj_val)) {
+            all_obj_function <- c(all_obj_function, obj_val)
+          }
+
+          # Variable importance using vip::vi_permute (requires training data from mold)
+          if (!inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
+            # Prepare training data
+            train_x <- as.data.frame(mold$predictors)
+            train_y <- as.numeric(mold$outcomes[[1]]) # Extract the outcome vector
+
+            # Create predict function for vi_permute that returns a simple numeric vector
+            pred_wrapper <- function(object, newdata) {
+              pred <- try(kernlab::predict(object, as.data.frame(newdata)), silent = TRUE)
+              if (inherits(pred, "try-error")) {
+                return(rep(NA_real_, nrow(newdata)))
+              }
+              # Ensure we return a simple numeric vector
+              result <- c(pred) # c() strips attributes and ensures vector
+              return(as.vector(result))
+            }
+
+            importance <- try(
+              vip::vi_permute(
+                object = inner_ksvm,
+                train = train_x,
+                target = train_y,
+                metric = "rmse",
+                pred_wrapper = pred_wrapper,
+                nsim = 5 # Reduced for speed (5 permutations per feature)
+              ),
+              silent = TRUE
+            )
+
+            if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+              # Filter out features with negligible importance
+              importance <- importance[importance$Importance > importance_threshold, ]
+
+              if (nrow(importance) > 0) {
+                for (i in seq_len(nrow(importance))) {
+                  feat_name <- importance$Variable[i]
+                  importance_val <- importance$Importance[i]
+
+                  # Accumulate importance across models
+                  if (is.null(all_importance[[feat_name]])) {
+                    all_importance[[feat_name]] <- c()
+                  }
+                  all_importance[[feat_name]] <- c(all_importance[[feat_name]], importance_val)
+                }
+              }
+            }
+          }
+        }
+      }
+
+      # Add aggregated metrics
+      if (length(all_n_sv) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_support_vectors", .format_numeric(mean(all_n_sv))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_support_vectors", as.character(sum(all_n_sv))))
+      }
+
+      if (length(all_training_error) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_training_error", .format_numeric(mean(all_training_error))))
+      }
+
+      if (length(all_obj_function) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_objective_value", .format_numeric(mean(all_obj_function))))
+      }
+
+      # Aggregate importance - average across all models (negligible values already excluded)
+      importance_list <- list()
+
+      if (length(all_importance) > 0) {
+        # Calculate average importance for each feature
+        avg_importance <- sapply(all_importance, mean)
+
+        # Sort by importance (descending)
+        sorted_idx <- order(avg_importance, decreasing = TRUE)
+        sorted_names <- names(avg_importance)[sorted_idx]
+        sorted_vals <- avg_importance[sorted_idx]
+
+        # Add all averaged importance values with consistent formatting
+        for (i in seq_along(sorted_names)) {
+          importance_list[[length(importance_list) + 1]] <- .kv(
+            "importance",
+            sorted_names[i],
+            .format_numeric(sorted_vals[i])
+          )
+        }
+      }
+
+      # Combine engine params and importance
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    } else {
+      # STANDARD SVM-RBF
+
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
+
+      # Extract ksvm object if wrapped
+      if (!inherits(svm_obj, "ksvm")) {
+        inner_ksvm <- try(svm_obj$fit, silent = TRUE)
+        if (!inherits(inner_ksvm, "try-error") && inherits(inner_ksvm, "ksvm")) {
+          svm_obj <- inner_ksvm
+        }
+      }
+
+      if (inherits(svm_obj, "ksvm")) {
+        # Kernel type
+        kernel_type <- try(kernlab::kernelf(svm_obj), silent = TRUE)
+        if (!inherits(kernel_type, "try-error") && !is.null(kernel_type)) {
+          kernel_name <- try(class(kernel_type)[1], silent = TRUE)
+          if (!inherits(kernel_name, "try-error")) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "kernel", kernel_name))
+          }
+        }
+
+        # Number of support vectors
+        n_sv <- try(kernlab::nSV(svm_obj), silent = TRUE)
+        if (!inherits(n_sv, "try-error") && !is.null(n_sv) && is.finite(n_sv)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_support_vectors", as.character(n_sv)))
+        }
+
+        # Number of features
+        n_features <- try(svm_obj@nvar, silent = TRUE)
+        if (!inherits(n_features, "try-error") && !is.null(n_features) && is.finite(n_features)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_features", as.character(n_features)))
+        }
+
+        # Training error
+        train_error <- try(kernlab::error(svm_obj), silent = TRUE)
+        if (!inherits(train_error, "try-error") && !is.null(train_error) && is.finite(train_error)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "training_error", .format_numeric(train_error)))
+        }
+
+        # Objective function value (primal or dual)
+        obj_val <- try(kernlab::obj(svm_obj), silent = TRUE)
+        if (!inherits(obj_val, "try-error") && !is.null(obj_val) && is.finite(obj_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "objective_value", .format_numeric(obj_val)))
+        }
+
+        # Cross validation error if available
+        cross_val <- try(kernlab::cross(svm_obj), silent = TRUE)
+        if (!inherits(cross_val, "try-error") && !is.null(cross_val) && is.finite(cross_val)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "cross_validation_error", .format_numeric(cross_val)))
+        }
+
+        # Get actual parameter values from the model
+        # Cost (C)
+        cost_val <- try(svm_obj@param$C, silent = TRUE)
+        if (!inherits(cost_val, "try-error") && !is.null(cost_val) && is.finite(cost_val)) {
+          if (args_tbl$value[args_tbl$name == "cost"] == "") {
+            args_tbl$value[args_tbl$name == "cost"] <- .format_numeric(cost_val)
+          }
+        }
+
+        # Sigma (for RBF kernel)
+        sigma_val <- try(kernlab::kpar(svm_obj)$sigma, silent = TRUE)
+        if (!inherits(sigma_val, "try-error") && !is.null(sigma_val) && is.finite(sigma_val)) {
+          if (args_tbl$value[args_tbl$name == "rbf_sigma"] == "") {
+            args_tbl$value[args_tbl$name == "rbf_sigma"] <- .format_numeric(sigma_val)
+          }
+        }
+
+        # Epsilon/Margin
+        epsilon_val <- try(svm_obj@param$epsilon, silent = TRUE)
+        if (!inherits(epsilon_val, "try-error") && !is.null(epsilon_val) && is.finite(epsilon_val)) {
+          if (args_tbl$value[args_tbl$name == "margin"] == "") {
+            args_tbl$value[args_tbl$name == "margin"] <- .format_numeric(epsilon_val)
+          }
+        }
+
+        # Number of training instances (alternative method using xmatrix)
+        n_train <- try(nrow(svm_obj@xmatrix), silent = TRUE)
+        if (!inherits(n_train, "try-error") && !is.null(n_train) && is.finite(n_train) && n_train > 0) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(n_train)))
+        }
+
+        # SVM type
+        svm_type <- try(svm_obj@type, silent = TRUE)
+        if (!inherits(svm_type, "try-error") && !is.null(svm_type)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "svm_type", as.character(svm_type)))
+        }
+
+        # Scaling information
+        scaling_info <- try(svm_obj@scaling, silent = TRUE)
+        if (!inherits(scaling_info, "try-error") && !is.null(scaling_info)) {
+          if (is.list(scaling_info) && !is.null(scaling_info$scaled)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "scaled", as.character(scaling_info$scaled)))
+          }
+        }
+
+        # Variable importance using vip::vi_permute (requires training data from mold)
+        if (!inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
+          # Prepare training data
+          train_x <- as.data.frame(mold$predictors)
+          train_y <- as.numeric(mold$outcomes[[1]]) # Extract the outcome vector
+
+          # Create predict function for vi_permute that returns a simple numeric vector
+          pred_wrapper <- function(object, newdata) {
+            pred <- try(kernlab::predict(object, as.data.frame(newdata)), silent = TRUE)
+            if (inherits(pred, "try-error")) {
+              return(rep(NA_real_, nrow(newdata)))
+            }
+            # Ensure we return a simple numeric vector
+            result <- c(pred) # c() strips attributes and ensures vector
+            return(as.vector(result))
+          }
+
+          importance <- try(
+            vip::vi_permute(
+              object = svm_obj,
+              train = train_x,
+              target = train_y,
+              metric = "rmse",
+              pred_wrapper = pred_wrapper,
+              nsim = 5 # Reduced for speed (5 permutations per feature)
+            ),
+            silent = TRUE
+          )
+
+          importance_list <- list()
+
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
+
+            if (nrow(importance) > 0) {
+              # vi_permute returns sorted by Importance (descending)
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
+
+                importance_list[[length(importance_list) + 1]] <- .kv(
+                  "importance",
+                  feat_name,
+                  .format_numeric(importance_val)
+                )
+              }
+            }
+          }
+
+          if (length(importance_list) > 0) {
+            importance_tbl <- dplyr::bind_rows(importance_list)
+            eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+          }
+        }
+      }
+    }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
   )
 }
 
