@@ -610,6 +610,302 @@ summarize_workflow_arimax <- function(wf) {
   out
 }
 
+#' Summarize an ARIMA Boost Workflow
+#'
+#' Extracts and summarizes key information from a fitted ARIMA Boost workflow.
+#' ARIMA Boost combines an ARIMA model for trend with an XGBoost model for residuals,
+#' providing both time series structure and machine learning capabilities.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::arima_boost()
+#'   model with engine 'auto_arima_xgboost'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including ARIMA parameters, XGBoost hyperparameters, and variable importance.
+#'
+#' @noRd
+summarize_workflow_arima_boost <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  add_diagnostics <- TRUE
+  importance_threshold <- 1e-6
+
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_arima_boost() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "auto_arima_xgboost")) {
+    stop("summarize_workflow_arima_boost() only supports modeltime::arima_boost() with engine 'auto_arima_xgboost'.")
+  }
+
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+
+  # Find the underlying forecast::Arima object for ARIMA component
+  find_arima <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "Arima") || (!is.null(x$arma) && !is.null(x$coef))
+    }, depth)
+  }
+
+  # Find the xgboost object for XGBoost component
+  find_xgboost <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "xgb.Booster") ||
+        (is.list(x) && !is.null(x$handle) && inherits(x$handle, "xgb.Booster.handle"))
+    }, depth)
+  }
+
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  # Model arguments - combine ARIMA and XGBoost parameters
+  # ARIMA parameters
+  arima_arg_names <- c(
+    "non_seasonal_ar", "non_seasonal_differences", "non_seasonal_ma",
+    "seasonal_ar", "seasonal_differences", "seasonal_ma", "seasonal_period"
+  )
+  # XGBoost parameters
+  xgb_arg_names <- c(
+    "tree_depth", "trees", "learn_rate", "mtry", "min_n",
+    "loss_reduction", "sample_size", "stop_iter"
+  )
+
+  all_arg_names <- c(arima_arg_names, xgb_arg_names)
+  arg_vals <- vapply(all_arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    if (nm %in% xgb_arg_names) {
+      .format_numeric(val)
+    } else {
+      val
+    }
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = all_arg_names, value = arg_vals)
+
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Add model type indicator
+  eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "ARIMA-Boost Hybrid"))
+
+  # ARIMA Component
+  arima_obj <- find_arima(fit$fit, scan_depth)
+  p <- q <- P <- Q <- d <- D <- m <- NA_integer_
+
+  if (!is.null(arima_obj)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arima_component", "present"))
+
+    arma <- try(arima_obj$arma, silent = TRUE)
+    if (!inherits(arma, "try-error") && length(arma) >= 7) {
+      p <- arma[1]
+      q <- arma[2]
+      P <- arma[3]
+      Q <- arma[4]
+      m <- arma[5]
+      d <- arma[6]
+      D <- arma[7]
+
+      # Update ARIMA args with actual values
+      actuals <- c(
+        non_seasonal_ar          = p,
+        non_seasonal_differences = d,
+        non_seasonal_ma          = q,
+        seasonal_ar              = P,
+        seasonal_differences     = D,
+        seasonal_ma              = Q,
+        seasonal_period          = m
+      )
+      for (nm in names(actuals)) {
+        if (nm %in% args_tbl$name) {
+          args_tbl$value[args_tbl$name == nm] <- as.character(actuals[[nm]])
+        }
+      }
+    }
+
+    # ARIMA order strings
+    if (is.finite(p) && is.finite(d) && is.finite(q)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arima_order", sprintf("(%d,%d,%d)", p, d, q)))
+    }
+    if (is.finite(P) && is.finite(D) && is.finite(Q) && is.finite(m)) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arima_seasonal_order", sprintf("(%d,%d,%d)[%d]", P, D, Q, m)))
+    }
+
+    # ARIMA info criteria
+    for (nm in c("aic", "aicc", "bic", "sigma2", "loglik")) {
+      val <- try(arima_obj[[nm]], silent = TRUE)
+      if (!inherits(val, "try-error") && !is.null(val) && is.finite(val)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("arima_", nm), as.character(signif(val, digits))))
+      }
+    }
+
+    # ARIMA coefficients
+    coefs <- try(arima_obj$coef, silent = TRUE)
+    if (!inherits(coefs, "try-error") && !is.null(coefs) && length(coefs)) {
+      cn <- names(coefs)
+      if (is.null(cn)) {
+        cn <- paste0("arima_coef[", seq_along(coefs), "]")
+      } else {
+        cn <- paste0("arima_", cn)
+      }
+
+      coef_tbl <- tibble::tibble(
+        section = "coefficient",
+        name = cn,
+        value = as.character(signif(as.numeric(coefs), digits))
+      )
+      eng_tbl <- dplyr::bind_rows(eng_tbl, coef_tbl)
+    }
+
+    # ARIMA diagnostics
+    if (isTRUE(add_diagnostics)) {
+      resids <- try(arima_obj$residuals, silent = TRUE)
+      if (!inherits(resids, "try-error") && !is.null(resids) && length(resids) > 0) {
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", "arima_residuals_mean", as.character(signif(mean(resids, na.rm = TRUE), digits))),
+          .kv("engine_param", "arima_residuals_sd", as.character(signif(sd(resids, na.rm = TRUE), digits)))
+        )
+      }
+    }
+  } else {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "arima_component", "not_found"))
+  }
+
+  # XGBoost Component
+  xgb_obj <- find_xgboost(fit$fit, scan_depth)
+
+  if (!is.null(xgb_obj)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgboost_component", "present"))
+
+    # Extract xgb.Booster if wrapped
+    if (!inherits(xgb_obj, "xgb.Booster")) {
+      inner_xgb <- try(xgb_obj$fit, silent = TRUE)
+      if (!inherits(inner_xgb, "try-error") && inherits(inner_xgb, "xgb.Booster")) {
+        xgb_obj <- inner_xgb
+      }
+    }
+
+    if (inherits(xgb_obj, "xgb.Booster")) {
+      # Number of boosting rounds
+      niter <- try(xgb_obj$niter, silent = TRUE)
+      if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgb_nrounds", as.character(niter)))
+
+        # Update args_tbl if trees was "auto"
+        if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
+          args_tbl$value[args_tbl$name == "trees"] <- as.character(niter)
+        }
+      }
+
+      # Get training parameters
+      params <- try(xgb_obj$params, silent = TRUE)
+      if (!inherits(params, "try-error") && !is.null(params) && is.list(params)) {
+        param_names <- c("objective", "eval_metric", "tree_method")
+
+        for (pname in param_names) {
+          pval <- params[[pname]]
+          if (!is.null(pval)) {
+            if (is.numeric(pval)) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("xgb_", pname), .format_numeric(pval)))
+            } else {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("xgb_", pname), as.character(pval)))
+            }
+          }
+        }
+
+        # Update args_tbl with actual parameter values if they were "auto"
+        param_map <- list(
+          tree_depth = "max_depth",
+          learn_rate = "eta",
+          min_n = "min_child_weight",
+          loss_reduction = "gamma",
+          sample_size = "subsample"
+        )
+
+        for (arg_name in names(param_map)) {
+          param_name <- param_map[[arg_name]]
+          if (args_tbl$value[args_tbl$name == arg_name] == "auto" && !is.null(params[[param_name]])) {
+            args_tbl$value[args_tbl$name == arg_name] <- .format_numeric(params[[param_name]])
+          }
+        }
+
+        # Handle mtry specially
+        if (args_tbl$value[args_tbl$name == "mtry"] == "auto") {
+          if (!is.null(params$colsample_bynode)) {
+            args_tbl$value[args_tbl$name == "mtry"] <- .format_numeric(params$colsample_bynode)
+          } else if (!is.null(params$colsample_bytree)) {
+            args_tbl$value[args_tbl$name == "mtry"] <- .format_numeric(params$colsample_bytree)
+          }
+        }
+      }
+
+      # Variable importance
+      importance <- try(vip::vi(xgb_obj), silent = TRUE)
+      importance_list <- list()
+
+      if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+        # Filter out features with negligible importance
+        importance <- importance[importance$Importance > importance_threshold, ]
+
+        if (nrow(importance) > 0) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgb_n_important_features", as.character(nrow(importance))))
+
+          for (i in seq_len(nrow(importance))) {
+            feat_name <- importance$Variable[i]
+            importance_val <- importance$Importance[i]
+
+            importance_list[[length(importance_list) + 1]] <- .kv(
+              "importance",
+              feat_name,
+              .format_numeric(importance_val)
+            )
+          }
+        } else {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgb_n_important_features", "0"))
+        }
+      }
+
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    }
+  } else {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgboost_component", "not_found"))
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
 #' Summarize a Croston Workflow
 #'
 #' Extracts and summarizes key information from a fitted Croston model workflow,
@@ -3397,6 +3693,498 @@ summarize_workflow_prophet <- function(wf) {
 
   # Return the combined table
   .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize a Prophet Boost Workflow
+#'
+#' Extracts and summarizes key information from a fitted Prophet Boost workflow.
+#' Prophet Boost combines Prophet's trend and seasonality modeling with XGBoost
+#' for residuals, providing both time series structure and machine learning capabilities.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::prophet_boost()
+#'   model with engine 'prophet_xgboost'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including Prophet parameters (growth, changepoints, seasonalities),
+#'   XGBoost hyperparameters, and variable importance.
+#'
+#' @noRd
+summarize_workflow_prophet_boost <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6
+
+  # Numeric formatting constants
+  NUM_FORMAT_SMALL_THRESHOLD <- 0.01
+  NUM_FORMAT_LARGE_THRESHOLD <- 100
+  NUM_FORMAT_PRECISION <- 4
+
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_prophet_boost() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "prophet_xgboost")) {
+    stop("summarize_workflow_prophet_boost() only supports modeltime::prophet_boost() with engine 'prophet_xgboost'.")
+  }
+
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+
+  # Specific predicates for Prophet and XGBoost
+  is_prophet <- function(o) {
+    inherits(o, "prophet") ||
+      (is.list(o) && !is.null(o$growth)) ||
+      (is.list(o) && !is.null(o$changepoints)) ||
+      (is.list(o) && !is.null(o$seasonalities))
+  }
+
+  find_xgboost <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "xgb.Booster") ||
+        (is.list(x) && "handle" %in% names(x) && inherits(x$handle, "xgb.Booster.handle"))
+    }, depth)
+  }
+
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Check for regressors (non-date predictors)
+  xreg_names <- character()
+  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    xreg_names <- names(mold$predictors)[!is_date]
+
+    # Update predictor types to indicate which are external regressors
+    if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
+      preds_tbl$value[preds_tbl$name %in% xreg_names] <-
+        paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [regressor]")
+    }
+  }
+
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  # Model arguments - combine Prophet and XGBoost parameters
+  # Prophet parameters
+  prophet_arg_names <- c(
+    "growth", "changepoint_num", "changepoint_range", "seasonality_yearly",
+    "seasonality_weekly", "seasonality_daily", "season", "prior_scale_changepoints",
+    "prior_scale_seasonality", "prior_scale_holidays", "logistic_cap", "logistic_floor"
+  )
+  # XGBoost parameters
+  xgb_arg_names <- c(
+    "tree_depth", "trees", "learn_rate", "mtry", "min_n",
+    "loss_reduction", "sample_size", "stop_iter"
+  )
+
+  all_arg_names <- c(prophet_arg_names, xgb_arg_names)
+  arg_vals <- vapply(all_arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    if (nm %in% xgb_arg_names) {
+      .format_numeric(val)
+    } else if (nm %in% prophet_arg_names) {
+      # Format numeric Prophet values to reasonable precision
+      num_val <- suppressWarnings(as.numeric(val))
+      if (!is.na(num_val) && is.finite(num_val)) {
+        if (abs(num_val) < NUM_FORMAT_SMALL_THRESHOLD || abs(num_val) > NUM_FORMAT_LARGE_THRESHOLD) {
+          val <- as.character(signif(num_val, NUM_FORMAT_PRECISION))
+        } else {
+          val <- as.character(round(num_val, NUM_FORMAT_PRECISION))
+        }
+      }
+      val
+    } else {
+      val
+    }
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = all_arg_names, value = arg_vals)
+
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Add model type indicator
+  eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Prophet-Boost Hybrid"))
+
+  # Prophet Component
+  engine_fit <- fit$fit
+  prophet_obj <- .find_obj(engine_fit, is_prophet, scan_depth)
+
+  # Also check if the fit itself is a Prophet object or in models structure
+  if (is.null(prophet_obj) && is_prophet(engine_fit)) {
+    prophet_obj <- engine_fit
+  }
+  if (is.null(prophet_obj)) {
+    if (!is.null(engine_fit$models) && !is.null(engine_fit$models$model_1)) {
+      if (is_prophet(engine_fit$models$model_1)) {
+        prophet_obj <- engine_fit$models$model_1
+      }
+    }
+  }
+
+  if (!is.null(prophet_obj)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "prophet_component", "present"))
+
+    # Override "auto" values in args_tbl with actual fitted values
+
+    # Growth
+    if (any(args_tbl$name == "growth" & args_tbl$value == "auto")) {
+      if (!is.null(prophet_obj$growth)) {
+        args_tbl$value[args_tbl$name == "growth"] <- as.character(prophet_obj$growth)
+      }
+    }
+
+    # Changepoint num
+    if (any(args_tbl$name == "changepoint_num" & args_tbl$value == "auto")) {
+      if (!is.null(prophet_obj$changepoints) && length(prophet_obj$changepoints) > 0) {
+        args_tbl$value[args_tbl$name == "changepoint_num"] <- as.character(length(prophet_obj$changepoints))
+      }
+    }
+
+    # Changepoint range
+    if (any(args_tbl$name == "changepoint_range" & args_tbl$value == "auto")) {
+      if (!is.null(prophet_obj$changepoint.range) && is.numeric(prophet_obj$changepoint.range) && is.finite(prophet_obj$changepoint.range)) {
+        args_tbl$value[args_tbl$name == "changepoint_range"] <- as.character(round(prophet_obj$changepoint.range, NUM_FORMAT_PRECISION))
+      }
+    }
+
+    # Prior scale changepoints
+    if (any(args_tbl$name == "prior_scale_changepoints" & args_tbl$value == "auto")) {
+      if (!is.null(prophet_obj$changepoint.prior.scale) && is.numeric(prophet_obj$changepoint.prior.scale) && is.finite(prophet_obj$changepoint.prior.scale)) {
+        args_tbl$value[args_tbl$name == "prior_scale_changepoints"] <- as.character(signif(prophet_obj$changepoint.prior.scale, NUM_FORMAT_PRECISION))
+      }
+    }
+
+    # Prior scale seasonality
+    if (any(args_tbl$name == "prior_scale_seasonality" & args_tbl$value == "auto")) {
+      if (!is.null(prophet_obj$seasonality.prior.scale) && is.numeric(prophet_obj$seasonality.prior.scale) && is.finite(prophet_obj$seasonality.prior.scale)) {
+        args_tbl$value[args_tbl$name == "prior_scale_seasonality"] <- as.character(signif(prophet_obj$seasonality.prior.scale, NUM_FORMAT_PRECISION))
+      }
+    }
+
+    # Prior scale holidays
+    if (any(args_tbl$name == "prior_scale_holidays" & args_tbl$value == "auto")) {
+      actual_holiday_prior <- prophet_obj$holidays.prior.scale
+      if (!is.null(actual_holiday_prior) && is.numeric(actual_holiday_prior) && is.finite(actual_holiday_prior)) {
+        args_tbl$value[args_tbl$name == "prior_scale_holidays"] <- as.character(signif(actual_holiday_prior, NUM_FORMAT_PRECISION))
+      }
+    }
+
+    # Season mode
+    if (any(args_tbl$name == "season" & args_tbl$value == "auto")) {
+      actual_season_mode <- prophet_obj$seasonality.mode
+      if (!is.null(actual_season_mode)) {
+        args_tbl$value[args_tbl$name == "season"] <- as.character(actual_season_mode)
+      }
+    }
+
+    # Seasonalities - check which are actually present
+    seasonalities_found <- FALSE
+    if (!is.null(prophet_obj$seasonalities)) {
+      if (is.data.frame(prophet_obj$seasonalities) && nrow(prophet_obj$seasonalities) > 0) {
+        seasonalities_found <- TRUE
+        season_names <- tolower(as.character(prophet_obj$seasonalities$name))
+
+        # Update yearly
+        if (any(args_tbl$name == "seasonality_yearly" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_yearly"] <- ifelse("yearly" %in% season_names, "TRUE", "FALSE")
+        }
+        # Update weekly
+        if (any(args_tbl$name == "seasonality_weekly" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_weekly"] <- ifelse("weekly" %in% season_names, "TRUE", "FALSE")
+        }
+        # Update daily
+        if (any(args_tbl$name == "seasonality_daily" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_daily"] <- ifelse("daily" %in% season_names, "TRUE", "FALSE")
+        }
+      } else if (is.list(prophet_obj$seasonalities) && length(prophet_obj$seasonalities) > 0) {
+        # Sometimes seasonalities is a list instead of dataframe
+        seasonalities_found <- TRUE
+        season_names <- tolower(names(prophet_obj$seasonalities))
+
+        # Update yearly
+        if (any(args_tbl$name == "seasonality_yearly" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_yearly"] <- ifelse("yearly" %in% season_names, "TRUE", "FALSE")
+        }
+        # Update weekly
+        if (any(args_tbl$name == "seasonality_weekly" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_weekly"] <- ifelse("weekly" %in% season_names, "TRUE", "FALSE")
+        }
+        # Update daily
+        if (any(args_tbl$name == "seasonality_daily" & args_tbl$value == "auto")) {
+          args_tbl$value[args_tbl$name == "seasonality_daily"] <- ifelse("daily" %in% season_names, "TRUE", "FALSE")
+        }
+      }
+    }
+
+    # If no seasonalities found at all, set to FALSE
+    if (!seasonalities_found) {
+      if (any(args_tbl$name == "seasonality_yearly" & args_tbl$value == "auto")) {
+        args_tbl$value[args_tbl$name == "seasonality_yearly"] <- "FALSE"
+      }
+      if (any(args_tbl$name == "seasonality_weekly" & args_tbl$value == "auto")) {
+        args_tbl$value[args_tbl$name == "seasonality_weekly"] <- "FALSE"
+      }
+      if (any(args_tbl$name == "seasonality_daily" & args_tbl$value == "auto")) {
+        args_tbl$value[args_tbl$name == "seasonality_daily"] <- "FALSE"
+      }
+    }
+
+    # Logistic cap and floor - only relevant for logistic growth
+    if (!is.null(prophet_obj$growth) && prophet_obj$growth == "logistic") {
+      # Check for cap and floor in the history data
+      if (!is.null(prophet_obj$history)) {
+        if ("cap" %in% names(prophet_obj$history) && any(args_tbl$name == "logistic_cap" & args_tbl$value == "auto")) {
+          cap_vals <- unique(prophet_obj$history$cap)
+          if (length(cap_vals) == 1 && is.finite(cap_vals)) {
+            args_tbl$value[args_tbl$name == "logistic_cap"] <- as.character(signif(cap_vals, NUM_FORMAT_PRECISION))
+          }
+        }
+        if ("floor" %in% names(prophet_obj$history) && any(args_tbl$name == "logistic_floor" & args_tbl$value == "auto")) {
+          floor_vals <- unique(prophet_obj$history$floor)
+          if (length(floor_vals) == 1 && is.finite(floor_vals)) {
+            args_tbl$value[args_tbl$name == "logistic_floor"] <- as.character(signif(floor_vals, NUM_FORMAT_PRECISION))
+          }
+        }
+      }
+    } else {
+      # For non-logistic growth, these aren't used
+      if (any(args_tbl$name == "logistic_cap" & args_tbl$value == "auto")) {
+        args_tbl$value[args_tbl$name == "logistic_cap"] <- "not_used"
+      }
+      if (any(args_tbl$name == "logistic_floor" & args_tbl$value == "auto")) {
+        args_tbl$value[args_tbl$name == "logistic_floor"] <- "not_used"
+      }
+    }
+
+    # Changepoints - show last few only (don't duplicate the count)
+    if (!is.null(prophet_obj$changepoints) && length(prophet_obj$changepoints) > 0) {
+      n_changepoints <- length(prophet_obj$changepoints)
+
+      # Show last few changepoints
+      cp_to_show <- min(3, n_changepoints)
+      cp_start_idx <- n_changepoints - cp_to_show + 1
+
+      for (i in seq_len(cp_to_show)) {
+        actual_idx <- cp_start_idx + i - 1
+        label <- if (n_changepoints <= 3) {
+          paste0("prophet_changepoint_", i)
+        } else {
+          paste0("prophet_changepoint_last_", i)
+        }
+        eng_tbl <- dplyr::bind_rows(
+          eng_tbl,
+          .kv("engine_param", label, as.character(prophet_obj$changepoints[actual_idx]))
+        )
+      }
+    }
+
+    # Seasonalities - detailed information
+    if (!is.null(prophet_obj$seasonalities)) {
+      seasons <- prophet_obj$seasonalities
+      if (is.data.frame(seasons) && nrow(seasons) > 0) {
+        for (i in 1:nrow(seasons)) {
+          season_name <- seasons$name[i]
+          season_period <- seasons$period[i]
+          season_fourier <- seasons$fourier.order[i]
+
+          if (is.finite(season_period)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv(
+                "engine_param", paste0("prophet_seasonality_", season_name, "_period"),
+                as.character(signif(season_period, digits))
+              )
+            )
+          }
+
+          if (is.finite(season_fourier)) {
+            eng_tbl <- dplyr::bind_rows(
+              eng_tbl,
+              .kv(
+                "engine_param", paste0("prophet_seasonality_", season_name, "_fourier_order"),
+                as.character(season_fourier)
+              )
+            )
+          }
+        }
+      }
+    }
+
+    # Holidays
+    if (!is.null(prophet_obj$holidays)) {
+      holidays_df <- prophet_obj$holidays
+      if (is.data.frame(holidays_df) && nrow(holidays_df) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
+          "engine_param", "prophet_n_holidays",
+          as.character(nrow(holidays_df))
+        ))
+
+        unique_holidays <- unique(holidays_df$holiday)
+        if (length(unique_holidays) > 0) {
+          holiday_list <- paste(head(unique_holidays, 5), collapse = ", ")
+          if (length(unique_holidays) > 5) {
+            holiday_list <- paste0(holiday_list, ", ...")
+          }
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "prophet_holidays", holiday_list))
+        }
+      }
+    }
+
+    # Extra regressors summary
+    if (!is.null(prophet_obj$extra_regressors)) {
+      extra_regs <- prophet_obj$extra_regressors
+      if (is.list(extra_regs) && length(extra_regs) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv(
+          "engine_param", "prophet_n_extra_regressors",
+          as.character(length(extra_regs))
+        ))
+
+        if (length(extra_regs) <= 5) {
+          for (reg_name in names(extra_regs)) {
+            reg_info <- extra_regs[[reg_name]]
+            if (!is.null(reg_info$prior.scale) && is.finite(reg_info$prior.scale)) {
+              eng_tbl <- dplyr::bind_rows(
+                eng_tbl,
+                .kv(
+                  "engine_param", paste0("prophet_regressor_", reg_name, "_prior_scale"),
+                  as.character(signif(reg_info$prior.scale, digits))
+                )
+              )
+            }
+          }
+        }
+      }
+    }
+  } else {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "prophet_component", "not_found"))
+  }
+
+  # XGBoost Component
+  xgb_obj <- find_xgboost(engine_fit, scan_depth)
+
+  if (!is.null(xgb_obj)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgboost_component", "present"))
+
+    # Extract xgb.Booster if wrapped
+    if (!inherits(xgb_obj, "xgb.Booster")) {
+      inner_xgb <- try(xgb_obj$fit, silent = TRUE)
+      if (!inherits(inner_xgb, "try-error") && inherits(inner_xgb, "xgb.Booster")) {
+        xgb_obj <- inner_xgb
+      }
+    }
+
+    if (inherits(xgb_obj, "xgb.Booster")) {
+      # Number of boosting rounds (already in model_arg as trees, so don't duplicate)
+      niter <- try(xgb_obj$niter, silent = TRUE)
+      if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+        # Update args_tbl if trees was "auto"
+        if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
+          args_tbl$value[args_tbl$name == "trees"] <- as.character(niter)
+        }
+      }
+
+      # Get training parameters
+      params <- try(xgb_obj$params, silent = TRUE)
+      if (!inherits(params, "try-error") && !is.null(params) && is.list(params)) {
+        param_names <- c("objective", "eval_metric", "tree_method")
+
+        for (pname in param_names) {
+          pval <- params[[pname]]
+          if (!is.null(pval)) {
+            if (is.numeric(pval)) {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("xgb_", pname), .format_numeric(pval)))
+            } else {
+              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", paste0("xgb_", pname), as.character(pval)))
+            }
+          }
+        }
+
+        # Update args_tbl with actual parameter values if they were "auto"
+        param_map <- list(
+          tree_depth = "max_depth",
+          learn_rate = "eta",
+          min_n = "min_child_weight",
+          loss_reduction = "gamma",
+          sample_size = "subsample",
+          stop_iter = "early_stopping_rounds"
+        )
+
+        for (arg_name in names(param_map)) {
+          param_name <- param_map[[arg_name]]
+          if (args_tbl$value[args_tbl$name == arg_name] == "auto" && !is.null(params[[param_name]])) {
+            args_tbl$value[args_tbl$name == arg_name] <- .format_numeric(params[[param_name]])
+          }
+        }
+
+        # Handle mtry specially
+        if (args_tbl$value[args_tbl$name == "mtry"] == "auto") {
+          if (!is.null(params$colsample_bynode)) {
+            args_tbl$value[args_tbl$name == "mtry"] <- .format_numeric(params$colsample_bynode)
+          } else if (!is.null(params$colsample_bytree)) {
+            args_tbl$value[args_tbl$name == "mtry"] <- .format_numeric(params$colsample_bytree)
+          }
+        }
+      }
+
+      # Variable importance (don't add count since the importance section shows all features)
+      importance <- try(vip::vi(xgb_obj), silent = TRUE)
+      importance_list <- list()
+
+      if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+        # Filter out features with negligible importance
+        importance <- importance[importance$Importance > importance_threshold, ]
+
+        if (nrow(importance) > 0) {
+          for (i in seq_len(nrow(importance))) {
+            feat_name <- importance$Variable[i]
+            importance_val <- importance$Importance[i]
+
+            importance_list[[length(importance_list) + 1]] <- .kv(
+              "importance",
+              feat_name,
+              .format_numeric(importance_val)
+            )
+          }
+        }
+      }
+
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    }
+  } else {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgboost_component", "not_found"))
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = FALSE, digits = digits
   )
