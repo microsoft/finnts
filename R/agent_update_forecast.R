@@ -97,10 +97,6 @@ update_forecast <- function(agent_info,
   check_input_type("max_iter", max_iter, "numeric")
   check_input_type("weighted_mape_goal", weighted_mape_goal, "numeric")
 
-  # register tools
-  register_update_fcst_tools(agent_info)
-  register_eda_tools(agent_info)
-
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
     agent_info$project_info$combo_variables <- "ID"
@@ -281,6 +277,17 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     save_agent_forecast = list(
       fn = "save_agent_forecast",
+      `next` = "save_model_summaries",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info,
+        parallel_processing = parallel_processing,
+        num_cores = num_cores
+      )
+    ),
+    save_model_summaries = list(
+      fn = "summarize_models",
       `next` = "eda_agent_workflow",
       retry_mode = "plain",
       max_retry = 2,
@@ -315,78 +322,6 @@ update_fcst_agent_workflow <- function(agent_info,
 
   # run the graph
   run_graph(agent_info$driver_llm, workflow, init_ctx)
-}
-
-#' Register Update Forecast Tools
-#'
-#' This function registers the tools required for the update forecast agent workflow.
-#'
-#' @param agent_info A list containing the agent information.
-#'
-#' @return Nothing
-#' @noRd
-register_update_fcst_tools <- function(agent_info) {
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "update_fcst_agent_workflow",
-    .description = "Run the Finn update forecast agent workflow",
-    .fun = update_fcst_agent_workflow
-  ))
-
-  # individual tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "initial_checks",
-    .description = "Get previous agent information and check formatting of latest data/inputs",
-    .fun = initial_checks
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "update_global_models",
-    .description = "Update global model forecasts across all time series",
-    .fun = update_global_models
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "update_local_models",
-    .description = "Update local mdoel forecasts for each time series",
-    .fun = update_local_models
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "analyze_results",
-    .description = "Analyze the results of the update forecast run, comparing with previous best agent run",
-    .fun = analyze_results
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "iterate_forecast",
-    .description = "Run the forecast iteration agent skill to improve the forecast results",
-    .fun = iterate_forecast
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "reconcile_agent_forecast",
-    .description = "Reconcile the hierarchical agent forecast based on the best model runs",
-    .fun = reconcile_agent_forecast
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "save_agent_forecast",
-    .description = "Save the final agent forecast to the project storage",
-    .fun = save_agent_forecast
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "save_best_agent_run",
-    .description = "Save the best agent run results to the project storage",
-    .fun = save_best_agent_run
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "eda_agent_workflow",
-    .description = "Run the EDA analysis agent workflow on the final forecast results",
-    .fun = eda_agent_workflow
-  ))
 }
 
 #' Initial Checks for Update Forecast

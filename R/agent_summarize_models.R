@@ -1,3 +1,262 @@
+#' Get the trained model summaries info for an agent
+#'
+#' This function retrieves the final summarized model info after agent completes its run.
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#'
+#' @return A tibble containing the summarized models for the agent.
+#' @examples
+#' \dontrun{
+#' # load example data
+#' hist_data <- timetk::m4_monthly %>%
+#'   dplyr::filter(date >= "2013-01-01") %>%
+#'   dplyr::rename(Date = date) %>%
+#'   dplyr::mutate(id = as.character(id))
+#'
+#' # set up Finn project
+#' project <- set_project_info(
+#'   project_name = "Demo_Project",
+#'   combo_variables = c("id"),
+#'   target_variable = "value",
+#'   date_type = "month"
+#' )
+#'
+#' # set up LLM
+#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#'
+#' # set up agent info
+#' agent_info <- set_agent_info(
+#'   project_info = project,
+#'   driver_llm = driver_llm,
+#'   input_data = hist_data,
+#'   forecast_horizon = 6
+#' )
+#'
+#' # run the forecast iteration process
+#' iterate_forecast(
+#'   agent_info = agent_info,
+#'   max_iter = 3,
+#'   weighted_mape_goal = 0.03
+#' )
+#'
+#' # get the final model summaries for an agent
+#' model_summary <- get_summarized_models(agent_info = agent_info)
+#' }
+#' @export
+get_summarized_models <- function(agent_info) {
+  # formatting checks
+  check_agent_info(agent_info = agent_info)
+
+  # metadata
+  project_info <- agent_info$project_info
+
+  # load the final forecast for the agent
+  model_summary_tbl <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/final_output/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-model_summary.", project_info$data_output
+    )
+  )
+
+  return(model_summary_tbl)
+}
+
+#' Summarize Models
+#'
+#' Summarizes trained models for each time series in the best agent run by extracting
+#' model details, hyperparameters, and diagnostics into a structured format.
+#'
+#' @param agent_info Agent info from [set_agent_info()]
+#' @param parallel_processing Default of NULL runs no parallel processing and
+#'   processes each time series one after another. 'local_machine' leverages
+#'   all cores on current machine. 'spark' runs in parallel on a spark cluster
+#'   in Azure Databricks or Azure Synapse.
+#' @param num_cores Number of cores to use for parallel processing. If NULL,
+#'   defaults to the number of available cores.
+#'
+#' @return A tibble containing summarized model information for all time series
+#'   in the best agent run, saved to the logs folder.
+#'
+#' @noRd
+summarize_models <- function(agent_info,
+                             parallel_processing = NULL,
+                             num_cores = NULL) {
+  # Check inputs
+  check_agent_info(agent_info = agent_info)
+  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
+  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+
+  # Get project info
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+
+  # Step 1: Get best agent run info
+  best_run_tbl <- get_best_agent_run(agent_info = agent_info) %>%
+    dplyr::select(combo, best_run_name, model_type) %>%
+    dplyr::distinct()
+
+  # Map model names to summarize functions
+  model_summarize_map <- list(
+    "arima" = summarize_model_arima,
+    "arimax" = summarize_model_arimax,
+    "arima-boost" = summarize_model_arima_boost,
+    "croston" = summarize_model_croston,
+    "cubist" = summarize_model_cubist,
+    "ets" = summarize_model_ets,
+    "glmnet" = summarize_model_glmnet,
+    "mars" = summarize_model_mars,
+    "meanf" = summarize_model_meanf,
+    "nnetar" = summarize_model_nnetar,
+    "prophet" = summarize_model_prophet,
+    "prophet-boost" = summarize_model_prophet_boost,
+    "snaive" = summarize_model_snaive,
+    "stlm-arima" = summarize_model_stlm_arima,
+    "stlm-ets" = summarize_model_stlm_ets,
+    "svm-poly" = summarize_model_svm_poly,
+    "svm-rbf" = summarize_model_svm_rbf,
+    "tbats" = summarize_model_tbats,
+    "theta" = summarize_model_theta,
+    "xgboost" = summarize_model_xgboost,
+    "nnetar-xregs" = summarize_model_nnetar,
+    "prophet-xregs" = summarize_model_prophet
+  )
+
+  # Setup parallel processing
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = nrow(best_run_tbl)
+  )
+
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+
+  # Step 2 & 3: Process each time series combo
+  summary_results <- foreach::foreach(
+    x = best_run_tbl %>%
+      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+    .combine = "rbind",
+    .packages = packages,
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .export = NULL,
+    .noexport = NULL
+  ) %op%
+    {
+      # set metadata
+      combo <- x$combo[1]
+      model_type <- x$model_type[1]
+      run_name <- x$best_run_name[1]
+
+      if (model_type == "global") {
+        hash_combo <- hash_data("all")
+      } else {
+        hash_combo <- hash_data(combo)
+      }
+
+      # Create run_info
+      run_info <- agent_info$project_info
+      run_info$project_name <- paste0(
+        agent_info$project_info$project_name,
+        "_",
+        hash_combo
+      )
+      run_info$run_name <- run_name
+
+      # Get trained models for this time series
+      trained_models_tbl <- tryCatch(
+        {
+          get_trained_models(run_info = run_info)
+        },
+        error = function(e) {
+          return(tibble::tibble())
+        }
+      )
+
+      if (nrow(trained_models_tbl) == 0) {
+        return(tibble::tibble(
+          Combo = combo,
+          Model_ID = NA_character_,
+          Model_Name = NA_character_,
+          Model_Type = NA_character_,
+          Error = "No trained models found"
+        ))
+      }
+
+      # Summarize each model
+      model_summaries <- list()
+
+      for (i in seq_len(nrow(trained_models_tbl))) {
+        model_row <- trained_models_tbl[i, ]
+        model_name <- model_row$Model_Name
+        model_id <- model_row$Model_ID
+        model_type <- model_row$Model_Type
+        workflow <- model_row$Model_Fit[[1]]
+
+        # Get the appropriate summarize function
+        summarize_fn <- model_summarize_map[[model_name]]
+
+        if (is.null(summarize_fn)) {
+          # Model type not supported for summarization
+          summary_df <- tibble::tibble(
+            section = "error",
+            name = "unsupported_model",
+            value = paste0("No summarize function for model: ", model_name)
+          )
+        } else {
+          # Summarize the workflow
+          summary_df <- tryCatch(
+            {
+              summarize_fn(workflow)
+            },
+            error = function(e) {
+              tibble::tibble(
+                section = "error",
+                name = "summarization_error",
+                value = as.character(e$message)
+              )
+            }
+          )
+        }
+
+        # Add metadata
+        summary_df <- summary_df %>%
+          dplyr::mutate(
+            Combo = combo,
+            Model_ID = model_id,
+            Model_Name = model_name,
+            Model_Type = model_type,
+            .before = 1
+          )
+
+        model_summaries[[i]] <- summary_df
+      }
+
+      # Combine all model summaries for this combo
+      combo_summary <- dplyr::bind_rows(model_summaries)
+
+      return(combo_summary)
+    } %>%
+    base::suppressPackageStartupMessages()
+
+  # Clean up parallel processing
+  par_end(cl)
+
+  write_data(
+    x = summary_results,
+    combo = NULL,
+    run_info = project_info,
+    output_type = "data",
+    folder = "final_output",
+    suffix = "-model_summary"
+  )
+}
+
 #' Summarize an ARIMA Workflow
 #'
 #' Extracts and summarizes key information from a fitted ARIMA workflow,
