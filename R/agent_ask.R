@@ -51,9 +51,6 @@ ask_agent <- function(agent_info,
     )
   }
 
-  # Register available tools
-  register_ask_tools(agent_info)
-
   # Create and run the workflow
   result <- ask_agent_workflow(
     agent_info = agent_info,
@@ -258,46 +255,6 @@ ask_agent_workflow <- function(agent_info,
     answer = final_ctx$results$generate_final_answer,
     results = final_ctx$analysis_results,
     plan = final_ctx$analysis_plan
-  ))
-}
-
-#' Register tools available for answering questions
-#'
-#' @param agent_info Agent info object
-#' @return NULL
-#' @noRd
-register_ask_tools <- function(agent_info) {
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "ask_agent_workflow",
-    .description = "Run the Finn ask agent workflow to answer questions",
-    .fun = ask_agent_workflow
-  ))
-
-  # Register the workflow orchestration tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "create_analysis_plan",
-    .description = "Create a plan of R code steps to answer a question",
-    .fun = create_analysis_plan
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "execute_analysis_step",
-    .description = "Generate and execute R code for an analysis step",
-    .fun = execute_analysis_step
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "generate_final_answer",
-    .description = "Generate the final answer based on analysis results",
-    .fun = generate_final_answer
-  ))
-
-  # Register R code execution tool
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "execute_r_code",
-    .description = "Execute R code and return the result",
-    .fun = execute_r_code
   ))
 }
 

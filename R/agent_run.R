@@ -250,18 +250,6 @@ execute_node <- function(node, ctx, chat) {
   }
 }
 
-#' Register tools for the agent
-#'
-#' @param agent_info A list containing the agent information, including project info and LLMs.
-#'
-#' @return NULL
-#' @noRd
-register_tools <- function(agent_info) {
-  # register the tools for the agent
-  register_eda_tools(agent_info)
-  register_fcst_tools(agent_info)
-}
-
 #' Sanitize arguments for display
 #'
 #' @param arg_list A list of arguments to sanitize.

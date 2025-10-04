@@ -227,9 +227,6 @@ iterate_forecast <- function(agent_info,
 
             agent_info$reason_llm <- reason_llm
           }
-
-          # re-register tools
-          register_fcst_tools(agent_info)
         }
 
         # adjust max iterations based on previous runs

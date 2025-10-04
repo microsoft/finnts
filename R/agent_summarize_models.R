@@ -1276,7 +1276,7 @@ summarize_model_croston <- function(wf) {
       if (is.numeric(demand_val)) {
         # Check if it's a vector or single value
         if (length(demand_val) > 1) {
-          final_demand <- tail(demand_val, 1)
+          final_demand <- utils::tail(demand_val, 1)
         } else {
           final_demand <- demand_val
         }
@@ -1299,7 +1299,7 @@ summarize_model_croston <- function(wf) {
       if (is.numeric(period_val)) {
         # Check if it's a vector or single value
         if (length(period_val) > 1) {
-          final_period <- tail(period_val, 1)
+          final_period <- utils::tail(period_val, 1)
         } else {
           final_period <- period_val
         }
