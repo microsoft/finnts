@@ -2144,6 +2144,347 @@ summarize_workflow_glmnet <- function(wf) {
   )
 }
 
+#' Summarize a MARS Workflow
+#'
+#' Extracts and summarizes key information from a fitted MARS (Multivariate
+#' Adaptive Regression Splines) workflow. MARS builds flexible regression
+#' models using piecewise linear basis functions (hinge functions) and
+#' automatic feature selection. Supports both standard earth models and
+#' multistep horizon models.
+#'
+#' @param wf A fitted tidymodels workflow containing a parsnip::mars()
+#'   model with engine 'earth' or mars_multistep with engine 'mars_multistep_horizon'.
+#'
+#' @return A tibble with columns: section, name, value containing model details
+#'   including number of terms, interaction degree, pruning method, basis
+#'   functions, and variable importance.
+#'
+#' @noRd
+summarize_workflow_mars <- function(wf) {
+  # Set fixed defaults
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6 # Filter out negligible importance values
+  
+  if (!inherits(wf, "workflow")) stop("summarize_workflow_mars() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+  
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  
+  # Check if it's standard mars or multistep
+  is_multistep <- identical(engine, "mars_multistep_horizon")
+  
+  if (!engine %in% c("earth", "mars_multistep_horizon")) {
+    stop("summarize_workflow_mars() only supports parsnip::mars() with engine 'earth' or mars_multistep with engine 'mars_multistep_horizon'.")
+  }
+  
+  # Find the mars/earth object(s)
+  find_mars <- function(o, depth = scan_depth) {
+    .find_obj(o, function(x) {
+      inherits(x, "earth") ||
+        inherits(x, "mars_multistep_fit_impl") ||
+        (is.list(x) && !is.null(x$coefficients) && !is.null(x$selected.terms))
+    }, depth)
+  }
+  
+  # Helper function to format numeric values
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      } else {
+        return(format(rounded, scientific = FALSE, trim = TRUE))
+      }
+    }
+    return(as.character(x))
+  }
+  
+  # Extract predictors & outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+  
+  # Extract recipe steps
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+  
+  # parsnip mars args
+  arg_names <- c("num_terms", "prod_degree", "prune_method")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- .chr1(spec$args[[nm]])
+    .format_numeric(val)
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+  
+  # Find the mars model object
+  mars_obj <- find_mars(fit$fit, scan_depth)
+  
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  
+  if (!is.null(mars_obj)) {
+    # Handle multistep vs standard mars differently
+    if (is_multistep && inherits(mars_obj, "mars_multistep_fit_impl")) {
+      # MULTISTEP MARS
+      
+      # Extract individual models from $models list
+      model_list <- mars_obj$models
+      n_models <- length(model_list)
+      
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Multistep Horizon"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_models", as.character(n_models)))
+      
+      # Extract lag info from model names (e.g., "model_lag_1", "model_lag_3")
+      lag_names <- names(model_list)
+      if (!is.null(lag_names) && length(lag_names) > 0) {
+        lags <- stringr::str_extract(lag_names, "[0-9]+")
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "lag_horizons", paste(lags, collapse = ", ")))
+      }
+      
+      # Aggregate metrics across all models
+      all_nterms <- c()
+      all_nsubsets <- c()
+      all_rsq <- c()
+      all_gcv <- c()
+      
+      # Collect importance from all models
+      all_importance <- list()
+      
+      for (model_name in names(model_list)) {
+        mars_model <- model_list[[model_name]]
+        
+        # The mars model is wrapped in a parsnip fit object
+        inner_mars <- NULL
+        
+        if (inherits(mars_model, "model_fit")) {
+          inner_mars <- try(mars_model$fit, silent = TRUE)
+          if (inherits(inner_mars, "try-error")) inner_mars <- NULL
+        } else if (inherits(mars_model, "earth")) {
+          inner_mars <- mars_model
+        }
+        
+        if (!is.null(inner_mars) && inherits(inner_mars, "earth")) {
+          # Number of terms (including intercept)
+          if (!is.null(inner_mars$selected.terms)) {
+            n_terms <- length(inner_mars$selected.terms)
+            if (is.finite(n_terms) && n_terms > 0) {
+              all_nterms <- c(all_nterms, n_terms)
+            }
+          }
+          
+          # Number of subsets evaluated during pruning
+          if (!is.null(inner_mars$nsubsets)) {
+            all_nsubsets <- c(all_nsubsets, inner_mars$nsubsets)
+          }
+          
+          # R-squared
+          if (!is.null(inner_mars$rsq)) {
+            all_rsq <- c(all_rsq, inner_mars$rsq)
+          }
+          
+          # GCV (Generalized Cross-Validation)
+          if (!is.null(inner_mars$gcv)) {
+            all_gcv <- c(all_gcv, inner_mars$gcv)
+          }
+          
+          # Variable importance using vip::vi()
+          importance <- try(vip::vi(inner_mars), silent = TRUE)
+          
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
+            
+            if (nrow(importance) > 0) {
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
+                
+                # Accumulate importance across models
+                if (is.null(all_importance[[feat_name]])) {
+                  all_importance[[feat_name]] <- c()
+                }
+                all_importance[[feat_name]] <- c(all_importance[[feat_name]], importance_val)
+              }
+            }
+          }
+        }
+      }
+      
+      # Add aggregated metrics
+      if (length(all_nterms) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_n_terms", .format_numeric(mean(all_nterms))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "total_terms", as.character(sum(all_nterms))))
+      }
+      
+      if (length(all_nsubsets) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_nsubsets", .format_numeric(mean(all_nsubsets))))
+      }
+      
+      if (length(all_rsq) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_rsq", .format_numeric(mean(all_rsq))))
+      }
+      
+      if (length(all_gcv) > 0) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "avg_gcv", .format_numeric(mean(all_gcv))))
+      }
+      
+      # Aggregate importance - average across all models (negligible values already excluded)
+      importance_list <- list()
+      
+      if (length(all_importance) > 0) {
+        # Calculate average importance for each feature
+        avg_importance <- sapply(all_importance, mean)
+        
+        # Sort by importance (descending)
+        sorted_idx <- order(avg_importance, decreasing = TRUE)
+        sorted_names <- names(avg_importance)[sorted_idx]
+        sorted_vals <- avg_importance[sorted_idx]
+        
+        # Add all averaged importance values with consistent formatting
+        for (i in seq_along(sorted_names)) {
+          importance_list[[length(importance_list) + 1]] <- .kv(
+            "importance",
+            sorted_names[i],
+            .format_numeric(sorted_vals[i])
+          )
+        }
+      }
+      
+      # Combine engine params and importance
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+      }
+    } else {
+      # STANDARD MARS
+      
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "Standard"))
+      
+      # Extract earth object if wrapped
+      if (!inherits(mars_obj, "earth")) {
+        inner_mars <- try(mars_obj$fit, silent = TRUE)
+        if (!inherits(inner_mars, "try-error") && inherits(inner_mars, "earth")) {
+          mars_obj <- inner_mars
+        }
+      }
+      
+      if (inherits(mars_obj, "earth")) {
+        # Update args_tbl if num_terms was tuned
+        if (!is.null(mars_obj$selected.terms)) {
+          n_terms <- length(mars_obj$selected.terms)
+          if (is.finite(n_terms) && n_terms > 0) {
+            if (args_tbl$value[args_tbl$name == "num_terms"] == "") {
+              args_tbl$value[args_tbl$name == "num_terms"] <- as.character(n_terms)
+            }
+          }
+        }
+        
+        # Number of basis functions in full model (before pruning)
+        if (!is.null(mars_obj$dirs)) {
+          n_basis <- nrow(mars_obj$dirs)
+          if (is.finite(n_basis) && n_basis > 0) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_basis_functions", as.character(n_basis)))
+          }
+        }
+        
+        # Maximum degree of interaction actually used
+        if (!is.null(mars_obj$degree.used)) {
+          degree_used <- mars_obj$degree.used
+          if (is.finite(degree_used)) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "degree_used", as.character(degree_used)))
+          }
+        }
+        
+        # Penalty parameter
+        if (!is.null(mars_obj$penalty)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "penalty", .format_numeric(mars_obj$penalty)))
+        }
+        
+        # Number of subsets evaluated during pruning
+        if (!is.null(mars_obj$nsubsets)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_subsets_evaluated", as.character(mars_obj$nsubsets)))
+        }
+        
+        # R-squared
+        if (!is.null(mars_obj$rsq)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "rsq", .format_numeric(mars_obj$rsq)))
+        }
+        
+        # GCV (Generalized Cross-Validation)
+        if (!is.null(mars_obj$gcv)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "gcv", .format_numeric(mars_obj$gcv)))
+        }
+        
+        # Number of observations
+        if (!is.null(mars_obj$nobs)) {
+          eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_obs", as.character(mars_obj$nobs)))
+        }
+        
+        # Pruning method used
+        if (!is.null(mars_obj$pmethod)) {
+          pmethod <- mars_obj$pmethod
+          if (args_tbl$value[args_tbl$name == "prune_method"] == "") {
+            args_tbl$value[args_tbl$name == "prune_method"] <- as.character(pmethod)
+          }
+        }
+        
+        # Variable importance using vip::vi()
+        importance <- try(vip::vi(mars_obj), silent = TRUE)
+        importance_list <- list()
+        
+        if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+          # Filter out features with negligible importance
+          importance <- importance[importance$Importance > importance_threshold, ]
+          
+          if (nrow(importance) > 0) {
+            # vip::vi already returns sorted by Importance (descending)
+            for (i in seq_len(nrow(importance))) {
+              feat_name <- importance$Variable[i]
+              importance_val <- importance$Importance[i]
+              
+              importance_list[[length(importance_list) + 1]] <- .kv(
+                "importance",
+                feat_name,
+                .format_numeric(importance_val)
+              )
+            }
+          }
+        }
+        
+        if (length(importance_list) > 0) {
+          importance_tbl <- dplyr::bind_rows(importance_list)
+          eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
+        }
+        
+        # Basis function information (sample of terms)
+        if (!is.null(mars_obj$cuts) && length(mars_obj$cuts) > 0) {
+          # Number of unique knots/cuts used
+          n_cuts <- sum(sapply(mars_obj$cuts, length))
+          if (is.finite(n_cuts) && n_cuts > 0) {
+            eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_knots", as.character(n_cuts)))
+          }
+        }
+      }
+    }
+  }
+  
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
 #' Summarize a Mean Forecast (MEANF) Workflow
 #'
 #' Extracts and summarizes key information from a fitted mean forecast workflow.
