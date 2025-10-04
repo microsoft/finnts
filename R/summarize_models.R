@@ -9,20 +9,20 @@
 #' @return A tibble with columns: section, name, value containing model details.
 #'
 #' @noRd
-summarize_workflow_arima <- function(wf) {
+summarize_model_arima <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   add_diagnostics <- TRUE
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_arima() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_arima() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!engine %in% c("auto_arima", "arima")) {
-    stop("summarize_workflow_arima() only supports modeltime::arima_reg() with engines 'auto_arima' or 'arima'.")
+    stop("summarize_model_arima() only supports modeltime::arima_reg() with engines 'auto_arima' or 'arima'.")
   }
 
   # Vectorized: TRUE for bare symbol-like tokens
@@ -263,20 +263,20 @@ summarize_workflow_arima <- function(wf) {
 #'   containing model details including external regressor information.
 #'
 #' @noRd
-summarize_workflow_arimax <- function(wf) {
+summarize_model_arimax <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   add_diagnostics <- TRUE
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_arimax() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_arimax() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!engine %in% c("auto_arima", "auto_arima_xregs", "arima", "arima_xregs")) {
-    stop("summarize_workflow_arimax() only supports modeltime::arima_reg() with engines 'auto_arima', 'auto_arima_xregs', 'arima', or 'arima_xregs'.")
+    stop("summarize_model_arimax() only supports modeltime::arima_reg() with engines 'auto_arima', 'auto_arima_xregs', 'arima', or 'arima_xregs'.")
   }
 
   # Vectorized: TRUE for bare symbol-like tokens
@@ -623,21 +623,21 @@ summarize_workflow_arimax <- function(wf) {
 #'   including ARIMA parameters, XGBoost hyperparameters, and variable importance.
 #'
 #' @noRd
-summarize_workflow_arima_boost <- function(wf) {
+summarize_model_arima_boost <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   add_diagnostics <- TRUE
   importance_threshold <- 1e-6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_arima_boost() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_arima_boost() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "auto_arima_xgboost")) {
-    stop("summarize_workflow_arima_boost() only supports modeltime::arima_boost() with engine 'auto_arima_xgboost'.")
+    stop("summarize_model_arima_boost() only supports modeltime::arima_boost() with engine 'auto_arima_xgboost'.")
   }
 
   # Helper function to format numeric values
@@ -919,19 +919,19 @@ summarize_workflow_arima_boost <- function(wf) {
 #'   including intermittent demand statistics, smoothing parameters, and diagnostics.
 #'
 #' @noRd
-summarize_workflow_croston <- function(wf) {
+summarize_model_croston <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_croston() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_croston() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "croston")) {
-    stop("summarize_workflow_croston() only supports modeltime::exp_smoothing() with set_engine('croston').")
+    stop("summarize_model_croston() only supports modeltime::exp_smoothing() with set_engine('croston').")
   }
 
   # Specific predicates for Croston
@@ -1306,13 +1306,13 @@ summarize_workflow_croston <- function(wf) {
 #' @return A tibble with columns: section, name, value containing model details.
 #'
 #' @noRd
-summarize_workflow_cubist <- function(wf) {
+summarize_model_cubist <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_cubist() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_cubist() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -1323,7 +1323,7 @@ summarize_workflow_cubist <- function(wf) {
   is_multistep <- identical(engine, "cubist_multistep_horizon")
 
   if (!engine %in% c("Cubist", "cubist_multistep_horizon")) {
-    stop("summarize_workflow_cubist() only supports parsnip::cubist_rules() with engine 'Cubist' or cubist_multistep with engine 'cubist_multistep_horizon'.")
+    stop("summarize_model_cubist() only supports parsnip::cubist_rules() with engine 'Cubist' or cubist_multistep with engine 'cubist_multistep_horizon'.")
   }
 
   # Find the cubist object(s)
@@ -1590,19 +1590,19 @@ summarize_workflow_cubist <- function(wf) {
 #'   states, and information criteria.
 #'
 #' @noRd
-summarize_workflow_ets <- function(wf) {
+summarize_model_ets <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_ets() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_ets() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "ets")) {
-    stop("summarize_workflow_ets() only supports modeltime::exp_smoothing() with set_engine('ets').")
+    stop("summarize_model_ets() only supports modeltime::exp_smoothing() with set_engine('ets').")
   }
 
   # Specific predicates for ETS
@@ -2027,12 +2027,12 @@ summarize_workflow_ets <- function(wf) {
 #'   coefficients sorted by absolute value.
 #'
 #' @noRd
-summarize_workflow_glmnet <- function(wf) {
+summarize_model_glmnet <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_glmnet() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_glmnet() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -2043,7 +2043,7 @@ summarize_workflow_glmnet <- function(wf) {
   is_multistep <- identical(engine, "glmnet_multistep_horizon")
 
   if (!engine %in% c("glmnet", "glmnet_multistep_horizon")) {
-    stop("summarize_workflow_glmnet() only supports parsnip::linear_reg() with engine 'glmnet' or glmnet_multistep with engine 'glmnet_multistep_horizon'.")
+    stop("summarize_model_glmnet() only supports parsnip::linear_reg() with engine 'glmnet' or glmnet_multistep with engine 'glmnet_multistep_horizon'.")
   }
 
   # Find the glmnet object(s)
@@ -2456,13 +2456,13 @@ summarize_workflow_glmnet <- function(wf) {
 #'   functions, and variable importance.
 #'
 #' @noRd
-summarize_workflow_mars <- function(wf) {
+summarize_model_mars <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_mars() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_mars() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -2473,7 +2473,7 @@ summarize_workflow_mars <- function(wf) {
   is_multistep <- identical(engine, "mars_multistep_horizon")
 
   if (!engine %in% c("earth", "mars_multistep_horizon")) {
-    stop("summarize_workflow_mars() only supports parsnip::mars() with engine 'earth' or mars_multistep with engine 'mars_multistep_horizon'.")
+    stop("summarize_model_mars() only supports parsnip::mars() with engine 'earth' or mars_multistep with engine 'mars_multistep_horizon'.")
   }
 
   # Find the mars/earth object(s)
@@ -2794,19 +2794,19 @@ summarize_workflow_mars <- function(wf) {
 #'   including window size, window values, and number of observations.
 #'
 #' @noRd
-summarize_workflow_meanf <- function(wf) {
+summarize_model_meanf <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 5
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_meanf() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_meanf() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "window_function")) {
-    stop("summarize_workflow_meanf() expects modeltime::window_reg() with set_engine('window_function').")
+    stop("summarize_model_meanf() expects modeltime::window_reg() with set_engine('window_function').")
   }
 
   # Extract predictors & outcomes
@@ -2945,19 +2945,19 @@ summarize_workflow_meanf <- function(wf) {
 #'   number of networks, lags used, and accuracy metrics.
 #'
 #' @noRd
-summarize_workflow_nnetar <- function(wf) {
+summarize_model_nnetar <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_nnetar() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_nnetar() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "nnetar")) {
-    stop("summarize_workflow_nnetar() only supports modeltime::nnetar_reg() with set_engine('nnetar').")
+    stop("summarize_model_nnetar() only supports modeltime::nnetar_reg() with set_engine('nnetar').")
   }
 
   # Specific predicates for NNETAR
@@ -3214,7 +3214,7 @@ summarize_workflow_nnetar <- function(wf) {
 #'   and fitted parameters.
 #'
 #' @noRd
-summarize_workflow_prophet <- function(wf) {
+summarize_model_prophet <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
@@ -3224,14 +3224,14 @@ summarize_workflow_prophet <- function(wf) {
   NUM_FORMAT_LARGE_THRESHOLD <- 100
   NUM_FORMAT_PRECISION <- 4
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_prophet() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_prophet() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "prophet")) {
-    stop("summarize_workflow_prophet() only supports modeltime::prophet_reg() with set_engine('prophet').")
+    stop("summarize_model_prophet() only supports modeltime::prophet_reg() with set_engine('prophet').")
   }
 
   # Specific predicates for Prophet
@@ -3712,7 +3712,7 @@ summarize_workflow_prophet <- function(wf) {
 #'   XGBoost hyperparameters, and variable importance.
 #'
 #' @noRd
-summarize_workflow_prophet_boost <- function(wf) {
+summarize_model_prophet_boost <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
@@ -3723,14 +3723,14 @@ summarize_workflow_prophet_boost <- function(wf) {
   NUM_FORMAT_LARGE_THRESHOLD <- 100
   NUM_FORMAT_PRECISION <- 4
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_prophet_boost() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_prophet_boost() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "prophet_xgboost")) {
-    stop("summarize_workflow_prophet_boost() only supports modeltime::prophet_boost() with engine 'prophet_xgboost'.")
+    stop("summarize_model_prophet_boost() only supports modeltime::prophet_boost() with engine 'prophet_xgboost'.")
   }
 
   # Helper function to format numeric values
@@ -4203,19 +4203,19 @@ summarize_workflow_prophet_boost <- function(wf) {
 #'   including seasonal period and number of observations.
 #'
 #' @noRd
-summarize_workflow_snaive <- function(wf) {
+summarize_model_snaive <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_snaive() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_snaive() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "snaive")) {
-    stop("summarize_workflow_snaive() only supports modeltime::naive_reg() with set_engine('snaive').")
+    stop("summarize_model_snaive() only supports modeltime::naive_reg() with set_engine('snaive').")
   }
 
   # Extract predictors & outcomes
@@ -4317,7 +4317,7 @@ summarize_workflow_snaive <- function(wf) {
 #'   coefficients, and diagnostics.
 #'
 #' @noRd
-summarize_workflow_stlm_arima <- function(wf) {
+summarize_model_stlm_arima <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
@@ -4329,14 +4329,14 @@ summarize_workflow_stlm_arima <- function(wf) {
   CADENCE_MONTHLY <- 25
   CADENCE_WEEKLY <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_stlm_arima() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_stlm_arima() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "stlm_arima")) {
-    stop("summarize_workflow_stlm_arima() only supports seasonal_reg() with set_engine('stlm_arima').")
+    stop("summarize_model_stlm_arima() only supports seasonal_reg() with set_engine('stlm_arima').")
   }
 
   # Specific predicates for this function
@@ -4760,7 +4760,7 @@ summarize_workflow_stlm_arima <- function(wf) {
 #'   smoothing parameters, and diagnostics.
 #'
 #' @noRd
-summarize_workflow_stlm_ets <- function(wf) {
+summarize_model_stlm_ets <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
@@ -4772,14 +4772,14 @@ summarize_workflow_stlm_ets <- function(wf) {
   CADENCE_MONTHLY <- 25
   CADENCE_WEEKLY <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_stlm_ets() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_stlm_ets() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "stlm_ets")) {
-    stop("summarize_workflow_stlm_ets() only supports seasonal_reg() with set_engine('stlm_ets').")
+    stop("summarize_model_stlm_ets() only supports seasonal_reg() with set_engine('stlm_ets').")
   }
 
   # Specific predicates for this function
@@ -5238,13 +5238,13 @@ summarize_workflow_stlm_ets <- function(wf) {
 #'   including kernel parameters, support vectors, training error, and variable importance.
 #'
 #' @noRd
-summarize_workflow_svm_poly <- function(wf) {
+summarize_model_svm_poly <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_svm_poly() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_svm_poly() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -5255,7 +5255,7 @@ summarize_workflow_svm_poly <- function(wf) {
   is_multistep <- identical(engine, "svm_poly_multistep_horizon")
 
   if (!engine %in% c("kernlab", "svm_poly_multistep_horizon")) {
-    stop("summarize_workflow_svm_poly() only supports parsnip::svm_poly() with engine 'kernlab' or svm_poly_multistep with engine 'svm_poly_multistep_horizon'.")
+    stop("summarize_model_svm_poly() only supports parsnip::svm_poly() with engine 'kernlab' or svm_poly_multistep with engine 'svm_poly_multistep_horizon'.")
   }
 
   # Find the ksvm object(s)
@@ -5655,13 +5655,13 @@ summarize_workflow_svm_poly <- function(wf) {
 #'   including kernel parameters, support vectors, training error, and variable importance.
 #'
 #' @noRd
-summarize_workflow_svm_rbf <- function(wf) {
+summarize_model_svm_rbf <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_svm_rbf() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_svm_rbf() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -5672,7 +5672,7 @@ summarize_workflow_svm_rbf <- function(wf) {
   is_multistep <- identical(engine, "svm_rbf_multistep_horizon")
 
   if (!engine %in% c("kernlab", "svm_rbf_multistep_horizon")) {
-    stop("summarize_workflow_svm_rbf() only supports parsnip::svm_rbf() with engine 'kernlab' or svm_rbf_multistep with engine 'svm_rbf_multistep_horizon'.")
+    stop("summarize_model_svm_rbf() only supports parsnip::svm_rbf() with engine 'kernlab' or svm_rbf_multistep with engine 'svm_rbf_multistep_horizon'.")
   }
 
   # Find the ksvm object(s)
@@ -6058,7 +6058,7 @@ summarize_workflow_svm_rbf <- function(wf) {
 #'   harmonics, and diagnostics.
 #'
 #' @noRd
-summarize_workflow_tbats <- function(wf) {
+summarize_model_tbats <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
@@ -6070,14 +6070,14 @@ summarize_workflow_tbats <- function(wf) {
   CADENCE_MONTHLY <- 25
   CADENCE_WEEKLY <- 6
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_tbats() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_tbats() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "tbats")) {
-    stop("summarize_workflow_tbats() only supports seasonal_reg() with set_engine('tbats').")
+    stop("summarize_model_tbats() only supports seasonal_reg() with set_engine('tbats').")
   }
 
   # Specific predicates for TBATS
@@ -6514,7 +6514,7 @@ summarize_workflow_tbats <- function(wf) {
 #'   trend/seasonal components, and diagnostics.
 #'
 #' @noRd
-summarize_workflow_theta <- function(wf) {
+summarize_model_theta <- function(wf) {
   # Set fixed defaults
   DIGITS <- 6
   SCAN_DEPTH <- 6
@@ -6530,7 +6530,7 @@ summarize_workflow_theta <- function(wf) {
   ALPHA_RECENT_THRESHOLD <- 0.5
 
   if (!inherits(wf, "workflow")) {
-    stop("summarize_workflow_theta() expects a tidymodels workflow.")
+    stop("summarize_model_theta() expects a tidymodels workflow.")
   }
 
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -6541,7 +6541,7 @@ summarize_workflow_theta <- function(wf) {
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
   if (!identical(engine, "theta")) {
-    stop("summarize_workflow_theta() only supports modeltime::exp_smoothing() with set_engine('theta').")
+    stop("summarize_model_theta() only supports modeltime::exp_smoothing() with set_engine('theta').")
   }
 
   # Specific predicates for Theta
@@ -6933,13 +6933,13 @@ summarize_workflow_theta <- function(wf) {
 #' @return A tibble with columns: section, name, value containing model details.
 #'
 #' @noRd
-summarize_workflow_xgboost <- function(wf) {
+summarize_model_xgboost <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
   importance_threshold <- 1e-6 # Filter out negligible importance values
 
-  if (!inherits(wf, "workflow")) stop("summarize_workflow_xgboost() expects a tidymodels workflow.")
+  if (!inherits(wf, "workflow")) stop("summarize_model_xgboost() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
   if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
 
@@ -6950,7 +6950,7 @@ summarize_workflow_xgboost <- function(wf) {
   is_multistep <- identical(engine, "xgboost_multistep_horizon")
 
   if (!engine %in% c("xgboost", "xgboost_multistep_horizon")) {
-    stop("summarize_workflow_xgboost() only supports parsnip::boost_tree() with engine 'xgboost' or xgboost_multistep with engine 'xgboost_multistep_horizon'.")
+    stop("summarize_model_xgboost() only supports parsnip::boost_tree() with engine 'xgboost' or xgboost_multistep with engine 'xgboost_multistep_horizon'.")
   }
 
   # Find the xgboost object(s)
