@@ -151,6 +151,61 @@ ask_agent_workflow <- function(agent_info,
 
       To filter for specific analysis or combo:
       eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
+    - get_summarized_models(agent_info): Returns a df of trained model details for each time series with the following columns:
+      - Combo: time series identifier
+      - Model_ID: unique identifier of the model (e.g., 'arima--local--R1')
+      - Model_Name: name of the model type (e.g., 'arima', 'ets', 'xgboost')
+      - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
+      - model_class: the underlying model class used by the engine (e.g., 'xgb.Booster', 'auto_arima_fit_impl')
+      - engine: the specific engine that trained the model (e.g., 'auto_arima', 'ets', 'xgboost')
+      - section: category of information (e.g., 'predictor', 'outcome', 'recipe_step', 'model_arg', 'engine_param', 'coefficient', 'importance', 'diagnostic')
+      - name: specific parameter, coefficient, or metric name within each section
+      - value: the value of the parameter, coefficient, or metric (stored as character, may need conversion to numeric)
+
+      Section types and their content:
+      - predictor: input variables used by the model (e.g., 'Date', 'Date_year', 'Date_month', lag features, Fourier terms, rolling statistics)
+      - outcome: target variable being predicted (typically 'Target')
+      - recipe_step: preprocessing steps applied, numbered sequentially (e.g., '1', '2', '3') with step descriptions as values
+        * Examples: 'Remove zero variance predictors [step_zv]', 'One-hot encode categorical variables [step_dummy]'
+      - model_arg: parsnip model arguments (e.g., 'seasonal_period', 'non_seasonal_ar', 'learn_rate', 'trees', 'tree_depth')
+      - engine_param: actual fitted model parameters from the underlying engine
+        * ARIMA: 'aic', 'bic', 'aicc', 'loglik', 'sigma2', 'order_str', 'seasonal_order_str', 'nobs', 'ljung_box_*'
+        * XGBoost: 'objective', 'colsample_bytree', 'model_type'
+        * TBATS: 'alpha', 'lambda', 'likelihood', 'state_space_dim', 'variance'
+        * General: 'nobs', 'residuals.mean', 'residuals.sd'
+      - coefficient: model coefficients (e.g., 'intercept', 'intercept.se' for ARIMA/regression models)
+      - importance: feature importance scores for tree-based models (XGBoost, Cubist, etc.)
+        * Values are importance scores, typically summing to 1 or representing gain/frequency
+      - diagnostic: model fit statistics (e.g., 'AIC', 'BIC', 'RMSE', 'ljung_box_p_value', residual tests)
+        * Note: Some diagnostics may appear in engine_param section depending on model type
+
+      Use cases:
+      - Understanding exact model specifications (ARIMA orders, ETS components, hyperparameters)
+      - Analyzing coefficients and their significance
+      - Identifying important features/predictors
+      - Reviewing model diagnostics and fit quality
+      - Comparing model architectures across time series
+      - Examining preprocessing steps applied to each model
+
+      Example queries:
+      # Get ARIMA orders for all ARIMA models
+      model_summary %>% dplyr::filter(Model_Name == 'arima', section == 'engine_param', name %in% c('order_str', 'seasonal_order_str'))
+      
+      # Get variable importance for XGBoost models (note: section is 'importance' not 'variable_importance')
+      model_summary %>% 
+        dplyr::filter(Model_Name == 'xgboost', section == 'importance') %>%
+        dplyr::mutate(value = as.numeric(value)) %>%
+        dplyr::arrange(Combo, desc(value))
+      
+      # Get model diagnostics (AIC, BIC, etc.)
+      model_summary %>% 
+        dplyr::filter(section == 'engine_param', name %in% c('aic', 'bic', 'aicc'))
+      
+      # Get all predictors used by a model
+      model_summary %>% dplyr::filter(section == 'predictor', Combo == 'M750--ID1')
+      
+      # Get recipe preprocessing steps
+      model_summary %>% dplyr::filter(section == 'recipe_step')
 
     ALWAYS use the dplyr package for data manipulation.
     Be precise and efficient in your code generation."
@@ -291,7 +346,23 @@ create_analysis_plan <- function(agent_info, question) {
        - Filter by Combo to get results for specific time series
        - Value column contains the metric values (numeric or character)
 
-    4. previous step results:
+    4. get_summarized_models(agent_info):
+       USE FOR: Detailed model specifications, hyperparameters, coefficients, feature importance, model diagnostics
+       Returns a data frame with columns: Combo, Model_ID, Model_Name, Model_Type, model_class, engine, section, name, value
+       - Filter by section to get specific types of information:
+         * 'predictor': input variables/features used (Date features, lags, Fourier terms, etc.)
+         * 'outcome': target variable
+         * 'recipe_step': preprocessing steps (numbered 1, 2, 3, etc.)
+         * 'model_arg': parsnip model arguments (learn_rate, trees, seasonal_period, etc.)
+         * 'engine_param': fitted parameters (ARIMA orders, AIC, BIC, lambda, nobs, etc.)
+         * 'coefficient': model coefficients (intercept, regressor coefficients)
+         * 'importance': feature importance scores (for XGBoost, Cubist, etc.)
+         * 'diagnostic': model fit statistics (may overlap with engine_param)
+       - Filter by Model_Name or Model_ID to get specific model types or instances
+       - Filter by Combo to get model details for specific time series
+       - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
+
+    5. previous step results:
        USE FOR: Working with results from earlier steps in the analysis
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
 
@@ -305,7 +376,13 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about stationarity/ACF/PACF -> use get_eda_data() with Analysis_Type filter
     - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
     - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
+    - Questions about model specifications/parameters -> use get_summarized_models()
+    - Questions about ARIMA orders, ETS components, hyperparameters -> use get_summarized_models() with section == 'engine_param'
+    - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
+    - Questions about feature importance -> use get_summarized_models() with section == 'importance'
+    - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param', name in c('aic', 'bic', 'aicc', 'loglik', 'ljung_box_p_value')
     - Questions needing both forecast values AND run settings -> use BOTH sources in separate steps
+    - Questions needing both model settings AND detailed specifications -> use get_best_agent_run() AND get_summarized_models()
 
     Keywords to Data Source Mapping:
     - WMAPE, MAPE, accuracy, error, performance -> get_agent_forecast()
@@ -316,10 +393,19 @@ create_analysis_plan <- function(agent_info, question) {
     - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
     - time series characteristics, patterns -> get_eda_data()
     - external regressor correlations -> get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
+    - ARIMA orders, p d q, seasonal differences -> get_summarized_models() with section == 'engine_param', name in c('order_str', 'seasonal_order_str')
+    - coefficients, parameters, model terms -> get_summarized_models() with section == 'coefficient'
+    - hyperparameters, tuning parameters, model settings -> get_summarized_models() with section in ('model_arg', 'engine_param')
+    - feature importance, variable importance, predictor importance -> get_summarized_models() with section == 'importance'
+    - AIC, BIC, log-likelihood, residual tests, diagnostics -> get_summarized_models() with section == 'engine_param', name in c('aic', 'bic', 'aicc', 'loglik', 'ljung_box_p_value')
+    - Box-Cox lambda, damping parameter, smoothing parameters -> get_summarized_models() with section == 'engine_param'
+    - tree depth, learning rate, number of trees -> get_summarized_models() with section == 'model_arg'
+    - which features/predictors were used -> get_summarized_models() with section == 'predictor'
+    - preprocessing steps, recipe steps -> get_summarized_models() with section == 'recipe_step'
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
-    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"none\", or \"previous\")
+    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"get_summarized_models\", \"none\", or \"previous\")
     - analysis: Brief description of the R code analysis to perform
     - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data') - THIS WILL BE AVAILABLE IN SUBSEQUENT STEPS
 
@@ -338,6 +424,22 @@ create_analysis_plan <- function(agent_info, question) {
       \"data_source\": \"get_agent_forecast\",
       \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo and Model_ID combinations\",
       \"output_name\": \"models_used\"
+    }}]
+
+    For 'What are the ARIMA orders for each time series?':
+    [{{
+      \"description\": \"Get detailed model specifications\",
+      \"data_source\": \"get_summarized_models\",
+      \"analysis\": \"Filter for section == 'engine_param' and name in c('p', 'd', 'q', 'P', 'D', 'Q', 'm'), then pivot to show ARIMA orders by Combo\",
+      \"output_name\": \"arima_orders\"
+    }}]
+
+    For 'What are the top 5 most important features in the XGBoost models?':
+    [{{
+      \"description\": \"Get feature importance from XGBoost models\",
+      \"data_source\": \"get_summarized_models\",
+      \"analysis\": \"Filter for Model_Name == 'xgboost' and section == 'importance', convert value to numeric, arrange by Combo and desc(value), and take top 5 per Combo\",
+      \"output_name\": \"top_features\"
     }}]
 
     For 'Analyze forecast bias and recommend adjustments':
@@ -429,6 +531,8 @@ execute_analysis_step <- function(agent_info,
         "get_agent_forecast(agent_info)"
       } else if (identical(src, "get_eda_data")) {
         "get_eda_data(agent_info)"
+      } else if (identical(src, "get_summarized_models")) {
+        "get_summarized_models(agent_info)"
       } else if (identical(src, "none") || identical(src, "previous")) {
         # Working with previous results
         NULL
@@ -465,7 +569,7 @@ execute_analysis_step <- function(agent_info,
   code_prompt <- glue::glue(
     "You are writing R code that will be executed inside an R environment that ALREADY contains:
     - agent_info (list-like)  [DO NOT create or modify it]
-    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data()
+    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data(), get_summarized_models()
     {previous_context}
 
     Task: {current_step$analysis}
@@ -495,6 +599,17 @@ execute_analysis_step <- function(agent_info,
       * Model_ID is the PRIMARY model identifier - ALWAYS include it in your results
       * When Model_Name is NA, it indicates an ensemble/average model
       * Model_ID for ensembles contains multiple models separated by '_'
+    - For get_summarized_models():
+      * Returns detailed model information organized by section (predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic)
+      * Filter by section to get specific types of information
+      * The 'value' column may be numeric or character depending on the parameter
+      * For numeric analysis, convert value column: as.numeric(value)
+      * Model_ID matches the Model_ID in get_agent_forecast() for joining
+      * For feature importance, section name is 'importance'
+      * Recipe steps are numbered (1, 2, 3) with descriptions as values
+      * ARIMA orders appear in engine_param as 'order_str' and 'seasonal_order_str' (e.g., '(0,0,0)', '(0,0,0)[12]')
+      * Diagnostic metrics like AIC, BIC often appear in engine_param section
+
     - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
   )
 
@@ -555,6 +670,7 @@ execute_r_code <- function(code,
   exec_env$get_agent_forecast <- get_agent_forecast
   exec_env$get_best_agent_run <- get_best_agent_run
   exec_env$get_eda_data <- get_eda_data
+  exec_env$get_summarized_models <- get_summarized_models
 
   # Add previous results to environment with their proper names
   if (!is.null(analysis_plan) && !is.null(step_index) && length(previous_results) > 0) {
