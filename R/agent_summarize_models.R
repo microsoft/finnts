@@ -1124,7 +1124,7 @@ summarize_model_arima_boost <- function(wf) {
       }
 
       # Variable importance
-      importance <- try(vip::vi(xgb_obj), silent = TRUE)
+      importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -1692,7 +1692,7 @@ summarize_model_cubist <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_cubist), silent = TRUE)
+          importance <- try(vip::vi(inner_cubist, scale = TRUE), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -1782,7 +1782,7 @@ summarize_model_cubist <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(cubist_obj), silent = TRUE)
+        importance <- try(vip::vi(cubist_obj, scale = TRUE), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2290,6 +2290,7 @@ summarize_model_glmnet <- function(wf) {
   # Set fixed defaults
   digits <- 6
   scan_depth <- 6
+  importance_threshold <- 1e-6 # Filter out negligible importance values
 
   if (!inherits(wf, "workflow")) stop("summarize_model_glmnet() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -2390,6 +2391,9 @@ summarize_model_glmnet <- function(wf) {
       all_coefficients <- list()
       all_intercepts <- c()
 
+      # Collect importance from all models using vip
+      all_importance <- list()
+
       for (model_name in names(model_list)) {
         model_fit <- model_list[[model_name]]
 
@@ -2472,6 +2476,27 @@ summarize_model_glmnet <- function(wf) {
               }
             }
           }
+
+          # Variable importance using vip::vi()
+          importance <- try(vip::vi(inner_glmnet, scale = TRUE), silent = TRUE)
+
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
+
+            if (nrow(importance) > 0) {
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
+
+                # Accumulate importance across models
+                if (is.null(all_importance[[feat_name]])) {
+                  all_importance[[feat_name]] <- c()
+                }
+                all_importance[[feat_name]] <- c(all_importance[[feat_name]], importance_val)
+              }
+            }
+          }
         }
       }
 
@@ -2525,6 +2550,34 @@ summarize_model_glmnet <- function(wf) {
       if (length(coef_list) > 0) {
         coef_tbl <- dplyr::bind_rows(coef_list)
         eng_tbl <- dplyr::bind_rows(eng_tbl, coef_tbl)
+      }
+
+      # Aggregate importance - average across all models (negligible values already excluded)
+      importance_list <- list()
+
+      if (length(all_importance) > 0) {
+        # Calculate average importance for each feature
+        avg_importance <- sapply(all_importance, mean)
+
+        # Sort by importance (descending)
+        sorted_idx <- order(avg_importance, decreasing = TRUE)
+        sorted_names <- names(avg_importance)[sorted_idx]
+        sorted_vals <- avg_importance[sorted_idx]
+
+        # Add all averaged importance values with consistent formatting
+        for (i in seq_along(sorted_names)) {
+          importance_list[[length(importance_list) + 1]] <- .kv(
+            "importance",
+            sorted_names[i],
+            as.character(signif(sorted_vals[i], digits))
+          )
+        }
+      }
+
+      # Add importance to eng_tbl
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
       }
     } else {
       # STANDARD GLMNET
@@ -2688,6 +2741,34 @@ summarize_model_glmnet <- function(wf) {
       if (length(coef_list) > 0) {
         coef_tbl <- dplyr::bind_rows(coef_list)
         eng_tbl <- dplyr::bind_rows(eng_tbl, coef_tbl)
+      }
+
+      # Variable importance using vip::vi()
+      importance <- try(vip::vi(glmnet_obj, scale = TRUE), silent = TRUE)
+      importance_list <- list()
+
+      if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+        # Filter out features with negligible importance
+        importance <- importance[importance$Importance > importance_threshold, ]
+
+        if (nrow(importance) > 0) {
+          # vip::vi already returns sorted by Importance (descending)
+          for (i in seq_len(nrow(importance))) {
+            feat_name <- importance$Variable[i]
+            importance_val <- importance$Importance[i]
+
+            importance_list[[length(importance_list) + 1]] <- .kv(
+              "importance",
+              feat_name,
+              as.character(signif(importance_val, digits))
+            )
+          }
+        }
+      }
+
+      if (length(importance_list) > 0) {
+        importance_tbl <- dplyr::bind_rows(importance_list)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, importance_tbl)
       }
     }
   }
@@ -2853,7 +2934,7 @@ summarize_model_mars <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_mars), silent = TRUE)
+          importance <- try(vip::vi(inner_mars, scale = TRUE), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -2994,7 +3075,7 @@ summarize_model_mars <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(mars_obj), silent = TRUE)
+        importance <- try(vip::vi(mars_obj, scale = TRUE), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -4412,7 +4493,7 @@ summarize_model_prophet_boost <- function(wf) {
       }
 
       # Variable importance (don't add count since the importance section shows all features)
-      importance <- try(vip::vi(xgb_obj), silent = TRUE)
+      importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -5648,13 +5729,15 @@ summarize_model_svm_poly <- function(wf) {
             }
 
             importance <- try(
-              vip::vi_permute(
+              vip::vi(
                 object = inner_ksvm,
+                method = "permute",
                 train = train_x,
                 target = train_y,
                 metric = "rmse",
                 pred_wrapper = pred_wrapper,
-                nsim = 5 # Reduced for speed (5 permutations per feature)
+                nsim = 10,
+                scale = TRUE
               ),
               silent = TRUE
             )
@@ -5852,13 +5935,15 @@ summarize_model_svm_poly <- function(wf) {
           }
 
           importance <- try(
-            vip::vi_permute(
+            vip::vi(
               object = svm_obj,
+              method = "permute",
               train = train_x,
               target = train_y,
               metric = "rmse",
               pred_wrapper = pred_wrapper,
-              nsim = 5 # Reduced for speed (5 permutations per feature)
+              nsim = 10,
+              scale = TRUE
             ),
             silent = TRUE
           )
@@ -6065,13 +6150,15 @@ summarize_model_svm_rbf <- function(wf) {
             }
 
             importance <- try(
-              vip::vi_permute(
+              vip::vi(
                 object = inner_ksvm,
+                method = "permute",
                 train = train_x,
                 target = train_y,
                 metric = "rmse",
                 pred_wrapper = pred_wrapper,
-                nsim = 5 # Reduced for speed (5 permutations per feature)
+                nsim = 10,
+                scale = TRUE
               ),
               silent = TRUE
             )
@@ -6254,13 +6341,15 @@ summarize_model_svm_rbf <- function(wf) {
           }
 
           importance <- try(
-            vip::vi_permute(
+            vip::vi(
               object = svm_obj,
+              method = "permute",
               train = train_x,
               target = train_y,
               metric = "rmse",
               pred_wrapper = pred_wrapper,
-              nsim = 5 # Reduced for speed (5 permutations per feature)
+              nsim = 10,
+              scale = TRUE
             ),
             silent = TRUE
           )
@@ -7328,32 +7417,19 @@ summarize_model_xgboost <- function(wf) {
             all_nfeatures <- c(all_nfeatures, length(feature_names))
           }
 
-          # Variable importance using xgboost::xgb.importance() with feature_names parameter
-          importance <- NULL
+          # Variable importance using vip::vi()
+          importance <- try(vip::vi(inner_xgb, scale = TRUE), silent = TRUE)
 
-          if (!is.null(feature_names) && length(feature_names) > 0) {
-            importance <- try(
-              xgboost::xgb.importance(
-                feature_names = feature_names,
-                model = inner_xgb
-              ),
-              silent = TRUE
-            )
+          if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
+            # Filter out features with negligible importance
+            importance <- importance[importance$Importance > importance_threshold, ]
 
-            if (inherits(importance, "try-error")) {
-              importance <- NULL
-            }
-          }
+            if (nrow(importance) > 0) {
+              for (i in seq_len(nrow(importance))) {
+                feat_name <- importance$Variable[i]
+                importance_val <- importance$Importance[i]
 
-          # Process importance if we got valid results
-          if (!is.null(importance) && is.data.frame(importance) && nrow(importance) > 0) {
-            # xgboost::xgb.importance returns Feature and Gain columns
-            for (i in seq_len(nrow(importance))) {
-              feat_name <- importance$Feature[i]
-              importance_val <- importance$Gain[i]
-
-              # Only collect importance values above threshold
-              if (importance_val > importance_threshold) {
+                # Accumulate importance across models
                 if (is.null(all_importance[[feat_name]])) {
                   all_importance[[feat_name]] <- c()
                 }
@@ -7482,7 +7558,7 @@ summarize_model_xgboost <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(xgb_obj), silent = TRUE)
+        importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {

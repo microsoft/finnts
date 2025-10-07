@@ -175,11 +175,18 @@ ask_agent_workflow <- function(agent_info,
         * XGBoost: 'objective', 'colsample_bytree', 'model_type'
         * TBATS: 'alpha', 'lambda', 'likelihood', 'state_space_dim', 'variance'
         * General: 'nobs', 'residuals.mean', 'residuals.sd'
-      - coefficient: model coefficients (e.g., 'intercept', 'intercept.se' for ARIMA/regression models)
-      - importance: feature importance scores for other multivariate models (XGBoost, Cubist, etc.)
-        * Values are importance scores, typically summing to 1 or representing gain/frequency
+      - coefficient: model coefficients (e.g., 'intercept', 'intercept.se')
+        * Applies to only arima, armimax, arima-boost, and glmnet models
+      - importance: feature importance scores for multivariate models
+        * Values are importance scores, scaled to 100 for the most important feature
       - diagnostic: model fit statistics (e.g., 'AIC', 'BIC', 'RMSE', 'ljung_box_p_value', residual tests)
         * Note: Some diagnostics may appear in engine_param section depending on model type
+
+      Key Model Characteristics to Explain:
+      - Univariate models (ARIMA, ETS, Prophet, NNETAR, etc.): Use only historical values of the target variable
+      - Multivariate models (XGBoost, Cubist, MARS, GLMNet, SVM, etc.): Can use additional input variables (features) beyond just historical values
+      - Local models: Trained separately for each time series (more customized)
+      - Global models: Trained across all time series together (learns common patterns)
 
       HANDLING SIMPLE AVERAGE MODELS:
       When the best model is a simple average (Model_Name is NA and Model_ID contains '_'):
@@ -213,7 +220,7 @@ ask_agent_workflow <- function(agent_info,
 
       # Get model diagnostics (AIC, BIC, etc.)
       model_summary %>%
-        dplyr::filter(section == 'engine_param', name %in% c('aic', 'bic', 'aicc'))
+        dplyr::filter(section == 'engine_param')
 
       # Get all predictors used by a model
       model_summary %>% dplyr::filter(section == 'predictor', Combo == 'M750--ID1')
@@ -773,7 +780,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
       # Format data frames as tables
       context_parts[[name]] <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        utils::capture.output(print(head(result, 20))) %>%
+        utils::capture.output(print(head(result, 100))) %>%
           paste(collapse = "\n")
       )
     } else if (is.list(result)) {
@@ -805,16 +812,67 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
   answer_prompt <- glue::glue(
     "Based on the following analysis results, provide a clear answer to this question: {question}
 
-    Analysis Results:
+    -----Analysis Results-----
     {full_context}
 
-    Instructions:
-    - Provide a clear, concise answer using plain text.
-    - Assume the user has no technical background. So avoid jargon and explain concepts simply.
-    - Reference specific numbers and findings from the analysis.
-    - Format numbers appropriately (e.g., percentages, decimals)
-    - If the analysis shows a table, describe the key findings
-    - No markdown formatting"
+    -----RULES FOR FINANCE-FRIENDLY EXPLANATIONS-----
+
+    AUDIENCE: Assume the reader is a finance professional with NO data science background.
+
+    STRUCTURE YOUR ANSWER:
+    1. Start with the direct answer (1-2 sentences)
+    2. Provide supporting evidence with specific numbers
+    3. If discussing models, explain WHAT they do, not HOW they work
+    4. End with business implications if relevant
+
+    WHEN EXPLAINING MODELS:
+    - ALWAYS use the plain-language model descriptions from the system prompt
+    - NEVER use technical terms like 'hyperparameters', 'tuning', 'cross-validation' without explanation
+    - If mentioning a simple average, say: 'combines predictions from X different models' instead of 'ensemble'
+    - For model selection, focus on WHY it was chosen (accuracy, reliability) not technical specs
+    - If describing model components (ARIMA orders, hyperparameters):
+      * Only mention if directly asked
+      * Translate to business meaning (e.g., 'captures 12-month seasonal pattern' not 'seasonal_period = 12')
+
+    TECHNICAL TERM TRANSLATIONS (use these automatically):
+    - 'WMAPE' or 'weighted MAPE' -> 'weighted average prediction error' (explain: lower is better, 5% means typically off by 5%)
+    - 'MAPE' -> 'average prediction error'
+    - 'Back test' -> 'historical testing period'
+    - 'Forecast horizon' -> 'number of periods predicted into the future'
+    - 'Feature engineering' -> 'data preparation and variable creation'
+    - 'Lag features' -> 'using past values as predictors'
+    - 'Rolling window' -> 'moving averages calculated over time'
+    - 'Fourier terms' -> 'mathematical components that capture seasonal patterns'
+    - 'Box-Cox transformation' -> 'mathematical adjustment to stabilize variance'
+    - 'Stationarity' -> 'removing trends to focus on patterns'
+    - 'Recipe' -> 'data preparation workflow'
+    - 'Local model' -> 'model trained specifically for this time series'
+    - 'Global model' -> 'model trained across multiple time series'
+
+    NUMBER FORMATTING:
+    - Percentages: Always include % symbol, round to 2 decimals (e.g., 4.52%)
+    - Large numbers: Use commas as thousands separators (e.g., 1,234.56)
+    - WMAPE/MAPE: Express as percentage, explain scale (e.g., '3.2% error means forecasts are typically within 3.2% of actual values')
+
+    AVOID THESE MISTAKES:
+    - DON'T say 'the model with the lowest WMAPE' → SAY 'the most accurate model'
+    - DON'T list technical parameters without context
+    - DON'T assume knowledge of statistical concepts
+    - DON'T use acronyms without defining them first
+    - DON'T say 'Recipe R1' -> SAY 'feature engineering recipe #1'
+
+    FORMAT:
+    - Use plain text only (NO markdown, NO bullet points)
+    - Use clear paragraph breaks for readability
+    - Put the most important information first
+    - If showing multiple models, group by time series and prioritize the best model
+
+    EXAMPLE GOOD ANSWER:
+    'The most accurate model for this time series is an ARIMA model, which achieved a 3.2% weighted average prediction error. This means the forecasts are typically within 3.2% of the actual values. ARIMA is a statistical model that uses historical patterns and trends to predict future values, and in this case, it was trained specifically for this individual time series (local model). The model captures a 12-month seasonal pattern and uses the past 3 months of data to make predictions.'
+
+    EXAMPLE BAD ANSWER:
+    'The best model is arima--local--R1 with WMAPE of 0.032. It has seasonal_period=12, lag_periods=1---3, and uses step_zv and step_dummy in the recipe.'
+    "
   )
 
   cli::cli_progress_step("Generating answer...")
