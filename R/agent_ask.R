@@ -855,7 +855,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
     - WMAPE/MAPE: Express as percentage, explain scale (e.g., '3.2% error means forecasts are typically within 3.2% of actual values')
 
     AVOID THESE MISTAKES:
-    - DON'T say 'the model with the lowest WMAPE' → SAY 'the most accurate model'
+    - DON'T say 'the model with the lowest WMAPE' -> SAY 'the most accurate model'
     - DON'T list technical parameters without context
     - DON'T assume knowledge of statistical concepts
     - DON'T use acronyms without defining them first

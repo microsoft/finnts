@@ -62,8 +62,7 @@ Imports:
     timetk,
     tune,
     vroom,
-    workflows,
-    xgboost
+    workflows
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
