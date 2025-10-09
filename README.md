@@ -74,7 +74,7 @@ accuracy_answer <- ask_agent(agent_info = agent,
                              question = "What's the best model accuracy?")
                              
 model_answer <- ask_agent(agent_info = agent,
-                          question = "Explain why the best model was selected.")
+                          question = "Explain why the best model was selected. How does that model work?")
 ```
 
 ## Contributing

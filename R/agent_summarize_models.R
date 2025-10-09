@@ -1,6 +1,6 @@
 #' Get the trained model summaries info for an agent
 #'
-#' This function retrieves the final summarized model info after agent completes its run.
+#' This function retrieves the final summarized model info (hyperparameters, recipe steps, feature importance, etc.) after agent completes its run.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'

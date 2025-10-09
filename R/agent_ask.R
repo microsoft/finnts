@@ -31,6 +31,12 @@
 #'   question = "Which models were used for the forecast?"
 #' )
 #'
+#' # Ask about feature importance
+#' answer <- ask_agent(
+#'   agent_info = agent_info,
+#'   question = "What are the top 5 most important features in the xgboost model?"
+#' )
+#'
 #' # Ask about specific time series
 #' answer <- ask_agent(
 #'   agent_info = agent_info,
@@ -101,14 +107,14 @@ ask_agent_workflow <- function(agent_info,
     - 'regressor_squared_lagN': Squared transformation of lagged regressor
     - 'regressor_log_lagN': Log transformation of lagged regressor
     - 'regressor_cubed_lagN': Cubed transformation of lagged regressor
-    
+
     When explaining feature importance:
     1. Group related features (e.g., all lag features, all seasonal features, all external regressors)
     2. Explain what the feature represents in business context
     3. Interpret why high importance makes sense given the data patterns
     4. Distinguish between different types of seasonal encoding (month indicators vs Fourier terms)
     5. Explain the practical meaning of rolling window features, polynomial transformations, and lagged regressors
-  
+
     Available data sources:
     - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
@@ -664,7 +670,7 @@ execute_analysis_step <- function(agent_info,
       * Model_ID matches the Model_ID in get_agent_forecast() for joining
       * When analyzing simple averages, filter for multiple Model_IDs using: Model_ID %in% c('model1', 'model2', 'model3')
     - When working with variable importance data, use these helper patterns for feature categorization:
-      importance_data %>% 
+      importance_data %>%
         dplyr::mutate(
           feature_category = dplyr::case_when(
             stringr::str_detect(name, '^Target_lag\\\\d+$') ~ 'Simple Lags',
@@ -868,7 +874,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
     - If describing model components (ARIMA orders, hyperparameters):
       * Only mention if directly asked
       * Translate to business meaning (e.g., 'captures 12-month seasonal pattern' not 'seasonal_period = 12')
-      
+
     When explaining feature importance:
     1. Start with a summary (e.g., 'The top 3 features contribute X% of total importance')
     2. Group features by category (lags, rolling windows, seasonal, external regressors)
