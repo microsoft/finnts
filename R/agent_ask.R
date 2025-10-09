@@ -89,6 +89,26 @@ ask_agent_workflow <- function(agent_info,
     - External Regressors: {ifelse(is.null(agent_info$external_regressors), 'None',
                                    paste(agent_info$external_regressors, collapse = ', '))}
 
+    Feature Naming Convention Guide:
+    When analyzing variable importance, interpret feature names as follows:
+    - 'Target_lagN': Lagged values of the target variable (e.g., Target_lag1 = 1 period ago)
+    - 'Target_lagN_rollM_Stat': Rolling window statistics (e.g., Target_lag1_roll12_Sum = sum of last 12 values starting from lag 1)
+      * Common statistics: Sum, Avg, StdDev, Min, Max
+    - 'Date_month.lbl_Month': One-hot encoded month indicators
+    - 'Date_sinN_KM' / 'Date_cosN_KM': Fourier seasonal features (N = period, M = harmonic order)
+    - 'Date_diff': Time difference between observations
+    - 'regressor_lagN': Lagged external regressor values
+    - 'regressor_squared_lagN': Squared transformation of lagged regressor
+    - 'regressor_log_lagN': Log transformation of lagged regressor
+    - 'regressor_cubed_lagN': Cubed transformation of lagged regressor
+    
+    When explaining feature importance:
+    1. Group related features (e.g., all lag features, all seasonal features, all external regressors)
+    2. Explain what the feature represents in business context
+    3. Interpret why high importance makes sense given the data patterns
+    4. Distinguish between different types of seasonal encoding (month indicators vs Fourier terms)
+    5. Explain the practical meaning of rolling window features, polynomial transformations, and lagged regressors
+  
     Available data sources:
     - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
@@ -643,6 +663,21 @@ execute_analysis_step <- function(agent_info,
       * For numeric analysis, convert value column: as.numeric(value)
       * Model_ID matches the Model_ID in get_agent_forecast() for joining
       * When analyzing simple averages, filter for multiple Model_IDs using: Model_ID %in% c('model1', 'model2', 'model3')
+    - When working with variable importance data, use these helper patterns for feature categorization:
+      importance_data %>% 
+        dplyr::mutate(
+          feature_category = dplyr::case_when(
+            stringr::str_detect(name, '^Target_lag\\\\d+$') ~ 'Simple Lags',
+            stringr::str_detect(name, '^Target_lag.*_roll.*_(Sum|Avg|StdDev|Min|Max)') ~ 'Rolling Windows',
+            stringr::str_detect(name, 'Date_month\\\\.lbl_') ~ 'Month Indicators',
+            stringr::str_detect(name, 'Date_(sin|cos)\\\\d+_K\\\\d+') ~ 'Fourier Seasonality',
+            stringr::str_detect(name, 'Date_') ~ 'Date Features',
+            stringr::str_detect(name, '_squared_lag') ~ 'Squared Transforms',
+            stringr::str_detect(name, '_log_lag') ~ 'Log Transforms',
+            stringr::str_detect(name, '_cubed_lag') ~ 'Cubed Transforms',
+            TRUE ~ 'External Regressors'
+          )
+        )
 
     - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
   )
@@ -833,6 +868,15 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
     - If describing model components (ARIMA orders, hyperparameters):
       * Only mention if directly asked
       * Translate to business meaning (e.g., 'captures 12-month seasonal pattern' not 'seasonal_period = 12')
+      
+    When explaining feature importance:
+    1. Start with a summary (e.g., 'The top 3 features contribute X% of total importance')
+    2. Group features by category (lags, rolling windows, seasonal, external regressors)
+    3. Explain what each important feature represents in plain language
+    4. Connect importance to business context (e.g., 'September is important because it's peak season')
+    5. If discussing specific features, decode the naming:
+       - Target_lag1_roll12_Sum = 'Sum of target values over the last 12 months, starting 1 month ago'
+       - driver1_squared_lag6 = 'Squared value of driver1 from 6 periods ago'
 
     TECHNICAL TERM TRANSLATIONS (use these automatically):
     - 'WMAPE' or 'weighted MAPE' -> 'weighted average prediction error' (explain: lower is better, 5% means typically off by 5%)
