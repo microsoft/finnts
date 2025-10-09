@@ -31,6 +31,12 @@
 #'   question = "Which models were used for the forecast?"
 #' )
 #'
+#' # Ask about feature importance
+#' answer <- ask_agent(
+#'   agent_info = agent_info,
+#'   question = "What are the top 5 most important features in the xgboost model?"
+#' )
+#'
 #' # Ask about specific time series
 #' answer <- ask_agent(
 #'   agent_info = agent_info,
@@ -50,9 +56,6 @@ ask_agent <- function(agent_info,
       call. = FALSE
     )
   }
-
-  # Register available tools
-  register_ask_tools(agent_info)
 
   # Create and run the workflow
   result <- ask_agent_workflow(
@@ -92,6 +95,26 @@ ask_agent_workflow <- function(agent_info,
     - External Regressors: {ifelse(is.null(agent_info$external_regressors), 'None',
                                    paste(agent_info$external_regressors, collapse = ', '))}
 
+    Feature Naming Convention Guide:
+    When analyzing variable importance, interpret feature names as follows:
+    - 'Target_lagN': Lagged values of the target variable (e.g., Target_lag1 = 1 period ago)
+    - 'Target_lagN_rollM_Stat': Rolling window statistics (e.g., Target_lag1_roll12_Sum = sum of last 12 values starting from lag 1)
+      * Common statistics: Sum, Avg, StdDev, Min, Max
+    - 'Date_month.lbl_Month': One-hot encoded month indicators
+    - 'Date_sinN_KM' / 'Date_cosN_KM': Fourier seasonal features (N = period, M = harmonic order)
+    - 'Date_diff': Time difference between observations
+    - 'regressor_lagN': Lagged external regressor values
+    - 'regressor_squared_lagN': Squared transformation of lagged regressor
+    - 'regressor_log_lagN': Log transformation of lagged regressor
+    - 'regressor_cubed_lagN': Cubed transformation of lagged regressor
+
+    When explaining feature importance:
+    1. Group related features (e.g., all lag features, all seasonal features, all external regressors)
+    2. Explain what the feature represents in business context
+    3. Interpret why high importance makes sense given the data patterns
+    4. Distinguish between different types of seasonal encoding (month indicators vs Fourier terms)
+    5. Explain the practical meaning of rolling window features, polynomial transformations, and lagged regressors
+
     Available data sources:
     - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
       - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
@@ -99,8 +122,10 @@ ask_agent_workflow <- function(agent_info,
         * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
         * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
         * ALWAYS USE Model_ID to identify which model(s) were used
+        * IMPORTANT: To analyze individual models within an average, split Model_ID by '_' to get component Model_IDs
       - Model_Name: name of the model type (e.g., 'arima', 'ets', 'cubist')
         * IMPORTANT: When Model_Name is NA, this indicates a SIMPLE AVERAGE model - check Model_ID for the actual models used
+        * To get details about an average model, split the Model_ID and look up each component in get_summarized_models()
       - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
       - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2', 'simple_average')
       - Run_Type: distinguishes between 'Back_Test' and 'Future_Forecast'
@@ -154,6 +179,80 @@ ask_agent_workflow <- function(agent_info,
 
       To filter for specific analysis or combo:
       eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
+    - get_summarized_models(agent_info): Returns a df of trained model details for each time series with the following columns:
+      - Combo: time series identifier
+      - Model_ID: unique identifier of the model (e.g., 'arima--local--R1')
+      - Model_Name: name of the model type (e.g., 'arima', 'ets', 'xgboost')
+      - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
+      - model_class: the underlying model class used by the engine (e.g., 'xgb.Booster', 'auto_arima_fit_impl')
+      - engine: the specific engine that trained the model (e.g., 'auto_arima', 'ets', 'xgboost')
+      - section: category of information (e.g., 'predictor', 'outcome', 'recipe_step', 'model_arg', 'engine_param', 'coefficient', 'importance', 'diagnostic')
+      - name: specific parameter, coefficient, or metric name within each section
+      - value: the value of the parameter, coefficient, or metric (stored as character, may need conversion to numeric)
+
+      Section types and their content:
+      - predictor: input variables used by the model (e.g., 'Date', 'Date_year', 'Date_month', lag features, Fourier terms, rolling statistics)
+      - outcome: target variable being predicted (typically 'Target')
+      - recipe_step: preprocessing steps applied, numbered sequentially (e.g., '1', '2', '3') with step descriptions as values
+        * Examples: 'Remove zero variance predictors [step_zv]', 'One-hot encode categorical variables [step_dummy]'
+      - model_arg: parsnip model arguments (e.g., 'seasonal_period', 'non_seasonal_ar', 'learn_rate', 'trees', 'tree_depth')
+      - engine_param: actual fitted model parameters from the underlying engine
+        * ARIMA: 'aic', 'bic', 'aicc', 'loglik', 'sigma2', 'order_str', 'seasonal_order_str', 'nobs', 'ljung_box_*'
+        * XGBoost: 'objective', 'colsample_bytree', 'model_type'
+        * TBATS: 'alpha', 'lambda', 'likelihood', 'state_space_dim', 'variance'
+        * General: 'nobs', 'residuals.mean', 'residuals.sd'
+      - coefficient: model coefficients (e.g., 'intercept', 'intercept.se')
+        * Applies to only arima, armimax, arima-boost, and glmnet models
+      - importance: feature importance scores for multivariate models
+        * Values are importance scores, scaled to 100 for the most important feature
+      - diagnostic: model fit statistics (e.g., 'AIC', 'BIC', 'RMSE', 'ljung_box_p_value', residual tests)
+        * Note: Some diagnostics may appear in engine_param section depending on model type
+
+      Key Model Characteristics to Explain:
+      - Univariate models (ARIMA, ETS, Prophet, NNETAR, etc.): Use only historical values of the target variable
+      - Multivariate models (XGBoost, Cubist, MARS, GLMNet, SVM, etc.): Can use additional input variables (features) beyond just historical values
+      - Local models: Trained separately for each time series (more customized)
+      - Global models: Trained across all time series together (learns common patterns)
+
+      HANDLING SIMPLE AVERAGE MODELS:
+      When the best model is a simple average (Model_Name is NA and Model_ID contains '_'):
+      1. Split Model_ID by '_' to get individual model IDs: stringr::str_split(Model_ID, '_')[[1]]
+      2. Filter get_summarized_models() using these individual Model_IDs to get component model details
+      3. When reporting on the 'best model', mention it's a simple average of X models and list them
+
+      Example:
+      # If Model_ID is 'arima--local--R1_ets--local--R1_prophet--local--R1'
+      component_models <- stringr::str_split(best_model_id, '_')[[1]]
+      model_details <- get_summarized_models(agent_info) %>%
+        dplyr::filter(Model_ID %in% component_models)
+
+      Use cases:
+      - Understanding exact model specifications (ARIMA orders, ETS components, hyperparameters)
+      - Analyzing coefficients and their significance
+      - Identifying important features/predictors
+      - Reviewing model diagnostics and fit quality
+      - Comparing model architectures across time series
+      - Examining preprocessing steps applied to each model
+
+      Example queries:
+      # Get ARIMA orders for all ARIMA models
+      model_summary %>% dplyr::filter(Model_Name == 'arima', section == 'engine_param', name %in% c('order_str', 'seasonal_order_str'))
+
+      # Get variable importance for XGBoost models
+      model_summary %>%
+        dplyr::filter(Model_Name == 'xgboost', section == 'importance') %>%
+        dplyr::mutate(value = as.numeric(value)) %>%
+        dplyr::arrange(Combo, desc(value))
+
+      # Get model diagnostics (AIC, BIC, etc.)
+      model_summary %>%
+        dplyr::filter(section == 'engine_param')
+
+      # Get all predictors used by a model
+      model_summary %>% dplyr::filter(section == 'predictor', Combo == 'M750--ID1')
+
+      # Get recipe preprocessing steps
+      model_summary %>% dplyr::filter(section == 'recipe_step')
 
     ALWAYS use the dplyr package for data manipulation.
     Be precise and efficient in your code generation."
@@ -261,46 +360,6 @@ ask_agent_workflow <- function(agent_info,
   ))
 }
 
-#' Register tools available for answering questions
-#'
-#' @param agent_info Agent info object
-#' @return NULL
-#' @noRd
-register_ask_tools <- function(agent_info) {
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "ask_agent_workflow",
-    .description = "Run the Finn ask agent workflow to answer questions",
-    .fun = ask_agent_workflow
-  ))
-
-  # Register the workflow orchestration tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "create_analysis_plan",
-    .description = "Create a plan of R code steps to answer a question",
-    .fun = create_analysis_plan
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "execute_analysis_step",
-    .description = "Generate and execute R code for an analysis step",
-    .fun = execute_analysis_step
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "generate_final_answer",
-    .description = "Generate the final answer based on analysis results",
-    .fun = generate_final_answer
-  ))
-
-  # Register R code execution tool
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "execute_r_code",
-    .description = "Execute R code and return the result",
-    .fun = execute_r_code
-  ))
-}
-
 #' Create a plan of R analysis steps to answer the question
 #'
 #' @param agent_info Agent info object
@@ -334,35 +393,69 @@ create_analysis_plan <- function(agent_info, question) {
        - Filter by Combo to get results for specific time series
        - Value column contains the metric values (numeric or character)
 
-    4. previous step results:
+    4. get_summarized_models(agent_info):
+       USE FOR: Detailed model specifications, hyperparameters, coefficients, feature importance, model diagnostics
+       Returns a data frame with columns: Combo, Model_ID, Model_Name, Model_Type, model_class, engine, section, name, value
+       - Filter by section to get specific types of information:
+         * 'predictor': input variables/features used (Date features, lags, Fourier terms, etc.)
+         * 'outcome': target variable
+         * 'recipe_step': preprocessing steps (numbered 1, 2, 3, etc.)
+         * 'model_arg': parsnip model arguments (learn_rate, trees, seasonal_period, etc.)
+         * 'engine_param': fitted parameters (ARIMA orders, AIC, BIC, lambda, nobs, etc.)
+         * 'coefficient': model coefficients (intercept, regressor coefficients)
+         * 'importance': feature importance scores (for XGBoost, Cubist, etc.)
+         * 'diagnostic': model fit statistics (may overlap with engine_param)
+       - Filter by Model_Name or Model_ID to get specific model types or instances
+       - Filter by Combo to get model details for specific time series
+       - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
+
+    5. previous step results:
        USE FOR: Working with results from earlier steps in the analysis
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
 
     Decision Rules:
     - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
     - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
+      * If Model_Name is NA, the best model is a simple average - split Model_ID by '_' to get components
+      * Use get_summarized_models() with the component Model_IDs to get details about each model in the average
     - Questions about forecasts/predictions/future values -> use get_agent_forecast()
     - Questions about models used -> check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
+      * If the best model is a simple average, you'll need BOTH get_agent_forecast() AND get_summarized_models()
     - Questions about feature engineering/transformations -> use get_best_agent_run()
     - Questions about data quality/patterns/seasonality -> use get_eda_data()
     - Questions about stationarity/ACF/PACF -> use get_eda_data() with Analysis_Type filter
     - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
     - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
-    - Questions needing both forecast values AND run settings -> use BOTH sources in separate steps
+    - Questions about model specifications/parameters -> use get_summarized_models()
+      * If analyzing the best model and it's a simple average, split Model_ID and query for each component
+    - Questions about model hyperparameters -> use get_summarized_models() with section == 'engine_param' or 'model_arg'
+    - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
+    - Questions about feature importance -> use get_summarized_models() with section == 'importance'
+    - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param'
+    - Questions needing both forecast values AND run settings -> use BOTH get_agent_forecast() and get_best_agent_run() sources in separate steps
+    - Questions needing both model settings AND detailed specifications -> use get_best_agent_run() AND get_summarized_models() sources in separate steps
 
     Keywords to Data Source Mapping:
     - WMAPE, MAPE, accuracy, error, performance -> get_agent_forecast()
     - forecast, prediction, future, back test, next month/year -> get_agent_forecast()
     - confidence interval, prediction interval -> get_agent_forecast()
     - outliers, missing values, transformations -> get_best_agent_run() for settings, get_eda_data() for actual counts
-    - best model -> get_agent_forecast()
+    - best model -> get_agent_forecast() for which model was best, get_summarized_models() for details about that model
+      * Check if Model_Name is NA (simple average) - if so, split Model_ID to get component models
+    - simple average, ensemble, averaged models, model combination -> get_agent_forecast() to identify, then get_summarized_models() with split Model_IDs
     - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
-    - time series characteristics, patterns -> get_eda_data()
+    - time series characteristics, patterns -> get_eda_data() for summary metrics, get_agent_forecast() for custom stats on forecasts
     - external regressor correlations -> get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
+    - model hyperparameters -> get_summarized_models() with section == 'engine_param' or 'model_arg'
+    - model coefficients -> get_summarized_models() with section == 'coefficient'
+    - hyperparameters, tuning parameters, model settings -> get_summarized_models() with section in ('model_arg', 'engine_param')
+    - feature importance, variable importance, predictor importance -> get_summarized_models() with section == 'importance'
+    - which features/predictors were used -> get_summarized_models() with section == 'predictor'
+    - preprocessing steps, recipe steps -> get_summarized_models() with section == 'recipe_step'
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
-    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"none\", or \"previous\")
+    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"get_summarized_models\", \"none\", or \"previous\")
     - analysis: Brief description of the R code analysis to perform
     - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data') - THIS WILL BE AVAILABLE IN SUBSEQUENT STEPS
 
@@ -383,11 +476,19 @@ create_analysis_plan <- function(agent_info, question) {
       \"output_name\": \"models_used\"
     }}]
 
+    For 'What are the top 5 most important features in the XGBoost models?':
+    [{{
+      \"description\": \"Get feature importance from XGBoost models\",
+      \"data_source\": \"get_summarized_models\",
+      \"analysis\": \"Filter for Model_Name == 'xgboost' and section == 'importance', convert value to numeric, arrange by Combo and desc(value), and take top 5 per Combo\",
+      \"output_name\": \"top_features\"
+    }}]
+
     For 'Analyze forecast bias and recommend adjustments':
     [{{
       \"description\": \"Get back-test results\",
       \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for Run_Type == 'Back_Test'\",
+      \"analysis\": \"Filter for Run_Type == 'Back_Test' and Best_Model == 'Yes'\",
       \"output_name\": \"backtest_data\"
     }},
     {{
@@ -403,7 +504,27 @@ create_analysis_plan <- function(agent_info, question) {
       \"output_name\": \"series_bias\"
     }}]
 
-    DO NOT call any tools. Return ONLY the JSON array."
+    For 'Explain how the best model works':
+    [{{
+      \"description\": \"Get best model information\",
+      \"data_source\": \"get_agent_forecast\",
+      \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo, Model_ID, Model_Name\",
+      \"output_name\": \"best_models\"
+    }},
+    {{
+      \"description\": \"Check if best models are simple averages and split Model_IDs\",
+      \"data_source\": \"none\",
+      \"analysis\": \"For each row in best_models, check if Model_Name is NA. If so, split Model_ID by '_' to get component model IDs. Create a data frame with Combo and individual Model_IDs\",
+      \"output_name\": \"component_models\"
+    }},
+    {{
+      \"description\": \"Get detailed specifications for component models\",
+      \"data_source\": \"get_summarized_models\",
+      \"analysis\": \"Filter for Model_IDs in component_models and get key specifications from sections: model_arg, engine_param, coefficient, importance\",
+      \"output_name\": \"model_specs\"
+    }}]
+
+    Return ONLY the JSON array."
   )
 
   response <- llm$chat(planning_prompt, echo = FALSE)
@@ -472,6 +593,8 @@ execute_analysis_step <- function(agent_info,
         "get_agent_forecast(agent_info)"
       } else if (identical(src, "get_eda_data")) {
         "get_eda_data(agent_info)"
+      } else if (identical(src, "get_summarized_models")) {
+        "get_summarized_models(agent_info)"
       } else if (identical(src, "none") || identical(src, "previous")) {
         # Working with previous results
         NULL
@@ -508,7 +631,7 @@ execute_analysis_step <- function(agent_info,
   code_prompt <- glue::glue(
     "You are writing R code that will be executed inside an R environment that ALREADY contains:
     - agent_info (list-like)  [DO NOT create or modify it]
-    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data()
+    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data(), get_summarized_models()
     {previous_context}
 
     Task: {current_step$analysis}
@@ -523,7 +646,6 @@ execute_analysis_step <- function(agent_info,
     - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools,
       lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
     - If last error is not none, it contains the error message from the last attempt to run R code, YOU MUST fix the code accordingly
-    - NEVER call any tools, just generate the R code
 
     Data Loading Rules:
     {ifelse(!is.null(ds_call), paste0('- FIRST LINE MUST load data exactly like:\n      data <- ', ds_call), paste0('- This step uses data from a previous step named \"', ifelse(step_index > 1 && (step_index - 1) <= length(analysis_plan), analysis_plan[[step_index - 1]]$output_name, 'previous_result'), '\"\n- Access it directly by its name (it\\'s already in the environment)'))}
@@ -538,6 +660,31 @@ execute_analysis_step <- function(agent_info,
       * Model_ID is the PRIMARY model identifier - ALWAYS include it in your results
       * When Model_Name is NA, it indicates an ensemble/average model
       * Model_ID for ensembles contains multiple models separated by '_'
+      * To analyze components of an average model: stringr::str_split(Model_ID, '_')[[1]]
+      * Then filter get_summarized_models() results using the component Model_IDs
+    - For get_summarized_models():
+      * Returns detailed model information organized by section (predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic)
+      * Filter by section to get specific types of information
+      * The 'value' column may be numeric or character depending on the parameter
+      * For numeric analysis, convert value column: as.numeric(value)
+      * Model_ID matches the Model_ID in get_agent_forecast() for joining
+      * When analyzing simple averages, filter for multiple Model_IDs using: Model_ID %in% c('model1', 'model2', 'model3')
+    - When working with variable importance data, use these helper patterns for feature categorization:
+      importance_data %>%
+        dplyr::mutate(
+          feature_category = dplyr::case_when(
+            stringr::str_detect(name, '^Target_lag\\\\d+$') ~ 'Simple Lags',
+            stringr::str_detect(name, '^Target_lag.*_roll.*_(Sum|Avg|StdDev|Min|Max)') ~ 'Rolling Windows',
+            stringr::str_detect(name, 'Date_month\\\\.lbl_') ~ 'Month Indicators',
+            stringr::str_detect(name, 'Date_(sin|cos)\\\\d+_K\\\\d+') ~ 'Fourier Seasonality',
+            stringr::str_detect(name, 'Date_') ~ 'Date Features',
+            stringr::str_detect(name, '_squared_lag') ~ 'Squared Transforms',
+            stringr::str_detect(name, '_log_lag') ~ 'Log Transforms',
+            stringr::str_detect(name, '_cubed_lag') ~ 'Cubed Transforms',
+            TRUE ~ 'External Regressors'
+          )
+        )
+
     - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
   )
 
@@ -598,6 +745,7 @@ execute_r_code <- function(code,
   exec_env$get_agent_forecast <- get_agent_forecast
   exec_env$get_best_agent_run <- get_best_agent_run
   exec_env$get_eda_data <- get_eda_data
+  exec_env$get_summarized_models <- get_summarized_models
 
   # Add previous results to environment with their proper names
   if (!is.null(analysis_plan) && !is.null(step_index) && length(previous_results) > 0) {
@@ -673,7 +821,7 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
       # Format data frames as tables
       context_parts[[name]] <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        utils::capture.output(print(head(result, 20))) %>%
+        utils::capture.output(print(head(result, 100))) %>%
           paste(collapse = "\n")
       )
     } else if (is.list(result)) {
@@ -705,15 +853,76 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
   answer_prompt <- glue::glue(
     "Based on the following analysis results, provide a clear answer to this question: {question}
 
-    Analysis Results:
+    -----Analysis Results-----
     {full_context}
 
-    Instructions:
-    - Provide a clear, concise answer using plain text. Explain everything at a middle school level.
-    - Reference specific numbers and findings from the analysis
-    - Format numbers appropriately (e.g., percentages, decimals)
-    - If the analysis shows a table, describe the key findings
-    - No markdown formatting"
+    -----RULES FOR FINANCE-FRIENDLY EXPLANATIONS-----
+
+    AUDIENCE: Assume the reader is a finance professional with NO data science background.
+
+    STRUCTURE YOUR ANSWER:
+    1. Start with the direct answer (1-2 sentences)
+    2. Provide supporting evidence with specific numbers
+    3. If discussing models, explain WHAT they do, not HOW they work
+    4. End with business implications if relevant
+
+    WHEN EXPLAINING MODELS:
+    - ALWAYS use the plain-language model descriptions from the system prompt
+    - NEVER use technical terms like 'hyperparameters', 'tuning', 'cross-validation' without explanation
+    - If mentioning a simple average, say: 'combines predictions from X different models' instead of 'ensemble'
+    - For model selection, focus on WHY it was chosen (accuracy, reliability) not technical specs
+    - If describing model components (ARIMA orders, hyperparameters):
+      * Only mention if directly asked
+      * Translate to business meaning (e.g., 'captures 12-month seasonal pattern' not 'seasonal_period = 12')
+
+    When explaining feature importance:
+    1. Start with a summary (e.g., 'The top 3 features contribute X% of total importance')
+    2. Group features by category (lags, rolling windows, seasonal, external regressors)
+    3. Explain what each important feature represents in plain language
+    4. Connect importance to business context (e.g., 'September is important because it's peak season')
+    5. If discussing specific features, decode the naming:
+       - Target_lag1_roll12_Sum = 'Sum of target values over the last 12 months, starting 1 month ago'
+       - driver1_squared_lag6 = 'Squared value of driver1 from 6 periods ago'
+
+    TECHNICAL TERM TRANSLATIONS (use these automatically):
+    - 'WMAPE' or 'weighted MAPE' -> 'weighted average prediction error' (explain: lower is better, 5% means typically off by 5%)
+    - 'MAPE' -> 'average prediction error'
+    - 'Back test' -> 'historical testing period'
+    - 'Forecast horizon' -> 'number of periods predicted into the future'
+    - 'Feature engineering' -> 'data preparation and variable creation'
+    - 'Lag features' -> 'using past values as predictors'
+    - 'Rolling window' -> 'moving averages calculated over time'
+    - 'Fourier terms' -> 'mathematical components that capture seasonal patterns'
+    - 'Box-Cox transformation' -> 'mathematical adjustment to stabilize variance'
+    - 'Stationarity' -> 'removing trends to focus on patterns'
+    - 'Recipe' -> 'data preparation workflow'
+    - 'Local model' -> 'model trained specifically for this time series'
+    - 'Global model' -> 'model trained across multiple time series'
+
+    NUMBER FORMATTING:
+    - Percentages: Always include % symbol, round to 2 decimals (e.g., 4.52%)
+    - Large numbers: Use commas as thousands separators (e.g., 1,234.56)
+    - WMAPE/MAPE: Express as percentage, explain scale (e.g., '3.2% error means forecasts are typically within 3.2% of actual values')
+
+    AVOID THESE MISTAKES:
+    - DON'T say 'the model with the lowest WMAPE' -> SAY 'the most accurate model'
+    - DON'T list technical parameters without context
+    - DON'T assume knowledge of statistical concepts
+    - DON'T use acronyms without defining them first
+    - DON'T say 'Recipe R1' -> SAY 'feature engineering recipe #1'
+
+    FORMAT:
+    - Use plain text only (NO markdown, NO bullet points)
+    - Use clear paragraph breaks for readability
+    - Put the most important information first
+    - If showing multiple models, group by time series and prioritize the best model
+
+    EXAMPLE GOOD ANSWER:
+    'The most accurate model for this time series is an ARIMA model, which achieved a 3.2% weighted average prediction error. This means the forecasts are typically within 3.2% of the actual values. ARIMA is a statistical model that uses historical patterns and trends to predict future values, and in this case, it was trained specifically for this individual time series (local model). The model captures a 12-month seasonal pattern and uses the past 3 months of data to make predictions.'
+
+    EXAMPLE BAD ANSWER:
+    'The best model is arima--local--R1 with WMAPE of 0.032. It has seasonal_period=12, lag_periods=1---3, and uses step_zv and step_dummy in the recipe.'
+    "
   )
 
   cli::cli_progress_step("Generating answer...")

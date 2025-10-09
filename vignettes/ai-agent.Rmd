@@ -39,7 +39,8 @@ Core Agent Functions:
 - A versioned **agent run** (with `agent_version` and `run_id`) and log files.
 - A **best-run table** per time series with metrics.
 - A combined **forecast table** (optionally reconciled if hierarchy is used).
-- Cached EDA outputs to inform later runs.
+- EDA artifacts (missing data, outliers, stationarity, seasonality, ACF/PACF).
+- Summaries of trained models (hyperparameters, recipes, feature importance).
 
 Use these helpers to retrieve outputs:
 
@@ -58,11 +59,11 @@ Use these helpers to retrieve outputs:
 Set up environment variables for Azure OpenAI (example):
 
 ```{r eval=FALSE}
-# Sys.setenv(
-#   AZURE_OPENAI_ENDPOINT    = "<your-endpoint>",
-#   AZURE_OPENAI_API_KEY     = "<your-key>",
-#   AZURE_OPENAI_API_VERSION = "<api-version>"
-# )
+Sys.setenv(
+  AZURE_OPENAI_ENDPOINT    = "<your-endpoint>",
+  AZURE_OPENAI_API_KEY     = "<your-key>",
+  AZURE_OPENAI_API_VERSION = "<api-version>"
+)
 ```
 
 ---
@@ -190,6 +191,12 @@ answer <- ask_agent(
   question = "Which models were selected as best for each time series?"
 )
 
+# Ask about feature importance
+answer <- ask_agent(
+  agent_info = agent,
+  question = "What are the top 3 most important features for the forecast models?"
+)
+
 # Ask about data quality
 answer <- ask_agent(
   agent_info = agent,
@@ -217,11 +224,12 @@ answer <- ask_agent(
 
 ### What data sources are available
 
-`ask_agent()` has access to three main data sources:
+`ask_agent()` has access to four main data sources:
 
 1. **Forecast results** (`get_agent_forecast()`): Future predictions, back-test results, model selections, confidence intervals
 2. **Model configurations** (`get_best_agent_run()`): Feature engineering settings, transformations applied, model hyperparameters
 3. **EDA results** (`get_eda_data()`): Time series characteristics, seasonality, stationarity tests, data quality metrics
+4. **Model summaries** (`get_summarized_models()`): Feature importance, model parameters, recipe details
 
 The agent automatically determines which data sources to use based on your question.
 
@@ -318,6 +326,6 @@ You normally won't need this, but for audits:
 - Inputs: `path/input_data/…`
 - EDA:    `path/eda/…`
 - Logs:   `path/logs/…` (includes the hashed `*-agent_run.csv` and `*-agent_best_run.*` for each version)
-- Forecasts: `path/forecasts/…` (condensed, reconciled or per-model outputs)
+- Final Agent Outputs: `path/final_output/…`
 
 Use the helpers first; dig into files only if you must.

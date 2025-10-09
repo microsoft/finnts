@@ -25,6 +25,7 @@ reference:
       - starts_with("get_agent_forecast")
       - starts_with("get_best_agent_run")
       - starts_with("get_eda_data")
+      - starts_with("get_summarized_models")
 
   - title: "Standard Finn Runs"
     desc: Run the standard Finn process without the agent, allowing for more manual control.

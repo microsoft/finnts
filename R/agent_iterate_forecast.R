@@ -80,10 +80,6 @@ iterate_forecast <- function(agent_info,
     agent_info$project_info$combo_variables <- "ID"
   }
 
-  # register tools
-  register_eda_tools(agent_info)
-  register_fcst_tools(agent_info)
-
   # run exploratory data analysis
   eda_results <- eda_agent_workflow(
     agent_info = agent_info,
@@ -231,9 +227,6 @@ iterate_forecast <- function(agent_info,
 
             agent_info$reason_llm <- reason_llm
           }
-
-          # re-register tools
-          register_fcst_tools(agent_info)
         }
 
         # adjust max iterations based on previous runs
@@ -303,6 +296,15 @@ iterate_forecast <- function(agent_info,
   message("[agent] Saving Final Forecast")
 
   save_agent_forecast(
+    agent_info = agent_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores
+  )
+
+  # save model summaries
+  message("[agent] Saving Model Summaries")
+
+  summarize_models(
     agent_info = agent_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores
@@ -969,52 +971,6 @@ fcst_agent_workflow <- function(agent_info,
 
   # run the graph
   run_graph(agent_info$driver_llm, workflow, init_ctx)
-}
-
-#' Register Finn forecasting tools for the agent
-#'
-#' @param agent_info A list containing agent information including driver LLM and project info.
-#'
-#' @return NULL
-#' @noRd
-register_fcst_tools <- function(agent_info) {
-  # workflows
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "fcst_agent_workflow",
-    .description = "Run the Finn forecasting agent workflow",
-    .fun = fcst_agent_workflow
-  ))
-
-  # individual tools
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "reason_inputs",
-    .description = "Reason about the best inputs for Finn forecast run",
-    .fun = reason_inputs
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "submit_fcst_run",
-    .description = "Submit a Finn forecasting run with the given inputs",
-    .fun = submit_fcst_run
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "get_fcst_output",
-    .description = "Get the forecast output from a Finn run",
-    .fun = get_fcst_output
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "calculate_fcst_metrics",
-    .description = "Calculate back test accuracy metrics from the forecast output",
-    .fun = calculate_fcst_metrics
-  ))
-
-  agent_info$driver_llm$register_tool(ellmer::tool(
-    .name = "log_best_run",
-    .description = "Log the best run from a Finn forecasting run",
-    .fun = log_best_run
-  ))
 }
 
 #' Generate Finn run inputs for the reasoning LLM

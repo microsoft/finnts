@@ -136,24 +136,16 @@ execute_node <- function(node, ctx, chat) {
   max_try <- node$max_retry %||% 0L
   retry_mode <- node$retry_mode %||% "plain" # "llm" (default) or "plain"
   attempt <- 0L
-  registry <- chat$get_tools()
   cli::cli_progress_step(sprintf("Running %s...", tool_name))
 
   repeat {
-    # look up tool and call it
-    if (!tool_name %in% names(registry)) {
-      stop(sprintf("Tool '%s' not registered.", tool_name), call. = FALSE)
-    }
-
-    tool_fn <- registry[[tool_name]]
-
-    # call the function object directly
+    # call the function directly
     try(doParallel::stopImplicitCluster(), silent = TRUE)
     try(foreach::registerDoSEQ(), silent = TRUE)
 
     err <- NULL
     result <- tryCatch(
-      rlang::exec(tool_fn@fun, !!!(ctx$args %||% list())),
+      rlang::exec(tool_name, !!!(ctx$args %||% list())),
       error = function(e) {
         err <<- e
         NULL
@@ -256,18 +248,6 @@ execute_node <- function(node, ctx, chat) {
       )
     )
   }
-}
-
-#' Register tools for the agent
-#'
-#' @param agent_info A list containing the agent information, including project info and LLMs.
-#'
-#' @return NULL
-#' @noRd
-register_tools <- function(agent_info) {
-  # register the tools for the agent
-  register_eda_tools(agent_info)
-  register_fcst_tools(agent_info)
 }
 
 #' Sanitize arguments for display

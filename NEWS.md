@@ -1,4 +1,4 @@
-# finnts 0.6.0.9002 (development version)
+# finnts 0.6.0.9003 (development version)
 
 ## Improvements
 
@@ -7,6 +7,11 @@
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.
   - `ask_agent()` can be used to ask questions about the forecast, data, or models to get insights.
   - Helper functions `set_project_info()` and `set_agent_info` to assist in iterating and updating forecasts. 
+  - New functions to retrieve information from agent runs:
+    - Added `get_agent_forecast()` to retrieve the final forecast output from an agent run.
+    - Added `get_best_agent_run()` to retrieve the run metadata information from an agent run. 
+    - Added `get_summarized_models()` to retrieve model summary information from an agent run.
+    - Added `get_eda_data()` to retrieve the exploratory data analysis results from an agent run.
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
   
 ## Breaking Changes

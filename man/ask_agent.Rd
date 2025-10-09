@@ -42,6 +42,12 @@ answer <- ask_agent(
   question = "Which models were used for the forecast?"
 )
 
+# Ask about feature importance
+answer <- ask_agent(
+  agent_info = agent_info,
+  question = "What are the top 5 most important features in the xgboost model?"
+)
+
 # Ask about specific time series
 answer <- ask_agent(
   agent_info = agent_info,
