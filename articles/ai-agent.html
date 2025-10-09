@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9002</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9003</span>
       </span>
     </div>
 
@@ -171,7 +171,10 @@ forecast results and get data-driven answers.</li>
 <li>A <strong>best-run table</strong> per time series with metrics.</li>
 <li>A combined <strong>forecast table</strong> (optionally reconciled if
 hierarchy is used).</li>
-<li>Cached EDA outputs to inform later runs.</li>
+<li>EDA artifacts (missing data, outliers, stationarity, seasonality,
+ACF/PACF).</li>
+<li>Summaries of trained models (hyperparameters, recipes, feature
+importance).</li>
 </ul>
 <p>Use these helpers to retrieve outputs:</p>
 <ul>
@@ -197,11 +200,11 @@ works.</li>
 </ul>
 <p>Set up environment variables for Azure OpenAI (example):</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># Sys.setenv(</span></span>
-<span><span class="co">#   AZURE_OPENAI_ENDPOINT    = "&lt;your-endpoint&gt;",</span></span>
-<span><span class="co">#   AZURE_OPENAI_API_KEY     = "&lt;your-key&gt;",</span></span>
-<span><span class="co">#   AZURE_OPENAI_API_VERSION = "&lt;api-version&gt;"</span></span>
-<span><span class="co"># )</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span></span>
+<span>  AZURE_OPENAI_ENDPOINT    <span class="op">=</span> <span class="st">"&lt;your-endpoint&gt;"</span>,</span>
+<span>  AZURE_OPENAI_API_KEY     <span class="op">=</span> <span class="st">"&lt;your-key&gt;"</span>,</span>
+<span>  AZURE_OPENAI_API_VERSION <span class="op">=</span> <span class="st">"&lt;api-version&gt;"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 <hr>
 </div>
 <div class="section level2">
@@ -359,6 +362,12 @@ results</p>
 <span>  question <span class="op">=</span> <span class="st">"Which models were selected as best for each time series?"</span></span>
 <span><span class="op">)</span></span>
 <span></span>
+<span><span class="co"># Ask about feature importance</span></span>
+<span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
+<span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
+<span>  question <span class="op">=</span> <span class="st">"What are the top 3 most important features for the forecast models?"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
 <span><span class="co"># Ask about data quality</span></span>
 <span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
 <span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
@@ -386,7 +395,7 @@ results</p>
 <div class="section level3">
 <h3 id="what-data-sources-are-available">What data sources are available<a class="anchor" aria-label="anchor" href="#what-data-sources-are-available"></a>
 </h3>
-<p><code><a href="../reference/ask_agent.html">ask_agent()</a></code> has access to three main data sources:</p>
+<p><code><a href="../reference/ask_agent.html">ask_agent()</a></code> has access to four main data sources:</p>
 <ol style="list-style-type: decimal">
 <li>
 <strong>Forecast results</strong>
@@ -400,6 +409,10 @@ transformations applied, model hyperparameters</li>
 <strong>EDA results</strong> (<code><a href="../reference/get_eda_data.html">get_eda_data()</a></code>): Time
 series characteristics, seasonality, stationarity tests, data quality
 metrics</li>
+<li>
+<strong>Model summaries</strong>
+(<code><a href="../reference/get_summarized_models.html">get_summarized_models()</a></code>): Feature importance, model
+parameters, recipe details</li>
 </ol>
 <p>The agent automatically determines which data sources to use based on
 your question.</p>
@@ -536,8 +549,8 @@ one</em>.</li>
 <li>Logs: <code>path/logs/…</code> (includes the hashed
 <code>*-agent_run.csv</code> and <code>*-agent_best_run.*</code> for
 each version)</li>
-<li>Forecasts: <code>path/forecasts/…</code> (condensed, reconciled or
-per-model outputs)</li>
+<li>Final Agent Outputs: <code>path/final_output/…</code>
+</li>
 </ul>
 <p>Use the helpers first; dig into files only if you must.</p>
 </div>

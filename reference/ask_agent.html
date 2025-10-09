@@ -26,7 +26,7 @@ R code to answer questions."><meta property="og:image" content="https://microsof
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9002</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9003</span>
       </span>
     </div>
 
@@ -149,6 +149,12 @@ R code to answer questions.</p>
 <span class="r-in"><span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu">ask_agent</span><span class="op">(</span></span></span>
 <span class="r-in"><span>  agent_info <span class="op">=</span> <span class="va">agent_info</span>,</span></span>
 <span class="r-in"><span>  question <span class="op">=</span> <span class="st">"Which models were used for the forecast?"</span></span></span>
+<span class="r-in"><span><span class="op">)</span></span></span>
+<span class="r-in"><span></span></span>
+<span class="r-in"><span><span class="co"># Ask about feature importance</span></span></span>
+<span class="r-in"><span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu">ask_agent</span><span class="op">(</span></span></span>
+<span class="r-in"><span>  agent_info <span class="op">=</span> <span class="va">agent_info</span>,</span></span>
+<span class="r-in"><span>  question <span class="op">=</span> <span class="st">"What are the top 5 most important features in the xgboost model?"</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># Ask about specific time series</span></span></span>

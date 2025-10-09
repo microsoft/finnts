@@ -35,6 +35,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_prepped_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_run_info.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/get_summarized_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/get_trained_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/glmnet_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/glmnet_multistep_fit_impl.html</loc></url>

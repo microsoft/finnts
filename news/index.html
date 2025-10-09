@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9002</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9003</span>
       </span>
     </div>
 
@@ -97,9 +97,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9002" id="finnts-0609002-development-version">finnts 0.6.0.9002 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609002-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.6.0.9003" id="finnts-0609003-development-version">finnts 0.6.0.9003 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609003-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9002">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9002"></a></h3>
+<h3 id="improvements-0-6-0-9003">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9003"></a></h3>
 <ul><li>New AI Agent Capabilities
 <ul><li>
 <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> can use LLM’s to find the optimal combination of data and inputs to create the most accurate forecast.</li>
@@ -108,11 +108,17 @@
 <li>
 <code><a href="../reference/ask_agent.html">ask_agent()</a></code> can be used to ask questions about the forecast, data, or models to get insights.</li>
 <li>Helper functions <code><a href="../reference/set_project_info.html">set_project_info()</a></code> and <code>set_agent_info</code> to assist in iterating and updating forecasts.</li>
+<li>New functions to retrieve information from agent runs:
+<ul><li>Added <code><a href="../reference/get_agent_forecast.html">get_agent_forecast()</a></code> to retrieve the final forecast output from an agent run.</li>
+<li>Added <code><a href="../reference/get_best_agent_run.html">get_best_agent_run()</a></code> to retrieve the run metadata information from an agent run.</li>
+<li>Added <code><a href="../reference/get_summarized_models.html">get_summarized_models()</a></code> to retrieve model summary information from an agent run.</li>
+<li>Added <code><a href="../reference/get_eda_data.html">get_eda_data()</a></code> to retrieve the exploratory data analysis results from an agent run.</li>
+</ul></li>
 </ul></li>
 <li>Updated how outliers are handled in <code><a href="../reference/prep_data.html">prep_data()</a></code>. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9002">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9002"></a></h3>
+<h3 id="breaking-changes-0-6-0-9003">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9003"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 </ul></div>
