@@ -265,7 +265,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     reconcile_agent_forecast = list(
       fn = "reconcile_agent_forecast",
-      `next` = "save_agent_forecast",
+      `next` = "save_hierarchy_summary",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
@@ -273,6 +273,15 @@ update_fcst_agent_workflow <- function(agent_info,
         project_info = agent_info$project_info,
         parallel_processing = parallel_processing,
         num_cores = num_cores
+      )
+    ),
+    save_hierarchy_summary = list(
+      fn = "summarize_hierarchy",
+      `next` = "save_agent_forecast",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info
       )
     ),
     save_agent_forecast = list(

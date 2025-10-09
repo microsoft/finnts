@@ -290,6 +290,10 @@ iterate_forecast <- function(agent_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores
     )
+    
+    message("[agent] Saving Hierarchy Summary")
+    
+    summarize_hierarchy(agent_info = agent_info)
   }
 
   # save the final forecast for the agent

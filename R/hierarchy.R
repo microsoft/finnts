@@ -1039,3 +1039,270 @@ sum_hts_data <- function(bottom_level_tbl,
 
   return(hierarchical_tbl)
 }
+
+#' Get hierarchy summary for an agent
+#'
+#' @param agent_info Agent info from [set_agent_info()]
+#'
+#' @return A data frame containing the hierarchy summary mapping
+#' @noRd
+get_hierarchy_summary <- function(agent_info) {
+  
+  # Check inputs
+  check_agent_info(agent_info = agent_info)
+  
+  # Get project info
+  project_info <- agent_info$project_info
+  
+  # Read hierarchy summary from disk
+  hierarchy_summary_tbl <- read_file(
+    run_info = project_info,
+    path = paste0(
+      "/final_output/", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-hierarchy_summary.", project_info$data_output
+    )
+  )
+  
+  return(hierarchy_summary_tbl)
+}
+
+#' Summarize hierarchical structure
+#'
+#' @param agent_info Agent info from [set_agent_info()]
+#'
+#' @return A data frame with one row per hierarchy-to-bottom mapping, saved to disk:
+#'   \itemize{
+#'     \item Hierarchy_Combo: The aggregated hierarchy level combo name (from hts_combos)
+#'     \item Hierarchy_Level_Type: The type of level (Total, Level 1, Level 2, etc. for standard; grouping variable name for grouped)
+#'     \item Bottom_Combo: Individual bottom-level series name (from original_combos)
+#'     \item Is_Bottom: Logical indicating if this is a bottom-level series (Hierarchy_Combo == Bottom_Combo)
+#'     \item Parent_Level: The hierarchical level above this one (NA for Total)
+#'   }
+#' @noRd
+summarize_hierarchy <- function(agent_info) {
+  
+  # Check inputs
+  check_agent_info(agent_info = agent_info)
+  
+  # Get project info
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+  
+  # Read hierarchical info from disk
+  hts_list <- read_file(
+    run_info = project_info,
+    path = paste0("/prep_data/", hash_data(project_info$project_name), "-", hash_data(agent_info$run_id), "-hts_info.", project_info$object_output),
+    return_type = "object"
+  )
+  
+  original_combos <- hts_list$original_combos
+  hts_combos <- hts_list$hts_combos
+  nodes <- hts_list$nodes
+  
+  # Determine if this is a grouped or standard hierarchy
+  is_grouped <- inherits(nodes, "gmatrix") || is.matrix(nodes)
+  
+  if (is_grouped) {
+    # Grouped hierarchy
+    summary_df <- summarize_grouped_hierarchy(original_combos, hts_combos, nodes)
+  } else {
+    # Standard hierarchy
+    summary_df <- summarize_standard_hierarchy(original_combos, hts_combos, nodes)
+  }
+  
+  # Convert to normalized long-format mapping
+  result_list <- list()
+  
+  for (i in seq_len(nrow(summary_df))) {
+    row <- summary_df[i, ]
+    
+    # Split the comma-separated original combos
+    bottom_series <- trimws(strsplit(row$Original_Combos, ",")[[1]])
+    
+    # Create one row per bottom series
+    for (bottom in bottom_series) {
+      result_list[[length(result_list) + 1]] <- data.frame(
+        Hierarchy_Combo = row$Hierarchy_Level,
+        Hierarchy_Level_Type = row$Level_Type,
+        Bottom_Combo = bottom,
+        Is_Bottom = row$Level_Type == "Bottom",
+        stringsAsFactors = FALSE
+      )
+    }
+  }
+  
+  result_df <- do.call(rbind, result_list) %>%
+    dplyr::mutate(
+      # Add parent level logic
+      Parent_Level = dplyr::case_when(
+        Hierarchy_Level_Type == "Total" ~ NA_character_,
+        Hierarchy_Level_Type == "Bottom" & !is_grouped ~ paste0("Level ", length(nodes) - 1),
+        Hierarchy_Level_Type == "Bottom" & is_grouped ~ "Multiple",
+        !is_grouped & grepl("^Level ", Hierarchy_Level_Type) ~ {
+          level_num <- suppressWarnings(as.integer(gsub("Level ", "", Hierarchy_Level_Type)))
+          ifelse(level_num == 1, "Total", paste0("Level ", level_num - 1))
+        },
+        is_grouped ~ "Total",
+        TRUE ~ NA_character_
+      )
+    )
+  
+  # Write outputs to disk
+  write_data(
+    x = result_df,
+    combo = NULL,
+    run_info = project_info,
+    output_type = "data",
+    folder = "final_output",
+    suffix = "-hierarchy_summary"
+  )
+  
+  return(result_df)
+}
+
+#' Summarize standard hierarchy structure (helper function)
+#'
+#' @param original_combos Character vector of bottom-level time series names
+#' @param hts_combos Character vector of all hierarchical level names
+#' @param nodes List containing hierarchical node structure
+#'
+#' @return A data frame mapping hierarchy levels to original combos (wide format, for internal use)
+#' @noRd
+summarize_standard_hierarchy <- function(original_combos, hts_combos, nodes) {
+  
+  n_bottom <- length(original_combos)
+  n_hts <- length(hts_combos)
+  result_list <- list()
+  combo_idx <- 1
+  
+  # Total level
+  result_list[[1]] <- data.frame(
+    Hierarchy_Level = hts_combos[combo_idx],
+    Level_Type = "Total",
+    Original_Combos = paste(original_combos, collapse = ", "),
+    Num_Bottom_Series = n_bottom,
+    stringsAsFactors = FALSE
+  )
+  combo_idx <- combo_idx + 1
+  
+  # Number of aggregation levels is just the length of nodes minus 1
+  # (The last level in nodes defines the bottom level structure, not an aggregation level)
+  n_agg_levels <- length(nodes) - 1
+  
+  # Process aggregation levels
+  if (n_agg_levels > 0) {
+    for (level_idx in seq_len(n_agg_levels)) {
+      level_name <- paste0("Level ", level_idx)
+      level_spec <- nodes[[level_idx]]
+      n_groups <- level_spec
+      items_per_group <- n_bottom / n_groups
+      
+      for (group_idx in seq_len(n_groups)) {
+        start_idx <- (group_idx - 1) * items_per_group + 1
+        end_idx <- group_idx * items_per_group
+        group_combos <- original_combos[start_idx:end_idx]
+        
+        result_list[[length(result_list) + 1]] <- data.frame(
+          Hierarchy_Level = hts_combos[combo_idx],
+          Level_Type = level_name,
+          Original_Combos = paste(group_combos, collapse = ", "),
+          Num_Bottom_Series = length(group_combos),
+          stringsAsFactors = FALSE
+        )
+        combo_idx <- combo_idx + 1
+      }
+    }
+  }
+  
+  # Bottom level - map remaining hts_combos to individual original_combos
+  for (i in seq_along(original_combos)) {
+    if (combo_idx <= n_hts) {
+      result_list[[length(result_list) + 1]] <- data.frame(
+        Hierarchy_Level = hts_combos[combo_idx],
+        Level_Type = "Bottom",
+        Original_Combos = original_combos[i],
+        Num_Bottom_Series = 1,
+        stringsAsFactors = FALSE
+      )
+      combo_idx <- combo_idx + 1
+    }
+  }
+  
+  result_df <- do.call(rbind, result_list)
+  rownames(result_df) <- NULL
+  
+  return(result_df)
+}
+
+#' Summarize grouped hierarchy structure (helper function)
+#'
+#' @param original_combos Character vector of bottom-level time series names
+#' @param hts_combos Character vector of all hierarchical level names
+#' @param nodes Matrix containing grouped hierarchy structure
+#'
+#' @return A data frame mapping hierarchy levels to original combos (wide format, for internal use)
+#' @noRd
+summarize_grouped_hierarchy <- function(original_combos, hts_combos, nodes) {
+  
+  n_bottom <- length(original_combos)
+  result_list <- list()
+  
+  # Get row names and identify grouping levels (exclude "Total" and "Bottom")
+  all_levels <- rownames(nodes)
+  group_levels <- all_levels[!(all_levels %in% c("Total", "Bottom"))]
+  
+  # Build a mapping of each hts_combo to its original combos
+  combo_idx <- 1
+  
+  # Total level
+  result_list[[combo_idx]] <- data.frame(
+    Hierarchy_Level = hts_combos[combo_idx],
+    Level_Type = "Total",
+    Original_Combos = paste(original_combos, collapse = ", "),
+    Num_Bottom_Series = n_bottom,
+    stringsAsFactors = FALSE
+  )
+  combo_idx <- combo_idx + 1
+  
+  # Process each grouping level in order
+  for (group_level in group_levels) {
+    # Get unique group values for this level
+    group_row <- nodes[group_level, ]
+    unique_groups <- unique(group_row)
+    
+    # Sort to ensure consistent ordering
+    unique_groups <- sort(unique_groups)
+    
+    for (group_val in unique_groups) {
+      # Find which bottom series belong to this group
+      matching_indices <- which(group_row == group_val)
+      node_combos <- original_combos[matching_indices]
+      
+      result_list[[combo_idx]] <- data.frame(
+        Hierarchy_Level = hts_combos[combo_idx],
+        Level_Type = group_level,
+        Original_Combos = paste(node_combos, collapse = ", "),
+        Num_Bottom_Series = length(node_combos),
+        stringsAsFactors = FALSE
+      )
+      combo_idx <- combo_idx + 1
+    }
+  }
+  
+  # Bottom level - each original combo maps to itself
+  for (i in seq_along(original_combos)) {
+    result_list[[combo_idx]] <- data.frame(
+      Hierarchy_Level = hts_combos[combo_idx],
+      Level_Type = "Bottom",
+      Original_Combos = original_combos[i],
+      Num_Bottom_Series = 1,
+      stringsAsFactors = FALSE
+    )
+    combo_idx <- combo_idx + 1
+  }
+  
+  result_df <- do.call(rbind, result_list)
+  rownames(result_df) <- NULL
+  
+  return(result_df)
+}
