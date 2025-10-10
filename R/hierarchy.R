@@ -1183,8 +1183,6 @@ summarize_hierarchy <- function(agent_info) {
     folder = "final_output",
     suffix = "-hierarchy_summary"
   )
-  
-  return(result_df)
 }
 
 #' Summarize standard hierarchy structure (helper function)
@@ -1197,66 +1195,160 @@ summarize_hierarchy <- function(agent_info) {
 #' @noRd
 summarize_standard_hierarchy <- function(original_combos, hts_combos, nodes) {
   
+  # Create a dummy time series object to extract the hierarchy structure
   n_bottom <- length(original_combos)
-  n_hts <- length(hts_combos)
-  result_list <- list()
-  combo_idx <- 1
+  dummy_data <- matrix(1, nrow = 1, ncol = n_bottom)
+  colnames(dummy_data) <- original_combos
   
-  # Total level
-  result_list[[1]] <- data.frame(
-    Hierarchy_Level = hts_combos[combo_idx],
-    Level_Type = "Total",
-    Original_Combos = paste(original_combos, collapse = ", "),
-    Num_Bottom_Series = n_bottom,
-    stringsAsFactors = FALSE
-  )
-  combo_idx <- combo_idx + 1
+  # Create HTS object
+  hts_obj <- hts::hts(dummy_data, nodes = nodes) %>% 
+    suppressMessages()
   
-  # Number of aggregation levels is just the length of nodes minus 1
-  # (The last level in nodes defines the bottom level structure, not an aggregation level)
-  n_agg_levels <- length(nodes) - 1
+  # Get the summing matrix (S matrix) which shows how bottom series aggregate
+  S <- hts::smatrix(hts_obj)
   
-  # Process aggregation levels
-  if (n_agg_levels > 0) {
-    for (level_idx in seq_len(n_agg_levels)) {
-      level_name <- paste0("Level ", level_idx)
-      level_spec <- nodes[[level_idx]]
-      n_groups <- level_spec
-      items_per_group <- n_bottom / n_groups
+  if (nrow(S) != length(hts_combos)) {
+    stop(paste0("Mismatch between S matrix rows (", nrow(S), ") and hts_combos length (", length(hts_combos), ")"))
+  }
+  
+  # Build a map of group size → level, accounting for hierarchy order
+  # We need to track cumulative groups across levels
+  level_info <- list()
+  cumulative_groups <- 1
+  
+  for (j in seq_along(nodes)) {
+    if (j < length(nodes)) {
+      node_val <- nodes[[j]]
       
-      for (group_idx in seq_len(n_groups)) {
-        start_idx <- (group_idx - 1) * items_per_group + 1
-        end_idx <- group_idx * items_per_group
-        group_combos <- original_combos[start_idx:end_idx]
+      if (length(node_val) == 1) {
+        # Single value means this many equal-sized groups at this level
+        n_groups_at_level <- node_val
+        cumulative_groups <- cumulative_groups * n_groups_at_level
+        items_per_group <- n_bottom / cumulative_groups
         
-        result_list[[length(result_list) + 1]] <- data.frame(
-          Hierarchy_Level = hts_combos[combo_idx],
-          Level_Type = level_name,
-          Original_Combos = paste(group_combos, collapse = ", "),
-          Num_Bottom_Series = length(group_combos),
-          stringsAsFactors = FALSE
+        level_info[[j]] <- list(
+          level_num = j,
+          group_sizes = rep(items_per_group, n_groups_at_level),
+          n_groups = n_groups_at_level
         )
-        combo_idx <- combo_idx + 1
+      } else {
+        # Vector of different group sizes
+        n_groups_at_level <- length(node_val)
+        
+        # Each parent from the previous level splits into node_val[i] children
+        # Calculate the size of each group at this level
+        if (j == 1) {
+          # First level with unequal splits shouldn't happen, but handle it
+          group_sizes <- (node_val / sum(node_val)) * n_bottom
+        } else {
+          # Get parent group sizes from previous level
+          parent_sizes <- level_info[[j-1]]$group_sizes
+          group_sizes <- c()
+          for (k in seq_along(node_val)) {
+            parent_size <- parent_sizes[k]
+            child_size <- parent_size / node_val[k]
+            group_sizes <- c(group_sizes, rep(child_size, node_val[k]))
+          }
+        }
+        
+        level_info[[j]] <- list(
+          level_num = j,
+          group_sizes = group_sizes,
+          n_groups = sum(node_val)  # Total number of groups is sum of all splits
+        )
+        
+        cumulative_groups <- cumulative_groups * n_groups_at_level
       }
     }
   }
   
-  # Bottom level - map remaining hts_combos to individual original_combos
-  for (i in seq_along(original_combos)) {
-    if (combo_idx <= n_hts) {
-      result_list[[length(result_list) + 1]] <- data.frame(
-        Hierarchy_Level = hts_combos[combo_idx],
-        Level_Type = "Bottom",
-        Original_Combos = original_combos[i],
-        Num_Bottom_Series = 1,
-        stringsAsFactors = FALSE
-      )
-      combo_idx <- combo_idx + 1
+  # Create result list
+  result_list <- list()
+  
+  # Track which level we expect to be processing (start after Total)
+  expected_level <- 1
+  groups_remaining_at_level <- if (length(level_info) > 0) level_info[[1]]$n_groups else 0
+  group_idx_at_level <- 1
+  
+  # Process each row of S matrix with corresponding hts_combo name
+  for (i in seq_len(nrow(S))) {
+    hier_name <- hts_combos[i]
+    
+    # Find which bottom series contribute to this hierarchy level
+    contributing_series <- original_combos[S[i, ] != 0]
+    
+    if (length(contributing_series) == 0) {
+      next
     }
+    
+    n_contributing <- length(contributing_series)
+    
+    # Determine level type
+    if (i == 1 || n_contributing == n_bottom) {
+      level_type <- "Total"
+    } else if (n_contributing == 1) {
+      level_type <- "Bottom"
+    } else {
+      # Use sequential level assignment based on S matrix order
+      # Check if this matches the expected level's group size
+      if (expected_level <= length(level_info) && 
+          group_idx_at_level <= length(level_info[[expected_level]]$group_sizes)) {
+        expected_size <- level_info[[expected_level]]$group_sizes[group_idx_at_level]
+        
+        if (abs(n_contributing - expected_size) < 0.5) {
+          # Matches expected level
+          level_type <- paste0("Level ", expected_level)
+          
+          # Move to next group in this level
+          group_idx_at_level <- group_idx_at_level + 1
+          groups_remaining_at_level <- groups_remaining_at_level - 1
+          
+          # Check if we've finished this level
+          if (groups_remaining_at_level <= 0) {
+            expected_level <- expected_level + 1
+            if (expected_level <= length(level_info)) {
+              groups_remaining_at_level <- level_info[[expected_level]]$n_groups
+              group_idx_at_level <- 1
+            }
+          }
+        } else {
+          # Doesn't match expected - mark as unknown
+          level_type <- "Unknown"
+        }
+      } else {
+        level_type <- "Unknown"
+      }
+    }
+    
+    result_list[[i]] <- data.frame(
+      Hierarchy_Level = hier_name,
+      Level_Type = level_type,
+      Original_Combos = paste(contributing_series, collapse = ", "),
+      Num_Bottom_Series = n_contributing,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  if (length(result_list) == 0) {
+    stop("Failed to create hierarchy summary. No hierarchy levels were processed.")
   }
   
   result_df <- do.call(rbind, result_list)
   rownames(result_df) <- NULL
+  
+  # Ensure proper ordering
+  result_df <- result_df %>%
+    dplyr::mutate(
+      Sort_Order = dplyr::case_when(
+        Level_Type == "Total" ~ 1,
+        grepl("^Level ", Level_Type) ~ suppressWarnings(as.numeric(gsub("Level ", "", Level_Type))) + 1,
+        Level_Type == "Bottom" ~ 999,
+        Level_Type == "Unknown" ~ 500,
+        TRUE ~ 500
+      )
+    ) %>%
+    dplyr::arrange(Sort_Order, Hierarchy_Level) %>%
+    dplyr::select(-Sort_Order)
   
   return(result_df)
 }
