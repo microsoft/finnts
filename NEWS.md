@@ -1,4 +1,4 @@
-# finnts 0.6.0.9003 (development version)
+# finnts 0.6.0.9004 (development version)
 
 ## Improvements
 
@@ -13,6 +13,9 @@
     - Added `get_summarized_models()` to retrieve model summary information from an agent run.
     - Added `get_eda_data()` to retrieve the exploratory data analysis results from an agent run.
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
+  
+## Bug Fixes
+-   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
   
 ## Breaking Changes
 

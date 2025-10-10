@@ -24,6 +24,33 @@ prep_hierarchical_data <- function(input_data,
   # initial data prep
   input_data_adj <- input_data %>%
     adjust_df()
+  
+  # If standard hierarchy, arrange data by hierarchy order (top to bottom)
+  if (forecast_approach == "standard_hierarchy") {
+    
+    combo_tbl_temp <- input_data_adj %>%
+      dplyr::select(tidyselect::all_of(combo_variables)) %>%
+      dplyr::distinct()
+    
+    hierarchy_length_tbl <- tibble::tibble()
+    
+    for (variable in combo_variables) {
+      hierarchy_length_tbl <- rbind(
+        hierarchy_length_tbl,
+        tibble::tibble(
+          Variable = variable,
+          Count = length(unique(combo_tbl_temp[[variable]]))
+        )
+      )
+    }
+    
+    hierarchy_order <- hierarchy_length_tbl %>%
+      dplyr::arrange(Count) %>%
+      dplyr::pull(Variable)
+    
+    input_data_adj <- input_data_adj %>%
+      dplyr::arrange(dplyr::across(tidyselect::all_of(hierarchy_order)))
+  }
 
   combo_tbl <- input_data_adj %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
@@ -1146,7 +1173,7 @@ summarize_hierarchy <- function(agent_info) {
         TRUE ~ NA_character_
       )
     )
-  
+
   # Write outputs to disk
   write_data(
     x = result_df,
