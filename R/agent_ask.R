@@ -229,15 +229,16 @@ ask_agent_workflow <- function(agent_info,
       To filter for specific analysis or combo:
       eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
     - get_summarized_models(agent_info): Returns a df of trained model details for each time series with the following columns:
-      - Combo: time series identifier
-      - Model_ID: unique identifier of the model (e.g., 'arima--local--R1')
-      - Model_Name: name of the model type (e.g., 'arima', 'ets', 'xgboost')
-      - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
-      - model_class: the underlying model class used by the engine (e.g., 'xgb.Booster', 'auto_arima_fit_impl')
-      - engine: the specific engine that trained the model (e.g., 'auto_arima', 'ets', 'xgboost')
+      - Combo: time series combination identifier
+      - Model_ID: unique model identifier (format: model_name--model_type--recipe)
+      - Model_Name: name of the forecasting model (e.g., 'arima', 'ets', 'xgboost')
+      - Model_Type: whether the model is 'local' (trained per combo) or 'global' (trained across all combos)
+      - Best_Model: 'Yes' if this model is the best model for this time series, 'No' otherwise
+        * When the best model is a simple average (e.g., 'arima--local--R1_ets--local--R1'), each component model is flagged as 'Yes'
+        * Use Best_Model == 'Yes' to filter to only the best performing models
       - section: category of information (e.g., 'predictor', 'outcome', 'recipe_step', 'model_arg', 'engine_param', 'coefficient', 'importance', 'diagnostic')
-      - name: specific parameter, coefficient, or metric name within each section
-      - value: the value of the parameter, coefficient, or metric (stored as character, may need conversion to numeric)
+      - name: specific name of the parameter/feature/metric
+      - value: the value as a character string
 
       Section types and their content:
       - predictor: input variables used by the model (e.g., 'Date', 'Date_year', 'Date_month', lag features, Fourier terms, rolling statistics)
@@ -263,18 +264,6 @@ ask_agent_workflow <- function(agent_info,
       - Local models: Trained separately for each time series (more customized)
       - Global models: Trained across all time series together (learns common patterns)
 
-      HANDLING SIMPLE AVERAGE MODELS:
-      When the best model is a simple average (Model_Name is NA and Model_ID contains '_'):
-      1. Split Model_ID by '_' to get individual model IDs: stringr::str_split(Model_ID, '_')[[1]]
-      2. Filter get_summarized_models() using these individual Model_IDs to get component model details
-      3. When reporting on the 'best model', mention it's a simple average of X models and list them
-
-      Example:
-      # If Model_ID is 'arima--local--R1_ets--local--R1_prophet--local--R1'
-      component_models <- stringr::str_split(best_model_id, '_')[[1]]
-      model_details <- get_summarized_models(agent_info) %>%
-        dplyr::filter(Model_ID %in% component_models)
-
       Use cases:
       - Understanding exact model specifications (ARIMA orders, ETS components, hyperparameters)
       - Analyzing coefficients and their significance
@@ -283,25 +272,11 @@ ask_agent_workflow <- function(agent_info,
       - Comparing model architectures across time series
       - Examining preprocessing steps applied to each model
 
-      Example queries:
-      # Get ARIMA orders for all ARIMA models
-      model_summary %>% dplyr::filter(Model_Name == 'arima', section == 'engine_param', name %in% c('order_str', 'seasonal_order_str'))
-
-      # Get variable importance for XGBoost models
-      model_summary %>%
-        dplyr::filter(Model_Name == 'xgboost', section == 'importance') %>%
-        dplyr::mutate(value = as.numeric(value)) %>%
-        dplyr::arrange(Combo, desc(value))
-
-      # Get model diagnostics (AIC, BIC, etc.)
-      model_summary %>%
-        dplyr::filter(section == 'engine_param')
-
-      # Get all predictors used by a model
-      model_summary %>% dplyr::filter(section == 'predictor', Combo == 'M750--ID1')
-
-      # Get recipe preprocessing steps
-      model_summary %>% dplyr::filter(section == 'recipe_step')
+      Usage examples:
+      - Get best models only: model_summary %>% dplyr::filter(Best_Model == 'Yes')
+      - Get feature importance for best XGBoost models: model_summary %>% dplyr::filter(Best_Model == 'Yes', Model_Name == 'xgboost', section == 'importance')
+      - Get ARIMA coefficients: model_summary %>% dplyr::filter(section == 'coefficient', Model_Name == 'arima')
+      - Get all preprocessing steps: model_summary %>% dplyr::filter(section == 'recipe_step')
     - get_hierarchy_summary(agent_info): Returns a df mapping hierarchical time series to bottom-level series (only available when forecast approach != 'bottoms_up') with the following columns:
       - Hierarchy_Combo: The aggregated hierarchy level combo name (e.g., 'Total', 'North America', 'United States--Enterprise'), maps to Combo in get_summarized_models() get_eda_data() and get_best_agent_run()
       - Hierarchy_Level_Type: The type of hierarchical level
@@ -310,7 +285,7 @@ ask_agent_workflow <- function(agent_info,
       - Bottom_Combo: Individual bottom-level series name that rolls up to this hierarchy level, maps to Combo in get_agent_forecast()
       - Is_Bottom: Logical (TRUE/FALSE) indicating if this is a bottom-level series (Hierarchy_Combo == Bottom_Combo)
       - Parent_Level: The hierarchical level above this one (NA for Total level)
-      
+
       Use cases:
       - Understanding hierarchical structure and relationships between aggregated and bottom-level series
       - Finding which bottom series contribute to a specific aggregate level
@@ -460,7 +435,7 @@ create_analysis_plan <- function(agent_info, question) {
 
     4. get_summarized_models(agent_info):
        USE FOR: Detailed model specifications, hyperparameters, coefficients, feature importance, model diagnostics
-       Returns a data frame with columns: Combo, Model_ID, Model_Name, Model_Type, model_class, engine, section, name, value
+       Returns a data frame with columns: Combo, Model_ID, Model_Name, Model_Type, Best_Model, model_class, engine, section, name, value
        - Filter by section to get specific types of information:
          * 'predictor': input variables/features used (Date features, lags, Fourier terms, etc.)
          * 'outcome': target variable
@@ -470,6 +445,7 @@ create_analysis_plan <- function(agent_info, question) {
          * 'coefficient': model coefficients (intercept, regressor coefficients)
          * 'importance': feature importance scores (for XGBoost, Cubist, etc.)
          * 'diagnostic': model fit statistics (may overlap with engine_param)
+       - Filter by Best_Model == 'Yes' to get only the best models for each time series
        - Filter by Model_Name or Model_ID to get specific model types or instances
        - Filter by Combo to get model details for specific time series
        - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
@@ -500,10 +476,11 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
     - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
     - Questions about model specifications/parameters -> use get_summarized_models()
-      * If analyzing the best model and it's a simple average, split Model_ID and query for each component
+      * Combine with Best_Model == 'Yes' to get importance for best models only
     - Questions about model hyperparameters -> use get_summarized_models() with section == 'engine_param' or 'model_arg'
     - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
     - Questions about feature importance -> use get_summarized_models() with section == 'importance'
+      * Combine with Best_Model == 'Yes' to get importance for best models only
     - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param'
     - Questions about hierarchical structure/relationships -> use get_hierarchy_summary()
     - Questions about which series roll up to an aggregate level -> use get_hierarchy_summary()
@@ -516,8 +493,8 @@ create_analysis_plan <- function(agent_info, question) {
     - forecast, prediction, future, back test, next month/year -> get_agent_forecast()
     - confidence interval, prediction interval -> get_agent_forecast()
     - outliers, missing values, transformations -> get_best_agent_run() for settings, get_eda_data() for actual counts
-    - best model -> get_agent_forecast() for which model was best, get_summarized_models() for details about that model
-      * Check if Model_Name is NA (simple average) - if so, split Model_ID to get component models
+    - best model -> get_agent_forecast() for which model was best, get_summarized_models() with Best_Model == 'Yes' for details
+      * No need to manually split Model_IDs - Best_Model flag handles simple averages automatically
     - simple average, ensemble, averaged models, model combination -> get_agent_forecast() to identify, then get_summarized_models() with split Model_IDs
     - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
     - time series characteristics, patterns -> get_eda_data() for summary metrics, get_agent_forecast() for custom stats on forecasts
@@ -746,6 +723,7 @@ execute_analysis_step <- function(agent_info,
       * For numeric analysis, convert value column: as.numeric(value)
       * Model_ID matches the Model_ID in get_agent_forecast() for joining
       * When analyzing simple averages, filter for multiple Model_IDs using: Model_ID %in% c('model1', 'model2', 'model3')
+      * Filter Best_Model == 'Yes' to get details for only the best models
     - When working with variable importance data, use these helper patterns for feature categorization:
       importance_data %>%
         dplyr::mutate(

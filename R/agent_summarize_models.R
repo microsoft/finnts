@@ -184,8 +184,42 @@ summarize_models <- function(agent_info,
           Model_ID = NA_character_,
           Model_Name = NA_character_,
           Model_Type = NA_character_,
+          Best_Model = "No",
           Error = "No trained models found"
         ))
+      }
+
+      # Get forecast data to identify best models
+      forecast_tbl <- tryCatch(
+        {
+          get_forecast_data(run_info = run_info, return_type = "df")
+        },
+        error = function(e) {
+          return(tibble::tibble())
+        }
+      )
+
+      # Determine best models for this combo
+      best_models <- tibble::tibble(Model_ID = character(), Best_Model = logical())
+
+      if (nrow(forecast_tbl) > 0) {
+        # Get best models, handling simple model averages
+        best_models <- forecast_tbl %>%
+          dplyr::filter(Combo == combo, Best_Model == "Yes") %>%
+          dplyr::select(Model_ID) %>%
+          dplyr::distinct() %>%
+          # Split simple model averages into individual model IDs (separated by "_")
+          tidyr::separate_rows(Model_ID, sep = "_") %>%
+          dplyr::distinct() %>%
+          dplyr::mutate(Best_Model = TRUE)
+      }
+
+      # If no best models found, set all to FALSE
+      if (nrow(best_models) == 0) {
+        best_models <- trained_models_tbl %>%
+          dplyr::select(Model_ID) %>%
+          dplyr::distinct() %>%
+          dplyr::mutate(Best_Model = FALSE)
       }
 
       # Summarize each model
@@ -197,6 +231,10 @@ summarize_models <- function(agent_info,
         model_id <- model_row$Model_ID
         model_type <- model_row$Model_Type
         workflow <- model_row$Model_Fit[[1]]
+
+        # Check if this model is a best model
+        is_best <- model_id %in% best_models$Model_ID[best_models$Best_Model]
+        is_best <- ifelse(is_best, "Yes", "No")  # Convert TRUE/FALSE to Yes/No
 
         # Get the appropriate summarize function
         summarize_fn <- model_summarize_map[[model_name]]
@@ -231,6 +269,7 @@ summarize_models <- function(agent_info,
             Model_ID = model_id,
             Model_Name = model_name,
             Model_Type = model_type,
+            Best_Model = is_best,
             .before = 1
           )
 
