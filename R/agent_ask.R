@@ -170,9 +170,12 @@ ask_agent_workflow <- function(agent_info,
       - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained.
         * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
         * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
+        * For hierarchical forecasts: 'Best-Model' indicates a reconciled forecast that combines predictions from multiple hierarchy levels
+          - When Model_ID == 'Best-Model', use get_hierarchy_summary() to understand the hierarchical structure
+          - Then use get_summarized_models() with Best_Model == 'Yes' to see the actual models trained at each hierarchy level
+          - Each hierarchy level (Total, Level 1, Bottom, etc.) may have used different best models
         * ALWAYS USE Model_ID to identify which model(s) were used
         * IMPORTANT: To analyze individual models within an average, split Model_ID by '_' to get component Model_IDs
-        * If Model_ID equals 'Best-Model', this means it came from a reconciled hierarchical forecast, utilize get_hierarchy_summary() to map to actual models
       - Model_Name: name of the model type (e.g., 'arima', 'ets', 'cubist')
         * IMPORTANT: When Model_Name is NA, this indicates a SIMPLE AVERAGE model - check Model_ID for the actual models used
         * To get details about an average model, split the Model_ID and look up each component in get_summarized_models()
@@ -466,6 +469,9 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
     - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
       * If Model_Name is NA, the best model is a simple average - split Model_ID by '_' to get components
+      * If Model_ID == 'Best-Model', this is a hierarchical reconciled forecast:
+        1. Use get_hierarchy_summary() to understand the hierarchical structure
+        2. Use get_summarized_models() with Best_Model == 'Yes' to see models at each hierarchy level
       * Use get_summarized_models() with the component Model_IDs to get details about each model in the average
     - Questions about forecasts/predictions/future values -> use get_agent_forecast()
     - Questions about models used -> check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
