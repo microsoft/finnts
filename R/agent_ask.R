@@ -94,6 +94,55 @@ ask_agent_workflow <- function(agent_info,
     - Forecast Horizon: {agent_info$forecast_horizon}
     - External Regressors: {ifelse(is.null(agent_info$external_regressors), 'None',
                                    paste(agent_info$external_regressors, collapse = ', '))}
+    - Forecast Approach: {agent_info$forecast_approach}
+
+    Hierarchical Forecasting Approach Guide:
+    The forecast approach indicates how time series are aggregated and forecasted:
+
+    1. bottoms_up: No hierarchical aggregation
+       - Each time series is forecasted independently at its lowest granularity
+       - No aggregation or reconciliation is performed
+       - get_hierarchy_summary() is NOT available for bottoms_up approach
+
+    2. standard_hierarchy: Nested hierarchical structure (like a pyramid)
+       - Combo variables can be aggregated sequentially into each other
+       - Example: City → Country → Continent → Total
+         * Bottom: Kansas City, Seattle, Mexico City (individual cities)
+         * Level 1: United States, Mexico (countries, sum of their cities)
+         * Level 2: North America (continent, sum of countries)
+         * Total: Grand total (sum of all continents)
+       - Each level aggregates ALL series from the level below
+       - Models are trained at each hierarchy level independently
+       - Forecasts are then 'reconciled' back down to the bottom level using optimization
+       - Hierarchy_Level_Type values: 'Total', 'Level 1', 'Level 2', ..., 'Bottom'
+       - Parent_Level shows the immediate level above (Total → Level 1 → Level 2 → Bottom)
+
+    3. grouped_hierarchy: Cross-cutting aggregations (multiple ways to slice data)
+       - Combo variables can be aggregated in multiple different ways
+       - Example: Country × Segment × Product
+         * Bottom: US--Enterprise--Coffee, US--PublicSector--Coffee, Mexico--Enterprise--Tea
+         * Country level: US (sum across all segments and products), Mexico
+         * Segment level: Enterprise (sum across all countries and products), PublicSector
+         * Product level: Coffee (sum across all countries and segments), Tea
+         * Total: Grand total (sum of everything)
+       - Same series can appear in multiple aggregation paths
+       - Models are trained at each aggregation level (Total, each grouping variable, Bottom)
+       - Forecasts are reconciled back to bottom level using optimization
+       - Hierarchy_Level_Type values: 'Total', grouping variable names (e.g., 'Country', 'Segment', 'Product'), 'Bottom'
+       - Parent_Level is typically 'Total' for grouping levels, and 'Multiple' for bottom (since bottom series can roll up multiple ways)
+
+    Key Concepts for Hierarchical Forecasting:
+    - RECONCILIATION: After models are trained at each hierarchy level, forecasts are mathematically adjusted
+      so that when you sum up bottom-level forecasts, they equal the forecast at higher levels
+    - COHERENCY: Reconciled forecasts maintain the hierarchical structure (bottom forecasts sum to top forecast)
+    - Best Model Selection: Each hierarchy level gets its own best model, then all models are reconciled
+    - Use get_hierarchy_summary() to understand which bottom series contribute to each aggregate level
+
+    When explaining hierarchical forecasts to users:
+    - Standard hierarchy: Emphasize the nested, pyramid-like structure
+    - Grouped hierarchy: Emphasize multiple ways to aggregate the same data
+    - Always mention that forecasts are reconciled to ensure mathematical consistency
+    - Explain that different hierarchy levels may use different best models
 
     Feature Naming Convention Guide:
     When analyzing variable importance, interpret feature names as follows:
@@ -123,6 +172,7 @@ ask_agent_workflow <- function(agent_info,
         * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
         * ALWAYS USE Model_ID to identify which model(s) were used
         * IMPORTANT: To analyze individual models within an average, split Model_ID by '_' to get component Model_IDs
+        * If Model_ID equals 'Best-Model', this means it came from a reconciled hierarchical forecast, utilize get_hierarchy_summary() to map to actual models
       - Model_Name: name of the model type (e.g., 'arima', 'ets', 'cubist')
         * IMPORTANT: When Model_Name is NA, this indicates a SIMPLE AVERAGE model - check Model_ID for the actual models used
         * To get details about an average model, split the Model_ID and look up each component in get_summarized_models()
@@ -174,7 +224,6 @@ ask_agent_workflow <- function(agent_info,
       - Missing_Data: total_rows, missing_count, missing_pct, longest_gap
       - Outliers: total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt
       - Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
-      - Hierarchy: hierarchy_type (none, standard, or grouped)
       - External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
 
       To filter for specific analysis or combo:
@@ -253,6 +302,22 @@ ask_agent_workflow <- function(agent_info,
 
       # Get recipe preprocessing steps
       model_summary %>% dplyr::filter(section == 'recipe_step')
+    - get_hierarchy_summary(agent_info): Returns a df mapping hierarchical time series to bottom-level series (only available when forecast approach != 'bottoms_up') with the following columns:
+      - Hierarchy_Combo: The aggregated hierarchy level combo name (e.g., 'Total', 'North America', 'United States--Enterprise'), maps to Combo in get_summarized_models() get_eda_data() and get_best_agent_run()
+      - Hierarchy_Level_Type: The type of hierarchical level
+        * For standard hierarchy: 'Total', 'Level 1', 'Level 2', etc., or 'Bottom'
+        * For grouped hierarchy: grouping variable name (based on combo variables) or 'Total', 'Bottom'
+      - Bottom_Combo: Individual bottom-level series name that rolls up to this hierarchy level, maps to Combo in get_agent_forecast()
+      - Is_Bottom: Logical (TRUE/FALSE) indicating if this is a bottom-level series (Hierarchy_Combo == Bottom_Combo)
+      - Parent_Level: The hierarchical level above this one (NA for Total level)
+      
+      Use cases:
+      - Understanding hierarchical structure and relationships between aggregated and bottom-level series
+      - Finding which bottom series contribute to a specific aggregate level
+      - Understanding results from get_eda_data() get_best_agent_run() and get_summarized_models() at different hierarchy levels
+
+      IMPORTANT: This data source is ONLY available when hierarchical forecasting is enabled (forecast approach is 'standard_hierarchy' or 'grouped_hierarchy').
+      If forecast approach is 'bottoms_up', this function will error.
 
     ALWAYS use the dplyr package for data manipulation.
     Be precise and efficient in your code generation."
@@ -409,7 +474,15 @@ create_analysis_plan <- function(agent_info, question) {
        - Filter by Combo to get model details for specific time series
        - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
 
-    5. previous step results:
+    5. get_hierarchy_summary(agent_info):
+       USE FOR: Understanding hierarchical structure, mapping between aggregated and bottom-level series
+       Returns a data frame with columns: Hierarchy_Combo, Hierarchy_Level_Type, Bottom_Combo, Is_Bottom, Parent_Level
+       - Only available when forecast approach is 'standard_hierarchy' or 'grouped_hierarchy'
+       - Use to find which bottom series contribute to an aggregate level
+       - Use to analyze forecasts across different hierarchy levels
+       - Use to understand parent-child relationships in the hierarchy
+
+    6. previous step results:
        USE FOR: Working with results from earlier steps in the analysis
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
 
@@ -432,6 +505,9 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
     - Questions about feature importance -> use get_summarized_models() with section == 'importance'
     - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param'
+    - Questions about hierarchical structure/relationships -> use get_hierarchy_summary()
+    - Questions about which series roll up to an aggregate level -> use get_hierarchy_summary()
+    - Questions comparing forecasts across hierarchy levels -> use get_hierarchy_summary() and get_agent_forecast() together
     - Questions needing both forecast values AND run settings -> use BOTH get_agent_forecast() and get_best_agent_run() sources in separate steps
     - Questions needing both model settings AND detailed specifications -> use get_best_agent_run() AND get_summarized_models() sources in separate steps
 
@@ -452,6 +528,7 @@ create_analysis_plan <- function(agent_info, question) {
     - feature importance, variable importance, predictor importance -> get_summarized_models() with section == 'importance'
     - which features/predictors were used -> get_summarized_models() with section == 'predictor'
     - preprocessing steps, recipe steps -> get_summarized_models() with section == 'recipe_step'
+    - hierarchy, hierarchical, aggregation, roll up, parent, child, top level, bottom level -> get_hierarchy_summary() (only if hierarchical forecast)
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
