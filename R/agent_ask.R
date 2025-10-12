@@ -423,24 +423,50 @@ create_analysis_plan <- function(agent_info, question) {
     - What is the specific scope? (all time series, specific combo, specific time period, etc.)
     - What type of answer format is expected? (single number, comparison, list, explanation, etc.)
     
-    Step 2: Review Project Information
-    - What project details are relevant? (target variable, combo variables, forecast horizon, external regressors, forecast approach)
-    - Are there any hierarchical structures to consider? (forecast approach == standard_hierarchy or grouped_hierarchy)
+    STEP 2: REVIEW PROJECT INFORMATION
+    - What project details are relevant? (target variable, combo variables, forecast horizon, external regressors)
+    - Forecast Approach: {agent_info$forecast_approach}
+    - IS THIS A HIERARCHICAL FORECAST? {ifelse(agent_info$forecast_approach != 'bottoms_up', 'YES - You MUST use get_hierarchy_summary()', 'NO - bottoms_up approach, no hierarchy')}
+    
+    CRITICAL HIERARCHICAL FORECASTING RULES:
+    {ifelse(agent_info$forecast_approach != 'bottoms_up', 
+    '>>> HIERARCHICAL FORECAST DETECTED <<<
+    - get_eda_data() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
+    - get_best_agent_run() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos  
+    - get_summarized_models() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
+    - get_agent_forecast() returns results at BOTTOM LEVEL combos (the actual forecast output)
+    - get_hierarchy_summary() MUST be used to map between hierarchical levels and bottom combos
+    
+    REQUIRED WORKFLOW FOR HIERARCHICAL FORECASTS:
+    1. If using get_eda_data(), get_best_agent_run(), or get_summarized_models():
+       - FIRST call get_hierarchy_summary() to understand the hierarchical structure
+       - Use Hierarchy_Combo from get_hierarchy_summary() to join with Combo in get_eda_data()/get_best_agent_run()/get_summarized_models()
+       - Use Bottom_Combo from get_hierarchy_summary() to map back to Combo in get_agent_forecast()
+    2. When analyzing models at different hierarchy levels:
+       - Remember that each hierarchy level (Total, Level 1, etc.) has its own best model
+       - Use get_hierarchy_summary() to understand which bottom series contribute to each level
+    3. When explaining results to users:
+       - Clarify which hierarchy level the analysis refers to
+       - Explain that models are trained at aggregate levels, then reconciled to bottom level',
+    'This is a bottoms_up forecast - no hierarchical mapping needed.')}
 
     STEP 3: IDENTIFY REQUIRED DATA SOURCES
     - Which data source(s) contain the information needed?
     - Do I need multiple sources to answer completely?
     - What specific columns or filters are needed from each source?
+    - FOR HIERARCHICAL FORECASTS: Do I need get_hierarchy_summary() to map between levels?
 
     STEP 4: DETERMINE ANALYSIS SEQUENCE
     - What order should I retrieve data in?
+    - FOR HIERARCHICAL FORECASTS: Should get_hierarchy_summary() be the FIRST step?
     - Are there dependencies (e.g., need to identify models before getting their specs)?
     - Can I combine operations or do I need separate steps?
 
     STEP 5: PLAN FOR EDGE CASES
     - What if the best model is a simple average (need to split Model_IDs)?
-    - What if this is a hierarchical forecast with forecast approach of standard_hierarchy or grouped_hierarchy (need get_hierarchy_summary)?
+    - What if this is a hierarchical forecast with Model_ID == 'Best-Model' (reconciled forecast)?
     - What if numeric columns are stored as character (need to convert)?
+    - FOR HIERARCHICAL FORECASTS: What if the user asks about a specific combo - do they mean hierarchy level or bottom level?
 
     Now, based on this reasoning, create your analysis plan.
 
@@ -450,12 +476,15 @@ create_analysis_plan <- function(agent_info, question) {
        USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons, identifying which models were used
        Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model,
                        Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
+       HIERARCHICAL NOTE: Combo represents BOTTOM-LEVEL time series (the final reconciled forecast output)
 
     2. get_best_agent_run(agent_info):
        USE FOR: model configurations, feature engineering settings
        Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run,
                        clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
                        lag_periods, rolling_window_periods, pca, feature_selection, etc.
+       HIERARCHICAL NOTE: combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
+       - Maps to Hierarchy_Combo in get_hierarchy_summary()
 
     3. get_eda_data(agent_info):
        USE FOR: data quality issues, time series characteristics, seasonality analysis, stationarity tests
@@ -463,6 +492,9 @@ create_analysis_plan <- function(agent_info, question) {
        - Filter by Analysis_Type to get specific EDA results (e.g., 'ACF', 'PACF', 'Stationarity', 'Missing_Data', 'Outliers', etc.)
        - Filter by Combo to get results for specific time series
        - Value column contains the metric values (numeric or character)
+       HIERARCHICAL NOTE: Combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
+       - Maps to Hierarchy_Combo in get_hierarchy_summary()
+       - Use get_hierarchy_summary() to find which bottom series contribute to each hierarchy level
 
     4. get_summarized_models(agent_info):
        USE FOR: Detailed model specifications, hyperparameters, coefficients, feature importance, model diagnostics
@@ -480,20 +512,34 @@ create_analysis_plan <- function(agent_info, question) {
        - Filter by Model_Name or Model_ID to get specific model types or instances
        - Filter by Combo to get model details for specific time series
        - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
+       HIERARCHICAL NOTE: Combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
+       - Maps to Hierarchy_Combo in get_hierarchy_summary()
+       - Use get_hierarchy_summary() to find which bottom series each hierarchy level aggregates
 
     5. get_hierarchy_summary(agent_info):
        USE FOR: Understanding hierarchical structure, mapping between aggregated and bottom-level series
        Returns a data frame with columns: Hierarchy_Combo, Hierarchy_Level_Type, Bottom_Combo, Is_Bottom, Parent_Level
        - Only available when forecast approach is 'standard_hierarchy' or 'grouped_hierarchy'
+       - CRITICAL: Hierarchy_Combo maps to Combo in get_eda_data(), get_best_agent_run(), and get_summarized_models()
+       - CRITICAL: Bottom_Combo maps to Combo in get_agent_forecast()
        - Use to find which bottom series contribute to an aggregate level
        - Use to analyze forecasts across different hierarchy levels
        - Use to understand parent-child relationships in the hierarchy
+       FOR HIERARCHICAL FORECASTS: This should typically be your FIRST step when using get_eda_data(), get_best_agent_run(), or get_summarized_models()
 
     6. previous step results:
        USE FOR: Working with results from earlier steps in the analysis
        Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
 
     Decision Rules:
+    - HIERARCHICAL FORECASTS ({agent_info$forecast_approach}):
+      * When using get_eda_data(), get_best_agent_run(), or get_summarized_models():
+        → ALWAYS call get_hierarchy_summary() FIRST
+        → Join using: hierarchy_summary$Hierarchy_Combo == eda_data$Combo
+        → Map back to forecasts using: hierarchy_summary$Bottom_Combo == forecast_data$Combo
+      * When explaining models: Clarify which hierarchy level each model was trained on
+      * When analyzing specific combos: Determine if user means hierarchy level or bottom level
+    
     - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
     - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
       * If Model_Name is NA, the best model is a simple average - split Model_ID by '_' to get components
@@ -504,46 +550,70 @@ create_analysis_plan <- function(agent_info, question) {
     - Questions about forecasts/predictions/future values -> use get_agent_forecast()
     - Questions about models used -> check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
       * If the best model is a simple average, you'll need BOTH get_agent_forecast() AND get_summarized_models()
+      * HIERARCHICAL: Use get_hierarchy_summary() to understand which hierarchy level the model was trained on
     - Questions about feature engineering/transformations -> use get_best_agent_run()
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels to bottom combos
     - Questions about data quality/patterns/seasonality -> use get_eda_data()
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels to bottom combos
     - Questions about stationarity/ACF/PACF -> use get_eda_data() with Analysis_Type filter
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
     - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
     - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
     - Questions about model specifications/parameters -> use get_summarized_models()
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
       * Combine with Best_Model == 'Yes' to get importance for best models only
     - Questions about model hyperparameters -> use get_summarized_models() with section == 'engine_param' or 'model_arg'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
     - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
     - Questions about feature importance -> use get_summarized_models() with section == 'importance'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
       * Combine with Best_Model == 'Yes' to get importance for best models only
     - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param'
-    - Questions about hierarchical structure/relationships -> use get_hierarchy_summary()
-    - Questions about which series roll up to an aggregate level -> use get_hierarchy_summary()
-    - Questions comparing forecasts across hierarchy levels -> use get_hierarchy_summary() and get_agent_forecast() together
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
+    - Questions about hierarchical structure/relationships -> ALWAYS use get_hierarchy_summary()
+    - Questions about which series roll up to an aggregate level -> ALWAYS use get_hierarchy_summary()
+    - Questions comparing forecasts across hierarchy levels -> get_hierarchy_summary() and get_agent_forecast() together
     - Questions needing both forecast values AND run settings -> use BOTH get_agent_forecast() and get_best_agent_run() sources in separate steps
+      * HIERARCHICAL: Include get_hierarchy_summary() to map between levels
     - Questions needing both model settings AND detailed specifications -> use get_best_agent_run() AND get_summarized_models() sources in separate steps
+      * HIERARCHICAL: get_hierarchy_summary() FIRST to enable mapping
 
     Keywords to Data Source Mapping:
     - WMAPE, MAPE, accuracy, error, performance -> get_agent_forecast()
     - forecast, prediction, future, back test, next month/year -> get_agent_forecast()
     - confidence interval, prediction interval -> get_agent_forecast()
     - outliers, missing values, transformations -> get_best_agent_run() for settings, get_eda_data() for actual counts
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - best model -> get_agent_forecast() for which model was best, get_summarized_models() with Best_Model == 'Yes' for details
+      * HIERARCHICAL: get_hierarchy_summary() to understand hierarchy level context
       * No need to manually split Model_IDs - Best_Model flag handles simple averages automatically
     - simple average, ensemble, averaged models, model combination -> get_agent_forecast() to identify, then get_summarized_models() with split Model_IDs
     - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - time series characteristics, patterns -> get_eda_data() for summary metrics, get_agent_forecast() for custom stats on forecasts
+      * HIERARCHICAL: get_hierarchy_summary() FIRST for EDA data
     - external regressor correlations -> get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - model hyperparameters -> get_summarized_models() with section == 'engine_param' or 'model_arg'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - model coefficients -> get_summarized_models() with section == 'coefficient'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - hyperparameters, tuning parameters, model settings -> get_summarized_models() with section in ('model_arg', 'engine_param')
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - feature importance, variable importance, predictor importance -> get_summarized_models() with section == 'importance'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - which features/predictors were used -> get_summarized_models() with section == 'predictor'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - preprocessing steps, recipe steps -> get_summarized_models() with section == 'recipe_step'
+      * HIERARCHICAL: get_hierarchy_summary() FIRST
     - hierarchy, hierarchical, aggregation, roll up, parent, child, top level, bottom level -> get_hierarchy_summary() (only if hierarchical forecast)
 
     Return a JSON array of analysis steps. Each step should have:
     - description: What this step does
-    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"get_summarized_models\", \"none\", or \"previous\")
+    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"get_summarized_models\", \"get_hierarchy_summary\", \"none\", or \"previous\")
     - analysis: Brief description of the R code analysis to perform
     - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data') - THIS WILL BE AVAILABLE IN SUBSEQUENT STEPS
 
@@ -631,7 +701,6 @@ create_analysis_plan <- function(agent_info, question) {
   tryCatch(
     {
       plan <- jsonlite::fromJSON(plan_text, simplifyVector = FALSE)
-      print(plan)
       return(plan)
     },
     error = function(e) {
@@ -828,7 +897,6 @@ execute_r_code <- function(code,
                            previous_results = list(),
                            analysis_plan = NULL,
                            step_index = NULL) {
-  cli::cli_code(code)
   # Create execution environment with necessary objects
   exec_env <- new.env(parent = globalenv())
   exec_env$agent_info <- agent_info
