@@ -414,7 +414,35 @@ create_analysis_plan <- function(agent_info, question) {
   llm <- agent_info$driver_llm
 
   planning_prompt <- glue::glue(
-    "Create a plan to answer this question using R code: '{question}'
+    "You will create a plan to answer this question: '{question}'
+
+    FOLLOW THIS REASONING PROCESS:
+
+    STEP 1: UNDERSTAND THE QUESTION
+    - What is the user asking for? (forecast values, accuracy metrics, model details, data quality, etc.)
+    - What is the specific scope? (all time series, specific combo, specific time period, etc.)
+    - What type of answer format is expected? (single number, comparison, list, explanation, etc.)
+    
+    Step 2: Review Project Information
+    - What project details are relevant? (target variable, combo variables, forecast horizon, external regressors, forecast approach)
+    - Are there any hierarchical structures to consider? (forecast approach == standard_hierarchy or grouped_hierarchy)
+
+    STEP 3: IDENTIFY REQUIRED DATA SOURCES
+    - Which data source(s) contain the information needed?
+    - Do I need multiple sources to answer completely?
+    - What specific columns or filters are needed from each source?
+
+    STEP 4: DETERMINE ANALYSIS SEQUENCE
+    - What order should I retrieve data in?
+    - Are there dependencies (e.g., need to identify models before getting their specs)?
+    - Can I combine operations or do I need separate steps?
+
+    STEP 5: PLAN FOR EDGE CASES
+    - What if the best model is a simple average (need to split Model_IDs)?
+    - What if this is a hierarchical forecast with forecast approach of standard_hierarchy or grouped_hierarchy (need get_hierarchy_summary)?
+    - What if numeric columns are stored as character (need to convert)?
+
+    Now, based on this reasoning, create your analysis plan.
 
     Available data sources:
 
@@ -603,7 +631,7 @@ create_analysis_plan <- function(agent_info, question) {
   tryCatch(
     {
       plan <- jsonlite::fromJSON(plan_text, simplifyVector = FALSE)
-
+      print(plan)
       return(plan)
     },
     error = function(e) {
@@ -800,6 +828,7 @@ execute_r_code <- function(code,
                            previous_results = list(),
                            analysis_plan = NULL,
                            step_index = NULL) {
+  cli::cli_code(code)
   # Create execution environment with necessary objects
   exec_env <- new.env(parent = globalenv())
   exec_env$agent_info <- agent_info
@@ -910,12 +939,43 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
 
   full_context <- paste(context_parts, collapse = "\n")
 
-  # Create answer prompt
+  # Create answer prompt with structured reasoning
   answer_prompt <- glue::glue(
-    "Based on the following analysis results, provide a clear answer to this question: {question}
+    "You will answer this question: '{question}'
 
+    Based on these analysis results:
     -----Analysis Results-----
     {full_context}
+
+    FOLLOW THIS REASONING PROCESS TO CONSTRUCT YOUR ANSWER:
+
+    STEP 1: SYNTHESIZE THE DATA
+    - What are the key findings from the analysis results?
+    - Are there any patterns, trends, or notable observations?
+    - What numbers or facts are most relevant to the question?
+
+    STEP 2: DETERMINE THE CORE ANSWER
+    - What is the direct, concise answer to the user's question?
+    - Can I answer with a single statement or do I need multiple points?
+    - What is the most important information the user needs to know?
+
+    STEP 3: IDENTIFY SUPPORTING EVIDENCE
+    - What specific numbers support my answer?
+    - Are there any comparisons or context that would help?
+    - What details would make this answer more actionable?
+
+    STEP 4: TRANSLATE TO BUSINESS LANGUAGE
+    - What technical terms need to be explained?
+    - How can I make model details accessible to non-technical users?
+    - What business implications should I highlight?
+
+    STEP 5: STRUCTURE THE RESPONSE
+    - Lead with the direct answer
+    - Follow with supporting evidence and numbers
+    - Add context or explanation where needed
+    - End with implications or recommendations if relevant
+
+    Now, construct your answer following these guidelines:
 
     -----RULES FOR FINANCE-FRIENDLY EXPLANATIONS-----
 
