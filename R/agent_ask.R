@@ -106,7 +106,7 @@ ask_agent_workflow <- function(agent_info,
 
     2. standard_hierarchy: Nested hierarchical structure (like a pyramid)
        - Combo variables can be aggregated sequentially into each other
-       - Example: City → Country → Continent → Total
+       - Example: City -> Country -> Continent -> Total
          * Bottom: Kansas City, Seattle, Mexico City (individual cities)
          * Level 1: United States, Mexico (countries, sum of their cities)
          * Level 2: North America (continent, sum of countries)
@@ -115,11 +115,11 @@ ask_agent_workflow <- function(agent_info,
        - Models are trained at each hierarchy level independently
        - Forecasts are then 'reconciled' back down to the bottom level using optimization
        - Hierarchy_Level_Type values: 'Total', 'Level 1', 'Level 2', ..., 'Bottom'
-       - Parent_Level shows the immediate level above (Total → Level 1 → Level 2 → Bottom)
+       - Parent_Level shows the immediate level above (Total -> Level 1 -> Level 2 -> Bottom)
 
     3. grouped_hierarchy: Cross-cutting aggregations (multiple ways to slice data)
        - Combo variables can be aggregated in multiple different ways
-       - Example: Country × Segment × Product
+       - Example: Country x Segment x Product
          * Bottom: US--Enterprise--Coffee, US--PublicSector--Coffee, Mexico--Enterprise--Tea
          * Country level: US (sum across all segments and products), Mexico
          * Segment level: Enterprise (sum across all countries and products), PublicSector
@@ -422,21 +422,21 @@ create_analysis_plan <- function(agent_info, question) {
     - What is the user asking for? (forecast values, accuracy metrics, model details, data quality, etc.)
     - What is the specific scope? (all time series, specific combo, specific time period, etc.)
     - What type of answer format is expected? (single number, comparison, list, explanation, etc.)
-    
+
     STEP 2: REVIEW PROJECT INFORMATION
     - What project details are relevant? (target variable, combo variables, forecast horizon, external regressors)
     - Forecast Approach: {agent_info$forecast_approach}
     - IS THIS A HIERARCHICAL FORECAST? {ifelse(agent_info$forecast_approach != 'bottoms_up', 'YES - You MUST use get_hierarchy_summary()', 'NO - bottoms_up approach, no hierarchy')}
-    
+
     CRITICAL HIERARCHICAL FORECASTING RULES:
-    {ifelse(agent_info$forecast_approach != 'bottoms_up', 
+    {ifelse(agent_info$forecast_approach != 'bottoms_up',
     '>>> HIERARCHICAL FORECAST DETECTED <<<
     - get_eda_data() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
-    - get_best_agent_run() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos  
+    - get_best_agent_run() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
     - get_summarized_models() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
     - get_agent_forecast() returns results at BOTTOM LEVEL combos (the actual forecast output)
     - get_hierarchy_summary() MUST be used to map between hierarchical levels and bottom combos
-    
+
     REQUIRED WORKFLOW FOR HIERARCHICAL FORECASTS:
     1. If using get_eda_data(), get_best_agent_run(), or get_summarized_models():
        - FIRST call get_hierarchy_summary() to understand the hierarchical structure
@@ -534,12 +534,12 @@ create_analysis_plan <- function(agent_info, question) {
     Decision Rules:
     - HIERARCHICAL FORECASTS ({agent_info$forecast_approach}):
       * When using get_eda_data(), get_best_agent_run(), or get_summarized_models():
-        → ALWAYS call get_hierarchy_summary() FIRST
-        → Join using: hierarchy_summary$Hierarchy_Combo == eda_data$Combo
-        → Map back to forecasts using: hierarchy_summary$Bottom_Combo == forecast_data$Combo
+        -> ALWAYS call get_hierarchy_summary() FIRST
+        -> Join using: hierarchy_summary$Hierarchy_Combo == eda_data$Combo
+        -> Map back to forecasts using: hierarchy_summary$Bottom_Combo == forecast_data$Combo
       * When explaining models: Clarify which hierarchy level each model was trained on
       * When analyzing specific combos: Determine if user means hierarchy level or bottom level
-    
+
     - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
     - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
       * If Model_Name is NA, the best model is a simple average - split Model_ID by '_' to get components

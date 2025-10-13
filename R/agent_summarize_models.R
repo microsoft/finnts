@@ -234,7 +234,7 @@ summarize_models <- function(agent_info,
 
         # Check if this model is a best model
         is_best <- model_id %in% best_models$Model_ID[best_models$Best_Model]
-        is_best <- ifelse(is_best, "Yes", "No")  # Convert TRUE/FALSE to Yes/No
+        is_best <- ifelse(is_best, "Yes", "No") # Convert TRUE/FALSE to Yes/No
 
         # Get the appropriate summarize function
         summarize_fn <- model_summarize_map[[model_name]]

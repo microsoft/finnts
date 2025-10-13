@@ -13,7 +13,7 @@ get_summarized_models(agent_info)
 A tibble containing the summarized models for the agent.
 }
 \description{
-This function retrieves the final summarized model info after agent completes its run.
+This function retrieves the final summarized model info (hyperparameters, recipe steps, feature importance, etc.) after agent completes its run.
 }
 \examples{
 \dontrun{
