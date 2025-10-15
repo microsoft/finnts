@@ -69,6 +69,177 @@ ask_agent <- function(agent_info,
   return(invisible(result$answer))
 }
 
+#' Generate Tool Specification (Single Source of Truth)
+#'
+#' @param agent_info Agent info object
+#' @return Character string with tool specification
+#' @noRd
+get_tool_spec <- function(agent_info) {
+  glue::glue(
+    "TOOL SPECIFICATION
+
+Functions (return data frames unless noted):
+
+1. get_agent_forecast(agent_info):
+   Use for: future values, backtests, intervals, which model(s) were used.
+
+2. get_best_agent_run(agent_info):
+   Use for: run settings, WMAPE summary.
+
+3. get_eda_data(agent_info):
+   Use for: data quality, ACF/PACF, stationarity, missing/outliers, seasonality.
+
+4. get_summarized_models(agent_info):
+   Use for: specs, coefficients, importance, diagnostics.
+
+5. get_hierarchy_summary(agent_info): only if forecast_approach != 'bottoms_up'
+   Use for: mapping hierarchy levels to bottom series.
+
+HIERARCHY RULES:
+- bottoms_up: no hierarchy. Don't call get_hierarchy_summary().
+- standard_hierarchy / grouped_hierarchy: use get_hierarchy_summary() to map
+  hierarchy levels ↔ bottom combos. EDA/best_run/model summary at hierarchy level;
+  forecasts at bottom level; reconciled forecasts appear under Model_ID == \"Best-Model\".
+
+FEATURE NAME DECODING:
+- Target_lagN: lagged target values
+- Target_lagN_rollM_Sum/Avg/StdDev/Min/Max: rolling window statistics
+- Date_month.lbl_*: month indicators
+- Date_sinP_KH, Date_cosP_KH: Fourier seasonal terms
+- Date_diff: time differences
+- regressor_lag/squared_lag/log_lag/cubed_lag: transformed regressors
+
+KEYWORD → SOURCE HINTS:
+- WMAPE/accuracy/error → get_agent_forecast or get_best_agent_run (summary)
+- forecast/prediction/intervals/back test → get_agent_forecast
+- model used/specs/importance/diagnostics → get_summarized_models (+ Best_Model filter)
+- data quality/stationarity/ACF/PACF/outliers/missing → get_eda_data
+- hierarchy/aggregation/rollup/parent/child → get_hierarchy_summary
+
+JOIN MAP:
+- get_agent_forecast$Combo <-> get_hierarchy_summary$Bottom_Combo
+- get_eda_data$Combo <-> get_hierarchy_summary$Hierarchy_Combo
+- get_best_agent_run$combo <-> get_hierarchy_summary$Hierarchy_Combo
+- get_summarized_models$Combo <-> get_hierarchy_summary$Hierarchy_Combo
+  )
+}
+
+#' Generate Column Cards (Selective Metadata)
+#'
+#' @param data_sources Character vector of data source names to include
+#' @return Character string with column metadata
+#' @noRd
+get_column_cards <- function(data_sources) {
+  
+  cards <- list(
+    get_agent_forecast = "
+get_agent_forecast KEY COLUMNS:
+- Combo — str — bottom-level series id — dimension — joins: get_hierarchy_summary$Bottom_Combo — GOTCHA: not a hierarchy level name
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- Date — date — period timestamp — dimension — GOTCHA: respect project granularity
+- Run_Type — enum {Back_Test, Future_Forecast} — flag — GOTCHA: Target is NA for Future_Forecast
+- Train_Test_ID — int — backtest fold id — dimension — GOTCHA: 1 = future block; ≥2 = historical tests
+- Horizon — int — step-ahead index (1..n) — dimension — GOTCHA: don't mix horizons when summarizing
+- Target — num — actuals (backtest only) — measure — GOTCHA: NA in future, compute errors only where present
+- Forecast — num — prediction — measure
+- lo_95/hi_95; lo_80/hi_80 — num — prediction intervals — measure — GOTCHA: often only present for future
+- Best_Model — enum {Yes, No} — flag — GOTCHA: summarize on Best_Model=='Yes' unless need all candidates
+- Model_ID — str — primary model key (ensembles joined by '_'; 'Best-Model'=reconciled hierarchy) — key — joins: get_summarized_models$Model_ID — GOTCHA: prefer Model_ID over Model_Name for joins
+- Model_Name — str|NA — human label (NA=simple average) — label — GOTCHA: only split Model_ID if truly need components
+- Model_Type — enum {local, global} — flag — local=per series; global=all series
+- Recipe_ID — str — feature recipe id — label",
+
+    get_best_agent_run = "
+get_best_agent_run KEY COLUMNS:
+- combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_eda_data$Combo, get_summarized_models$Combo — GOTCHA: not same as bottom Combo
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- weighted_mape — num — summary error over backtests (lower better) — measure — GOTCHA: prefer this for headline accuracy
+- model_type — enum {local, global} — flag
+- clean_missing_values/clean_outliers/stationary/box_cox/pca/feature_selection/negative_forecast/average_models — bool — flags
+- fourier_periods/seasonal_period — str — seasonality terms — parameter — GOTCHA: NA=defaults
+- lag_periods/rolling_window_periods — str — hyphen-delimited lists (e.g., '1---12---24') — parameter — GOTCHA: parse before numeric use
+- recipes_to_run/models_to_run — str — hyphen-delimited candidates — parameter — GOTCHA: NA='all'",
+
+    get_eda_data = "
+get_eda_data KEY COLUMNS:
+- Combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_summarized_models$Combo
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- Analysis_Type — enum {Data_Profile, ACF, PACF, Stationarity, Missing_Data, Outliers, Additional_Seasonality, External_Regressor_Distance_Correlation} — selector
+- Metric — str — metric key based on analysis type — dimension
+  * Data_Profile: Data_Profile: Total_Rows, Number_Series, Min_Rows_Per_Series, Max_Rows_Per_Series, Avg_Rows_Per_Series, Negative_Count, Negative_Percent, Start_Date, End_Date
+  * ACF: Lag_0, Lag_1, Lag_2, etc. (autocorrelation values at different lags)
+  * PACF: Lag_0, Lag_1, Lag_2, etc. (partial autocorrelation values at different lags)
+  * Stationarity: is_stationary (TRUE/FALSE indicating if series is stationary based on ADF and KPSS tests)
+  * Missing_Data: total_rows, missing_count, missing_pct, longest_gap
+  * Outliers: total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt
+  * Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
+  * External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
+- Value — num|str — metric value — measure — GOTCHA: coerce to numeric when needed",
+
+    get_summarized_models = "
+get_summarized_models KEY COLUMNS:
+- Combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_eda_data$Combo
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- Model_ID — str — primary model key — key — joins: get_agent_forecast$Model_ID
+- Model_Name — str — model family — label
+- Model_Type — enum {local, global} — flag
+- Best_Model — enum {Yes, No} — flag — GOTCHA: for simple averages, each component may be flagged Yes
+- section — enum {predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic} — selector
+- name — str — item within section — dimension
+- value — str|num — item value (often numeric stored as text) — measure — GOTCHA: convert with as.numeric carefully",
+
+    get_hierarchy_summary = "
+get_hierarchy_summary KEY COLUMNS:
+- Hierarchy_Combo — str — hierarchy level id — key — joins: EDA/best_run/model_summary$Combo
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- Hierarchy_Level_Type — str — level type label (Total, Level 1, Country, Product, Bottom) — dimension
+- Bottom_Combo — str — bottom series id — key — joins: get_agent_forecast$Combo
+  * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
+  * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
+  * Component order matches combo_variables from agent_info$project_info
+- Is_Bottom — bool — true if bottom row — flag
+- Parent_Level — str|NA — immediate parent — dimension"
+  )
+  
+  # Filter to requested sources
+  relevant_cards <- cards[intersect(names(cards), data_sources)]
+  
+  if (length(relevant_cards) == 0) {
+    return("")
+  }
+  
+  paste0(
+    "\n\nCOLUMN CARDS (use for joins, filters, aggregations):",
+    paste(relevant_cards, collapse = "\n")
+  )
+}
+
+#' Get Column Sanity Checklist
+#'
+#' @return Character string with common pitfalls
+#' @noRd
+get_column_sanity_checklist <- function() {
+  "
+COLUMN SANITY CHECKS:
+- If Run_Type=='Future_Forecast', don't use Target (it's NA)
+- If computing errors, filter Run_Type=='Back_Test' AND !is.na(Target)
+- For summaries, use Best_Model=='Yes' unless need all candidates
+- Intervals (lo_*/hi_*) typically present only for future periods
+- Don't mix hierarchy and bottom metrics without get_hierarchy_summary() mapping
+- Use Model_ID (not Model_Name) as join key to get_summarized_models
+- When Model_Name is NA, it's a simple average - Model_ID shows components"
+}
+
 #' Ask Agent Workflow
 #'
 #' @param agent_info Agent info object
@@ -81,231 +252,42 @@ ask_agent_workflow <- function(agent_info,
   # Clone the LLM for this workflow
   agent_info$driver_llm <- agent_info$driver_llm$clone()
 
-  # Set system prompt for Q&A workflow
+  # Get tool specification once
+  tool_spec <- get_tool_spec(agent_info)
+
+  # Set system prompt for Q&A workflow (SHORT, ROLE-FIRST)
   system_prompt <- glue::glue(
-    "You are an R programming assistant that answers questions about Finn forecast results.
-    You generate and execute R code to analyze forecast data and model information.
+    "ROLE
+You are an R analyst that answers questions about Finn forecast results by planning small analyses, running safe R code against provided functions, and writing a concise finance-friendly answer.
 
-    Project Information:
-    - Project Name: {agent_info$project_info$project_name}
-    - Target Variable: {agent_info$project_info$target_variable}
-    - Date Type: {agent_info$project_info$date_type}
-    - Combo Variables: {paste(agent_info$project_info$combo_variables, collapse = ', ')}
-    - Forecast Horizon: {agent_info$forecast_horizon}
-    - External Regressors: {ifelse(is.null(agent_info$external_regressors), 'None',
-                                   paste(agent_info$external_regressors, collapse = ', '))}
-    - Forecast Approach: {agent_info$forecast_approach}
+MISSION
+Given (a) the user question and (b) ToolSpec, plan the minimum steps needed, execute them, and explain results clearly.
 
-    Hierarchical Forecasting Approach Guide:
-    The forecast approach indicates how time series are aggregated and forecasted:
+CONSTRAINTS
+- Never modify agent_info. Use provided functions only.
+- Prefer dplyr/tidyr pipelines; qualify packages with ::
+- Be exact and efficient; avoid unnecessary steps.
 
-    1. bottoms_up: No hierarchical aggregation
-       - Each time series is forecasted independently at its lowest granularity
-       - No aggregation or reconciliation is performed
-       - get_hierarchy_summary() is NOT available for bottoms_up approach
+TOOLS
+{tool_spec}
 
-    2. standard_hierarchy: Nested hierarchical structure (like a pyramid)
-       - Combo variables can be aggregated sequentially into each other
-       - Example: City -> Country -> Continent -> Total
-         * Bottom: Kansas City, Seattle, Mexico City (individual cities)
-         * Level 1: United States, Mexico (countries, sum of their cities)
-         * Level 2: North America (continent, sum of countries)
-         * Total: Grand total (sum of all continents)
-       - Each level aggregates ALL series from the level below
-       - Models are trained at each hierarchy level independently
-       - Forecasts are then 'reconciled' back down to the bottom level using optimization
-       - Hierarchy_Level_Type values: 'Total', 'Level 1', 'Level 2', ..., 'Bottom'
-       - Parent_Level shows the immediate level above (Total -> Level 1 -> Level 2 -> Bottom)
+STYLE
+- Be precise and concrete.
+- If hierarchy is enabled (see ToolSpec), map hierarchy levels ↔ bottom combos via get_hierarchy_summary() before mixing sources.
+- When unsure about a mapping, state the limitation and use the safest interpretation.
 
-    3. grouped_hierarchy: Cross-cutting aggregations (multiple ways to slice data)
-       - Combo variables can be aggregated in multiple different ways
-       - Example: Country x Segment x Product
-         * Bottom: US--Enterprise--Coffee, US--PublicSector--Coffee, Mexico--Enterprise--Tea
-         * Country level: US (sum across all segments and products), Mexico
-         * Segment level: Enterprise (sum across all countries and products), PublicSector
-         * Product level: Coffee (sum across all countries and segments), Tea
-         * Total: Grand total (sum of everything)
-       - Same series can appear in multiple aggregation paths
-       - Models are trained at each aggregation level (Total, each grouping variable, Bottom)
-       - Forecasts are reconciled back to bottom level using optimization
-       - Hierarchy_Level_Type values: 'Total', grouping variable names (e.g., 'Country', 'Segment', 'Product'), 'Bottom'
-       - Parent_Level is typically 'Total' for grouping levels, and 'Multiple' for bottom (since bottom series can roll up multiple ways)
-
-    Key Concepts for Hierarchical Forecasting:
-    - RECONCILIATION: After models are trained at each hierarchy level, forecasts are mathematically adjusted
-      so that when you sum up bottom-level forecasts, they equal the forecast at higher levels
-    - COHERENCY: Reconciled forecasts maintain the hierarchical structure (bottom forecasts sum to top forecast)
-    - Best Model Selection: Each hierarchy level gets its own best model, then all models are reconciled
-    - Use get_hierarchy_summary() to understand which bottom series contribute to each aggregate level
-
-    When explaining hierarchical forecasts to users:
-    - Standard hierarchy: Emphasize the nested, pyramid-like structure
-    - Grouped hierarchy: Emphasize multiple ways to aggregate the same data
-    - Always mention that forecasts are reconciled to ensure mathematical consistency
-    - Explain that different hierarchy levels may use different best models
-
-    Feature Naming Convention Guide:
-    When analyzing variable importance, interpret feature names as follows:
-    - 'Target_lagN': Lagged values of the target variable (e.g., Target_lag1 = 1 period ago)
-    - 'Target_lagN_rollM_Stat': Rolling window statistics (e.g., Target_lag1_roll12_Sum = sum of last 12 values starting from lag 1)
-      * Common statistics: Sum, Avg, StdDev, Min, Max
-    - 'Date_month.lbl_Month': One-hot encoded month indicators
-    - 'Date_sinN_KM' / 'Date_cosN_KM': Fourier seasonal features (N = period, M = harmonic order)
-    - 'Date_diff': Time difference between observations
-    - 'regressor_lagN': Lagged external regressor values
-    - 'regressor_squared_lagN': Squared transformation of lagged regressor
-    - 'regressor_log_lagN': Log transformation of lagged regressor
-    - 'regressor_cubed_lagN': Cubed transformation of lagged regressor
-
-    When explaining feature importance:
-    1. Group related features (e.g., all lag features, all seasonal features, all external regressors)
-    2. Explain what the feature represents in business context
-    3. Interpret why high importance makes sense given the data patterns
-    4. Distinguish between different types of seasonal encoding (month indicators vs Fourier terms)
-    5. Explain the practical meaning of rolling window features, polynomial transformations, and lagged regressors
-
-    Available data sources:
-    - get_agent_forecast(agent_info): Returns a df of the final forecast data with the following columns:
-      - Combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
-      - Model_ID: THE PRIMARY MODEL IDENTIFIER - unique identifier of the specific model(s) trained.
-        * For single models: combination of Model_Name, Model_Type, and Recipe_ID (e.g., 'arima--local--R1')
-        * For ensemble/average models: lists all averaged models separated by '_' (e.g., 'arima--local--R1_ets--local--R1_prophet--local--R1')
-        * For hierarchical forecasts: 'Best-Model' indicates a reconciled forecast that combines predictions from multiple hierarchy levels
-          - When Model_ID == 'Best-Model', use get_hierarchy_summary() to understand the hierarchical structure
-          - Then use get_summarized_models() with Best_Model == 'Yes' to see the actual models trained at each hierarchy level
-          - Each hierarchy level (Total, Level 1, Bottom, etc.) may have used different best models
-        * ALWAYS USE Model_ID to identify which model(s) were used
-        * IMPORTANT: To analyze individual models within an average, split Model_ID by '_' to get component Model_IDs
-      - Model_Name: name of the model type (e.g., 'arima', 'ets', 'cubist')
-        * IMPORTANT: When Model_Name is NA, this indicates a SIMPLE AVERAGE model - check Model_ID for the actual models used
-        * To get details about an average model, split the Model_ID and look up each component in get_summarized_models()
-      - Model_Type: how the model was trained ('local' for individual time series, 'global' for all time series)
-      - Recipe_ID: unique identifier of the recipe used for the model (e.g., 'R1', 'R2', 'simple_average')
-      - Run_Type: distinguishes between 'Back_Test' and 'Future_Forecast'
-      - Train_Test_ID: identifies each fold of time series cross-validation (e.g., 1 for future forecast, 2 for the first back test fold, etc.)
-      - Best_Model: indicates if this model was selected as the best model for the time series (Yes, No)
-      - Horizon: forecast horizon step (1, 2, ..., n)
-      - Date: timestamp of the forecast
-      - Target: actual value, only available for back test periods
-      - Forecast: forecasted value
-      - lo_95: lower bound of the 95% prediction interval (future forecasts only)
-      - hi_95: upper bound of the 95% prediction interval (future forecasts only)
-      - lo_80: lower bound of the 80% prediction interval (future forecasts only)
-      - hi_80: upper bound of the 80% prediction interval (future forecasts only)
-    - get_best_agent_run(agent_info): Returns a df of the best agent run metadata inputs for each time series with the following columns:
-      - combo: individual time series identifier, which is the combination of all combo variables, separated by '--'
-      - model_type: how the model was trained, local for individual time series, global for all time series
-      - weighted_mape: weighted mean absolute percentage error across all back test periods
-      - clean_missing_values: indicates if missing values were cleaned (TRUE, FALSE)
-      - clean_outliers: indicates if outliers were cleaned (TRUE, FALSE)
-      - stationary: indicates if the time series was made stationary (TRUE, FALSE)
-      - box_cox: indicates if a Box-Cox transformation was applied (TRUE, FALSE)
-      - fourier_periods: number of Fourier terms used (NA uses default values)
-      - lag_periods: lag periods used in feature engineering recipe, combined as a string using '---' (e.g., '1---12---24'), value of NA means default lags were used
-      - rolling_window_periods: rolling window periods used in feature engineering recipe, combined as a string using '---' (e.g., '3---7---30'), value of NA means default windows were used
-      - recipes_to_run: recipes used in the model (e.g., 'R1', 'R2')
-      - multistep_horizon: indicates if multistep horizon forecasting was used (TRUE, FALSE)
-      - models_to_run: models trained and evaluated, combined as a string using '---' (e.g., 'arima---ets---cubist'), value of NA means all models were used
-      - pca: indicates if PCA was applied in the recipe (TRUE, FALSE)
-      - seasonal_period: seasonal periods used in models that can handle multiple seasonalities, combined as a string using '---' (e.g., '12---24'), value of NA means default seasonality was used
-      - back_test_scenarios: number of folds used in time series cross-validation, value of NA means default number of folds was used
-      - back_test_spacing: spacing between back test folds, value of NA means default spacing was used
-      - feature_selection: indicates if feature selection was applied in the recipe (TRUE, FALSE)
-      - negative_forecast: indicates if negative forecasts were allowed (TRUE, FALSE)
-      - average_models: indicates if an average ensemble model was created (TRUE, FALSE)
-    - get_eda_data(agent_info): Returns a data frame containing all exploratory data analysis results with columns:
-      - Combo: time series identifier ('All' for aggregate metrics across all series, or specific combo like 'Product_A--Region_1')
-      - Analysis_Type: type of EDA analysis performed
-      - Metric: specific metric name within each analysis type
-      - Value: numeric or character value of the metric
-
-      Analysis types and their metrics include:
-      - Data_Profile: Total_Rows, Number_Series, Min_Rows_Per_Series, Max_Rows_Per_Series, Avg_Rows_Per_Series, Negative_Count, Negative_Percent, Start_Date, End_Date
-      - ACF: Lag_0, Lag_1, Lag_2, etc. (autocorrelation values at different lags)
-      - PACF: Lag_0, Lag_1, Lag_2, etc. (partial autocorrelation values at different lags)
-      - Stationarity: is_stationary (TRUE/FALSE indicating if series is stationary based on ADF and KPSS tests)
-      - Missing_Data: total_rows, missing_count, missing_pct, longest_gap
-      - Outliers: total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt
-      - Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
-      - External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
-
-      To filter for specific analysis or combo:
-      eda_data %>% dplyr::filter(Analysis_Type == 'ACF', Combo == 'Product_A--Region_1')
-    - get_summarized_models(agent_info): Returns a df of trained model details for each time series with the following columns:
-      - Combo: time series combination identifier
-      - Model_ID: unique model identifier (format: model_name--model_type--recipe)
-      - Model_Name: name of the forecasting model (e.g., 'arima', 'ets', 'xgboost')
-      - Model_Type: whether the model is 'local' (trained per combo) or 'global' (trained across all combos)
-      - Best_Model: 'Yes' if this model is the best model for this time series, 'No' otherwise
-        * When the best model is a simple average (e.g., 'arima--local--R1_ets--local--R1'), each component model is flagged as 'Yes'
-        * Use Best_Model == 'Yes' to filter to only the best performing models
-      - section: category of information (e.g., 'predictor', 'outcome', 'recipe_step', 'model_arg', 'engine_param', 'coefficient', 'importance', 'diagnostic')
-      - name: specific name of the parameter/feature/metric
-      - value: the value as a character string
-
-      Section types and their content:
-      - predictor: input variables used by the model (e.g., 'Date', 'Date_year', 'Date_month', lag features, Fourier terms, rolling statistics)
-      - outcome: target variable being predicted (typically 'Target')
-      - recipe_step: preprocessing steps applied, numbered sequentially (e.g., '1', '2', '3') with step descriptions as values
-        * Examples: 'Remove zero variance predictors [step_zv]', 'One-hot encode categorical variables [step_dummy]'
-      - model_arg: parsnip model arguments (e.g., 'seasonal_period', 'non_seasonal_ar', 'learn_rate', 'trees', 'tree_depth')
-      - engine_param: actual fitted model parameters from the underlying engine
-        * ARIMA: 'aic', 'bic', 'aicc', 'loglik', 'sigma2', 'order_str', 'seasonal_order_str', 'nobs', 'ljung_box_*'
-        * XGBoost: 'objective', 'colsample_bytree', 'model_type'
-        * TBATS: 'alpha', 'lambda', 'likelihood', 'state_space_dim', 'variance'
-        * General: 'nobs', 'residuals.mean', 'residuals.sd'
-      - coefficient: model coefficients (e.g., 'intercept', 'intercept.se')
-        * Applies to only arima, armimax, arima-boost, and glmnet models
-      - importance: feature importance scores for multivariate models
-        * Values are importance scores, scaled to 100 for the most important feature
-      - diagnostic: model fit statistics (e.g., 'AIC', 'BIC', 'RMSE', 'ljung_box_p_value', residual tests)
-        * Note: Some diagnostics may appear in engine_param section depending on model type
-
-      Key Model Characteristics to Explain:
-      - Univariate models (ARIMA, ETS, Prophet, NNETAR, etc.): Use only historical values of the target variable
-      - Multivariate models (XGBoost, Cubist, MARS, GLMNet, SVM, etc.): Can use additional input variables (features) beyond just historical values
-      - Local models: Trained separately for each time series (more customized)
-      - Global models: Trained across all time series together (learns common patterns)
-
-      Use cases:
-      - Understanding exact model specifications (ARIMA orders, ETS components, hyperparameters)
-      - Analyzing coefficients and their significance
-      - Identifying important features/predictors
-      - Reviewing model diagnostics and fit quality
-      - Comparing model architectures across time series
-      - Examining preprocessing steps applied to each model
-
-      Usage examples:
-      - Get best models only: model_summary %>% dplyr::filter(Best_Model == 'Yes')
-      - Get feature importance for best XGBoost models: model_summary %>% dplyr::filter(Best_Model == 'Yes', Model_Name == 'xgboost', section == 'importance')
-      - Get ARIMA coefficients: model_summary %>% dplyr::filter(section == 'coefficient', Model_Name == 'arima')
-      - Get all preprocessing steps: model_summary %>% dplyr::filter(section == 'recipe_step')
-    - get_hierarchy_summary(agent_info): Returns a df mapping hierarchical time series to bottom-level series (only available when forecast approach != 'bottoms_up') with the following columns:
-      - Hierarchy_Combo: The aggregated hierarchy level combo name (e.g., 'Total', 'North America', 'United States--Enterprise'), maps to Combo in get_summarized_models() get_eda_data() and get_best_agent_run()
-      - Hierarchy_Level_Type: The type of hierarchical level
-        * For standard hierarchy: 'Total', 'Level 1', 'Level 2', etc., or 'Bottom'
-        * For grouped hierarchy: grouping variable name (based on combo variables) or 'Total', 'Bottom'
-      - Bottom_Combo: Individual bottom-level series name that rolls up to this hierarchy level, maps to Combo in get_agent_forecast()
-      - Is_Bottom: Logical (TRUE/FALSE) indicating if this is a bottom-level series (Hierarchy_Combo == Bottom_Combo)
-      - Parent_Level: The hierarchical level above this one (NA for Total level)
-
-      Use cases:
-      - Understanding hierarchical structure and relationships between aggregated and bottom-level series
-      - Finding which bottom series contribute to a specific aggregate level
-      - Understanding results from get_eda_data() get_best_agent_run() and get_summarized_models() at different hierarchy levels
-
-      IMPORTANT: This data source is ONLY available when hierarchical forecasting is enabled (forecast approach is 'standard_hierarchy' or 'grouped_hierarchy').
-      If forecast approach is 'bottoms_up', this function will error.
-
-    ALWAYS use the dplyr package for data manipulation.
-    Be precise and efficient in your code generation."
+OUTPUTS
+- Planning: JSON that matches the provided schema.
+- Code: raw R only, ends with result <- ...
+- Final answer: plain text for finance readers (no markdown)."
   )
 
   agent_info$driver_llm <- agent_info$driver_llm$set_system_prompt(system_prompt)
 
   # Store workflow parameters in agent_info for tool access
   agent_info$workflow_params <- list(
-    question = question
+    question = question,
+    tool_spec = tool_spec
   )
 
   # Construct the workflow
@@ -413,276 +395,99 @@ ask_agent_workflow <- function(agent_info,
 create_analysis_plan <- function(agent_info, question) {
   llm <- agent_info$driver_llm
 
+  # Determine hierarchy note
+  hierarchy_note <- if (agent_info$forecast_approach != "bottoms_up") {
+    "HIERARCHICAL FORECAST: Use get_hierarchy_summary() first when accessing EDA/best_run/model summary or mapping hierarchy levels to bottom combos."
+  } else {
+    "This is a bottoms_up forecast - no hierarchical mapping needed."
+  }
+
   planning_prompt <- glue::glue(
-    "You will create a plan to answer this question: '{question}'
+    "You will create a minimal analysis plan to answer:
+QUESTION: \"{question}\"
 
-    FOLLOW THIS REASONING PROCESS:
+Context:
+- Forecast approach: {agent_info$forecast_approach}
+- Project: {agent_info$project_info$project_name}
+- Target: {agent_info$project_info$target_variable}
+- Combo variables: {paste(agent_info$project_info$combo_variables, collapse = ', ')}
+- External regressors: {ifelse(is.null(agent_info$external_regressors), 'None', paste(agent_info$external_regressors, collapse = ', '))}
+- Forecast horizon: {agent_info$forecast_horizon}
 
-    STEP 1: UNDERSTAND THE QUESTION
-    - What is the user asking for? (forecast values, accuracy metrics, model details, data quality, etc.)
-    - What is the specific scope? (all time series, specific combo, specific time period, etc.)
-    - What type of answer format is expected? (single number, comparison, list, explanation, etc.)
+{hierarchy_note}
 
-    STEP 2: REVIEW PROJECT INFORMATION
-    - What project details are relevant? (target variable, combo variables, forecast horizon, external regressors)
-    - Forecast Approach: {agent_info$forecast_approach}
-    - IS THIS A HIERARCHICAL FORECAST? {ifelse(agent_info$forecast_approach != 'bottoms_up', 'YES - You MUST use get_hierarchy_summary()', 'NO - bottoms_up approach, no hierarchy')}
+ToolSpec is available (see system prompt). Use it to choose sources.
 
-    CRITICAL HIERARCHICAL FORECASTING RULES:
-    {ifelse(agent_info$forecast_approach != 'bottoms_up',
-    '>>> HIERARCHICAL FORECAST DETECTED <<<
-    - get_eda_data() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
-    - get_best_agent_run() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
-    - get_summarized_models() returns results at HIERARCHICAL LEVELS (Total, Level 1, etc.), NOT bottom combos
-    - get_agent_forecast() returns results at BOTTOM LEVEL combos (the actual forecast output)
-    - get_hierarchy_summary() MUST be used to map between hierarchical levels and bottom combos
+Column Cards:
+{get_column_cards(c('get_agent_forecast','get_best_agent_run','get_eda_data','get_summarized_models','get_hierarchy_summary'))}
 
-    REQUIRED WORKFLOW FOR HIERARCHICAL FORECASTS:
-    1. If using get_eda_data(), get_best_agent_run(), or get_summarized_models():
-       - FIRST call get_hierarchy_summary() to understand the hierarchical structure
-       - Use Hierarchy_Combo from get_hierarchy_summary() to join with Combo in get_eda_data()/get_best_agent_run()/get_summarized_models()
-       - Use Bottom_Combo from get_hierarchy_summary() to map back to Combo in get_agent_forecast()
-    2. When analyzing models at different hierarchy levels:
-       - Remember that each hierarchy level (Total, Level 1, etc.) has its own best model
-       - Use get_hierarchy_summary() to understand which bottom series contribute to each level
-    3. When explaining results to users:
-       - Clarify which hierarchy level the analysis refers to
-       - Explain that models are trained at aggregate levels, then reconciled to bottom level',
-    'This is a bottoms_up forecast - no hierarchical mapping needed.')}
+Checklist:
+1) Identify scope (series/timeframe/metric).
+2) Pick the fewest data sources to answer.
+3) If hierarchy != bottoms_up and you touch EDA/best_run/model summary, include get_hierarchy_summary() first.
+4) Name outputs you will reuse (snake_case).
+5) Prefer Best_Model == \"Yes\" unless you need all candidates.
+6) If anwering questions about more than one series, think through possible filters and groupings to summarize the data.
 
-    STEP 3: IDENTIFY REQUIRED DATA SOURCES
-    - Which data source(s) contain the information needed?
-    - Do I need multiple sources to answer completely?
-    - What specific columns or filters are needed from each source?
-    - FOR HIERARCHICAL FORECASTS: Do I need get_hierarchy_summary() to map between levels?
+Return ONLY JSON that conforms to this schema:
 
-    STEP 4: DETERMINE ANALYSIS SEQUENCE
-    - What order should I retrieve data in?
-    - FOR HIERARCHICAL FORECASTS: Should get_hierarchy_summary() be the FIRST step?
-    - Are there dependencies (e.g., need to identify models before getting their specs)?
-    - Can I combine operations or do I need separate steps?
+BEGIN_JSON_SCHEMA
+{{
+  \"type\": \"array\",
+  \"items\": {{
+    \"type\": \"object\",
+    \"required\": [\"description\",\"data_source\",\"analysis\",\"output_name\"],
+    \"properties\": {{
+      \"description\": {{\"type\":\"string\", \"maxLength\": 180}},
+      \"data_source\": {{\"type\":\"string\", \"enum\":[\"get_agent_forecast\",\"get_best_agent_run\",\"get_eda_data\",\"get_summarized_models\",\"get_hierarchy_summary\",\"none\",\"previous\"]}},
+      \"analysis\": {{\"type\":\"string\", \"maxLength\": 280}},
+      \"output_name\": {{\"type\":\"string\", \"pattern\":\"^[a-z][a-z0-9_]*$\"}}
+    }}
+  }},
+  \"minItems\": 1,
+  \"maxItems\": 6
+}}
+END_JSON_SCHEMA
 
-    STEP 5: PLAN FOR EDGE CASES
-    - What if the best model is a simple average (need to split Model_IDs)?
-    - What if this is a hierarchical forecast with Model_ID == 'Best-Model' (reconciled forecast)?
-    - What if numeric columns are stored as character (need to convert)?
-    - FOR HIERARCHICAL FORECASTS: What if the user asks about a specific combo - do they mean hierarchy level or bottom level?
+EXAMPLES (resolve placeholders like <combo>, <N> from user question):
 
-    Now, based on this reasoning, create your analysis plan.
+Q: What is the overall weighted MAPE?
+[{{\"description\":\"Compute overall weighted MAPE across all hierarchy levels\",\"data_source\":\"get_best_agent_run\",\"analysis\":\"Calculate mean(weighted_mape, na.rm=true); also compute median for robustness\",\"output_name\":\"overall_wmape\"}}]
 
-    Available data sources:
+Q: Which model was selected as the best for each combo?
+[{{\"description\":\"List best models per combo\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Best_Model=='Yes'; select distinct Combo, Model_ID, Model_Name, Model_Type\",\"output_name\":\"best_models_by_combo\"}}]
 
-    1. get_agent_forecast(agent_info):
-       USE FOR: Future predictions, confidence intervals, back-test results, actual vs forecast comparisons, identifying which models were used
-       Returns columns: Combo, Date, Forecast, Target (actuals), Run_Type, Train_Test_ID, Best_Model,
-                       Model_ID, Model_Name, Recipe_ID, Horizon, lo_95, hi_95, lo_80, hi_80
-       HIERARCHICAL NOTE: Combo represents BOTTOM-LEVEL time series (the final reconciled forecast output)
+Q: Give the next 3 periods of forecast (with 80% and 95% intervals) for <combos>.
+[{{\"description\":\"Get 3-step future forecasts for specified combos with intervals\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Combo in <combos> and Run_Type=='Future_Forecast' and Horizon<=3; select Combo, Date, Horizon, Forecast, lo_80, hi_80, lo_95, hi_95\",\"output_name\":\"combo_forecast_3h\"}}]
 
-    2. get_best_agent_run(agent_info):
-       USE FOR: model configurations, feature engineering settings
-       Returns columns: combo, weighted_mape, model_type, models_to_run, recipes_to_run,
-                       clean_missing_values, clean_outliers, stationary, box_cox, fourier_periods,
-                       lag_periods, rolling_window_periods, pca, feature_selection, etc.
-       HIERARCHICAL NOTE: combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
-       - Maps to Hierarchy_Combo in get_hierarchy_summary()
+Q: Which bottom series roll up to <hierarchy_combo>, and what are their next-period forecasts?
+[{{\"description\":\"Map requested hierarchy level to its bottom series\",\"data_source\":\"get_hierarchy_summary\",\"analysis\":\"Filter Hierarchy_Combo==<hierarchy_combo>; keep Bottom_Combo\",\"output_name\":\"children_map\"}},{{\"description\":\"Fetch next-step forecasts for mapped bottom series\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Combo in children_map$Bottom_Combo and Run_Type=='Future_Forecast' and Horizon==1; select Combo, Date, Forecast, lo_80, hi_80, lo_95, hi_95\",\"output_name\":\"child_h1_forecasts\"}}]
 
-    3. get_eda_data(agent_info):
-       USE FOR: data quality issues, time series characteristics, seasonality analysis, stationarity tests
-       Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
-       - Filter by Analysis_Type to get specific EDA results (e.g., 'ACF', 'PACF', 'Stationarity', 'Missing_Data', 'Outliers', etc.)
-       - Filter by Combo to get results for specific time series
-       - Value column contains the metric values (numeric or character)
-       HIERARCHICAL NOTE: Combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
-       - Maps to Hierarchy_Combo in get_hierarchy_summary()
-       - Use get_hierarchy_summary() to find which bottom series contribute to each hierarchy level
+Q: What are the top 5 most important features in the best XGBoost models (per series)?
+[{{\"description\":\"Top 5 importance features for best XGBoost models by series\",\"data_source\":\"get_summarized_models\",\"analysis\":\"Filter Best_Model=='Yes' and Model_Name=='xgboost' and section=='importance'; coerce value to numeric; group by Combo; take top 5 by value\",\"output_name\":\"top5_xgb_features\"}}]
 
-    4. get_summarized_models(agent_info):
-       USE FOR: Detailed model specifications, hyperparameters, coefficients, feature importance, model diagnostics
-       Returns a data frame with columns: Combo, Model_ID, Model_Name, Model_Type, Best_Model, model_class, engine, section, name, value
-       - Filter by section to get specific types of information:
-         * 'predictor': input variables/features used (Date features, lags, Fourier terms, etc.)
-         * 'outcome': target variable
-         * 'recipe_step': preprocessing steps (numbered 1, 2, 3, etc.)
-         * 'model_arg': parsnip model arguments (learn_rate, trees, seasonal_period, etc.)
-         * 'engine_param': fitted parameters (ARIMA orders, AIC, BIC, lambda, nobs, etc.)
-         * 'coefficient': model coefficients (intercept, regressor coefficients)
-         * 'importance': feature importance scores (for XGBoost, Cubist, etc.)
-         * 'diagnostic': model fit statistics (may overlap with engine_param)
-       - Filter by Best_Model == 'Yes' to get only the best models for each time series
-       - Filter by Model_Name or Model_ID to get specific model types or instances
-       - Filter by Combo to get model details for specific time series
-       - IMPORTANT: value column is character type - convert to numeric when needed: as.numeric(value)
-       HIERARCHICAL NOTE: Combo represents HIERARCHY LEVEL names (Total, Level 1, etc.), NOT bottom combos
-       - Maps to Hierarchy_Combo in get_hierarchy_summary()
-       - Use get_hierarchy_summary() to find which bottom series each hierarchy level aggregates
+Q: Where do we have missing data and outliers? Provide a compact summary by hierarchy level.
+[{{\"description\":\"Summarize missing data and outliers from EDA\",\"data_source\":\"get_eda_data\",\"analysis\":\"Filter Analysis_Type in ('Missing_Data','Outliers'); coerce Value numeric when applicable; reshape to concise per-Combo summary\",\"output_name\":\"missing_outlier_summary\"}}]
 
-    5. get_hierarchy_summary(agent_info):
-       USE FOR: Understanding hierarchical structure, mapping between aggregated and bottom-level series
-       Returns a data frame with columns: Hierarchy_Combo, Hierarchy_Level_Type, Bottom_Combo, Is_Bottom, Parent_Level
-       - Only available when forecast approach is 'standard_hierarchy' or 'grouped_hierarchy'
-       - CRITICAL: Hierarchy_Combo maps to Combo in get_eda_data(), get_best_agent_run(), and get_summarized_models()
-       - CRITICAL: Bottom_Combo maps to Combo in get_agent_forecast()
-       - Use to find which bottom series contribute to an aggregate level
-       - Use to analyze forecasts across different hierarchy levels
-       - Use to understand parent-child relationships in the hierarchy
-       FOR HIERARCHICAL FORECASTS: This should typically be your FIRST step when using get_eda_data(), get_best_agent_run(), or get_summarized_models()
+Q: Is there systematic bias in backtests? Report mean percentage error (MPE) per series and overall.
+[{{\"description\":\"Load backtest rows for best models\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Run_Type=='Back_Test' and Best_Model=='Yes' and !is.na(Target)\",\"output_name\":\"bt\"}},{{\"description\":\"Compute MPE by series and overall\",\"data_source\":\"previous\",\"analysis\":\"From bt, compute pct_error=(Forecast-Target)/Target*100; group by Combo and Model_ID for mean; also compute overall mean\",\"output_name\":\"bias_summary\"}}]
 
-    6. previous step results:
-       USE FOR: Working with results from earlier steps in the analysis
-       Set data_source to \"none\" or \"previous\" when you need to use results from a prior step
+Q: Why was the best model chosen for <combo>? Compare candidate models by backtest WMAPE and rank them.
+[{{\"description\":\"Load backtest rows for the specified combo across all candidate models\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Combo==<combo> and Run_Type=='Back_Test' and !is.na(Target)\",\"output_name\":\"bt_combo\"}},{{\"description\":\"Compute WMAPE per model and rank ascending\",\"data_source\":\"previous\",\"analysis\":\"wmape=sum(abs(Forecast-Target))/sum(Target)*100 by Model_ID; sort ascending; flag the lowest as best\",\"output_name\":\"model_wmape_rank\"}}]
 
-    Decision Rules:
-    - HIERARCHICAL FORECASTS ({agent_info$forecast_approach}):
-      * When using get_eda_data(), get_best_agent_run(), or get_summarized_models():
-        -> ALWAYS call get_hierarchy_summary() FIRST
-        -> Join using: hierarchy_summary$Hierarchy_Combo == eda_data$Combo
-        -> Map back to forecasts using: hierarchy_summary$Bottom_Combo == forecast_data$Combo
-      * When explaining models: Clarify which hierarchy level each model was trained on
-      * When analyzing specific combos: Determine if user means hierarchy level or bottom level
+Q: Show key diagnostics (AIC, BIC, RMSE) for best models at each hierarchy level.
+[{{\"description\":\"Collect AIC, BIC, RMSE for best models at each level\",\"data_source\":\"get_summarized_models\",\"analysis\":\"Filter Best_Model=='Yes' and section in ('engine_param','diagnostic') and name in ('AIC','BIC','RMSE'); coerce value numeric; reshape to one row per Combo\",\"output_name\":\"best_model_diagnostics\"}}]
 
-    - Questions about accuracy/WMAPE/errors -> use get_agent_forecast() for detailed metrics or get_best_agent_run() for summary WMAPE
-    - Questions about which specific models were used -> use get_agent_forecast() and analyze Model_ID column
-      * If Model_Name is NA, the best model is a simple average - split Model_ID by '_' to get components
-      * If Model_ID == 'Best-Model', this is a hierarchical reconciled forecast:
-        1. Use get_hierarchy_summary() to understand the hierarchical structure
-        2. Use get_summarized_models() with Best_Model == 'Yes' to see models at each hierarchy level
-      * Use get_summarized_models() with the component Model_IDs to get details about each model in the average
-    - Questions about forecasts/predictions/future values -> use get_agent_forecast()
-    - Questions about models used -> check if asking about all models that were ran (get_best_agent_run) or the best model (get_agent_forecast)
-      * If the best model is a simple average, you'll need BOTH get_agent_forecast() AND get_summarized_models()
-      * HIERARCHICAL: Use get_hierarchy_summary() to understand which hierarchy level the model was trained on
-    - Questions about feature engineering/transformations -> use get_best_agent_run()
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels to bottom combos
-    - Questions about data quality/patterns/seasonality -> use get_eda_data()
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels to bottom combos
-    - Questions about stationarity/ACF/PACF -> use get_eda_data() with Analysis_Type filter
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about outliers in the data -> use get_eda_data() with Analysis_Type == 'Outliers'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about missing data patterns -> use get_eda_data() with Analysis_Type == 'Missing_Data'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about model specifications/parameters -> use get_summarized_models()
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-      * Combine with Best_Model == 'Yes' to get importance for best models only
-    - Questions about model hyperparameters -> use get_summarized_models() with section == 'engine_param' or 'model_arg'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about model coefficients -> use get_summarized_models() with section == 'coefficient'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about feature importance -> use get_summarized_models() with section == 'importance'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-      * Combine with Best_Model == 'Yes' to get importance for best models only
-    - Questions about model diagnostics (AIC, BIC, RMSE) -> use get_summarized_models() with section == 'engine_param'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to map hierarchy levels
-    - Questions about hierarchical structure/relationships -> ALWAYS use get_hierarchy_summary()
-    - Questions about which series roll up to an aggregate level -> ALWAYS use get_hierarchy_summary()
-    - Questions comparing forecasts across hierarchy levels -> get_hierarchy_summary() and get_agent_forecast() together
-    - Questions needing both forecast values AND run settings -> use BOTH get_agent_forecast() and get_best_agent_run() sources in separate steps
-      * HIERARCHICAL: Include get_hierarchy_summary() to map between levels
-    - Questions needing both model settings AND detailed specifications -> use get_best_agent_run() AND get_summarized_models() sources in separate steps
-      * HIERARCHICAL: get_hierarchy_summary() FIRST to enable mapping
+Q: Which bottom series contribute most to next period's total forecast? Return top <N> with shares.
+[{{\"description\":\"Get bottom series for Total level\",\"data_source\":\"get_hierarchy_summary\",\"analysis\":\"Filter Hierarchy_Combo=='Total'; keep Bottom_Combo\",\"output_name\":\"total_children\"}},{{\"description\":\"Get next-step forecasts for those bottom series\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Combo in total_children$Bottom_Combo and Run_Type=='Future_Forecast' and Horizon==1; keep Combo and Forecast\",\"output_name\":\"h1_forecasts\"}},{{\"description\":\"Compute contribution shares and return top N\",\"data_source\":\"previous\",\"analysis\":\"share=Forecast/sum(Forecast); sort desc; take top <N>; include cumulative share\",\"output_name\":\"top_contributors\"}}]
 
-    Keywords to Data Source Mapping:
-    - WMAPE, MAPE, accuracy, error, performance -> get_agent_forecast()
-    - forecast, prediction, future, back test, next month/year -> get_agent_forecast()
-    - confidence interval, prediction interval -> get_agent_forecast()
-    - outliers, missing values, transformations -> get_best_agent_run() for settings, get_eda_data() for actual counts
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - best model -> get_agent_forecast() for which model was best, get_summarized_models() with Best_Model == 'Yes' for details
-      * HIERARCHICAL: get_hierarchy_summary() to understand hierarchy level context
-      * No need to manually split Model_IDs - Best_Model flag handles simple averages automatically
-    - simple average, ensemble, averaged models, model combination -> get_agent_forecast() to identify, then get_summarized_models() with split Model_IDs
-    - data quality, seasonality, stationarity, ACF, PACF -> get_eda_data()
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - time series characteristics, patterns -> get_eda_data() for summary metrics, get_agent_forecast() for custom stats on forecasts
-      * HIERARCHICAL: get_hierarchy_summary() FIRST for EDA data
-    - external regressor correlations -> get_eda_data() with Analysis_Type == 'External_Regressor_Distance_Correlation'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - model hyperparameters -> get_summarized_models() with section == 'engine_param' or 'model_arg'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - model coefficients -> get_summarized_models() with section == 'coefficient'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - hyperparameters, tuning parameters, model settings -> get_summarized_models() with section in ('model_arg', 'engine_param')
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - feature importance, variable importance, predictor importance -> get_summarized_models() with section == 'importance'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - which features/predictors were used -> get_summarized_models() with section == 'predictor'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - preprocessing steps, recipe steps -> get_summarized_models() with section == 'recipe_step'
-      * HIERARCHICAL: get_hierarchy_summary() FIRST
-    - hierarchy, hierarchical, aggregation, roll up, parent, child, top level, bottom level -> get_hierarchy_summary() (only if hierarchical forecast)
+Q: What is the forecast for all US series for the next period?
+[{{\"description\":\"Get forecasts and split Combo to filter by Country\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Run_Type=='Future_Forecast' and Horizon==1; use tidyr::separate(Combo, into=agent_info$project_info$combo_variables, sep='--', remove=FALSE) to split; filter Country=='US'; select Combo, Date, Forecast, lo_80, hi_80\",\"output_name\":\"us_h1_forecasts\"}}]
 
-    Return a JSON array of analysis steps. Each step should have:
-    - description: What this step does
-    - data_source: Which function to call for data (\"get_agent_forecast\", \"get_best_agent_run\", \"get_eda_data\", \"get_summarized_models\", \"get_hierarchy_summary\", \"none\", or \"previous\")
-    - analysis: Brief description of the R code analysis to perform
-    - output_name: Variable name to store this step's result (e.g., 'accuracy_data', 'forecast_data') - THIS WILL BE AVAILABLE IN SUBSEQUENT STEPS
+Q: Which segments were the most challenging to forecast and why?
+[{{\"description\":\"Get backtest errors for best models\",\"data_source\":\"get_agent_forecast\",\"analysis\":\"Filter Run_Type=='Back_Test' and Best_Model=='Yes' and !is.na(Target); compute abs_pct_error=abs((Forecast-Target)/Target)*100 by row\",\"output_name\":\"bt_errors\"}},{{\"description\":\"Split Combo and aggregate errors by Segment\",\"data_source\":\"previous\",\"analysis\":\"Use tidyr::separate(Combo, into=agent_info$project_info$combo_variables, sep='--', remove=FALSE); group by Segment; compute mean_ape, median_ape, std_ape; rank desc by mean_ape\",\"output_name\":\"segment_errors\"}},{{\"description\":\"Get EDA flags for top 3 challenging segments\",\"data_source\":\"get_eda_data\",\"analysis\":\"Filter Analysis_Type in ('Missing_Data','Outliers','Stationarity'); split Combo to extract Segment; filter Segment in top 3 from segment_errors; summarize issue counts\",\"output_name\":\"segment_issues\"}}]
 
-    Examples:
-    For 'What is the average WMAPE across all time series?':
-    [{{
-      \"description\": \"Get accuracy metrics from best agent runs\",
-      \"data_source\": \"get_best_agent_run\",
-      \"analysis\": \"Calculate mean of weighted_mape column\",
-      \"output_name\": \"avg_wmape\"
-    }}]
-
-    For 'Which models were used for each time series?':
-    [{{
-      \"description\": \"Get forecast data with model information\",
-      \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo and Model_ID combinations\",
-      \"output_name\": \"models_used\"
-    }}]
-
-    For 'What are the top 5 most important features in the XGBoost models?':
-    [{{
-      \"description\": \"Get feature importance from XGBoost models\",
-      \"data_source\": \"get_summarized_models\",
-      \"analysis\": \"Filter for Model_Name == 'xgboost' and section == 'importance', convert value to numeric, arrange by Combo and desc(value), and take top 5 per Combo\",
-      \"output_name\": \"top_features\"
-    }}]
-
-    For 'Analyze forecast bias and recommend adjustments':
-    [{{
-      \"description\": \"Get back-test results\",
-      \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for Run_Type == 'Back_Test' and Best_Model == 'Yes'\",
-      \"output_name\": \"backtest_data\"
-    }},
-    {{
-      \"description\": \"Calculate errors\",
-      \"data_source\": \"none\",
-      \"analysis\": \"Using backtest_data, calculate error = Forecast - Target and pct_error = (Forecast - Target) / Target * 100\",
-      \"output_name\": \"error_data\"
-    }},
-    {{
-      \"description\": \"Summarize bias by series\",
-      \"data_source\": \"none\",
-      \"analysis\": \"Using error_data, group by Combo and calculate mean percentage error\",
-      \"output_name\": \"series_bias\"
-    }}]
-
-    For 'Explain how the best model works':
-    [{{
-      \"description\": \"Get best model information\",
-      \"data_source\": \"get_agent_forecast\",
-      \"analysis\": \"Filter for Best_Model == 'Yes' and select distinct Combo, Model_ID, Model_Name\",
-      \"output_name\": \"best_models\"
-    }},
-    {{
-      \"description\": \"Check if best models are simple averages and split Model_IDs\",
-      \"data_source\": \"none\",
-      \"analysis\": \"For each row in best_models, check if Model_Name is NA. If so, split Model_ID by '_' to get component model IDs. Create a data frame with Combo and individual Model_IDs\",
-      \"output_name\": \"component_models\"
-    }},
-    {{
-      \"description\": \"Get detailed specifications for component models\",
-      \"data_source\": \"get_summarized_models\",
-      \"analysis\": \"Filter for Model_IDs in component_models and get key specifications from sections: model_arg, engine_param, coefficient, importance\",
-      \"output_name\": \"model_specs\"
-    }}]
-
-    Return ONLY the JSON array."
+Return ONLY the JSON array."
   )
 
   response <- llm$chat(planning_prompt, echo = FALSE)
@@ -694,7 +499,8 @@ create_analysis_plan <- function(agent_info, question) {
     plan_text <- as.character(response)
   }
 
-  # Parse JSON
+  # Parse JSON - look for content between BEGIN_JSON_SCHEMA and END_JSON_SCHEMA markers or clean up
+  plan_text <- gsub("BEGIN_JSON_SCHEMA.*?END_JSON_SCHEMA", "", plan_text, perl = TRUE)
   plan_text <- gsub("```json|```", "", plan_text)
   plan_text <- trimws(plan_text)
 
@@ -709,7 +515,7 @@ create_analysis_plan <- function(agent_info, question) {
         description = "Get forecast summary",
         data_source = "get_agent_forecast",
         analysis = "Summarize forecast data",
-        question = question
+        output_name = "forecast_summary"
       )))
     }
   )
@@ -739,12 +545,11 @@ execute_analysis_step <- function(agent_info,
 
   cli::cli_progress_step("Executing: {current_step$description}")
 
-  # Build an explicit first-line data source call the LLM must use
+  # Build data source call
   ds_call <- tryCatch(
     {
       src <- as.character(current_step$data_source %||% "get_agent_forecast")
       if (identical(src, "get_best_agent_run")) {
-        # Often we want full_run_info for accuracy fields
         "get_best_agent_run(agent_info)"
       } else if (identical(src, "get_agent_forecast")) {
         "get_agent_forecast(agent_info)"
@@ -752,11 +557,11 @@ execute_analysis_step <- function(agent_info,
         "get_eda_data(agent_info)"
       } else if (identical(src, "get_summarized_models")) {
         "get_summarized_models(agent_info)"
+      } else if (identical(src, "get_hierarchy_summary")) {
+        "get_hierarchy_summary(agent_info)"
       } else if (identical(src, "none") || identical(src, "previous")) {
-        # Working with previous results
         NULL
       } else {
-        # Fallback: treat as a function name taking the standard args
         sprintf("%s(agent_info)", src)
       }
     },
@@ -765,85 +570,102 @@ execute_analysis_step <- function(agent_info,
     }
   )
 
-  # Build context about available previous results
-  previous_context <- ""
+  # Collect data sources used in current and previous steps for column cards
+  data_sources_used <- c()
+  if (!is.null(current_step$data_source) && 
+      !current_step$data_source %in% c("none", "previous")) {
+    data_sources_used <- c(data_sources_used, current_step$data_source)
+  }
+  # Add sources from previous steps that might be referenced
   if (length(previous_results) > 0 && step_index > 1) {
-    # Map step names to output names from the plan
-    available_objects <- c()
+    for (i in 1:(step_index - 1)) {
+      if (i <= length(analysis_plan)) {
+        prev_source <- analysis_plan[[i]]$data_source
+        if (!is.null(prev_source) && !prev_source %in% c("none", "previous")) {
+          data_sources_used <- c(data_sources_used, prev_source)
+        }
+      }
+    }
+  }
+  data_sources_used <- unique(data_sources_used)
+  
+  # Get column cards for relevant data sources
+  column_cards <- get_column_cards(data_sources_used)
+  column_sanity <- get_column_sanity_checklist()
+
+  # Build context about available previous results
+  prev_output <- NULL
+  if (length(previous_results) > 0 && step_index > 1) {
     for (i in 1:(step_index - 1)) {
       if (i <= length(analysis_plan) && !is.null(previous_results[[paste0("step_", i)]])) {
         output_name <- analysis_plan[[i]]$output_name
-        available_objects <- c(available_objects, paste0(output_name, " (from step ", i, ")"))
+        if (i == step_index - 1) {
+          prev_output <- output_name
+        }
       }
     }
-    if (length(available_objects) > 0) {
-      previous_context <- paste0(
-        "\n\nAvailable objects from previous steps:\n",
-        paste("- ", available_objects, collapse = "\n")
-      )
-    }
+  }
+
+  # Build data loading section
+  data_loading_section <- if (!is.null(ds_call)) {
+    paste0("FIRST LINE MUST BE:\ndata <- ", ds_call)
+  } else {
+    paste0('This step uses a previous object named "', 
+           ifelse(!is.null(prev_output), prev_output, 'previous_result'), 
+           '". Access it directly.')
+  }
+
+  # Build function list based on forecast approach
+  function_list <- if (agent_info$forecast_approach != "bottoms_up") {
+    "get_agent_forecast(), get_best_agent_run(), get_eda_data(), get_summarized_models(), get_hierarchy_summary()"
+  } else {
+    "get_agent_forecast(), get_best_agent_run(), get_eda_data(), get_summarized_models()"
   }
 
   # Generate R code for this step
   code_prompt <- glue::glue(
-    "You are writing R code that will be executed inside an R environment that ALREADY contains:
-    - agent_info (list-like)  [DO NOT create or modify it]
-    - functions: get_agent_forecast(), get_best_agent_run(), get_eda_data(), get_summarized_models()
-    {previous_context}
+    "You are writing R code to execute one plan step.
 
-    Task: {current_step$analysis}
-    Step description: {current_step$description}
-    Expected output name: {current_step$output_name}
-    Last error: {ifelse(is.null(last_error), 'None', last_error)}
+Environment already contains:
+- agent_info (do not modify)
+- functions: {function_list}
+- Any previous step outputs named per the plan.
 
-    HARD RULES:
-    - NEVER write placeholder values like \"your_agent_info\".
-    - NEVER assign to agent_info.
-    - Do NOT call library(); always attach the package to the function using ::.
-    - ONLY USE these specific R libraries: dplyr, feasts, foreach, generics, glue, gtools,
-      lubridate, plyr, purrr, rlang, stringr, tibble, tidyr, tidyselect, timetk
-    - If last error is not none, it contains the error message from the last attempt to run R code, YOU MUST fix the code accordingly
+Task: {current_step$analysis}
+Step: {current_step$description}
+Expected output object: {current_step$output_name}
+Last error (if any): {ifelse(is.null(last_error), 'None', last_error)}
 
-    Data Loading Rules:
-    {ifelse(!is.null(ds_call), paste0('- FIRST LINE MUST load data exactly like:\n      data <- ', ds_call), paste0('- This step uses data from a previous step named \"', ifelse(step_index > 1 && (step_index - 1) <= length(analysis_plan), analysis_plan[[step_index - 1]]$output_name, 'previous_result'), '\"\n- Access it directly by its name (it\\'s already in the environment)'))}
+Rules (concise):
+- Use only namespaced verbs (e.g., dplyr::, tidyr::). No library().
+- End with result <- {current_step$output_name} or directly assign result <- ...
+- Keep code idempotent and vectorized; no interactive calls.
 
-    - Use dplyr verbs for manipulation.
-    - Put your final output in a variable named result.
-    - Output ONLY raw R code (no backticks, no prose).
+Data loading (exactly one of):
+{data_loading_section}
 
-    Special notes:
-    - For get_eda_data(): Returns a data frame with columns: Combo, Analysis_Type, Metric, Value
-    - For get_agent_forecast():
-      * Model_ID is the PRIMARY model identifier - ALWAYS include it in your results
-      * When Model_Name is NA, it indicates an ensemble/average model
-      * Model_ID for ensembles contains multiple models separated by '_'
-      * To analyze components of an average model: stringr::str_split(Model_ID, '_')[[1]]
-      * Then filter get_summarized_models() results using the component Model_IDs
-    - For get_summarized_models():
-      * Returns detailed model information organized by section (predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic)
-      * Filter by section to get specific types of information
-      * The 'value' column may be numeric or character depending on the parameter
-      * For numeric analysis, convert value column: as.numeric(value)
-      * Model_ID matches the Model_ID in get_agent_forecast() for joining
-      * When analyzing simple averages, filter for multiple Model_IDs using: Model_ID %in% c('model1', 'model2', 'model3')
-      * Filter Best_Model == 'Yes' to get details for only the best models
-    - When working with variable importance data, use these helper patterns for feature categorization:
-      importance_data %>%
-        dplyr::mutate(
-          feature_category = dplyr::case_when(
-            stringr::str_detect(name, '^Target_lag\\\\d+$') ~ 'Simple Lags',
-            stringr::str_detect(name, '^Target_lag.*_roll.*_(Sum|Avg|StdDev|Min|Max)') ~ 'Rolling Windows',
-            stringr::str_detect(name, 'Date_month\\\\.lbl_') ~ 'Month Indicators',
-            stringr::str_detect(name, 'Date_(sin|cos)\\\\d+_K\\\\d+') ~ 'Fourier Seasonality',
-            stringr::str_detect(name, 'Date_') ~ 'Date Features',
-            stringr::str_detect(name, '_squared_lag') ~ 'Squared Transforms',
-            stringr::str_detect(name, '_log_lag') ~ 'Log Transforms',
-            stringr::str_detect(name, '_cubed_lag') ~ 'Cubed Transforms',
-            TRUE ~ 'External Regressors'
-          )
-        )
+Hints:
+- For feature importance: convert numeric columns as needed with suppressWarnings(as.numeric(value)).
+- When grouping metrics, keep both Combo and Model_ID.
+{column_cards}
+{column_sanity}
 
-    - When calculating metrics like MAPE, ensure you group by BOTH Combo AND Model_ID to maintain model information"
+Output format:
+- Return RAW R code only. No comments, no prose, no backticks.
+
+Optional helper for feature categorization:
+importance %>%
+  dplyr::mutate(feature_category = dplyr::case_when(
+    stringr::str_detect(name, '^Target_lag\\\\d+$') ~ 'Simple Lags',
+    stringr::str_detect(name, '^Target_lag.*_roll.*_(Sum|Avg|StdDev|Min|Max)') ~ 'Rolling Windows',
+    stringr::str_detect(name, 'Date_month\\\\.lbl_') ~ 'Month Indicators',
+    stringr::str_detect(name, 'Date_(sin|cos)\\\\d+_K\\\\d+') ~ 'Fourier Seasonality',
+    stringr::str_detect(name, 'Date_') ~ 'Date Features',
+    stringr::str_detect(name, '_squared_lag') ~ 'Squared Transforms',
+    stringr::str_detect(name, '_log_lag') ~ 'Log Transforms',
+    stringr::str_detect(name, '_cubed_lag') ~ 'Cubed Transforms',
+    TRUE ~ 'External Regressors'
+  ))"
   )
 
   code_response <- llm$chat(code_prompt, echo = FALSE)
@@ -855,13 +677,11 @@ execute_analysis_step <- function(agent_info,
     as.character(code_response)
   }
 
-  # Clean up and apply guardrails against placeholders / reassignments
+  # Clean up code
   r_code <- gsub("```r|```R|```", "", r_code)
   r_code <- trimws(r_code)
   # Strip any illegal reassignments to pre-bound variables
   r_code <- gsub("(?m)^\\s*(agent_info)\\s*<-.*$", "", r_code, perl = TRUE)
-  # Replace any explicit placeholders that slipped through
-  r_code <- gsub('"your_agent_info"|\'your_agent_info\'', "agent_info", r_code)
   # Normalize spacing
   r_code <- gsub("\n{3,}", "\n\n", r_code)
 
@@ -904,10 +724,14 @@ execute_r_code <- function(code,
   exec_env$get_best_agent_run <- get_best_agent_run
   exec_env$get_eda_data <- get_eda_data
   exec_env$get_summarized_models <- get_summarized_models
+  
+  # Only add get_hierarchy_summary if hierarchical
+  if (agent_info$forecast_approach != "bottoms_up") {
+    exec_env$get_hierarchy_summary <- get_hierarchy_summary
+  }
 
   # Add previous results to environment with their proper names
   if (!is.null(analysis_plan) && !is.null(step_index) && length(previous_results) > 0) {
-    # Map step_X results to their output_name from the plan
     for (i in 1:(step_index - 1)) {
       step_name <- paste0("step_", i)
       if (step_name %in% names(previous_results) && i <= length(analysis_plan)) {
@@ -918,7 +742,6 @@ execute_r_code <- function(code,
       }
     }
   } else {
-    # Fallback: add all previous results as-is
     for (name in names(previous_results)) {
       exec_env[[name]] <- previous_results[[name]]
     }
@@ -933,17 +756,14 @@ execute_r_code <- function(code,
   # Execute the code
   result <- tryCatch(
     {
-      # Parse and evaluate the code
       parsed_code <- parse(text = code)
       for (expr in parsed_code) {
         eval(expr, envir = exec_env)
       }
 
-      # Get the result variable if it exists
       if (exists("result", envir = exec_env)) {
         exec_env$result
       } else {
-        # Return the last evaluated expression
         eval(parsed_code[length(parsed_code)], envir = exec_env)
       }
     },
@@ -958,6 +778,58 @@ execute_r_code <- function(code,
   return(result)
 }
 
+#' Summarize analysis results for answer generation
+#'
+#' @param analysis_results Results from all analysis steps
+#' @param max_rows Maximum rows to include per data frame
+#'
+#' @return Character string with summarized results
+#' @noRd
+summarize_analysis_results <- function(analysis_results, max_rows = 20) {
+  context_parts <- list()
+
+  for (name in names(analysis_results)) {
+    result <- analysis_results[[name]]
+
+    if (is.data.frame(result)) {
+      # Cap at max_rows and provide summary stats
+      n_rows <- nrow(result)
+      display_rows <- min(n_rows, max_rows)
+      
+      summary_text <- paste0(
+        "\nAnalysis ", gsub("step_", "", name), " result (", n_rows, " rows total, showing ", display_rows, "):\n",
+        utils::capture.output(print(head(data.frame(result), display_rows))) %>%
+          paste(collapse = "\n")
+      )
+      
+      if (n_rows > max_rows) {
+        summary_text <- paste0(summary_text, "\n[... ", n_rows - max_rows, " more rows omitted]")
+      }
+      
+      context_parts[[name]] <- summary_text
+    } else if (is.list(result)) {
+      context_parts[[name]] <- paste0(
+        "\nAnalysis ", gsub("step_", "", name), " result:\n",
+        utils::capture.output(utils::str(result, max.level = 2)) %>%
+          paste(collapse = "\n")
+      )
+    } else if (is.numeric(result) || is.character(result)) {
+      context_parts[[name]] <- paste0(
+        "\nAnalysis ", gsub("step_", "", name), " result: ",
+        paste(result, collapse = ", ")
+      )
+    } else {
+      context_parts[[name]] <- paste0(
+        "\nAnalysis ", gsub("step_", "", name), " result:\n",
+        utils::capture.output(print(result)) %>%
+          paste(collapse = "\n")
+      )
+    }
+  }
+
+  return(paste(context_parts, collapse = "\n"))
+}
+
 #' Generate final answer based on analysis results
 #'
 #' @param agent_info Agent info object
@@ -969,149 +841,41 @@ execute_r_code <- function(code,
 generate_final_answer <- function(agent_info, question, analysis_results) {
   llm <- agent_info$driver_llm
 
-  # Format analysis results for context
-  context_parts <- list()
-
-  for (name in names(analysis_results)) {
-    result <- analysis_results[[name]]
-
-    if (is.data.frame(result)) {
-      # Format data frames as tables
-      context_parts[[name]] <- paste0(
-        "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        utils::capture.output(print(head(result, 100))) %>%
-          paste(collapse = "\n")
-      )
-    } else if (is.list(result)) {
-      # Format lists
-      context_parts[[name]] <- paste0(
-        "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        utils::capture.output(utils::str(result)) %>%
-          paste(collapse = "\n")
-      )
-    } else if (is.numeric(result) || is.character(result)) {
-      # Format simple values
-      context_parts[[name]] <- paste0(
-        "\nAnalysis ", gsub("step_", "", name), " result: ",
-        paste(result, collapse = ", ")
-      )
-    } else {
-      # Default formatting
-      context_parts[[name]] <- paste0(
-        "\nAnalysis ", gsub("step_", "", name), " result:\n",
-        utils::capture.output(print(result)) %>%
-          paste(collapse = "\n")
-      )
-    }
-  }
-
-  full_context <- paste(context_parts, collapse = "\n")
-
-  # Create answer prompt with structured reasoning
+  # Summarize analysis results (cap token usage)
+  full_context <- summarize_analysis_results(analysis_results, max_rows = 20)
+  # Create answer prompt (LEAN FINANCE STYLE)
   answer_prompt <- glue::glue(
-    "You will answer this question: '{question}'
+    "You will answer:
+\"{question}\"
 
-    Based on these analysis results:
-    -----Analysis Results-----
-    {full_context}
+Use only the material below. If something isn't present, say so plainly.
 
-    FOLLOW THIS REASONING PROCESS TO CONSTRUCT YOUR ANSWER:
+-----INPUT (summarized analysis results)-----
+{full_context}
+--------------------------------------------
 
-    STEP 1: SYNTHESIZE THE DATA
-    - What are the key findings from the analysis results?
-    - Are there any patterns, trends, or notable observations?
-    - What numbers or facts are most relevant to the question?
+Audience: finance professionals (non-data scientists).
+Style: plain text with simple lists allowed, short paragraphs.
 
-    STEP 2: DETERMINE THE CORE ANSWER
-    - What is the direct, concise answer to the user's question?
-    - Can I answer with a single statement or do I need multiple points?
-    - What is the most important information the user needs to know?
+Checklist:
+1) Start with the direct answer in 1–2 sentences.
+2) Support with the key numbers (include % with two decimals; use commas for thousands).
+3) If models are discussed, explain WHAT they capture in business terms (seasonality, trend, recency), not technical parameters.
+4) If hierarchy is involved, name the level(s) you're summarizing.
+5) If technical terms are used, explain them briefly in simple language.
 
-    STEP 3: IDENTIFY SUPPORTING EVIDENCE
-    - What specific numbers support my answer?
-    - Are there any comparisons or context that would help?
-    - What details would make this answer more actionable?
+Term translations (use inline, don't over-explain):
+- WMAPE → \"weighted average prediction error\" (lower is better).
+- Back test → \"historical testing period\".
+- Forecast horizon → \"number of periods predicted ahead\".
 
-    STEP 4: TRANSLATE TO BUSINESS LANGUAGE
-    - What technical terms need to be explained?
-    - How can I make model details accessible to non-technical users?
-    - What business implications should I highlight?
+Formatting:
+- 6–10 sentences total (or fewer sentences with a short list if appropriate).
+- Use simple bullet lists (- or *) ONLY when listing multiple items (e.g., series names, models, features).
+- NO bold, NO italics, NO headers, NO code blocks, NO tables.
+- Be specific; cite the exact series and dates you used.
 
-    STEP 5: STRUCTURE THE RESPONSE
-    - Lead with the direct answer
-    - Follow with supporting evidence and numbers
-    - Add context or explanation where needed
-    - End with implications or recommendations if relevant
-
-    Now, construct your answer following these guidelines:
-
-    -----RULES FOR FINANCE-FRIENDLY EXPLANATIONS-----
-
-    AUDIENCE: Assume the reader is a finance professional with NO data science background.
-
-    STRUCTURE YOUR ANSWER:
-    1. Start with the direct answer (1-2 sentences)
-    2. Provide supporting evidence with specific numbers
-    3. If discussing models, explain WHAT they do, not HOW they work
-    4. End with business implications if relevant
-
-    WHEN EXPLAINING MODELS:
-    - ALWAYS use the plain-language model descriptions from the system prompt
-    - NEVER use technical terms like 'hyperparameters', 'tuning', 'cross-validation' without explanation
-    - If mentioning a simple average, say: 'combines predictions from X different models' instead of 'ensemble'
-    - For model selection, focus on WHY it was chosen (accuracy, reliability) not technical specs
-    - If describing model components (ARIMA orders, hyperparameters):
-      * Only mention if directly asked
-      * Translate to business meaning (e.g., 'captures 12-month seasonal pattern' not 'seasonal_period = 12')
-
-    When explaining feature importance:
-    1. Start with a summary (e.g., 'The top 3 features contribute X% of total importance')
-    2. Group features by category (lags, rolling windows, seasonal, external regressors)
-    3. Explain what each important feature represents in plain language
-    4. Connect importance to business context (e.g., 'September is important because it's peak season')
-    5. If discussing specific features, decode the naming:
-       - Target_lag1_roll12_Sum = 'Sum of target values over the last 12 months, starting 1 month ago'
-       - driver1_squared_lag6 = 'Squared value of driver1 from 6 periods ago'
-
-    TECHNICAL TERM TRANSLATIONS (use these automatically):
-    - 'WMAPE' or 'weighted MAPE' -> 'weighted average prediction error' (explain: lower is better, 5% means typically off by 5%)
-    - 'MAPE' -> 'average prediction error'
-    - 'Back test' -> 'historical testing period'
-    - 'Forecast horizon' -> 'number of periods predicted into the future'
-    - 'Feature engineering' -> 'data preparation and variable creation'
-    - 'Lag features' -> 'using past values as predictors'
-    - 'Rolling window' -> 'moving averages calculated over time'
-    - 'Fourier terms' -> 'mathematical components that capture seasonal patterns'
-    - 'Box-Cox transformation' -> 'mathematical adjustment to stabilize variance'
-    - 'Stationarity' -> 'removing trends to focus on patterns'
-    - 'Recipe' -> 'data preparation workflow'
-    - 'Local model' -> 'model trained specifically for this time series'
-    - 'Global model' -> 'model trained across multiple time series'
-
-    NUMBER FORMATTING:
-    - Percentages: Always include % symbol, round to 2 decimals (e.g., 4.52%)
-    - Large numbers: Use commas as thousands separators (e.g., 1,234.56)
-    - WMAPE/MAPE: Express as percentage, explain scale (e.g., '3.2% error means forecasts are typically within 3.2% of actual values')
-
-    AVOID THESE MISTAKES:
-    - DON'T say 'the model with the lowest WMAPE' -> SAY 'the most accurate model'
-    - DON'T list technical parameters without context
-    - DON'T assume knowledge of statistical concepts
-    - DON'T use acronyms without defining them first
-    - DON'T say 'Recipe R1' -> SAY 'feature engineering recipe #1'
-
-    FORMAT:
-    - Use plain text only (NO markdown, NO bullet points)
-    - Use clear paragraph breaks for readability
-    - Put the most important information first
-    - If showing multiple models, group by time series and prioritize the best model
-
-    EXAMPLE GOOD ANSWER:
-    'The most accurate model for this time series is an ARIMA model, which achieved a 3.2% weighted average prediction error. This means the forecasts are typically within 3.2% of the actual values. ARIMA is a statistical model that uses historical patterns and trends to predict future values, and in this case, it was trained specifically for this individual time series (local model). The model captures a 12-month seasonal pattern and uses the past 3 months of data to make predictions.'
-
-    EXAMPLE BAD ANSWER:
-    'The best model is arima--local--R1 with WMAPE of 0.032. It has seasonal_period=12, lag_periods=1---3, and uses step_zv and step_dummy in the recipe.'
-    "
+Return plain text with simple lists only."
   )
 
   cli::cli_progress_step("Generating answer...")
@@ -1135,8 +899,8 @@ generate_final_answer <- function(agent_info, question, analysis_results) {
 display_answer <- function(answer) {
   cli::cli_h3("Answer:")
 
-  # Clean any residual markdown
-  answer <- clean_markdown(answer)
+  # Clean any residual markdown (except lists)
+  answer <- clean_markdown(answer, keep_lists = TRUE)
 
   # Display the answer
   cat(answer, "\n")
@@ -1145,16 +909,23 @@ display_answer <- function(answer) {
 #' Clean markdown formatting from text
 #'
 #' @param text Character string potentially containing markdown
+#' @param keep_lists Logical, if TRUE keeps bullet lists
 #' @return Character string with markdown removed
 #' @noRd
-clean_markdown <- function(text) {
+clean_markdown <- function(text, keep_lists = FALSE) {
   # Remove markdown bold
   text <- gsub("\\*\\*(.+?)\\*\\*", "\\1", text)
   text <- gsub("__(.+?)__", "\\1", text)
 
-  # Remove markdown italic
-  text <- gsub("(?<!\\*)\\*([^*]+?)\\*(?!\\*)", "\\1", text, perl = TRUE)
-  text <- gsub("(?<!_)_([^_]+?)_(?!_)", "\\1", text, perl = TRUE)
+  # Remove markdown italic (but preserve list markers if keep_lists = TRUE)
+  if (keep_lists) {
+    # Only remove italics that are NOT list markers at start of line
+    text <- gsub("(?<!^)(?<!\\n)\\*([^*]+?)\\*", "\\1", text, perl = TRUE)
+    text <- gsub("(?<!^)(?<!\\n)_([^_]+?)_", "\\1", text, perl = TRUE)
+  } else {
+    text <- gsub("(?<!\\*)\\*([^*]+?)\\*(?!\\*)", "\\1", text, perl = TRUE)
+    text <- gsub("(?<!_)_([^_]+?)_(?!_)", "\\1", text, perl = TRUE)
+  }
 
   # Remove markdown headers
   text <- gsub("^#{1,6}\\s+", "", text, perl = TRUE, useBytes = FALSE)
