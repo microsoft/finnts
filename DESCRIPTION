@@ -46,6 +46,7 @@ Imports:
     lubridate,
     magrittr,
     methods,
+    nixtlar,
     parallel,
     parsnip,
     plyr,
