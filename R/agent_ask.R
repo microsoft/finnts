@@ -98,7 +98,7 @@ Functions (return data frames unless noted):
 HIERARCHY RULES:
 - bottoms_up: no hierarchy. Don't call get_hierarchy_summary().
 - standard_hierarchy / grouped_hierarchy: use get_hierarchy_summary() to map
-  hierarchy levels ↔ bottom combos. EDA/best_run/model summary at hierarchy level;
+  hierarchy levels <-> bottom combos. EDA/best_run/model summary at hierarchy level;
   forecasts at bottom level; reconciled forecasts appear under Model_ID == \"Best-Model\".
 
 FEATURE NAME DECODING:
@@ -109,12 +109,12 @@ FEATURE NAME DECODING:
 - Date_diff: time differences
 - regressor_lag/squared_lag/log_lag/cubed_lag: transformed regressors
 
-KEYWORD → SOURCE HINTS:
-- WMAPE/accuracy/error → get_agent_forecast or get_best_agent_run (summary)
-- forecast/prediction/intervals/back test → get_agent_forecast
-- model used/specs/importance/diagnostics → get_summarized_models (+ Best_Model filter)
-- data quality/stationarity/ACF/PACF/outliers/missing → get_eda_data
-- hierarchy/aggregation/rollup/parent/child → get_hierarchy_summary
+KEYWORD -> SOURCE HINTS:
+- WMAPE/accuracy/error -> get_agent_forecast or get_best_agent_run (summary)
+- forecast/prediction/intervals/back test -> get_agent_forecast
+- model used/specs/importance/diagnostics -> get_summarized_models (+ Best_Model filter)
+- data quality/stationarity/ACF/PACF/outliers/missing -> get_eda_data
+- hierarchy/aggregation/rollup/parent/child -> get_hierarchy_summary
 
 JOIN MAP:
 - get_agent_forecast$Combo <-> get_hierarchy_summary$Bottom_Combo
@@ -130,48 +130,45 @@ JOIN MAP:
 #' @return Character string with column metadata
 #' @noRd
 get_column_cards <- function(data_sources) {
-  
   cards <- list(
     get_agent_forecast = "
 get_agent_forecast KEY COLUMNS:
-- Combo — str — bottom-level series id — dimension — joins: get_hierarchy_summary$Bottom_Combo — GOTCHA: not a hierarchy level name
+- Combo - str - bottom-level series id - dimension - joins: get_hierarchy_summary$Bottom_Combo - GOTCHA: not a hierarchy level name
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- Date — date — period timestamp — dimension — GOTCHA: respect project granularity
-- Run_Type — enum {Back_Test, Future_Forecast} — flag — GOTCHA: Target is NA for Future_Forecast
-- Train_Test_ID — int — backtest fold id — dimension — GOTCHA: 1 = future block; ≥2 = historical tests
-- Horizon — int — step-ahead index (1..n) — dimension — GOTCHA: don't mix horizons when summarizing
-- Target — num — actuals (backtest only) — measure — GOTCHA: NA in future, compute errors only where present
-- Forecast — num — prediction — measure
-- lo_95/hi_95; lo_80/hi_80 — num — prediction intervals — measure — GOTCHA: often only present for future
-- Best_Model — enum {Yes, No} — flag — GOTCHA: summarize on Best_Model=='Yes' unless need all candidates
-- Model_ID — str — primary model key (ensembles joined by '_'; 'Best-Model'=reconciled hierarchy) — key — joins: get_summarized_models$Model_ID — GOTCHA: prefer Model_ID over Model_Name for joins
-- Model_Name — str|NA — human label (NA=simple average) — label — GOTCHA: only split Model_ID if truly need components
-- Model_Type — enum {local, global} — flag — local=per series; global=all series
-- Recipe_ID — str — feature recipe id — label",
-
+- Date - date - period timestamp - dimension - GOTCHA: respect project granularity
+- Run_Type - enum {Back_Test, Future_Forecast} - flag - GOTCHA: Target is NA for Future_Forecast
+- Train_Test_ID - int - backtest fold id - dimension - GOTCHA: 1 = future block; >=2 = historical tests
+- Horizon - int - step-ahead index (1..n) - dimension - GOTCHA: don't mix horizons when summarizing
+- Target - num - actuals (backtest only) - measure - GOTCHA: NA in future, compute errors only where present
+- Forecast - num - prediction - measure
+- lo_95/hi_95; lo_80/hi_80 - num - prediction intervals - measure - GOTCHA: often only present for future
+- Best_Model - enum {Yes, No} - flag - GOTCHA: summarize on Best_Model=='Yes' unless need all candidates
+- Model_ID - str - primary model key (ensembles joined by '_'; 'Best-Model'=reconciled hierarchy) - key - joins: get_summarized_models$Model_ID - GOTCHA: prefer Model_ID over Model_Name for joins
+- Model_Name - str|NA - human label (NA=simple average) - label - GOTCHA: only split Model_ID if truly need components
+- Model_Type - enum {local, global} - flag - local=per series; global=all series
+- Recipe_ID - str - feature recipe id - label",
     get_best_agent_run = "
 get_best_agent_run KEY COLUMNS:
-- combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_eda_data$Combo, get_summarized_models$Combo — GOTCHA: not same as bottom Combo
+- combo - str - series id - dimension - joins: get_hierarchy_summary$Hierarchy_Combo, get_eda_data$Combo, get_summarized_models$Combo - GOTCHA: not same as bottom Combo
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- weighted_mape — num — summary error over backtests (lower better) — measure — GOTCHA: prefer this for headline accuracy
-- model_type — enum {local, global} — flag
-- clean_missing_values/clean_outliers/stationary/box_cox/pca/feature_selection/negative_forecast/average_models — bool — flags
-- fourier_periods/seasonal_period — str — seasonality terms — parameter — GOTCHA: NA=defaults
-- lag_periods/rolling_window_periods — str — hyphen-delimited lists (e.g., '1---12---24') — parameter — GOTCHA: parse before numeric use
-- recipes_to_run/models_to_run — str — hyphen-delimited candidates — parameter — GOTCHA: NA='all'",
-
+- weighted_mape - num - summary error over backtests (lower better) - measure - GOTCHA: prefer this for headline accuracy
+- model_type - enum {local, global} - flag
+- clean_missing_values/clean_outliers/stationary/box_cox/pca/feature_selection/negative_forecast/average_models - bool - flags
+- fourier_periods/seasonal_period - str - seasonality terms - parameter - GOTCHA: NA=defaults
+- lag_periods/rolling_window_periods - str - hyphen-delimited lists (e.g., '1---12---24') - parameter - GOTCHA: parse before numeric use
+- recipes_to_run/models_to_run - str - hyphen-delimited candidates - parameter - GOTCHA: NA='all'",
     get_eda_data = "
 get_eda_data KEY COLUMNS:
-- Combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_summarized_models$Combo
+- Combo - str - series id - dimension - joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_summarized_models$Combo
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- Analysis_Type — enum {Data_Profile, ACF, PACF, Stationarity, Missing_Data, Outliers, Additional_Seasonality, External_Regressor_Distance_Correlation} — selector
-- Metric — str — metric key based on analysis type — dimension
+- Analysis_Type - enum {Data_Profile, ACF, PACF, Stationarity, Missing_Data, Outliers, Additional_Seasonality, External_Regressor_Distance_Correlation} - selector
+- Metric - str - metric key based on analysis type - dimension
   * Data_Profile: Data_Profile: Total_Rows, Number_Series, Min_Rows_Per_Series, Max_Rows_Per_Series, Avg_Rows_Per_Series, Negative_Count, Negative_Percent, Start_Date, End_Date
   * ACF: Lag_0, Lag_1, Lag_2, etc. (autocorrelation values at different lags)
   * PACF: Lag_0, Lag_1, Lag_2, etc. (partial autocorrelation values at different lags)
@@ -180,44 +177,42 @@ get_eda_data KEY COLUMNS:
   * Outliers: total_rows, outlier_count, outlier_pct, first_outlier_dt, last_outlier_dt
   * Additional_Seasonality: Lag_X values indicating seasonal patterns beyond primary seasonality
   * External_Regressor_Distance_Correlation: Regressor_Lag_X values showing distance correlation between regressors and target
-- Value — num|str — metric value — measure — GOTCHA: coerce to numeric when needed",
-
+- Value - num|str - metric value - measure - GOTCHA: coerce to numeric when needed",
     get_summarized_models = "
 get_summarized_models KEY COLUMNS:
-- Combo — str — series id — dimension — joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_eda_data$Combo
+- Combo - str - series id - dimension - joins: get_hierarchy_summary$Hierarchy_Combo, get_best_agent_run$combo, get_eda_data$Combo
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- Model_ID — str — primary model key — key — joins: get_agent_forecast$Model_ID
-- Model_Name — str — model family — label
-- Model_Type — enum {local, global} — flag
-- Best_Model — enum {Yes, No} — flag — GOTCHA: for simple averages, each component may be flagged Yes
-- section — enum {predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic} — selector
-- name — str — item within section — dimension
-- value — str|num — item value (often numeric stored as text) — measure — GOTCHA: convert with as.numeric carefully",
-
+- Model_ID - str - primary model key - key - joins: get_agent_forecast$Model_ID
+- Model_Name - str - model family - label
+- Model_Type - enum {local, global} - flag
+- Best_Model - enum {Yes, No} - flag - GOTCHA: for simple averages, each component may be flagged Yes
+- section - enum {predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic} - selector
+- name - str - item within section - dimension
+- value - str|num - item value (often numeric stored as text) - measure - GOTCHA: convert with as.numeric carefully",
     get_hierarchy_summary = "
 get_hierarchy_summary KEY COLUMNS:
-- Hierarchy_Combo — str — hierarchy level id — key — joins: EDA/best_run/model_summary$Combo
+- Hierarchy_Combo - str - hierarchy level id - key - joins: EDA/best_run/model_summary$Combo
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- Hierarchy_Level_Type — str — level type label (Total, Level 1, Country, Product, Bottom) — dimension
-- Bottom_Combo — str — bottom series id — key — joins: get_agent_forecast$Combo
+- Hierarchy_Level_Type - str - level type label (Total, Level 1, Country, Product, Bottom) - dimension
+- Bottom_Combo - str - bottom series id - key - joins: get_agent_forecast$Combo
   * Combo format: values joined by '--' (e.g., 'US--Enterprise--Coffee')
   * To filter by component: use tidyr::separate() or stringr::str_split() to extract individual combo variables
   * Component order matches combo_variables from agent_info$project_info
-- Is_Bottom — bool — true if bottom row — flag
-- Parent_Level — str|NA — immediate parent — dimension"
+- Is_Bottom - bool - true if bottom row - flag
+- Parent_Level - str|NA - immediate parent - dimension"
   )
-  
+
   # Filter to requested sources
   relevant_cards <- cards[intersect(names(cards), data_sources)]
-  
+
   if (length(relevant_cards) == 0) {
     return("")
   }
-  
+
   paste0(
     "\n\nCOLUMN CARDS (use for joins, filters, aggregations):",
     paste(relevant_cards, collapse = "\n")
@@ -273,7 +268,7 @@ TOOLS
 
 STYLE
 - Be precise and concrete.
-- If hierarchy is enabled (see ToolSpec), map hierarchy levels ↔ bottom combos via get_hierarchy_summary() before mixing sources.
+- If hierarchy is enabled (see ToolSpec), map hierarchy levels <-> bottom combos via get_hierarchy_summary() before mixing sources.
 - When unsure about a mapping, state the limitation and use the safest interpretation.
 
 OUTPUTS
@@ -572,8 +567,8 @@ execute_analysis_step <- function(agent_info,
 
   # Collect data sources used in current and previous steps for column cards
   data_sources_used <- c()
-  if (!is.null(current_step$data_source) && 
-      !current_step$data_source %in% c("none", "previous")) {
+  if (!is.null(current_step$data_source) &&
+    !current_step$data_source %in% c("none", "previous")) {
     data_sources_used <- c(data_sources_used, current_step$data_source)
   }
   # Add sources from previous steps that might be referenced
@@ -588,7 +583,7 @@ execute_analysis_step <- function(agent_info,
     }
   }
   data_sources_used <- unique(data_sources_used)
-  
+
   # Get column cards for relevant data sources
   column_cards <- get_column_cards(data_sources_used)
   column_sanity <- get_column_sanity_checklist()
@@ -610,9 +605,11 @@ execute_analysis_step <- function(agent_info,
   data_loading_section <- if (!is.null(ds_call)) {
     paste0("FIRST LINE MUST BE:\ndata <- ", ds_call)
   } else {
-    paste0('This step uses a previous object named "', 
-           ifelse(!is.null(prev_output), prev_output, 'previous_result'), 
-           '". Access it directly.')
+    paste0(
+      'This step uses a previous object named "',
+      ifelse(!is.null(prev_output), prev_output, "previous_result"),
+      '". Access it directly.'
+    )
   }
 
   # Build function list based on forecast approach
@@ -724,7 +721,7 @@ execute_r_code <- function(code,
   exec_env$get_best_agent_run <- get_best_agent_run
   exec_env$get_eda_data <- get_eda_data
   exec_env$get_summarized_models <- get_summarized_models
-  
+
   # Only add get_hierarchy_summary if hierarchical
   if (agent_info$forecast_approach != "bottoms_up") {
     exec_env$get_hierarchy_summary <- get_hierarchy_summary
@@ -795,17 +792,17 @@ summarize_analysis_results <- function(analysis_results, max_rows = 20) {
       # Cap at max_rows and provide summary stats
       n_rows <- nrow(result)
       display_rows <- min(n_rows, max_rows)
-      
+
       summary_text <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result (", n_rows, " rows total, showing ", display_rows, "):\n",
         utils::capture.output(print(head(data.frame(result), display_rows))) %>%
           paste(collapse = "\n")
       )
-      
+
       if (n_rows > max_rows) {
         summary_text <- paste0(summary_text, "\n[... ", n_rows - max_rows, " more rows omitted]")
       }
-      
+
       context_parts[[name]] <- summary_text
     } else if (is.list(result)) {
       context_parts[[name]] <- paste0(
@@ -858,19 +855,20 @@ Audience: finance professionals (non-data scientists).
 Style: plain text with simple lists allowed, short paragraphs.
 
 Checklist:
-1) Start with the direct answer in 1–2 sentences.
+1) Start with the direct answer in 1-2 sentences.
 2) Support with the key numbers (include % with two decimals; use commas for thousands).
 3) If models are discussed, explain WHAT they capture in business terms (seasonality, trend, recency), not technical parameters.
 4) If hierarchy is involved, name the level(s) you're summarizing.
 5) If technical terms are used, explain them briefly in simple language.
+6) Answer in a way that makes sense to a corporate finance reader.
 
 Term translations (use inline, don't over-explain):
-- WMAPE → \"weighted average prediction error\" (lower is better).
-- Back test → \"historical testing period\".
-- Forecast horizon → \"number of periods predicted ahead\".
+- WMAPE -> \"weighted average prediction error\" (lower is better).
+- Back test -> \"historical testing period\".
+- Forecast horizon -> \"number of periods predicted ahead\".
 
 Formatting:
-- 6–10 sentences total (or fewer sentences with a short list if appropriate).
+- 6-10 sentences total (or fewer sentences with a short list if appropriate).
 - Use simple bullet lists (- or *) ONLY when listing multiple items (e.g., series names, models, features).
 - NO bold, NO italics, NO headers, NO code blocks, NO tables.
 - Be specific; cite the exact series and dates you used.
