@@ -120,7 +120,7 @@ JOIN MAP:
 - get_agent_forecast$Combo <-> get_hierarchy_summary$Bottom_Combo
 - get_eda_data$Combo <-> get_hierarchy_summary$Hierarchy_Combo
 - get_best_agent_run$combo <-> get_hierarchy_summary$Hierarchy_Combo
-- get_summarized_models$Combo <-> get_hierarchy_summary$Hierarchy_Combo
+- get_summarized_models$Combo <-> get_hierarchy_summary$Hierarchy_Combo"
   )
 }
 
