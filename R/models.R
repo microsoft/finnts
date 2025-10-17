@@ -71,7 +71,7 @@ list_multivariate_models <- function() {
   list <- c(
     "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
     "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
-    "nnetar-xregs"
+    "nnetar-xregs", "timeGPT"
   )
 
   return(list)
