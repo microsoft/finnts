@@ -1347,7 +1347,7 @@ timeGPT <- function(train_data,
                     horizon,
                     external_regressors = NULL
                     ) {
-  
+  #combo recipe since timegpt forecast needs unique ids for identifying series
   recipe_spec_timegpt <- train_data %>%
     get_recipe_combo()
   
