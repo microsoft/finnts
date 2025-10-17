@@ -6,7 +6,7 @@ list_models <- function() {
   list <- c(
     "arima", "arima-boost", "arimax", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
-    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "time_gpt", "xgboost"
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timeGPT", "xgboost"
   )
 
   return(list)
@@ -1340,24 +1340,22 @@ theta <- function(train_data,
 #' @param train_data Training Data
 #' @param horizon Forecast horizon
 #' @param external_regressors External regressors
-#' @param api_key TimeGPT API key
 #'
 #' @return Get the TimeGPT based model
 #' @noRd
-time_gpt <- function(train_data,
+timeGPT <- function(train_data,
                     horizon,
-                    external_regressors = NULL,
-                    api_key = NULL) {
+                    external_regressors = NULL
+                    ) {
   
   recipe_spec_timegpt <- train_data %>%
-    get_recipe_simple()
+    get_recipe_combo()
   
   # TimeGPT model specification
   model_spec_timegpt <- timegpt(
     mode = "regression",
     forecast_horizon = horizon,
-    external_regressors = external_regressors,
-    api_key = api_key
+    external_regressors = external_regressors
   ) %>%
     parsnip::set_engine("timegpt")
   

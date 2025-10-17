@@ -21,15 +21,6 @@ make_timegpt <- function() {
   parsnip::set_model_arg(
     model = "timegpt",
     eng = "timegpt",
-    parsnip = "api_key",
-    original = "api_key",
-    func = list(fun = "api_key"),
-    has_submodel = FALSE
-  )
-
-  parsnip::set_model_arg(
-    model = "timegpt",
-    eng = "timegpt",
     parsnip = "external_regressors",
     original = "external_regressors",
     func = list(fun = "external_regressors"),
@@ -96,20 +87,17 @@ make_timegpt <- function() {
 #' @param mode Model mode (regression)
 #' @param forecast_horizon Number of periods to forecast
 #' @param external_regressors List of external regressors
-#' @param api_key TimeGPT API key
 #'
 #' @return TimeGPT model specification
 #' @export
 timegpt <- function(
   mode = "regression",
   forecast_horizon = NULL,
-  external_regressors = NULL,
-  api_key = NULL
+  external_regressors = NULL
 ) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
-    external_regressors = rlang::enquo(external_regressors),
-    api_key = rlang::enquo(api_key)
+    external_regressors = rlang::enquo(external_regressors)
   )
 
   parsnip::new_model_spec(
@@ -135,31 +123,30 @@ timegpt_fit_impl <- function(
   x,
   y,
   forecast_horizon = NULL,
-  external_regressors = NULL,
-  api_key = NULL,
-  ...
+  external_regressors = NULL
 ) {
-  if (is.null(api_key)) {
-    # env support for FinnTS API workflow
-    api_key <- Sys.getenv("TIMEGPT_API_KEY")
+  #build dataframe for timegpt nixtla forecast client
+  train_df <- as.data.frame(x)
+  train_df$y <- y
+  train_df <- tibble::as_tibble(train_df)
+
+  if (
+    !is.data.frame(train_df) ||
+      !"y" %in% names(train_df) ||
+      nrow(train_df) == 0
+  ) {
+    stop("Invalid input")
   }
 
-  if (is.null(api_key) || api_key == "") {
-    stop("API key is required for TimeGPT model")
-  }
-
-  nixtlar::nixtla_client_setup(api_key = api_key)
-
-  args <- list(
+  #since there is no actual training involved, we just pass the data through fit object and return it
+  fit_obj <- list(
+    train_data = train_df,
     forecast_horizon = forecast_horizon,
-    external_regressors = external_regressors,
-    api_key = api_key
+    external_regressors = external_regressors
   )
 
-  return(list(
-    fit = list(ready = TRUE),
-    args = args
-  ))
+  class(fit_obj) <- "timegpt_fit"
+  return(fit_obj)
 }
 
 #' Predict with TimeGPT model
@@ -172,20 +159,30 @@ timegpt_fit_impl <- function(
 #' @keywords internal
 #' @export
 timegpt_predict_impl <- function(object, new_data, ...) {
-  # Transform data to TimeGPT format
-  args <- object$args
+  api_key <- Sys.getenv("TIMEGPT_API_KEY")
+  if (api_key == "") {
+    stop("TimeGPT API key not set. Please set TIMEGPT_API_KEY environment variable.")
+  }
 
-  # Call TimeGPT API with column name specifications
+  nixtlar::nixtla_client_setup(api_key = api_key)
+
+  full_train_df <- object$train_data
+
+  #handle train/test splits
+  test_start <- min(new_data$Date, na.rm = TRUE)
+  train_df <- full_train_df %>% dplyr::filter(Date < test_start)
+  h <- nrow(new_data)
+
+  # Call TimeGPT
   results <- nixtlar::nixtla_client_forecast(
-    df = new_data,
-    h = args$forecast_horizon,
+    df = train_df,
+    h = h,
     time_col = "Date",
-    target_col = "Target",
+    target_col = "y",
     id_col = "Combo",
-    hist_exog_list = args$external_regressors
+    hist_exog_list = object$external_regressors
   )
 
-  # Return numeric vector (following XGBoost pattern)
   return(as.numeric(results$TimeGPT))
 }
 
@@ -197,13 +194,70 @@ timegpt_predict_impl <- function(object, new_data, ...) {
 #' @return Invisible model specification
 #' @export
 print.timegpt <- function(x, ...) {
-  cat("TimeGPT Model (", x$mode, ")\n\n", sep = "")
   parsnip::model_printer(x, ...)
 
   if (!is.null(x$method$fit$args)) {
-    cat("Model fit template:\n")
     print(parsnip::show_call(x))
   }
 
   invisible(x)
+}
+
+#' Update method for timegpt model specs
+#'
+#'
+#' @param object A timegpt model specification
+#' @param parameters A dials::parameters object or NULL
+#' @param forecast_horizon Optional new horizon
+#' @param external_regressors Optional new xreg list
+#' @param fresh Whether to replace (TRUE) or merge (FALSE) arguments
+#' @param ... Additional args (ignored)
+#'
+#' @return An updated timegpt model specification
+#' @export
+update.timegpt <- function(
+  object,
+  parameters = NULL,
+  forecast_horizon = NULL,
+  external_regressors = NULL,
+  fresh = FALSE,
+  ...
+) {
+  eng_args <- object$eng_args
+
+  if (!is.null(parameters)) {
+    parameters <- parsnip::check_final_param(parameters)
+  }
+
+  args <- list(
+    forecast_horizon = rlang::enquo(forecast_horizon),
+    external_regressors = rlang::enquo(external_regressors)
+  )
+
+  args <- parsnip::update_main_parameters(args, parameters)
+
+  if (fresh) {
+    object$args <- args
+    object$eng_args <- eng_args
+  } else {
+    null_args <- purrr::map_lgl(args, parsnip::null_value)
+    if (any(null_args)) {
+      args <- args[!null_args]
+    }
+    if (length(args) > 0) {
+      object$args[names(args)] <- args
+    }
+    if (length(eng_args) > 0) {
+      object$eng_args[names(eng_args)] <- eng_args
+    }
+  }
+
+  parsnip::new_model_spec(
+    "timegpt",
+    args = object$args,
+    eng_args = object$eng_args,
+    mode = object$mode,
+    method = NULL,
+    engine = object$engine
+  )
 }

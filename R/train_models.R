@@ -411,12 +411,13 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "remove",
+        .errorhandling = "pass",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
         .noexport = NULL
       ) %do% {
+        tryCatch({
         # get initial run info
         model <- model_run %>%
           dplyr::pull(Model_Name)
@@ -428,6 +429,15 @@ train_models <- function(run_info,
           dplyr::filter(Recipe == data_prep_recipe) %>%
           dplyr::select(Data) %>%
           tidyr::unnest(Data)
+        
+        # Debug: Print prep_data info
+        cli::cli_inform(c(
+          "i" = paste0("Loaded prep_data: ", nrow(prep_data), " rows, ", ncol(prep_data), " cols"),
+          "i" = paste0("Columns: ", paste(names(prep_data), collapse = ", ")),
+          "i" = paste0("Target summary: min=", round(min(prep_data$Target, na.rm=TRUE), 2), 
+                       ", max=", round(max(prep_data$Target, na.rm=TRUE), 2),
+                       ", mean=", round(mean(prep_data$Target, na.rm=TRUE), 2))
+        ))
 
         workflow <- model_workflow_tbl %>%
           dplyr::filter(
@@ -436,7 +446,31 @@ train_models <- function(run_info,
           ) %>%
           dplyr::select(Model_Workflow)
 
+        # Log workflow details before extraction
+        cli::cli_inform(c(
+          "i" = paste0("Filtered workflow rows: ", nrow(workflow)),
+          "i" = paste0("Model_Name: ", model),
+          "i" = paste0("Model_Recipe: ", data_prep_recipe)
+        ))
+        
+        if (nrow(workflow) == 0) {
+          cli::cli_alert_danger("No workflow found for {.val {model}} / {.val {data_prep_recipe}}")
+          cli::cli_inform("Available models in workflow_tbl:")
+          cli::cli_inform(paste(unique(model_workflow_tbl$Model_Name), collapse = ", "))
+          cli::cli_inform("Available recipes in workflow_tbl:")
+          cli::cli_inform(paste(unique(model_workflow_tbl$Model_Recipe), collapse = ", "))
+          next
+        }
+        
+        if (is.null(workflow$Model_Workflow[[1]])) {
+          cli::cli_alert_danger("workflow$Model_Workflow[[1]] is NULL for {.val {model}}")
+          next
+        }
+        
         workflow <- workflow$Model_Workflow[[1]]
+        cli::cli_inform("Workflow object extracted successfully")
+
+       
 
         if (nrow(prep_data) > 500 & model == "xgboost") {
           # update xgboost model to use 'hist' tree method to speed up training
@@ -501,7 +535,32 @@ train_models <- function(run_info,
               filtered_combo_info_tbl,
               model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
             )
+
+            cli::cli_inform("Applied undifferencing for univariate on R1 data")
         }
+
+        #  # Force undifferencing for TimeGPT on R1 (bypass R1 differencing)
+        # if (model == "time_gpt" && data_prep_recipe == "R1") {
+        #   cli::cli_inform("BEFORE undifferencing - prep_data summary:")
+        #   print(summary(prep_data$Target))
+        #   print(paste("Target range:", min(prep_data$Target, na.rm=TRUE), "to", max(prep_data$Target, na.rm=TRUE)))
+          
+        #   prep_data <- prep_data %>%
+        #     undifference_recipe(
+        #       filtered_combo_info_tbl,
+        #       model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
+        #     )
+          
+        #   # Filter to only historical data (up to train end date) after undifferencing
+        #   # train_end_date <- model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
+        #   # rows_before_filter <- nrow(prep_data)
+        #   # prep_data <- prep_data %>%
+        #   #   dplyr::filter(Date <= train_end_date)
+        #   # rows_after_filter <- nrow(prep_data)
+          
+          
+        #   cli::cli_inform("Applied undifferencing for TimeGPT on R1 data")
+        # }
 
         # tune hyperparameters
         set.seed(seed)
@@ -672,6 +731,12 @@ train_models <- function(run_info,
         )
 
         return(final_return_tbl)
+        }, error = function(e) {
+          cli::cli_alert_danger("Error in model {.val {model}} with recipe {.val {data_prep_recipe}}:")
+          cli::cli_inform(paste("Error message:", e$message))
+          cli::cli_inform(paste("Error call:", deparse(e$call)))
+          return(NULL)
+        })
       }
 
       par_end(inner_cl)
