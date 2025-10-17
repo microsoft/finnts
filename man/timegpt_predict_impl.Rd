@@ -11,7 +11,7 @@ timegpt_predict_impl(object, new_data, ...)
 
 \item{new_data}{input data to predict}
 
-\item{...}{Additional arguments passed to \code{nixtlar::nixtla_client_forecast()}}
+\item{...}{Additional arguments}
 }
 \value{
 predictions

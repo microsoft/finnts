@@ -158,7 +158,7 @@ timegpt_fit_impl <- function(
 #' @inheritParams parsnip::predict.model_fit
 #' @param object model object
 #' @param new_data input data to predict
-#' @param ... Additional arguments passed to `nixtlar::nixtla_client_forecast()`
+#' @param ... Additional arguments
 #'
 #' @return predictions
 #' @keywords internal
