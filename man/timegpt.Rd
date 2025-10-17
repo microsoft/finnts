@@ -7,22 +7,21 @@
 timegpt(
   mode = "regression",
   forecast_horizon = NULL,
-  external_regressors = NULL,
-  api_key = NULL
+  external_regressors = NULL
 )
 }
 \arguments{
-\item{mode}{Model mode (regression)}
+\item{mode}{A single character string for the type of model.
+The only possible value for this model is "regression".}
 
-\item{forecast_horizon}{Number of periods to forecast}
+\item{forecast_horizon}{forecast horizon}
 
-\item{external_regressors}{List of external regressors}
-
-\item{api_key}{TimeGPT API key}
+\item{external_regressors}{external regressors}
 }
 \value{
-TimeGPT model specification
+Get TimeGPT model
 }
 \description{
 TimeGPT model specification
 }
+\keyword{internal}

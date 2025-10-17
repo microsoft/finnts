@@ -2,21 +2,21 @@
 % Please edit documentation in R/timegpt.R
 \name{timegpt_predict_impl}
 \alias{timegpt_predict_impl}
-\title{Predict with TimeGPT model}
+\title{Bridge prediction Function for TimeGPT Models}
 \usage{
 timegpt_predict_impl(object, new_data, ...)
 }
 \arguments{
-\item{object}{Fitted TimeGPT model}
+\item{object}{model object}
 
-\item{new_data}{New data for prediction}
+\item{new_data}{input data to predict}
 
-\item{...}{Additional arguments}
+\item{...}{Additional arguments passed to \code{nixtlar::nixtla_client_forecast()}}
 }
 \value{
-Predictions
+predictions
 }
 \description{
-Predict with TimeGPT model
+Bridge prediction Function for TimeGPT Models
 }
 \keyword{internal}

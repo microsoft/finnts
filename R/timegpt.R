@@ -84,11 +84,14 @@ make_timegpt <- function() {
 
 #' TimeGPT model specification
 #'
-#' @param mode Model mode (regression)
-#' @param forecast_horizon Number of periods to forecast
-#' @param external_regressors List of external regressors
+#' @inheritParams parsnip::boost_tree
+#' @param mode A single character string for the type of model.
+#'  The only possible value for this model is "regression".
+#' @param forecast_horizon forecast horizon
+#' @param external_regressors external regressors
 #'
-#' @return TimeGPT model specification
+#' @return Get TimeGPT model
+#' @keywords internal
 #' @export
 timegpt <- function(
   mode = "regression",
@@ -112,9 +115,10 @@ timegpt <- function(
 
 #' Fit TimeGPT model
 #'
-#' @param x Training data
-#' @param y Target variable
-#' @param ... Additional arguments
+#' @param x A dataframe of xreg (exogenous regressors)
+#' @param y A numeric vector of values to fit
+#' @param forecast_horizon forecast horizon
+#' @param external_regressors external regressors
 #'
 #' @return Fitted TimeGPT model object
 #' @keywords internal
@@ -149,22 +153,30 @@ timegpt_fit_impl <- function(
   return(fit_obj)
 }
 
-#' Predict with TimeGPT model
+#' Bridge prediction Function for TimeGPT Models
 #'
-#' @param object Fitted TimeGPT model
-#' @param new_data New data for prediction
-#' @param ... Additional arguments
+#' @inheritParams parsnip::predict.model_fit
+#' @param object model object
+#' @param new_data input data to predict
+#' @param ... Additional arguments passed to `nixtlar::nixtla_client_forecast()`
 #'
-#' @return Predictions
+#' @return predictions
 #' @keywords internal
 #' @export
 timegpt_predict_impl <- function(object, new_data, ...) {
-  api_key <- Sys.getenv("TIMEGPT_API_KEY")
-  if (api_key == "") {
-    stop("TimeGPT API key not set. Please set TIMEGPT_API_KEY environment variable.")
-  }
+  azure_key <- Sys.getenv("AZURE_TIMEGEN_API_KEY")
+  azure_url <- Sys.getenv("AZURE_TIMEGEN_BASE_URL")
+  nixtla_key <- Sys.getenv("NIXTLA_TIMEGPT_API_KEY")
 
-  nixtlar::nixtla_client_setup(api_key = api_key)
+  if (nzchar(azure_key) && nzchar(azure_url)) {
+    nixtlar::nixtla_client_setup(base_url = azure_url, api_key = azure_key)
+    azure_api <- TRUE
+  } else if (nzchar(nixtla_key)) {
+    nixtlar::nixtla_client_setup(api_key = nixtla_key)
+    azure_api <- FALSE
+  } else {
+    stop("No TimeGPT credentials: set AZURE_* or NIXTLA_TIMEGPT_API_KEY.")
+  }
 
   full_train_df <- object$train_data
 
@@ -173,25 +185,40 @@ timegpt_predict_impl <- function(object, new_data, ...) {
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
   h <- nrow(new_data)
 
-  # Call TimeGPT
-  results <- nixtlar::nixtla_client_forecast(
-    df = train_df,
-    h = h,
-    time_col = "Date",
-    target_col = "y",
-    id_col = "Combo",
-    hist_exog_list = object$external_regressors
-  )
+  # TimeGPT API call for forecast
+  if (azure_api) {
+    results <- nixtlar::nixtla_client_forecast(
+      df = train_df,
+      h = h,
+      time_col = "Date",
+      target_col = "y",
+      id_col = "Combo",
+      level = c(80, 95),
+      hist_exog_list = object$external_regressors,
+      model = "azureai"
+    )
+  } else {
+    results <- nixtlar::nixtla_client_forecast(
+      df = train_df,
+      h = h,
+      time_col = "Date",
+      target_col = "y",
+      id_col = "Combo",
+      level = c(80, 95),
+      hist_exog_list = object$external_regressors
+    )
+  }
 
   return(as.numeric(results$TimeGPT))
 }
 
-#' Print TimeGPT model specification
+#' Print custom TimeGPT model
 #'
-#' @param x TimeGPT model specification
+#' @param x model object
 #' @param ... Additional arguments
 #'
-#' @return Invisible model specification
+#' @return Prints model info
+#' @keywords internal
 #' @export
 print.timegpt <- function(x, ...) {
   parsnip::model_printer(x, ...)
@@ -203,17 +230,18 @@ print.timegpt <- function(x, ...) {
   invisible(x)
 }
 
-#' Update method for timegpt model specs
+#' Update parameter in custom TimeGPT model
 #'
+#' @param object model object
+#' @param parameters parameters
+#' @param forecast_horizon forecast horizon
+#' @param external_regressors external regressors
+#' @param fresh fresh
+#' @param ... extra args passed to TimeGPT
 #'
-#' @param object A timegpt model specification
-#' @param parameters A dials::parameters object or NULL
-#' @param forecast_horizon Optional new horizon
-#' @param external_regressors Optional new xreg list
-#' @param fresh Whether to replace (TRUE) or merge (FALSE) arguments
-#' @param ... Additional args (ignored)
-#'
-#' @return An updated timegpt model specification
+#' @return Updated model
+#' @keywords internal
+#' @importFrom stats update
 #' @export
 update.timegpt <- function(
   object,

@@ -2,18 +2,19 @@
 % Please edit documentation in R/timegpt.R
 \name{print.timegpt}
 \alias{print.timegpt}
-\title{Print TimeGPT model specification}
+\title{Print custom TimeGPT model}
 \usage{
 \method{print}{timegpt}(x, ...)
 }
 \arguments{
-\item{x}{TimeGPT model specification}
+\item{x}{model object}
 
 \item{...}{Additional arguments}
 }
 \value{
-Invisible model specification
+Prints model info
 }
 \description{
-Print TimeGPT model specification
+Print custom TimeGPT model
 }
+\keyword{internal}
