@@ -842,6 +842,8 @@ fcst_agent_workflow <- function(agent_info,
   # create a fresh session for the reasoning LLM
   if (!is.null(agent_info$reason_llm)) {
     agent_info$reason_llm <- agent_info$reason_llm$clone()
+  } else {
+    agent_info$reason_llm <- agent_info$driver_llm$clone()
   }
 
   # add LLM system prompt for EDA info
