@@ -928,8 +928,27 @@ clean_markdown <- function(text, keep_lists = FALSE) {
   # Remove markdown italic (but preserve list markers if keep_lists = TRUE)
   if (keep_lists) {
     # Only remove italics that are NOT list markers at start of line
-    text <- gsub("(?<!^)(?<!\\n)\\*([^*]+?)\\*", "\\1", text, perl = TRUE)
-    text <- gsub("(?<!^)(?<!\\n)_([^_]+?)_", "\\1", text, perl = TRUE)
+    lines <- strsplit(text, "\n", fixed = TRUE)[[1]]
+    lines <- vapply(
+      lines,
+      function(line) {
+        # If line starts with optional spaces then * or -, skip italic removal for that marker
+        if (grepl("^\\s*([*\\-])\\s", line)) {
+          # Only remove italics not at start of line
+          # Remove italics elsewhere in the line
+          line <- gsub("(?<!^)\\*([^*]+?)\\*", "\\1", line, perl = TRUE)
+          line <- gsub("(?<!^)_([^_]+?)_", "\\1", line, perl = TRUE)
+          return(line)
+        } else {
+          # Remove all italics
+          line <- gsub("\\*([^*]+?)\\*", "\\1", line, perl = TRUE)
+          line <- gsub("_([^_]+?)_", "\\1", line, perl = TRUE)
+          return(line)
+        }
+      },
+      character(1)
+    )
+    text <- paste(lines, collapse = "\n")
   } else {
     text <- gsub("(?<!\\*)\\*([^*]+?)\\*(?!\\*)", "\\1", text, perl = TRUE)
     text <- gsub("(?<!_)_([^_]+?)_(?!_)", "\\1", text, perl = TRUE)
