@@ -129,8 +129,14 @@ JOIN MAP:
 
 #' Generate Column Cards (Selective Metadata)
 #'
-#' @param data_sources Character vector of data source names to include
-#' @return Character string with column metadata
+#' Returns a formatted character string describing the key columns and metadata for one or more specified data sources
+#' used in Finn Agent forecasting workflows. This function is useful for generating documentation or tool specifications
+#' for selected data sources.
+#'
+#' @param data_sources Character vector of data source names to include. Each element should be one of the following:
+#'   "get_agent_forecast", "get_best_agent_run", "get_eda_data", "get_summarized_models", or "get_hierarchy_summary".
+#'   Only these specific source names are supported; unrecognized names will be ignored.
+#' @return Character string with column metadata for the requested data sources.
 #' @noRd
 get_column_cards <- function(data_sources) {
   cards <- list(
