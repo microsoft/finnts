@@ -71,8 +71,11 @@ ask_agent <- function(agent_info,
 
 #' Generate Tool Specification (Single Source of Truth)
 #'
-#' @param agent_info Agent info object
-#' @return Character string with tool specification
+#' Generates a detailed tool specification string describing available functions,
+#' their purposes, and hierarchy/feature rules for Finn Agent workflows.
+#'
+#' @param agent_info Agent info object. Used to tailor the tool specification if needed.
+#' @return Character string containing the tool specification for the agent.
 #' @noRd
 get_tool_spec <- function(agent_info) {
   glue::glue(
