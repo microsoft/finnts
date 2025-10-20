@@ -157,13 +157,18 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   nixtla_key <- Sys.getenv("NIXTLA_TIMEGPT_API_KEY")
 
   if (nzchar(azure_key) && nzchar(azure_url)) {
+    # azure_url validation
+    if (!grepl("/$", azure_url)) {
+      azure_url <- paste0(azure_url, "/")
+      warning("AZURE_TIMEGEN_BASE_URL should end with '/'. Automatically appending it.")
+    }
     nixtlar::nixtla_client_setup(base_url = azure_url, api_key = azure_key)
     azure_api <- TRUE
   } else if (nzchar(nixtla_key)) {
     nixtlar::nixtla_client_setup(api_key = nixtla_key)
     azure_api <- FALSE
   } else {
-    stop("No TimeGPT credentials: set AZURE_* or NIXTLA_TIMEGPT_API_KEY.")
+    stop("No TimeGPT credentials: set AZURE_TIMEGEN_API_KEY and AZURE_TIMEGEN_BASE_URL or NIXTLA_TIMEGPT_API_KEY.")
   }
 
   full_train_df <- object$train_data
@@ -193,6 +198,14 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
       id_col = "Combo",
       level = c(80, 95)
     )
+  }
+
+  # Validate forecast data
+  if (length(results$TimeGPT) != h) {
+    stop(sprintf(
+      "TimeGPT forecast length (%d) does not match expected horizon (%d).",
+      length(results$TimeGPT), h
+    ))
   }
 
   return(as.numeric(results$TimeGPT))
