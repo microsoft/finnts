@@ -27,7 +27,7 @@ make_timegpt <- function() {
     has_submodel = FALSE
   )
 
-  #TODO : add hyperparameters for finetune
+  # TODO : add hyperparameters for finetune
 
   parsnip::set_model_engine(
     model = "timegpt",
@@ -52,6 +52,7 @@ make_timegpt <- function() {
       allow_sparse_x = FALSE
     )
   )
+
 
   parsnip::set_fit(
     model = "timegpt",
@@ -129,20 +130,22 @@ timegpt_fit_impl <- function(
   forecast_horizon = NULL,
   external_regressors = NULL
 ) {
-  #build dataframe for timegpt nixtla forecast client
+  # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
 
-  if (
-    !is.data.frame(train_df) ||
-      !"y" %in% names(train_df) ||
-      nrow(train_df) == 0
-  ) {
-    stop("Invalid input")
+  if (!is.data.frame(train_df)) {
+    stop("Input 'x' must be convertible to a data frame.")
+  }
+  if (!"y" %in% names(train_df)) {
+    stop("Input data must contain a 'y' column.")
+  }
+  if (nrow(train_df) == 0) {
+    stop("Input data frame must have at least one row.")
   }
 
-  #since there is no actual training involved, we just pass the data through fit object and return it
+  # since there is no actual training involved, we just pass the data through fit object and return it
   fit_obj <- list(
     train_data = train_df,
     forecast_horizon = forecast_horizon,
@@ -180,7 +183,7 @@ timegpt_predict_impl <- function(object, new_data, ...) {
 
   full_train_df <- object$train_data
 
-  #handle train/test splits
+  # handle train/test splits
   test_start <- min(new_data$Date, na.rm = TRUE)
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
   h <- nrow(new_data)
