@@ -230,6 +230,7 @@ get_hierarchy_summary KEY COLUMNS:
 
 #' Get Column Sanity Checklist
 #'
+#' @param None. This function takes no parameters.
 #' @return Character string with common pitfalls
 #' @noRd
 get_column_sanity_checklist <- function() {
