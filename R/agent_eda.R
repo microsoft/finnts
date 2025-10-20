@@ -593,7 +593,7 @@ load_eda_results <- function(agent_info,
     ),
     return_type = "df"
   ) %>%
-  dplyr::mutate(Value = as.numeric(Value))
+    dplyr::mutate(Value = as.numeric(Value))
 
   if (is.null(combo)) {
     # summarize across all combos
@@ -629,7 +629,7 @@ load_eda_results <- function(agent_info,
     ),
     return_type = "df"
   ) %>%
-  dplyr::mutate(Value = as.numeric(Value))
+    dplyr::mutate(Value = as.numeric(Value))
 
   if (is.null(combo)) {
     # summarize across all combos
@@ -765,7 +765,7 @@ load_eda_results <- function(agent_info,
     ),
     return_type = "df"
   ) %>%
-  dplyr::mutate(Value = as.numeric(Value))
+    dplyr::mutate(Value = as.numeric(Value))
 
   if (is.null(combo)) {
     seasonality_scan <- seasonality_scan %>%

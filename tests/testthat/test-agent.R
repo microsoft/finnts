@@ -10,11 +10,11 @@ has_llm_credentials <- function() {
     !is.na(Sys.getenv("AZURE_OPENAI_API_KEY", unset = NA)) &&
     nzchar(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = "")) &&
     nzchar(Sys.getenv("AZURE_OPENAI_API_KEY", unset = ""))
-  
+
   # Check for OpenAI credentials
   openai_ok <- !is.na(Sys.getenv("OPENAI_API_KEY", unset = NA)) &&
     nzchar(Sys.getenv("OPENAI_API_KEY", unset = ""))
-  
+
   return(azure_ok || openai_ok)
 }
 
@@ -23,7 +23,7 @@ create_test_llm <- function() {
   if (has_llm_credentials()) {
     # Use Azure OpenAI if available
     if (!is.na(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = NA)) &&
-        nzchar(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = ""))) {
+      nzchar(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = ""))) {
       return(ellmer::chat_azure_openai(model = "gpt-4o-mini"))
     } else {
       # Fall back to OpenAI
@@ -61,7 +61,7 @@ test_that("set_project_info creates valid project for agent", {
     date_type = "month",
     fiscal_year_start = 1
   )
-  
+
   expect_type(project, "list")
   expect_equal(project$project_name, "agent_test")
   expect_equal(project$combo_variables, c("id"))
@@ -73,7 +73,7 @@ test_that("set_project_info creates valid project for agent", {
 
 test_that("set_agent_info creates valid agent info object", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
-  
+
   project <- set_project_info(
     project_name = "agent_test_info",
     path = tempdir(),
@@ -82,9 +82,9 @@ test_that("set_agent_info creates valid agent info object", {
     date_type = "month",
     fiscal_year_start = 1
   )
-  
+
   driver_llm <- create_test_llm()
-  
+
   agent_info <- set_agent_info(
     project_info = project,
     driver_llm = driver_llm,
@@ -94,7 +94,7 @@ test_that("set_agent_info creates valid agent info object", {
     allow_hierarchical_forecast = FALSE,
     overwrite = TRUE
   )
-  
+
   expect_type(agent_info, "list")
   expect_true("project_info" %in% names(agent_info))
   expect_true("driver_llm" %in% names(agent_info))
@@ -107,7 +107,7 @@ test_that("set_agent_info creates valid agent info object", {
 
 test_that("set_agent_info validates inputs correctly", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
-  
+
   project <- set_project_info(
     project_name = "agent_validation",
     path = tempdir(),
@@ -115,9 +115,9 @@ test_that("set_agent_info validates inputs correctly", {
     target_variable = "value",
     date_type = "month"
   )
-  
+
   driver_llm <- create_test_llm()
-  
+
   # Test invalid forecast_horizon
   expect_error(
     set_agent_info(
@@ -128,7 +128,7 @@ test_that("set_agent_info validates inputs correctly", {
     ),
     "forecast_horizon"
   )
-  
+
   # Test invalid input_data
   expect_error(
     set_agent_info(
@@ -143,7 +143,7 @@ test_that("set_agent_info validates inputs correctly", {
 
 test_that("set_agent_info handles hierarchical forecast detection", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
-  
+
   project <- set_project_info(
     project_name = "agent_hierarchy",
     path = tempdir(),
@@ -151,9 +151,9 @@ test_that("set_agent_info handles hierarchical forecast detection", {
     target_variable = "value",
     date_type = "month"
   )
-  
+
   driver_llm <- create_test_llm()
-  
+
   agent_info <- set_agent_info(
     project_info = project,
     driver_llm = driver_llm,
@@ -162,7 +162,7 @@ test_that("set_agent_info handles hierarchical forecast detection", {
     allow_hierarchical_forecast = TRUE,
     overwrite = TRUE
   )
-  
+
   expect_true("forecast_approach" %in% names(agent_info))
   # With only 2 flat time series, should default to bottoms_up
   expect_equal(agent_info$forecast_approach, "bottoms_up")
@@ -206,7 +206,7 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
     parallel_processing = NULL,
     seed = 123
   )
-  
+
   # Test get_agent_forecast
   forecast <- get_agent_forecast(agent_info = agent_info)
   expect_s3_class(forecast, "data.frame")
@@ -214,7 +214,7 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
   expect_true("Date" %in% colnames(forecast))
   expect_true("Forecast" %in% colnames(forecast))
   expect_true(nrow(forecast) > 0)
-  
+
   # Test get_best_agent_run
   best_run <- get_best_agent_run(agent_info = agent_info)
   expect_s3_class(best_run, "data.frame")
@@ -222,17 +222,17 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
   expect_true("weighted_mape" %in% colnames(best_run))
   expect_true(nrow(best_run) >= 1)
   expect_true(all(best_run$weighted_mape >= 0))
-  
+
   # Test get_eda_data
   eda <- get_eda_data(agent_info = agent_info)
   expect_type(eda, "list")
   expect_true(length(eda) > 0)
-  
+
   # Test get_summarized_models
   models <- get_summarized_models(agent_info = agent_info)
   expect_type(models, "list")
   expect_true(length(models) > 0)
-  
+
   # Test ask_agent with a simple question
   answer <- ask_agent(
     agent_info = agent_info,
@@ -240,7 +240,7 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
   )
   expect_type(answer, "character")
   expect_true(nchar(answer) > 0)
-  
+
   # Test ask_agent input validation
   expect_error(
     ask_agent(
@@ -352,20 +352,20 @@ test_that("update_forecast completes with getter functions and ask_agent", {
   updated_forecast <- get_agent_forecast(agent_info = agent_info2)
   expect_s3_class(updated_forecast, "data.frame")
   expect_true(nrow(updated_forecast) > 0)
-  
+
   # Test get_best_agent_run with updated data
   updated_best_run <- get_best_agent_run(agent_info = agent_info2)
   expect_s3_class(updated_best_run, "data.frame")
   expect_true(nrow(updated_best_run) >= 1)
-  
+
   # Test get_eda_data remains accessible
   updated_eda <- get_eda_data(agent_info = agent_info2)
   expect_type(updated_eda, "list")
-  
+
   # Test get_summarized_models with updated data
   updated_models <- get_summarized_models(agent_info = agent_info2)
   expect_type(updated_models, "list")
-  
+
   # Test ask_agent after update
   answer <- ask_agent(
     agent_info = agent_info2,
@@ -445,7 +445,7 @@ test_that("full agent workflow with multiple time series completes successfully"
   expect_true(length(models) > 0)
 
   # Step 4: Test ask_agent
-  
+
   # Question about accuracy
   answer1 <- ask_agent(
     agent_info = agent_info,
