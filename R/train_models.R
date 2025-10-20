@@ -494,7 +494,7 @@ train_models <- function(run_info,
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
 
-        if (stationary & (!(model %in% list_multivariate_models()) || model == "timeGPT")) {
+        if (stationary & (!(model %in% list_multivariate_models()) || model == "timegpt")) {
           # undifference the data for a univariate model or TimeGPT
           prep_data <- prep_data %>%
             undifference_recipe(
@@ -577,7 +577,7 @@ train_models <- function(run_info,
         }
 
         # undo differencing transformation
-        if (stationary & model %in% list_multivariate_models() & model != "timeGPT") {
+        if (stationary & model %in% list_multivariate_models() & model != "timegpt") {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%

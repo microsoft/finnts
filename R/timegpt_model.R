@@ -4,14 +4,14 @@
 #'
 #' @return NA
 #' @noRd
-make_timegpt <- function() {
-  parsnip::set_new_model("timegpt")
-  parsnip::set_model_mode(model = "timegpt", mode = "regression")
+make_timegpt_model <- function() {
+  parsnip::set_new_model("timegpt_model")
+  parsnip::set_model_mode(model = "timegpt_model", mode = "regression")
 
   # Model arguments
   parsnip::set_model_arg(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     parsnip = "forecast_horizon",
     original = "forecast_horizon",
     func = list(fun = "forecast_horizon"),
@@ -19,8 +19,8 @@ make_timegpt <- function() {
   )
 
   parsnip::set_model_arg(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     parsnip = "external_regressors",
     original = "external_regressors",
     func = list(fun = "external_regressors"),
@@ -30,20 +30,20 @@ make_timegpt <- function() {
   # TODO : add hyperparameters for finetune
 
   parsnip::set_model_engine(
-    model = "timegpt",
+    model = "timegpt_model",
     mode = "regression",
-    eng = "timegpt"
+    eng = "timegpt_model"
   )
 
   parsnip::set_dependency(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     pkg = "nixtlar"
   )
 
   parsnip::set_encoding(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     mode = "regression",
     options = list(
       predictor_indicators = "none",
@@ -55,26 +55,26 @@ make_timegpt <- function() {
 
 
   parsnip::set_fit(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     mode = "regression",
     value = list(
       interface = "data.frame",
       protect = c("x", "y"),
-      func = c(pkg = "finnts", fun = "timegpt_fit_impl"),
+      func = c(pkg = "finnts", fun = "timegpt_model_fit_impl"),
       defaults = list()
     )
   )
 
   parsnip::set_pred(
-    model = "timegpt",
-    eng = "timegpt",
+    model = "timegpt_model",
+    eng = "timegpt_model",
     mode = "regression",
     type = "numeric",
     value = list(
       pre = NULL,
       post = NULL,
-      func = c(pkg = "finnts", fun = "timegpt_predict_impl"),
+      func = c(pkg = "finnts", fun = "timegpt_model_predict_impl"),
       args = list(
         object = rlang::expr(object$fit),
         new_data = rlang::expr(new_data)
@@ -94,7 +94,7 @@ make_timegpt <- function() {
 #' @return Get TimeGPT model
 #' @keywords internal
 #' @export
-timegpt <- function(
+timegpt_model <- function(
   mode = "regression",
   forecast_horizon = NULL,
   external_regressors = NULL
@@ -105,7 +105,7 @@ timegpt <- function(
   )
 
   parsnip::new_model_spec(
-    "timegpt",
+    "timegpt_model",
     args = args,
     eng_args = NULL,
     mode = mode,
@@ -124,7 +124,7 @@ timegpt <- function(
 #' @return Fitted TimeGPT model object
 #' @keywords internal
 #' @export
-timegpt_fit_impl <- function(
+timegpt_model_fit_impl <- function(
   x,
   y,
   forecast_horizon = NULL,
@@ -152,7 +152,7 @@ timegpt_fit_impl <- function(
     external_regressors = external_regressors
   )
 
-  class(fit_obj) <- "timegpt_fit"
+  class(fit_obj) <- "timegpt_model_fit"
   return(fit_obj)
 }
 
@@ -166,7 +166,7 @@ timegpt_fit_impl <- function(
 #' @return predictions
 #' @keywords internal
 #' @export
-timegpt_predict_impl <- function(object, new_data, ...) {
+timegpt_model_predict_impl <- function(object, new_data, ...) {
   azure_key <- Sys.getenv("AZURE_TIMEGEN_API_KEY")
   azure_url <- Sys.getenv("AZURE_TIMEGEN_BASE_URL")
   nixtla_key <- Sys.getenv("NIXTLA_TIMEGPT_API_KEY")
@@ -223,7 +223,7 @@ timegpt_predict_impl <- function(object, new_data, ...) {
 #' @return Prints model info
 #' @keywords internal
 #' @export
-print.timegpt <- function(x, ...) {
+print.timegpt_model <- function(x, ...) {
   parsnip::model_printer(x, ...)
 
   if (!is.null(x$method$fit$args)) {
@@ -246,7 +246,7 @@ print.timegpt <- function(x, ...) {
 #' @keywords internal
 #' @importFrom stats update
 #' @export
-update.timegpt <- function(
+update.timegpt_model <- function(
   object,
   parameters = NULL,
   forecast_horizon = NULL,
@@ -284,7 +284,7 @@ update.timegpt <- function(
   }
 
   parsnip::new_model_spec(
-    "timegpt",
+    "timegpt_model",
     args = object$args,
     eng_args = object$eng_args,
     mode = object$mode,

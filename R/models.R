@@ -6,7 +6,7 @@ list_models <- function() {
   list <- c(
     "arima", "arima-boost", "arimax", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
-    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timeGPT", "xgboost"
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timegpt", "xgboost"
   )
 
   return(list)
@@ -71,7 +71,7 @@ list_multivariate_models <- function() {
   list <- c(
     "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
     "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
-    "nnetar-xregs", "timeGPT"
+    "nnetar-xregs", "timegpt"
   )
 
   return(list)
@@ -1343,7 +1343,7 @@ theta <- function(train_data,
 #'
 #' @return Get the TimeGPT based model
 #' @noRd
-timeGPT <- function(train_data,
+timegpt <- function(train_data,
                     horizon,
                     external_regressors = NULL) {
   # combo recipe since timegpt forecast needs unique ids for identifying series
@@ -1351,12 +1351,12 @@ timeGPT <- function(train_data,
     get_recipe_combo()
 
   # TimeGPT model specification
-  model_spec_timegpt <- timegpt(
+  model_spec_timegpt <- timegpt_model(
     mode = "regression",
     forecast_horizon = horizon,
     external_regressors = external_regressors
   ) %>%
-    parsnip::set_engine("timegpt")
+    parsnip::set_engine("timegpt_model")
 
   wflw_spec <- get_workflow_simple(
     model_spec_timegpt,
