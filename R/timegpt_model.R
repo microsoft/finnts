@@ -18,15 +18,6 @@ make_timegpt_model <- function() {
     has_submodel = FALSE
   )
 
-  parsnip::set_model_arg(
-    model = "timegpt_model",
-    eng = "timegpt_model",
-    parsnip = "external_regressors",
-    original = "external_regressors",
-    func = list(fun = "external_regressors"),
-    has_submodel = FALSE
-  )
-
   # TODO : add hyperparameters for finetune
 
   parsnip::set_model_engine(
@@ -89,19 +80,16 @@ make_timegpt_model <- function() {
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param forecast_horizon forecast horizon
-#' @param external_regressors external regressors
 #'
 #' @return Get TimeGPT model
 #' @keywords internal
 #' @export
 timegpt_model <- function(
   mode = "regression",
-  forecast_horizon = NULL,
-  external_regressors = NULL
+  forecast_horizon = NULL
 ) {
   args <- list(
-    forecast_horizon = rlang::enquo(forecast_horizon),
-    external_regressors = rlang::enquo(external_regressors)
+    forecast_horizon = rlang::enquo(forecast_horizon)
   )
 
   parsnip::new_model_spec(
@@ -119,7 +107,6 @@ timegpt_model <- function(
 #' @param x A dataframe of xreg (exogenous regressors)
 #' @param y A numeric vector of values to fit
 #' @param forecast_horizon forecast horizon
-#' @param external_regressors external regressors
 #'
 #' @return Fitted TimeGPT model object
 #' @keywords internal
@@ -127,8 +114,7 @@ timegpt_model <- function(
 timegpt_model_fit_impl <- function(
   x,
   y,
-  forecast_horizon = NULL,
-  external_regressors = NULL
+  forecast_horizon = NULL
 ) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
@@ -148,8 +134,7 @@ timegpt_model_fit_impl <- function(
   # since there is no actual training involved, we just pass the data through fit object and return it
   fit_obj <- list(
     train_data = train_df,
-    forecast_horizon = forecast_horizon,
-    external_regressors = external_regressors
+    forecast_horizon = forecast_horizon
   )
 
   class(fit_obj) <- "timegpt_model_fit"
@@ -197,7 +182,6 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
       target_col = "y",
       id_col = "Combo",
       level = c(80, 95),
-      hist_exog_list = object$external_regressors,
       model = "azureai"
     )
   } else {
@@ -207,8 +191,7 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
       time_col = "Date",
       target_col = "y",
       id_col = "Combo",
-      level = c(80, 95),
-      hist_exog_list = object$external_regressors
+      level = c(80, 95)
     )
   }
 
@@ -238,7 +221,6 @@ print.timegpt_model <- function(x, ...) {
 #' @param object model object
 #' @param parameters parameters
 #' @param forecast_horizon forecast horizon
-#' @param external_regressors external regressors
 #' @param fresh fresh
 #' @param ... extra args passed to TimeGPT
 #'
@@ -250,7 +232,6 @@ update.timegpt_model <- function(
   object,
   parameters = NULL,
   forecast_horizon = NULL,
-  external_regressors = NULL,
   fresh = FALSE,
   ...
 ) {
@@ -261,8 +242,7 @@ update.timegpt_model <- function(
   }
 
   args <- list(
-    forecast_horizon = rlang::enquo(forecast_horizon),
-    external_regressors = rlang::enquo(external_regressors)
+    forecast_horizon = rlang::enquo(forecast_horizon)
   )
 
   args <- parsnip::update_main_parameters(args, parameters)

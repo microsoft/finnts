@@ -1339,13 +1339,11 @@ theta <- function(train_data,
 #'
 #' @param train_data Training Data
 #' @param horizon Forecast horizon
-#' @param external_regressors External regressors
 #'
 #' @return Get the TimeGPT based model
 #' @noRd
 timegpt <- function(train_data,
-                    horizon,
-                    external_regressors = NULL) {
+                    horizon) {
   # combo recipe since timegpt forecast needs unique ids for identifying series
   recipe_spec_timegpt <- train_data %>%
     get_recipe_combo()
@@ -1353,8 +1351,7 @@ timegpt <- function(train_data,
   # TimeGPT model specification
   model_spec_timegpt <- timegpt_model(
     mode = "regression",
-    forecast_horizon = horizon,
-    external_regressors = external_regressors
+    forecast_horizon = horizon
   ) %>%
     parsnip::set_engine("timegpt_model")
 

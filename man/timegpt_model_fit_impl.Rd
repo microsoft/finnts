@@ -4,12 +4,7 @@
 \alias{timegpt_model_fit_impl}
 \title{Fit TimeGPT model}
 \usage{
-timegpt_model_fit_impl(
-  x,
-  y,
-  forecast_horizon = NULL,
-  external_regressors = NULL
-)
+timegpt_model_fit_impl(x, y, forecast_horizon = NULL)
 }
 \arguments{
 \item{x}{A dataframe of xreg (exogenous regressors)}
@@ -17,8 +12,6 @@ timegpt_model_fit_impl(
 \item{y}{A numeric vector of values to fit}
 
 \item{forecast_horizon}{forecast horizon}
-
-\item{external_regressors}{external regressors}
 }
 \value{
 Fitted TimeGPT model object
