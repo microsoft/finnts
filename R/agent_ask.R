@@ -615,11 +615,11 @@ execute_analysis_step <- function(agent_info,
   data_loading_section <- if (!is.null(ds_call)) {
     paste0("FIRST LINE MUST BE:\ndata <- ", ds_call)
   } else {
-    paste0(
-      'This step uses a previous object named "',
-      ifelse(!is.null(prev_output), prev_output, "previous_result"),
-      '". Access it directly.'
-    )
+    if (!is.null(prev_output)) {
+      paste0('This step uses a previous object named "', prev_output, '". Access it directly.')
+    } else {
+      stop('No previous output object is available for this step. Please check that previous steps have produced results and that output names are correctly set.', call. = FALSE)
+    }
   }
 
   # Build function list based on forecast approach
