@@ -803,9 +803,11 @@ summarize_analysis_results <- function(analysis_results, max_rows = 20) {
       n_rows <- nrow(result)
       display_rows <- min(n_rows, max_rows)
 
+      # Only convert to data.frame if not already a data.frame
+      if (!is.data.frame(result)) result <- data.frame(result)
       summary_text <- paste0(
         "\nAnalysis ", gsub("step_", "", name), " result (", n_rows, " rows total, showing ", display_rows, "):\n",
-        utils::capture.output(print(head(data.frame(result), display_rows))) %>%
+        utils::capture.output(print(head(result, display_rows))) %>%
           paste(collapse = "\n")
       )
 
