@@ -141,6 +141,71 @@ timegpt_model_fit_impl <- function(
   return(fit_obj)
 }
 
+#' Check if base URL is Azure endpoint and not Nixtla default
+#'
+#' @param url Base URL to check
+#' @return Logical indicating if URL is Azure endpoint
+#' @noRd
+is_azure_url <- function(url) {
+  if (is.null(url) || !nzchar(url)) {
+    return(FALSE)
+  }
+  # azure is part of domain or subdomain
+  grepl("^https?://[^/]*azure", url, ignore.case = TRUE)
+}
+
+#' Ensure URL ends with trailing slash
+#'
+#' @param url Base URL to normalize
+#' @return URL with trailing slash
+#' @noRd
+normalize_url <- function(url) {
+  if (!grepl("/$", url)) {
+    warning("Base URL should end with '/'. Automatically appending it.")
+    url <- paste0(url, "/")
+  }
+  url
+}
+
+#' Setup TimeGPT API client
+#'
+#' @return Logical indicating if Azure API should be used
+#' @noRd
+setup_timegpt_client <- function() {
+  # Check if client is already configured
+  base_url <- getOption("NIXTLA_BASE_URL")
+  api_key <- getOption("NIXTLA_API_KEY")
+
+  # Client already configured and API key is valid, determine API type from URL
+  if (!is.null(base_url) && !is.null(api_key) && nixtlar::nixtla_validate_api_key()) {
+    return(is_azure_url(base_url))
+  }
+
+  # Client not configured, check environment variables
+  env_base_url <- Sys.getenv("NIXTLA_BASE_URL")
+  env_api_key <- Sys.getenv("NIXTLA_API_KEY")
+
+  if (nzchar(env_base_url) && nzchar(env_api_key)) {
+    env_base_url <- normalize_url(env_base_url)
+
+    # nixtlar::get_client_setup prioritizes env over options, need to update to normalized url
+    Sys.setenv(NIXTLA_BASE_URL = env_base_url)
+
+    nixtlar::nixtla_client_setup(base_url = env_base_url, api_key = env_api_key)
+    return(is_azure_url(env_base_url))
+  } else if (nzchar(env_api_key)) {
+    # Only API key found, assume Nixtla default endpoint
+    nixtlar::nixtla_client_setup(api_key = env_api_key)
+    return(FALSE)
+  } else {
+    stop(
+      "No TimeGPT credentials found. Set either:\n",
+      "  - NIXTLA_API_KEY and NIXTLA_BASE_URL (for Azure or custom endpoints), or\n",
+      "  - NIXTLA_API_KEY only (for default Nixtla API)"
+    )
+  }
+}
+
 #' Bridge prediction Function for TimeGPT Models
 #'
 #' @inheritParams parsnip::predict.model_fit
@@ -152,53 +217,32 @@ timegpt_model_fit_impl <- function(
 #' @keywords internal
 #' @export
 timegpt_model_predict_impl <- function(object, new_data, ...) {
-  azure_key <- Sys.getenv("AZURE_TIMEGEN_API_KEY")
-  azure_url <- Sys.getenv("AZURE_TIMEGEN_BASE_URL")
-  nixtla_key <- Sys.getenv("NIXTLA_TIMEGPT_API_KEY")
+  # Setup API client and determine which endpoint to use
+  use_azure <- setup_timegpt_client()
 
-  if (nzchar(azure_key) && nzchar(azure_url)) {
-    # azure_url validation
-    if (!grepl("/$", azure_url)) {
-      azure_url <- paste0(azure_url, "/")
-      warning("AZURE_TIMEGEN_BASE_URL should end with '/'. Automatically appending it.")
-    }
-    nixtlar::nixtla_client_setup(base_url = azure_url, api_key = azure_key)
-    azure_api <- TRUE
-  } else if (nzchar(nixtla_key)) {
-    nixtlar::nixtla_client_setup(api_key = nixtla_key)
-    azure_api <- FALSE
-  } else {
-    stop("No TimeGPT credentials: set AZURE_TIMEGEN_API_KEY and AZURE_TIMEGEN_BASE_URL or NIXTLA_TIMEGPT_API_KEY.")
-  }
-
+  # Prepare training data
   full_train_df <- object$train_data
-
-  # handle train/test splits
   test_start <- min(new_data$Date, na.rm = TRUE)
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
   h <- nrow(new_data)
 
-  # TimeGPT API call for forecast
-  if (azure_api) {
-    results <- nixtlar::nixtla_client_forecast(
-      df = train_df,
-      h = h,
-      time_col = "Date",
-      target_col = "y",
-      id_col = "Combo",
-      level = c(80, 95),
-      model = "azureai"
-    )
-  } else {
-    results <- nixtlar::nixtla_client_forecast(
-      df = train_df,
-      h = h,
-      time_col = "Date",
-      target_col = "y",
-      id_col = "Combo",
-      level = c(80, 95)
-    )
+  # Make forecast based on API type
+  forecast_args <- list(
+    df = train_df,
+    h = h,
+    time_col = "Date",
+    target_col = "y",
+    id_col = "Combo",
+    level = c(80, 95)
+  )
+
+  if (use_azure) {
+    forecast_args$model <- "azureai"
   }
+  base_url <- getOption("NIXTLA_BASE_URL")
+  api_key <- getOption("NIXTLA_API_KEY")
+
+  results <- do.call(nixtlar::nixtla_client_forecast, forecast_args)
 
   # Validate forecast data
   if (length(results$TimeGPT) != h) {
