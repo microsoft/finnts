@@ -161,7 +161,7 @@ is_azure_url <- function(url) {
 #' @noRd
 normalize_url <- function(url) {
   if (!grepl("/$", url)) {
-    warning("Base URL should end with '/'. Automatically appending it.")
+    warning("NIXTLA_BASE_URL did not end with '/'. Automatically appended.")
     url <- paste0(url, "/")
   }
   url
