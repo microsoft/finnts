@@ -6,7 +6,7 @@ list_models <- function() {
   list <- c(
     "arima", "arima-boost", "arimax", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
-    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "xgboost"
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timegpt", "xgboost"
   )
 
   return(list)
@@ -71,7 +71,7 @@ list_multivariate_models <- function() {
   list <- c(
     "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
     "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
-    "nnetar-xregs"
+    "nnetar-xregs", "timegpt"
   )
 
   return(list)
@@ -1333,6 +1333,34 @@ theta <- function(train_data,
   )
 
   return(wflw_spec_theta)
+}
+
+#' TimeGPT Model
+#'
+#' @param train_data Training Data
+#' @param horizon Forecast horizon
+#'
+#' @return Get the TimeGPT based model
+#' @noRd
+timegpt <- function(train_data,
+                    horizon) {
+  # combo recipe since timegpt forecast needs unique ids for identifying series
+  recipe_spec_timegpt <- train_data %>%
+    get_recipe_combo()
+
+  # TimeGPT model specification
+  model_spec_timegpt <- timegpt_model(
+    mode = "regression",
+    forecast_horizon = horizon
+  ) %>%
+    parsnip::set_engine("timegpt_model")
+
+  wflw_spec <- get_workflow_simple(
+    model_spec_timegpt,
+    recipe_spec_timegpt
+  )
+
+  return(wflw_spec)
 }
 
 #' XGBoost
