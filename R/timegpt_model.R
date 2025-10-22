@@ -239,8 +239,6 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   if (use_azure) {
     forecast_args$model <- "azureai"
   }
-  base_url <- getOption("NIXTLA_BASE_URL")
-  api_key <- getOption("NIXTLA_API_KEY")
 
   results <- do.call(nixtlar::nixtla_client_forecast, forecast_args)
 
