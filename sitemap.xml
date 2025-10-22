@@ -64,6 +64,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/print.svm_poly_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.svm_rbf_multistep_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.timegpt_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/set_agent_info.html</loc></url>
@@ -75,6 +76,9 @@
 <url><loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/svm_rbf_multistep_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/timegpt_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/timegpt_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/timegpt_model_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/train_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.glmnet_multistep.html</loc></url>
@@ -87,6 +91,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/update.mars_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.svm_poly_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.svm_rbf_multistep.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update.timegpt_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update_forecast.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep.html</loc></url>
