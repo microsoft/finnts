@@ -135,7 +135,7 @@ summarize_models <- function(agent_info,
   `%op%` <- par_info$foreach_operator
 
   # Step 2 & 3: Process each time series combo
-  summary_results <- foreach::foreach(
+  summary_tbl <- foreach::foreach(
     x = best_run_tbl %>%
       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
     .combine = "rbind",
@@ -279,13 +279,36 @@ summarize_models <- function(agent_info,
       # Combine all model summaries for this combo
       combo_summary <- dplyr::bind_rows(model_summaries)
 
-      return(combo_summary)
+      # Write to disk in models folder
+      write_data(
+        x = combo_summary,
+        combo = combo,
+        run_info = project_info,
+        output_type = "data",
+        folder = "models",
+        suffix = "-model_summary"
+      )
+      
+      return(data.frame(Combo = combo))
     } %>%
     base::suppressPackageStartupMessages()
 
   # Clean up parallel processing
   par_end(cl)
 
+  # Step 4: Read all individual model summary files and consolidate
+  model_summary_path <- paste0(
+    "/models/*", hash_data(project_info$project_name), "-",
+    hash_data(project_info$run_name), "*-model_summary.", project_info$data_output
+  )
+  
+  summary_results <- read_file(
+    run_info = project_info,
+    path = model_summary_path,
+    return_type = "df"
+  )
+  
+  # Step 5: Write final consolidated model summaries to final_output folder
   write_data(
     x = summary_results,
     combo = NULL,
@@ -1163,7 +1186,7 @@ summarize_model_arima_boost <- function(wf) {
       }
 
       # Variable importance
-      importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
+      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -1731,7 +1754,7 @@ summarize_model_cubist <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_cubist, scale = TRUE), silent = TRUE)
+          importance <- try(vip::vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -1821,7 +1844,7 @@ summarize_model_cubist <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(cubist_obj, scale = TRUE), silent = TRUE)
+        importance <- try(vip::vi(cubist_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2517,7 +2540,7 @@ summarize_model_glmnet <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_glmnet, scale = TRUE), silent = TRUE)
+          importance <- try(vip::vi(inner_glmnet, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -2783,7 +2806,7 @@ summarize_model_glmnet <- function(wf) {
       }
 
       # Variable importance using vip::vi()
-      importance <- try(vip::vi(glmnet_obj, scale = TRUE), silent = TRUE)
+      importance <- try(vip::vi(glmnet_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2973,7 +2996,7 @@ summarize_model_mars <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_mars, scale = TRUE), silent = TRUE)
+          importance <- try(vip::vi(inner_mars, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -3114,7 +3137,7 @@ summarize_model_mars <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(mars_obj, scale = TRUE), silent = TRUE)
+        importance <- try(vip::vi(mars_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -4532,7 +4555,7 @@ summarize_model_prophet_boost <- function(wf) {
       }
 
       # Variable importance (don't add count since the importance section shows all features)
-      importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
+      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -7457,7 +7480,7 @@ summarize_model_xgboost <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_xgb, scale = TRUE), silent = TRUE)
+          importance <- try(vip::vi(inner_xgb, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -7597,7 +7620,7 @@ summarize_model_xgboost <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(xgb_obj, scale = TRUE), silent = TRUE)
+        importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
