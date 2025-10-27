@@ -308,6 +308,10 @@ summarize_models <- function(agent_info,
     return_type = "df"
   )
 
+  # Error handling: Check if any model summary files were found/read
+  if (is.null(summary_results) || (is.data.frame(summary_results) && nrow(summary_results) == 0)) {
+    stop("No model summary files found. Cannot consolidate model summaries.")
+  }
   # Step 5: Write final consolidated model summaries to final_output folder
   write_data(
     x = summary_results,
