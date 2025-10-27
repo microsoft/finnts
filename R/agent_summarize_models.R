@@ -288,7 +288,7 @@ summarize_models <- function(agent_info,
         folder = "models",
         suffix = "-model_summary"
       )
-      
+
       return(data.frame(Combo = combo))
     } %>%
     base::suppressPackageStartupMessages()
@@ -301,13 +301,13 @@ summarize_models <- function(agent_info,
     "/models/*", hash_data(project_info$project_name), "-",
     hash_data(project_info$run_name), "*-model_summary.", project_info$data_output
   )
-  
+
   summary_results <- read_file(
     run_info = project_info,
     path = model_summary_path,
     return_type = "df"
   )
-  
+
   # Step 5: Write final consolidated model summaries to final_output folder
   write_data(
     x = summary_results,
