@@ -85,9 +85,8 @@ make_timegpt_model <- function() {
 #' @keywords internal
 #' @export
 timegpt_model <- function(
-  mode = "regression",
-  forecast_horizon = NULL
-) {
+    mode = "regression",
+    forecast_horizon = NULL) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon)
   )
@@ -112,10 +111,9 @@ timegpt_model <- function(
 #' @keywords internal
 #' @export
 timegpt_model_fit_impl <- function(
-  x,
-  y,
-  forecast_horizon = NULL
-) {
+    x,
+    y,
+    forecast_horizon = NULL) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
   train_df$y <- y
@@ -284,12 +282,11 @@ print.timegpt_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.timegpt_model <- function(
-  object,
-  parameters = NULL,
-  forecast_horizon = NULL,
-  fresh = FALSE,
-  ...
-) {
+    object,
+    parameters = NULL,
+    forecast_horizon = NULL,
+    fresh = FALSE,
+    ...) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {

@@ -470,7 +470,7 @@ load_agent_forecast <- function(agent_info,
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
-  # check for reconciled forecast
+  # check for reconciled forecast and return if found
   if (agent_info$forecast_approach != "bottoms_up" & final_output) {
     project_info <- agent_info$project_info
     project_info$run_name <- agent_info$run_id
@@ -536,7 +536,7 @@ load_agent_forecast <- function(agent_info,
     `%op%` <- par_info$foreach_operator
 
     # submit tasks
-    local_fcst_tbl <- foreach::foreach(
+    local_file_tbl <- foreach::foreach(
       x = local_run_tbl %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
@@ -548,26 +548,93 @@ load_agent_forecast <- function(agent_info,
       .noexport = NULL
     ) %op%
       {
-        run_info <- agent_info$project_info
-        run_info$project_name <- paste0(
+        project_info <- agent_info$project_info
+
+        project_name <- paste0(
           agent_info$project_info$project_name,
           "_",
           hash_data(x$combo)
         )
-        run_info$run_name <- x$best_run_name
 
-        temp_local_fcst_tbl <- get_forecast_data(run_info = run_info)
+        file_list <- list_files(
+          project_info$storage_object,
+          paste0(
+            project_info$path, "/forecasts/*", hash_data(project_name), "-",
+            hash_data(x$best_run_name), "-", hash_data(x$combo),
+            "*.", project_info$data_output
+          )
+        )
 
-        return(temp_local_fcst_tbl)
+        return(tibble::tibble(File_List = file_list))
       } %>%
       base::suppressPackageStartupMessages()
 
     par_end(cl)
+
+    # load local forecast files
+    if (nrow(local_file_tbl) == 0) {
+      stop("Error in load_agent_forecast(). No local forecast files found for agent.", call. = FALSE)
+    }
+
+    local_fcst_tbl <- read_file(
+      run_info = agent_info$project_info,
+      file_list = local_file_tbl$File_List,
+      return_type = "df"
+    )
+
+    # get train test split data
+    local_run_example <- local_run_tbl %>%
+      dplyr::slice(1)
+
+    local_project_name <- paste0(
+      agent_info$project_info$project_name,
+      "_",
+      hash_data(local_run_example$combo)
+    )
+
+    model_train_test_tbl <- read_file(agent_info$project_info,
+      path = paste0(
+        "/prep_models/", hash_data(local_project_name), "-", hash_data(local_run_example$best_run_name),
+        "-train_test_split.", agent_info$project_info$data_output
+      ),
+      return_type = "df"
+    ) %>%
+      dplyr::select(Run_Type, Train_Test_ID) %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+
+    # final formatting
+    local_fcst_tbl <- local_fcst_tbl %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+      dplyr::left_join(model_train_test_tbl,
+        by = "Train_Test_ID"
+      ) %>%
+      dplyr::relocate(Run_Type, .before = Train_Test_ID) %>%
+      dplyr::select(-Combo_ID, -Hyperparameter_ID) %>%
+      dplyr::relocate(Combo) %>%
+      dplyr::arrange(Combo, dplyr::desc(Best_Model), Model_ID, Train_Test_ID, Date) %>%
+      tidyr::separate(
+        col = Combo,
+        into = agent_info$project_info$combo_variables,
+        remove = FALSE,
+        sep = "--"
+      ) %>%
+      base::suppressWarnings()
   } else {
     local_fcst_tbl <- tibble::tibble()
   }
 
-  return(global_fcst_tbl %>% dplyr::bind_rows(local_fcst_tbl))
+  # combine global and local forecasts
+  final_fcst_tbl <- global_fcst_tbl %>%
+    dplyr::bind_rows(local_fcst_tbl)
+
+  # check that all combos are present
+  if (length(unique(best_run_tbl$combo)) != length(unique(final_fcst_tbl$Combo))) {
+    missing_combos <- setdiff(unique(best_run_tbl$combo), unique(final_fcst_tbl$Combo))
+    stop(paste0("Error in load_agent_forecast(). Missing forecast data for combos: ", paste(missing_combos, collapse = ", ")), call. = FALSE)
+  }
+
+  # return final forecast table
+  return(final_fcst_tbl)
 }
 
 #' Save the final best forecast for an agent
