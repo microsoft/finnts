@@ -628,8 +628,8 @@ load_agent_forecast <- function(agent_info,
     dplyr::bind_rows(local_fcst_tbl)
 
   # check that all combos are present
-  if (length(best_run_tbl$combo) != length(unique(final_fcst_tbl$Combo))) {
-    missing_combos <- setdiff(best_run_tbl$combo, unique(final_fcst_tbl$Combo))
+  if (length(unique(best_run_tbl$combo)) != length(unique(final_fcst_tbl$Combo))) {
+    missing_combos <- setdiff(unique(best_run_tbl$combo), unique(final_fcst_tbl$Combo))
     stop(paste0("Error in load_agent_forecast(). Missing forecast data for combos: ", paste(missing_combos, collapse = ", ")), call. = FALSE)
   }
 
