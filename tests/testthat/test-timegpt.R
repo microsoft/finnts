@@ -16,9 +16,7 @@ has_timegpt_credentials <- function() {
   return(TRUE)
 }
 
-# validate TimeGPT API key
-test_that("TimeGPT API key validation works", {
-  print("Testing TimeGPT API key validation...")
+test_that("TimeGPT API key validation", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
 
   # Get credentials
@@ -36,7 +34,6 @@ test_that("TimeGPT API key validation works", {
   expect_true(nixtlar::nixtla_validate_api_key())
 })
 
-# Validate TimeGPT model initialization
 test_that("TimeGPT model can be initialized", {
   skip_on_cran()
 
@@ -46,9 +43,7 @@ test_that("TimeGPT model can be initialized", {
   expect_equal(model$mode, "regression")
 })
 
-# Timegpt fit test without external regressors
-
-test_that("TimeGPT fit works without external regressors", {
+test_that("TimeGPT fit function works without external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -66,7 +61,7 @@ test_that("TimeGPT fit works without external regressors", {
   expect_equal(nrow(fit$train_data), 48)
 })
 
-test_that("TimeGPT predict works without external regressors", {
+test_that("TimeGPT predict function works without external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -87,13 +82,12 @@ test_that("TimeGPT predict works without external regressors", {
 
   preds <- timegpt_model_predict_impl(fit, new_data)
 
-
   expect_type(preds, "double")
   expect_length(preds, 3)
   expect_true(all(!is.na(preds)))
 })
 
-test_that("TimeGPT works with historical-only external regressors through full pipeline", {
+test_that("TimeGPT works with historical-only external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -129,7 +123,7 @@ test_that("TimeGPT works with historical-only external regressors through full p
 
   # Predict (tests full predict pipeline with recipe)
   preds <- predict(wf_fit, new_data)
-  print(preds)
+
 
   expect_s3_class(preds, "data.frame")
   expect_true(".pred" %in% colnames(preds))
@@ -137,7 +131,7 @@ test_that("TimeGPT works with historical-only external regressors through full p
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT works with future external regressors (X_df) through full pipeline", {
+test_that("TimeGPT works with future external regressors (X_df) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -180,7 +174,7 @@ test_that("TimeGPT works with future external regressors (X_df) through full pip
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) through full pipeline", {
+test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -225,7 +219,7 @@ test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) 
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT handles one-hot encoded external regressors through full pipeline", {
+test_that("TimeGPT handles one-hot encoded external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -268,7 +262,7 @@ test_that("TimeGPT handles one-hot encoded external regressors through full pipe
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT handles one-hot encoded external regressors (historical-only) through full pipeline", {
+test_that("TimeGPT handles one-hot encoded external regressors (historical-only) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -304,15 +298,14 @@ test_that("TimeGPT handles one-hot encoded external regressors (historical-only)
 
   # Predict
   preds <- predict(wf_fit, new_data)
-  print("Predictions with one-hot encoded historical-only external regressor:")
-  print(preds)
+
   expect_s3_class(preds, "data.frame")
   expect_true(".pred" %in% colnames(preds))
   expect_equal(nrow(preds), 3)
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT handles mixed numeric and categorical external regressors through full pipeline", {
+test_that("TimeGPT handles mixed numeric and categorical external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -349,7 +342,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors thr
   )
 
   # Predict
-  preds <- predict(wf_fit, new_data)
+  preds <- suppressWarnings(predict(wf_fit, new_data))
 
   expect_s3_class(preds, "data.frame")
   expect_true(".pred" %in% colnames(preds))
@@ -394,7 +387,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors wit
   )
 
   # Predict
-  preds <- suppressWarnings(predict(wf_fit, new_data)) # Suppress NA level warning
+  preds <- suppressWarnings(predict(wf_fit, new_data))
 
   expect_s3_class(preds, "data.frame")
   expect_true(".pred" %in% colnames(preds))
@@ -402,7 +395,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors wit
   expect_true(all(!is.na(preds$.pred)))
 })
 
-test_that("TimeGPT full pipeline with external regressors", {
+test_that("TimeGPT Model pipeline Integration test with external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
   skip_on_cran()
 
@@ -418,8 +411,6 @@ test_that("TimeGPT full pipeline with external regressors", {
       temperature = rnorm(dplyr::n(), mean = 20, sd = 5)
     )
 
-
-  print(head(data))
 
   run_info <- set_run_info()
 
@@ -446,11 +437,9 @@ test_that("TimeGPT full pipeline with external regressors", {
     run_global_models = FALSE
   )
 
-
   # pull trained model
   trained_models <- get_trained_models(run_info = run_info)
 
-  # Assertions
   # Assertions
   expect_s3_class(trained_models, "data.frame")
   expect_true(nrow(trained_models) > 0)
@@ -464,4 +453,80 @@ test_that("TimeGPT full pipeline with external regressors", {
   # Check that external regressors are present in training data
   train_data_cols <- colnames(fit_obj$train_data)
   expect_true(any(grepl("temperature_original", train_data_cols)))
+})
+
+
+test_that("TimeGPT Model pipeline Integration test with future external regressors", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+  skip_on_cran()
+
+  # Historical data (up to 2015-06-01)
+  hist_data <- timetk::m4_monthly %>%
+    dplyr::mutate(id = as.character(id)) %>%
+    dplyr::rename(Date = date) %>%
+    dplyr::filter(
+      id == "M2",
+      Date >= "2010-01-01",
+      Date <= "2015-06-01"
+    ) %>%
+    dplyr::mutate(
+      temperature = rnorm(dplyr::n(), mean = 20, sd = 5)
+    )
+
+  # Future data (beyond hist_end_date) with temperature values
+  future_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2015-07-01"), by = "month", length.out = 3),
+    id = "M2",
+    value = NA_real_, # No future target values
+    temperature = c(22, 23, 21) # FUTURE external regressor values
+  )
+
+  # Combine historical and future
+  data <- dplyr::bind_rows(hist_data, future_data)
+
+
+  run_info <- set_run_info()
+
+  # prep data
+  prep_data(
+    run_info = run_info,
+    input_data = data,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 3,
+    external_regressors = c("temperature"),
+    hist_end_date = as.Date("2015-06-01")
+  )
+
+  # prep models
+  prep_models(
+    run_info = run_info,
+    models_to_run = "timegpt",
+  )
+
+  # train models
+  train_models(
+    run_info = run_info,
+    run_global_models = FALSE
+  )
+
+  ensemble_models(run_info = run_info)
+  final_models(run_info = run_info)
+  # Get forecasts
+  forecasts <- get_forecast_data(run_info = run_info)
+
+  forecasts <- get_forecast_data(run_info = run_info) %>%
+    dplyr::filter(Date > as.Date("2015-06-01"))
+
+  # Assertions
+  expect_s3_class(forecasts, "data.frame")
+  expect_equal(nrow(forecasts), 3)
+  # expect_equal(nrow(forecasts), 3)
+  expect_true(all(!is.na(forecasts$Forecast)))
+
+  trained_models <- get_trained_models(run_info = run_info)
+  fit_obj <- trained_models$Model_Fit[[1]]$fit$fit$fit
+  expect_true("train_data" %in% names(fit_obj))
+  expect_true(any(grepl("temperature_original", colnames(fit_obj$train_data))))
 })

@@ -332,7 +332,6 @@ prep_data <- function(run_info,
           xregs_future_list <- NULL
         }
 
-
         # initial data prep
         initial_tbl <- initial_prep_combo_tbl %>%
           dplyr::filter(Combo == combo) %>%
@@ -375,7 +374,6 @@ prep_data <- function(run_info,
             NA,
             Target
           ))
-
 
         # adjust original target col
         if ("Target_Original" %in% colnames(initial_tbl)) {
@@ -448,7 +446,6 @@ prep_data <- function(run_info,
               xreg_raw_df = xreg_raw_df
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
-
 
           write_data(
             x = R1,
@@ -571,6 +568,13 @@ prep_data <- function(run_info,
               dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
           }
 
+          # preserve raw external regressors for TimeGPT
+          xreg_raw_df <- NULL
+          if (!is.null(external_regressors) && length(external_regressors) > 0) {
+            xreg_raw_df <- initial_tbl %>%
+              dplyr::select(Date, tidyselect::all_of(external_regressors))
+          }
+
           # box-cox transformation
           if (box_cox) {
             box_cox_tbl <- initial_tbl %>%
@@ -624,10 +628,9 @@ prep_data <- function(run_info,
                 get_fourier_periods(fourier_periods, date_type),
                 get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
                 get_rolling_window_periods(rolling_window_periods, date_type),
-                xreg_raw_df =
-                ) %>%
+                xreg_raw_df = xreg_raw_df
+              ) %>%
               dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
-
 
             write_data(
               x = R1,
@@ -1283,7 +1286,6 @@ multivariate_prep_recipe_1 <- function(data,
     }
   }
 
-
   # add lags, rolling window calcs, and fourier periods
   if (!is.null(xregs_future_values_list)) {
     # create lags for xregs with future values
@@ -1292,7 +1294,6 @@ multivariate_prep_recipe_1 <- function(data,
   } else {
     df_lag_initial <- df_poly
   }
-
 
   data_lag_window <- df_lag_initial %>%
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
@@ -1350,37 +1351,26 @@ multivariate_prep_recipe_1 <- function(data,
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
 
+
   if (!is.null(xreg_raw_df) && !is.null(external_regressors) && length(external_regressors) > 0) {
     for (xr in external_regressors) {
       lag0_col <- paste0(xr, "_original")
       if (xr %in% names(xreg_raw_df) && !(lag0_col %in% names(data_lag_window))) {
-        # Join raw values by Date
         temp_join <- xreg_raw_df %>%
           dplyr::select(Date, tidyselect::all_of(xr)) %>%
-          dplyr::rename(!!lag0_col := !!xr) %>%
-          dplyr::mutate(!!lag0_col := ifelse(Date > hist_end_date, NA, !!rlang::sym(lag0_col)))
+          dplyr::rename(!!lag0_col := !!xr)
+
+        # Only mask future values as NA if this regressor is NOT in the future values list
+        if (!(xr %in% xregs_future_values_list)) {
+          temp_join <- temp_join %>%
+            dplyr::mutate(!!lag0_col := ifelse(Date > hist_end_date, NA, !!rlang::sym(lag0_col)))
+        }
 
         data_lag_window <- data_lag_window %>%
           dplyr::left_join(temp_join, by = "Date")
       }
     }
   }
-
-  cat("\n=== DATA_LAG_WINDOW WITH XREG(first 10 rows) ===\n")
-
-  cat("\n=== DATA_LAG_WINDOW (first 10 rows) ===\n")
-  # Select only Date, Target, and any lag0 (raw xreg) columns
-  lag0_cols <- grep("_original$", names(data_lag_window), value = TRUE)
-  core_cols <- c("Date", "Target")
-  show_cols <- unique(c(core_cols, lag0_cols))
-
-  if (length(lag0_cols) == 0) {
-    cat("  (No *_original columns found — verify xreg_raw_df was passed and join logic ran.)\n")
-  }
-
-  # Use base subsetting to avoid partial match issues
-  preview_head <- data_lag_window[, show_cols[show_cols %in% names(data_lag_window)], drop = FALSE]
-
 
   return(data_lag_window)
 }
