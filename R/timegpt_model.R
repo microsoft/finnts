@@ -118,6 +118,7 @@ timegpt_model_fit_impl <- function(
 ) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
+
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
 
@@ -226,6 +227,10 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
   h <- nrow(new_data)
 
+  # Extract columns containing _original
+  # search for _original is not position specific in case external regressor was one hot encoded
+  original_cols <- colnames(train_df)[grepl("_original", colnames(train_df))]
+
   # Make forecast based on API type
   forecast_args <- list(
     df = train_df,
@@ -235,13 +240,98 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
     id_col = "Combo",
     level = c(80, 95)
   )
+  # Check if we have future external regressor values
+  # if (length(original_cols) > 0) {
+  #   # Check if new_data has any non-NA values in _original columns
+
+  #   has_future_xregs <- any(sapply(original_cols, function(col) {
+  #     if (col %in% colnames(new_data)) {
+  #       return(any(!is.na(new_data[[col]])))
+  #     }
+  #     return(FALSE)
+  #   }))
+  #   print(has_future_xregs)
+  #   if (has_future_xregs) {
+  #     # Use X_df for future external regressors
+  #     forecast_args$X_df <- new_data %>%
+  #     dplyr::select(Date, Combo, tidyselect::all_of(original_cols)) %>%
+  #     dplyr::rename(unique_id = Combo, ds = Date)
+  #   print("x_df")
+  #   print(forecast_args$X_df)
+  #   } else {
+  #     # Use hist_exog_list for historical-only external regressors
+  #     forecast_args$hist_exog_list <- original_cols
+  #   }
+  # }
+
+  if (length(original_cols) > 0) {
+    # Separate columns with future values vs without
+    cols_with_future <- c()
+    cols_without_future <- c()
+
+    for (col in original_cols) {
+      if (col %in% colnames(new_data) && any(!is.na(new_data[[col]]))) {
+        cols_with_future <- c(cols_with_future, col)
+      } else {
+        cols_without_future <- c(cols_without_future, col)
+      }
+    }
+
+    # SPECIAL CASE: h=1 doesn't work with X_df, use hist_exog_list for all
+    if (h == 1) {
+      all_xreg_cols <- c(cols_with_future, cols_without_future)
+      if (length(all_xreg_cols) > 0) {
+        forecast_args$hist_exog_list <- all_xreg_cols
+      }
+    } else {
+      # Normal case: h > 1
+      if (length(cols_with_future) > 0) {
+        forecast_args$X_df <- new_data %>%
+          dplyr::select(Date, Combo, tidyselect::all_of(cols_with_future)) %>%
+          dplyr::rename(unique_id = Combo, ds = Date)
+      }
+
+      if (length(cols_without_future) > 0) {
+        forecast_args$hist_exog_list <- cols_without_future
+      }
+    }
+  }
 
   if (use_azure) {
     forecast_args$model <- "azureai"
   }
 
-  results <- do.call(nixtlar::nixtla_client_forecast, forecast_args)
 
+  # Print all arguments being passed to TimeGPT API
+  print("=== TimeGPT API Call Arguments ===")
+  print(paste("h (forecast horizon):", forecast_args$h))
+  print(paste("time_col:", forecast_args$time_col))
+  print(paste("target_col:", forecast_args$target_col))
+  print(paste("id_col:", forecast_args$id_col))
+  print(paste("Training data rows:", nrow(forecast_args$df)))
+  print(paste("Training data columns:", paste(colnames(forecast_args$df), collapse = ", ")))
+  print(paste("Training data date range:", min(forecast_args$df$Date), "to", max(forecast_args$df$Date)))
+  if (!is.null(forecast_args$X_df)) {
+    print(paste("X_df provided: TRUE, rows:", nrow(forecast_args$X_df)))
+    print(paste("X_df columns:", paste(colnames(forecast_args$X_df), collapse = ", ")))
+    print("Actual X_df:")
+    print(forecast_args$X_df)
+  } else {
+    print("X_df provided: FALSE")
+  }
+  if (!is.null(forecast_args$hist_exog_list)) {
+    print(paste("hist_exog_list provided: TRUE"))
+    print(paste("hist_exog_list columns:", paste(forecast_args$hist_exog_list, collapse = ", ")))
+  } else {
+    print("hist_exog_list provided: FALSE")
+  }
+  if (!is.null(forecast_args$model)) {
+    print(paste("model:", forecast_args$model))
+  }
+  print("==================================")
+
+  results <- do.call(nixtlar::nixtla_client_forecast, forecast_args)
+  print(tail(new_data, 15))
   # Validate forecast data
   if (length(results$TimeGPT) != h) {
     stop(sprintf(
