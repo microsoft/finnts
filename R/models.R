@@ -235,8 +235,8 @@ get_recipe_configurable <- function(train_data,
     }
   }
 
-  #remove original columns created for TimeGPT
-   rm_original_fn <- function(df) {
+  # remove original columns created for TimeGPT
+  rm_original_fn <- function(df) {
     original_cols <- names(train_data)[grepl("_original$", names(train_data))]
     if (length(original_cols) > 0) {
       df %>%
@@ -251,6 +251,7 @@ get_recipe_configurable <- function(train_data,
     step_nz_fn() %>%
     rm_date_fn() %>%
     norm_date_adj_year_fn() %>%
+    rm_original_fn() %>%
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
     center_scale_fn() %>%
@@ -1367,9 +1368,6 @@ theta <- function(train_data,
 #' @noRd
 timegpt <- function(train_data,
                     horizon) {
-
- 
-  
   recipe_spec_timegpt <- train_data %>%
     get_recipe_timegpt()
 
