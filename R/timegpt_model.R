@@ -226,7 +226,7 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   h <- nrow(new_data)
 
   # Extract columns containing _original since these indicate exogenous regressors as part of data pre processing and not arguments
-  # Search for _original is not position specific in case external regressor was one hot encoded(e.g., category_original_A)
+  # Search for _original is not position specific in case external regressor was one hot encoded (e.g., category_original_A)
   original_cols <- colnames(train_df)[grepl("_original", colnames(train_df))]
 
   # Make forecast based on API type

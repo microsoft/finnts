@@ -628,6 +628,8 @@ prep_data <- function(run_info,
                 get_fourier_periods(fourier_periods, date_type),
                 get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
                 get_rolling_window_periods(rolling_window_periods, date_type),
+                hist_end_date,
+                date_type,
                 xreg_raw_df = xreg_raw_df
               ) %>%
               dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
@@ -1354,16 +1356,16 @@ multivariate_prep_recipe_1 <- function(data,
 
   if (!is.null(xreg_raw_df) && !is.null(external_regressors) && length(external_regressors) > 0) {
     for (xr in external_regressors) {
-      lag0_col <- paste0(xr, "_original")
-      if (xr %in% names(xreg_raw_df) && !(lag0_col %in% names(data_lag_window))) {
+      original_col <- paste0(xr, "_original")
+      if (xr %in% names(xreg_raw_df) && !(original_col %in% names(data_lag_window))) {
         temp_join <- xreg_raw_df %>%
           dplyr::select(Date, tidyselect::all_of(xr)) %>%
-          dplyr::rename(!!lag0_col := !!xr)
+          dplyr::rename(!!original_col := !!xr)
 
         # Only mask future values as NA if this regressor is NOT in the future values list
         if (!(xr %in% xregs_future_values_list)) {
           temp_join <- temp_join %>%
-            dplyr::mutate(!!lag0_col := ifelse(Date > hist_end_date, NA, !!rlang::sym(lag0_col)))
+            dplyr::mutate(!!original_col := ifelse(Date > hist_end_date, NA, !!rlang::sym(original_col)))
         }
 
         data_lag_window <- data_lag_window %>%

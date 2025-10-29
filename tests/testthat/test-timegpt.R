@@ -514,8 +514,7 @@ test_that("TimeGPT Model pipeline Integration test with future external regresso
   ensemble_models(run_info = run_info)
   final_models(run_info = run_info)
   # Get forecasts
-  forecasts <- get_forecast_data(run_info = run_info)
-
+  
   forecasts <- get_forecast_data(run_info = run_info) %>%
     dplyr::filter(Date > as.Date("2015-06-01"))
 
