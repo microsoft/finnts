@@ -46,7 +46,6 @@ Imports:
     lubridate,
     magrittr,
     methods,
-    nixtlar (>= 0.6.4),
     parallel,
     parsnip,
     plyr,
@@ -64,6 +63,8 @@ Imports:
     tune,
     vroom,
     workflows
+Remotes:
+    Nixtla/nixtlar
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
