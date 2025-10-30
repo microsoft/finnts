@@ -383,10 +383,24 @@ summarize_models <- function(agent_info,
     stop("No model summary files found. Cannot consolidate model summaries.")
   }
 
+  # Error handling: Check if the number of unique combos matches the expected count
   if (length(unique(summary_results$Combo)) != nrow(best_run_tbl)) {
     stop(
       "Mismatch in number of combos summarized. Expected: ", nrow(best_run_tbl),
       ", Found: ", length(unique(summary_results$Combo))
+    )
+  }
+
+  # Error handling: Check that all best models were summarized
+  best_model_combos <- summary_results %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    dplyr::select(Combo, Best_Model) %>%
+    dplyr::distinct()
+
+  if (nrow(best_model_combos) != nrow(best_run_tbl)) {
+    stop(
+      "Not all best models were summarized. Expected combos with best models: ", nrow(best_run_tbl),
+      ", Found: ", nrow(best_model_combos)
     )
   }
 
