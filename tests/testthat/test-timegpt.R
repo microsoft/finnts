@@ -521,9 +521,7 @@ test_that("TimeGPT Model pipeline Integration test with future external regresso
   # Assertions
   expect_s3_class(forecasts, "data.frame")
   expect_equal(nrow(forecasts), 3)
-  # expect_equal(nrow(forecasts), 3)
   expect_true(all(!is.na(forecasts$Forecast)))
-
   trained_models <- get_trained_models(run_info = run_info)
   fit_obj <- trained_models$Model_Fit[[1]]$fit$fit$fit
   expect_true("train_data" %in% names(fit_obj))
