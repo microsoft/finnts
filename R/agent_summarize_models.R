@@ -186,7 +186,7 @@ summarize_models <- function(agent_info,
       )
 
       if (nrow(trained_models_tbl) == 0) {
-        stop("No trained models found for combo", combo, ".", call. = FALSE)
+        stop(paste0("No trained models found for combo: ", combo, "."), call. = FALSE)
       }
 
       # Get forecast data to identify best models by reading specific files directly
