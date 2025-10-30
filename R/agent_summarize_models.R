@@ -186,69 +186,87 @@ summarize_models <- function(agent_info,
       )
 
       if (nrow(trained_models_tbl) == 0) {
-        stop("No trained models found", call. = FALSE)
+        stop("No trained models found for combo", combo, ".", call. = FALSE)
       }
 
       # Get forecast data to identify best models by reading specific files directly
-      forecast_tbl <- tibble::tibble()
-
-      # Try to read local models forecast file
-      local_forecast_tbl <- tryCatch(
-        {
-          read_file(project_info,
-            path = paste0(
-              "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-              forecast_hash_combo, "-single_models.", project_info$data_output
+      if (model_type == "global") {
+        # Try to read global models forecast file
+        forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-global_models.", project_info$data_output
+              )
             )
-          )
-        },
-        error = function(e) {
-          return(tibble::tibble())
-        }
-      ) %>%
-        suppressWarnings()
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
 
-      # Try to read global models forecast file
-      global_forecast_tbl <- tryCatch(
-        {
-          read_file(project_info,
-            path = paste0(
-              "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-              forecast_hash_combo, "-global_models.", project_info$data_output
+        # if no data, try reading a reconciled forecast file
+        if (nrow(forecast_tbl) == 0) {
+          forecast_tbl <- tryCatch(
+            {
+              read_file(project_info,
+                path = paste0(
+                  "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                  hash_data("Best-Model"), "-reconciled.", project_info$data_output
+                )
+              )
+            },
+            error = function(e) {
+              return(tibble::tibble())
+            }
+          ) %>%
+            suppressWarnings()
+        }
+      } else {
+        # Try to read local models forecast file
+        local_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-single_models.", project_info$data_output
+              )
             )
-          )
-        },
-        error = function(e) {
-          return(tibble::tibble())
-        }
-      ) %>%
-        suppressWarnings()
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
 
-      # Try to read average models forecast file
-      average_forecast_tbl <- tryCatch(
-        {
-          read_file(project_info,
-            path = paste0(
-              "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-              forecast_hash_combo, "-average_models.", project_info$data_output
+        # Try to read average models forecast file
+        average_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-average_models.", project_info$data_output
+              )
             )
-          )
-        },
-        error = function(e) {
-          return(tibble::tibble())
-        }
-      ) %>%
-        suppressWarnings()
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
 
-      # Combine all forecast data
-      forecast_tbl <- dplyr::bind_rows(
-        local_forecast_tbl,
-        global_forecast_tbl,
-        average_forecast_tbl
-      )
+        # Combine all forecast data
+        forecast_tbl <- dplyr::bind_rows(
+          local_forecast_tbl,
+          average_forecast_tbl
+        )
+      }
+
 
       if (nrow(forecast_tbl) == 0) {
-        stop("No forecast data found to determine best models", call. = FALSE)
+        stop("No forecast data found to determine best models for combo: ", combo, call. = FALSE)
       }
 
       # Determine best models for this combo
