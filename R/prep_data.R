@@ -94,6 +94,18 @@ prep_data <- function(run_info,
                       multistep_horizon = FALSE) {
   cli::cli_progress_step("Prepping Data")
 
+# Check if external regressors contain "original" in their names
+  if (!is.null(external_regressors)) {
+    original_vars <- external_regressors[grepl("original", external_regressors, ignore.case = TRUE)]
+    if (length(original_vars) > 0) {
+      cli::cli_warn(c(
+        "!" = "External regressor name(s) contain 'original': {.val {original_vars}}",
+        "i" = "This may cause conflicts with internal processing that creates '_original' columns.",
+        "i" = "Consider renaming these variables to avoid potential issues."
+      ))
+    }
+  }
+
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame", "tbl_spark"))
