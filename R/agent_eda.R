@@ -934,7 +934,7 @@ data_profile <- function(agent_info) {
   }
 
   # core metrics
-  grp <- dfx %>% dplyr::group_by(dplyr::across(tidyselect::all_of(combo_variables)))
+  grp <- dfx %>% dplyr::group_by(Combo)
 
   n_series <- dplyr::n_groups(grp)
   rows_per <- grp %>%

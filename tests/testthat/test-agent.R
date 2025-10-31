@@ -412,7 +412,7 @@ test_that("full agent workflow with multiple time series completes successfully"
   # Step 2: Run forecast iteration
   iterate_forecast(
     agent_info = agent_info,
-    weighted_mape_goal = 0.10,
+    weighted_mape_goal = 0.08,
     max_iter = 1,
     parallel_processing = NULL,
     seed = 123
