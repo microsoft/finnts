@@ -235,17 +235,41 @@ get_recipe_configurable <- function(train_data,
     }
   }
 
+  # remove original columns created for TimeGPT
+  rm_original_fn <- function(df) {
+    original_cols <- names(train_data)[grepl("_original$", names(train_data))]
+    if (length(original_cols) > 0) {
+      df %>%
+        recipes::step_rm(tidyselect::ends_with("_original"), id = "step_remove_original")
+    } else {
+      df
+    }
+  }
+
   recipes::recipe(Target ~ ., data = train_data %>% dplyr::select(-Combo)) %>%
     mutate_adj_half_fn() %>%
     step_nz_fn() %>%
     rm_date_fn() %>%
     norm_date_adj_year_fn() %>%
+    rm_original_fn() %>%
     dummy_one_hot_fn() %>%
     character_factor_fn() %>%
     center_scale_fn() %>%
     pca_fn() %>%
     rm_lincomb_fn() %>%
     corr_fn()
+}
+
+#' Gets a recipe for TimeGPT with one-hot encoding
+#'
+#' @param train_data Training Data
+#'
+#' @return TimeGPT recipe with one-hot encoding
+#' @noRd
+get_recipe_timegpt <- function(train_data) {
+  recipes::recipe(Target ~ ., data = train_data %>%
+    dplyr::select(Target, Date, Combo, tidyselect::ends_with("_original"))) %>%
+    recipes::step_dummy(recipes::all_nominal_predictors(), -Combo, one_hot = TRUE, id = "step_dummy_timegpt")
 }
 
 
@@ -1344,9 +1368,8 @@ theta <- function(train_data,
 #' @noRd
 timegpt <- function(train_data,
                     horizon) {
-  # combo recipe since timegpt forecast needs unique ids for identifying series
   recipe_spec_timegpt <- train_data %>%
-    get_recipe_combo()
+    get_recipe_timegpt()
 
   # TimeGPT model specification
   model_spec_timegpt <- timegpt_model(

@@ -1,6 +1,9 @@
-# finnts 0.6.0.9006 (development version)
+# finnts 0.6.0.9007 (development version)
 
 ## Improvements
+- TimeGPT Integration
+  - Added TimeGPT in addition to existing model to support zero shot forecasting
+  - Added support for both historical and future external regressors
 
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 

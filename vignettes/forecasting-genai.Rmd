@@ -1,0 +1,155 @@
+---
+title: "Forecasting with GenAI: TimeGPT in finnts"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Forecasting with GenAI: TimeGPT in finnts}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Generative AI for forecasting is powered by transformer architectures which are neural networks designed to model 
+long-range dependencies in sequences. A time-series transformer is pre-trained on massive, diverse datasets, 
+learning a general “language of time series” (recurring structures, seasonality, and signal vs. noise). 
+Because this knowledge is broadly applicable, the foundation model can forecast new, unseen series immediately often 
+with strong accuracy without task-specific training. This is zero‑shot forecasting: you bring data, the model brings general knowledge.
+
+When you need domain‑specific nuance, you can fine‑tune the foundation model on your own historical data. 
+Fine‑tuning adapts the pre‑trained knowledge to your context, typically improving accuracy and stability 
+for your use cases while keeping training cost far lower than training from scratch.
+
+## TimeGPT
+
+TimeGPT is once such transformer based foundation model for time series developed by [Nixtla](https://nixtla.github.io/nixtlar/). It delivers:
+
+- Zero‑shot forecasts with prediction intervals.
+- Support for multiple series.
+- Optional use of both historical and future exogenous variables.
+- A clear path to fine‑tuning when deeper domain adaptation is required.
+
+## Authentication and Setup
+
+You can setup TimeGPT via either of the following:
+
+  - Azure-deployed TimeGPT [TimeGen-1](https://nixtla.github.io/nixtlar/articles/azure-quickstart.html)
+  - [Nixtla API](https://www.nixtla.io/docs/setup/setting_up_your_api_key)
+
+### Azure-hosted TimeGPT
+
+Set the Azure base URL and API key.
+
+#### Option A: Environment variables
+```{r eval=FALSE}
+# In R (or add to .Renviron)
+Sys.setenv(NIXTLA_BASE_URL = "https://your-azure-deployed-timegen.azure.com/")
+Sys.setenv(NIXTLA_API_KEY  = "your_api_key_here")
+#Note that the current version of nixtlar requires base url to end with "/"
+```
+
+#### Option B: Using nixtlar helper
+```{r eval=FALSE}
+#devtools::install_github("Nixtla/nixtlar")
+library(nixtlar)
+nixtla_client_setup(
+  base_url = "Base URL here", 
+  api_key = "API key here"
+)
+```
+
+### Nixtla API
+
+If you use API directly from Nixtla, base url is not required.
+
+#### Option A: Environment variable
+```{r eval=FALSE}
+Sys.setenv(NIXTLA_API_KEY = "your_api_key_here")
+```
+
+#### Option B: Using nixtlar helper
+```{r eval=FALSE}
+#devtools::install_github("Nixtla/nixtlar")
+library(nixtlar)
+nixtla_set_api_key(api_key = "Your API key here")
+```
+
+
+
+## Quick start with nixtlar (standalone)
+
+```{r eval=FALSE}
+#devtools::install_github("Nixtla/nixtlar")
+library(nixtlar)
+
+df <- nixtlar::electricity
+
+# Forecast next 8 steps
+fcst <- nixtla_client_forecast(
+  df,
+  h = 8,
+  level = c(80, 95),
+  #if using azure deployed timegen
+  #model = "azureai"
+)
+
+head(fcst)
+```
+
+## Using TimeGPT within finnts
+
+TimeGPT is available as a model within finnts unified workflow. 
+
+```{r eval=FALSE}
+library(finnts)
+
+#setup timegpt api keys
+
+#Checkout these data requirements provided by nixtla
+#https://www.nixtla.io/docs/data_requirements/data_requirements
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(
+    date >= "2010-01-01",
+    id =="M2"
+  ) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+run_info <- set_run_info(
+  project_name = "finnts_fcst",
+  run_name = "finn_sub_component_run"
+)
+
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("timegpt"),
+)
+
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
+
+final_models(run_info = run_info)
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+head(finn_output_tbl)
+
+# A tibble: 6 x 17
+#  Combo id    Model_ID      Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon
+#  <chr> <chr> <chr>         <chr>      <chr>      <chr>     <chr>            <dbl> <chr>        <dbl>
+#1 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              1
+#2 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              2
+#3 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              3
+#4 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              4
+#5 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              5
+#6 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              6
+# i 7 more variables: Date <date>, Target <dbl>, Forecast <dbl>, lo_95 <dbl>, lo_80 <dbl>,
+#   hi_80 <dbl>, hi_95 <dbl>
+```

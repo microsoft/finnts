@@ -116,6 +116,7 @@ timegpt_model_fit_impl <- function(
     forecast_horizon = NULL) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
+
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
 
@@ -224,6 +225,10 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
   h <- nrow(new_data)
 
+  # Extract columns containing _original since these indicate exogenous regressors as part of data pre processing and not arguments
+  # Search for _original is not position specific in case external regressor was one hot encoded (e.g., category_original_A)
+  original_cols <- colnames(train_df)[grepl("_original", colnames(train_df))]
+
   # Make forecast based on API type
   forecast_args <- list(
     df = train_df,
@@ -233,6 +238,45 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
     id_col = "Combo",
     level = c(80, 95)
   )
+
+
+  # handling 3 cases for exogenous regressors:
+  # 1. only future values present
+  # 2. only historical values present
+  # 3. both historical and future values present
+  if (length(original_cols) > 0) {
+    # Separate columns with future values vs without
+    cols_with_future <- c()
+    cols_without_future <- c()
+
+    for (col in original_cols) {
+      if (col %in% colnames(new_data) && any(!is.na(new_data[[col]]))) {
+        cols_with_future <- c(cols_with_future, col)
+      } else {
+        cols_without_future <- c(cols_without_future, col)
+      }
+    }
+
+    # SPECIAL CASE: h=1 doesn't work with future X_df, use hist_exog_list for all
+    if (h == 1) {
+      all_xreg_cols <- c(cols_with_future, cols_without_future)
+      if (length(all_xreg_cols) > 0) {
+        forecast_args$hist_exog_list <- all_xreg_cols
+      }
+    } else {
+      # Normal case: h > 1
+      if (length(cols_with_future) > 0) {
+        forecast_args$X_df <- new_data %>%
+          dplyr::select(Date, Combo, tidyselect::all_of(cols_with_future)) %>%
+          # X_df only accepts ds, unique_id as column names
+          dplyr::rename(unique_id = Combo, ds = Date)
+      }
+
+      if (length(cols_without_future) > 0) {
+        forecast_args$hist_exog_list <- cols_without_future
+      }
+    }
+  }
 
   if (use_azure) {
     forecast_args$model <- "azureai"
