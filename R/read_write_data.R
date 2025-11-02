@@ -592,8 +592,27 @@ read_file <- function(run_info,
         error = function(e) {
           files %>%
             purrr::map(function(path) {
-              read.csv(path, stringsAsFactors = FALSE)
+              tryCatch(
+                {
+                  # Check if file is empty or has no data rows
+                  file_info <- file.info(path)
+                  if (is.na(file_info$size) || file_info$size == 0) {
+                    return(tibble::tibble())
+                  }
+
+                  df <- read.csv(path, stringsAsFactors = FALSE)
+                  if (nrow(df) == 0) {
+                    return(tibble::tibble())
+                  }
+                  df
+                },
+                error = function(inner_e) {
+                  warning(paste0("Skipping empty or unreadable file: ", path))
+                  return(tibble::tibble())
+                }
+              )
             }) %>%
+            purrr::compact() %>% # Remove NULL/empty results
             plyr::rbind.fill() %>%
             tibble::tibble()
         }
