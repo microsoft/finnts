@@ -35,8 +35,6 @@ test_that("TimeGPT API key validation", {
 })
 
 test_that("TimeGPT model can be initialized", {
-  skip_on_cran()
-
   model <- timegpt_model(forecast_horizon = 6)
 
   expect_s3_class(model, "timegpt_model")
@@ -45,7 +43,7 @@ test_that("TimeGPT model can be initialized", {
 
 test_that("TimeGPT fit function works without external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Simple data
   x <- data.frame(
@@ -63,7 +61,7 @@ test_that("TimeGPT fit function works without external regressors", {
 
 test_that("TimeGPT predict function works without external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data
   x <- data.frame(
@@ -89,7 +87,7 @@ test_that("TimeGPT predict function works without external regressors", {
 
 test_that("TimeGPT works with historical-only external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with external regressor
   train_data <- data.frame(
@@ -133,7 +131,7 @@ test_that("TimeGPT works with historical-only external regressors through parsni
 
 test_that("TimeGPT works with future external regressors (X_df) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with external regressor
   train_data <- data.frame(
@@ -176,7 +174,7 @@ test_that("TimeGPT works with future external regressors (X_df) through parsnip 
 
 test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with multiple external regressors
   train_data <- data.frame(
@@ -221,7 +219,7 @@ test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) 
 
 test_that("TimeGPT handles one-hot encoded external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with categorical that will be one-hot encoded
   train_data <- data.frame(
@@ -264,7 +262,7 @@ test_that("TimeGPT handles one-hot encoded external regressors through parsnip w
 
 test_that("TimeGPT handles one-hot encoded external regressors (historical-only) through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with categorical that will be one-hot encoded
   train_data <- data.frame(
@@ -307,7 +305,7 @@ test_that("TimeGPT handles one-hot encoded external regressors (historical-only)
 
 test_that("TimeGPT handles mixed numeric and categorical external regressors through parsnip workflow", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with both numeric and categorical external regressors
   train_data <- data.frame(
@@ -352,7 +350,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors thr
 
 test_that("TimeGPT handles mixed numeric and categorical external regressors with partial future values", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Training data with both numeric and categorical external regressors
   train_data <- data.frame(
@@ -397,7 +395,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors wit
 
 test_that("TimeGPT Model pipeline Integration test with external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Mock data setup with only numeric external regressor
   data <- timetk::m4_monthly %>%
@@ -458,7 +456,7 @@ test_that("TimeGPT Model pipeline Integration test with external regressors", {
 
 test_that("TimeGPT Model pipeline Integration test with future external regressors", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-  skip_on_cran()
+
 
   # Historical data (up to 2015-06-01)
   hist_data <- timetk::m4_monthly %>%
@@ -514,7 +512,7 @@ test_that("TimeGPT Model pipeline Integration test with future external regresso
   ensemble_models(run_info = run_info)
   final_models(run_info = run_info)
   # Get forecasts
-  
+
   forecasts <- get_forecast_data(run_info = run_info) %>%
     dplyr::filter(Date > as.Date("2015-06-01"))
 
@@ -526,4 +524,64 @@ test_that("TimeGPT Model pipeline Integration test with future external regresso
   fit_obj <- trained_models$Model_Fit[[1]]$fit$fit$fit
   expect_true("train_data" %in% names(fit_obj))
   expect_true(any(grepl("temperature_original", colnames(fit_obj$train_data))))
+})
+
+
+test_that("Predictor variables for non TimeGPT exclude *_original columns", {
+  set.seed(123)
+  data <- timetk::m4_monthly %>%
+    dplyr::mutate(id = as.character(id)) %>%
+    dplyr::rename(Date = date, value = value) %>%
+    dplyr::filter(id == "M2", Date >= as.Date("2010-01-01"), Date <= as.Date("2012-12-01")) %>%
+    dplyr::mutate(
+      temperature = rnorm(dplyr::n(), 20, 5)
+    )
+
+  run_info <- set_run_info()
+
+  prep_data(
+    run_info = run_info,
+    input_data = data,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 3,
+    recipes_to_run = "R1",
+    external_regressors = c("temperature")
+  )
+
+  prep_models(
+    run_info = run_info,
+    models_to_run = c("xgboost", "cubist"),
+    num_hyperparameters = 1
+  )
+
+  # Extract all workflows and R1 training data
+  pm <- get_prepped_models(run_info)
+  wf_tbl <- pm %>%
+    dplyr::filter(Type == "Model_Workflows") %>%
+    dplyr::pull(Data) %>%
+    .[[1]]
+
+  r1_train <- get_prepped_data(run_info = run_info, recipe = "R1")
+
+  check_predictors <- function(model_name) {
+    # extract specific workflow
+    wf <- wf_tbl %>%
+      dplyr::filter(Model_Name == model_name, Model_Recipe == "R1") %>%
+      dplyr::pull(Model_Workflow) %>%
+      .[[1]]
+    rec <- workflows::extract_recipe(wf, estimated = FALSE)
+    rec_prep <- recipes::prep(rec, training = r1_train)
+    baked <- recipes::juice(rec_prep)
+    preds <- setdiff(colnames(baked), "Target")
+
+    expect_true(length(preds) > 0, info = paste("No predictors found for", model_name))
+    expect_false(any(grepl("_original", preds)),
+      info = paste("Predictors include *_original columns for", model_name)
+    )
+  }
+
+  check_predictors("xgboost")
+  check_predictors("cubist")
 })
