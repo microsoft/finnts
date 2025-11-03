@@ -1793,7 +1793,7 @@ load_run_results <- function(agent_info,
   )
 
   # filter previous runs based on the combo value and select relevant columns
-  if ("run_name" %in% names(previous_runs) & "weighted_mape" %in% names(previous_runs)) {
+  if ("run_name" %in% names(previous_runs) & "weighted_mape" %in% names(previous_runs) & "agent_version" %in% names(previous_runs)) {
     pattern <- sprintf("^agent_[^_]+_%s.*", combo_value)
 
     previous_runs_formatted <- previous_runs %>%
@@ -1897,7 +1897,7 @@ get_total_run_count <- function(agent_info,
   )
 
   # filter total runs based on the combo value
-  if ("run_name" %in% names(total_runs) & "weighted_mape" %in% names(total_runs)) {
+  if ("run_name" %in% names(total_runs) & "weighted_mape" %in% names(total_runs) & "agent_version" %in% names(total_runs)) {
     total_runs <- total_runs %>%
       dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
       dplyr::filter(!is.na(weighted_mape)) %>%

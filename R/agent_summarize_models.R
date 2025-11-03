@@ -155,23 +155,30 @@ summarize_models <- function(agent_info,
 
       if (model_type == "global") {
         hash_combo <- hash_data("all")
+        forecast_hash_combo <- hash_data(combo)
+        model_hash_combo <- hash_data("All-Data")
       } else {
         hash_combo <- hash_data(combo)
+        forecast_hash_combo <- hash_data(combo)
+        model_hash_combo <- hash_combo
       }
 
-      # Create run_info
-      run_info <- agent_info$project_info
-      run_info$project_name <- paste0(
+      # Create run info metadata
+      project_name <- paste0(
         agent_info$project_info$project_name,
         "_",
         hash_combo
       )
-      run_info$run_name <- run_name
 
       # Get trained models for this time series
       trained_models_tbl <- tryCatch(
         {
-          get_trained_models(run_info = run_info)
+          read_file(project_info,
+            path = paste0(
+              "/models/", hash_data(project_name), "-", hash_data(run_name), "-",
+              model_hash_combo, "-single_models.", project_info$object_output
+            )
+          )
         },
         error = function(e) {
           return(tibble::tibble())
@@ -179,25 +186,88 @@ summarize_models <- function(agent_info,
       )
 
       if (nrow(trained_models_tbl) == 0) {
-        return(tibble::tibble(
-          Combo = combo,
-          Model_ID = NA_character_,
-          Model_Name = NA_character_,
-          Model_Type = NA_character_,
-          Best_Model = "No",
-          Error = "No trained models found"
-        ))
+        stop(paste0("No trained models found for combo: ", combo, "."), call. = FALSE)
       }
 
-      # Get forecast data to identify best models
-      forecast_tbl <- tryCatch(
-        {
-          get_forecast_data(run_info = run_info, return_type = "df")
-        },
-        error = function(e) {
-          return(tibble::tibble())
+      # Get forecast data to identify best models by reading specific files directly
+      if (model_type == "global") {
+        # Try to read global models forecast file
+        forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-global_models.", project_info$data_output
+              )
+            )
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
+
+        # if no data, try reading a reconciled forecast file
+        if (nrow(forecast_tbl) == 0) {
+          forecast_tbl <- tryCatch(
+            {
+              read_file(project_info,
+                path = paste0(
+                  "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                  hash_data("Best-Model"), "-reconciled.", project_info$data_output
+                )
+              )
+            },
+            error = function(e) {
+              return(tibble::tibble())
+            }
+          ) %>%
+            suppressWarnings()
         }
-      )
+      } else {
+        # Try to read local models forecast file
+        local_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-single_models.", project_info$data_output
+              )
+            )
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
+
+        # Try to read average models forecast file
+        average_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-average_models.", project_info$data_output
+              )
+            )
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
+
+        # Combine all forecast data
+        forecast_tbl <- dplyr::bind_rows(
+          local_forecast_tbl,
+          average_forecast_tbl
+        )
+      }
+
+
+      if (nrow(forecast_tbl) == 0) {
+        stop(paste0("No forecast data found to determine best models for combo: ", combo), call. = FALSE)
+      }
 
       # Determine best models for this combo
       best_models <- tibble::tibble(Model_ID = character(), Best_Model = logical())
@@ -233,8 +303,13 @@ summarize_models <- function(agent_info,
         workflow <- model_row$Model_Fit[[1]]
 
         # Check if this model is a best model
-        is_best <- model_id %in% best_models$Model_ID[best_models$Best_Model]
-        is_best <- ifelse(is_best, "Yes", "No") # Convert TRUE/FALSE to Yes/No
+        if (best_models$Model_ID[[1]] == "Best-Model" && model_type == "global" && model_name == "xgboost") {
+          # Special case for global xgboost best model that runs hts reconciliation
+          is_best <- "Yes"
+        } else {
+          is_best <- model_id %in% best_models$Model_ID[best_models$Best_Model]
+          is_best <- ifelse(is_best, "Yes", "No") # Convert TRUE/FALSE to Yes/No
+        }
 
         # Get the appropriate summarize function
         summarize_fn <- model_summarize_map[[model_name]]
@@ -312,6 +387,28 @@ summarize_models <- function(agent_info,
   if (is.null(summary_results) || (is.data.frame(summary_results) && nrow(summary_results) == 0)) {
     stop("No model summary files found. Cannot consolidate model summaries.")
   }
+
+  # Error handling: Check if the number of unique combos matches the expected count
+  if (length(unique(summary_results$Combo)) != nrow(best_run_tbl)) {
+    stop(
+      "Mismatch in number of combos summarized. Expected: ", nrow(best_run_tbl),
+      ", Found: ", length(unique(summary_results$Combo))
+    )
+  }
+
+  # Error handling: Check that all best models were summarized
+  best_model_combos <- summary_results %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    dplyr::select(Combo, Best_Model) %>%
+    dplyr::distinct()
+
+  if (nrow(best_model_combos) != nrow(best_run_tbl)) {
+    stop(
+      "Not all best models were summarized. Expected combos with best models: ", nrow(best_run_tbl),
+      ", Found: ", nrow(best_model_combos)
+    )
+  }
+
   # Step 5: Write final consolidated model summaries to final_output folder
   write_data(
     x = summary_results,
