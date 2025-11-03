@@ -303,7 +303,7 @@ summarize_models <- function(agent_info,
         workflow <- model_row$Model_Fit[[1]]
 
         # Check if this model is a best model
-        if (best_models$Model_ID[[1]] == "Best-Model" & model_type == "global" & model_name == "xgboost") {
+        if (best_models$Model_ID[[1]] == "Best-Model" && model_type == "global" && model_name == "xgboost") {
           # Special case for global xgboost best model that runs hts reconciliation
           is_best <- "Yes"
         } else {
