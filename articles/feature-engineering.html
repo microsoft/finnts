@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9006</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9007</span>
       </span>
     </div>
 
@@ -77,6 +77,9 @@
     </li>
     <li>
       <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
+    </li>
+    <li>
+      <a href="../articles/forecasting-genai.html">Forecasting with GenAI: TimeGPT in finnts</a>
     </li>
     <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
@@ -153,6 +156,25 @@ input from <code><a href="../reference/forecast_time_series.html">forecast_time_
 <p><strong>Important Note:</strong> Missing values and outliers are
 replaced for the target variable and any numeric external
 regressors.</p>
+</div>
+<div class="section level2">
+<h2 id="understanding-_original-columns">Understanding “_original” Columns<a class="anchor" aria-label="anchor" href="#understanding-_original-columns"></a>
+</h2>
+<p>When you call get_prepped_data() to view your feature engineered
+data, you may notice columns with “_original” appended to their names
+(e.g. Price_original). These columns are created during the
+preprocessing pipeline that preserve the untransformed external
+regressor values. This happens after missing value and outlier cleaning,
+but before any transformations like Box-Cox or differencing are
+applied.</p>
+<p>TimeGPT uses these “_original” columns for external regressors as it
+expects data in its original scale and distribution.</p>
+<p>Models like XGBoost, LightGBM, Random Forest, etc., ignore the
+“_original” columns and use the transformed versions instead.</p>
+<p><strong>Important Note:</strong> Avoid naming your external
+regressors with “original” or “Original” in their names (e.g.,
+original_price, Price_Original) as this can cause conflicts with the
+internal “_original” columns created by finnts.</p>
 </div>
 <div class="section level2">
 <h2 id="box-cox">Box-Cox<a class="anchor" aria-label="anchor" href="#box-cox"></a>

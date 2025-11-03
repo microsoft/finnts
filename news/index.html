@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9006</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9007</span>
       </span>
     </div>
 
@@ -62,6 +62,9 @@
       <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
     </li>
     <li>
+      <a href="../articles/forecasting-genai.html">Forecasting with GenAI: TimeGPT in finnts</a>
+    </li>
+    <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
     </li>
     <li>
@@ -97,10 +100,14 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9006" id="finnts-0609006-development-version">finnts 0.6.0.9006 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609006-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.6.0.9007" id="finnts-0609007-development-version">finnts 0.6.0.9007 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609007-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9006">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9006"></a></h3>
-<ul><li>New AI Agent Capabilities
+<h3 id="improvements-0-6-0-9007">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9007"></a></h3>
+<ul><li>TimeGPT Integration
+<ul><li>Added TimeGPT in addition to existing model to support zero shot forecasting</li>
+<li>Added support for both historical and future external regressors</li>
+</ul></li>
+<li>New AI Agent Capabilities
 <ul><li>
 <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> can use LLM’s to find the optimal combination of data and inputs to create the most accurate forecast.</li>
 <li>
@@ -118,11 +125,11 @@
 <li>Updated how outliers are handled in <code><a href="../reference/prep_data.html">prep_data()</a></code>. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-6-0-9006">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9006"></a></h3>
+<h3 id="bug-fixes-0-6-0-9007">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9007"></a></h3>
 <ul><li>Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9006">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9006"></a></h3>
+<h3 id="breaking-changes-0-6-0-9007">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9007"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 </ul></div>
