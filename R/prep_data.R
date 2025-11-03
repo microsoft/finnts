@@ -94,6 +94,18 @@ prep_data <- function(run_info,
                       multistep_horizon = FALSE) {
   cli::cli_progress_step("Prepping Data")
 
+# Check if external regressors contain "original" in their names
+  if (!is.null(external_regressors)) {
+    original_vars <- external_regressors[grepl("original", external_regressors, ignore.case = TRUE)]
+    if (length(original_vars) > 0) {
+      cli::cli_warn(c(
+        "!" = "External regressor name(s) contain 'original': {.val {original_vars}}",
+        "i" = "This may cause conflicts with internal processing that creates '_original' columns.",
+        "i" = "Consider renaming these variables to avoid potential issues."
+      ))
+    }
+  }
+
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame", "tbl_spark"))
@@ -381,6 +393,13 @@ prep_data <- function(run_info,
             dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
         }
 
+        # preserve raw external regressors for TimeGPT
+        xreg_raw_df <- NULL
+        if (!is.null(external_regressors) && length(external_regressors) > 0) {
+          xreg_raw_df <- initial_tbl %>%
+            dplyr::select(Date, tidyselect::all_of(external_regressors))
+        }
+
         # box-cox transformation
         if (box_cox) {
           box_cox_tbl <- initial_tbl %>%
@@ -435,7 +454,8 @@ prep_data <- function(run_info,
               get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
               get_rolling_window_periods(rolling_window_periods, date_type),
               hist_end_date,
-              date_type
+              date_type,
+              xreg_raw_df = xreg_raw_df
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
 
@@ -560,6 +580,13 @@ prep_data <- function(run_info,
               dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
           }
 
+          # preserve raw external regressors for TimeGPT
+          xreg_raw_df <- NULL
+          if (!is.null(external_regressors) && length(external_regressors) > 0) {
+            xreg_raw_df <- initial_tbl %>%
+              dplyr::select(Date, tidyselect::all_of(external_regressors))
+          }
+
           # box-cox transformation
           if (box_cox) {
             box_cox_tbl <- initial_tbl %>%
@@ -612,7 +639,10 @@ prep_data <- function(run_info,
                 xregs_future_values_list = xregs_future_list,
                 get_fourier_periods(fourier_periods, date_type),
                 get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
-                get_rolling_window_periods(rolling_window_periods, date_type)
+                get_rolling_window_periods(rolling_window_periods, date_type),
+                hist_end_date,
+                date_type,
+                xreg_raw_df = xreg_raw_df
               ) %>%
               dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
 
@@ -1237,7 +1267,8 @@ multivariate_prep_recipe_1 <- function(data,
                                        lag_periods,
                                        rolling_window_periods,
                                        hist_end_date,
-                                       date_type) {
+                                       date_type,
+                                       xreg_raw_df = NULL) {
   # apply polynomial transformations
   numeric_xregs <- c()
 
@@ -1325,6 +1356,7 @@ multivariate_prep_recipe_1 <- function(data,
     tidyr::fill(tidyselect::contains("_roll"), .direction = "down") %>%
     dplyr::select(-tidyselect::all_of(numeric_xregs))
 
+
   is.na(data_lag_window) <- sapply(
     data_lag_window,
     is.infinite
@@ -1332,6 +1364,27 @@ multivariate_prep_recipe_1 <- function(data,
 
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
+
+
+  if (!is.null(xreg_raw_df) && !is.null(external_regressors) && length(external_regressors) > 0) {
+    for (xr in external_regressors) {
+      original_col <- paste0(xr, "_original")
+      if (xr %in% names(xreg_raw_df) && !(original_col %in% names(data_lag_window))) {
+        temp_join <- xreg_raw_df %>%
+          dplyr::select(Date, tidyselect::all_of(xr)) %>%
+          dplyr::rename(!!original_col := !!xr)
+
+        # Only mask future values as NA if this regressor is NOT in the future values list
+        if (!(xr %in% xregs_future_values_list)) {
+          temp_join <- temp_join %>%
+            dplyr::mutate(!!original_col := ifelse(Date > hist_end_date, NA, !!rlang::sym(original_col)))
+        }
+
+        data_lag_window <- data_lag_window %>%
+          dplyr::left_join(temp_join, by = "Date")
+      }
+    }
+  }
 
   return(data_lag_window)
 }

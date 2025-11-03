@@ -26,6 +26,15 @@ Outliers are handled using the [ts_clean_vec](https://business-science.github.io
 
 **Important Note:** Missing values and outliers are replaced for the target variable and any numeric external regressors.
 
+## Understanding "_original" Columns
+When you call get_prepped_data() to view your feature engineered data, you may notice columns with "_original" appended to their names (e.g. Price_original). These columns are created during the preprocessing pipeline that preserve the untransformed external regressor values. This happens after missing value and outlier cleaning, but before any transformations like Box-Cox or differencing are applied.
+
+TimeGPT  uses these "_original" columns for external regressors as it expects data in its original scale and distribution.
+
+Models like XGBoost, LightGBM, Random Forest, etc., ignore the "_original" columns and use the transformed versions instead.
+
+**Important Note:** Avoid naming your external regressors with "original" or "Original" in their names (e.g., original_price, Price_Original) as this can cause conflicts with the internal "_original" columns created by finnts.
+
 ## Box-Cox
 
 Stabilizes the variance in each time series using the [box_cox_vec](https://business-science.github.io/timetk/reference/box_cox_vec.html) function from the timetk package. Applied to both the target variable and any external regressor before other transformations like differencing. You can control this within `prep_models()`. 
