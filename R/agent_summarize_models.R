@@ -266,7 +266,7 @@ summarize_models <- function(agent_info,
 
 
       if (nrow(forecast_tbl) == 0) {
-        stop("No forecast data found to determine best models for combo: ", combo, call. = FALSE)
+        stop(paste0("No forecast data found to determine best models for combo: ", combo), call. = FALSE)
       }
 
       # Determine best models for this combo
