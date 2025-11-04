@@ -1366,6 +1366,7 @@ submit_fcst_run <- function(agent_info,
   project_info <- agent_info$project_info
   back_test_scenarios <- agent_info$back_test_scenarios
   back_test_spacing <- agent_info$back_test_spacing
+  pca <- NULL
 
   # read all combos or just one
   if (is.null(combo)) {
@@ -1407,6 +1408,11 @@ submit_fcst_run <- function(agent_info,
     ),
     return_type = "df"
   )
+  
+  # adjust inputs based on data
+  if (nrow(input_data) >= 10000) {
+    pca <- TRUE
+  }
 
   # create unique run name and project name
   run_name <- paste0(
@@ -1468,7 +1474,7 @@ submit_fcst_run <- function(agent_info,
     models_to_run = null_converter(inputs$models_to_run),
     models_not_to_run = NULL,
     run_ensemble_models = FALSE,
-    pca = NULL,
+    pca = pca,
     num_hyperparameters = 10,
     seasonal_period = null_converter(inputs$seasonal_period)
   )
