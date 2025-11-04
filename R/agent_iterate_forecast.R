@@ -81,11 +81,26 @@ iterate_forecast <- function(agent_info,
   }
 
   # run exploratory data analysis
-  eda_results <- eda_agent_workflow(
-    agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+  # check if eda data already exists
+  eda_exists <- tryCatch(
+    {
+      eda_check <- get_eda_data(agent_info = agent_info)
+      !is.null(eda_check) && nrow(eda_check) > 0
+    },
+    error = function(e) {
+      FALSE
+    }
   )
+
+  if (eda_exists) {
+    message("[agent] EDA already ran. Skipping EDA process.")
+  } else {
+    eda_results <- eda_agent_workflow(
+      agent_info = agent_info,
+      parallel_processing = parallel_processing,
+      num_cores = num_cores
+    )
+  }
 
   # get total number of time series
   combo_list <- read_file(
@@ -1408,7 +1423,7 @@ submit_fcst_run <- function(agent_info,
     ),
     return_type = "df"
   )
-  
+
   # adjust inputs based on data
   if (nrow(input_data) >= 10000) {
     pca <- TRUE
@@ -1524,7 +1539,7 @@ get_fcst_output <- function(run_info) {
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param fcst_tbl A tibble containing the forecast output.
 #'
-# @return A numeric value representing the weighted MAPE of the forecast.
+#' @return A numeric value representing the weighted MAPE of the forecast.
 #' @noRd
 calculate_fcst_metrics <- function(run_info,
                                    fcst_tbl) {
@@ -1936,7 +1951,7 @@ collapse_or_na <- function(x) {
 #' @param drop_extra Logical indicating whether to drop columns in the target that are not in the template.
 #' @param reorder Logical indicating whether to reorder columns in the target to match the template.
 #'
-# @return The target dataframe with applied column types.
+#' @return The target dataframe with applied column types.
 #' @noRd
 apply_column_types <- function(target_df,
                                template_df,

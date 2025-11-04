@@ -94,7 +94,7 @@ prep_data <- function(run_info,
                       multistep_horizon = FALSE) {
   cli::cli_progress_step("Prepping Data")
 
-# Check if external regressors contain "original" in their names
+  # Check if external regressors contain "original" in their names
   if (!is.null(external_regressors)) {
     original_vars <- external_regressors[grepl("original", external_regressors, ignore.case = TRUE)]
     if (length(original_vars) > 0) {
