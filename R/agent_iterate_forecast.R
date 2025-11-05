@@ -1590,9 +1590,9 @@ log_best_run <- function(agent_info,
       ) %>%
       dplyr::group_by(Model_ID) %>%
       dplyr::mutate(
-        MAPE = round(abs((Forecast - Target) / Target), digits = 4),
-        Total = sum(Target, na.rm = TRUE),
-        Weight = (MAPE * Target) / Total
+        MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4),
+        Total = sum(abs(Target), na.rm = TRUE),
+        Weight = (MAPE * abs(Target)) / Total
       ) %>%
       dplyr::summarise(weighted_mape = sum(Weight, na.rm = TRUE)) %>%
       dplyr::ungroup()
@@ -1704,9 +1704,9 @@ log_best_run <- function(agent_info,
           Target = ifelse(Target == 0, 0.1, Target)
         ) %>%
         dplyr::mutate(
-          MAPE = round(abs((Forecast - Target) / Target), digits = 4),
-          Total = sum(Target, na.rm = TRUE),
-          Weight = (MAPE * Target) / Total
+          MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4),
+          Total = sum(abs(Target), na.rm = TRUE),
+          Weight = (MAPE * abs(Target)) / Total
         ) %>%
         dplyr::pull(Weight) %>%
         sum(na.rm = TRUE) %>%
