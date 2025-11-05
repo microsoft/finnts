@@ -1992,14 +1992,12 @@ calc_wmape <- function(forecast_tbl) {
     ) %>%
     dplyr::group_by(Combo) %>%
     dplyr::mutate(
-      MAPE = round(abs((Forecast - Target) / Target), digits = 4),
-      Total = sum(Target, na.rm = TRUE),
-      Weight = (MAPE * Target) / Total
+      MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4),
+      Total = sum(abs(Target), na.rm = TRUE),
+      Weight = (MAPE * abs(Target)) / Total
     ) %>%
-    dplyr::summarise(
-      weighted_mape = round(sum(Weight, na.rm = TRUE), digits = 4),
-      .groups = "drop"
-    ) %>%
+    dplyr::summarise(weighted_mape = sum(Weight, na.rm = TRUE)) %>%
+    dplyr::ungroup() %>%
     dplyr::pull(weighted_mape) %>%
     mean(na.rm = TRUE)
 }
