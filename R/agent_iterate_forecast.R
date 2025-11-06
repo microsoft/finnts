@@ -290,9 +290,7 @@ iterate_forecast <- function(agent_info,
   message("[agent] Saving Best Run Metadata")
 
   save_best_agent_run(
-    agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   )
 
   # reconcile hierarchical forecast
@@ -708,18 +706,9 @@ save_agent_forecast <- function(agent_info,
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @param parallel_processing Default of NULL runs no parallel processing and
-#'  loads each time series forecast one after another. 'local_machine' leverages
-#'  all cores on current machine Finn is running on. 'spark' runs time series
-#'  in parallel on a spark cluster in Azure Databricks or Azure Synapse.
-#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
-#'
 #' @return table containing the best run information for the agent.
 #' @noRd
-load_best_agent_run <- function(agent_info,
-                                full_info = FALSE,
-                                parallel_processing = NULL,
-                                num_cores = NULL) {
+load_best_agent_run <- function(agent_info) {
   # metadata
   project_info <- agent_info$project_info
 
@@ -742,111 +731,7 @@ load_best_agent_run <- function(agent_info,
     )
   }
 
-  if (!full_info) {
-    return(best_run_tbl)
-  }
-
-  # read in all run setting data
-  model_type_list <- best_run_tbl %>%
-    dplyr::pull(model_type) %>%
-    unique()
-
-  # load global model run
-  if ("global" %in% model_type_list) {
-    global_run_name <- best_run_tbl %>%
-      dplyr::filter(model_type == "global") %>%
-      dplyr::pull(best_run_name) %>%
-      unique()
-
-    global_run_info <- get_run_info(
-      project_name = paste0(agent_info$project_info$project_name, "_", hash_data("all")),
-      run_name = global_run_name,
-      storage_object = project_info$storage_object,
-      path = project_info$path
-    ) %>%
-      dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-
-    global_best_run_tbl <- best_run_tbl %>%
-      dplyr::filter(model_type == "global") %>%
-      dplyr::left_join(global_run_info, by = dplyr::join_by(best_run_name == run_name))
-  } else {
-    global_best_run_tbl <- tibble::tibble()
-  }
-
-  # load local model runs
-  if ("local" %in% model_type_list) {
-    local_run_tbl <- best_run_tbl %>%
-      dplyr::filter(model_type == "local")
-
-    local_run_combo_list <- local_run_tbl %>%
-      dplyr::pull(combo)
-
-    # agent adjustments to prevent serialization issues
-    agent_info_lean <- agent_info
-    agent_info_lean$driver_llm <- NULL
-    agent_info_lean$reason_llm <- NULL
-
-    # run parallel process
-    par_info <- par_start(
-      run_info = agent_info$project_info,
-      parallel_processing = parallel_processing,
-      num_cores = num_cores,
-      task_length = length(local_run_combo_list)
-    )
-
-    cl <- par_info$cl
-    packages <- par_info$packages
-    `%op%` <- par_info$foreach_operator
-
-    # submit tasks
-    local_best_run_tbl <- foreach::foreach(
-      combo = local_run_combo_list,
-      .packages = packages,
-      .errorhandling = "stop",
-      .combine = "rbind",
-      .inorder = FALSE,
-      .multicombine = TRUE
-    ) %op%
-      {
-        temp_local_run_tbl <- read_file(
-          run_info = agent_info_lean$project_info,
-          file_list = paste0(
-            agent_info_lean$project_info$path, "/logs/",
-            hash_data(agent_info_lean$project_info$project_name), "-",
-            hash_data(agent_info_lean$run_id), "-",
-            hash_data(combo), "-",
-            "agent_best_run.csv"
-          ) %>% fs::path_tidy()
-        )
-
-        if (nrow(temp_local_run_tbl) == 0) {
-          stop("Can't find previous best run for time series.")
-        }
-
-        temp_local_run_info <- get_run_info(
-          project_name = paste0(agent_info_lean$project_info$project_name, "_", hash_data(combo)),
-          run_name = temp_local_run_tbl$best_run_name,
-          storage_object = agent_info_lean$project_info$storage_object,
-          path = agent_info_lean$project_info$path
-        ) %>%
-          dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape)
-
-        temp_local_run_tbl <- temp_local_run_tbl %>%
-          dplyr::left_join(temp_local_run_info, by = dplyr::join_by(best_run_name == run_name))
-
-        return(temp_local_run_tbl)
-      } %>%
-      base::suppressPackageStartupMessages()
-
-    par_end(cl)
-  } else {
-    local_best_run_tbl <- tibble::tibble()
-  }
-
-  final_run_tbl <- global_best_run_tbl %>%
-    dplyr::bind_rows(local_best_run_tbl)
-
-  return(final_run_tbl)
+  return(best_run_tbl)
 }
 
 #' Save the best run for an agent
@@ -854,22 +739,12 @@ load_best_agent_run <- function(agent_info,
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete and saves to disk.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' @param parallel_processing Default of NULL runs no parallel processing and
-#' loads each time series forecast one after another. 'local_machine' leverages
-#' all cores on current machine Finn is running on. 'spark' runs time series
-#' in parallel on a spark cluster in Azure Databricks or Azure Synapse.
-#' @param num_cores Number of cores to use for parallel processing. If NULL,
-#' defaults to the number of available cores.
 #'
 #' @return Nothing
 #' @noRd
-save_best_agent_run <- function(agent_info,
-                                parallel_processing = NULL,
-                                num_cores = NULL) {
+save_best_agent_run <- function(agent_info) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
-  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
-  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   # metadata
   project_info <- agent_info$project_info
@@ -877,10 +752,7 @@ save_best_agent_run <- function(agent_info,
 
   # load the best run for the agent
   final_run_tbl <- load_best_agent_run(
-    agent_info = agent_info,
-    full_info = TRUE,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   )
 
   if (nrow(final_run_tbl) == 0) {
@@ -1739,17 +1611,22 @@ log_best_run <- function(agent_info,
       if (wmape < prev_wmape || (combo == "all" & prev_model_type == "global")) { # always log the wmape for global models with no local best run, but check for local models
 
         # log the best run
-        log_df <- tibble::tibble(
+        best_run_log_df <- tibble::tibble(
           project_name = agent_info$project_info$project_name,
           agent_run_id = agent_info$run_id,
           best_run_name = run_info$run_name,
           model_type = ifelse(combo == "all", "global", "local"),
           combo = combo_name,
           weighted_mape = wmape
-        )
+        ) %>%
+          dplyr::left_join(
+            log_df %>%
+              dplyr::select(-project_name, -path, -data_output, -object_output, -weighted_mape),
+            by = dplyr::join_by(best_run_name == run_name)
+          )
 
         write_data(
-          x = log_df,
+          x = best_run_log_df,
           combo = combo_name,
           run_info = project_info,
           output_type = "log",
