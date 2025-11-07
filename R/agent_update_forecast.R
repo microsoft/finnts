@@ -762,7 +762,7 @@ analyze_results <- function(agent_info) {
 
     if (nrow(temp_run_results) > 0) {
       if (nrow(temp_run_results) == total_combos) { # ensure version finished successfully
-        previous_best_run_tbl <- rbind(previous_best_run_tbl, temp_run_results)
+        previous_best_run_tbl <- plyr::rbind.fill(previous_best_run_tbl, temp_run_results)
         counter <- counter + 1
       }
     }
