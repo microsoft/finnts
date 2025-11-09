@@ -527,7 +527,8 @@ load_agent_forecast <- function(agent_info,
     run_info$run_name <- global_run_name
 
     global_fcst_tbl <- get_forecast_data(run_info = run_info) %>%
-      dplyr::filter(Combo %in% global_combos)
+      dplyr::filter(Combo %in% global_combos) %>%
+      dplyr::mutate(Date = as.Date(Date))
   } else {
     global_fcst_tbl <- tibble::tibble()
   }
@@ -617,7 +618,8 @@ load_agent_forecast <- function(agent_info,
 
     # final formatting
     local_fcst_tbl <- local_fcst_tbl %>%
-      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID), 
+                    Date = as.Date(Date)) %>%
       dplyr::left_join(model_train_test_tbl,
         by = "Train_Test_ID"
       ) %>%
