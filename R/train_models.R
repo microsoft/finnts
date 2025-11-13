@@ -64,7 +64,8 @@ train_models <- function(run_info,
                          parallel_processing = NULL,
                          inner_parallel = FALSE,
                          num_cores = NULL,
-                         seed = 123) {
+                         seed = 123,
+                         debug = FALSE) {
   cli::cli_progress_step("Training Individual Models")
 
   # check input values
@@ -411,7 +412,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = "remove",
+        .errorhandling = if (debug) "stop" else "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
@@ -496,33 +497,35 @@ train_models <- function(run_info,
 
         if (stationary & (!(model %in% list_multivariate_models()) || model == "timegpt")) {
           # undifference the data for a univariate model or TimeGPT
-           if (combo_hash == "All-Data") {
-    # For global models, process each combo separately
-    prep_data <- prep_data %>%
-      dplyr::group_by(Combo) %>%
-      dplyr::group_modify(function(.x, .y) {
-        combo <- .y$Combo
-        combo_diff_tbl <- filtered_combo_info_tbl %>% 
-          dplyr::filter(Combo == combo) %>%
-          dplyr::slice(1)  # Ensure single row
-        
-        undiff_data <- .x %>%
-          undifference_recipe(
-            combo_diff_tbl,
-            model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
-          )
-        
-        return(undiff_data)
-      }) %>%
-      dplyr::ungroup()
-  } else {
-    # For local models, use single combo's diff info
-    prep_data <- prep_data %>%
-      undifference_recipe(
-        filtered_combo_info_tbl %>% dplyr::slice(1),  # Ensure single row
-        model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
-      )
-  }
+          if (combo_hash == "All-Data") {
+            # For global models, process each combo separately
+            prep_data <- prep_data %>%
+              dplyr::group_by(Combo) %>%
+              dplyr::group_modify(function(.x, .y) {
+                combo <- .y$Combo
+                combo_diff_tbl <- filtered_combo_info_tbl %>%
+                  dplyr::filter(Combo == combo) %>%
+                  dplyr::slice(1) # Ensure single row
+
+                undiff_data <- .x %>%
+                  undifference_recipe(
+                    combo_diff_tbl,
+                    model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
+                  )
+
+                return(undiff_data)
+              }) %>%
+              dplyr::ungroup()
+          } else {
+            # For local models, use single combo's diff info
+            prep_data <- prep_data %>%
+              undifference_recipe(
+                filtered_combo_info_tbl %>% dplyr::slice(1), # Ensure single row
+                model_train_test_tbl %>%
+                  dplyr::slice(1) %>%
+                  dplyr::pull(Train_End)
+              )
+          }
         }
 
         # tune hyperparameters
@@ -621,10 +624,12 @@ train_models <- function(run_info,
               }) %>%
               dplyr::bind_rows()
           } else {
-             print(paste0("Skipping undifference_forecast for model: ", model, 
-                      " (stationary=", stationary, 
-                      ", in_multivariate=", model %in% list_multivariate_models(),
-                      ", is_timegpt=", model == "timegpt", ")"))
+            print(paste0(
+              "Skipping undifference_forecast for model: ", model,
+              " (stationary=", stationary,
+              ", in_multivariate=", model %in% list_multivariate_models(),
+              ", is_timegpt=", model == "timegpt", ")"
+            ))
             final_fcst <- final_fcst %>%
               undifference_forecast(
                 prep_data,
