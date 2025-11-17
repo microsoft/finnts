@@ -1379,7 +1379,7 @@ timegpt <- function(train_data,
     forecast_horizon = horizon,
     frequency = frequency,
     finetune_steps = tune::tune(),
-    finetune_depth = tune::tune() 
+    finetune_depth = tune::tune()
   ) %>%
     parsnip::set_engine("timegpt_model")
 

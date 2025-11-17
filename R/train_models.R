@@ -497,20 +497,25 @@ train_models <- function(run_info,
 
         if (stationary & (!(model %in% list_multivariate_models()) || model == "timegpt")) {
           # undifference the data for a univariate model or TimeGPT
+
+          hist_end_date <- model_train_test_tbl %>%
+            dplyr::slice(1) %>%
+            dplyr::pull(Train_End)
+
+          # For global models, process each combo separately
           if (combo_hash == "All-Data") {
-            # For global models, process each combo separately
             prep_data <- prep_data %>%
               dplyr::group_by(Combo) %>%
               dplyr::group_modify(function(.x, .y) {
                 combo <- .y$Combo
                 combo_diff_tbl <- filtered_combo_info_tbl %>%
                   dplyr::filter(Combo == combo) %>%
-                  dplyr::slice(1) # Ensure single row
+                  dplyr::slice(1)
 
                 undiff_data <- .x %>%
                   undifference_recipe(
                     combo_diff_tbl,
-                    model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
+                    hist_end_date
                   )
 
                 return(undiff_data)
@@ -520,10 +525,7 @@ train_models <- function(run_info,
             # For local models, use single combo's diff info
             prep_data <- prep_data %>%
               undifference_recipe(
-                filtered_combo_info_tbl %>% dplyr::slice(1), # Ensure single row
-                model_train_test_tbl %>%
-                  dplyr::slice(1) %>%
-                  dplyr::pull(Train_End)
+                filtered_combo_info_tbl %>% dplyr::slice(1),
               )
           }
         }
@@ -603,10 +605,6 @@ train_models <- function(run_info,
 
         # undo differencing transformation
         if (stationary & model %in% list_multivariate_models() & model != "timegpt") {
-          print(paste0("Calling undifference_forecast for model: ", model))
-          print(paste0("Combo hash: ", combo_hash))
-          print(paste0("Stationary: ", stationary))
-          print(paste0("Model: ", model))
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%
@@ -624,12 +622,6 @@ train_models <- function(run_info,
               }) %>%
               dplyr::bind_rows()
           } else {
-            print(paste0(
-              "Skipping undifference_forecast for model: ", model,
-              " (stationary=", stationary,
-              ", in_multivariate=", model %in% list_multivariate_models(),
-              ", is_timegpt=", model == "timegpt", ")"
-            ))
             final_fcst <- final_fcst %>%
               undifference_forecast(
                 prep_data,

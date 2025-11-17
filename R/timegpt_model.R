@@ -29,7 +29,7 @@ make_timegpt_model <- function() {
 
   # TODO : add hyperparameters for finetune
 
-   parsnip::set_model_arg(
+  parsnip::set_model_arg(
     model = "timegpt_model",
     eng = "timegpt_model",
     parsnip = "finetune_steps",
@@ -115,12 +115,12 @@ make_timegpt_model <- function() {
 #' @keywords internal
 #' @export
 timegpt_model <- function(
-    mode = "regression",
-    forecast_horizon = NULL,
-    frequency = NULL,
-     finetune_steps = NULL,
-    finetune_depth = NULL
-    ) {
+  mode = "regression",
+  forecast_horizon = NULL,
+  frequency = NULL,
+  finetune_steps = NULL,
+  finetune_depth = NULL
+) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency),
@@ -149,13 +149,13 @@ timegpt_model <- function(
 #' @keywords internal
 #' @export
 timegpt_model_fit_impl <- function(
-    x,
-    y,
-    forecast_horizon = NULL,
-    frequency = NULL,
-    finetune_steps = NULL,
-    finetune_depth = NULL
-    ) {
+  x,
+  y,
+  forecast_horizon = NULL,
+  frequency = NULL,
+  finetune_steps = NULL,
+  finetune_depth = NULL
+) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
 
@@ -250,35 +250,58 @@ setup_timegpt_client <- function() {
   }
 }
 
-#' Get TimeGPT minimum size requirement based on frequency
+# #' Get TimeGPT minimum size requirement based on frequency
+# #'
+# #' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
+# #' @return Minimum size requirement
+# #' @noRd
+# get_timegpt_min_size <- function(frequency) {
+#   if (is.null(frequency)) {
+#     return(48) # Default to monthly minimum
+#   }
+
+#   # Map frequency to minimum size
+#   if (frequency >= 365.25) {
+#     # Daily or hourly
+#     if (frequency == 365.25) {
+#       return(300) # Daily
+#     } else {
+#       return(1008) # Hourly/subhourly
+#     }
+#   } else if (abs(frequency - 52.17857) < 0.1) {
+#     return(64) # Weekly
+#   } else if (frequency == 12) {
+#     return(48) # Monthly
+#   } else if (frequency == 4) {
+#     return(48) # Quarterly
+#   } else if (frequency == 1) {
+#     return(48) # Yearly
+#   } else {
+#     return(48) # Default
+#   }
+# }
+
+#' Get TimeGPT minimum size requirement based on date_type
 #'
-#' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
+#' @param date_type Date type string ("day", "week", "month", "quarter", "year")
 #' @return Minimum size requirement
 #' @noRd
-get_timegpt_min_size <- function(frequency) {
-  if (is.null(frequency)) {
+get_timegpt_min_size <- function(date_type) {
+  if (is.null(date_type)) {
     return(48) # Default to monthly minimum
   }
-  
-  # Map frequency to minimum size
-  if (frequency >= 365.25) {
-    # Daily or hourly
-    if (frequency == 365.25) {
-      return(300) # Daily
-    } else {
-      return(1008) # Hourly/subhourly
-    }
-  } else if (abs(frequency - 52.17857) < 0.1) {
-    return(64) # Weekly
-  } else if (frequency == 12) {
-    return(48) # Monthly
-  } else if (frequency == 4) {
-    return(48) # Quarterly
-  } else if (frequency == 1) {
-    return(48) # Yearly
-  } else {
-    return(48) # Default
-  }
+
+  # Simple switch on string instead of numeric comparisons
+  min_size <- switch(date_type,
+    "day"     = 300,
+    "week"    = 64,
+    "month"   = 48,
+    "quarter" = 48,
+    "year"    = 48,
+    48 # Default
+  )
+
+  return(min_size)
 }
 
 #' Bridge prediction Function for TimeGPT Models
@@ -302,61 +325,70 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
 
   num_combos_in_new <- length(unique(new_data$Combo))
   periods_per_combo <- nrow(new_data) / num_combos_in_new
-  h <- periods_per_combo 
-  # Get frequency from fit object
+  h <- periods_per_combo
+
   frequency <- object$frequency
+  forecast_horizon <- object$forecast_horizon
+  date_type <- NULL
+  if (!is.null(frequency)) {
+    date_type <- get_date_type(frequency)
+  }
+
+  is_long_horizon <- FALSE
+  if (!is.null(forecast_horizon) && !is.null(date_type)) {
+    # long horizon should be based on forecast_horizon and not on train split h
+    is_long_horizon <- is_long_horizon_forecast(forecast_horizon, date_type)
+  }
 
   # Apply minimum size constraints ONLY for Azure (model == "azureai")
- # Replace the current padding block that builds padding_dates via lubridate::period(...)
-if (use_azure && !is.null(frequency)) {
-  
-  min_size <- get_timegpt_min_size(frequency)
-  date_type <- get_date_type(frequency)  # convert numeric frequency → "day|week|month|quarter|year"
-print("RAN1")
-  train_df <- train_df %>%
-    dplyr::group_by(Combo) %>%
-    dplyr::group_modify(function(.x, .y) {
-      n_rows <- nrow(.x)
-      if (n_rows < min_size) {
-        message("RAN")
-        message(n_rows)
-        message(min_size)
-        print(paste0("RAN ", n_rows, " ", min_size, " ", date_type))
-        rows_to_add <- min_size - n_rows
-        earliest_date <- min(.x$Date, na.rm = TRUE)
 
-        # Use lubridate::period() with explicit unit strings (no months())
-      offset <- switch(date_type,
-        "day"     = lubridate::period(rows_to_add, "days"),
-        "week"    = lubridate::period(rows_to_add, "weeks"),
-        "month"   = lubridate::period(rows_to_add, "months"),
-        "quarter" = lubridate::period(rows_to_add * 3, "months"),
-        "year"    = lubridate::period(rows_to_add, "years"),
-        lubridate::period(rows_to_add, "months")
-      )
+  if (use_azure && !is.null(date_type)) {
+    min_size <- get_timegpt_min_size(date_type)
+    # convert numeric frequency → "day|week|month|quarter|year"
 
-      start_date <- earliest_date - offset
-      cli::cli_inform("Start date: {start_date}")
-      print(start_date)
+    train_df <- train_df %>%
+      dplyr::group_by(Combo) %>%
+      dplyr::group_modify(function(.x, .y) {
+        n_rows <- nrow(.x)
+        if (n_rows < min_size) {
+          message("RAN")
+          message(n_rows)
+          message(min_size)
 
-        # pad using timetk (no invalid unit strings)
-        padded_df <- .x %>%
-          timetk::pad_by_time(
-            .date_var = Date,
-            .by = date_type,
-            .pad_value = 0,
-            .start_date = start_date,
-            .end_date = max(.x$Date, na.rm = TRUE)
+          rows_to_add <- min_size - n_rows
+          earliest_date <- min(.x$Date, na.rm = TRUE)
+
+          # Use lubridate::period() with explicit unit strings (no months())
+          offset <- switch(date_type,
+            "day"     = lubridate::period(rows_to_add, "days"),
+            "week"    = lubridate::period(rows_to_add, "weeks"),
+            "month"   = lubridate::period(rows_to_add, "months"),
+            "quarter" = lubridate::period(rows_to_add * 3, "months"),
+            "year"    = lubridate::period(rows_to_add, "years"),
+            stop("Unsupported date_type: '", date_type, "'. Expected one of: day, week, month, quarter, year")
           )
 
-        return(padded_df)
-      } else {
-        message("NOT RAN")
-        return(.x)
-      }
-    }) %>%
-    dplyr::ungroup()
-}
+          start_date <- earliest_date - offset
+
+
+          # pad using timetk (no invalid unit strings)
+          padded_df <- .x %>%
+            timetk::pad_by_time(
+              .date_var = Date,
+              .by = date_type,
+              .pad_value = 0,
+              .start_date = start_date,
+              .end_date = max(.x$Date, na.rm = TRUE)
+            )
+
+          return(padded_df)
+        } else {
+          message("NOT RAN")
+          return(.x)
+        }
+      }) %>%
+      dplyr::ungroup()
+  }
 
   # Extract columns containing _original since these indicate exogenous regressors as part of data pre processing and not arguments
   # Search for _original is not position specific in case external regressor was one hot encoded (e.g., category_original_A)
@@ -416,11 +448,8 @@ print("RAN1")
     }
   }
 
-    # Determine if this is a long horizon forecast
-  is_long_horizon <- is_long_horizon_forecast(h, frequency)
-  
+
   if (is_long_horizon) {
-    print("-------is_long_horizon")
     forecast_args$model <- "timegpt-1-long-horizon"
   } else if (use_azure) {
     forecast_args$model <- "azureai"
@@ -428,18 +457,16 @@ print("RAN1")
 
   results <- do.call(nixtlar::nixtla_client_forecast, forecast_args)
 
-   num_combos_in_train <- length(unique(train_df$Combo))
-  expected_timegpt_length <- h * num_combos_in_train  
-print(paste0("h and num_combos_in_train: ", h, " ", num_combos_in_train))
+  num_combos_in_train <- length(unique(train_df$Combo))
+  expected_timegpt_length <- h * num_combos_in_train
 
   # Validate forecast data
- if (length(results$TimeGPT) != expected_timegpt_length) {
+  if (length(results$TimeGPT) != expected_timegpt_length) {
     stop(sprintf(
       "TimeGPT forecast length (%d) does not match expected (%d). train_df has %d combos, %d periods per combo.",
       length(results$TimeGPT), expected_timegpt_length, num_combos_in_train, h
     ))
   }
-  
 
   return(as.numeric(results$TimeGPT))
 }
@@ -478,14 +505,15 @@ print.timegpt_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.timegpt_model <- function(
-    object,
-    parameters = NULL,
-    forecast_horizon = NULL,
-    fresh = FALSE,
-    frequency = NULL,
-    finetune_steps = NULL,
-    finetune_depth = NULL,
-    ...) {
+  object,
+  parameters = NULL,
+  forecast_horizon = NULL,
+  fresh = FALSE,
+  frequency = NULL,
+  finetune_steps = NULL,
+  finetune_depth = NULL,
+  ...
+) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {
@@ -550,7 +578,56 @@ finetune_depth <- function(range = c(2L, 5L), trans = NULL) {
   )
 }
 
-#' Determine if forecast horizon is "long" based on frequency
+# #' Determine if forecast horizon is "long" based on frequency
+# #'
+# #' Long horizon is defined as more than two seasonal periods:
+# #' - Hourly: > 48 hours (2 days)
+# #' - Daily: > 14 days (2 weeks)
+# #' - Weekly: > 104 weeks (2 years)
+# #' - Monthly: > 24 months (2 years)
+# #' - Quarterly: > 8 quarters (2 years)
+# #' - Yearly: > 2 years
+# #'
+# #' @param forecast_horizon Number of periods to forecast
+# #' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
+# #' @return Logical indicating if this is a long horizon forecast
+# #' @noRd
+# is_long_horizon_forecast <- function(forecast_horizon, frequency) {
+#   if (is.null(forecast_horizon) || is.null(frequency)) {
+#     return(FALSE)
+#   }
+
+#   # Determine seasonal period and threshold based on frequency
+#   if (frequency >= 365.25) {
+#     # Daily or hourly
+#     if (frequency == 365.25) {
+#       # Daily: seasonal period is 7 days (weekly pattern), threshold is 14 days
+#       threshold <- 14
+#     } else {
+#       # Hourly: seasonal period is 24 hours (daily pattern), threshold is 48 hours
+#       threshold <- 48
+#     }
+#   } else if (abs(frequency - 52.17857) < 0.1) {
+#     # Weekly: seasonal period is 52 weeks (annual pattern), threshold is 104 weeks
+#     threshold <- 104
+#   } else if (frequency == 12) {
+#     # Monthly: seasonal period is 12 months (annual pattern), threshold is 24 months
+#     threshold <- 24
+#   } else if (frequency == 4) {
+#     # Quarterly: seasonal period is 4 quarters (annual pattern), threshold is 8 quarters
+#     threshold <- 8
+#   } else if (frequency == 1) {
+#     # Yearly: seasonal period is 1 year, threshold is 2 years
+#     threshold <- 2
+#   } else {
+#     # Default: use monthly threshold
+#     threshold <- 24
+#   }
+
+#   return(forecast_horizon > threshold)
+# }
+
+#' Determine if forecast horizon is "long" based on date_type
 #'
 #' Long horizon is defined as more than two seasonal periods:
 #' - Hourly: > 48 hours (2 days)
@@ -561,40 +638,24 @@ finetune_depth <- function(range = c(2L, 5L), trans = NULL) {
 #' - Yearly: > 2 years
 #'
 #' @param forecast_horizon Number of periods to forecast
-#' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
+#' @param date_type Date type string ("day", "week", "month", "quarter", "year")
 #' @return Logical indicating if this is a long horizon forecast
 #' @noRd
-is_long_horizon_forecast <- function(forecast_horizon, frequency) {
-  if (is.null(forecast_horizon) || is.null(frequency)) {
+is_long_horizon_forecast <- function(forecast_horizon, date_type) {
+  if (is.null(forecast_horizon) || is.null(date_type)) {
     return(FALSE)
   }
-  
-  # Determine seasonal period and threshold based on frequency
-  if (frequency >= 365.25) {
-    # Daily or hourly
-    if (frequency == 365.25) {
-      # Daily: seasonal period is 7 days (weekly pattern), threshold is 14 days
-      threshold <- 14
-    } else {
-      # Hourly: seasonal period is 24 hours (daily pattern), threshold is 48 hours
-      threshold <- 48
-    }
-  } else if (abs(frequency - 52.17857) < 0.1) {
-    # Weekly: seasonal period is 52 weeks (annual pattern), threshold is 104 weeks
-    threshold <- 104
-  } else if (frequency == 12) {
-    # Monthly: seasonal period is 12 months (annual pattern), threshold is 24 months
-    threshold <- 24
-  } else if (frequency == 4) {
-    # Quarterly: seasonal period is 4 quarters (annual pattern), threshold is 8 quarters
-    threshold <- 8
-  } else if (frequency == 1) {
-    # Yearly: seasonal period is 1 year, threshold is 2 years
-    threshold <- 2
-  } else {
-    # Default: use monthly threshold
-    threshold <- 24
-  }
-  
+
+  # Simple switch on date_type instead of complex numeric comparisons
+  threshold <- switch(date_type,
+    "hour"    = 48, # > 2 days
+    "day"     = 14, # > 2 weeks
+    "week"    = 104, # > 2 years
+    "month"   = 24, # > 2 years
+    "quarter" = 8, # > 2 years
+    "year"    = 2, # > 2 years
+    24 # Default to monthly threshold
+  )
+
   return(forecast_horizon > threshold)
 }

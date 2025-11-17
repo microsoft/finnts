@@ -940,7 +940,6 @@ get_frequency_number <- function(date_type) {
     "week" = 365.25 / 7,
     "day" = 365.25
   )
-
   return(frequency_number)
 }
 
