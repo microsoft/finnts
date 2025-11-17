@@ -526,6 +526,7 @@ train_models <- function(run_info,
             prep_data <- prep_data %>%
               undifference_recipe(
                 filtered_combo_info_tbl %>% dplyr::slice(1),
+                hist_end_date
               )
           }
         }
