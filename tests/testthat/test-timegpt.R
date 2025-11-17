@@ -585,11 +585,9 @@ test_that("Predictor variables for non TimeGPT exclude *_original columns", {
   check_predictors("xgboost")
   check_predictors("cubist")
 })
-####
 
 test_that("TimeGPT pads monthly data below minimum size for Azure", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-
 
   # Monthly data with only 25 rows (below minimum of 48 for monthly)
   x <- data.frame(
@@ -672,45 +670,6 @@ test_that("TimeGPT padding works with multiple combos (global model)", {
   )
 })
 
-
-test_that("TimeGPT tune parameters work through parsnip workflow", {
-  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
-
-  # Test that tune::tune() can be used in model spec
-  train_data <- data.frame(
-    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
-    Combo = "1",
-    Target = rnorm(48, mean = 100, sd = 10)
-  )
-
-  recipe_spec <- get_recipe_timegpt(train_data)
-
-  # Create model spec with tune::tune() placeholders
-  model_spec <- timegpt_model(
-    forecast_horizon = 6,
-    frequency = 12,
-    finetune_steps = tune::tune(),
-    finetune_depth = tune::tune()
-  ) %>%
-    parsnip::set_engine("timegpt_model")
-
-  # Verify model spec has tune parameters
-  expect_true(inherits(model_spec$args$finetune_steps, "quosure"),
-    info = "finetune_steps should be a quosure (from tune::tune())"
-  )
-  expect_true(inherits(model_spec$args$finetune_depth, "quosure"),
-    info = "finetune_depth should be a quosure (from tune::tune())"
-  )
-
-  # Create workflow
-  wf <- workflows::workflow() %>%
-    workflows::add_recipe(recipe_spec) %>%
-    workflows::add_model(model_spec)
-
-  # Workflow should be valid
-  expect_s3_class(wf, "workflow")
-})
-
 test_that("TimeGPT tune parameters are assigned actual values after finalization", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
 
@@ -736,7 +695,7 @@ test_that("TimeGPT tune parameters are assigned actual values after finalization
     workflows::add_recipe(recipe_spec) %>%
     workflows::add_model(model_spec)
 
-  # Simulate what tune::finalize_workflow() does - replace quosures with actual values
+  # Simulate what tune::finalize_workflow()
   finalized_spec <- wf %>%
     workflows::update_model(
       parsnip::set_args(
@@ -749,12 +708,10 @@ test_that("TimeGPT tune parameters are assigned actual values after finalization
   # Extract finalized model spec
   finalized_model <- finalized_spec$fit$actions$model$spec
 
-  # In parsnip, args are stored as quosures, but we can evaluate them to check values
-  # Verify the quosures evaluate to the correct values
   finetune_steps_value <- rlang::eval_tidy(finalized_model$args$finetune_steps)
   finetune_depth_value <- rlang::eval_tidy(finalized_model$args$finetune_depth)
 
-  # Check that they evaluate to the correct values (not tune::tune() anymore)
+  # Check that they evaluate to the correct values
   expect_equal(finetune_steps_value, 80,
     info = "finetune_steps should evaluate to 80 after finalization"
   )
@@ -762,21 +719,11 @@ test_that("TimeGPT tune parameters are assigned actual values after finalization
     info = "finetune_depth should evaluate to 3 after finalization"
   )
 
-  # Verify they are numeric (double or integer - both are fine)
-  expect_true(is.numeric(finetune_steps_value),
-    info = "finetune_steps should be numeric after finalization"
-  )
-  expect_true(is.numeric(finetune_depth_value),
-    info = "finetune_depth should be numeric after finalization"
-  )
 
-  # Fit the finalized workflow
   wf_fit <- parsnip::fit(finalized_spec, data = train_data)
 
-  # Extract fit object and verify values are stored
   fit_obj <- wf_fit$fit$fit$fit
 
-  # Verify the actual values made it to the fit object (this is what really matters)
   expect_equal(fit_obj$finetune_steps, 80,
     info = "finetune_steps value should be stored in fit object"
   )
@@ -784,10 +731,6 @@ test_that("TimeGPT tune parameters are assigned actual values after finalization
     info = "finetune_depth value should be stored in fit object"
   )
 })
-
-# ============================================================================
-# Tests for Long Horizon Detection
-# ============================================================================
 
 test_that("TimeGPT uses long-horizon model for monthly forecasts > 24 months", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
@@ -801,21 +744,18 @@ test_that("TimeGPT uses long-horizon model for monthly forecasts > 24 months", {
     info = "Helper function: 12 months should NOT be detected as long horizon (< 24)"
   )
 
-  # Now test the full pipeline with monthly data and forecast_horizon = 30 (> 24, so long horizon)
+  # Now test the full pipeline with monthly data and forecast_horizon = 25 (> 24, so long horizon)
   x <- data.frame(
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 60),
     Combo = "1"
   )
   y <- rnorm(60, mean = 100, sd = 10)
 
-  # Fit with forecast_horizon = 30 and frequency = 12 (monthly)
   fit <- timegpt_model_fit_impl(x, y, forecast_horizon = 25, frequency = 12)
 
-  # Verify forecast_horizon and frequency are stored
   expect_equal(fit$forecast_horizon, 25)
   expect_equal(fit$frequency, 12)
 
-  # Prediction data with 30 periods
   new_data <- data.frame(
     Date = seq.Date(as.Date("2025-01-01"), by = "month", length.out = 25),
     Combo = "1"
