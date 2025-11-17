@@ -250,36 +250,6 @@ setup_timegpt_client <- function() {
   }
 }
 
-# #' Get TimeGPT minimum size requirement based on frequency
-# #'
-# #' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
-# #' @return Minimum size requirement
-# #' @noRd
-# get_timegpt_min_size <- function(frequency) {
-#   if (is.null(frequency)) {
-#     return(48) # Default to monthly minimum
-#   }
-
-#   # Map frequency to minimum size
-#   if (frequency >= 365.25) {
-#     # Daily or hourly
-#     if (frequency == 365.25) {
-#       return(300) # Daily
-#     } else {
-#       return(1008) # Hourly/subhourly
-#     }
-#   } else if (abs(frequency - 52.17857) < 0.1) {
-#     return(64) # Weekly
-#   } else if (frequency == 12) {
-#     return(48) # Monthly
-#   } else if (frequency == 4) {
-#     return(48) # Quarterly
-#   } else if (frequency == 1) {
-#     return(48) # Yearly
-#   } else {
-#     return(48) # Default
-#   }
-# }
 
 #' Get TimeGPT minimum size requirement based on date_type
 #'
@@ -577,55 +547,6 @@ finetune_depth <- function(range = c(2L, 5L), trans = NULL) {
     finalize = NULL
   )
 }
-
-# #' Determine if forecast horizon is "long" based on frequency
-# #'
-# #' Long horizon is defined as more than two seasonal periods:
-# #' - Hourly: > 48 hours (2 days)
-# #' - Daily: > 14 days (2 weeks)
-# #' - Weekly: > 104 weeks (2 years)
-# #' - Monthly: > 24 months (2 years)
-# #' - Quarterly: > 8 quarters (2 years)
-# #' - Yearly: > 2 years
-# #'
-# #' @param forecast_horizon Number of periods to forecast
-# #' @param frequency Frequency number (1=year, 4=quarter, 12=month, 52.17857=week, 365.25=day)
-# #' @return Logical indicating if this is a long horizon forecast
-# #' @noRd
-# is_long_horizon_forecast <- function(forecast_horizon, frequency) {
-#   if (is.null(forecast_horizon) || is.null(frequency)) {
-#     return(FALSE)
-#   }
-
-#   # Determine seasonal period and threshold based on frequency
-#   if (frequency >= 365.25) {
-#     # Daily or hourly
-#     if (frequency == 365.25) {
-#       # Daily: seasonal period is 7 days (weekly pattern), threshold is 14 days
-#       threshold <- 14
-#     } else {
-#       # Hourly: seasonal period is 24 hours (daily pattern), threshold is 48 hours
-#       threshold <- 48
-#     }
-#   } else if (abs(frequency - 52.17857) < 0.1) {
-#     # Weekly: seasonal period is 52 weeks (annual pattern), threshold is 104 weeks
-#     threshold <- 104
-#   } else if (frequency == 12) {
-#     # Monthly: seasonal period is 12 months (annual pattern), threshold is 24 months
-#     threshold <- 24
-#   } else if (frequency == 4) {
-#     # Quarterly: seasonal period is 4 quarters (annual pattern), threshold is 8 quarters
-#     threshold <- 8
-#   } else if (frequency == 1) {
-#     # Yearly: seasonal period is 1 year, threshold is 2 years
-#     threshold <- 2
-#   } else {
-#     # Default: use monthly threshold
-#     threshold <- 24
-#   }
-
-#   return(forecast_horizon > threshold)
-# }
 
 #' Determine if forecast horizon is "long" based on date_type
 #'
