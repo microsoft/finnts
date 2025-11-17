@@ -311,10 +311,8 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   }
 
   # Apply minimum size constraints ONLY for Azure (model == "azureai")
-
   if (use_azure && !is.null(date_type)) {
     min_size <- get_timegpt_min_size(date_type)
-    # convert numeric frequency → "day|week|month|quarter|year"
 
     train_df <- train_df %>%
       dplyr::group_by(Combo) %>%
@@ -328,7 +326,6 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
           rows_to_add <- min_size - n_rows
           earliest_date <- min(.x$Date, na.rm = TRUE)
 
-          # Use lubridate::period() with explicit unit strings (no months())
           offset <- switch(date_type,
             "day"     = lubridate::period(rows_to_add, "days"),
             "week"    = lubridate::period(rows_to_add, "weeks"),
