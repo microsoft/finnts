@@ -41,16 +41,16 @@ Set the Azure base URL and API key.
 ```{r eval=FALSE}
 # In R (or add to .Renviron)
 Sys.setenv(NIXTLA_BASE_URL = "https://your-azure-deployed-timegen.azure.com/")
-Sys.setenv(NIXTLA_API_KEY  = "your_api_key_here")
-#Note that the current version of nixtlar requires base url to end with "/"
+Sys.setenv(NIXTLA_API_KEY = "your_api_key_here")
+# Note that the current version of nixtlar requires base url to end with "/"
 ```
 
 #### Option B: Using nixtlar helper
 ```{r eval=FALSE}
-#devtools::install_github("Nixtla/nixtlar")
+# devtools::install_github("Nixtla/nixtlar")
 library(nixtlar)
 nixtla_client_setup(
-  base_url = "Base URL here", 
+  base_url = "Base URL here",
   api_key = "API key here"
 )
 ```
@@ -66,7 +66,7 @@ Sys.setenv(NIXTLA_API_KEY = "your_api_key_here")
 
 #### Option B: Using nixtlar helper
 ```{r eval=FALSE}
-#devtools::install_github("Nixtla/nixtlar")
+# devtools::install_github("Nixtla/nixtlar")
 library(nixtlar)
 nixtla_set_api_key(api_key = "Your API key here")
 ```
@@ -76,7 +76,7 @@ nixtla_set_api_key(api_key = "Your API key here")
 ## Quick start with nixtlar (standalone)
 
 ```{r eval=FALSE}
-#devtools::install_github("Nixtla/nixtlar")
+# devtools::install_github("Nixtla/nixtlar")
 library(nixtlar)
 
 df <- nixtlar::electricity
@@ -86,8 +86,8 @@ fcst <- nixtla_client_forecast(
   df,
   h = 8,
   level = c(80, 95),
-  #if using azure deployed timegen
-  #model = "azureai"
+  # if using azure deployed timegen
+  # model = "azureai"
 )
 
 head(fcst)
@@ -100,14 +100,14 @@ TimeGPT is available as a model within finnts unified workflow and can run as bo
 ```{r eval=FALSE}
 library(finnts)
 
-#setup timegpt api keys
+# setup timegpt api keys
 
-#Checkout these data requirements provided by nixtla
-#https://www.nixtla.io/docs/data_requirements/data_requirements
+# Checkout these data requirements provided by nixtla
+# https://www.nixtla.io/docs/data_requirements/data_requirements
 hist_data <- timetk::m4_monthly %>%
   dplyr::filter(
     date >= "2010-01-01",
-    id =="M2"
+    id == "M2"
   ) %>%
   dplyr::rename(Date = date) %>%
   dplyr::mutate(id = as.character(id))
@@ -144,15 +144,16 @@ head(finn_output_tbl)
 # A tibble: 6 x 17
 #  Combo id    Model_ID      Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon
 #  <chr> <chr> <chr>         <chr>      <chr>      <chr>     <chr>            <dbl> <chr>        <dbl>
-#1 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              1
-#2 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              2
-#3 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              3
-#4 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              4
-#5 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              5
-#6 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              6
+# 1 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              1
+# 2 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              2
+# 3 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              3
+# 4 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              4
+# 5 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              5
+# 6 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              6
 # i 7 more variables: Date <date>, Target <dbl>, Forecast <dbl>, lo_95 <dbl>, lo_80 <dbl>,
 #   hi_80 <dbl>, hi_95 <dbl>
 ```
+<<<<<<< HEAD
 
 ## Data Size Requirements and Automatic Padding
 
@@ -207,3 +208,5 @@ train_models(
   run_global_models = TRUE  # TimeGPT will train on all combos together
 )
 ```
+=======
+>>>>>>> main

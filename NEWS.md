@@ -1,4 +1,4 @@
-# finnts 0.6.0.9007 (development version)
+# finnts 0.6.0.9008 (development version)
 
 ## Improvements
 - TimeGPT Integration
@@ -19,6 +19,7 @@
   
 ## Bug Fixes
 -   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
+-   Fixed weighted mape calculation when target variable has negative values.
   
 ## Breaking Changes
 
