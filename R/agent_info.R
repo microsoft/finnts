@@ -169,7 +169,8 @@ set_agent_info <- function(project_info,
       return_type = "df"
     ) %>%
       dplyr::arrange(dplyr::desc(created)) %>%
-      dplyr::slice(1)
+      dplyr::slice(1) %>%
+      dplyr::mutate(forecast_horizon = as.numeric(forecast_horizon))
   } else {
     agent_runs_tbl <- tibble::tibble()
   }
