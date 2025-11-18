@@ -640,7 +640,7 @@ update.timegpt_model <- function(
 #'   allowable values (default: `c(10L, 200L)`).
 #'
 #' @return A `dials` parameter object describing the finetune steps hyperparameter.
-#' @noRd
+#' @export
 finetune_steps <- function(range = c(10L, 200L)) {
   dials::new_quant_param(
     type = "integer",
@@ -662,7 +662,7 @@ finetune_steps <- function(range = c(10L, 200L)) {
 #'   allowable values (default: `c(2L, 5L)`).
 #'
 #' @return A `dials` parameter object describing the finetune depth hyperparameter.
-#' @noRd
+#' @export
 finetune_depth <- function(range = c(2L, 5L)) {
   dials::new_quant_param(
     type = "integer",

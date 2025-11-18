@@ -153,7 +153,6 @@ head(finn_output_tbl)
 # i 7 more variables: Date <date>, Target <dbl>, Forecast <dbl>, lo_95 <dbl>, lo_80 <dbl>,
 #   hi_80 <dbl>, hi_95 <dbl>
 ```
-<<<<<<< HEAD
 
 ## Data Size Requirements and Automatic Padding
 
@@ -208,5 +207,3 @@ train_models(
   run_global_models = TRUE  # TimeGPT will train on all combos together
 )
 ```
-=======
->>>>>>> main
