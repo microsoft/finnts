@@ -144,6 +144,8 @@ timegpt_model <- function(
 #' @param y A numeric vector of values to fit
 #' @param forecast_horizon forecast horizon
 #' @param frequency frequency of data
+#' @param finetune_steps finetune steps
+#' @param finetune_depth finetune depth
 #'
 #' @return Fitted TimeGPT model object
 #' @keywords internal
@@ -274,6 +276,142 @@ get_timegpt_min_size <- function(date_type) {
   return(min_size)
 }
 
+#' Pad time series data to meet minimum size requirements
+#'
+#' Pads time series data backward from the earliest date to meet minimum row
+#' requirements. Useful for models that require a minimum amount of historical data.
+#' Padded rows have target variable and numeric external regressors set to 0.
+#'
+#' @param train_df Data frame with columns: Date, Combo, y, and optionally external regressors
+#' @param date_type Character string: "day", "week", "month", "quarter", or "year"
+#' @param min_size Minimum number of rows required per combo (default: NULL, no padding)
+#' @return Padded data frame with same structure as input, but with additional rows
+#'   where y and numeric external regressors are set to 0
+#' @noRd
+pad_time_series_data <- function(train_df, date_type, min_size = NULL) {
+  if (is.null(min_size) || is.null(date_type)) {
+    return(train_df) # No padding if min_size or date_type is unknown
+  }
+
+  # Identify which combos need padding
+  combo_info <- train_df %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::summarise(
+      n_rows = dplyr::n(),
+      earliest_date = min(Date, na.rm = TRUE),
+      latest_date = max(Date, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      needs_padding = n_rows < min_size,
+      rows_to_add = pmax(0L, min_size - n_rows)
+    )
+
+  # Filter to only combos that actually need padding
+  combos_to_pad <- combo_info %>%
+    dplyr::filter(needs_padding)
+
+  # Only proceed if there are combos that need padding
+  if (nrow(combos_to_pad) == 0) {
+    return(train_df) # No padding needed
+  }
+
+  # Validate date_type upfront
+  valid_date_types <- c("day", "week", "month", "quarter", "year")
+  if (!date_type %in% valid_date_types) {
+    stop(
+      "Unsupported date_type: '", date_type, "'. Expected one of: ",
+      paste(valid_date_types, collapse = ", ")
+    )
+  }
+
+  # For each combo, calculate how far back we need to go to add required rows
+  combos_to_pad <- combos_to_pad %>%
+    dplyr::mutate(
+      start_date = dplyr::case_when(
+        date_type == "day" ~ earliest_date - lubridate::days(rows_to_add),
+        date_type == "week" ~ earliest_date - lubridate::weeks(rows_to_add),
+        date_type == "month" ~ earliest_date - months(rows_to_add),
+        date_type == "quarter" ~ earliest_date - months(rows_to_add * 3),
+        date_type == "year" ~ earliest_date - lubridate::years(rows_to_add)
+      )
+    )
+
+  # Create complete date sequences for each combo
+  create_date_sequence <- function(start, end, by_type) {
+    start <- as.Date(start)
+    end <- as.Date(end)
+
+    switch(by_type,
+      "day"     = seq.Date(start, end, by = "day"),
+      "week"    = seq.Date(start, end, by = "week"),
+      "month"   = seq.Date(start, end, by = "month"),
+      "quarter" = seq.Date(start, end, by = "3 months"), # Proper quarterly sequence
+      "year"    = seq.Date(start, end, by = "year"),
+      stop("Unsupported date_type: '", by_type, "'")
+    )
+  }
+
+  # Create full date grids for all combos that need padding
+  # This creates a complete date range from (start_date to latest_date) for each combo
+  padded_grids <- combos_to_pad %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(
+      date_seq = list(create_date_sequence(start_date, latest_date, date_type))
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(Combo, date_seq) %>%
+    tidyr::unnest(date_seq) %>%
+    dplyr::rename(Date = date_seq)
+
+  # Join original data onto the padded grids
+  all_cols <- colnames(train_df)
+  target_col <- "y"
+  other_cols <- setdiff(all_cols, c("Combo", "Date", target_col))
+
+  # Left join original data onto padded grid
+  train_df_padded <- padded_grids %>%
+    dplyr::left_join(
+      train_df %>% dplyr::filter(Combo %in% combos_to_pad$Combo),
+      by = c("Combo", "Date")
+    ) %>%
+    dplyr::mutate(
+      # Fill target variable with 0 for padded rows
+      y = dplyr::if_else(is.na(y), 0, y)
+    )
+
+  # Handle external regressors and other numeric columns
+  train_df_padded <- train_df_padded %>%
+    dplyr::mutate(
+      dplyr::across(
+        .cols = dplyr::where(is.numeric) & !dplyr::any_of(c("y")),
+        .fns = ~ dplyr::if_else(is.na(.x), 0, .x)
+      )
+    )
+
+  # Combine padded and non-padded combos
+  combos_no_padding <- combo_info %>%
+    dplyr::filter(!needs_padding) %>%
+    dplyr::pull(Combo)
+
+  # Combine both groups back together
+  if (length(combos_no_padding) > 0) {
+    train_df_no_padding <- train_df %>%
+      dplyr::filter(Combo %in% combos_no_padding)
+
+    train_df <- dplyr::bind_rows(train_df_padded, train_df_no_padding)
+  } else {
+    # All combos needed padding
+    train_df <- train_df_padded
+  }
+
+  # Final cleanup and ordering
+  train_df <- train_df %>%
+    dplyr::arrange(Combo, Date)
+
+  return(train_df)
+}
+
 #' Bridge prediction Function for TimeGPT Models
 #'
 #' @inheritParams parsnip::predict.model_fit
@@ -310,51 +448,15 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
     is_long_horizon <- is_long_horizon_forecast(forecast_horizon, date_type)
   }
 
-  # Apply minimum size constraints ONLY for Azure (model == "azureai")
+
+  # Apply minimum size constraints ONLY for Azure AI (model == "azureai")
+  # handling padding for data constraints
   if (use_azure && !is.null(date_type)) {
+    # Get minimum required rows based on date frequency
     min_size <- get_timegpt_min_size(date_type)
 
-    train_df <- train_df %>%
-      dplyr::group_by(Combo) %>%
-      dplyr::group_modify(function(.x, .y) {
-        n_rows <- nrow(.x)
-        if (n_rows < min_size) {
-          message("RAN")
-          message(n_rows)
-          message(min_size)
-
-          rows_to_add <- min_size - n_rows
-          earliest_date <- min(.x$Date, na.rm = TRUE)
-
-          offset <- switch(date_type,
-            "day"     = lubridate::period(rows_to_add, "days"),
-            "week"    = lubridate::period(rows_to_add, "weeks"),
-            "month"   = lubridate::period(rows_to_add, "months"),
-            "quarter" = lubridate::period(rows_to_add * 3, "months"),
-            "year"    = lubridate::period(rows_to_add, "years"),
-            stop("Unsupported date_type: '", date_type, "'. Expected one of: day, week, month, quarter, year")
-          )
-
-          start_date <- earliest_date - offset
-
-
-          # pad using timetk (no invalid unit strings)
-          padded_df <- .x %>%
-            timetk::pad_by_time(
-              .date_var = Date,
-              .by = date_type,
-              .pad_value = 0,
-              .start_date = start_date,
-              .end_date = max(.x$Date, na.rm = TRUE)
-            )
-
-          return(padded_df)
-        } else {
-          message("NOT RAN")
-          return(.x)
-        }
-      }) %>%
-      dplyr::ungroup()
+    # Pad the training data to meet the minimum size requirement
+    train_df <- pad_time_series_data(train_df, date_type, min_size)
   }
 
   # Extract columns containing _original since these indicate exogenous regressors as part of data pre processing and not arguments
@@ -522,24 +624,45 @@ update.timegpt_model <- function(
   )
 }
 
-# Custom parameter functions for TimeGPT integer hyperparameters
-finetune_steps <- function(range = c(10L, 200L), trans = NULL) {
+#' Finetune steps parameter definition
+#'
+#' Defines the tunable parameter used to control the number of fine-tuning steps
+#' for the TimeGPT model. This parameter is exposed via `tune::tune()` and can
+#' be searched over a specified integer range.
+#'
+#' @param range Integer vector of length 2 giving the minimum and maximum
+#'   allowable values (default: `c(10L, 200L)`).
+#'
+#' @return A `dials` parameter object describing the finetune steps hyperparameter.
+#' @noRd
+finetune_steps <- function(range = c(10L, 200L)) {
   dials::new_quant_param(
     type = "integer",
     range = range,
     inclusive = c(TRUE, TRUE),
-    trans = trans,
+    trans = NULL,
     label = c(finetune_steps = "Finetune Steps"),
     finalize = NULL
   )
 }
 
-finetune_depth <- function(range = c(2L, 5L), trans = NULL) {
+#' Finetune depth parameter definition
+#'
+#' Defines the tunable parameter used to control the fine-tuning depth
+#' (number of layers) for the TimeGPT model. Like `finetune_steps()`, this can
+#' be passed through `tune::tune()` and searched over an integer range.
+#'
+#' @param range Integer vector of length 2 giving the minimum and maximum
+#'   allowable values (default: `c(2L, 5L)`).
+#'
+#' @return A `dials` parameter object describing the finetune depth hyperparameter.
+#' @noRd
+finetune_depth <- function(range = c(2L, 5L)) {
   dials::new_quant_param(
     type = "integer",
     range = range,
     inclusive = c(TRUE, TRUE),
-    trans = trans,
+    trans = NULL,
     label = c(finetune_depth = "Finetune Depth"),
     finalize = NULL
   )

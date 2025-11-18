@@ -23,6 +23,7 @@
 #'   Default of NULL uses total amount of cores on machine minus one. Can't be
 #'   greater than number of cores on machine minus 1.
 #' @param seed Set seed for random number generator. Numeric value.
+#' @param debug If TRUE, will stop on errors and show traceback.
 #'
 #' @return trained model outputs are written to disk.
 #' @export

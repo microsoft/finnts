@@ -14,7 +14,8 @@ train_models(
   parallel_processing = NULL,
   inner_parallel = FALSE,
   num_cores = NULL,
-  seed = 123
+  seed = 123,
+  debug = FALSE
 )
 }
 \arguments{
@@ -50,6 +51,8 @@ Default of NULL uses total amount of cores on machine minus one. Can't be
 greater than number of cores on machine minus 1.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
+
+\item{debug}{If TRUE, will stop on errors and show traceback.}
 }
 \value{
 trained model outputs are written to disk.

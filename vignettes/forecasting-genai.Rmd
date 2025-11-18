@@ -95,7 +95,7 @@ head(fcst)
 
 ## Using TimeGPT within finnts
 
-TimeGPT is available as a model within finnts unified workflow. 
+TimeGPT is available as a model within finnts unified workflow and can run as both a **local** (per time series) or **global** (across all time series) model. When running as a global model, TimeGPT learns patterns across all your time series simultaneously. 
 
 ```{r eval=FALSE}
 library(finnts)
@@ -152,4 +152,58 @@ head(finn_output_tbl)
 #6 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              6
 # i 7 more variables: Date <date>, Target <dbl>, Forecast <dbl>, lo_95 <dbl>, lo_80 <dbl>,
 #   hi_80 <dbl>, hi_95 <dbl>
+```
+
+## Data Size Requirements and Automatic Padding
+
+Azure AI TimeGPT endpoints have minimum data size requirements based on data frequency:
+
+- **Daily data**: Minimum 300 rows
+- **Weekly data**: Minimum 64 rows  
+- **Monthly/Quarterly/Yearly data**: Minimum 48 rows
+
+When using Azure AI endpoints, finnts automatically pads your data with zeros (backward from the earliest date) to meet these requirements. This ensures your forecasts work even with smaller datasets. The padding only affects the data sent to the API, your original training data remains unchanged in the model fit object.
+
+**Note:** Padding is only applied for Azure AI endpoints. The default Nixtla API does not have these constraints.
+
+## Long-Horizon Forecasting
+
+For forecasts exceeding two seasonal periods, TimeGPT automatically uses the `timegpt-1-long-horizon` model, which is optimized for longer forecast horizons. The threshold for "long horizon" depends on your data frequency:
+
+- **Hourly**: > 48 hours (2 days)
+- **Daily**: > 14 days (2 weeks)
+- **Weekly**: > 104 weeks (2 years)
+- **Monthly**: > 24 months (2 years)
+- **Quarterly**: > 8 quarters (2 years)
+- **Yearly**: > 2 years
+
+This selection happens automatically based on your `forecast_horizon` and `date_type` parameters—no additional configuration needed.
+
+## Hyperparameter Tuning
+
+TimeGPT supports hyperparameter tuning for fine-tuning parameters:
+
+- **`finetune_steps`**: Number of fine-tuning steps (range: 10-200)
+- **`finetune_depth`**: Fine-tuning depth/layers (range: 2-5)
+
+These parameters are automatically tuned when you set `num_hyperparameters` in `prep_models()`. The tuning process uses validation splits to find optimal values, then refits the model with the best parameters.
+
+```{r eval=FALSE}
+prep_models(
+  run_info = run_info,
+  models_to_run = c("timegpt"),
+  num_hyperparameters = 4  # Will tune finetune_steps and finetune_depth
+)
+```
+
+## Global Model Support
+
+TimeGPT can run as both a **local** (per time series) or **global** (across all time series) model. When running as a global model, TimeGPT learns patterns across all your time series simultaneously.
+
+```{r eval=FALSE}
+# Run TimeGPT as a global model
+train_models(
+  run_info = run_info,
+  run_global_models = TRUE  # TimeGPT will train on all combos together
+)
 ```

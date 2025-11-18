@@ -4,7 +4,16 @@
 \alias{update.timegpt_model}
 \title{Update parameter in custom TimeGPT model}
 \usage{
-\method{update}{timegpt_model}(object, parameters = NULL, forecast_horizon = NULL, fresh = FALSE, ...)
+\method{update}{timegpt_model}(
+  object,
+  parameters = NULL,
+  forecast_horizon = NULL,
+  fresh = FALSE,
+  frequency = NULL,
+  finetune_steps = NULL,
+  finetune_depth = NULL,
+  ...
+)
 }
 \arguments{
 \item{object}{model object}
@@ -14,6 +23,12 @@
 \item{forecast_horizon}{forecast horizon}
 
 \item{fresh}{fresh}
+
+\item{frequency}{frequency}
+
+\item{finetune_steps}{finetune steps}
+
+\item{finetune_depth}{finetune depth}
 
 \item{...}{extra args passed to TimeGPT}
 }
