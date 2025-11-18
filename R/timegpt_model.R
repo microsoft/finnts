@@ -432,7 +432,13 @@ timegpt_model_predict_impl <- function(object, new_data, ...) {
   train_df <- full_train_df %>% dplyr::filter(Date < test_start)
 
   num_combos_in_new <- length(unique(new_data$Combo))
+  
+  if (num_combos_in_new == 0) {
+    stop("No unique combos found in new_data$Combo. Cannot calculate periods per combo.")
+  }
+  
   periods_per_combo <- nrow(new_data) / num_combos_in_new
+  # added support for handling horizon for multiple combos in new_data when timegpt forecats as global model
   h <- periods_per_combo
 
   frequency <- object$frequency
