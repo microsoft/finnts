@@ -170,7 +170,10 @@ set_agent_info <- function(project_info,
     ) %>%
       dplyr::arrange(dplyr::desc(created)) %>%
       dplyr::slice(1) %>%
-      dplyr::mutate(forecast_horizon = as.numeric(forecast_horizon))
+      dplyr::mutate(forecast_horizon = as.numeric(forecast_horizon), 
+                    hist_end_date = as.Date(hist_end_date), 
+                    hist_start_date = as.Date(hist_start_date), 
+                    combo_cleanup_date = as.Date(combo_cleanup_date))
   } else {
     agent_runs_tbl <- tibble::tibble()
   }
