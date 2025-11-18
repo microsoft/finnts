@@ -900,7 +900,7 @@ test_that("TimeGPT uses long-horizon model for monthly forecasts > 24 months", {
     info = "Helper function: 12 months should NOT be detected as long horizon (< 24)"
   )
 
-  # Now test the full pipeline with monthly data and forecast_horizon = 25 (> 24, so long horizon)
+  # test the full pipeline with monthly data and forecast_horizon = 25 (> 24, so long horizon)
   x <- data.frame(
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 60),
     Combo = "1"
