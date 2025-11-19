@@ -27,8 +27,6 @@ make_timegpt_model <- function() {
     has_submodel = FALSE
   )
 
-  # TODO : add hyperparameters for finetune
-
   parsnip::set_model_arg(
     model = "timegpt_model",
     eng = "timegpt_model",
@@ -38,7 +36,6 @@ make_timegpt_model <- function() {
     has_submodel = FALSE
   )
 
-  # Add finetune_depth argument
   parsnip::set_model_arg(
     model = "timegpt_model",
     eng = "timegpt_model",
