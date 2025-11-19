@@ -169,10 +169,7 @@ set_agent_info <- function(project_info,
       return_type = "df"
     ) %>%
       dplyr::arrange(dplyr::desc(created)) %>%
-      dplyr::slice(1) %>%
-      dplyr::mutate(forecast_horizon = as.numeric(forecast_horizon), 
-                    hist_end_date = as.Date(hist_end_date), 
-                    hist_start_date = as.Date(hist_start_date))
+      dplyr::slice(1)
     
     if(is.character(agent_runs_tbl$combo_cleanup_date)) {
       agent_runs_tbl <- agent_runs_tbl %>%
@@ -200,11 +197,12 @@ set_agent_info <- function(project_info,
       forecast_approach = forecast_approach
     ) %>%
       data.frame()
-
-    prev_log_df <- agent_runs_tbl %>%
-      dplyr::select(colnames(current_log_df)) %>%
+    
+    prev_log_df <- align_types(current_log_df, 
+                               agent_runs_tbl %>%
+                                 dplyr::select(colnames(current_log_df))) %>%
       data.frame()
-
+    
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
       stop("Inputs have recently changed in 'set_agent_info',
            please revert back to original inputs or start new agent run with 'overwrite' argument set to TRUE.",
@@ -344,4 +342,42 @@ set_agent_info <- function(project_info,
 
     return(output_list)
   }
+}
+
+#' Align Data Frame Column Types
+#' 
+#' This function aligns the column types of `df2` to match those of `df1`
+#' for all shared columns.
+#' 
+#' @param df1 A data frame whose column types will be used as reference.
+#' @param df2 A data frame whose column types will be aligned to match `df1`.
+#' 
+#' @return A data frame `df2` with column types aligned to `df1`.
+#' @noRd
+align_types <- function(df1, df2) {
+  shared_cols <- intersect(names(df1), names(df2))
+  
+  for (col in shared_cols) {
+    target_class <- class(df1[[col]])[1]
+    
+    # select proper converter
+    convert_fun <- switch(
+      target_class,
+      Date     = function(x) as.Date(x),
+      POSIXct  = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
+      POSIXt   = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
+      factor   = function(x) as.factor(x),
+      integer  = function(x) as.integer(x),
+      numeric  = function(x) as.numeric(x),
+      logical  = function(x) as.logical(x),
+      character= function(x) as.character(x),
+      # fallback: return unchanged
+      function(x) x
+    )
+    
+    # convert df2
+    df2[[col]] <- convert_fun(df2[[col]])
+  }
+  
+  df2
 }
