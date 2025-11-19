@@ -532,7 +532,7 @@ test_that("Predictor variables for non TimeGPT exclude *_original columns", {
   data <- timetk::m4_monthly %>%
     dplyr::mutate(id = as.character(id)) %>%
     dplyr::rename(Date = date, value = value) %>%
-    dplyr::filter(id == "M2", Date >= as.Date("2010-01-01"), Date <= as.Date("2012-12-01")) %>%
+    dplyr::filter(id == "M2", Date >= as.Date("2010-01-01"), Date <= as.Date("2014-12-01")) %>%
     dplyr::mutate(
       temperature = rnorm(dplyr::n(), 20, 5)
     )
