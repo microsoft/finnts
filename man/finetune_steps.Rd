@@ -4,11 +4,11 @@
 \alias{finetune_steps}
 \title{Finetune steps parameter definition}
 \usage{
-finetune_steps(range = c(10L, 200L))
+finetune_steps(range = c(0L, 200L))
 }
 \arguments{
 \item{range}{Integer vector of length 2 giving the minimum and maximum
-allowable values (default: \code{c(10L, 200L)}).}
+allowable values (default: \code{c(0L, 200L)}).}
 }
 \value{
 A \code{dials} parameter object describing the finetune steps hyperparameter.

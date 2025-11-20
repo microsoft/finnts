@@ -4,11 +4,11 @@
 \alias{finetune_depth}
 \title{Finetune depth parameter definition}
 \usage{
-finetune_depth(range = c(2L, 5L))
+finetune_depth(range = c(1L, 5L))
 }
 \arguments{
 \item{range}{Integer vector of length 2 giving the minimum and maximum
-allowable values (default: \code{c(2L, 5L)}).}
+allowable values (default: \code{c(1L, 5L)}).}
 }
 \value{
 A \code{dials} parameter object describing the finetune depth hyperparameter.
