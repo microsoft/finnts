@@ -1006,8 +1006,45 @@ update_forecast_combo <- function(agent_info,
     unique()
 
   # get trained models from previous run
-  trained_models_tbl <- get_trained_models(run_info = prev_run_info) %>%
-    dplyr::filter(Model_ID %in% model_id_list)
+  # determine combo hash based on model type
+  if (unique(prev_best_run_tbl$model_type) == "global") {
+    combo_hash <- hash_data("All-Data")
+  } else {
+    combo_hash <- hash_data(prev_best_run_tbl$combo[1])
+  }
+  
+  # construct file path for trained models
+  file_path <- paste0(
+    prev_run_info$path, "/models/",
+    hash_data(prev_run_info$project_name), "-",
+    hash_data(prev_run_info$run_name), "-",
+    combo_hash, "-single_models.",
+    prev_run_info$object_output
+  ) %>% fs::path_tidy()
+  
+  # read the trained models file and filter by model IDs
+  trained_models_tbl <- tryCatch(
+    {
+      read_file(
+        run_info = prev_run_info,
+        file_list = file_path,
+        return_type = "df"
+      ) %>%
+        dplyr::filter(Model_ID %in% model_id_list)
+    },
+    error = function(e) {
+      stop("Error in update_forecast(). No trained models found from previous run at: ", file_path,
+           call. = FALSE
+      )
+    }
+  )
+  
+  # verify models were found
+  if (nrow(trained_models_tbl) == 0) {
+    stop("Error in update_forecast(). No trained models matching the model IDs found in previous run.",
+         call. = FALSE
+    )
+  }
 
   # get external regressor info from previous run
   external_regressors <- adjust_inputs(prev_run_log_tbl$external_regressors)
