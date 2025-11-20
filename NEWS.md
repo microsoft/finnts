@@ -6,6 +6,7 @@
   - Added support for both historical and future external regressors
   - Added timegpt-long-horizon model
   - Added finetuning for depth and layers
+  - Enabled TimeGPT as a global model
   - Added support for padding time series that don't meet minimum data requirements
 
 - Updated Train Model function
