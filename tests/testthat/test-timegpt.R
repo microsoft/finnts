@@ -1,4 +1,4 @@
-# # tests/testthat/test-timegpt.R
+# tests/testthat/test-timegpt.R
 
 # Skip all tests in this file on CRAN
 skip_on_cran()

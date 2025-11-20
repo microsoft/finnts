@@ -170,7 +170,6 @@ When using Azure AI endpoints, finnts automatically pads your data with zeros (b
 
 For forecasts exceeding two seasonal periods, TimeGPT automatically uses the `timegpt-1-long-horizon` model, which is optimized for longer forecast horizons. The threshold for "long horizon" depends on your data frequency:
 
-- **Hourly**: > 48 hours (2 days)
 - **Daily**: > 14 days (2 weeks)
 - **Weekly**: > 104 weeks (2 years)
 - **Monthly**: > 24 months (2 years)
@@ -183,8 +182,8 @@ This selection happens automatically based on your `forecast_horizon` and `date_
 
 TimeGPT supports hyperparameter tuning for fine-tuning parameters:
 
-- **`finetune_steps`**: Number of fine-tuning steps (range: 10-200)
-- **`finetune_depth`**: Fine-tuning depth/layers (range: 2-5)
+- **`finetune_steps`**: Number of fine-tuning steps (range: 0-200)
+- **`finetune_depth`**: Fine-tuning depth/layers (range: 1-5)
 
 These parameters are automatically tuned when you set `num_hyperparameters` in `prep_models()`. The tuning process uses validation splits to find optimal values, then refits the model with the best parameters.
 
