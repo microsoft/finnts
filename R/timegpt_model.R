@@ -634,7 +634,7 @@ update.timegpt_model <- function(
 #' be searched over a specified integer range.
 #'
 #' @param range Integer vector of length 2 giving the minimum and maximum
-#'   allowable values (default: `c(10L, 200L)`).
+#'   allowable values (default: `c(0L, 200L)`).
 #'
 #' @return A `dials` parameter object describing the finetune steps hyperparameter.
 #' @export
@@ -656,7 +656,7 @@ finetune_steps <- function(range = c(0L, 200L)) {
 #' be passed through `tune::tune()` and searched over an integer range.
 #'
 #' @param range Integer vector of length 2 giving the minimum and maximum
-#'   allowable values (default: `c(2L, 5L)`).
+#'   allowable values (default: `c(1L, 5L)`).
 #'
 #' @return A `dials` parameter object describing the finetune depth hyperparameter.
 #' @export
@@ -674,7 +674,6 @@ finetune_depth <- function(range = c(1L, 5L)) {
 #' Determine if forecast horizon is "long" based on date_type
 #'
 #' Long horizon is defined as more than two seasonal periods:
-#' - Hourly: > 48 hours (2 days)
 #' - Daily: > 14 days (2 weeks)
 #' - Weekly: > 104 weeks (2 years)
 #' - Monthly: > 24 months (2 years)
@@ -690,9 +689,7 @@ is_long_horizon_forecast <- function(forecast_horizon, date_type) {
     return(FALSE)
   }
 
-  # Simple switch on date_type instead of complex numeric comparisons
   threshold <- switch(date_type,
-    "hour"    = 48, # > 2 days
     "day"     = 14, # > 2 weeks
     "week"    = 104, # > 2 years
     "month"   = 24, # > 2 years
