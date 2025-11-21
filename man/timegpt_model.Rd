@@ -4,13 +4,25 @@
 \alias{timegpt_model}
 \title{TimeGPT model specification}
 \usage{
-timegpt_model(mode = "regression", forecast_horizon = NULL)
+timegpt_model(
+  mode = "regression",
+  forecast_horizon = NULL,
+  frequency = NULL,
+  finetune_steps = NULL,
+  finetune_depth = NULL
+)
 }
 \arguments{
 \item{mode}{A single character string for the type of model.
 The only possible value for this model is "regression".}
 
 \item{forecast_horizon}{forecast horizon}
+
+\item{frequency}{frequency of data}
+
+\item{finetune_steps}{finetune steps}
+
+\item{finetune_depth}{finetune depth}
 }
 \value{
 Get TimeGPT model
