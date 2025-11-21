@@ -982,14 +982,55 @@ update_forecast_combo <- function(agent_info,
     path = project_info$path
   )
 
-  # get previous forecast of best run
-  prev_fcst_tbl <- get_forecast_data(run_info = prev_run_info) %>%
-    dplyr::filter(Best_Model == "Yes")
-
   # get best model list from previous run
-  if (prev_run_log_tbl$forecast_approach != "bottoms_up") {
+  if (unique(prev_best_run_tbl$model_type) == "global") {
+    # global model only runs xgboost with R1 recipe
     model_id_list <- "xgboost--global--R1"
   } else {
+    # get previous forecast for local model
+    # read the single models forecast file
+    single_models_fcst <- read_file(
+      run_info = prev_run_info,
+      path = paste0(
+        "forecasts/",
+        hash_data(prev_run_info$project_name), "-",
+        hash_data(prev_run_info$run_name), "-",
+        hash_data(combo), "-single_models.",
+        prev_run_info$data_output
+      ) %>% fs::path_tidy(),
+      return_type = "df"
+    )
+    
+    # read the average models forecast file
+    avg_models_fcst <- tryCatch(
+      {
+        read_file(
+          run_info = prev_run_info,
+          path = paste0(
+            "forecasts/",
+            hash_data(prev_run_info$project_name), "-",
+            hash_data(prev_run_info$run_name), "-",
+            hash_data(combo), "-average_models.",
+            prev_run_info$data_output
+          ) %>% fs::path_tidy(),
+          return_type = "df"
+        )
+      },
+      error = function(e) {
+        tibble::tibble()
+      }
+    )
+            
+    # combine forecasts
+    prev_fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst) %>%
+      dplyr::filter(Best_Model == "Yes")
+    
+    if (nrow(prev_fcst_tbl) == 0) {
+      stop("Error in update_forecast(). No best model forecasts found from previous run for combo: ", combo,
+           call. = FALSE
+      )
+    }
+    
     model_id_list <- prev_fcst_tbl %>%
       dplyr::pull(Model_ID) %>%
       unique() %>%
