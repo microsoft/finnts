@@ -991,8 +991,8 @@ update_forecast_combo <- function(agent_info,
     # read the single models forecast file
     single_models_fcst <- read_file(
       run_info = prev_run_info,
-      path = paste0(
-        "forecasts/",
+      file_list = paste0(
+        prev_run_info$path, "/forecasts/",
         hash_data(prev_run_info$project_name), "-",
         hash_data(prev_run_info$run_name), "-",
         hash_data(combo), "-single_models.",
@@ -1006,8 +1006,8 @@ update_forecast_combo <- function(agent_info,
       {
         read_file(
           run_info = prev_run_info,
-          path = paste0(
-            "forecasts/",
+          file_list = paste0(
+            prev_run_info$path, "/forecasts/",
             hash_data(prev_run_info$project_name), "-",
             hash_data(prev_run_info$run_name), "-",
             hash_data(combo), "-average_models.",
@@ -1047,28 +1047,18 @@ update_forecast_combo <- function(agent_info,
     unique()
 
   # get trained models from previous run
-  # determine combo hash based on model type
-  if (unique(prev_best_run_tbl$model_type) == "global") {
-    combo_hash <- hash_data("All-Data")
-  } else {
-    combo_hash <- hash_data(prev_best_run_tbl$combo[1])
-  }
-  
-  # construct file path for trained models
-  file_path <- paste0(
-    prev_run_info$path, "/models/",
-    hash_data(prev_run_info$project_name), "-",
-    hash_data(prev_run_info$run_name), "-",
-    combo_hash, "-single_models.",
-    prev_run_info$object_output
-  ) %>% fs::path_tidy()
-  
   # read the trained models file and filter by model IDs
   trained_models_tbl <- tryCatch(
     {
       read_file(
         run_info = prev_run_info,
-        file_list = file_path,
+        file_list = paste0(
+          prev_run_info$path, "/models/",
+          hash_data(prev_run_info$project_name), "-",
+          hash_data(prev_run_info$run_name), "-",
+          hash_data(combo), "-single_models.",
+          prev_run_info$object_output
+        ) %>% fs::path_tidy(),
         return_type = "df"
       ) %>%
         dplyr::filter(Model_ID %in% model_id_list)
