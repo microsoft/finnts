@@ -1451,6 +1451,22 @@ fit_models <- function(run_info,
                        num_cores,
                        inner_parallel,
                        seed = 123) {
+  
+  # get recipe info
+  if("R1" %in% unique(trained_models_tbl$Recipe_ID)) {
+    r1_tbl <- get_prepped_data(
+      run_info = run_info,
+      recipe = "R1"
+    )
+  }
+
+  if("R2" %in% unique(trained_models_tbl$Recipe_ID)) {
+    r2_tbl <- get_prepped_data(
+      run_info = run_info,
+      recipe = "R2"
+    )
+  }
+  
   # train each model
   par_info <- par_start(
     run_info = run_info,
@@ -1483,11 +1499,12 @@ fit_models <- function(run_info,
     data_prep_recipe <- model_run %>%
       dplyr::pull(Recipe_ID)
 
-    prep_data <- get_prepped_data(
-      run_info = run_info,
-      recipe = data_prep_recipe
+    prep_data <- switch(
+      data_prep_recipe,
+      "R1" = r1_tbl,
+      "R2" = r2_tbl
     )
-
+      
     workflow <- model_run$Model_Fit[[1]]
 
     # convert trained workflow to empty workflow to prevent memory issues
