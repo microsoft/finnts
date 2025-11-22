@@ -1454,16 +1454,37 @@ fit_models <- function(run_info,
   
   # get recipe info
   if("R1" %in% unique(trained_models_tbl$Recipe_ID)) {
-    r1_tbl <- get_prepped_data(
-      run_info = run_info,
-      recipe = "R1"
-    )
+    if(combo == "All-Data") {
+      r1_tbl <- get_prepped_data(
+        run_info = run_info,
+        recipe = "R1"
+      )
+    } else {
+      r1_tbl <- read_file(
+        run_info = run_info,
+        file_list = paste0(
+          run_info$path, "/prep_data/",
+          hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-",
+          hash_data(combo), "-R1.",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        return_type = "df"
+      )
+    }
   }
 
   if("R2" %in% unique(trained_models_tbl$Recipe_ID)) {
-    r2_tbl <- get_prepped_data(
+    r2_tbl <- read_file(
       run_info = run_info,
-      recipe = "R2"
+      file_list = paste0(
+        run_info$path, "/prep_data/",
+        hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "-",
+        hash_data(combo), "-R2.",
+        run_info$data_output
+      ) %>% fs::path_tidy(),
+      return_type = "df"
     )
   }
   
