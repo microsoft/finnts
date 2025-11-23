@@ -2141,7 +2141,7 @@ load_combo_forecast <- function(combo, run_info) {
   avg_models_fcst <- tryCatch(
     {
       read_file(
-        run_info = prev_run_info,
+        run_info = run_info,
         file_list = paste0(
           run_info$path, "/forecasts/",
           hash_data(run_info$project_name), "-",
