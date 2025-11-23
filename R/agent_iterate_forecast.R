@@ -1451,7 +1451,8 @@ log_best_run <- function(agent_info,
 
   # update the run log file with additional model accuracy information
   if (!is.null(combo)) {
-    model_back_test_tbl <- get_forecast_data(run_info = run_info) %>%
+    model_back_test_tbl <- load_combo_forecast(combo = combo, 
+                                               run_info = run_info) %>%
       dplyr::filter(
         Run_Type == "Back_Test",
         Recipe_ID != "simple_average"
@@ -1558,7 +1559,8 @@ log_best_run <- function(agent_info,
     }
 
     # get back test data
-    back_test_tbl <- get_forecast_data(run_info = run_info) %>%
+    back_test_tbl <- load_combo_forecast(combo = ifelse(combo == "all", "All-Data", combo), 
+                                         run_info = run_info) %>%
       dplyr::filter(
         Best_Model == "Yes",
         Run_Type == "Back_Test"

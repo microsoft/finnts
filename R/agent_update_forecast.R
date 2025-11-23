@@ -988,41 +988,8 @@ update_forecast_combo <- function(agent_info,
     model_id_list <- "xgboost--global--R1"
   } else {
     # get previous forecast for local model
-    # read the single models forecast file
-    single_models_fcst <- read_file(
-      run_info = prev_run_info,
-      file_list = paste0(
-        prev_run_info$path, "/forecasts/",
-        hash_data(prev_run_info$project_name), "-",
-        hash_data(prev_run_info$run_name), "-",
-        hash_data(combo), "-single_models.",
-        prev_run_info$data_output
-      ) %>% fs::path_tidy(),
-      return_type = "df"
-    )
-    
-    # read the average models forecast file
-    avg_models_fcst <- tryCatch(
-      {
-        read_file(
-          run_info = prev_run_info,
-          file_list = paste0(
-            prev_run_info$path, "/forecasts/",
-            hash_data(prev_run_info$project_name), "-",
-            hash_data(prev_run_info$run_name), "-",
-            hash_data(combo), "-average_models.",
-            prev_run_info$data_output
-          ) %>% fs::path_tidy(),
-          return_type = "df"
-        )
-      },
-      error = function(e) {
-        tibble::tibble()
-      }
-    )
-            
-    # combine forecasts
-    prev_fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst) %>%
+    prev_fcst_tbl <-load_combo_forecast(combo = combo, 
+                                        run_info = prev_run_info) %>%
       dplyr::filter(Best_Model == "Yes")
     
     if (nrow(prev_fcst_tbl) == 0) {
@@ -2135,4 +2102,89 @@ adjust_inputs <- function(x,
       x
     }
   }
+}
+
+#' Load Combo Forecast
+#' 
+#' This function loads the forecast data for a specified combo from the run information.
+#' If the combo is "All-Data", it retrieves the standard forecast data. For other combos,
+#' it reads the single models and average models forecast files and combines them.
+#' 
+#' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
+#' @param run_info A list containing run information including project name, run name, storage
+#' object, path, data output, and object output.
+#' 
+#' @return A data frame containing the loaded forecast data for the specified combo.
+#' @noRd
+load_combo_forecast <- function(combo, run_info) {
+  
+  # standard forecast loading for global models
+  if(combo == "All-Data") {
+    fcst_tbl <- get_forecast_data(run_info)
+    return(fcst_tbl)
+  }
+  
+  # read the single models forecast file
+  single_models_fcst <- read_file(
+    run_info = run_info,
+    file_list = paste0(
+      run_info$path, "/forecasts/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-",
+      hash_data(combo), "-single_models.",
+      run_info$data_output
+    ) %>% fs::path_tidy(),
+    return_type = "df"
+  )
+  
+  # read the average models forecast file
+  avg_models_fcst <- tryCatch(
+    {
+      read_file(
+        run_info = prev_run_info,
+        file_list = paste0(
+          run_info$path, "/forecasts/",
+          hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-",
+          hash_data(combo), "-average_models.",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        return_type = "df"
+      )
+    },
+    error = function(e) {
+      tibble::tibble()
+    }
+  )
+  
+  # combine forecasts
+  fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst)
+  
+  # load train test info
+  train_test_tbl <- read_file(
+    run_info = run_info,
+    file_list = paste0(
+      run_info$path, "/prep_models/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-",
+      "train_test_split.",
+      run_info$data_output
+    ) %>% fs::path_tidy(),
+    return_type = "df"
+  )
+  
+  # join train test info
+  fcst_tbl <- fcst_tbl %>%
+    dplyr::left_join(
+      train_test_tbl %>%
+        dplyr::select(Train_Test_ID, Run_Type),
+      by = "Train_Test_ID"
+    )
+  
+  # check if forecast data exists
+  if(nrow(fcst_tbl) == 0) {
+    stop("No forecast data found for combo: ", combo)
+  }
+  
+  return(fcst_tbl)
 }
