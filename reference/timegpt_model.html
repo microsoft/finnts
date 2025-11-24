@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9008</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
       </span>
     </div>
 
@@ -105,7 +105,13 @@
     </div>
 
     <div id="ref-usage">
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">timegpt_model</span><span class="op">(</span>mode <span class="op">=</span> <span class="st">"regression"</span>, forecast_horizon <span class="op">=</span> <span class="cn">NULL</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">timegpt_model</span><span class="op">(</span></span>
+<span>  mode <span class="op">=</span> <span class="st">"regression"</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  frequency <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  finetune_steps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  finetune_depth <span class="op">=</span> <span class="cn">NULL</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div id="arguments">
@@ -119,6 +125,18 @@ The only possible value for this model is "regression".</p></dd>
 
 <dt id="arg-forecast-horizon">forecast_horizon<a class="anchor" aria-label="anchor" href="#arg-forecast-horizon"></a></dt>
 <dd><p>forecast horizon</p></dd>
+
+
+<dt id="arg-frequency">frequency<a class="anchor" aria-label="anchor" href="#arg-frequency"></a></dt>
+<dd><p>frequency of data</p></dd>
+
+
+<dt id="arg-finetune-steps">finetune_steps<a class="anchor" aria-label="anchor" href="#arg-finetune-steps"></a></dt>
+<dd><p>finetune steps</p></dd>
+
+
+<dt id="arg-finetune-depth">finetune_depth<a class="anchor" aria-label="anchor" href="#arg-finetune-depth"></a></dt>
+<dd><p>finetune depth</p></dd>
 
 </dl></div>
     <div id="value">

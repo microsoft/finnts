@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9008</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
       </span>
     </div>
 
@@ -234,7 +234,11 @@ API</a></li>
 <div class="section level2">
 <h2 id="using-timegpt-within-finnts">Using TimeGPT within finnts<a class="anchor" aria-label="anchor" href="#using-timegpt-within-finnts"></a>
 </h2>
-<p>TimeGPT is available as a model within finnts unified workflow.</p>
+<p>TimeGPT is available as a model within finnts unified workflow and
+can run as both a <strong>local</strong> (per time series) or
+<strong>global</strong> (across all time series) model. When running as
+a global model, TimeGPT learns patterns across all your time series
+simultaneously.</p>
 <div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
@@ -290,6 +294,89 @@ API</a></li>
 <span><span class="co"># 6 M2    M2    timegpt--loc~ timegpt    local      R1        Future_~             1 Yes              6</span></span>
 <span><span class="co"># i 7 more variables: Date &lt;date&gt;, Target &lt;dbl&gt;, Forecast &lt;dbl&gt;, lo_95 &lt;dbl&gt;, lo_80 &lt;dbl&gt;,</span></span>
 <span><span class="co">#   hi_80 &lt;dbl&gt;, hi_95 &lt;dbl&gt;</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="data-size-requirements-and-automatic-padding">Data Size Requirements and Automatic Padding<a class="anchor" aria-label="anchor" href="#data-size-requirements-and-automatic-padding"></a>
+</h2>
+<p>Azure AI TimeGPT endpoints have minimum data size requirements based
+on data frequency:</p>
+<ul>
+<li>
+<strong>Daily data</strong>: Minimum 300 rows</li>
+<li>
+<strong>Weekly data</strong>: Minimum 64 rows<br>
+</li>
+<li>
+<strong>Monthly/Quarterly/Yearly data</strong>: Minimum 48 rows</li>
+</ul>
+<p>When using Azure AI endpoints, finnts automatically pads your data
+with zeros (backward from the earliest date) to meet these requirements.
+This ensures your forecasts work even with smaller datasets. The padding
+only affects the data sent to the API, your original training data
+remains unchanged in the model fit object.</p>
+<p><strong>Note:</strong> Padding is only applied for Azure AI
+endpoints. The default Nixtla API does not have these constraints.</p>
+</div>
+<div class="section level2">
+<h2 id="long-horizon-forecasting">Long-Horizon Forecasting<a class="anchor" aria-label="anchor" href="#long-horizon-forecasting"></a>
+</h2>
+<p>For forecasts exceeding two seasonal periods, TimeGPT automatically
+uses the <code>timegpt-1-long-horizon</code> model, which is optimized
+for longer forecast horizons. The threshold for “long horizon” depends
+on your data frequency:</p>
+<ul>
+<li>
+<strong>Daily</strong>: &gt; 14 days (2 weeks)</li>
+<li>
+<strong>Weekly</strong>: &gt; 104 weeks (2 years)</li>
+<li>
+<strong>Monthly</strong>: &gt; 24 months (2 years)</li>
+<li>
+<strong>Quarterly</strong>: &gt; 8 quarters (2 years)</li>
+<li>
+<strong>Yearly</strong>: &gt; 2 years</li>
+</ul>
+<p>This selection happens automatically based on your
+<code>forecast_horizon</code> and <code>date_type</code> parameters—no
+additional configuration needed.</p>
+</div>
+<div class="section level2">
+<h2 id="hyperparameter-tuning">Hyperparameter Tuning<a class="anchor" aria-label="anchor" href="#hyperparameter-tuning"></a>
+</h2>
+<p>TimeGPT supports hyperparameter tuning for fine-tuning
+parameters:</p>
+<ul>
+<li>
+<strong><code>finetune_steps</code></strong>: Number of fine-tuning
+steps (range: 0-200)</li>
+<li>
+<strong><code>finetune_depth</code></strong>: Fine-tuning
+depth/layers (range: 1-5)</li>
+</ul>
+<p>These parameters are automatically tuned when you set
+<code>num_hyperparameters</code> in <code><a href="../reference/prep_models.html">prep_models()</a></code>. The
+tuning process uses validation splits to find optimal values, then
+refits the model with the best parameters.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
+<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"timegpt"</span><span class="op">)</span>,</span>
+<span>  num_hyperparameters <span class="op">=</span> <span class="fl">4</span>  <span class="co"># Will tune finetune_steps and finetune_depth</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="global-model-support">Global Model Support<a class="anchor" aria-label="anchor" href="#global-model-support"></a>
+</h2>
+<p>TimeGPT can run as both a <strong>local</strong> (per time series) or
+<strong>global</strong> (across all time series) model. When running as
+a global model, TimeGPT learns patterns across all your time series
+simultaneously.</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># Run TimeGPT as a global model</span></span>
+<span><span class="fu"><a href="../reference/train_models.html">train_models</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">TRUE</span>  <span class="co"># TimeGPT will train on all combos together</span></span>
+<span><span class="op">)</span></span></code></pre></div>
 </div>
   </div>
 

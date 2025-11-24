@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9008</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
       </span>
     </div>
 
@@ -433,7 +433,10 @@ training. Each default model in finnts has their own preprocessing steps
 that ensure the data fed into the model has the best chance of producing
 a high quality forecast. The <a href="https://recipes.tidymodels.org/" class="external-link">recipes</a> package is used to
 easily apply various preprocessing transformations needed before
-training a model.</p>
+training a model. Additionally, TimeGPT automatically pads data with
+zeros when using Azure AI endpoints just before the API call to meet
+minimum data size requirements based on data frequency (see the <a href="forecasting-genai.html">Forecasting with GenAI</a> vignette for
+details).</p>
 </div>
   </div>
 

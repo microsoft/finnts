@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9008</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
       </span>
     </div>
 
@@ -106,7 +106,16 @@
 
     <div id="ref-usage">
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="co"># S3 method for class 'timegpt_model'</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/stats/update.html" class="external-link">update</a></span><span class="op">(</span><span class="va">object</span>, parameters <span class="op">=</span> <span class="cn">NULL</span>, forecast_horizon <span class="op">=</span> <span class="cn">NULL</span>, fresh <span class="op">=</span> <span class="cn">FALSE</span>, <span class="va">...</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu"><a href="https://rdrr.io/r/stats/update.html" class="external-link">update</a></span><span class="op">(</span></span>
+<span>  <span class="va">object</span>,</span>
+<span>  parameters <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  fresh <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  frequency <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  finetune_steps <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  finetune_depth <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  <span class="va">...</span></span>
+<span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div id="arguments">
@@ -127,6 +136,18 @@
 
 <dt id="arg-fresh">fresh<a class="anchor" aria-label="anchor" href="#arg-fresh"></a></dt>
 <dd><p>fresh</p></dd>
+
+
+<dt id="arg-frequency">frequency<a class="anchor" aria-label="anchor" href="#arg-frequency"></a></dt>
+<dd><p>frequency</p></dd>
+
+
+<dt id="arg-finetune-steps">finetune_steps<a class="anchor" aria-label="anchor" href="#arg-finetune-steps"></a></dt>
+<dd><p>finetune steps</p></dd>
+
+
+<dt id="arg-finetune-depth">finetune_depth<a class="anchor" aria-label="anchor" href="#arg-finetune-depth"></a></dt>
+<dd><p>finetune depth</p></dd>
 
 
 <dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
