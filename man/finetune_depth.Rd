@@ -18,3 +18,4 @@ Defines the tunable parameter used to control the fine-tuning depth
 (number of layers) for the TimeGPT model. Like \code{finetune_steps()}, this can
 be passed through \code{tune::tune()} and searched over an integer range.
 }
+\keyword{internal}
