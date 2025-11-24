@@ -18,3 +18,4 @@ Defines the tunable parameter used to control the number of fine-tuning steps
 for the TimeGPT model. This parameter is exposed via \code{tune::tune()} and can
 be searched over a specified integer range.
 }
+\keyword{internal}
