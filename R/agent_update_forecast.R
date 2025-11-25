@@ -1087,7 +1087,8 @@ update_forecast_combo <- function(agent_info,
         )
       ),
       return_type = "df"
-    )
+    ) %>% 
+      adjust_combo_column()
   } else {
     input_data <- read_file(
       run_info = project_info,
@@ -1096,7 +1097,8 @@ update_forecast_combo <- function(agent_info,
         hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
       ) %>% fs::path_tidy(),
       return_type = "df"
-    )
+    ) %>% 
+      adjust_combo_column()
   }
 
   # create unique run name
@@ -1425,7 +1427,8 @@ fit_models <- function(run_info,
       r1_tbl <- get_prepped_data(
         run_info = run_info,
         recipe = "R1"
-      )
+      ) %>%
+        adjust_combo_column()
     } else {
       r1_tbl <- read_file(
         run_info = run_info,
@@ -1437,7 +1440,8 @@ fit_models <- function(run_info,
           run_info$data_output
         ) %>% fs::path_tidy(),
         return_type = "df"
-      )
+      ) %>% 
+        adjust_combo_column()
     }
   }
 
@@ -1452,7 +1456,8 @@ fit_models <- function(run_info,
         run_info$data_output
       ) %>% fs::path_tidy(),
       return_type = "df"
-    )
+    ) %>% 
+      adjust_combo_column()
   }
   
   # train each model
@@ -2135,7 +2140,8 @@ load_combo_forecast <- function(combo, run_info) {
       run_info$data_output
     ) %>% fs::path_tidy(),
     return_type = "df"
-  )
+  ) %>% 
+    adjust_combo_column()
   
   # read the average models forecast file
   avg_models_fcst <- tryCatch(
@@ -2150,7 +2156,8 @@ load_combo_forecast <- function(combo, run_info) {
           run_info$data_output
         ) %>% fs::path_tidy(),
         return_type = "df"
-      )
+      ) %>% 
+        adjust_combo_column()
     },
     error = function(e) {
       tibble::tibble()
