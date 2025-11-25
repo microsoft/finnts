@@ -277,7 +277,8 @@ final_models <- function(run_info,
       predictions_tbl <- local_model_tbl %>%
         rbind(global_model_tbl) %>%
         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-        dplyr::filter(Train_Test_ID %in% train_test_id_list)
+        dplyr::filter(Train_Test_ID %in% train_test_id_list) %>% 
+        adjust_combo_column()
 
       # get model list
       if (!is.null(local_model_tbl)) {
@@ -459,6 +460,7 @@ final_models <- function(run_info,
             Hyperparameter_ID = "NA",
             Best_Model = "Yes"
           ) %>%
+          adjust_combo_column() %>%
           dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
           dplyr::mutate(Horizon = dplyr::row_number()) %>%
           dplyr::ungroup() %>%
@@ -476,6 +478,7 @@ final_models <- function(run_info,
 
         if (!is.null(single_model_tbl)) {
           single_model_final_tbl <- single_model_tbl %>%
+            adjust_combo_column() %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
             convert_weekly_to_daily(date_type, initial_weekly_to_daily)
@@ -492,6 +495,7 @@ final_models <- function(run_info,
 
         if (!is.null(ensemble_model_tbl)) {
           ensemble_model_final_tbl <- ensemble_model_tbl %>%
+            adjust_combo_column() %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
             convert_weekly_to_daily(date_type, initial_weekly_to_daily)
@@ -508,6 +512,7 @@ final_models <- function(run_info,
 
         if (!is.null(global_model_tbl)) {
           global_model_final_tbl <- global_model_tbl %>%
+            adjust_combo_column() %>%
             dplyr::mutate(Best_Model = "No") %>%
             create_prediction_intervals(model_train_test_tbl) %>%
             convert_weekly_to_daily(date_type, initial_weekly_to_daily)
@@ -543,6 +548,7 @@ final_models <- function(run_info,
               Hyperparameter_ID = "NA",
               Best_Model = "No"
             ) %>%
+            adjust_combo_column() %>%
             dplyr::group_by(Combo_ID, Model_ID, Train_Test_ID) %>%
             dplyr::mutate(Horizon = dplyr::row_number()) %>%
             dplyr::ungroup() %>%
@@ -561,6 +567,7 @@ final_models <- function(run_info,
 
         if (!is.null(single_model_tbl)) {
           single_model_final_tbl <- single_model_tbl %>%
+            adjust_combo_column() %>%
             remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
@@ -580,6 +587,7 @@ final_models <- function(run_info,
 
         if (!is.null(ensemble_model_tbl)) {
           ensemble_model_final_tbl <- ensemble_model_tbl %>%
+            adjust_combo_column() %>%
             remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
@@ -599,6 +607,7 @@ final_models <- function(run_info,
 
         if (!is.null(global_model_tbl)) {
           global_model_final_tbl <- global_model_tbl %>%
+            adjust_combo_column() %>%
             remove_best_model() %>%
             dplyr::left_join(final_model_tbl,
               by = "Model_ID"
@@ -788,4 +797,19 @@ remove_best_model <- function(df) {
     df <- df %>% dplyr::select(-Best_Model)
   }
   return(df)
+}
+
+#' Adjust Combo column if read in as logical
+#'
+#' @param input_data input data
+#' 
+#' @return data frame with adjusted Combo column
+#' @noRd
+adjust_combo_column <- function(input_data) {
+  # adjust Combo column if read in as logical, converting FALSE to F and TRUE to T
+  if (is.logical(input_data$Combo)) {
+    input_data <- input_data %>%
+      dplyr::mutate(Combo = ifelse(Combo, as.character("T"), as.character("F")))
+  }
+  return(input_data)
 }

@@ -20,6 +20,7 @@
 ## Bug Fixes
 -   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
 -   Fixed weighted mape calculation when target variable has negative values.
+-   Fixed issue when reconciling standard hierarchical forecasts
   
 ## Breaking Changes
 
