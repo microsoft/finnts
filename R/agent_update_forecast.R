@@ -1380,7 +1380,7 @@ update_forecast_combo <- function(agent_info,
     combo = if (combo == "All-Data") {
       NULL
     } else {
-      combo
+      hash_data(combo)
     }
   )
 
@@ -2136,7 +2136,7 @@ load_combo_forecast <- function(combo, run_info) {
       run_info$path, "/forecasts/",
       hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "-",
-      hash_data(combo), "-single_models.",
+      combo, "-single_models.",
       run_info$data_output
     ) %>% fs::path_tidy(),
     return_type = "df"
@@ -2152,7 +2152,7 @@ load_combo_forecast <- function(combo, run_info) {
           run_info$path, "/forecasts/",
           hash_data(run_info$project_name), "-",
           hash_data(run_info$run_name), "-",
-          hash_data(combo), "-average_models.",
+          combo, "-average_models.",
           run_info$data_output
         ) %>% fs::path_tidy(),
         return_type = "df"
@@ -2166,6 +2166,11 @@ load_combo_forecast <- function(combo, run_info) {
   
   # combine forecasts
   fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst)
+  
+  # check if forecast data exists
+  if(nrow(fcst_tbl) == 0) {
+    stop("No forecast data found for combo hash: ", combo)
+  }
   
   # load train test info
   train_test_tbl <- read_file(
@@ -2187,11 +2192,6 @@ load_combo_forecast <- function(combo, run_info) {
         dplyr::select(Train_Test_ID, Run_Type),
       by = "Train_Test_ID"
     )
-  
-  # check if forecast data exists
-  if(nrow(fcst_tbl) == 0) {
-    stop("No forecast data found for combo: ", combo)
-  }
   
   return(fcst_tbl)
 }
