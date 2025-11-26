@@ -988,7 +988,7 @@ update_forecast_combo <- function(agent_info,
     model_id_list <- "xgboost--global--R1"
   } else {
     # get previous forecast for local model
-    prev_fcst_tbl <-load_combo_forecast(combo = combo, 
+    prev_fcst_tbl <-load_combo_forecast(combo = hash_data(combo), 
                                         run_info = prev_run_info) %>%
       dplyr::filter(Best_Model == "Yes")
     
