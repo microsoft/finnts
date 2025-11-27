@@ -1377,6 +1377,7 @@ update_forecast_combo <- function(agent_info,
     agent_info = agent_info,
     run_info = new_run_info,
     weighted_mape = log_wmape,
+    check_best_run = FALSE,
     combo = if (combo == "All-Data") {
       NULL
     } else {

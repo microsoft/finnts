@@ -1438,13 +1438,15 @@ calculate_fcst_metrics <- function(run_info,
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param weighted_mape A numeric value representing the weighted MAPE of the forecast.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param check_best_run Logical indicating if the best run check should be performed. Default is TRUE
 #'
 #' @return NULL
 #' @noRd
 log_best_run <- function(agent_info,
                          run_info,
                          weighted_mape,
-                         combo = NULL) {
+                         combo = NULL, 
+                         check_best_run = TRUE) {
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
@@ -1536,7 +1538,12 @@ log_best_run <- function(agent_info,
   }
 
   # check if previous best run exists and is more accurate
-  previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
+  if(check_best_run) {
+    previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
+  } else {
+    # skip best run check when running update forecast
+    previous_runs <- NULL
+  }
 
   if (is.data.frame(previous_runs) && nrow(previous_runs) > 1) {
     # see if latest run was the best run
