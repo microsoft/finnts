@@ -652,6 +652,29 @@ update_local_models <- function(agent_info,
         .multicombine = TRUE
       ) %op%
         {
+          
+          # check if combo already ran (in case of restart)
+          agent_best_run_tbl <- tryCatch(
+            {
+              read_file(agent_info_lean$project_info,
+                file_list = paste0(
+                  agent_info_lean$project_info$path, "/logs/",
+                  hash_data(agent_info_lean$project_info$project_name), "-",
+                  hash_data(agent_info_lean$run_id), "-",
+                  hash_data(combo), "-agent_best_run.csv"
+                ) %>%
+                  fs::path_tidy()
+              )
+            },
+            error = function(e) {
+              tibble::tibble()
+            }
+          )
+          
+          if (nrow(agent_best_run_tbl) > 0) {
+            return(data.frame(Combo = hash_data(combo)))
+          }
+          
           # get the previous best run for combo
           prev_run <- read_file(agent_info_lean$project_info,
             file_list = paste0(
