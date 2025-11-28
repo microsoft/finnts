@@ -485,8 +485,8 @@ list_files <- function(storage_object,
 
   files <- switch(class(storage_object)[[1]],
     "NULL" = if (grepl("*", file, fixed = TRUE)) {
-      # fs::dir_ls(path = dir, glob = file)
-      custom_ls(fs::path(dir, file))
+      fs::dir_ls(path = dir, glob = file)
+      # custom_ls(fs::path(dir, file))
     } else {
       path
     },
