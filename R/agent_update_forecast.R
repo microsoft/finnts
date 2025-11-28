@@ -621,7 +621,14 @@ update_local_models <- function(agent_info,
   }
 
   # final list to iterate through
-  local_combo_list <- unique(previous_best_run_local_tbl$combo)
+  local_combo_list <- previous_best_run_local_tbl %>%
+    dplyr::mutate(
+      underscore_count = stringr::str_count(models_to_run, "---")
+    ) %>%
+    # prioritize combos with more models to run first
+    dplyr::arrange(dplyr::desc(underscore_count)) %>%
+    dplyr::pull(combo) %>%
+    unique()
 
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
@@ -705,9 +712,6 @@ update_local_models <- function(agent_info,
               ))
             }
           )
-          
-          # sleep for 1-30 seconds to avoid spark job collisions
-          Sys.sleep(sample(1:30, 1))
 
           return(data.frame(Combo = hash_data(combo)))
         } %>%
