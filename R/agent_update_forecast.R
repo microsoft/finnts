@@ -705,6 +705,9 @@ update_local_models <- function(agent_info,
               ))
             }
           )
+          
+          # sleep for 1-30 seconds to avoid spark job collisions
+          Sys.sleep(sample(1:30, 1))
 
           return(data.frame(Combo = hash_data(combo)))
         } %>%
