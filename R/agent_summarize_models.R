@@ -217,7 +217,7 @@ summarize_models <- function(agent_info,
                   "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                   hash_data("Best-Model"), "-reconciled.", project_info$data_output
                 )
-              ) %>% 
+              ) %>%
                 adjust_combo_column()
             },
             error = function(e) {
@@ -252,7 +252,7 @@ summarize_models <- function(agent_info,
                 "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                 forecast_hash_combo, "-average_models.", project_info$data_output
               )
-            ) %>% 
+            ) %>%
               adjust_combo_column()
           },
           error = function(e) {

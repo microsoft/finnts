@@ -268,25 +268,24 @@ train_test_split <- function(run_info,
   )
 
   # pull out first recipe data
-  if("combo" %in% names(run_info)) {
+  if ("combo" %in% names(run_info)) {
     # determine first recipe
-    if(is.na(log_df$recipes_to_run)) {
+    if (is.na(log_df$recipes_to_run)) {
       first_recipe <- "R1"
     } else {
       recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
       first_recipe <- recipes[1]
     }
-    
+
     # get combo value from run info
     combo_value <- run_info$combo
-    
+
     # construct file path directly
     file_name <- paste0(
       run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
       hash_data(run_info$run_name), "-", combo_value, "-", first_recipe, ".",
       run_info$data_output
     ) %>% fs::path_tidy()
-    
   } else {
     file_name <- list_files(
       run_info$storage_object,
@@ -296,11 +295,11 @@ train_test_split <- function(run_info,
       )
     )[1]
   }
-  
+
   source_path <- switch(class(run_info$storage_object)[[1]],
-                        "NULL" = gsub(fs::path(run_info$path), "", file_name),
-                        blob_container = gsub(fs::path(run_info$path), "", file_name),
-                        ms_drive = fs::path("/prep_data/", file_name)
+    "NULL" = gsub(fs::path(run_info$path), "", file_name),
+    blob_container = gsub(fs::path(run_info$path), "", file_name),
+    ms_drive = fs::path("/prep_data/", file_name)
   )
 
   temp_tbl <- read_file(run_info,
@@ -514,10 +513,10 @@ model_workflows <- function(run_info,
   # pull out recipe data for a single combo
   input_tbl <- tibble::tibble()
 
-  if("combo" %in% names(run_info)) {
+  if ("combo" %in% names(run_info)) {
     # determine recipes
-    if(is.na(log_df$recipes_to_run)) {
-      if(date_type %in% c("month", "quarter", "year")) {
+    if (is.na(log_df$recipes_to_run)) {
+      if (date_type %in% c("month", "quarter", "year")) {
         recipes <- c("R1", "R2")
       } else {
         recipes <- "R1"
@@ -528,11 +527,11 @@ model_workflows <- function(run_info,
 
     # get combo value from run info
     combo_value <- run_info$combo
-    
+
     # create file name table based on recipes
     file_name_tbl <- tibble::tibble()
-    
-    for(recipe in recipes) {
+
+    for (recipe in recipes) {
       temp_file_name_tbl <- tibble::tibble(
         Path = paste0(
           run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
@@ -541,10 +540,9 @@ model_workflows <- function(run_info,
         ) %>% fs::path_tidy(),
         Recipe = recipe
       )
-      
+
       file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
     }
-    
   } else {
     file_name_tbl <- list_files(
       run_info$storage_object,
@@ -769,10 +767,10 @@ model_hyperparameters <- function(run_info,
   # get recipe input data
   input_tbl <- tibble::tibble()
 
-  if("combo" %in% names(run_info)) {
+  if ("combo" %in% names(run_info)) {
     # determine recipes
-    if(is.na(log_df$recipes_to_run)) {
-      if(date_type %in% c("month", "quarter", "year")) {
+    if (is.na(log_df$recipes_to_run)) {
+      if (date_type %in% c("month", "quarter", "year")) {
         recipes <- c("R1", "R2")
       } else {
         recipes <- "R1"
@@ -780,14 +778,14 @@ model_hyperparameters <- function(run_info,
     } else {
       recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
     }
-    
+
     # get combo value from run info
     combo_value <- run_info$combo
-    
+
     # create file name table based on recipes
     file_name_tbl <- tibble::tibble()
-    
-    for(recipe in recipes) {
+
+    for (recipe in recipes) {
       temp_file_name_tbl <- tibble::tibble(
         Path = paste0(
           run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
@@ -796,10 +794,9 @@ model_hyperparameters <- function(run_info,
         ) %>% fs::path_tidy(),
         Recipe = recipe
       )
-      
+
       file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
     }
-    
   } else {
     file_name_tbl <- list_files(
       run_info$storage_object,

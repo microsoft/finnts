@@ -153,9 +153,9 @@ set_agent_info <- function(project_info,
   }
 
   # check if agent run already exists
-  raw_agent_runs_tbl <- load_agent_runs(project_info) 
-  
-  if(nrow(raw_agent_runs_tbl) > 0) {
+  raw_agent_runs_tbl <- load_agent_runs(project_info)
+
+  if (nrow(raw_agent_runs_tbl) > 0) {
     # filter on latest run
     agent_runs_tbl <- raw_agent_runs_tbl %>%
       dplyr::arrange(dplyr::desc(created)) %>%
@@ -182,12 +182,14 @@ set_agent_info <- function(project_info,
       forecast_approach = forecast_approach
     ) %>%
       data.frame()
-    
-    prev_log_df <- align_types(current_log_df, 
-                               agent_runs_tbl %>%
-                                 dplyr::select(colnames(current_log_df))) %>%
+
+    prev_log_df <- align_types(
+      current_log_df,
+      agent_runs_tbl %>%
+        dplyr::select(colnames(current_log_df))
+    ) %>%
       data.frame()
-    
+
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
       stop("Inputs have recently changed in 'set_agent_info',
            please revert back to original inputs or start new agent run with 'overwrite' argument set to TRUE.",
@@ -330,11 +332,11 @@ set_agent_info <- function(project_info,
 }
 
 #' Set Up Finn Agent Run Information with Custom Logic
-#' 
+#'
 #' This function sets up the necessary information for a Finn Agent run,
 #' including input data, forecast horizon, and other parameters.
 #' It checks for existing runs based on a request ID and allows for overwriting if specified.
-#' This allows more advanced control over agent runs when running in production where 
+#' This allows more advanced control over agent runs when running in production where
 #' you may need to rerun forecasts multiple times with the same or updated parameters.
 #'
 #' @param project_info A Finn project from `set_project_info()`
@@ -353,7 +355,7 @@ set_agent_info <- function(project_info,
 #' @param request_id A unique identifier for the agent run request
 #' @param agent_action A character string indicating the action: "iterate_forecast" or
 #' "update_forecast"
-#' 
+#'
 #' @return A list containing the agent run information
 #' @noRd
 set_agent_info_custom <- function(project_info,
@@ -368,32 +370,30 @@ set_agent_info_custom <- function(project_info,
                                   combo_cleanup_date = NULL,
                                   allow_hierarchical_forecast = FALSE,
                                   reason_llm = NULL,
-                                  overwrite = FALSE, 
-                                  request_id, 
+                                  overwrite = FALSE,
+                                  request_id,
                                   agent_action) {
-  
   request_id_value <- request_id
-  
+
   # check inputs
   check_input_type("request_id", request_id, "character")
   check_input_type("agent_action", agent_action, "character")
-  if(!agent_action %in% c("iterate_forecast", "update_forecast")) {
+  if (!agent_action %in% c("iterate_forecast", "update_forecast")) {
     stop("agent_action must be either 'iterate_forecast' or 'update_forecast'", call. = FALSE)
   }
-  
+
   # see if previous agent run exists with same request_id
   agent_runs_tbl <- load_agent_runs(project_info)
-  
-  if(nrow(agent_runs_tbl) > 0) {
-    
+
+  if (nrow(agent_runs_tbl) > 0) {
     # ensure request_id column exists
-    if(!"request_id" %in% colnames(agent_runs_tbl)) {
+    if (!"request_id" %in% colnames(agent_runs_tbl)) {
       agent_runs_tbl <- agent_runs_tbl %>%
         dplyr::mutate(request_id = NA_character_)
     } else {
       agent_runs_tbl$request_id <- as.character(agent_runs_tbl$request_id)
     }
-    
+
     # filter on request id
     agent_run_request_id_tbl <- agent_runs_tbl %>%
       dplyr::filter(request_id == request_id_value)
@@ -402,8 +402,8 @@ set_agent_info_custom <- function(project_info,
   }
 
   # use existing agent run info if request id matches
-  if(nrow(agent_run_request_id_tbl) > 0) {
-    if(agent_action == "iterate_forecast") {
+  if (nrow(agent_run_request_id_tbl) > 0) {
+    if (agent_action == "iterate_forecast") {
       # use existing agent run info with overwrite = FALSE
       agent_info <- set_agent_info(
         project_info = project_info,
@@ -420,7 +420,7 @@ set_agent_info_custom <- function(project_info,
         reason_llm = reason_llm,
         overwrite = FALSE
       )
-    } else if(agent_action == "update_forecast") {
+    } else if (agent_action == "update_forecast") {
       # use existing agent run info but set overwrite = TRUE manually
       agent_info <- set_agent_info(
         project_info = project_info,
@@ -439,11 +439,11 @@ set_agent_info_custom <- function(project_info,
       )
       agent_info$overwrite <- TRUE
     }
-    
+
     return(agent_info)
   }
-  
-  if(nrow(agent_runs_tbl) > 0 && nrow(agent_run_request_id_tbl) == 0 & overwrite == TRUE) {
+
+  if (nrow(agent_runs_tbl) > 0 && nrow(agent_run_request_id_tbl) == 0 & overwrite == TRUE) {
     # create new agent run info with overwrite = TRUE
     agent_info <- set_agent_info(
       project_info = project_info,
@@ -478,19 +478,21 @@ set_agent_info_custom <- function(project_info,
       overwrite = overwrite
     )
   }
-  
+
   # load latest agent runs again
   new_agent_runs_tbl <- load_agent_runs(project_info)
-  
+
   # filter on latest run and add request id
   new_agent_runs_tbl <- new_agent_runs_tbl %>%
-    dplyr::filter(agent_version == agent_info$agent_version,
-                  run_id == agent_info$run_id) %>% 
+    dplyr::filter(
+      agent_version == agent_info$agent_version,
+      run_id == agent_info$run_id
+    ) %>%
     dplyr::mutate(request_id = as.character(request_id_value))
-  
+
   # write updated run info with request id to disc
   project_info$run_name <- agent_info$run_id
-  
+
   write_data(
     x = new_agent_runs_tbl,
     combo = NULL,
@@ -499,55 +501,54 @@ set_agent_info_custom <- function(project_info,
     folder = "logs",
     suffix = "-agent_run"
   )
-  
+
   # return agent info
   return(agent_info)
 }
 
 #' Align Data Frame Column Types
-#' 
+#'
 #' This function aligns the column types of `df2` to match those of `df1`
 #' for all shared columns.
-#' 
+#'
 #' @param df1 A data frame whose column types will be used as reference.
 #' @param df2 A data frame whose column types will be aligned to match `df1`.
-#' 
+#'
 #' @return A data frame `df2` with column types aligned to `df1`.
 #' @noRd
 align_types <- function(df1, df2) {
   shared_cols <- intersect(names(df1), names(df2))
-  
+
   for (col in shared_cols) {
     target_class <- class(df1[[col]])[1]
-    
+
     # select proper converter
-    convert_fun <- switch(
-      target_class,
-      Date     = function(x) as.Date(x),
-      POSIXct  = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
-      POSIXt   = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
-      factor   = function(x) as.factor(x),
-      integer  = function(x) as.integer(x),
-      numeric  = function(x) as.numeric(x),
-      logical  = function(x) as.logical(x),
-      character= function(x) as.character(x),
+    convert_fun <- switch(target_class,
+      Date = function(x) as.Date(x),
+      POSIXct = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
+      POSIXt = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
+      factor = function(x) as.factor(x),
+      integer = function(x) as.integer(x),
+      numeric = function(x) as.numeric(x),
+      logical = function(x) as.logical(x),
+      character = function(x) as.character(x),
       # fallback: return unchanged
       function(x) x
     )
-    
+
     # convert df2
     df2[[col]] <- convert_fun(df2[[col]])
   }
-  
+
   df2
 }
 
 #' Load Latest Agent Run Information
-#' 
+#'
 #' This function loads the latest agent run information for a given Finn project.
 #'
 #' @param project_info A Finn project from `set_project_info()`
-#' 
+#'
 #' @return A data frame containing the latest agent run information.
 #' @noRd
 load_agent_runs <- function(project_info) {

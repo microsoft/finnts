@@ -192,6 +192,62 @@ prep_data <- function(run_info,
       frequency_number = get_frequency_number(date_type)
     )
 
+  # define columns to check for input changes
+  cols_check_list <- c(
+    "combo_variables", "target_variable", "date_type",
+    "forecast_horizon", "external_regressors", "hist_start_date",
+    "hist_end_date", "combo_cleanup_date", "fiscal_year_start",
+    "clean_missing_values", "clean_outliers", "forecast_approach",
+    "parallel_processing", "num_cores", "fourier_periods",
+    "lag_periods", "rolling_window_periods", "recipes_to_run"
+  )
+
+  # read previous log
+  prev_log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  ) %>%
+    dplyr::select(tidyselect::any_of(cols_check_list))
+
+  # create current log
+  current_log_df <- tibble::tibble(
+    combo_variables = paste(combo_variables, collapse = "---"),
+    target_variable = target_variable,
+    date_type = date_type,
+    forecast_horizon = forecast_horizon,
+    external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = "---")),
+    hist_start_date = hist_start_date,
+    hist_end_date = hist_end_date,
+    combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, combo_cleanup_date),
+    fiscal_year_start = fiscal_year_start,
+    clean_missing_values = clean_missing_values,
+    clean_outliers = clean_outliers,
+    forecast_approach = forecast_approach,
+    parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
+    num_cores = ifelse(is.null(num_cores), NA, num_cores),
+    fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
+    lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
+    rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
+    recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---"))
+  ) %>%
+    data.frame()
+
+  # check if inputs have changed from previous run
+  if (length(cols_check_list) == length(colnames(prev_log_df))) {
+    prev_log_df_aligned <- prev_log_df %>%
+      dplyr::select(colnames(current_log_df)) %>%
+      data.frame()
+
+    if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
+      stop("Inputs have recently changed in 'prep_data', please revert back to original inputs or start a new run with 'set_run_info'",
+        call. = FALSE
+      )
+    } else {
+      cli::cli_alert_info("Data Already Prepped")
+      return(cli::cli_progress_done())
+    }
+  }
+
   # check if a previous run already has necessary outputs
   prev_combo_list <- list_files(
     run_info$storage_object,
@@ -228,6 +284,13 @@ prep_data <- function(run_info,
     prev_combo_list
   )
 
+  # check if previous run is complete
+  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+    cli::cli_alert_info("Data Already Prepped")
+    return(cli::cli_progress_done())
+  }
+
+  # filter to only combos that need to be processed
   current_combo_list_final <- current_combo_list %>%
     dplyr::filter(Combo_Hash %in% combo_diff) %>%
     dplyr::pull(Combo)

@@ -618,8 +618,10 @@ load_agent_forecast <- function(agent_info,
 
     # final formatting
     local_fcst_tbl <- local_fcst_tbl %>%
-      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID), 
-                    Date = as.Date(Date)) %>%
+      dplyr::mutate(
+        Train_Test_ID = as.numeric(Train_Test_ID),
+        Date = as.Date(Date)
+      ) %>%
       dplyr::left_join(model_train_test_tbl,
         by = "Train_Test_ID"
       ) %>%
@@ -1327,8 +1329,8 @@ submit_fcst_run <- function(agent_info,
     object_output = project_info$object_output,
     add_unique_id = FALSE
   )
-  
-  if(!is.null(combo)) {
+
+  if (!is.null(combo)) {
     # adjust to prevent unnecessary list_files() calls in spark
     run_info$combo <- combo_value
   }
@@ -1450,7 +1452,7 @@ calculate_fcst_metrics <- function(run_info,
 log_best_run <- function(agent_info,
                          run_info,
                          weighted_mape,
-                         combo = NULL, 
+                         combo = NULL,
                          check_best_run = TRUE) {
   # metadata
   project_info <- agent_info$project_info
@@ -1458,8 +1460,10 @@ log_best_run <- function(agent_info,
 
   # update the run log file with additional model accuracy information
   if (!is.null(combo)) {
-    model_back_test_tbl <- load_combo_forecast(combo = combo, 
-                                               run_info = run_info) %>%
+    model_back_test_tbl <- load_combo_forecast(
+      combo = combo,
+      run_info = run_info
+    ) %>%
       dplyr::filter(
         Run_Type == "Back_Test",
         Recipe_ID != "simple_average"
@@ -1543,7 +1547,7 @@ log_best_run <- function(agent_info,
   }
 
   # check if previous best run exists and is more accurate
-  if(check_best_run) {
+  if (check_best_run) {
     previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
   } else {
     # skip best run check when running update forecast
@@ -1571,8 +1575,10 @@ log_best_run <- function(agent_info,
     }
 
     # get back test data
-    back_test_tbl <- load_combo_forecast(combo = ifelse(combo == "all", "All-Data", combo), 
-                                         run_info = run_info) %>%
+    back_test_tbl <- load_combo_forecast(
+      combo = ifelse(combo == "all", "All-Data", combo),
+      run_info = run_info
+    ) %>%
       dplyr::filter(
         Best_Model == "Yes",
         Run_Type == "Back_Test"

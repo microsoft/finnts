@@ -277,7 +277,7 @@ final_models <- function(run_info,
       predictions_tbl <- local_model_tbl %>%
         rbind(global_model_tbl) %>%
         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
-        dplyr::filter(Train_Test_ID %in% train_test_id_list) %>% 
+        dplyr::filter(Train_Test_ID %in% train_test_id_list) %>%
         adjust_combo_column()
 
       # get model list
@@ -802,7 +802,7 @@ remove_best_model <- function(df) {
 #' Adjust Combo column if read in as logical
 #'
 #' @param input_data input data
-#' 
+#'
 #' @return data frame with adjusted Combo column
 #' @noRd
 adjust_combo_column <- function(input_data) {
