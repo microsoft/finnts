@@ -1148,6 +1148,11 @@ update_forecast_combo <- function(agent_info,
     object_output = project_info$object_output,
     add_unique_id = FALSE
   )
+  
+  if(combo != "All-Data") {
+    # adjust to prevent unnecessary list_files() calls in spark
+    new_run_info$combo <- combo_value
+  }
 
   # clean and prepare data for training
   prep_data(

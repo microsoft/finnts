@@ -1327,6 +1327,11 @@ submit_fcst_run <- function(agent_info,
     object_output = project_info$object_output,
     add_unique_id = FALSE
   )
+  
+  if(!is.null(combo)) {
+    # adjust to prevent unnecessary list_files() calls in spark
+    run_info$combo <- combo_value
+  }
 
   # clean and prepare data for training
   prep_data(
