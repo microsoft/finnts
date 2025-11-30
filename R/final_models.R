@@ -78,23 +78,6 @@ final_models <- function(run_info,
     inner_parallel
   )
 
-  # get combos
-  combo_list <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*_models.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
-    ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Type"), sep = "-", remove = TRUE) %>%
-    dplyr::filter(Combo != hash_data("All-Data")) %>%
-    dplyr::pull(Combo) %>%
-    unique()
-
   # get run splits
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
@@ -104,30 +87,7 @@ final_models <- function(run_info,
     return_type = "df"
   )
 
-  # check if a previous run already has necessary outputs
-  prev_combo_list <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*average_models.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
-    ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
-    dplyr::pull(Combo) %>%
-    unique()
-
-  current_combo_list <- combo_list
-
-  current_combo_list_final <- setdiff(
-    current_combo_list,
-    prev_combo_list
-  ) %>%
-    sample()
-
+  # read previous log
   prev_log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
@@ -147,34 +107,91 @@ final_models <- function(run_info,
     initial_weekly_to_daily <- weekly_to_daily
   }
 
-  if (sum(colnames(prev_log_df) %in% "weighted_mape")) {
-    # check if input values have changed
+  # define columns to check for input changes
+  cols_check_list <- c("average_models", "max_model_average")
+
+  # check if input values have changed from previous run
+  if (all(cols_check_list %in% colnames(prev_log_df))) {
+    # create current log
     current_log_df <- tibble::tibble(
       average_models = average_models,
-      max_model_average = max_model_average,
+      max_model_average = max_model_average
     ) %>%
       data.frame()
 
-    prev_log_df <- prev_log_df %>%
-      dplyr::select(colnames(current_log_df)) %>%
+    # get previous log
+    prev_log_df_aligned <- prev_log_df %>%
+      dplyr::select(tidyselect::all_of(cols_check_list)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      cli::cli_alert_info("Best Models Already Selected")
-      return(cli::cli_progress_done())
-    } else {
+    if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
       stop("Inputs have recently changed in 'final_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
       )
+    } else {
+      cli::cli_alert_info("Best Models Already Selected")
+      return(cli::cli_progress_done())
     }
   }
+
+  # get combos and check previous completion
+  if ("combo" %in% names(run_info)) {
+    # Single combo mode - no need to check previously completed combos
+    combo_list <- run_info$combo
+    prev_combo_list <- NULL
+    combo_diff <- combo_list
+  } else {
+    # Multi combo mode - get all combos and check which are complete
+    combo_list <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*_models.", run_info$data_output
+      )
+    ) %>%
+      tibble::tibble(
+        Path = .,
+        File = fs::path_file(.)
+      ) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Type"), sep = "-", remove = TRUE) %>%
+      dplyr::filter(Combo != hash_data("All-Data")) %>%
+      dplyr::pull(Combo) %>%
+      unique()
+
+    prev_combo_list <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*average_models.", run_info$data_output
+      )
+    ) %>%
+      tibble::tibble(
+        Path = .,
+        File = fs::path_file(.)
+      ) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+      dplyr::pull(Combo) %>%
+      unique()
+
+    combo_diff <- setdiff(combo_list, prev_combo_list)
+  }
+
+  # check if previous run is complete
+  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+    cli::cli_alert_info("Best Models Already Selected")
+    return(cli::cli_progress_done())
+  }
+
+  # filter to only combos that need to be processed
+  current_combo_list_final <- combo_diff %>%
+    sample()
 
   # parallel run info
   par_info <- par_start(
     run_info = run_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = length(current_combo_list)
+    task_length = length(current_combo_list_final)
   )
 
   cl <- par_info$cl
