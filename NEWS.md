@@ -4,6 +4,14 @@
 - TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
   - Added support for both historical and future external regressors
+  - Added timegpt-long-horizon model
+  - Added finetuning for depth and layers
+  - Enabled TimeGPT as a global model
+  - Added support for padding time series that don't meet minimum data requirements
+
+- Updated Train Model function
+  - Added debug arg to trace error while training over various models
+  - Fixed differencing restoration for combo data in global models.
 
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 

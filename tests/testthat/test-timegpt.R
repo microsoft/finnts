@@ -532,7 +532,7 @@ test_that("Predictor variables for non TimeGPT exclude *_original columns", {
   data <- timetk::m4_monthly %>%
     dplyr::mutate(id = as.character(id)) %>%
     dplyr::rename(Date = date, value = value) %>%
-    dplyr::filter(id == "M2", Date >= as.Date("2010-01-01"), Date <= as.Date("2012-12-01")) %>%
+    dplyr::filter(id == "M2", Date >= as.Date("2010-01-01"), Date <= as.Date("2014-12-01")) %>%
     dplyr::mutate(
       temperature = rnorm(dplyr::n(), 20, 5)
     )
@@ -584,4 +584,344 @@ test_that("Predictor variables for non TimeGPT exclude *_original columns", {
 
   check_predictors("xgboost")
   check_predictors("cubist")
+})
+
+test_that("pad_time_series_data preserves original y and external regressor values", {
+  # Create test data with known values (25 rows, below monthly minimum of 48)
+  set.seed(123)
+  original_dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 25)
+
+  train_df <- data.frame(
+    Date = original_dates,
+    Combo = "1",
+    y = 100 + rnorm(25, mean = 0, sd = 10), # Known values around 100
+    temperature_original = 20 + rnorm(25, mean = 0, sd = 2) # Known values around 20
+  )
+
+  # Store original values for verification
+  original_y_values <- train_df$y
+  original_xreg_values <- train_df$temperature_original
+  original_date_range <- range(original_dates)
+
+  # Pad the data (monthly data, min_size = 48)
+  padded_df <- finnts:::pad_time_series_data(train_df, date_type = "month", min_size = 48)
+
+  # Verify padding occurred (should have >= 48 rows)
+  expect_true(nrow(padded_df) >= 48,
+    info = "Padded data should have at least 48 rows"
+  )
+
+  # Verify original 25 rows are still present
+  original_rows <- padded_df %>%
+    dplyr::filter(Date >= original_date_range[1] & Date <= original_date_range[2]) %>%
+    dplyr::arrange(Date)
+
+  expect_equal(nrow(original_rows), 25,
+    info = "All 25 original rows should be present in padded data"
+  )
+
+  # Verify original y values are preserved (not zeroed)
+  expect_equal(original_rows$y, original_y_values,
+    tolerance = 1e-10,
+    info = "Original y values should be preserved exactly, not zeroed"
+  )
+
+  # Verify original external regressor values are preserved (not zeroed)
+  expect_equal(original_rows$temperature_original, original_xreg_values,
+    tolerance = 1e-10,
+    info = "Original external regressor values should be preserved exactly, not zeroed"
+  )
+
+  # Verify padded rows (before original dates) have zeros
+  padded_rows <- padded_df %>%
+    dplyr::filter(Date < original_date_range[1])
+
+  if (nrow(padded_rows) > 0) {
+    expect_true(all(padded_rows$y == 0),
+      info = "Padded rows (before original dates) should have y = 0"
+    )
+    expect_true(all(padded_rows$temperature_original == 0, na.rm = TRUE),
+      info = "Padded rows should have external regressor = 0"
+    )
+  }
+
+  # Verify data above minimum size is not padded
+  large_df <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 60),
+    Combo = "1",
+    y = rnorm(60, mean = 100, sd = 10),
+    temperature_original = rnorm(60, mean = 20, sd = 2)
+  )
+
+  not_padded_df <- finnts:::pad_time_series_data(large_df, date_type = "month", min_size = 48)
+
+  expect_equal(nrow(not_padded_df), 60,
+    info = "Data above minimum size should not be padded"
+  )
+  expect_equal(not_padded_df$y, large_df$y,
+    info = "Original y values should be unchanged when no padding occurs"
+  )
+})
+
+test_that("pad_time_series_data works with multiple combos", {
+  # Create test data with 2 combos, both below minimum
+  set.seed(456)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 25)
+
+  train_df <- data.frame(
+    Date = rep(dates, 2),
+    Combo = rep(c("M1", "M2"), each = 25),
+    y = rnorm(50, mean = 100, sd = 10),
+    temperature_original = rnorm(50, mean = 20, sd = 2)
+  )
+
+  # Store original values per combo
+  original_m1 <- train_df %>% dplyr::filter(Combo == "M1")
+  original_m2 <- train_df %>% dplyr::filter(Combo == "M2")
+
+  # Pad the data
+  padded_df <- finnts:::pad_time_series_data(train_df, date_type = "month", min_size = 48)
+
+  # Verify both combos were padded
+  combo_counts <- padded_df %>%
+    dplyr::count(Combo)
+
+  expect_true(all(combo_counts$n >= 48),
+    info = "All combos should have at least 48 rows after padding"
+  )
+
+  # Verify original data for M1 is preserved
+  m1_original_rows <- padded_df %>%
+    dplyr::filter(
+      Combo == "M1",
+      Date >= min(original_m1$Date),
+      Date <= max(original_m1$Date)
+    ) %>%
+    dplyr::arrange(Date)
+
+  expect_equal(m1_original_rows$y, original_m1$y,
+    tolerance = 1e-10,
+    info = "M1 original y values should be preserved"
+  )
+
+  # Verify original data for M2 is preserved
+  m2_original_rows <- padded_df %>%
+    dplyr::filter(
+      Combo == "M2",
+      Date >= min(original_m2$Date),
+      Date <= max(original_m2$Date)
+    ) %>%
+    dplyr::arrange(Date)
+
+  expect_equal(m2_original_rows$y, original_m2$y,
+    tolerance = 1e-10,
+    info = "M2 original y values should be preserved"
+  )
+})
+
+test_that("TimeGPT padding works with external regressors", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+
+  azure_url <- Sys.getenv("NIXTLA_BASE_URL", unset = NA)
+  skip_if(
+    is.na(azure_url) || !nzchar(azure_url) || !grepl("azure", azure_url, ignore.case = TRUE),
+    "Azure endpoint not configured - skipping padding test"
+  )
+
+  # Monthly data with external regressor, below minimum size (25 rows < 48)
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 25),
+    Combo = "1",
+    temperature_original = rnorm(25, mean = 20, sd = 5)
+  )
+  y <- rnorm(25, mean = 100, sd = 10)
+
+  fit <- timegpt_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  # Original data should still have 25 rows
+  expect_equal(nrow(fit$train_data), 25,
+    info = "Fit object should store original data (25 rows)"
+  )
+
+  # Verify external regressor is present in fit object
+  expect_true("temperature_original" %in% colnames(fit$train_data),
+    info = "External regressor should be present in fit object"
+  )
+
+  # Test that predict works (padding happens internally)
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2022-02-01"), by = "month", length.out = 3),
+    Combo = "1",
+    temperature_original = c(22, 23, 21)
+  )
+
+  preds <- timegpt_model_predict_impl(fit, new_data)
+
+  expect_type(preds, "double")
+  expect_length(preds, 3)
+  expect_true(all(!is.na(preds)),
+    info = "Predictions should work with external regressors (padding should handle small data)"
+  )
+})
+
+test_that("TimeGPT does not pad data above minimum size", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+
+  azure_url <- Sys.getenv("NIXTLA_BASE_URL", unset = NA)
+  skip_if(
+    is.na(azure_url) || !nzchar(azure_url) || !grepl("azure", azure_url, ignore.case = TRUE),
+    "Azure endpoint not configured - skipping padding test"
+  )
+
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 60),
+    Combo = "1"
+  )
+  y <- rnorm(60, mean = 100, sd = 10)
+
+  fit <- timegpt_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  expect_equal(nrow(fit$train_data), 60,
+    info = "Data above minimum size should not be padded"
+  )
+})
+
+test_that("TimeGPT padding works with multiple combos (global model)", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+
+  azure_url <- Sys.getenv("NIXTLA_BASE_URL", unset = NA)
+  skip_if(
+    is.na(azure_url) || !nzchar(azure_url) || !grepl("azure", azure_url, ignore.case = TRUE),
+    "Azure endpoint not configured - skipping padding test"
+  )
+
+  x <- data.frame(
+    Date = rep(seq.Date(as.Date("2020-01-01"), by = "month", length.out = 25), 2),
+    Combo = rep(c("M1", "M2"), each = 25)
+  )
+  y <- rnorm(50, mean = 100, sd = 10)
+
+  fit <- timegpt_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  # Original data should still have 25 rows per combo
+  train_df <- fit$train_data
+  combo_counts <- train_df %>%
+    dplyr::count(Combo)
+
+  expect_true(all(combo_counts$n == 25),
+    info = "Fit object should store original data (25 rows per combo)"
+  )
+
+  # Test that predict works (padding happens internally)
+  new_data <- data.frame(
+    Date = rep(seq.Date(as.Date("2022-02-01"), by = "month", length.out = 3), 2),
+    Combo = rep(c("M1", "M2"), each = 3)
+  )
+
+  preds <- timegpt_model_predict_impl(fit, new_data)
+
+  expect_type(preds, "double")
+  expect_length(preds, 6) # 3 periods × 2 combos
+  expect_true(all(!is.na(preds)),
+    info = "Predictions should work for all combos (padding should handle small data)"
+  )
+})
+
+test_that("TimeGPT tune parameters are assigned actual values after finalization", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1",
+    Target = rnorm(48, mean = 100, sd = 10)
+  )
+
+  recipe_spec <- get_recipe_timegpt(train_data)
+
+  # Create model spec with tune::tune() placeholders
+  model_spec <- timegpt_model(
+    forecast_horizon = 6,
+    frequency = 12,
+    finetune_steps = tune::tune(),
+    finetune_depth = tune::tune()
+  ) %>%
+    parsnip::set_engine("timegpt_model")
+
+  # Create workflow
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec)
+
+  # Simulate what tune::finalize_workflow()
+  finalized_spec <- wf %>%
+    workflows::update_model(
+      parsnip::set_args(
+        model_spec,
+        finetune_steps = 80,
+        finetune_depth = 3
+      )
+    )
+
+  # Extract finalized model spec
+  finalized_model <- finalized_spec$fit$actions$model$spec
+
+  finetune_steps_value <- rlang::eval_tidy(finalized_model$args$finetune_steps)
+  finetune_depth_value <- rlang::eval_tidy(finalized_model$args$finetune_depth)
+
+  # Check that they evaluate to the correct values
+  expect_equal(finetune_steps_value, 80,
+    info = "finetune_steps should evaluate to 80 after finalization"
+  )
+  expect_equal(finetune_depth_value, 3,
+    info = "finetune_depth should evaluate to 3 after finalization"
+  )
+
+  wf_fit <- parsnip::fit(finalized_spec, data = train_data)
+
+  fit_obj <- wf_fit$fit$fit$fit
+
+  expect_equal(fit_obj$finetune_steps, 80,
+    info = "finetune_steps value should be stored in fit object"
+  )
+  expect_equal(fit_obj$finetune_depth, 3,
+    info = "finetune_depth value should be stored in fit object"
+  )
+})
+
+test_that("TimeGPT uses long-horizon model for monthly forecasts > 24 months", {
+  skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
+
+  # First verify the helper function detects long horizon correctly
+  expect_true(finnts:::is_long_horizon_forecast(25, "month"),
+    info = "Helper function: 25 months should be detected as long horizon (> 24)"
+  )
+
+  expect_false(finnts:::is_long_horizon_forecast(12, "month"),
+    info = "Helper function: 12 months should NOT be detected as long horizon (< 24)"
+  )
+
+  # test the full pipeline with monthly data and forecast_horizon = 25 (> 24, so long horizon)
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 60),
+    Combo = "1"
+  )
+  y <- rnorm(60, mean = 100, sd = 10)
+
+  fit <- timegpt_model_fit_impl(x, y, forecast_horizon = 25, frequency = 12)
+
+  expect_equal(fit$forecast_horizon, 25)
+  expect_equal(fit$frequency, 12)
+
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2025-01-01"), by = "month", length.out = 25),
+    Combo = "1"
+  )
+
+  preds <- timegpt_model_predict_impl(fit, new_data)
+
+  expect_type(preds, "double")
+  expect_length(preds, 25)
+  expect_true(all(!is.na(preds)),
+    info = "Long-horizon forecast should produce valid predictions"
+  )
 })

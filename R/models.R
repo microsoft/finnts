@@ -57,7 +57,7 @@ list_r2_models <- function() {
 #' @return list of models
 #' @noRd
 list_global_models <- function() {
-  list <- c("xgboost")
+  list <- c("xgboost", "timegpt")
 
   return(list)
 }
@@ -1363,18 +1363,23 @@ theta <- function(train_data,
 #'
 #' @param train_data Training Data
 #' @param horizon Forecast horizon
+#' @param frequency Frequency of Data
 #'
 #' @return Get the TimeGPT based model
 #' @noRd
 timegpt <- function(train_data,
-                    horizon) {
+                    horizon,
+                    frequency = NULL) {
   recipe_spec_timegpt <- train_data %>%
     get_recipe_timegpt()
 
   # TimeGPT model specification
   model_spec_timegpt <- timegpt_model(
     mode = "regression",
-    forecast_horizon = horizon
+    forecast_horizon = horizon,
+    frequency = frequency,
+    finetune_steps = tune::tune(),
+    finetune_depth = tune::tune()
   ) %>%
     parsnip::set_engine("timegpt_model")
 
