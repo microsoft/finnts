@@ -1062,7 +1062,7 @@ update_forecast_combo <- function(agent_info,
         dplyr::filter(Model_ID %in% model_id_list)
     },
     error = function(e) {
-      stop("Error in update_forecast(). No trained models found from previous run at: ", file_path,
+      stop("Error in update_forecast(). No trained models found from previous run for combo: ", combo,
         call. = FALSE
       )
     }
