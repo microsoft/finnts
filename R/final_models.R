@@ -824,7 +824,7 @@ remove_best_model <- function(df) {
 #' @noRd
 adjust_combo_column <- function(input_data) {
   # adjust Combo column if read in as logical, converting FALSE to F and TRUE to T
-  if (is.logical(input_data$Combo)) {
+  if ("Combo" %in% names(input_data) && is.logical(input_data$Combo)) {
     input_data <- input_data %>%
       dplyr::mutate(Combo = ifelse(Combo, as.character("T"), as.character("F")))
   }

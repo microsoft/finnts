@@ -743,7 +743,6 @@ model_hyperparameters <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
-  
   date_type <- log_df$date_type
 
   if (sum(colnames(log_df) %in% c("num_hyperparameters")) == 1) {
