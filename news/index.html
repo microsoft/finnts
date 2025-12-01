@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9010</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9009" id="finnts-0609009-development-version">finnts 0.6.0.9009 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609009-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.6.0.9010" id="finnts-0609010-development-version">finnts 0.6.0.9010 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609010-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9009">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9009"></a></h3>
+<h3 id="improvements-0-6-0-9010">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9010"></a></h3>
 <ul><li>TimeGPT Integration
 <ul><li>Added TimeGPT in addition to existing model to support zero shot forecasting</li>
 <li>Added support for both historical and future external regressors</li>
@@ -133,12 +133,13 @@
 <li>Updated how outliers are handled in <code><a href="../reference/prep_data.html">prep_data()</a></code>. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-6-0-9009">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9009"></a></h3>
+<h3 id="bug-fixes-0-6-0-9010">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9010"></a></h3>
 <ul><li>Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.</li>
 <li>Fixed weighted mape calculation when target variable has negative values.</li>
+<li>Fixed issue when reconciling standard hierarchical forecasts</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9009">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9009"></a></h3>
+<h3 id="breaking-changes-0-6-0-9010">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9010"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 </ul></div>

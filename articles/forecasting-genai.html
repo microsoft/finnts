@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9009</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9010</span>
       </span>
     </div>
 
@@ -361,7 +361,7 @@ refits the model with the best parameters.</p>
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span></span>
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
 <span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"timegpt"</span><span class="op">)</span>,</span>
-<span>  num_hyperparameters <span class="op">=</span> <span class="fl">4</span>  <span class="co"># Will tune finetune_steps and finetune_depth</span></span>
+<span>  num_hyperparameters <span class="op">=</span> <span class="fl">4</span> <span class="co"># Will tune finetune_steps and finetune_depth</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
@@ -375,7 +375,7 @@ simultaneously.</p>
 <code class="sourceCode R"><span><span class="co"># Run TimeGPT as a global model</span></span>
 <span><span class="fu"><a href="../reference/train_models.html">train_models</a></span><span class="op">(</span></span>
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
-<span>  run_global_models <span class="op">=</span> <span class="cn">TRUE</span>  <span class="co"># TimeGPT will train on all combos together</span></span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">TRUE</span> <span class="co"># TimeGPT will train on all combos together</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 </div>
   </div>
