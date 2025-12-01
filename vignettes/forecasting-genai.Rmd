@@ -191,7 +191,7 @@ These parameters are automatically tuned when you set `num_hyperparameters` in `
 prep_models(
   run_info = run_info,
   models_to_run = c("timegpt"),
-  num_hyperparameters = 4  # Will tune finetune_steps and finetune_depth
+  num_hyperparameters = 4 # Will tune finetune_steps and finetune_depth
 )
 ```
 
@@ -203,6 +203,6 @@ TimeGPT can run as both a **local** (per time series) or **global** (across all 
 # Run TimeGPT as a global model
 train_models(
   run_info = run_info,
-  run_global_models = TRUE  # TimeGPT will train on all combos together
+  run_global_models = TRUE # TimeGPT will train on all combos together
 )
 ```

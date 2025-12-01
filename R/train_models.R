@@ -176,70 +176,60 @@ train_models <- function(run_info,
   # get list of tasks to run
   current_combo_list <- c()
 
-  all_combo_list <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*R*.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
+  if ("combo" %in% names(run_info)) {
+    # Single combo mode - determine which combo to run
+    all_combo_list <- run_info$combo
+
+    if (run_local_models) {
+      current_combo_list <- all_combo_list
+    }
+
+    if (run_global_models) {
+      run_global_models <- FALSE
+      cli::cli_alert_info("Turning global models off since there is only a single time series.")
+      cli::cli_progress_update()
+    }
+  } else {
+    # Multi combo mode - get all combos from prep_data
+    all_combo_list <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*R*.", run_info$data_output
+      )
     ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-    dplyr::pull(Combo) %>%
-    unique()
+      tibble::tibble(
+        Path = .,
+        File = fs::path_file(.)
+      ) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+      dplyr::pull(Combo) %>%
+      unique()
 
-  if (run_local_models) {
-    current_combo_list <- all_combo_list
+    if (run_local_models) {
+      current_combo_list <- all_combo_list
+    }
+
+    if (length(all_combo_list) == 1 & run_global_models) {
+      run_global_models <- FALSE
+      cli::cli_alert_info("Turning global models off since there is only a single time series.")
+      cli::cli_progress_update()
+    }
+
+    if (run_global_models & length(all_combo_list) > 1) {
+      current_combo_list <- c(current_combo_list, hash_data("All-Data"))
+    }
   }
 
-  if (length(all_combo_list) == 1 & run_global_models) {
-    run_global_models <- FALSE
-    cli::cli_alert_info("Turning global models off since there is only a single time series.")
-    cli::cli_progress_update()
-  }
-
-  if (run_global_models & length(all_combo_list) > 1) {
-    current_combo_list <- c(current_combo_list, hash_data("All-Data"))
-  }
-
-  # check if a previous run already has necessary outputs
-  prev_combo_tbl <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .
-    ) %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-    dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
-    base::suppressWarnings()
-
-  prev_combo_list <- prev_combo_tbl %>%
-    dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
-    dplyr::pull(Combo)
-
-  if (sum(unique(prev_combo_tbl$Run_Type) %in% paste0("global_models.", run_info$data_output) == 1)) {
-    prev_combo_list <- c(prev_combo_list, hash_data("All-Data"))
-  }
-
-  combo_diff <- setdiff(
-    current_combo_list,
-    prev_combo_list
+  # define columns to check for input changes
+  cols_check_list <- c(
+    "run_global_models", "run_local_models", "global_model_recipes",
+    "feature_selection", "seed"
   )
 
-  current_combo_list_final <- combo_diff %>%
-    stringr::str_replace(hash_data("All-Data"), "All-Data")
-
-  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
-    # check if input values have changed
+  # check if input values have changed from previous run
+  if (all(cols_check_list %in% colnames(log_df))) {
+    # create current log
     current_log_df <- tibble::tibble(
       run_global_models = run_global_models,
       run_local_models = run_local_models,
@@ -249,19 +239,67 @@ train_models <- function(run_info,
     ) %>%
       data.frame()
 
+    # get previous log
     prev_log_df <- log_df %>%
-      dplyr::select(colnames(current_log_df)) %>%
+      dplyr::select(tidyselect::all_of(cols_check_list)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
-      cli::cli_alert_info("Individual Models Already Trained")
-      return(cli::cli_progress_done())
-    } else {
+    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
       stop("Inputs have recently changed in 'train_models', please revert back to original inputs or start a new run with 'set_run_info'",
         call. = FALSE
       )
+    } else {
+      cli::cli_alert_info("Individual Models Already Trained")
+      return(cli::cli_progress_done())
     }
   }
+
+  # check if a previous run already has necessary outputs
+  if ("combo" %in% names(run_info)) {
+    # Single combo mode - no need to check previously completed combos
+    prev_combo_list <- NULL
+    combo_diff <- current_combo_list
+  } else {
+    # Multi combo mode - check which combos have already been completed
+    prev_combo_tbl <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*.", run_info$data_output
+      )
+    ) %>%
+      tibble::tibble(
+        Path = .
+      ) %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+      dplyr::ungroup() %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+      base::suppressWarnings()
+
+    prev_combo_list <- prev_combo_tbl %>%
+      dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
+      dplyr::pull(Combo)
+
+    if (sum(unique(prev_combo_tbl$Run_Type) %in% paste0("global_models.", run_info$data_output) == 1)) {
+      prev_combo_list <- c(prev_combo_list, hash_data("All-Data"))
+    }
+
+    combo_diff <- setdiff(
+      current_combo_list,
+      prev_combo_list
+    )
+  }
+
+  # check if previous run is complete
+  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+    cli::cli_alert_info("Individual Models Already Trained")
+    return(cli::cli_progress_done())
+  }
+
+  # filter to only combos that need to be processed
+  current_combo_list_final <- combo_diff %>%
+    stringr::str_replace(hash_data("All-Data"), "All-Data")
 
   # parallel run info
   par_info <- par_start(
@@ -763,49 +801,51 @@ train_models <- function(run_info,
   par_end(cl)
 
   # check if all time series combos ran correctly
-  successful_combo_tbl <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .
+  if (!"combo" %in% names(run_info)) {
+    successful_combo_tbl <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*.", run_info$data_output
+      )
     ) %>%
-    dplyr::rowwise() %>%
-    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-    dplyr::ungroup() %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
-    base::suppressWarnings()
+      tibble::tibble(
+        Path = .
+      ) %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+      dplyr::ungroup() %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
+      base::suppressWarnings()
 
-  successful_combos <- 0
+    successful_combos <- 0
 
-  if (run_local_models) {
-    successful_combos <- successful_combo_tbl %>%
-      dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
-      dplyr::pull(Combo) %>%
+    if (run_local_models) {
+      successful_combos <- successful_combo_tbl %>%
+        dplyr::filter(Run_Type != paste0("global_models.", run_info$data_output)) %>%
+        dplyr::pull(Combo) %>%
+        unique() %>%
+        length()
+    }
+
+    if (run_global_models) {
+      successful_combos <- successful_combos + 1
+    }
+
+    total_combos <- current_combo_list %>%
       unique() %>%
       length()
-  }
 
-  if (run_global_models) {
-    successful_combos <- successful_combos + 1
-  }
-
-  total_combos <- current_combo_list %>%
-    unique() %>%
-    length()
-
-  if (successful_combos != total_combos) {
-    stop(
-      paste0(
-        "Not all time series were completed within 'train_models', expected ",
-        total_combos, " time series but only ", successful_combos,
-        " time series were ran. ", "Please run 'train_models' again."
-      ),
-      call. = FALSE
-    )
+    if (successful_combos != total_combos) {
+      stop(
+        paste0(
+          "Not all time series were completed within 'train_models', expected ",
+          total_combos, " time series but only ", successful_combos,
+          " time series were ran. ", "Please run 'train_models' again."
+        ),
+        call. = FALSE
+      )
+    }
   }
 
   # update logging file

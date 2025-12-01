@@ -621,7 +621,14 @@ update_local_models <- function(agent_info,
   }
 
   # final list to iterate through
-  local_combo_list <- unique(previous_best_run_local_tbl$combo)
+  local_combo_list <- previous_best_run_local_tbl %>%
+    dplyr::mutate(
+      underscore_count = stringr::str_count(models_to_run, "---")
+    ) %>%
+    # prioritize combos with more models to run first
+    dplyr::arrange(dplyr::desc(underscore_count)) %>%
+    dplyr::pull(combo) %>%
+    unique()
 
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
@@ -652,6 +659,28 @@ update_local_models <- function(agent_info,
         .multicombine = TRUE
       ) %op%
         {
+          # check if combo already ran (in case of restart)
+          agent_best_run_tbl <- tryCatch(
+            {
+              read_file(agent_info_lean$project_info,
+                file_list = paste0(
+                  agent_info_lean$project_info$path, "/logs/",
+                  hash_data(agent_info_lean$project_info$project_name), "-",
+                  hash_data(agent_info_lean$run_id), "-",
+                  hash_data(combo), "-agent_best_run.csv"
+                ) %>%
+                  fs::path_tidy()
+              )
+            },
+            error = function(e) {
+              tibble::tibble()
+            }
+          )
+
+          if (nrow(agent_best_run_tbl) > 0) {
+            return(data.frame(Combo = hash_data(combo)))
+          }
+
           # get the previous best run for combo
           prev_run <- read_file(agent_info_lean$project_info,
             file_list = paste0(
@@ -982,14 +1011,24 @@ update_forecast_combo <- function(agent_info,
     path = project_info$path
   )
 
-  # get previous forecast of best run
-  prev_fcst_tbl <- get_forecast_data(run_info = prev_run_info) %>%
-    dplyr::filter(Best_Model == "Yes")
-
   # get best model list from previous run
-  if (prev_run_log_tbl$forecast_approach != "bottoms_up") {
+  if (unique(prev_best_run_tbl$model_type) == "global") {
+    # global model only runs xgboost with R1 recipe
     model_id_list <- "xgboost--global--R1"
   } else {
+    # get previous forecast for local model
+    prev_fcst_tbl <- load_combo_forecast(
+      combo = hash_data(combo),
+      run_info = prev_run_info
+    ) %>%
+      dplyr::filter(Best_Model == "Yes")
+
+    if (nrow(prev_fcst_tbl) == 0) {
+      stop("Error in update_forecast(). No best model forecasts found from previous run for combo: ", combo,
+        call. = FALSE
+      )
+    }
+
     model_id_list <- prev_fcst_tbl %>%
       dplyr::pull(Model_ID) %>%
       unique() %>%
@@ -1006,8 +1045,35 @@ update_forecast_combo <- function(agent_info,
     unique()
 
   # get trained models from previous run
-  trained_models_tbl <- get_trained_models(run_info = prev_run_info) %>%
-    dplyr::filter(Model_ID %in% model_id_list)
+  # read the trained models file and filter by model IDs
+  trained_models_tbl <- tryCatch(
+    {
+      read_file(
+        run_info = prev_run_info,
+        file_list = paste0(
+          prev_run_info$path, "/models/",
+          hash_data(prev_run_info$project_name), "-",
+          hash_data(prev_run_info$run_name), "-",
+          hash_data(combo), "-single_models.",
+          prev_run_info$object_output
+        ) %>% fs::path_tidy(),
+        return_type = "df"
+      ) %>%
+        dplyr::filter(Model_ID %in% model_id_list)
+    },
+    error = function(e) {
+      stop("Error in update_forecast(). No trained models found from previous run for combo: ", combo,
+        call. = FALSE
+      )
+    }
+  )
+
+  # verify models were found
+  if (nrow(trained_models_tbl) == 0) {
+    stop("Error in update_forecast(). No trained models matching the model IDs found in previous run.",
+      call. = FALSE
+    )
+  }
 
   # get external regressor info from previous run
   external_regressors <- adjust_inputs(prev_run_log_tbl$external_regressors)
@@ -1052,7 +1118,8 @@ update_forecast_combo <- function(agent_info,
         )
       ),
       return_type = "df"
-    )
+    ) %>%
+      adjust_combo_column()
   } else {
     input_data <- read_file(
       run_info = project_info,
@@ -1061,7 +1128,8 @@ update_forecast_combo <- function(agent_info,
         hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
       ) %>% fs::path_tidy(),
       return_type = "df"
-    )
+    ) %>%
+      adjust_combo_column()
   }
 
   # create unique run name
@@ -1081,6 +1149,11 @@ update_forecast_combo <- function(agent_info,
     object_output = project_info$object_output,
     add_unique_id = FALSE
   )
+
+  if (combo != "All-Data") {
+    # adjust to prevent unnecessary list_files() calls in spark
+    new_run_info$combo <- combo_value
+  }
 
   # clean and prepare data for training
   prep_data(
@@ -1340,10 +1413,11 @@ update_forecast_combo <- function(agent_info,
     agent_info = agent_info,
     run_info = new_run_info,
     weighted_mape = log_wmape,
+    check_best_run = FALSE,
     combo = if (combo == "All-Data") {
       NULL
     } else {
-      combo
+      hash_data(combo)
     }
   )
 
@@ -1383,6 +1457,45 @@ fit_models <- function(run_info,
                        num_cores,
                        inner_parallel,
                        seed = 123) {
+  # get recipe info
+  if ("R1" %in% unique(trained_models_tbl$Recipe_ID)) {
+    if (combo == "All-Data") {
+      r1_tbl <- get_prepped_data(
+        run_info = run_info,
+        recipe = "R1"
+      ) %>%
+        adjust_combo_column()
+    } else {
+      r1_tbl <- read_file(
+        run_info = run_info,
+        file_list = paste0(
+          run_info$path, "/prep_data/",
+          hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-",
+          hash_data(combo), "-R1.",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        return_type = "df"
+      ) %>%
+        adjust_combo_column()
+    }
+  }
+
+  if ("R2" %in% unique(trained_models_tbl$Recipe_ID)) {
+    r2_tbl <- read_file(
+      run_info = run_info,
+      file_list = paste0(
+        run_info$path, "/prep_data/",
+        hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "-",
+        hash_data(combo), "-R2.",
+        run_info$data_output
+      ) %>% fs::path_tidy(),
+      return_type = "df"
+    ) %>%
+      adjust_combo_column()
+  }
+
   # train each model
   par_info <- par_start(
     run_info = run_info,
@@ -1415,9 +1528,9 @@ fit_models <- function(run_info,
     data_prep_recipe <- model_run %>%
       dplyr::pull(Recipe_ID)
 
-    prep_data <- get_prepped_data(
-      run_info = run_info,
-      recipe = data_prep_recipe
+    prep_data <- switch(data_prep_recipe,
+      "R1" = r1_tbl,
+      "R2" = r2_tbl
     )
 
     workflow <- model_run$Model_Fit[[1]]
@@ -2029,4 +2142,90 @@ adjust_inputs <- function(x,
       x
     }
   }
+}
+
+#' Load Combo Forecast
+#'
+#' This function loads the forecast data for a specified combo from the run information.
+#' If the combo is "All-Data", it retrieves the standard forecast data. For other combos,
+#' it reads the single models and average models forecast files and combines them.
+#'
+#' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
+#' @param run_info A list containing run information including project name, run name, storage
+#' object, path, data output, and object output.
+#'
+#' @return A data frame containing the loaded forecast data for the specified combo.
+#' @noRd
+load_combo_forecast <- function(combo, run_info) {
+  # standard forecast loading for global models
+  if (combo == "All-Data") {
+    fcst_tbl <- get_forecast_data(run_info)
+    return(fcst_tbl)
+  }
+
+  # read the single models forecast file
+  single_models_fcst <- read_file(
+    run_info = run_info,
+    file_list = paste0(
+      run_info$path, "/forecasts/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-",
+      combo, "-single_models.",
+      run_info$data_output
+    ) %>% fs::path_tidy(),
+    return_type = "df"
+  ) %>%
+    adjust_combo_column()
+
+  # read the average models forecast file
+  avg_models_fcst <- tryCatch(
+    {
+      read_file(
+        run_info = run_info,
+        file_list = paste0(
+          run_info$path, "/forecasts/",
+          hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-",
+          combo, "-average_models.",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        return_type = "df"
+      ) %>%
+        adjust_combo_column()
+    },
+    error = function(e) {
+      tibble::tibble()
+    }
+  )
+
+  # combine forecasts
+  fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst)
+
+  # check if forecast data exists
+  if (nrow(fcst_tbl) == 0) {
+    stop("No forecast data found for combo hash: ", combo)
+  }
+
+  # load train test info
+  train_test_tbl <- read_file(
+    run_info = run_info,
+    file_list = paste0(
+      run_info$path, "/prep_models/",
+      hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-",
+      "train_test_split.",
+      run_info$data_output
+    ) %>% fs::path_tidy(),
+    return_type = "df"
+  )
+
+  # join train test info
+  fcst_tbl <- fcst_tbl %>%
+    dplyr::left_join(
+      train_test_tbl %>%
+        dplyr::select(Train_Test_ID, Run_Type),
+      by = "Train_Test_ID"
+    )
+
+  return(fcst_tbl)
 }

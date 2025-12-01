@@ -199,7 +199,8 @@ summarize_models <- function(agent_info,
                 "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                 forecast_hash_combo, "-global_models.", project_info$data_output
               )
-            )
+            ) %>%
+              adjust_combo_column()
           },
           error = function(e) {
             return(tibble::tibble())
@@ -216,7 +217,8 @@ summarize_models <- function(agent_info,
                   "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                   hash_data("Best-Model"), "-reconciled.", project_info$data_output
                 )
-              )
+              ) %>%
+                adjust_combo_column()
             },
             error = function(e) {
               return(tibble::tibble())
@@ -233,7 +235,8 @@ summarize_models <- function(agent_info,
                 "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                 forecast_hash_combo, "-single_models.", project_info$data_output
               )
-            )
+            ) %>%
+              adjust_combo_column()
           },
           error = function(e) {
             return(tibble::tibble())
@@ -249,7 +252,8 @@ summarize_models <- function(agent_info,
                 "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
                 forecast_hash_combo, "-average_models.", project_info$data_output
               )
-            )
+            ) %>%
+              adjust_combo_column()
           },
           error = function(e) {
             return(tibble::tibble())
@@ -263,7 +267,6 @@ summarize_models <- function(agent_info,
           average_forecast_tbl
         )
       }
-
 
       if (nrow(forecast_tbl) == 0) {
         stop(paste0("No forecast data found to determine best models for combo: ", combo), call. = FALSE)

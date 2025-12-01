@@ -268,13 +268,33 @@ train_test_split <- function(run_info,
   )
 
   # pull out first recipe data
-  file_name <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "-*.", run_info$data_output
-    )
-  )[1]
+  if ("combo" %in% names(run_info)) {
+    # determine first recipe
+    if (is.na(log_df$recipes_to_run)) {
+      first_recipe <- "R1"
+    } else {
+      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
+      first_recipe <- recipes[1]
+    }
+
+    # get combo value from run info
+    combo_value <- run_info$combo
+
+    # construct file path directly
+    file_name <- paste0(
+      run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-", combo_value, "-", first_recipe, ".",
+      run_info$data_output
+    ) %>% fs::path_tidy()
+  } else {
+    file_name <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "-*.", run_info$data_output
+      )
+    )[1]
+  }
 
   source_path <- switch(class(run_info$storage_object)[[1]],
     "NULL" = gsub(fs::path(run_info$path), "", file_name),
@@ -493,20 +513,52 @@ model_workflows <- function(run_info,
   # pull out recipe data for a single combo
   input_tbl <- tibble::tibble()
 
-  file_name_tbl <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*R*.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
+  if ("combo" %in% names(run_info)) {
+    # determine recipes
+    if (is.na(log_df$recipes_to_run)) {
+      if (date_type %in% c("month", "quarter", "year")) {
+        recipes <- c("R1", "R2")
+      } else {
+        recipes <- "R1"
+      }
+    } else {
+      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
+    }
+
+    # get combo value from run info
+    combo_value <- run_info$combo
+
+    # create file name table based on recipes
+    file_name_tbl <- tibble::tibble()
+
+    for (recipe in recipes) {
+      temp_file_name_tbl <- tibble::tibble(
+        Path = paste0(
+          run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-", combo_value, "-", recipe, ".",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        Recipe = recipe
+      )
+
+      file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
+    }
+  } else {
+    file_name_tbl <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*R*.", run_info$data_output
+      )
     ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-    dplyr::filter(Combo == .$Combo[[1]]) %>%
-    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+      tibble::tibble(
+        Path = .,
+        File = fs::path_file(.)
+      ) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+      dplyr::filter(Combo == .$Combo[[1]]) %>%
+      dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+  }
 
   for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
@@ -691,6 +743,7 @@ model_hyperparameters <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  date_type <- log_df$date_type
 
   if (sum(colnames(log_df) %in% c("num_hyperparameters")) == 1) {
     current_log_df <- tibble::tibble(
@@ -715,20 +768,52 @@ model_hyperparameters <- function(run_info,
   # get recipe input data
   input_tbl <- tibble::tibble()
 
-  file_name_tbl <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*R*.", run_info$data_output
-    )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
+  if ("combo" %in% names(run_info)) {
+    # determine recipes
+    if (is.na(log_df$recipes_to_run)) {
+      if (date_type %in% c("month", "quarter", "year")) {
+        recipes <- c("R1", "R2")
+      } else {
+        recipes <- "R1"
+      }
+    } else {
+      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
+    }
+
+    # get combo value from run info
+    combo_value <- run_info$combo
+
+    # create file name table based on recipes
+    file_name_tbl <- tibble::tibble()
+
+    for (recipe in recipes) {
+      temp_file_name_tbl <- tibble::tibble(
+        Path = paste0(
+          run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
+          hash_data(run_info$run_name), "-", combo_value, "-", recipe, ".",
+          run_info$data_output
+        ) %>% fs::path_tidy(),
+        Recipe = recipe
+      )
+
+      file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
+    }
+  } else {
+    file_name_tbl <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*R*.", run_info$data_output
+      )
     ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-    dplyr::filter(Combo == .$Combo[[1]]) %>%
-    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+      tibble::tibble(
+        Path = .,
+        File = fs::path_file(.)
+      ) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+      dplyr::filter(Combo == .$Combo[[1]]) %>%
+      dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+  }
 
   for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
