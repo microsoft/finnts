@@ -2,7 +2,7 @@
 utils::globalVariables(c(
   ".", ".estimate", ".id", ".key", ".pred", "Back_Test_Scenario", "Best_Model", "Col", "Combo",
   "Combo_Hash", "Combo_ID", "Combo_Total", "Count", "Data", "Date", "Date_Adj", "Date_Day",
-  "Date_half", "Date_index.num", "Date_quarter", "date_seq","Date_year", "File", "Forecast", "Horizon",
+  "Date_half", "Date_index.num", "Date_quarter", "date_seq", "Date_year", "File", "Forecast", "Horizon",
   "Hyperparameter_Combo", "Hyperparameter_ID", "Hyperparameters", "latest_date", "n_rows", "needs_padding", "MAPE", "Model",
   "Model_Combo", "Model_Fit", "Model_ID", "Model_Key", "Model_Name", "Model_Recipe",
   "Model_Type", "Number", "Number_Char", "Origin", "Path", "Prediction", "RMSE", "Recipe",
