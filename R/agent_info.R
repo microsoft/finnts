@@ -382,6 +382,23 @@ set_agent_info_custom <- function(project_info,
     stop("agent_action must be either 'iterate_forecast' or 'update_forecast'", call. = FALSE)
   }
 
+  # set agent info args
+  agent_args <- list(
+    project_info = project_info,
+    driver_llm = driver_llm,
+    input_data = input_data,
+    forecast_horizon = forecast_horizon,
+    external_regressors = external_regressors,
+    hist_end_date = hist_end_date,
+    hist_start_date = hist_start_date,
+    back_test_scenarios = back_test_scenarios,
+    back_test_spacing = back_test_spacing,
+    combo_cleanup_date = combo_cleanup_date,
+    allow_hierarchical_forecast = allow_hierarchical_forecast,
+    reason_llm = reason_llm,
+    overwrite = overwrite
+  )
+
   # see if previous agent run exists with same request_id
   agent_runs_tbl <- load_agent_runs(project_info)
 
@@ -405,38 +422,12 @@ set_agent_info_custom <- function(project_info,
   if (nrow(agent_run_request_id_tbl) > 0) {
     if (agent_action == "iterate_forecast") {
       # use existing agent run info with overwrite = FALSE
-      agent_info <- set_agent_info(
-        project_info = project_info,
-        driver_llm = driver_llm,
-        input_data = input_data,
-        forecast_horizon = forecast_horizon,
-        external_regressors = external_regressors,
-        hist_end_date = hist_end_date,
-        hist_start_date = hist_start_date,
-        back_test_scenarios = back_test_scenarios,
-        back_test_spacing = back_test_spacing,
-        combo_cleanup_date = combo_cleanup_date,
-        allow_hierarchical_forecast = allow_hierarchical_forecast,
-        reason_llm = reason_llm,
-        overwrite = FALSE
-      )
+      agent_args$overwrite <- FALSE
+      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
     } else if (agent_action == "update_forecast") {
       # use existing agent run info but set overwrite = TRUE manually
-      agent_info <- set_agent_info(
-        project_info = project_info,
-        driver_llm = driver_llm,
-        input_data = input_data,
-        forecast_horizon = forecast_horizon,
-        external_regressors = external_regressors,
-        hist_end_date = hist_end_date,
-        hist_start_date = hist_start_date,
-        back_test_scenarios = back_test_scenarios,
-        back_test_spacing = back_test_spacing,
-        combo_cleanup_date = combo_cleanup_date,
-        allow_hierarchical_forecast = allow_hierarchical_forecast,
-        reason_llm = reason_llm,
-        overwrite = FALSE
-      )
+      agent_args$overwrite <- FALSE
+      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
       agent_info$overwrite <- TRUE
     }
 
@@ -445,38 +436,11 @@ set_agent_info_custom <- function(project_info,
 
   if (nrow(agent_runs_tbl) > 0 && nrow(agent_run_request_id_tbl) == 0 & overwrite == TRUE) {
     # create new agent run info with overwrite = TRUE
-    agent_info <- set_agent_info(
-      project_info = project_info,
-      driver_llm = driver_llm,
-      input_data = input_data,
-      forecast_horizon = forecast_horizon,
-      external_regressors = external_regressors,
-      hist_end_date = hist_end_date,
-      hist_start_date = hist_start_date,
-      back_test_scenarios = back_test_scenarios,
-      back_test_spacing = back_test_spacing,
-      combo_cleanup_date = combo_cleanup_date,
-      allow_hierarchical_forecast = allow_hierarchical_forecast,
-      reason_llm = reason_llm,
-      overwrite = TRUE
-    )
+    agent_args$overwrite <- TRUE
+    agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
   } else {
     # create new agent run info with current params
-    agent_info <- set_agent_info(
-      project_info = project_info,
-      driver_llm = driver_llm,
-      input_data = input_data,
-      forecast_horizon = forecast_horizon,
-      external_regressors = external_regressors,
-      hist_end_date = hist_end_date,
-      hist_start_date = hist_start_date,
-      back_test_scenarios = back_test_scenarios,
-      back_test_spacing = back_test_spacing,
-      combo_cleanup_date = combo_cleanup_date,
-      allow_hierarchical_forecast = allow_hierarchical_forecast,
-      reason_llm = reason_llm,
-      overwrite = overwrite
-    )
+    agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
   }
 
   # load latest agent runs again
