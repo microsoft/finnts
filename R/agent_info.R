@@ -525,8 +525,8 @@ align_types <- function(df1, df2) {
     # select proper converter
     convert_fun <- switch(target_class,
       Date = function(x) as.Date(x),
-      POSIXct = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
-      POSIXt = function(x) as.POSIXct(x, tz = attr(df1[[col]], "tzone")),
+      POSIXct = function(x) as.POSIXct(x, tz = if (is.null(attr(df1[[col]], "tzone"))) "UTC" else attr(df1[[col]], "tzone")),
+      POSIXt = function(x) as.POSIXct(x, tz = if (is.null(attr(df1[[col]], "tzone"))) "UTC" else attr(df1[[col]], "tzone")),
       factor = function(x) as.factor(x),
       integer = function(x) as.integer(x),
       numeric = function(x) as.numeric(x),
