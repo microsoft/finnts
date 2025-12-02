@@ -1569,7 +1569,6 @@ run_all_eda_per_combo <- function(agent_info,
   par_end(cl)
 
   # check if all time series combos ran correctly for each EDA type
-  all_passed <- TRUE
   for (eda_type in eda_types) {
     successful_combos <- get_finished_eda_combos(
       agent_info = agent_info,
@@ -1577,7 +1576,6 @@ run_all_eda_per_combo <- function(agent_info,
     )
 
     if (length(successful_combos) != length(total_combo_list)) {
-      all_passed <- FALSE
       stop(
         paste0(
           "Not all time series completed '", eda_type, "', expected ",
@@ -1588,9 +1586,8 @@ run_all_eda_per_combo <- function(agent_info,
     }
   }
 
-  if (all_passed) {
-    return(cli::cli_progress_done())
-  }
+  # all checks passed
+  return(cli::cli_progress_done())
 }
 
 #' Hierarchy detection tool
