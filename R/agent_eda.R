@@ -1375,19 +1375,9 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
 
   tryCatch(
     {
-      # Need to read unfiltered data to check for future regressor values
-      input_data_full <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", combo_name, ".", project_info$data_output
-        ),
-        return_type = "df"
-      )
-
       # determine future xregs using full unfiltered data
       future_xregs_list <- get_xregs_future_values_tbl(
-        data_tbl = input_data_full,
+        data_tbl = input_data,
         external_regressors = regressors,
         hist_end_date = hist_end_date
       ) %>%
@@ -1396,6 +1386,7 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
 
       # finalize input data (use filtered data for analysis)
       input_data_xreg <- input_data %>%
+        dplyr::filter(Date <= hist_end_date) %>%
         dplyr::arrange(Date)
 
       # get lags by date type
@@ -1427,15 +1418,13 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
         dplyr::mutate(Combo = combo_name, .before = 1)
 
       # filter out lag 0 values if a regressor does not have future values
-      if (!is.null(future_xregs_list) && length(future_xregs_list) > 0) {
-        lag_tbl <- lag_tbl %>%
-          dplyr::mutate(
-            Has_Future = Regressor %in% future_xregs_list,
-            Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)
-          ) %>%
-          dplyr::filter(!Drop) %>%
-          dplyr::select(-Has_Future, -Drop)
-      }
+      lag_tbl <- lag_tbl %>%
+        dplyr::mutate(
+          Has_Future = Regressor %in% future_xregs_list,
+          Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)
+        ) %>%
+        dplyr::filter(!Drop) %>%
+        dplyr::select(-Has_Future, -Drop)
 
       # write per-combo result
       write_data(
@@ -1541,7 +1530,7 @@ run_all_eda_per_combo <- function(agent_info,
   ) %op%
     {
       # read data once for all analyses
-      input_data <- read_file(
+      input_data_full <- read_file(
         run_info = project_info,
         path = paste0(
           "/input_data/", hash_data(project_info$project_name), "-",
@@ -1549,6 +1538,9 @@ run_all_eda_per_combo <- function(agent_info,
         ),
         return_type = "df"
       ) %>%
+        dplyr::mutate(Date = as.Date(Date))
+
+      input_data <- input_data_full %>%
         dplyr::filter(Date <= hist_end_date)
 
       combo_name <- unique(input_data$Combo)
@@ -1560,7 +1552,7 @@ run_all_eda_per_combo <- function(agent_info,
       run_missing_analysis(input_data, combo_name, date_type, project_info)
       run_outlier_analysis(input_data, combo_name, date_type, freq_val, project_info)
       run_seasonality_analysis(input_data, combo_name, date_type, freq_val, project_info)
-      run_xreg_analysis(input_data, combo_name, date_type, regressors, hist_end_date, project_info)
+      run_xreg_analysis(input_data_full, combo_name, date_type, regressors, hist_end_date, project_info)
     } %>%
     base::suppressWarnings() %>%
     base::suppressPackageStartupMessages()
@@ -1581,7 +1573,8 @@ run_all_eda_per_combo <- function(agent_info,
           "Not all time series completed '", eda_type, "', expected ",
           length(total_combo_list), " time series but only ", length(successful_combos),
           " completed successfully."
-        )
+        ),
+        call. = FALSE
       )
     }
   }
@@ -1776,168 +1769,6 @@ hierarchy_detect <- function(agent_info,
     )
 
     return(final_type)
-  }
-}
-
-#' External regressor scan tool
-#'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
-#'
-#' @return nothing
-#' @noRd
-xreg_scan <- function(agent_info,
-                      parallel_processing,
-                      num_cores) {
-  # metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  combo_vars <- project_info$combo_variables
-  regressors <- agent_info$external_regressors
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  if (length(regressors) == 0) {
-    cli::cli_alert_info("No external regressors set for this agent run. Skipping 'reg_scan'.")
-    return("SKIPPING: no xregs in data")
-  }
-
-  # identify time-series combos
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # detect previously completed combos
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-xreg_scan."
-  )
-
-  current_combo_list <- setdiff(total_combo_list, prev_combo_list)
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("External Regressor Scan Already Ran")
-    return("SKIPPING: xregs_scan already ran")
-  }
-
-  # parallel setup
-
-  par_info <- par_start(
-    run_info            = project_info,
-    parallel_processing = parallel_processing,
-    num_cores           = num_cores,
-    task_length         = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  # foreach over each combo file
-  foreach::foreach(
-    x               = current_combo_list,
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .inorder        = FALSE,
-    .multicombine   = TRUE
-  ) %op%
-    {
-      # read one combo
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      )
-
-      combo_name <- unique(input_data$Combo)
-
-      # determine future xregs
-      if (!is.null(regressors)) {
-        future_xregs_list <- get_xregs_future_values_tbl(
-          data_tbl = input_data,
-          external_regressors = regressors,
-          hist_end_date = hist_end_date
-        ) %>%
-          dplyr::select(-Combo, -Date) %>%
-          colnames()
-      }
-
-      # finalize input data
-      input_data <- input_data %>%
-        dplyr::filter(Date <= hist_end_date) %>%
-        dplyr::arrange(Date)
-
-      # get lags by date type
-      date_type_lags <- switch(date_type,
-        "day"     = c(0:7, seq(14, 364, by = 7)), # daily: 0-7, then weekly steps up to 364
-        "week"    = 0:52, # weekly data lags
-        "month"   = 0:12, # monthly data lags
-        "quarter" = 0:4, # quarterly data lags
-        "year"    = 0:5 # yearly data lags
-      )
-
-      # build lagged regressors
-      lag_tbl <- tidyr::crossing(
-        Regressor = regressors,
-        Lag       = date_type_lags
-      ) %>%
-        dplyr::mutate(
-          dCor = purrr::map2_dbl(Regressor, Lag, \(var, l) {
-            x <- dplyr::lag(input_data[[var]], l)
-            y <- input_data$Target
-            keep <- !(is.na(x) | is.na(y))
-            if (sum(keep) < 5) {
-              return(NA_real_)
-            }
-            energy::dcor(x[keep], y[keep])
-          })
-        ) %>%
-        dplyr::mutate(dCor = round(dCor, 2)) %>%
-        dplyr::mutate(Combo = combo_name, .before = 1)
-
-      # filter out lag 0 values if a regressor does not have future values
-      if (!is.null(future_xregs_list)) {
-        lag_tbl <- lag_tbl %>%
-          # create flag column
-          dplyr::mutate(
-            Has_Future = Regressor %in% future_xregs_list,
-            Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)
-          ) %>%
-          dplyr::filter(!Drop) %>%
-          dplyr::select(-Has_Future, -Drop)
-      }
-
-      # write per-combo result
-      write_data(
-        x = lag_tbl,
-        combo = combo_name,
-        run_info = project_info,
-        output_type = "data",
-        folder = "eda",
-        suffix = "-xreg_scan"
-      )
-    } %>% base::suppressPackageStartupMessages()
-
-  par_end(cl)
-
-  # sanity check
-  successful_combos <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-xreg_scan."
-  )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'xreg_scan', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'xreg_scan' again."
-      ),
-      call. = FALSE
-    )
   }
 }
 
