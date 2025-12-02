@@ -1380,7 +1380,7 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
         run_info = project_info,
         path = paste0(
           "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(project_info$run_id), "-", combo_name, ".", project_info$data_output
+          hash_data(agent_info$run_id), "-", combo_name, ".", project_info$data_output
         ),
         return_type = "df"
       )
