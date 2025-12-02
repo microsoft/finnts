@@ -1359,7 +1359,7 @@ run_seasonality_analysis <- function(input_data, combo_name, date_type, freq_val
 
 #' Run external regressor analysis on a single time series
 #'
-#' @param input_data data frame with Combo, Date, Target, and regressor columns
+#' @param input_data data frame with Combo, Date, Target, and regressor columns (already filtered to hist_end_date)
 #' @param combo_name name of the combo
 #' @param date_type date type (day, week, month, quarter, year)
 #' @param regressors vector of regressor column names
@@ -1375,16 +1375,26 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
 
   tryCatch(
     {
-      # determine future xregs
+      # Need to read unfiltered data to check for future regressor values
+      input_data_full <- read_file(
+        run_info = project_info,
+        path = paste0(
+          "/input_data/", hash_data(project_info$project_name), "-",
+          hash_data(project_info$run_id), "-", combo_name, ".", project_info$data_output
+        ),
+        return_type = "df"
+      )
+
+      # determine future xregs using full unfiltered data
       future_xregs_list <- get_xregs_future_values_tbl(
-        data_tbl = input_data,
+        data_tbl = input_data_full,
         external_regressors = regressors,
         hist_end_date = hist_end_date
       ) %>%
         dplyr::select(-Combo, -Date) %>%
         colnames()
 
-      # finalize input data
+      # finalize input data (use filtered data for analysis)
       input_data_xreg <- input_data %>%
         dplyr::arrange(Date)
 
@@ -1417,7 +1427,7 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
         dplyr::mutate(Combo = combo_name, .before = 1)
 
       # filter out lag 0 values if a regressor does not have future values
-      if (!is.null(future_xregs_list)) {
+      if (!is.null(future_xregs_list) && length(future_xregs_list) > 0) {
         lag_tbl <- lag_tbl %>%
           dplyr::mutate(
             Has_Future = Regressor %in% future_xregs_list,
