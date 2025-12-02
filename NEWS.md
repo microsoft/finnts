@@ -1,4 +1,4 @@
-# finnts 0.6.0.9010 (development version)
+# finnts 0.6.0.9011 (development version)
 
 ## Improvements
 - TimeGPT Integration

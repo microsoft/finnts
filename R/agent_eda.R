@@ -425,68 +425,13 @@ eda_agent_workflow <- function(agent_info,
   workflow <- list(
     start = list(
       fn = "data_profile",
-      `next` = "acf_scan",
+      `next` = "run_all_eda_per_combo",
       retry_mode = "plain",
       max_retry = 2,
       args = list("agent_info" = agent_info)
     ),
-    acf_scan = list(
-      fn = "acf_scan",
-      `next` = "pacf_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
-    ),
-    pacf_scan = list(
-      fn = "pacf_scan",
-      `next` = "stationarity_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
-    ),
-    stationarity_scan = list(
-      fn = "stationarity_scan",
-      `next` = "missing_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
-    ),
-    missing_scan = list(
-      fn = "missing_scan",
-      `next` = "outlier_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
-    ),
-    outlier_scan = list(
-      fn = "outlier_scan",
-      `next` = "seasonality_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
-    ),
-    seasonality_scan = list(
-      fn = "seasonality_scan",
+    run_all_eda_per_combo = list(
+      fn = "run_all_eda_per_combo",
       `next` = "hierarchy_detect",
       retry_mode = "plain",
       max_retry = 2,
@@ -498,21 +443,10 @@ eda_agent_workflow <- function(agent_info,
     ),
     hierarchy_detect = list(
       fn = "hierarchy_detect",
-      `next` = "xreg_scan",
-      retry_mode = "plain",
-      max_retry = 2,
-      args = list("agent_info" = agent_info)
-    ),
-    xreg_scan = list(
-      fn = "xreg_scan",
       `next` = "save_eda_data",
       retry_mode = "plain",
       max_retry = 2,
-      args = list(
-        "agent_info" = agent_info,
-        "parallel_processing" = parallel_processing,
-        "num_cores" = num_cores
-      )
+      args = list("agent_info" = agent_info)
     ),
     save_eda_data = list(
       fn = "save_eda_data",
@@ -890,7 +824,7 @@ data_profile <- function(agent_info) {
     read_file(project_info,
       path = paste0(
         "eda/*", hash_data(project_info$project_name), "-",
-        hash_data(project_info$run_name), "-data_profile.", project_info$object_output
+        hash_data(agent_info$run_id), "-data_profile.", project_info$object_output
       ),
       return_type = "object"
     ),
@@ -991,77 +925,19 @@ data_profile <- function(agent_info) {
   return(summary_text)
 }
 
-#' ACF scan tool
+#' Run ACF analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-acf_scan <- function(agent_info,
-                     parallel_processing,
-                     num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  # get time series to run
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # check if a previous run already has necessary outputs
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info = agent_info,
-    eda_wildcard = "*-acf."
-  )
-
-  current_combo_list <- setdiff(
-    total_combo_list,
-    prev_combo_list
-  )
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("ACF Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # run acf across each time series combo
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  # submit tasks
-  final_data <- foreach::foreach(
-    x = current_combo_list,
-    .combine = "rbind",
-    .packages = packages,
-    .errorhandling = "stop",
-    .verbose = FALSE,
-    .inorder = FALSE,
-    .multicombine = TRUE,
-    .noexport = NULL
-  ) %op%
+run_acf_analysis <- function(input_data, combo_name, date_type, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_acf <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1072,9 +948,7 @@ acf_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
-      combo_name <- unique(input_data$Combo)
-
-      # calculate maximum lag to use in acf
+      # calculate maximum lag
       date_type_max_lag <- switch(date_type,
         "day" = 364 * 2,
         "week" = 52 * 2,
@@ -1083,14 +957,12 @@ acf_scan <- function(agent_info,
         "year" = 10
       )
 
-      max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
+      max_lag <- min(nrow(input_data_acf) - 1, date_type_max_lag)
 
       # calculate acf
-      acf_result <- stats::acf(input_data$Target, plot = FALSE, lag.max = max_lag)
-
-      # calculate critical value for significance
-      n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
-      crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
+      acf_result <- stats::acf(input_data_acf$Target, plot = FALSE, lag.max = max_lag)
+      n_obs <- sum(!is.na(input_data_acf$Target))
+      crit <- 1.96 / sqrt(n_obs)
 
       # convert to table and filter
       acf_tbl <- tibble::tibble(
@@ -1100,12 +972,12 @@ acf_scan <- function(agent_info,
       ) %>%
         dplyr::mutate(Value = round(Value, 2)) %>%
         dplyr::rowwise() %>%
-        dplyr::mutate(Significant = abs(Value) > crit) %>% # flag spikes beyond band
+        dplyr::mutate(Significant = abs(Value) > crit) %>%
         dplyr::ungroup() %>%
         dplyr::filter(Significant, Lag > 0) %>%
         dplyr::select(-Significant)
 
-      # save results to disc
+      # save results
       write_data(
         x = acf_tbl,
         combo = combo_name,
@@ -1114,101 +986,26 @@ acf_scan <- function(agent_info,
         folder = "eda",
         suffix = "-acf"
       )
-    } %>%
-    base::suppressPackageStartupMessages()
-
-  # stop parallel processing
-  par_end(cl)
-
-  # check if all time series combos ran correctly
-  successful_combos <- get_finished_eda_combos(
-    agent_info = agent_info,
-    eda_wildcard = "*-acf."
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("ACF failed for ", combo_name, ": ", e$message))
+    }
   )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'acf', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'acf' again."
-      ),
-      call. = FALSE
-    )
-  }
 }
 
-#' PACF scan tool
+#' Run PACF analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-pacf_scan <- function(agent_info,
-                      parallel_processing,
-                      num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  # get time series to run
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # check if a previous run already has necessary outputs
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info = agent_info,
-    eda_wildcard = "*-pacf."
-  )
-
-  current_combo_list <- setdiff(
-    total_combo_list,
-    prev_combo_list
-  )
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("PACF Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # run pacf across each time series combo
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  # submit tasks
-  final_data <- foreach::foreach(
-    x = current_combo_list,
-    .combine = "rbind",
-    .packages = packages,
-    .errorhandling = "stop",
-    .verbose = FALSE,
-    .inorder = FALSE,
-    .multicombine = TRUE,
-    .noexport = NULL
-  ) %op%
+run_pacf_analysis <- function(input_data, combo_name, date_type, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_pacf <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1219,9 +1016,7 @@ pacf_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
-      combo_name <- unique(input_data$Combo)
-
-      # calculate maximum lag to use in pacf
+      # calculate maximum lag
       date_type_max_lag <- switch(date_type,
         "day" = 364 * 2,
         "week" = 52 * 2,
@@ -1230,15 +1025,13 @@ pacf_scan <- function(agent_info,
         "year" = 10
       )
 
-      max_lag <- min(nrow(input_data) - 1, date_type_max_lag)
+      max_lag <- min(nrow(input_data_pacf) - 1, date_type_max_lag)
 
       if (max_lag > 0) {
         # calculate pacf
-        pacf_result <- stats::pacf(input_data$Target, plot = FALSE, lag.max = max_lag)
-
-        # calculate critical value for significance
-        n_obs <- sum(!is.na(input_data$Target)) # length after any NA removal
-        crit <- 1.96 / sqrt(n_obs) # two-sided 95 % limit
+        pacf_result <- stats::pacf(input_data_pacf$Target, plot = FALSE, lag.max = max_lag)
+        n_obs <- sum(!is.na(input_data_pacf$Target))
+        crit <- 1.96 / sqrt(n_obs)
 
         # convert to table and filter
         pacf_tbl <- tibble::tibble(
@@ -1248,7 +1041,7 @@ pacf_scan <- function(agent_info,
         ) %>%
           dplyr::mutate(Value = round(Value, 2)) %>%
           dplyr::rowwise() %>%
-          dplyr::mutate(Significant = abs(Value) > crit) %>% # flag spikes beyond band
+          dplyr::mutate(Significant = abs(Value) > crit) %>%
           dplyr::ungroup() %>%
           dplyr::filter(Significant, Lag > 0) %>%
           dplyr::select(-Significant)
@@ -1261,7 +1054,7 @@ pacf_scan <- function(agent_info,
           dplyr::filter(Value > 0)
       }
 
-      # save results to disc
+      # save results
       write_data(
         x = pacf_tbl,
         combo = combo_name,
@@ -1270,102 +1063,28 @@ pacf_scan <- function(agent_info,
         folder = "eda",
         suffix = "-pacf"
       )
-    } %>%
-    base::suppressPackageStartupMessages()
-
-  # stop parallel processing
-  par_end(cl)
-
-  # check if all time series combos ran correctly
-  successful_combos <- get_finished_eda_combos(
-    agent_info = agent_info,
-    eda_wildcard = "*-pacf."
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("PACF failed for ", combo_name, ": ", e$message))
+    }
   )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'pacf', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'pacf' again."
-      ),
-      call. = FALSE
-    )
-  }
 }
 
-#' stationarity scan tool
+#' Run stationarity analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param hist_start_date historical start date
+#' @param hist_end_date historical end date
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-stationarity_scan <- function(agent_info,
-                              parallel_processing,
-                              num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  hist_start_date <- agent_info$hist_start_date
-  date_type <- project_info$date_type
-
-  # identify time-series combos
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # detect previously completed combos
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-stationarity."
-  )
-
-  current_combo_list <- setdiff(
-    total_combo_list,
-    prev_combo_list
-  )
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("Stationarity Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # parallel setup
-  par_info <- par_start(
-    run_info            = project_info,
-    parallel_processing = parallel_processing,
-    num_cores           = num_cores,
-    task_length         = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  # submit tasks
-  final_stat <- foreach::foreach(
-    x               = current_combo_list,
-    .combine        = "rbind",
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .verbose        = FALSE,
-    .inorder        = FALSE,
-    .multicombine   = TRUE,
-    .noexport       = NULL
-  ) %op%
+run_stationarity_analysis <- function(input_data, combo_name, date_type, hist_start_date, hist_end_date, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_stat <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1378,11 +1097,9 @@ stationarity_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
-      combo_name <- unique(input_data$Combo)
-
       # calculate stationarity
-      adf_res <- tseries::adf.test(x = input_data$Target, alternative = "stationary")
-      kpss_res <- tseries::kpss.test(input_data$Target, null = "Level")
+      adf_res <- tseries::adf.test(x = input_data_stat$Target, alternative = "stationary")
+      kpss_res <- tseries::kpss.test(input_data_stat$Target, null = "Level")
 
       # build results table
       stat_tbl <- tibble::tibble(
@@ -1393,7 +1110,7 @@ stationarity_scan <- function(agent_info,
         stationary_kpss = kpss_res$p.value > 0.05
       )
 
-      # save results to disc
+      # save results
       write_data(
         x = stat_tbl,
         combo = combo_name,
@@ -1402,97 +1119,26 @@ stationarity_scan <- function(agent_info,
         folder = "eda",
         suffix = "-stationarity"
       )
-    } %>%
-    base::suppressWarnings() %>%
-    base::suppressPackageStartupMessages()
-
-  par_end(cl)
-
-  # sanity check
-  successful_combos <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-stationarity."
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("Stationarity failed for ", combo_name, ": ", e$message))
+    }
   )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'stationarity_scan', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'stationarity_scan' again."
-      ),
-      call. = FALSE
-    )
-  }
 }
 
-#' missing data scan tool
+#' Run missing data analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-missing_scan <- function(agent_info,
-                         parallel_processing,
-                         num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  # identify time-series combos
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # detect previously completed combos
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-missing."
-  )
-
-  current_combo_list <- setdiff(total_combo_list, prev_combo_list)
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("Missing Data Scan Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # parallel setup
-  par_info <- par_start(
-    run_info            = project_info,
-    parallel_processing = parallel_processing,
-    num_cores           = num_cores,
-    task_length         = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages # no extra pkgs needed
-  `%op%` <- par_info$foreach_operator
-
-  # submit tasks
-  foreach::foreach(
-    x               = current_combo_list,
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .verbose        = FALSE,
-    .inorder        = FALSE,
-    .multicombine   = TRUE,
-    .noexport       = NULL
-  ) %op%
+run_missing_analysis <- function(input_data, combo_name, date_type, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_miss <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1503,23 +1149,21 @@ missing_scan <- function(agent_info,
         ) %>%
         dplyr::ungroup()
 
-      combo_name <- unique(input_data$Combo)
-
       # missing-data metrics
-      total_rows <- nrow(input_data)
-      missing_count <- sum(is.na(input_data$Target))
+      total_rows <- nrow(input_data_miss)
+      missing_count <- sum(is.na(input_data_miss$Target))
       missing_pct <- missing_count / total_rows * 100
 
       # longest consecutive NA streak
-      rle_na <- rle(is.na(input_data$Target))
+      rle_na <- rle(is.na(input_data_miss$Target))
       longest_gap <- if (any(rle_na$values)) max(rle_na$lengths[rle_na$values]) else 0L
 
       miss_tbl <- tibble::tibble(
-        Combo           = combo_name,
-        total_rows      = total_rows,
-        missing_count   = missing_count,
-        missing_pct     = missing_pct,
-        longest_gap     = longest_gap
+        Combo = combo_name,
+        total_rows = total_rows,
+        missing_count = missing_count,
+        missing_pct = missing_pct,
+        longest_gap = longest_gap
       )
 
       # save results
@@ -1531,106 +1175,27 @@ missing_scan <- function(agent_info,
         folder = "eda",
         suffix = "-missing"
       )
-    } %>%
-    base::suppressPackageStartupMessages()
-
-  par_end(cl)
-
-  # sanity check
-  successful_combos <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-missing."
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("Missing data scan failed for ", combo_name, ": ", e$message))
+    }
   )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'missing_scan', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'missing_scan' again."
-      ),
-      call. = FALSE
-    )
-  }
 }
 
-#' Outlier scan tool
+#' Run outlier analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param freq_val frequency value for time series
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-outlier_scan <- function(agent_info,
-                         parallel_processing,
-                         num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  # identify time-series combos
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # detect previously completed combos
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-outliers."
-  )
-
-  current_combo_list <- setdiff(total_combo_list, prev_combo_list)
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("Outlier Scan Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # parallel setup
-  par_info <- par_start(
-    run_info            = project_info,
-    parallel_processing = parallel_processing,
-    num_cores           = num_cores,
-    task_length         = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages # no extra pkgs needed
-  `%op%` <- par_info$foreach_operator
-
-  # helper: map date_type to ts() frequency
-  freq_map <- c(
-    "day"     = 7, # weekly seasonality for daily data
-    "week"    = 52,
-    "month"   = 12,
-    "quarter" = 4,
-    "year"    = 1
-  )
-  freq_val <- freq_map[date_type] %||% 1
-
-  # submit tasks
-  foreach::foreach(
-    x               = current_combo_list,
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .verbose        = FALSE,
-    .inorder        = FALSE,
-    .multicombine   = TRUE,
-    .noexport       = NULL
-  ) %op%
+run_outlier_analysis <- function(input_data, combo_name, date_type, freq_val, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_outlier <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1642,65 +1207,52 @@ outlier_scan <- function(agent_info,
         dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
-      combo_name <- unique(input_data$Combo)
-
       # skip series with not enough data
-      if (nrow(input_data) <= 2 * freq_val) {
+      if (nrow(input_data_outlier) <= 2 * freq_val) {
         out_tbl <- tibble::tibble(
-          Combo            = combo_name,
-          total_rows       = nrow(input_data),
-          outlier_count    = NA_integer_,
-          outlier_pct      = NA_real_,
+          Combo = combo_name,
+          total_rows = nrow(input_data_outlier),
+          outlier_count = NA_integer_,
+          outlier_pct = NA_real_,
           first_outlier_dt = as.Date(NA),
-          last_outlier_dt  = as.Date(NA)
+          last_outlier_dt = as.Date(NA)
         )
+      } else {
+        # create ts object
+        ts_vec <- stats::ts(input_data_outlier$Target, frequency = freq_val)
 
-        write_data(
-          x = out_tbl,
-          combo = combo_name,
-          run_info = project_info,
-          output_type = "data",
-          folder = "eda",
-          suffix = "-outliers"
+        # STL decomposition (robust)
+        stl_res <- stats::stl(ts_vec, s.window = "periodic", robust = TRUE)
+        remainder <- as.numeric(stl_res$time.series[, "remainder"])
+
+        # detect outliers in remainder (MAD-based z > 3)
+        med <- stats::median(remainder, na.rm = TRUE)
+        madv <- stats::mad(remainder, constant = 1, na.rm = TRUE)
+        z_sc <- abs(remainder - med) / (1.4826 * madv)
+        outlier_flag <- z_sc > 3
+
+        # attach flags back to data frame
+        input_data_outlier <- input_data_outlier %>%
+          dplyr::mutate(outlier_flag = outlier_flag)
+
+        # summarise
+        total_rows <- nrow(input_data_outlier)
+        outlier_count <- sum(input_data_outlier$outlier_flag, na.rm = TRUE)
+        outlier_pct <- outlier_count / total_rows * 100
+
+        outlier_dates <- input_data_outlier$Date[input_data_outlier$outlier_flag]
+        first_outlier <- if (length(outlier_dates)) min(outlier_dates) else as.Date(NA)
+        last_outlier <- if (length(outlier_dates)) max(outlier_dates) else as.Date(NA)
+
+        out_tbl <- tibble::tibble(
+          Combo = combo_name,
+          total_rows = total_rows,
+          outlier_count = outlier_count,
+          outlier_pct = round(outlier_pct, 2),
+          first_outlier_dt = first_outlier,
+          last_outlier_dt = last_outlier
         )
-
-        return()
       }
-
-      # create ts object
-      ts_vec <- stats::ts(input_data$Target, frequency = freq_val)
-
-      # STL decomposition (robust)
-      stl_res <- stats::stl(ts_vec, s.window = "periodic", robust = TRUE)
-      remainder <- as.numeric(stl_res$time.series[, "remainder"])
-
-      # detect outliers in remainder (MAD-based z > 3)
-      med <- stats::median(remainder, na.rm = TRUE)
-      madv <- stats::mad(remainder, constant = 1, na.rm = TRUE) # raw MAD
-      z_sc <- abs(remainder - med) / (1.4826 * madv) # 1.4826 = to SD
-      outlier_flag <- z_sc > 3 # 3-sigma rule
-
-      # attach flags back to data frame
-      input_data <- input_data %>%
-        dplyr::mutate(outlier_flag = outlier_flag)
-
-      # summarise
-      total_rows <- nrow(input_data)
-      outlier_count <- sum(input_data$outlier_flag, na.rm = TRUE)
-      outlier_pct <- outlier_count / total_rows * 100
-
-      outlier_dates <- input_data$Date[input_data$outlier_flag]
-      first_outlier <- if (length(outlier_dates)) min(outlier_dates) else as.Date(NA)
-      last_outlier <- if (length(outlier_dates)) max(outlier_dates) else as.Date(NA)
-
-      out_tbl <- tibble::tibble(
-        Combo            = combo_name,
-        total_rows       = total_rows,
-        outlier_count    = outlier_count,
-        outlier_pct      = round(outlier_pct, 2),
-        first_outlier_dt = first_outlier,
-        last_outlier_dt  = last_outlier
-      )
 
       # save results
       write_data(
@@ -1711,106 +1263,27 @@ outlier_scan <- function(agent_info,
         folder = "eda",
         suffix = "-outliers"
       )
-    } %>%
-    base::suppressPackageStartupMessages()
-
-  par_end(cl)
-
-  # sanity check
-  successful_combos <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-outliers."
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("Outlier scan failed for ", combo_name, ": ", e$message))
+    }
   )
-
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'outlier_scan', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'outlier_scan' again."
-      ),
-      call. = FALSE
-    )
-  }
 }
 
-#' Multiple seasonality scan tool
+#' Run seasonality analysis on a single time series
 #'
-#' @param agent_info agent information list
-#' @param parallel_processing whether to use parallel processing
-#' @param num_cores number of cores to use for parallel processing
+#' @param input_data data frame with Combo, Date, and Target columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param freq_val frequency value for time series
+#' @param project_info project information list
 #'
-#' @return nothing
+#' @return nothing, writes results to disk
 #' @noRd
-seasonality_scan <- function(agent_info,
-                             parallel_processing,
-                             num_cores) {
-  # get metadata
-  project_info <- agent_info$project_info
-  project_info$run_name <- agent_info$run_id
-
-  hist_end_date <- agent_info$hist_end_date
-  date_type <- project_info$date_type
-
-  # identify time-series combos
-  total_combo_list <- get_total_combos(agent_info = agent_info)
-
-  # detect previously completed combos
-  prev_combo_list <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-add_season."
-  )
-
-  current_combo_list <- setdiff(total_combo_list, prev_combo_list)
-
-  if (length(current_combo_list) == 0 & length(prev_combo_list) > 0) {
-    cli::cli_alert_info("Additional Seasonality Scan Already Ran")
-    return(cli::cli_progress_done())
-  }
-
-  # parallel setup
-  par_info <- par_start(
-    run_info            = project_info,
-    parallel_processing = parallel_processing,
-    num_cores           = num_cores,
-    task_length         = length(current_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  # helper: map date_type to ts() frequency
-  freq_map <- c(
-    "day"     = 7, # primary weekly seasonality for daily data
-    "week"    = 52,
-    "month"   = 12,
-    "quarter" = 4,
-    "year"    = 1
-  )
-  primary_freq <- freq_map[date_type] %||% 1
-
-  # submit tasks
-  foreach::foreach(
-    x               = current_combo_list,
-    .packages       = packages,
-    .errorhandling  = "stop",
-    .verbose        = FALSE,
-    .inorder        = FALSE,
-    .multicombine   = TRUE,
-    .noexport       = NULL
-  ) %op%
+run_seasonality_analysis <- function(input_data, combo_name, date_type, freq_val, project_info) {
+  tryCatch(
     {
-      # read data
-      input_data <- read_file(
-        run_info = project_info,
-        path = paste0(
-          "/input_data/", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
-        ),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Date <= hist_end_date) %>%
+      input_data_season <- input_data %>%
         dplyr::select(Combo, Date, Target) %>%
         dplyr::mutate(Target = as.numeric(Target)) %>%
         dplyr::group_by(Combo) %>%
@@ -1822,64 +1295,51 @@ seasonality_scan <- function(agent_info,
         dplyr::ungroup() %>%
         dplyr::arrange(Date)
 
-      combo_name <- unique(input_data$Combo)
-
       # skip short series
-      if (nrow(input_data) <= 2 * primary_freq) {
+      if (nrow(input_data_season) <= 2 * freq_val) {
         add_tbl <- tibble::tibble(
           Combo = combo_name,
-          Lag   = integer(),
+          Lag = integer(),
           Value = numeric()
         )
+      } else {
+        # create ts object
+        ts_vec <- stats::ts(input_data_season$Target, frequency = freq_val)
 
-        write_data(
-          x = add_tbl,
-          combo = combo_name,
-          run_info = project_info,
-          output_type = "data",
-          folder = "eda",
-          suffix = "-add_season"
+        # remove primary season via STL
+        stl_res <- stats::stl(ts_vec, s.window = "periodic", robust = TRUE)
+        resid <- as.numeric(stl_res$time.series[, "remainder"])
+
+        # calc maximum lag
+        date_type_max_lag <- switch(date_type,
+          "day" = 364 * 2,
+          "week" = 52 * 2,
+          "month" = 12 * 2,
+          "quarter" = 4 * 2,
+          "year" = 10
         )
 
-        return()
+        max_lag <- min(length(resid) - 1, date_type_max_lag)
+
+        # residual ACF
+        acf_res <- stats::acf(resid, plot = FALSE, lag.max = max_lag)
+
+        # significance threshold
+        n_obs <- sum(!is.na(resid))
+        crit <- 1.96 / sqrt(n_obs)
+
+        add_tbl <- tibble::tibble(
+          Combo = combo_name,
+          Lag = drop(acf_res$lag),
+          Value = drop(acf_res$acf)
+        ) %>%
+          dplyr::mutate(Value = round(Value, 2)) %>%
+          dplyr::rowwise() %>%
+          dplyr::mutate(Significant = abs(Value) > crit) %>%
+          dplyr::ungroup() %>%
+          dplyr::filter(Significant, Lag > 0) %>%
+          dplyr::select(-Significant)
       }
-
-      # create ts object
-      ts_vec <- stats::ts(input_data$Target, frequency = primary_freq)
-
-      # remove primary season via STL
-      stl_res <- stats::stl(ts_vec, s.window = "periodic", robust = TRUE)
-      resid <- as.numeric(stl_res$time.series[, "remainder"])
-
-      # calc maximum lag to use in ACF
-      date_type_max_lag <- switch(date_type,
-        "day" = 364 * 2,
-        "week" = 52 * 2,
-        "month" = 12 * 2,
-        "quarter" = 4 * 2,
-        "year" = 10
-      )
-
-      max_lag <- min(length(resid) - 1, date_type_max_lag)
-
-      # residual ACF
-      acf_res <- stats::acf(resid, plot = FALSE, lag.max = max_lag)
-
-      # significance threshold
-      n_obs <- sum(!is.na(resid))
-      crit <- 1.96 / sqrt(n_obs)
-
-      add_tbl <- tibble::tibble(
-        Combo = combo_name,
-        Lag   = drop(acf_res$lag),
-        Value = drop(acf_res$acf)
-      ) %>%
-        dplyr::mutate(Value = round(Value, 2)) %>%
-        dplyr::rowwise() %>%
-        dplyr::mutate(Significant = abs(Value) > crit) %>%
-        dplyr::ungroup() %>%
-        dplyr::filter(Significant, Lag > 0) %>%
-        dplyr::select(-Significant)
 
       # save results
       write_data(
@@ -1890,26 +1350,236 @@ seasonality_scan <- function(agent_info,
         folder = "eda",
         suffix = "-add_season"
       )
-    } %>%
-    base::suppressPackageStartupMessages()
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("Seasonality scan failed for ", combo_name, ": ", e$message))
+    }
+  )
+}
 
-  par_end(cl)
+#' Run external regressor analysis on a single time series
+#'
+#' @param input_data data frame with Combo, Date, Target, and regressor columns
+#' @param combo_name name of the combo
+#' @param date_type date type (day, week, month, quarter, year)
+#' @param regressors vector of regressor column names
+#' @param hist_end_date historical end date
+#' @param project_info project information list
+#'
+#' @return nothing, writes results to disk
+#' @noRd
+run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, hist_end_date, project_info) {
+  if (is.null(regressors) || length(regressors) == 0) {
+    return(invisible(NULL))
+  }
 
-  # sanity check
-  successful_combos <- get_finished_eda_combos(
-    agent_info   = agent_info,
-    eda_wildcard = "*-add_season."
+  tryCatch(
+    {
+      # determine future xregs
+      future_xregs_list <- get_xregs_future_values_tbl(
+        data_tbl = input_data,
+        external_regressors = regressors,
+        hist_end_date = hist_end_date
+      ) %>%
+        dplyr::select(-Combo, -Date) %>%
+        colnames()
+
+      # finalize input data
+      input_data_xreg <- input_data %>%
+        dplyr::arrange(Date)
+
+      # get lags by date type
+      date_type_lags <- switch(date_type,
+        "day" = c(0:7, seq(14, 364, by = 7)),
+        "week" = 0:52,
+        "month" = 0:12,
+        "quarter" = 0:4,
+        "year" = 0:5
+      )
+
+      # build lagged regressors
+      lag_tbl <- tidyr::crossing(
+        Regressor = regressors,
+        Lag = date_type_lags
+      ) %>%
+        dplyr::mutate(
+          dCor = purrr::map2_dbl(Regressor, Lag, \(var, l) {
+            x <- dplyr::lag(input_data_xreg[[var]], l)
+            y <- input_data_xreg$Target
+            keep <- !(is.na(x) | is.na(y))
+            if (sum(keep) < 5) {
+              return(NA_real_)
+            }
+            energy::dcor(x[keep], y[keep])
+          })
+        ) %>%
+        dplyr::mutate(dCor = round(dCor, 2)) %>%
+        dplyr::mutate(Combo = combo_name, .before = 1)
+
+      # filter out lag 0 values if a regressor does not have future values
+      if (!is.null(future_xregs_list)) {
+        lag_tbl <- lag_tbl %>%
+          dplyr::mutate(
+            Has_Future = Regressor %in% future_xregs_list,
+            Drop = ifelse((Lag == 0 & Has_Future == FALSE), TRUE, FALSE)
+          ) %>%
+          dplyr::filter(!Drop) %>%
+          dplyr::select(-Has_Future, -Drop)
+      }
+
+      # write per-combo result
+      write_data(
+        x = lag_tbl,
+        combo = combo_name,
+        run_info = project_info,
+        output_type = "data",
+        folder = "eda",
+        suffix = "-xreg_scan"
+      )
+    },
+    error = function(e) {
+      cli::cli_alert_warning(paste0("External regressor scan failed for ", combo_name, ": ", e$message))
+    }
+  )
+}
+
+#' Run all EDA functions per time series combo
+#'
+#' @param agent_info agent information list
+#' @param parallel_processing whether to use parallel processing
+#' @param num_cores number of cores to use for parallel processing
+#'
+#' @return nothing
+#' @noRd
+run_all_eda_per_combo <- function(agent_info,
+                                  parallel_processing,
+                                  num_cores) {
+  # get metadata
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+
+  hist_end_date <- agent_info$hist_end_date
+  hist_start_date <- agent_info$hist_start_date
+  date_type <- project_info$date_type
+  regressors <- agent_info$external_regressors
+
+  # get time series to run
+  total_combo_list <- get_total_combos(agent_info = agent_info)
+
+  # define which EDA types are required
+  eda_types <- c("acf", "pacf", "stationarity", "missing", "outliers", "add_season")
+  if (!is.null(regressors) && length(regressors) > 0) {
+    eda_types <- c(eda_types, "xreg_scan")
+  }
+
+  # for each EDA type, check which combos are missing
+  # then take the union of all missing combos
+  combos_needing_work <- c()
+
+  for (eda_type in eda_types) {
+    finished_combos <- get_finished_eda_combos(
+      agent_info = agent_info,
+      eda_wildcard = paste0("*-", eda_type, ".")
+    )
+
+    # find combos that don't have this EDA type
+    missing_combos <- setdiff(total_combo_list, finished_combos)
+
+    # add to the list of combos needing work
+    combos_needing_work <- union(combos_needing_work, missing_combos)
+  }
+
+  # sort for consistency
+  current_combo_list <- sort(combos_needing_work)
+
+  if (length(current_combo_list) == 0) {
+    cli::cli_alert_info("All EDA functions already completed for all time series")
+    return(cli::cli_progress_done())
+  }
+
+  # parallel setup
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = length(current_combo_list)
   )
 
-  if (length(successful_combos) != length(total_combo_list)) {
-    stop(
-      paste0(
-        "Not all time series were ran within 'seasonality_scan', expected ",
-        length(total_combo_list), " time series but only ", length(successful_combos),
-        " time series were ran. ", "Please run 'seasonality_scan' again."
-      ),
-      call. = FALSE
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+
+  # helper: map date_type to ts() frequency
+  freq_map <- c(
+    "day" = 7,
+    "week" = 52,
+    "month" = 12,
+    "quarter" = 4,
+    "year" = 1
+  )
+  freq_val <- freq_map[date_type] %||% 1
+
+  # submit tasks - one task per time series running all EDA functions
+  foreach::foreach(
+    x = current_combo_list,
+    .packages = packages,
+    .errorhandling = "stop",
+    .verbose = FALSE,
+    .inorder = FALSE,
+    .multicombine = TRUE,
+    .noexport = NULL
+  ) %op%
+    {
+      # read data once for all analyses
+      input_data <- read_file(
+        run_info = project_info,
+        path = paste0(
+          "/input_data/", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "-", x, ".", project_info$data_output
+        ),
+        return_type = "df"
+      ) %>%
+        dplyr::filter(Date <= hist_end_date)
+
+      combo_name <- unique(input_data$Combo)
+
+      # Run all EDA analyses
+      run_acf_analysis(input_data, combo_name, date_type, project_info)
+      run_pacf_analysis(input_data, combo_name, date_type, project_info)
+      run_stationarity_analysis(input_data, combo_name, date_type, hist_start_date, hist_end_date, project_info)
+      run_missing_analysis(input_data, combo_name, date_type, project_info)
+      run_outlier_analysis(input_data, combo_name, date_type, freq_val, project_info)
+      run_seasonality_analysis(input_data, combo_name, date_type, freq_val, project_info)
+      run_xreg_analysis(input_data, combo_name, date_type, regressors, hist_end_date, project_info)
+    } %>%
+    base::suppressWarnings() %>%
+    base::suppressPackageStartupMessages()
+
+  # stop parallel processing
+  par_end(cl)
+
+  # check if all time series combos ran correctly for each EDA type
+  all_passed <- TRUE
+  for (eda_type in eda_types) {
+    successful_combos <- get_finished_eda_combos(
+      agent_info = agent_info,
+      eda_wildcard = paste0("*-", eda_type, ".")
     )
+
+    if (length(successful_combos) != length(total_combo_list)) {
+      all_passed <- FALSE
+      stop(
+        paste0(
+          "Not all time series completed '", eda_type, "', expected ",
+          length(total_combo_list), " time series but only ", length(successful_combos),
+          " completed successfully."
+        )
+      )
+    }
+  }
+
+  if (all_passed) {
+    return(cli::cli_progress_done())
   }
 }
 
@@ -2235,12 +1905,12 @@ xreg_scan <- function(agent_info,
 
       # write per-combo result
       write_data(
-        x           = lag_tbl,
-        combo       = combo_name,
-        run_info    = project_info,
+        x = lag_tbl,
+        combo = combo_name,
+        run_info = project_info,
         output_type = "data",
-        folder      = "eda",
-        suffix      = "-xreg_scan"
+        folder = "eda",
+        suffix = "-xreg_scan"
       )
     } %>% base::suppressPackageStartupMessages()
 
