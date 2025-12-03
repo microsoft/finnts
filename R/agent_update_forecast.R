@@ -290,9 +290,7 @@ update_fcst_agent_workflow <- function(agent_info,
       retry_mode = "plain",
       max_retry = 2,
       args = list(
-        agent_info = agent_info,
-        parallel_processing = parallel_processing,
-        num_cores = num_cores
+        agent_info = agent_info
       )
     ),
     save_model_summaries = list(
@@ -907,9 +905,7 @@ reconcile_agent_forecast <- function(agent_info,
 
   # load hierarchical forecast
   hts_fcst_tbl <- load_agent_forecast(
-    agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   ) %>%
     dplyr::filter(Best_Model == "Yes")
 
