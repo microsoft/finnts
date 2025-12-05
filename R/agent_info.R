@@ -15,6 +15,11 @@
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
 #' @param allow_hierarchical_forecast Logical indicating whether to allow hierarchical forecasting
+#' @param run_global_models If TRUE, run multivariate models on the entire data
+#'   set (across all time series) as a global model. Default of NULL runs global models for all date types
+#'   except week and day.
+#' @param run_local_models If TRUE, run models by individual time series as
+#'   local models. Default is TRUE.
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #'
@@ -58,6 +63,8 @@ set_agent_info <- function(project_info,
                            back_test_spacing = NULL,
                            combo_cleanup_date = NULL,
                            allow_hierarchical_forecast = FALSE,
+                           run_global_models = NULL,
+                           run_local_models = TRUE,
                            reason_llm = NULL,
                            overwrite = FALSE) {
   # get metadata
@@ -78,6 +85,8 @@ set_agent_info <- function(project_info,
   check_input_type("back_test_spacing", back_test_spacing, c("numeric", "NULL"))
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
   check_input_type("allow_hierarchical_forecast", allow_hierarchical_forecast, "logical")
+  check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
+  check_input_type("run_local_models", run_local_models, "logical")
   check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
   check_input_type("overwrite", overwrite, "logical")
 
@@ -90,6 +99,17 @@ set_agent_info <- function(project_info,
     fiscal_year_start,
     parallel_processing = NULL
   )
+
+  # set default for run_global_models based on date_type
+  if (is.null(run_global_models) & date_type %in% c("day", "week")) {
+    run_global_models <- FALSE
+  } else if (is.null(run_global_models)) {
+    run_global_models <- TRUE
+  }
+
+  if (run_global_models == FALSE & run_local_models == FALSE) {
+    stop("At least one of 'run_global_models' or 'run_local_models' must be TRUE.", call. = FALSE)
+  }
 
   # input data formatting
   if (is.null(hist_end_date)) {
@@ -179,16 +199,34 @@ set_agent_info <- function(project_info,
       } else {
         combo_cleanup_date
       },
-      forecast_approach = forecast_approach
+      forecast_approach = forecast_approach,
+      run_global_models = run_global_models,
+      run_local_models = run_local_models
     ) %>%
       data.frame()
 
     prev_log_df <- align_types(
       current_log_df,
       agent_runs_tbl %>%
-        dplyr::select(colnames(current_log_df))
+        dplyr::select(tidyselect::any_of(colnames(current_log_df)))
     ) %>%
       data.frame()
+
+    # handle missing columns in previous log (backward compatibility)
+    for (col in setdiff(colnames(current_log_df), colnames(prev_log_df))) {
+      if (col == "run_global_models") {
+        # default based on date_type
+        if (date_type %in% c("day", "week")) {
+          prev_log_df$run_global_models <- FALSE
+        } else {
+          prev_log_df$run_global_models <- TRUE
+        }
+      } else if (col == "run_local_models") {
+        prev_log_df$run_local_models <- TRUE
+      } else {
+        prev_log_df[[col]] <- current_log_df[[col]]
+      }
+    }
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
       stop("Inputs have recently changed in 'set_agent_info',
@@ -227,6 +265,8 @@ set_agent_info <- function(project_info,
         as.Date(prev_log_df$combo_cleanup_date)
       },
       forecast_approach = prev_log_df$forecast_approach,
+      run_global_models = prev_log_df$run_global_models,
+      run_local_models = prev_log_df$run_local_models,
       overwrite = overwrite
     )
 
@@ -291,6 +331,8 @@ set_agent_info <- function(project_info,
       back_test_spacing = back_test_spacing,
       combo_cleanup_date = combo_cleanup_date,
       forecast_approach = forecast_approach,
+      run_global_models = run_global_models,
+      run_local_models = run_local_models,
       overwrite = overwrite
     )
 
@@ -306,7 +348,9 @@ set_agent_info <- function(project_info,
       back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
       back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date)),
-      forecast_approach = forecast_approach
+      forecast_approach = forecast_approach,
+      run_global_models = run_global_models,
+      run_local_models = run_local_models
     )
 
     # write run info to disc
@@ -350,6 +394,11 @@ set_agent_info <- function(project_info,
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
 #' @param allow_hierarchical_forecast Logical indicating whether to allow hierarchical forecasting
+#' @param run_global_models If TRUE, run multivariate models on the entire data
+#'   set (across all time series) as a global model. Default of NULL runs global models for all date types
+#'   except week and day.
+#' @param run_local_models If TRUE, run models by individual time series as
+#'   local models. Default is TRUE.
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #' @param request_id A unique identifier for the agent run request
@@ -369,6 +418,8 @@ set_agent_info_custom <- function(project_info,
                                   back_test_spacing = NULL,
                                   combo_cleanup_date = NULL,
                                   allow_hierarchical_forecast = FALSE,
+                                  run_global_models = NULL,
+                                  run_local_models = TRUE,
                                   reason_llm = NULL,
                                   overwrite = FALSE,
                                   request_id,
@@ -395,6 +446,8 @@ set_agent_info_custom <- function(project_info,
     back_test_spacing = back_test_spacing,
     combo_cleanup_date = combo_cleanup_date,
     allow_hierarchical_forecast = allow_hierarchical_forecast,
+    run_global_models = run_global_models,
+    run_local_models = run_local_models,
     reason_llm = reason_llm,
     overwrite = overwrite
   )
