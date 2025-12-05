@@ -75,6 +75,10 @@ iterate_forecast <- function(agent_info,
   # get project info
   project_info <- agent_info$project_info
 
+  # get metadata
+  run_global_models <- agent_info$run_global_models
+  run_local_models <- agent_info$run_local_models
+
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
     agent_info$project_info$combo_variables <- "ID"
@@ -118,7 +122,7 @@ iterate_forecast <- function(agent_info,
     unique()
 
   # optimize global models
-  if (length(combo_list) > 1) {
+  if (length(combo_list) > 1 & run_global_models) {
     message("[agent] Starting Global Model Iteration Workflow")
 
     # adjust max iterations based on previous runs
@@ -145,7 +149,7 @@ iterate_forecast <- function(agent_info,
       # run the global model optimization
       fcst_results <- fcst_agent_workflow(
         agent_info = agent_info,
-        combo = NULL,
+        combo = NULL, # NULL = global models
         weighted_mape_goal = weighted_mape_goal,
         parallel_processing = parallel_processing,
         inner_parallel = inner_parallel,
@@ -162,6 +166,9 @@ iterate_forecast <- function(agent_info,
       dplyr::filter(weighted_mape > weighted_mape_goal) %>%
       dplyr::pull(combo) %>%
       unique()
+  } else if (length(combo_list) > 1 & !run_global_models) {
+    message("[agent] Global models disabled. Skipping global model optimization.")
+    local_combo_list <- combo_list
   } else {
     message("[agent] Only one time series found. Skipping global model optimization.")
     local_combo_list <- combo_list
@@ -170,10 +177,12 @@ iterate_forecast <- function(agent_info,
   # optimize local models
   if (length(local_combo_list) == 0) {
     message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
+  } else if (!run_local_models) {
+    message("[agent] Local models disabled. Skipping local model optimization.")
   } else {
     message("[agent] Starting Local Model Iteration Workflow")
 
-    # adjustments for parallel processing
+    # parallel processing adjustments
     if (!is.null(parallel_processing)) {
       if (!is.null(agent_info$reason_llm)) {
         llm_info <- agent_info$reason_llm$get_provider()@api_key
