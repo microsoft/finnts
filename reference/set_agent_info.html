@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9011</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9012</span>
       </span>
     </div>
 
@@ -121,6 +121,8 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <span>  back_test_spacing <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  combo_cleanup_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  allow_hierarchical_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  reason_llm <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  overwrite <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -172,6 +174,17 @@ It checks for existing runs and allows for overwriting if specified.</p>
 
 <dt id="arg-allow-hierarchical-forecast">allow_hierarchical_forecast<a class="anchor" aria-label="anchor" href="#arg-allow-hierarchical-forecast"></a></dt>
 <dd><p>Logical indicating whether to allow hierarchical forecasting</p></dd>
+
+
+<dt id="arg-run-global-models">run_global_models<a class="anchor" aria-label="anchor" href="#arg-run-global-models"></a></dt>
+<dd><p>If TRUE, run multivariate models on the entire data
+set (across all time series) as a global model. Default of NULL runs global models for all date types
+except week and day.</p></dd>
+
+
+<dt id="arg-run-local-models">run_local_models<a class="anchor" aria-label="anchor" href="#arg-run-local-models"></a></dt>
+<dd><p>If TRUE, run models by individual time series as
+local models. Default is TRUE.</p></dd>
 
 
 <dt id="arg-reason-llm">reason_llm<a class="anchor" aria-label="anchor" href="#arg-reason-llm"></a></dt>
