@@ -1035,7 +1035,7 @@ reason_inputs <- function(agent_info,
   input_list <- extract_json_object(response)
 
   # Log what LLM returned for models_to_run
-cli::cli_alert_info("LLM returned models_to_run: {input_list$models_to_run %||% 'NOT PROVIDED'}")
+  cli::cli_alert_info("LLM returned models_to_run: {input_list$models_to_run %||% 'NOT PROVIDED'}")
 
   # check if the response is an abort schema
   if ("abort" %in% names(input_list) && input_list$abort == "TRUE") {
@@ -1067,8 +1067,8 @@ cli::cli_alert_info("LLM returned models_to_run: {input_list$models_to_run %||% 
   }
 
   # Check timegpt availability for defaults
-timegpt_available <- check_timegpt_available()
-timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
+  timegpt_available <- check_timegpt_available()
+  timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
 
   # fill in missing fields with default values
   if (is.null(combo)) {
@@ -1843,20 +1843,23 @@ get_total_run_count <- function(agent_info,
 #' @return Logical indicating if TimeGPT is available
 #' @noRd
 check_timegpt_available <- function() {
-  tryCatch({
-    env_api_key <- Sys.getenv("NIXTLA_API_KEY")
-    opt_api_key <- getOption("NIXTLA_API_KEY")
-    
-    has_key <- nzchar(env_api_key) || !is.null(opt_api_key)
-    
-    if (!has_key) {
+  tryCatch(
+    {
+      env_api_key <- Sys.getenv("NIXTLA_API_KEY")
+      opt_api_key <- getOption("NIXTLA_API_KEY")
+
+      has_key <- nzchar(env_api_key) || !is.null(opt_api_key)
+
+      if (!has_key) {
+        FALSE
+      } else {
+        nixtlar::nixtla_validate_api_key()
+      }
+    },
+    error = function(e) {
       FALSE
-    } else {
-      nixtlar::nixtla_validate_api_key()
     }
-  }, error = function(e) {
-    FALSE
-  })
+  )
 }
 
 #' Collapse a vector into a string with "---" as separator, or return NA if the vector is "NULL"
@@ -2060,10 +2063,10 @@ iterate_forecast_system_prompt <- function(agent_info,
   cli::cli_alert_info("TimeGPT availability: {timegpt_available}")
   timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
 
-# Model lists with conditional timegpt
-models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
-models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", timegpt_model_suffix)
-models_rule_10c <- "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
+  # Model lists with conditional timegpt
+  models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
+  models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", timegpt_model_suffix)
+  models_rule_10c <- "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
 
   # create final prompt
   if (is.null(combo)) {
