@@ -91,6 +91,14 @@ set_agent_info <- function(project_info,
     parallel_processing = NULL
   )
 
+    # Inform user about TimeGPT setup
+  cli::cli_alert_info("To use TimeGPT models in the agent run, ensure you have set up your API keys.")
+  cli::cli_bullets(c(
+    "i" = "See setup instructions at: {.url https://microsoft.github.io/finnts/articles/forecasting-genai.html}",
+    " " = "Set via environment variable: Sys.setenv(NIXTLA_API_KEY = 'your_key')",
+    " " = "Or for Azure: Also set Sys.setenv(NIXTLA_BASE_URL = 'your_url')"
+  ))
+
   # input data formatting
   if (is.null(hist_end_date)) {
     hist_end_date <- input_data %>%
