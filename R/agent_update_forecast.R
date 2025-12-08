@@ -290,9 +290,7 @@ update_fcst_agent_workflow <- function(agent_info,
       retry_mode = "plain",
       max_retry = 2,
       args = list(
-        agent_info = agent_info,
-        parallel_processing = parallel_processing,
-        num_cores = num_cores
+        agent_info = agent_info
       )
     ),
     save_model_summaries = list(
@@ -421,6 +419,8 @@ initial_checks <- function(agent_info) {
       back_test_scenarios = temp_agent_tbl$back_test_scenarios,
       back_test_spacing = temp_agent_tbl$back_test_spacing,
       combo_cleanup_date = temp_agent_tbl$combo_cleanup_date,
+      run_global_models = temp_agent_tbl$run_global_models,
+      run_local_models = temp_agent_tbl$run_local_models,
       overwrite = agent_info$overwrite
     )
 
@@ -481,6 +481,24 @@ initial_checks <- function(agent_info) {
     )
   }
 
+  # check global and local model run settings
+  model_type_list <- prev_best_runs_tbl %>%
+    dplyr::pull(model_type) %>%
+    unique()
+
+  if ("local" %in% model_type_list & !agent_info$run_local_models) {
+    stop("Error in update_forecast(). Previous agent run included local models, but current agent_info has run_local_models = FALSE. Please set run_local_models = TRUE to update local models.",
+      call. = FALSE
+    )
+  }
+
+  if ("global" %in% model_type_list & !agent_info$run_global_models) {
+    stop("Error in update_forecast(). Previous agent run included global models, but current agent_info has run_global_models = FALSE. Please set run_global_models = TRUE to update global models.",
+      call. = FALSE
+    )
+  }
+
+  # return unfinished previous best runs
   return(prev_best_runs_tbl)
 }
 
@@ -907,9 +925,7 @@ reconcile_agent_forecast <- function(agent_info,
 
   # load hierarchical forecast
   hts_fcst_tbl <- load_agent_forecast(
-    agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   ) %>%
     dplyr::filter(Best_Model == "Yes")
 

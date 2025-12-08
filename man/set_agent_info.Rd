@@ -16,6 +16,8 @@ set_agent_info(
   back_test_spacing = NULL,
   combo_cleanup_date = NULL,
   allow_hierarchical_forecast = FALSE,
+  run_global_models = NULL,
+  run_local_models = TRUE,
   reason_llm = NULL,
   overwrite = FALSE
 )
@@ -42,6 +44,13 @@ set_agent_info(
 \item{combo_cleanup_date}{Optional Date object for combo cleanup}
 
 \item{allow_hierarchical_forecast}{Logical indicating whether to allow hierarchical forecasting}
+
+\item{run_global_models}{If TRUE, run multivariate models on the entire data
+set (across all time series) as a global model. Default of NULL runs global models for all date types
+except week and day.}
+
+\item{run_local_models}{If TRUE, run models by individual time series as
+local models. Default is TRUE.}
 
 \item{reason_llm}{Optional Chat LLM object for reasoning tasks}
 

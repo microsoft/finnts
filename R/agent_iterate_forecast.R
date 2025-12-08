@@ -75,6 +75,10 @@ iterate_forecast <- function(agent_info,
   # get project info
   project_info <- agent_info$project_info
 
+  # get metadata
+  run_global_models <- agent_info$run_global_models
+  run_local_models <- agent_info$run_local_models
+
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
     agent_info$project_info$combo_variables <- "ID"
@@ -118,7 +122,7 @@ iterate_forecast <- function(agent_info,
     unique()
 
   # optimize global models
-  if (length(combo_list) > 1) {
+  if (length(combo_list) > 1 & run_global_models) {
     message("[agent] Starting Global Model Iteration Workflow")
 
     # adjust max iterations based on previous runs
@@ -145,7 +149,7 @@ iterate_forecast <- function(agent_info,
       # run the global model optimization
       fcst_results <- fcst_agent_workflow(
         agent_info = agent_info,
-        combo = NULL,
+        combo = NULL, # NULL = global models
         weighted_mape_goal = weighted_mape_goal,
         parallel_processing = parallel_processing,
         inner_parallel = inner_parallel,
@@ -162,6 +166,9 @@ iterate_forecast <- function(agent_info,
       dplyr::filter(weighted_mape > weighted_mape_goal) %>%
       dplyr::pull(combo) %>%
       unique()
+  } else if (length(combo_list) > 1 & !run_global_models) {
+    message("[agent] Global models disabled. Skipping global model optimization.")
+    local_combo_list <- combo_list
   } else {
     message("[agent] Only one time series found. Skipping global model optimization.")
     local_combo_list <- combo_list
@@ -170,10 +177,12 @@ iterate_forecast <- function(agent_info,
   # optimize local models
   if (length(local_combo_list) == 0) {
     message("[agent] All time series met the MAPE goal after global models. Skipping local model optimization.")
+  } else if (!run_local_models) {
+    message("[agent] Local models disabled. Skipping local model optimization.")
   } else {
     message("[agent] Starting Local Model Iteration Workflow")
 
-    # adjustments for parallel processing
+    # parallel processing adjustments
     if (!is.null(parallel_processing)) {
       if (!is.null(agent_info$reason_llm)) {
         llm_info <- agent_info$reason_llm$get_provider()@api_key
@@ -313,9 +322,7 @@ iterate_forecast <- function(agent_info,
   message("[agent] Saving Final Forecast")
 
   save_agent_forecast(
-    agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores
+    agent_info = agent_info
   )
 
   # save model summaries
@@ -465,23 +472,14 @@ get_best_agent_run <- function(agent_info) {
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and prepares it before it writes to disk.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' @param parallel_processing Default of NULL runs no parallel processing and
-#'  loads each time series forecast one after another. 'local_machine' leverages
-#'  all cores on current machine Finn is running on. 'spark' runs time series
-#'  in parallel on a spark cluster in Azure Databricks or Azure Synapse.
-#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #' @param final_output If TRUE, formats the output for final saving. If FALSE, returns raw forecast data.
 #'
 #' @return A tibble containing the final forecast for the agent.
 #' @noRd
 load_agent_forecast <- function(agent_info,
-                                parallel_processing = NULL,
-                                num_cores = NULL,
                                 final_output = FALSE) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
-  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
-  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   # check for reconciled forecast and return if found
   if (agent_info$forecast_approach != "bottoms_up" & final_output) {
@@ -538,30 +536,19 @@ load_agent_forecast <- function(agent_info,
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
 
-    par_info <- par_start(
-      run_info = agent_info$project_info,
-      parallel_processing = parallel_processing,
-      num_cores = num_cores,
-      task_length = nrow(local_run_tbl)
-    )
-
-    cl <- par_info$cl
-    packages <- par_info$packages
-    `%op%` <- par_info$foreach_operator
-
     # submit tasks
     local_file_tbl <- foreach::foreach(
       x = local_run_tbl %>%
         dplyr::group_split(dplyr::row_number(), .keep = FALSE),
       .combine = "rbind",
-      .packages = packages,
       .errorhandling = "stop",
       .verbose = FALSE,
       .inorder = FALSE,
       .multicombine = TRUE,
       .noexport = NULL
-    ) %op%
+    ) %do%
       {
+        # metadata
         project_info <- agent_info$project_info
 
         project_name <- paste0(
@@ -569,21 +556,34 @@ load_agent_forecast <- function(agent_info,
           "_",
           hash_data(x$combo)
         )
+        run_name <- x$best_run_name
 
-        file_list <- list_files(
-          project_info$storage_object,
-          paste0(
-            project_info$path, "/forecasts/*", hash_data(project_name), "-",
-            hash_data(x$best_run_name), "-", hash_data(x$combo),
-            "*.", project_info$data_output
+        multiple_models <- grepl("---", x$models_to_run)
+        average_models <- x$average_models
+
+        # create file list
+        # single models
+        file_list <- paste0(
+          project_info$path, "/forecasts/", hash_data(project_name), "-",
+          hash_data(run_name), "-", hash_data(x$combo),
+          "-single_models.", project_info$data_output
+        ) %>% fs::path_tidy()
+
+        if (multiple_models & average_models) {
+          # add average model file if multiple models were run and averaging was selected
+          file_list <- c(
+            file_list,
+            paste0(
+              project_info$path, "/forecasts/", hash_data(project_name), "-",
+              hash_data(run_name), "-", hash_data(x$combo),
+              "-average_models.", project_info$data_output
+            ) %>% fs::path_tidy()
           )
-        )
+        }
 
         return(tibble::tibble(File_List = file_list))
       } %>%
       base::suppressPackageStartupMessages()
-
-    par_end(cl)
 
     # load local forecast files
     if (nrow(local_file_tbl) == 0) {
@@ -659,21 +659,12 @@ load_agent_forecast <- function(agent_info,
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and saves to disk.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' @param parallel_processing Default of NULL runs no parallel processing and
-#' loads each time series forecast one after another. 'local_machine' leverages
-#' all cores on current machine Finn is running on. 'spark' runs time series
-#' in parallel on a spark cluster in Azure Databricks or Azure Synapse.
-#' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #'
 #' @return Nothing
 #' @noRd
-save_agent_forecast <- function(agent_info,
-                                parallel_processing = NULL,
-                                num_cores = NULL) {
+save_agent_forecast <- function(agent_info) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
-  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
-  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   # metadata
   project_info <- agent_info$project_info
@@ -682,8 +673,6 @@ save_agent_forecast <- function(agent_info,
   # load the final forecast for the agent
   final_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
     final_output = TRUE
   )
 
