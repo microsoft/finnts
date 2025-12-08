@@ -2062,7 +2062,7 @@ iterate_forecast_system_prompt <- function(agent_info,
   # Model lists with conditional timegpt
   models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
   models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", timegpt_model_suffix)
-  models_rule_10c <- "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
+  models_rule_10c <- paste0("arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", timegpt_model_suffix)
 
   # create final prompt
   if (is.null(combo)) {
