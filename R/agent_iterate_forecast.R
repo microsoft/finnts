@@ -1827,9 +1827,9 @@ get_total_run_count <- function(agent_info,
 
 #' TimeGPT Availability
 #'
-#' Checks if TimeGPT API key is set and validates it works
+#' Checks if TimeGPT API key is set (via environment variable or option) and validates it by calling the Nixtla API.
 #'
-#' @return Logical indicating if TimeGPT is available
+#' @return Logical indicating if TimeGPT is available, Returns FALSE if no key is found, validation fails, or any error occurs.
 #' @noRd
 check_timegpt_available <- function() {
   tryCatch(
@@ -1837,7 +1837,7 @@ check_timegpt_available <- function() {
       env_api_key <- Sys.getenv("NIXTLA_API_KEY")
       opt_api_key <- getOption("NIXTLA_API_KEY")
 
-      has_key <- nzchar(env_api_key) || !is.null(opt_api_key)
+      has_key <- nzchar(env_api_key) || (!is.null(opt_api_key) && nzchar(opt_api_key))
 
       if (!has_key) {
         FALSE
