@@ -1059,10 +1059,6 @@ reason_inputs <- function(agent_info,
   timegpt_available <- check_timegpt_available()
   timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
 
-  if (!timegpt_available) {
-    cli::cli_alert_warning("TimeGPT is not configured (NIXTLA_API_KEY not set or invalid) and will NOT be included as part of agent training")
-  }
-
   # fill in missing fields with default values
   if (is.null(combo)) {
     default_values <- list(
@@ -2054,10 +2050,6 @@ iterate_forecast_system_prompt <- function(agent_info,
   # Check timegpt availability
   timegpt_available <- check_timegpt_available()
   timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
-
-  if (!timegpt_available) {
-    cli::cli_alert_warning("TimeGPT is not configured (NIXTLA_API_KEY not set or invalid) and will NOT be included as part of agent training")
-  }
 
   # Model lists with conditional timegpt
   models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
