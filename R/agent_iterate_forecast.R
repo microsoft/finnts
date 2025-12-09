@@ -1059,7 +1059,7 @@ reason_inputs <- function(agent_info,
   # fill in missing fields with default values
   if (is.null(combo)) {
     default_values <- list(
-      models_to_run = paste0("xgboost", timegpt_model_suffix),
+      models_to_run = "xgboost",
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
