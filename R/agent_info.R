@@ -100,13 +100,6 @@ set_agent_info <- function(project_info,
     parallel_processing = NULL
   )
 
-  # Inform user about TimeGPT LLM setup
-  cli::cli_alert_info("To use TimeGPT models in the agent run, ensure you have set up your API keys.")
-  cli::cli_bullets(c(
-    "i" = "See setup instructions at: {.url https://microsoft.github.io/finnts/articles/forecasting-genai.html}",
-    " " = "Set via environment variable: Sys.setenv(NIXTLA_API_KEY = 'your_key')",
-    " " = "Or for Azure: Also set Sys.setenv(NIXTLA_BASE_URL = 'your_url')"
-  ))
   # set default for run_global_models based on date_type
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -439,14 +432,6 @@ set_agent_info_custom <- function(project_info,
   if (!agent_action %in% c("iterate_forecast", "update_forecast")) {
     stop("agent_action must be either 'iterate_forecast' or 'update_forecast'", call. = FALSE)
   }
-
-    # Inform user about TimeGPT LLM setup
-  cli::cli_alert_info("To use TimeGPT models in the agent run, ensure you have set up your API keys.")
-  cli::cli_bullets(c(
-    "i" = "See setup instructions at: {.url https://microsoft.github.io/finnts/articles/forecasting-genai.html}",
-    " " = "Set via environment variable: Sys.setenv(NIXTLA_API_KEY = 'your_key')",
-    " " = "Or for Azure: Also set Sys.setenv(NIXTLA_BASE_URL = 'your_url')"
-  ))
 
   # set agent info args
   agent_args <- list(

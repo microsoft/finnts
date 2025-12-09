@@ -1023,9 +1023,6 @@ reason_inputs <- function(agent_info,
   # extract out json from response and convert to list
   input_list <- extract_json_object(response)
 
-  # Log what LLM returned for models_to_run
-  cli::cli_alert_info("LLM returned models_to_run: {input_list$models_to_run %||% 'NOT PROVIDED'}")
-
   # check if the response is an abort schema
   if ("abort" %in% names(input_list) && input_list$abort == "TRUE") {
     cli::cli_alert_info("LLM has aborted the run. Reason: {input_list$reasoning}")
