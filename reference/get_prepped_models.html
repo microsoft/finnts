@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9014</span>
       </span>
     </div>
 
@@ -136,7 +136,7 @@
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: finn_project</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20251210T161134Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20251210T201909Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_data.html">prep_data</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -148,7 +148,9 @@
 <span class="r-in"><span>  recipes_to_run <span class="op">=</span> <span class="st">"R1"</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[418ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Data Already Prepped</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[51ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_models.html">prep_models</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -156,18 +158,20 @@
 <span class="r-in"><span>  num_hyperparameters <span class="op">=</span> <span class="fl">1</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[83ms]</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[78ms]</span></span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Turning ensemble models off since no multivariate models were chosen to run.</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[376ms]</span></span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Unknown or uninitialised column: `date_type`.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Unknown or uninitialised column: `forecast_approach`.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Unknown or uninitialised column: `forecast_horizon`.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Unknown or uninitialised column: `multistep_horizon`.</span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>Unknown or uninitialised column: `external_regressors`.</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in if (is.na(log_df$external_regressors)) {    NULL} else {    unlist(strsplit(log_df$external_regressors, split = "---"))}:</span> argument is of length zero</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #BB0000;">✖</span> Creating Model Workflows <span style="color: #B2B2B2;">[14ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="va">prepped_models_tbl</span> <span class="op">&lt;-</span> <span class="fu">get_prepped_models</span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span></span>
+<span class="r-wrn co"><span class="r-pr">#&gt;</span> <span class="warning">Warning: </span>cannot open compressed file '/tmp/RtmpWVlI0e/prep_models/15a7d24ac5ec18da-ccec688fa952902e-model_hyperparameters.rds', probable reason 'No such file or directory'</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span class="error">Error in map(.x, .f, ...):</span> <span style="color: #00BBBB;">ℹ</span> In index: 1.</span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="font-weight: bold;">Caused by error in `gzfile()`:</span></span>
+<span class="r-err co"><span class="r-pr">#&gt;</span> <span style="color: #BBBB00;">!</span> cannot open the connection</span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>
     </div>
