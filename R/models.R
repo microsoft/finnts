@@ -21,7 +21,7 @@ list_hyperparmater_models <- function() {
   list <- c(
     "arima-boost", "cubist", "glmnet", "mars",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost",
-    "prophet-xregs", "svm-poly", "svm-rbf", "xgboost"
+    "prophet-xregs", "svm-poly", "svm-rbf", "timegpt", "xgboost"
   )
 
   return(list)

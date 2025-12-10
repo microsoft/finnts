@@ -66,6 +66,9 @@ Sys.setenv(
 )
 ```
 
+- TimeGPT Setup: In order to use TimeGPT model as part of agent forecast workflow, set the TimeGPT credentials. 
+  - See [TimeGPT Setup section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#authentication-and-setup) for details.
+
 ---
 
 ## End-to-end: first run with the AI agent
