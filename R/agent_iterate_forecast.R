@@ -177,7 +177,7 @@ iterate_forecast <- function(agent_info,
       best_run_tbl <- best_run_tbl %>%
         dplyr::mutate(
           run_complete = FALSE,
-          max_iterations = max_iter
+          max_iterations = 0
         )
     }
 
