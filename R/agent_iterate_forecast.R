@@ -1052,6 +1052,10 @@ reason_inputs <- function(agent_info,
     )
   }
 
+  # Check timegpt availability for defaults
+  timegpt_available <- check_timegpt_available()
+  timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
+
   # fill in missing fields with default values
   if (is.null(combo)) {
     default_values <- list(
@@ -1072,7 +1076,7 @@ reason_inputs <- function(agent_info,
     )
   } else {
     default_values <- list(
-      models_to_run = "arima---ets---tbats---stlm-arima---xgboost---glmnet",
+      models_to_run = paste0("arima---ets---tbats---stlm-arima---xgboost---glmnet", timegpt_model_suffix),
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
@@ -1818,6 +1822,32 @@ get_total_run_count <- function(agent_info,
   return(nrow(total_runs))
 }
 
+#' TimeGPT Availability
+#'
+#' Checks if TimeGPT API key is set (via environment variable or option) and validates it by calling the Nixtla API.
+#'
+#' @return Logical indicating if TimeGPT is available, Returns FALSE if no key is found, validation fails, or any error occurs.
+#' @noRd
+check_timegpt_available <- function() {
+  tryCatch(
+    {
+      env_api_key <- Sys.getenv("NIXTLA_API_KEY")
+      opt_api_key <- getOption("NIXTLA_API_KEY")
+
+      has_key <- nzchar(env_api_key) || (!is.null(opt_api_key) && nzchar(opt_api_key))
+
+      if (!has_key) {
+        FALSE
+      } else {
+        nixtlar::nixtla_validate_api_key()
+      }
+    },
+    error = function(e) {
+      FALSE
+    }
+  )
+}
+
 #' Collapse a vector into a string with "---" as separator, or return NA if the vector is "NULL"
 #'
 #' @param x A character vector to collapse.
@@ -2014,6 +2044,15 @@ iterate_forecast_system_prompt <- function(agent_info,
   # load EDA results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
 
+  # Check timegpt availability
+  timegpt_available <- check_timegpt_available()
+  timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
+
+  # Model lists with conditional timegpt
+  models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
+  models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", timegpt_model_suffix)
+  models_rule_10c <- paste0("arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", timegpt_model_suffix)
+
   # create final prompt
   if (is.null(combo)) {
     # global model prompt
@@ -2202,9 +2241,9 @@ iterate_forecast_system_prompt <- function(agent_info,
           9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
           9-F. Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
       10. FULL MODEL SWEEP RULES
-          10-A. IF run_count == 0 -> models_to_run = "arima---meanf---snaive---stlm-arima---tbats---xgboost"
-          10-B. IF run_count > 0 AND *Step D is complete* -> models_to_run = "arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost"
-          10-C. AFTER applying rule 10-B, if wmape goal was not met -> models_to_run = "arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost"
+          10-A. IF run_count == 0 -> models_to_run = "<<models_rule_10a>>"
+          10-B. IF run_count > 0 AND *Step D is complete* -> models_to_run = "<<models_rule_10b>>"
+          10-C. AFTER applying rule 10-B, if wmape goal was not met -> models_to_run = "<<models_rule_10c>>"
       11. EXTERNAL REGRESSOR RULES
           11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
           11-B. IF adding external regressors AND run_count == 0 -> external_regressors="NULL"
@@ -2305,7 +2344,10 @@ iterate_forecast_system_prompt <- function(agent_info,
       rolling_default = rolling_default,
       recipe_default = recipe_default,
       seasonal_period_default = seasonal_period_default,
-      agent_version = agent_info$agent_version
+      agent_version = agent_info$agent_version,
+      models_rule_10a = models_rule_10a,
+      models_rule_10b = models_rule_10b,
+      models_rule_10c = models_rule_10c
     )
   }
 

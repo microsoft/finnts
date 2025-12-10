@@ -1,4 +1,4 @@
-# finnts 0.6.0.9012 (development version)
+# finnts 0.6.0.9013 (development version)
 
 ## Improvements
 - TimeGPT Integration
@@ -8,6 +8,7 @@
   - Added finetuning for depth and layers
   - Enabled TimeGPT as a global model
   - Added support for padding time series that don't meet minimum data requirements
+  - Integrated TimeGPT into the finn agent workflow
 
 - Updated Train Model function
   - Added debug arg to trace error while training over various models
