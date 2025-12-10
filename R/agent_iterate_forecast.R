@@ -1722,12 +1722,12 @@ log_best_run <- function(agent_info,
 #' Finalize Agent Run Metadata
 #'
 #' This function updates the agent best run file for each combo by setting
-#' the max_iterations and run_complete flags. For global models (combo = NULL),
+#' the max_iterations and run_complete flags. For global models (combo = NULL or combo = "all"),
 #' it updates all combo files. For local models, it updates a single combo file.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
-#' @param combo A character string representing the hashed combo. If NULL, updates all combos for global models.
+#' @param combo A character string representing the hashed combo. If NULL or "all", updates all combos for global models.
 #'
 #' @return Character string indicating success
 #' @noRd
