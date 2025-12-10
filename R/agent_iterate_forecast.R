@@ -172,8 +172,8 @@ iterate_forecast <- function(agent_info,
   best_run_tbl <- load_best_agent_run(agent_info = agent_info)
 
   if (nrow(best_run_tbl) > 0) {
-    # check if max_iter AND run_complete columns exist (for backward compatibility)
-    if (!"run_complete" %in% colnames(best_run_tbl) & !"max_iterations" %in% colnames(best_run_tbl)) {
+    # check if max_iter OR run_complete columns exist (for backward compatibility)
+    if (!"run_complete" %in% colnames(best_run_tbl) | !"max_iterations" %in% colnames(best_run_tbl)) {
       best_run_tbl <- best_run_tbl %>%
         dplyr::mutate(
           run_complete = FALSE,
