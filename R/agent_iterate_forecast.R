@@ -793,7 +793,7 @@ save_best_agent_run <- function(agent_info) {
 
   # remove unnecessary columns
   final_run_tbl <- final_run_tbl %>%
-    dplyr::select(-run_complete, -max_iterations)
+    dplyr::select(-dplyr::any_of(c("run_complete", "max_iterations")))
 
   # save the best run for the agent
   write_data(
