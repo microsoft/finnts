@@ -865,7 +865,14 @@ fcst_agent_workflow <- function(agent_info,
 
         # check if the LLM aborted the run
         if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
-          return(list(ctx = ctx, `next` = "finalize_run"))
+          # check if any iterations have been completed
+          if (ctx$iter > 0) {
+            # proceed to finalize run step if there is existing run_info from previous iterations
+            return(list(ctx = ctx, `next` = "finalize_run"))
+          } else {
+            # skip finalize run step since run was aborted with no existing run_info
+            return(list(ctx = ctx, `next` = "stop"))
+          }
         } else {
           return(list(ctx = ctx, `next` = "submit_fcst_run"))
         }
