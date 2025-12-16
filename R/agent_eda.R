@@ -1387,7 +1387,8 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
       # finalize input data (use filtered data for analysis)
       input_data_xreg <- input_data %>%
         dplyr::filter(Date <= hist_end_date) %>%
-        dplyr::arrange(Date)
+        dplyr::arrange(Date) %>%
+        tidyr::drop_na() # drop rows with any NA values
 
       # get lags by date type
       date_type_lags <- switch(date_type,
@@ -1541,7 +1542,8 @@ run_all_eda_per_combo <- function(agent_info,
         dplyr::mutate(Date = as.Date(Date))
 
       input_data <- input_data_full %>%
-        dplyr::filter(Date <= hist_end_date)
+        dplyr::filter(Date <= hist_end_date) %>%
+        tidyr::drop_na(Target)
 
       combo_name <- unique(input_data$Combo)
 
