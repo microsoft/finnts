@@ -597,6 +597,7 @@ load_agent_forecast <- function(agent_info,
         )
         run_name <- x$best_run_name
 
+        multiple_recipes <- grepl("---", x$recipes_to_run)
         multiple_models <- grepl("---", x$models_to_run)
         average_models <- x$average_models
 
@@ -608,7 +609,7 @@ load_agent_forecast <- function(agent_info,
           "-single_models.", project_info$data_output
         ) %>% fs::path_tidy()
 
-        if (multiple_models & average_models) {
+        if ((multiple_models | multiple_recipes) & average_models) {
           # add average model file if multiple models were run and averaging was selected
           file_list <- c(
             file_list,
