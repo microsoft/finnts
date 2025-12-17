@@ -7764,15 +7764,14 @@ summarize_model_xgboost <- function(wf) {
 #' Summarize a TimeGPT Workflow
 #'
 #' Extracts and summarizes key information from a fitted TimeGPT workflow,
-#' including model arguments, engine parameters, and configuration details.
-#' TimeGPT is an API-based forecasting model, so this focuses on parameters
-#' and configuration rather than internal model structure.
+#' including model arguments, engine parameters, and api configuration details.
 #'
 #' @param wf A fitted tidymodels workflow containing a timegpt_model()
 #'   model with engine 'timegpt_model'.
 #'
 #' @return A tibble with columns: section, name, value containing model details.
 #'
+#' #' @noRd
 summarize_model_timegpt <- function(wf) {
   digits <- 6
   scan_depth <- 6
@@ -7835,7 +7834,6 @@ summarize_model_timegpt <- function(wf) {
   }
   timegpt_obj <- .find_obj(fit$fit, is_timegpt_fit, scan_depth)
   if (is.null(timegpt_obj) && is_timegpt_fit(fit$fit)) timegpt_obj <- fit$fit
-
 
   if (!is.null(timegpt_obj)) {
     # Training data stats - external regressors
