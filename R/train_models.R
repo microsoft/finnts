@@ -141,7 +141,7 @@ train_models <- function(run_info,
 
   global_model_list <- list_global_models()
   fs_model_list <- list_multivariate_models()
-  # Remove timegpt from feature selection list - it doesn't use traditional features
+  # Remove timegpt from feature selection list as it doesn't use traditional features, prevents Combo getting dropped from feature selection
   fs_model_list <- setdiff(fs_model_list, "timegpt")
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {

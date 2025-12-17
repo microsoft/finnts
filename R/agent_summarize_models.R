@@ -4808,7 +4808,6 @@ summarize_model_snaive <- function(wf) {
 }
 
 
-
 #' Summarize an STLM-ARIMA Workflow
 #'
 #' Extracts and summarizes key information from a fitted STLM-ARIMA workflow.
@@ -7789,11 +7788,15 @@ summarize_model_timegpt <- function(wf) {
   }
 
   .format_numeric <- function(x) {
-    if (is.character(x) && (x == "auto" || x == "")) return(x)
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
     x_num <- suppressWarnings(as.numeric(x))
     if (!is.na(x_num) && is.finite(x_num)) {
       rounded <- round(x_num, digits)
-      if (rounded == floor(rounded)) return(as.character(as.integer(rounded)))
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
       return(format(rounded, scientific = FALSE, trim = TRUE))
     }
     as.character(x)
@@ -7802,7 +7805,7 @@ summarize_model_timegpt <- function(wf) {
   # Predictors / outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
   preds_tbl <- .extract_predictors(mold)
-  outs_tbl  <- .extract_outcomes(mold)
+  outs_tbl <- .extract_outcomes(mold)
 
   # Flag external regressors (non-date predictors)
   xreg_names <- character()
@@ -7816,10 +7819,9 @@ summarize_model_timegpt <- function(wf) {
   }
 
   # Recipe steps
-  # preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
-  # steps_tbl <- if (!inherits(preproc, "try-error")) .extract_recipe_steps(preproc) else tibble::tibble(section = character(), name = character(), value = character())
-steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-  # Model args
+  # no significant step
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
   arg_names <- c("finetune_steps", "finetune_depth")
   arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
   args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
@@ -7834,22 +7836,22 @@ steps_tbl <- tibble::tibble(section = character(), name = character(), value = c
   timegpt_obj <- .find_obj(fit$fit, is_timegpt_fit, scan_depth)
   if (is.null(timegpt_obj) && is_timegpt_fit(fit$fit)) timegpt_obj <- fit$fit
 
-  
+
   if (!is.null(timegpt_obj)) {
     # Training data stats - external regressors
     if (!is.null(timegpt_obj$train_data)) {
       train_data <- timegpt_obj$train_data
       original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
       if (length(original_cols) > 0) {
-         clean_names <- gsub("_original$", "", original_cols)  # Remove _original suffix
-         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", as.character(length(clean_names))))
-         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "external_regressors", paste(clean_names, collapse = ", ")))
+        clean_names <- gsub("_original$", "", original_cols) # Remove _original suffix
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", as.character(length(clean_names))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "external_regressors", paste(clean_names, collapse = ", ")))
       } else {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
       }
     }
 
-    # API configuration (matches predict path logic)
+    # API Details
     api_key_set <- !is.null(getOption("NIXTLA_API_KEY")) || nzchar(Sys.getenv("NIXTLA_API_KEY"))
     base_url <- getOption("NIXTLA_BASE_URL") %||% Sys.getenv("NIXTLA_BASE_URL")
     if (api_key_set) {
@@ -7878,10 +7880,6 @@ steps_tbl <- tibble::tibble(section = character(), name = character(), value = c
     unquote_values = FALSE, digits = digits
   )
 }
-
-
-
-
 
 
 #' Convert various R objects to a single character string
