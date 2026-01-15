@@ -84,6 +84,10 @@ set_project_info <- function(project_name = "finn_project",
   input_data_folder <- "input_data"
   logs_folder <- "logs"
   final_output_folder <- "final_output"
+  prep_data_folder <- "prep_data"
+  prep_models_folder <- "prep_models"
+  models_folder <- "models"
+  forecasts_folder <- "forecasts"
 
   if (is.null(path)) {
     path <- fs::path(tempdir())
@@ -92,6 +96,10 @@ set_project_info <- function(project_name = "finn_project",
     fs::dir_create(tempdir(), input_data_folder)
     fs::dir_create(tempdir(), logs_folder)
     fs::dir_create(tempdir(), final_output_folder)
+    fs::dir_create(tempdir(), prep_data_folder)
+    fs::dir_create(tempdir(), prep_models_folder)
+    fs::dir_create(tempdir(), models_folder)
+    fs::dir_create(tempdir(), forecasts_folder)
   } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
@@ -110,21 +118,49 @@ set_project_info <- function(project_name = "finn_project",
     if (!dir.exists(fs::path(temp_path, final_output_folder) %>% as.character())) {
       notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, final_output_folder) %>% as.character())
     }
+
+    if (!dir.exists(fs::path(temp_path, prep_data_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_data_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(temp_path, prep_models_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, prep_models_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(temp_path, models_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, models_folder) %>% as.character())
+    }
+
+    if (!dir.exists(fs::path(temp_path, forecasts_folder) %>% as.character())) {
+      notebookutils::mssparkutils.fs.mkdirs(fs::path(temp_path, forecasts_folder) %>% as.character())
+    }
   } else if (is.null(storage_object)) {
     fs::dir_create(path, eda_folder)
     fs::dir_create(path, input_data_folder)
     fs::dir_create(path, logs_folder)
     fs::dir_create(path, final_output_folder)
+    fs::dir_create(path, prep_data_folder)
+    fs::dir_create(path, prep_models_folder)
+    fs::dir_create(path, models_folder)
+    fs::dir_create(path, forecasts_folder)
   } else if (inherits(storage_object, "blob_container")) {
     AzureStor::create_storage_dir(storage_object, fs::path(path, eda_folder))
     AzureStor::create_storage_dir(storage_object, fs::path(path, input_data_folder))
     AzureStor::create_storage_dir(storage_object, fs::path(path, logs_folder))
     AzureStor::create_storage_dir(storage_object, fs::path(path, final_output_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, prep_data_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, prep_models_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, models_folder))
+    AzureStor::create_storage_dir(storage_object, fs::path(path, forecasts_folder))
   } else if (inherits(storage_object, "ms_drive")) {
     try(storage_object$create_folder(fs::path(path, eda_folder)), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, input_data_folder)), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, logs_folder)), silent = TRUE)
     try(storage_object$create_folder(fs::path(path, final_output_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, prep_data_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, prep_models_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, models_folder)), silent = TRUE)
+    try(storage_object$create_folder(fs::path(path, forecasts_folder)), silent = TRUE)
   }
 
   temp_project_info <- list(
