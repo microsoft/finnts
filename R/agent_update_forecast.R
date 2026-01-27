@@ -96,7 +96,7 @@ update_forecast <- function(agent_info,
 
   check_input_type("max_iter", max_iter, "numeric")
   check_input_type("weighted_mape_goal", weighted_mape_goal, "numeric")
-  
+
   # get metadata
   project_info <- agent_info$project_info
 
