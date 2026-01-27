@@ -1225,6 +1225,9 @@ reason_inputs <- function(agent_info,
   previous_runs_tbl <- load_run_results(agent_info = agent_info, combo = combo)
 
   if (is.data.frame(previous_runs_tbl)) {
+    previous_runs_tbl <- previous_runs_tbl %>%
+      dplyr::filter(agent_version == agent_info$agent_version)
+
     check_inputs <- input_list
     check_inputs$agent_version <- agent_info$agent_version
     check_inputs$models_to_run <- collapse_or_na(check_inputs$models_to_run)
