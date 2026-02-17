@@ -120,4 +120,5 @@ get_timestamp <- function() {
   make_svm_rbf_multistep()
   make_xgboost_multistep()
   make_timegpt_model()
+  make_chronos2_model()
 }
