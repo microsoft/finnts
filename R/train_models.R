@@ -141,8 +141,8 @@ train_models <- function(run_info,
 
   global_model_list <- list_global_models()
   fs_model_list <- list_multivariate_models()
-  # Remove timegpt from feature selection list as it doesn't use traditional features, prevents Combo getting dropped from feature selection
-  fs_model_list <- setdiff(fs_model_list, "timegpt")
+  # Remove foundation models from feature selection list as they don't use traditional features
+  fs_model_list <- setdiff(fs_model_list, list_foundation_models())
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
@@ -368,6 +368,7 @@ train_models <- function(run_info,
         undifference_recipe <- undifference_recipe
         list_global_models <- list_global_models
         list_multivariate_models <- list_multivariate_models
+        list_foundation_models <- list_foundation_models
       }
 
       if (feature_selection) {
@@ -536,8 +537,8 @@ train_models <- function(run_info,
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
 
-        if (stationary & (!(model %in% list_multivariate_models()) || model == "timegpt")) {
-          # undifference the data for a univariate model or TimeGPT
+        if (stationary & (!(model %in% list_multivariate_models()) || model %in% list_foundation_models())) {
+          # undifference the data for a univariate model or foundation model
 
           hist_end_date <- model_train_test_tbl %>%
             dplyr::slice(1) %>%
@@ -646,7 +647,7 @@ train_models <- function(run_info,
         }
 
         # undo differencing transformation
-        if (stationary & model %in% list_multivariate_models() & model != "timegpt") {
+        if (stationary & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%

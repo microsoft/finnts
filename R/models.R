@@ -77,6 +77,18 @@ list_multivariate_models <- function() {
   return(list)
 }
 
+#' List foundation models
+#'
+#' Foundation models (e.g. timegpt, chronos2) are multivariate/global but
+#' do not use traditional features. They need exceptions for feature
+#' selection and stationarity handling.
+#'
+#' @return character vector of foundation model names
+#' @noRd
+list_foundation_models <- function() {
+  c("timegpt", "chronos2")
+}
+
 #' List multistep models
 #'
 #'
