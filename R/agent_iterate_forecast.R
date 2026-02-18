@@ -1569,7 +1569,7 @@ log_best_run <- function(agent_info,
       dplyr::pull(weighted_mape) %>%
       sd()
 
-    # load log file
+    # build log data frame (not saved to disk yet)
     log_df <- get_run_info(
       project_name = run_info$project_name,
       run_name = run_info$run_name,
@@ -1583,18 +1583,8 @@ log_best_run <- function(agent_info,
         agent_version = as.numeric(agent_info$agent_version),
         agent_forecast_approach = agent_info$forecast_approach
       )
-
-    # save the log file
-    write_data(
-      x = log_df,
-      combo = NULL,
-      run_info = run_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = NULL
-    )
   } else {
-    # load log file
+    # build log data frame (not saved to disk yet)
     log_df <- get_run_info(
       project_name = run_info$project_name,
       run_name = run_info$run_name,
@@ -1608,21 +1598,15 @@ log_best_run <- function(agent_info,
         agent_version = as.numeric(agent_info$agent_version),
         agent_forecast_approach = agent_info$forecast_approach
       )
-
-    # save the log file
-    write_data(
-      x = log_df,
-      combo = NULL,
-      run_info = run_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = NULL
-    )
   }
 
   # check if previous best run exists and is more accurate
   if (check_best_run) {
-    previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
+    previous_runs <- load_run_results(
+      agent_info = agent_info,
+      combo = combo,
+      current_run_log = log_df
+    )
   } else {
     # skip best run check when running update forecast
     previous_runs <- NULL
@@ -1770,6 +1754,17 @@ log_best_run <- function(agent_info,
       )
     }
   }
+
+  # save the run log only after best run logging succeeds
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
   return("Run logged successfully.")
 }
 
@@ -1868,11 +1863,15 @@ finalize_run <- function(agent_info,
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param current_run_log Optional data frame of the current run's log entry
+#'   (not yet saved to disk). When supplied, it is appended to the on-disk runs
+#'   so the best-run comparison can include the current run.
 #'
 #' @return A tibble containing the previous run results or a message indicating no previous runs.
 #' @noRd
 load_run_results <- function(agent_info,
-                             combo = NULL) {
+                             combo = NULL,
+                             current_run_log = NULL) {
   # determine the combo value and columns to return
   if (is.null(combo)) {
     combo_value <- hash_data("all")
@@ -1912,6 +1911,17 @@ load_run_results <- function(agent_info,
     storage_object = agent_info$project_info$storage_object,
     path = agent_info$project_info$path
   )
+
+  # append the current run log if provided (not yet saved to disk)
+  if (!is.null(current_run_log) && "run_name" %in% names(current_run_log)) {
+    # remove the incomplete on-disk row for this run before appending
+    current_run_name <- current_run_log$run_name[[1]]
+    previous_runs <- previous_runs %>%
+      dplyr::filter(run_name != current_run_name)
+
+    # bind_rows fills missing columns with NA in either direction
+    previous_runs <- dplyr::bind_rows(previous_runs, current_run_log)
+  }
 
   # filter previous runs based on the combo value and select relevant columns
   if ("run_name" %in% names(previous_runs) & "weighted_mape" %in% names(previous_runs) & "agent_version" %in% names(previous_runs)) {
