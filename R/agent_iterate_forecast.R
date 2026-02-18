@@ -334,6 +334,55 @@ iterate_forecast <- function(agent_info,
     par_end(cl)
   }
 
+  # validate every time series has an agent_best_run file, retry missing ones
+  missing_combos <- validate_agent_best_runs(agent_info, combo_list)
+
+  if (length(missing_combos) > 0) {
+    cli::cli_alert_warning(
+      "Missing agent_best_run files for {length(missing_combos)} out of {length(combo_list)} time series. Retrying..."
+    )
+
+    for (retry_combo in missing_combos) {
+      message("[agent] Retrying forecast for combo: ", retry_combo)
+
+      tryCatch(
+        {
+          fcst_agent_workflow(
+            agent_info = agent_info,
+            combo = hash_data(retry_combo),
+            weighted_mape_goal = weighted_mape_goal,
+            parallel_processing = NULL,
+            inner_parallel = inner_parallel,
+            num_cores = num_cores,
+            max_iter = 1, # only need one successful run
+            seed = seed
+          )
+        },
+        error = function(e) {
+          warning(
+            "Retry failed for combo '", retry_combo, "': ",
+            conditionMessage(e),
+            call. = FALSE
+          )
+        }
+      )
+    }
+
+    # Final validation after retries
+    still_missing <- validate_agent_best_runs(agent_info, combo_list)
+
+    if (length(still_missing) > 0) {
+      stop(
+        "Error in iterate_forecast(). The following time series do not have ",
+        "completed agent_best_run files after retries: ",
+        paste(still_missing, collapse = ", "),
+        ". ", length(still_missing), " out of ", length(combo_list),
+        " time series are missing.",
+        call. = FALSE
+      )
+    }
+  }
+
   # save the best run for the agent
   message("[agent] Saving Best Run Metadata")
 
@@ -767,6 +816,36 @@ load_best_agent_run <- function(agent_info) {
   return(best_run_tbl)
 }
 
+#' Validate that all expected time series have agent_best_run files
+#'
+#' Compares the set of expected combo names against combos that already
+#' have an agent_best_run log file on disk.
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#' @param expected_combos Character vector of expected (unhashed) combo names.
+#'
+#' @return Character vector of combo names that are missing agent_best_run files
+#'   (empty character vector when all are present).
+#' @noRd
+validate_agent_best_runs <- function(agent_info, expected_combos) {
+  # load existing agent_best_run files
+  best_run_tbl <- load_best_agent_run(agent_info)
+
+  if (nrow(best_run_tbl) == 0) {
+    return(expected_combos) # all are missing
+  }
+
+  # get combos that have agent_best_run files
+  existing_combos <- best_run_tbl %>%
+    dplyr::pull(combo) %>%
+    unique()
+
+  # find missing combos
+  missing_combos <- setdiff(expected_combos, existing_combos)
+
+  return(missing_combos)
+}
+
 #' Save the best run for an agent
 #'
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete and saves to disk.
@@ -790,6 +869,30 @@ save_best_agent_run <- function(agent_info) {
 
   if (nrow(final_run_tbl) == 0) {
     stop("Error in save_best_agent_run(). No best run found for agent.", call. = FALSE)
+  }
+
+  # verify that all expected combos are present
+  expected_combos <- get_total_combos(agent_info)
+  existing_combo_count <- final_run_tbl %>%
+    dplyr::pull(combo) %>%
+    unique() %>%
+    length()
+
+  if (existing_combo_count < length(expected_combos)) {
+    existing_combos <- final_run_tbl %>%
+      dplyr::pull(combo) %>%
+      unique()
+    missing <- setdiff(
+      # expected_combos are hashes; convert existing_combos to hashes for comparison
+      expected_combos,
+      purrr::map_chr(existing_combos, hash_data)
+    )
+    stop(
+      "Error in save_best_agent_run(). Expected ", length(expected_combos),
+      " time series but only found ", existing_combo_count,
+      ". Missing combo hashes: ", paste(missing, collapse = ", "),
+      call. = FALSE
+    )
   }
 
   # remove unnecessary columns
@@ -871,8 +974,46 @@ fcst_agent_workflow <- function(agent_info,
             # proceed to finalize run step if there is existing run_info from previous iterations
             return(list(ctx = ctx, `next` = "finalize_run"))
           } else {
-            # skip finalize run step since run was aborted with no existing run_info
-            return(list(ctx = ctx, `next` = "stop"))
+            # only allow abort if agent_best_run files already exist for this combo
+            if (is.null(combo)) {
+              # global model: check that all combos have agent_best_run files
+              combo_list <- read_file(
+                run_info = agent_info$project_info,
+                file_list = list_files(
+                  agent_info$project_info$storage_object,
+                  paste0(
+                    agent_info$project_info$path, "/input_data/*",
+                    hash_data(agent_info$project_info$project_name), "-",
+                    hash_data(agent_info$run_id), "*.", agent_info$project_info$data_output
+                  )
+                ),
+                return_type = "df"
+              ) %>%
+                dplyr::pull(Combo) %>%
+                unique()
+              missing <- validate_agent_best_runs(agent_info, combo_list)
+              has_all_files <- length(missing) == 0
+            } else {
+              # local model: check that this specific combo has an agent_best_run file
+              best_run_tbl <- load_best_agent_run(agent_info)
+              if (nrow(best_run_tbl) > 0) {
+                existing_hashes <- purrr::map_chr(unique(best_run_tbl$combo), hash_data)
+                has_all_files <- combo %in% existing_hashes
+              } else {
+                has_all_files <- FALSE
+              }
+            }
+
+            if (has_all_files) {
+              # safe to abort since agent_best_run files already exist from a prior run
+              return(list(ctx = ctx, `next` = "stop"))
+            } else {
+              # force a run so that agent_best_run files are created
+              cli::cli_alert_warning(
+                "LLM requested abort but agent_best_run files are missing. Overriding: at least one forecast run is required."
+              )
+              return(list(ctx = ctx, `next` = "submit_fcst_run"))
+            }
           }
         } else {
           return(list(ctx = ctx, `next` = "submit_fcst_run"))
