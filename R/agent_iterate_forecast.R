@@ -792,6 +792,23 @@ save_best_agent_run <- function(agent_info) {
     stop("Error in save_best_agent_run(). No best run found for agent.", call. = FALSE)
   }
 
+  # verify all expected combos have agent_best_run files
+  expected_combos <- get_total_combos(agent_info)
+  existing_combos <- final_run_tbl %>%
+    dplyr::pull(combo) %>%
+    unique()
+
+  if (length(existing_combos) < length(expected_combos)) {
+    existing_hashes <- purrr::map_chr(existing_combos, hash_data)
+    missing_hashes <- setdiff(expected_combos, existing_hashes)
+    stop(
+      "Error in save_best_agent_run(). Expected ", length(expected_combos),
+      " time series but only found ", length(existing_combos),
+      ". Missing combo hashes: ", paste(missing_hashes, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
   # remove unnecessary columns
   final_run_tbl <- final_run_tbl %>%
     dplyr::select(-dplyr::any_of(c("run_complete", "max_iterations")))
