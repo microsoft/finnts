@@ -584,48 +584,6 @@ update_global_models <- function(agent_info,
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   try(foreach::registerDoSEQ(), silent = TRUE)
 
-  # validate that all global combos have agent_best_run files
-  expected_global_combos <- unique(previous_best_run_global_tbl$combo)
-  missing_combos <- validate_agent_best_runs(agent_info, expected_global_combos)
-
-  if (length(missing_combos) > 0) {
-    cli::cli_alert_warning(
-      "Missing agent_best_run files for {length(missing_combos)} global time series. Retrying..."
-    )
-
-    tryCatch(
-      {
-        update_forecast_combo(
-          agent_info = agent_info,
-          prev_best_run_tbl = previous_best_run_global_tbl,
-          parallel_processing = NULL,
-          num_cores = num_cores,
-          inner_parallel = inner_parallel,
-          seed = seed
-        )
-      },
-      error = function(e) {
-        warning(
-          "Global model retry failed: ", conditionMessage(e),
-          call. = FALSE
-        )
-      }
-    )
-
-    still_missing <- validate_agent_best_runs(agent_info, expected_global_combos)
-
-    if (length(still_missing) > 0) {
-      stop(
-        "Error in update_global_models(). The following time series do not have ",
-        "completed agent_best_run files after retries: ",
-        paste(still_missing, collapse = ", "),
-        ". ", length(still_missing), " out of ", length(expected_global_combos),
-        " time series are missing.",
-        call. = FALSE
-      )
-    }
-  }
-
   return("Finished Global Model Update")
 }
 
@@ -790,77 +748,6 @@ update_local_models <- function(agent_info,
       stop(e)
     }
   )
-
-  # validate every local combo has an agent_best_run file, retry missing ones
-  expected_local_combos <- unique(previous_best_run_local_tbl$combo)
-  missing_combos <- validate_agent_best_runs(agent_info, expected_local_combos)
-
-  if (length(missing_combos) > 0) {
-    cli::cli_alert_warning(
-      "Missing agent_best_run files for {length(missing_combos)} local time series after update. Retrying..."
-    )
-
-    for (retry_combo in missing_combos) {
-      message("[agent] Retrying update for combo: ", retry_combo)
-
-      prev_run <- tryCatch(
-        read_file(agent_info$project_info,
-          file_list = paste0(
-            agent_info$project_info$path, "/logs/",
-            hash_data(agent_info$project_info$project_name), "-",
-            hash_data(prev_run_id), "-",
-            hash_data(retry_combo), "-agent_best_run.csv"
-          ) %>% fs::path_tidy()
-        ),
-        error = function(e) {
-          tibble::tibble()
-        }
-      )
-
-      if (nrow(prev_run) == 0) {
-        warning(
-          "Cannot retry combo '", retry_combo,
-          "': no previous best run file found.",
-          call. = FALSE
-        )
-        next
-      }
-
-      tryCatch(
-        {
-          update_forecast_combo(
-            agent_info = agent_info_lean,
-            prev_best_run_tbl = prev_run,
-            parallel_processing = NULL,
-            num_cores = num_cores,
-            inner_parallel = inner_parallel,
-            seed = seed
-          )
-        },
-        error = function(e) {
-          warning(
-            "Retry failed for combo '", retry_combo, "': ",
-            conditionMessage(e),
-            call. = FALSE
-          )
-        }
-      )
-    }
-
-    # Final validation after retries
-    still_missing <- validate_agent_best_runs(agent_info, expected_local_combos)
-
-    if (length(still_missing) > 0) {
-      stop(
-        "Error in update_local_models(). The following time series do not have ",
-        "completed agent_best_run files after retries: ",
-        paste(still_missing, collapse = ", "),
-        ". ", length(still_missing), " out of ", length(expected_local_combos),
-        " time series are missing.",
-        call. = FALSE
-      )
-    }
-  }
 
   return("Finished Local Model Update")
 }
