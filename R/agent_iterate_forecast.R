@@ -1727,7 +1727,7 @@ log_best_run <- function(agent_info,
         project_info$storage_object,
         paste0(
           project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-          hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
+          hash_data(agent_info$run_id), "*-agent_best_run.csv"
         )
       )
       existing_count <- length(existing_best_run_files)
@@ -1737,7 +1737,7 @@ log_best_run <- function(agent_info,
         project_info$path, "/logs/",
         hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-",
-        hash_data(combo_list), "-agent_best_run.", project_info$data_output
+        hash_data(combo_list), "-agent_best_run.csv"
       ) %>% fs::path_tidy()
 
       existing_count <- sum(file.exists(local_file))
