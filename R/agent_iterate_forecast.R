@@ -798,9 +798,10 @@ save_best_agent_run <- function(agent_info) {
     dplyr::pull(combo) %>%
     unique()
 
-  if (length(existing_combos) < length(expected_combos)) {
-    existing_hashes <- purrr::map_chr(existing_combos, hash_data)
-    missing_hashes <- setdiff(expected_combos, existing_hashes)
+  existing_hashes <- purrr::map_chr(existing_combos, hash_data)
+  missing_hashes <- setdiff(expected_combos, existing_hashes)
+
+  if (length(missing_hashes) > 0) {
     stop(
       "Error in save_best_agent_run(). Expected ", length(expected_combos),
       " time series but only found ", length(existing_combos),
