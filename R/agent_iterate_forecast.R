@@ -889,6 +889,7 @@ fcst_agent_workflow <- function(agent_info,
             # proceed to finalize run step if there is existing run_info from previous iterations
             return(list(ctx = ctx, `next` = "finalize_run"))
           } else {
+            # skip finalize run step since run was aborted with no existing run_info
             return(list(ctx = ctx, `next` = "stop"))
           }
         } else {
