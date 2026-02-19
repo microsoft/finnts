@@ -1733,15 +1733,19 @@ log_best_run <- function(agent_info,
       )
       existing_count <- length(existing_best_run_files)
     } else {
-      # local model: check with exact file path
-      local_file <- paste0(
+      # local model: single combo, read the file directly
+      file_path <- paste0(
         project_info$path, "/logs/",
         hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-",
-        hash_data(combo_list), "-agent_best_run.csv"
+        combo, "-agent_best_run.csv"
       ) %>% fs::path_tidy()
-
-      existing_count <- sum(file.exists(local_file))
+      best_run_check <- read_file(
+        run_info = project_info,
+        file_list = file_path,
+        return_type = "df"
+      )
+      existing_count <- if (nrow(best_run_check) > 0) 1L else 0L
     }
 
     expected_count <- length(combo_list)
