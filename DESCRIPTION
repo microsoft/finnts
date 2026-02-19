@@ -31,7 +31,7 @@ Imports:
     callr,
     cli,
     Cubist,
-    dials,
+    dials (>= 1.3.0),
     digest, 
     doParallel,
     dplyr,
