@@ -28,8 +28,8 @@
 #'   of 'parquet' will instead write parquet files.
 #' @param object_output String value describing the file type for object
 #'   outputs. Default will write object outputs like trained models as
-#'   rds files. The other option of 'qs' will instead serialize R objects
-#'   as qs files by using the 'qs' package.
+#'   rds files. The other option of 'qs2' will instead serialize R objects
+#'   as qs2 files by using the 'qs2' package.
 #' @param overwrite Logical value of whether to overwrite existing project
 #'
 #' @return A list of project information
@@ -55,6 +55,9 @@ set_project_info <- function(project_name = "finn_project",
                              object_output = "rds",
                              overwrite = FALSE) {
   # initial input checks
+  check_input_type("data_output", data_output, "character", c("csv", "parquet"))
+  check_input_type("object_output", object_output, "character", c("rds", "qs2"))
+
   if (!inherits(project_name, c("NULL", "character"))) {
     stop("`project_name` must either be a NULL or a string")
   }

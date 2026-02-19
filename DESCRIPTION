@@ -78,7 +78,7 @@ Suggests:
     knitr,
     Microsoft365R,
     notebookutils, 
-    qs,
+    qs2,
     reactable,
     rmarkdown,
     sparklyr,
