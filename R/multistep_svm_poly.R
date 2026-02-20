@@ -127,7 +127,6 @@ make_svm_poly_multistep <- function() {
 
 #' SVM-POLY Multistep Horizon
 #'
-#' @inheritParams parsnip::svm_poly
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param cost A positive number for the cost of predicting
