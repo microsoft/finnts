@@ -92,9 +92,10 @@ make_chronos2_model <- function() {
 #' @keywords internal
 #' @export
 chronos2_model <- function(
-    mode = "regression",
-    forecast_horizon = NULL,
-    frequency = NULL) {
+  mode = "regression",
+  forecast_horizon = NULL,
+  frequency = NULL
+) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency)
@@ -125,10 +126,11 @@ chronos2_model <- function(
 #' @keywords internal
 #' @export
 chronos2_model_fit_impl <- function(
-    x,
-    y,
-    forecast_horizon = NULL,
-    frequency = NULL) {
+  x,
+  y,
+  forecast_horizon = NULL,
+  frequency = NULL
+) {
   # Build dataframe with target column
   train_df <- as.data.frame(x)
   train_df$y <- y
@@ -187,7 +189,7 @@ chronos2_model_predict_impl <- function(object, new_data, ...) {
   train_df <- pad_chronos2_data(train_df)
 
   # Detect exogenous columns (_original suffix from finnts preprocessing)
-  # Controller handles dropping all-NA columns from future_data automatically
+  # Controller handles dropping all-NA columns from future_data
   exogenous_cols <- colnames(train_df)[grepl("_original", colnames(train_df))]
   if (length(exogenous_cols) == 0) exogenous_cols <- NULL
 
@@ -248,12 +250,13 @@ print.chronos2_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.chronos2_model <- function(
-    object,
-    parameters = NULL,
-    forecast_horizon = NULL,
-    frequency = NULL,
-    fresh = FALSE,
-    ...) {
+  object,
+  parameters = NULL,
+  forecast_horizon = NULL,
+  frequency = NULL,
+  fresh = FALSE,
+  ...
+) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {
@@ -330,8 +333,8 @@ pad_chronos2_data <- function(train_df) {
   pad_rows <- lapply(seq_len(nrow(combo_counts)), function(i) {
     combo_name <- combo_counts$Combo[i]
     n_existing <- combo_counts$n_rows[i]
-    earliest   <- combo_counts$earliest_date[i]
-    n_to_add   <- min_rows - n_existing
+    earliest <- combo_counts$earliest_date[i]
+    n_to_add <- min_rows - n_existing
 
     # Create dates stepping backward from the earliest date
     new_dates <- earliest - (seq_len(n_to_add) * date_step)

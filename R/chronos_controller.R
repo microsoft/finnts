@@ -5,9 +5,6 @@
 # transforms them to the API schema (ds, unique_id, y, ...),
 # sends the request, and returns a tidy data frame of forecasts.
 
-# ──────────────────────────────────────────────────────────────────────
-# Main entry point
-# ──────────────────────────────────────────────────────────────────────
 
 #' Call the Chronos forecast API
 #'
@@ -15,24 +12,18 @@
 #' to the Chronos API payload schema, sends a POST request, and returns
 #' the forecast as a data frame.
 #'
-#' @param train_df Data frame with columns: \code{Date}, \code{Combo},
-#'   \code{y}, and optionally exogenous regressor columns.
-#' @param new_data Data frame with columns: \code{Date}, \code{Combo},
+#' @param train_df Data frame with columns: Date, Combo,
+#'   y, and optionally exogenous regressor columns.
+#' @param new_data Data frame with columns: Date, Combo,
 #'   and optionally exogenous regressor columns for the future horizon.
-#'   Columns that are all \code{NA} are dropped automatically.
-#' @param model_type Character. Model identifier (e.g. \code{"chronos2"},
-#'   \code{"chronos-bolt-base"}).
+#'   Columns that are all NA are dropped automatically.
+#' @param model_type Character. Model identifier chronos2, chronos-bolt-base
 #' @param horizon Integer. Number of forecast periods per series.
-#' @param exogenous_cols Character vector of exogenous column names in
-#'   \code{train_df} / \code{new_data}. If \code{NULL} (default), any column
-#'   that is not \code{Date}, \code{Combo}, or \code{y} is treated as exogenous.
-#' @param global Logical. Fit a single global model across all series?
-#'   Default \code{TRUE}.
+#' @param exogenous_cols Character vector of exogenous column names
+#' @param global Logical
 #' @param quantile_levels Numeric vector. Quantile levels for prediction
-#'   intervals. Default \code{c(0.1, 0.5, 0.9)}.
 #'
-#' @return A data frame with columns: \code{unique_id}, \code{ds},
-#'   \code{target_name}, \code{predictions}, and one column per quantile level.
+#' @return A data frame with columns: unique_id, ds, target_name, predictions, and one column per quantile level.
 #' @noRd
 chronos_forecast <- function(train_df,
                              new_data,
@@ -41,13 +32,7 @@ chronos_forecast <- function(train_df,
                              exogenous_cols = NULL,
                              global = TRUE,
                              quantile_levels = c(0.1, 0.5, 0.9)) {
-  # ---- Validate inputs ----
   validate_chronos_inputs(train_df, new_data, horizon)
-
-  # ---- Resolve exogenous columns ----
-  if (is.null(exogenous_cols)) {
-    exogenous_cols <- setdiff(colnames(train_df), c("Date", "Combo", "y"))
-  }
 
   # ---- Build API payload pieces ----
   data_payload <- build_data_payload(train_df, exogenous_cols)
@@ -65,14 +50,8 @@ chronos_forecast <- function(train_df,
     payload$future_data <- future_payload
   }
 
-  # ---- Send request & return data frame ----
   send_chronos_request(payload)
 }
-
-
-# ──────────────────────────────────────────────────────────────────────
-# Input validation
-# ──────────────────────────────────────────────────────────────────────
 
 #' Validate inputs for chronos_forecast
 #'
@@ -107,10 +86,6 @@ validate_chronos_inputs <- function(train_df, new_data, horizon) {
 }
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Payload builders
-# ──────────────────────────────────────────────────────────────────────
-
 #' Build the "data" portion of the API payload from train_df
 #'
 #' Renames Date -> ds, Combo -> unique_id, keeps y and exogenous columns.
@@ -142,7 +117,7 @@ build_data_payload <- function(train_df, exogenous_cols) {
 #' @param new_data Future data frame.
 #' @param exogenous_cols Character vector of exogenous column names.
 #'
-#' @return A data frame with API column names, or \code{NULL} if no
+#' @return A data frame with API column names, or NULL if no
 #'   future exogenous values are available.
 #' @noRd
 build_future_payload <- function(new_data, exogenous_cols) {
@@ -172,11 +147,6 @@ build_future_payload <- function(new_data, exogenous_cols) {
 
   out
 }
-
-
-# ──────────────────────────────────────────────────────────────────────
-# HTTP layer
-# ──────────────────────────────────────────────────────────────────────
 
 #' Send a POST request to the Chronos API
 #'
@@ -217,8 +187,8 @@ get_chronos_env <- function(var_name) {
   if (!nzchar(val)) {
     stop(
       sprintf(
-        "Environment variable '%s' is not set. "
-        , var_name
+        "Environment variable '%s' is not set. ",
+        var_name
       ),
       "Please set it before calling the Chronos API.",
       call. = FALSE
