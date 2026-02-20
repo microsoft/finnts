@@ -481,14 +481,14 @@ get_kfold_tune_grid <- function(train_data,
     )
 }
 
-#' Get grid_latin_hypercube
+#' Get space-filling grid
 #'
 #' @param model_spec Model Spec Obj
 #'
-#' @return gives the latin hypercube grid
+#' @return gives a space-filling parameter grid
 #' @noRd
-get_latin_hypercube_grid <- function(model_spec) {
-  dials::grid_latin_hypercube(
+get_space_filling_grid <- function(model_spec) {
+  dials::grid_space_filling(
     dials::parameters(model_spec),
     size = 10
   )

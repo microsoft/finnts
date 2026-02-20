@@ -321,7 +321,7 @@ test_that("get_resample_tscv creates time series CV splits", {
   expect_s3_class(result, "rset")
 })
 
-test_that("get_latin_hypercube_grid creates parameter grid", {
+test_that("get_space_filling_grid creates parameter grid", {
   model_spec <- parsnip::boost_tree(
     mode = "regression",
     trees = tune::tune(),
@@ -329,7 +329,7 @@ test_that("get_latin_hypercube_grid creates parameter grid", {
     learn_rate = tune::tune()
   ) %>% parsnip::set_engine("xgboost")
 
-  result <- get_latin_hypercube_grid(model_spec)
+  result <- get_space_filling_grid(model_spec)
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), 10)
 })
