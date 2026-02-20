@@ -5,7 +5,8 @@
   - Added Chronos2 in addition to existing model to support zero shot forecasting
   - It support for both historical and future external regressors
   - It can work as a global model
-  - Added chronos controller, which will support other chronos variation as well
+  - Added chronos controller, which will support other chronos variation api post requests as well
+  - Added two new packages jsonlite and httr
 
 - TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
