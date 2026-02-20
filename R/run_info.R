@@ -20,8 +20,8 @@
 #'   of 'parquet' will instead write parquet files.
 #' @param object_output String value describing the file type for object
 #'   outputs. Default will write object outputs like trained models as
-#'   rds files. The other option of 'qs' will instead serialize R objects
-#'   as qs files by using the 'qs' package.
+#'   rds files. The other option of 'qs2' will instead serialize R objects
+#'   as qs2 files by using the 'qs2' package.
 #' @param add_unique_id Add a unique id to end of run_name based on submission time.
 #'   Set to FALSE to supply your own unique run name, which is helpful in
 #'   multistage ML pipelines.
@@ -43,6 +43,9 @@ set_run_info <- function(project_name = "finn_project",
                          object_output = "rds",
                          add_unique_id = TRUE) {
   # initial input checks
+  check_input_type("data_output", data_output, "character", c("csv", "parquet"))
+  check_input_type("object_output", object_output, "character", c("rds", "qs2"))
+
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
   }

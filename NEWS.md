@@ -1,4 +1,4 @@
-# finnts 0.6.0.9020 (development version)
+# finnts 0.6.0.9022 (development version)
 
 ## Improvements
 - TimeGPT Integration
@@ -26,6 +26,9 @@
     - Added `get_eda_data()` to retrieve the exploratory data analysis results from an agent run.
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
   
+## Breaking Changes
+- Migrated from the `qs` package to [`qs2`](https://CRAN.R-project.org/package=qs2) for fast object serialization. The `qs2` package is actively maintained and CRAN-ready with improved compression. Files previously saved with `qs` format cannot be read by `qs2`; any cached `.qs` files from prior runs will need to be regenerated.
+
 ## Bug Fixes
 -   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
 -   Fixed weighted mape calculation when target variable has negative values.

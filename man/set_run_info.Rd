@@ -37,8 +37,8 @@ of 'parquet' will instead write parquet files.}
 
 \item{object_output}{String value describing the file type for object
 outputs. Default will write object outputs like trained models as
-rds files. The other option of 'qs' will instead serialize R objects
-as qs files by using the 'qs' package.}
+rds files. The other option of 'qs2' will instead serialize R objects
+as qs2 files by using the 'qs2' package.}
 
 \item{add_unique_id}{Add a unique id to end of run_name based on submission time.
 Set to FALSE to supply your own unique run name, which is helpful in

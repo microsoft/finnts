@@ -256,7 +256,7 @@ forecast_backwards_compatibility <- function(run_info,
   future_forecast_tbl <- initial_fcst_tbl %>%
     dplyr::filter(Run_Type == "Future_Forecast") %>%
     dplyr::mutate(Model_ID = ifelse(Best_Model == "Yes", "Best-Model", Model_ID)) %>%
-    dplyr::select(Combo, combo_variables, Model_ID, Date, Forecast, lo_95, lo_80, hi_80, hi_95) %>%
+    dplyr::select(Combo, tidyselect::all_of(combo_variables), Model_ID, Date, Forecast, lo_95, lo_80, hi_80, hi_95) %>%
     dplyr::rename(Target = Forecast) %>%
     rbind(
       hist_tbl %>%

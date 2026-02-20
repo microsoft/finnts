@@ -65,7 +65,7 @@ check_input_data <- function(input_data,
 
   # target variable is numeric
   if (!input_data %>%
-    dplyr::rename(Target = target_variable) %>%
+    dplyr::rename(Target = tidyselect::all_of(target_variable)) %>%
     dplyr::pull(Target) %>%
     is.numeric()) {
     stop("Target variable in input data needs to be numeric")
@@ -119,7 +119,7 @@ check_input_data <- function(input_data,
 
   duplicate_tbl <- input_data %>%
     tidyr::unite("Combo",
-      combo_variables,
+      tidyselect::all_of(combo_variables),
       sep = "--",
       remove = F
     ) %>%

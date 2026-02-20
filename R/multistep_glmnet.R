@@ -111,7 +111,6 @@ make_glmnet_multistep <- function() {
 
 #' GLMNET Multistep Horizon
 #'
-#' @inheritParams parsnip::linear_reg
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param mixture mixture

@@ -119,7 +119,6 @@ make_mars_multistep <- function() {
 
 #' MARS Multistep Horizon
 #'
-#' @inheritParams parsnip::mars
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param num_terms The number of features that will be retained in
