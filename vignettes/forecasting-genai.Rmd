@@ -1,8 +1,8 @@
 ---
-title: "Forecasting with GenAI: TimeGPT in finnts"
+title: "Forecasting with GenAI"
 output: rmarkdown::html_vignette
 vignette: >
-  %\VignetteIndexEntry{Forecasting with GenAI: TimeGPT in finnts}
+  %\VignetteIndexEntry{Forecasting with GenAI }
   %\VignetteEngine{knitr::rmarkdown}
   %\VignetteEncoding{UTF-8}
 ---
@@ -17,9 +17,79 @@ When you need domain‑specific nuance, you can fine‑tune the foundation model
 Fine‑tuning adapts the pre‑trained knowledge to your context, typically improving accuracy and stability 
 for your use cases while keeping training cost far lower than training from scratch.
 
+## Chronos2
+Chronos2 is a foundation model for time series forecasting developed by [Amazon](https://huggingface.co/amazon/chronos-2)
+
+- Zero‑shot forecasts with prediction intervals.
+- It supports univariate, multivariate, and covariate-informed tasks.
+- Optional use of both historical and future exogenous variables.
+- Can be easily deployed for inference
+
+## Authentication and Setup
+Finnts leverages chronos2, via azure self deployed model. The model weights were downloaded from [huggingface/chronos2](https://huggingface.co/amazon/chronos-2) and was deployed as an azure ml endpoint. For detailed steps on hosting refer to [Azure ML documentation](https://learn.microsoft.com/en-us/azure/machine-learning/concept-endpoints-online?view=azureml-api-2).
+
+After the endpoint is up and running, set the base URL and API key as environment variables:
+```{r eval=FALSE}
+# In R (or add to .Renviron)
+Sys.setenv(CHRONOS_API_URL = "https://xyz.inference.ml.azure.com/score")
+Sys.setenv(CHRONOS_API_TOKEN = "your api key here")
+```
+
+## Quick start with chronos2 API (standalone)
+
+```{r eval=FALSE}
+
+train_df <- data.frame(
+  Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+  Combo = "1",
+  y = rnorm(48, mean = 100, sd = 10),
+  temperature_original = rnorm(48, mean = 20, sd = 5)
+)
+
+new_data <- data.frame(
+  Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
+  Combo = "1",
+  temperature_original = c(22.0, 23.0, 21.0)
+)
+
+result <- finnts:::chronos_forecast(
+  train_df = train_df,
+  new_data = new_data,
+  model_type = "chronos2",
+  horizon = 3,
+  exogenous_cols = "temperature_original",
+  global = TRUE,
+  quantile_levels = c(0.1, 0.5, 0.9)
+)
+
+> head(result)
+
+#
+#  unique_id         ds target_name predictions      0.1       0.5      0.9
+# 1         1 2024-01-01           y    99.58167 86.67576  99.58167 112.1509
+# 2         1 2024-02-01           y   101.33984 88.47334 101.33984 113.9274
+# 3         1 2024-03-01           y    99.54839 86.45997  99.54839 112.2024
+```
+
+## Data Size Requirements and Automatic Padding
+
+Azure ML Chronos2 endpoints have minimum data size requirements of 3 rows irrespective of data frequency. When using Azure ML endpoints, finnts automatically pads your data with zeros (backward from the earliest date) to meet these requirements. This ensures your forecasts work even with smaller datasets. The padding only affects the data sent to the API, your original training data remains unchanged in the model fit object.
+
+## Global Model Support
+
+Chronos2 can run as both a **local** (per time series) or **global** (across all time series) model. When running as a global model, Chronos2 learns patterns across all your time series simultaneously.
+
+```{r eval=FALSE}
+# Run Chronos2 as a global model
+train_models(
+  run_info = run_info,
+  run_global_models = TRUE # Chronos2 will train on all combos together
+)
+```
+
 ## TimeGPT
 
-TimeGPT is once such transformer based foundation model for time series developed by [Nixtla](https://nixtla.github.io/nixtlar/). It delivers:
+TimeGPT is one such transformer based foundation model for time series developed by [Nixtla](https://nixtla.github.io/nixtlar/). It delivers:
 
 - Zero‑shot forecasts with prediction intervals.
 - Support for multiple series.
