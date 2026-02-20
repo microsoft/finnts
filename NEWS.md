@@ -1,6 +1,12 @@
-# finnts 0.6.0.9022 (development version)
+# finnts 0.6.0.9023 (development version)
 
 ## Improvements
+- Chronos2 Integration
+  - Added Chronos2 in addition to existing model to support zero shot forecasting
+  - It support for both historical and future external regressors
+  - It can work as a global model
+  - Added chronos controller, which will support other chronos variation as well
+
 - TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
   - Added support for both historical and future external regressors
