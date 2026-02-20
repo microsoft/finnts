@@ -96,3 +96,44 @@ test_that("get_back_test_scenario_hist_periods uses custom scenarios", {
 
   expect_equal(result$back_test_scenarios, 6) # scenarios + 1
 })
+
+# -- get_frequency_number additional tests --
+
+test_that("get_frequency_number returns correct values for week and day", {
+  expect_equal(get_frequency_number("week"), 52.17857)
+  expect_equal(get_frequency_number("day"), 365.25)
+})
+
+# -- get_seasonal_periods additional tests --
+
+test_that("get_seasonal_periods returns correct values for week", {
+  result <- get_seasonal_periods("week")
+  expect_equal(result, c(365.25 / 7, (365.25 / 7) / 4, (365.25 / 7) / 12))
+})
+
+test_that("get_seasonal_periods returns correct values for day", {
+  result <- get_seasonal_periods("day")
+  expect_equal(result, c(365.25, 365.25 / 4, 365.25 / 12))
+})
+
+# -- get_back_test_scenario_hist_periods edge cases --
+
+test_that("get_back_test_scenario_hist_periods with short data", {
+  input_tbl <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 8),
+    Combo = "A",
+    Target = rnorm(8)
+  )
+
+  result <- get_back_test_scenario_hist_periods(
+    input_tbl,
+    hist_end_date = as.Date("2020-08-01"),
+    forecast_horizon = 3,
+    back_test_scenarios = NULL,
+    back_test_spacing = 1
+  )
+
+  expect_type(result, "list")
+  expect_true("back_test_scenarios" %in% names(result))
+  expect_true(result$back_test_scenarios >= 1)
+})

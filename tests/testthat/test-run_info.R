@@ -142,3 +142,75 @@ test_that("get_run_info returns run data after set_run_info", {
   expect_equal(result$project_name, "test_proj")
   expect_equal(result$run_name, "my_run")
 })
+
+test_that("set_run_info with add_unique_id=FALSE reuses existing log", {
+  temp_dir <- tempfile("run_info_reuse_test")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+
+  ri1 <- set_run_info(
+    project_name = "p",
+    run_name = "r",
+    path = temp_dir,
+    add_unique_id = FALSE
+  )
+
+  ri2 <- set_run_info(
+    project_name = "p",
+    run_name = "r",
+    path = temp_dir,
+    add_unique_id = FALSE
+  )
+
+  expect_equal(ri1$created, ri2$created)
+  expect_equal(ri1$path, ri2$path)
+})
+
+test_that("set_run_info with add_unique_id=FALSE errors on changed inputs", {
+  temp_dir <- tempfile("run_info_changed_test")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+
+  set_run_info(
+    project_name = "p",
+    run_name = "r",
+    path = temp_dir,
+    add_unique_id = FALSE
+  )
+
+  expect_error(
+    set_run_info(
+      project_name = "p",
+      run_name = "r",
+      path = temp_dir,
+      data_output = "parquet",
+      add_unique_id = FALSE
+    ),
+    "Inputs have recently changed"
+  )
+})
+
+# -- utility.R tests --
+
+test_that("get_timestamp returns a POSIXct object in UTC", {
+  ts <- get_timestamp()
+
+  expect_s3_class(ts, "POSIXct")
+  expect_equal(attr(ts, "tzone"), "UTC")
+})
+
+test_that("get_timestamp returns a timestamp close to current time", {
+  ts <- get_timestamp()
+  now_utc <- as.POSIXct(format(Sys.time(), tz = "UTC"), tz = "UTC")
+
+  # should be within 5 seconds of now
+
+  expect_true(abs(difftime(ts, now_utc, units = "secs")) < 5)
+})
+
+test_that("get_timestamp format is YYYYMMDDTHHMMSSZ", {
+  ts <- get_timestamp()
+  formatted <- format(ts, "%Y%m%dT%H%M%SZ")
+
+  # should be parseable back
+  parsed <- as.POSIXct(formatted, format = "%Y%m%dT%H%M%SZ", tz = "UTC")
+  expect_false(is.na(parsed))
+})

@@ -181,3 +181,169 @@ test_that("null_converter returns vector for multi-element input", {
   result <- null_converter(c("a", "b"))
   expect_equal(result, c("a", "b"))
 })
+
+# -- clean_markdown tests --
+
+test_that("clean_markdown removes bold markers", {
+  result <- clean_markdown("This is **bold** text")
+  expect_equal(result, "This is bold text")
+})
+
+test_that("clean_markdown removes underscore bold markers", {
+  result <- clean_markdown("This is __bold__ text")
+  expect_equal(result, "This is bold text")
+})
+
+test_that("clean_markdown removes italic markers", {
+  result <- clean_markdown("This is *italic* text")
+  expect_equal(result, "This is italic text")
+})
+
+test_that("clean_markdown removes header markers", {
+  result <- clean_markdown("# Header text")
+  expect_equal(result, "Header text")
+})
+
+test_that("clean_markdown removes multi-level headers", {
+  result <- clean_markdown("### Third level header")
+  expect_equal(result, "Third level header")
+})
+
+test_that("clean_markdown removes code blocks", {
+  result <- clean_markdown("Use `code` in text")
+  expect_equal(result, "Use code in text")
+})
+
+test_that("clean_markdown cleans excess whitespace", {
+  result <- clean_markdown("Text\n\n\n\nMore text")
+  expect_equal(result, "Text\n\nMore text")
+})
+
+test_that("clean_markdown returns empty string for empty input", {
+  result <- clean_markdown("")
+  expect_equal(result, "")
+})
+
+test_that("clean_markdown with keep_lists preserves bullet markers", {
+  text <- "- Item 1\n- Item 2\n* Item 3"
+  result <- clean_markdown(text, keep_lists = TRUE)
+  expect_true(grepl("- Item 1", result))
+  expect_true(grepl("- Item 2", result))
+  expect_true(grepl("\\* Item 3", result))
+})
+
+test_that("clean_markdown with keep_lists=FALSE still removes list-like italics", {
+  text <- "Some *italic* text"
+  result <- clean_markdown(text, keep_lists = FALSE)
+  expect_false(grepl("\\*", result))
+})
+
+# -- summarize_analysis_results tests --
+
+test_that("summarize_analysis_results handles data.frame result", {
+  results <- list(
+    step_1 = data.frame(x = 1:3, y = c("a", "b", "c"))
+  )
+  output <- summarize_analysis_results(results, max_rows = 10)
+  expect_type(output, "character")
+  expect_true(grepl("3 rows total", output))
+})
+
+test_that("summarize_analysis_results handles numeric result", {
+  results <- list(step_1 = 42.5)
+  output <- summarize_analysis_results(results)
+  expect_true(grepl("42.5", output))
+})
+
+test_that("summarize_analysis_results handles character result", {
+  results <- list(step_1 = "some text result")
+  output <- summarize_analysis_results(results)
+  expect_true(grepl("some text result", output))
+})
+
+test_that("summarize_analysis_results handles list result", {
+  results <- list(step_1 = list(a = 1, b = "text"))
+  output <- summarize_analysis_results(results)
+  expect_type(output, "character")
+  expect_true(nchar(output) > 0)
+})
+
+test_that("summarize_analysis_results truncates long data frames", {
+  results <- list(
+    step_1 = data.frame(x = 1:100, y = letters[rep(1:26, length.out = 100)])
+  )
+  output <- summarize_analysis_results(results, max_rows = 5)
+  expect_true(grepl("100 rows total, showing 5", output))
+  expect_true(grepl("more rows omitted", output))
+})
+
+test_that("summarize_analysis_results handles multiple steps", {
+  results <- list(
+    step_1 = data.frame(x = 1:3),
+    step_2 = 42,
+    step_3 = "text"
+  )
+  output <- summarize_analysis_results(results)
+  expect_true(grepl("1 result", output))
+  expect_true(grepl("2 result", output))
+  expect_true(grepl("3 result", output))
+})
+
+test_that("summarize_analysis_results handles empty results", {
+  results <- list()
+  output <- summarize_analysis_results(results)
+  expect_equal(output, "")
+})
+
+# -- display_answer tests --
+
+test_that("display_answer prints to console", {
+  expect_output(display_answer("This is a test answer"), "This is a test answer")
+})
+
+test_that("display_answer cleans markdown in answer", {
+  expect_output(
+    display_answer("This is **bold** text"),
+    "This is bold text"
+  )
+})
+
+# -- sanitize_args tests (from agent_run.R) --
+
+test_that("sanitize_args keeps atomic values", {
+  result <- sanitize_args(list(a = "hello", b = 42, c = TRUE))
+  expect_equal(result$a, "hello")
+  expect_equal(result$b, 42)
+  expect_equal(result$c, TRUE)
+})
+
+test_that("sanitize_args replaces non-atomic values with placeholder", {
+  result <- sanitize_args(list(
+    simple = "text",
+    complex = data.frame(x = 1:3)
+  ))
+  expect_equal(result$simple, "text")
+  expect_equal(result$complex, "<object:complex>")
+})
+
+test_that("sanitize_args handles empty list", {
+  result <- sanitize_args(list())
+  expect_equal(length(result), 0)
+})
+
+test_that("sanitize_args handles list values", {
+  result <- sanitize_args(list(
+    x = 1,
+    y = list(a = 1, b = 2)
+  ))
+  expect_equal(result$x, 1)
+  expect_type(result$y, "character")
+  expect_true(grepl("object", result$y))
+})
+
+test_that("sanitize_args handles NULL values in list", {
+  result <- sanitize_args(list(a = NULL, b = "text"))
+  # NULL is non-atomic, so sanitize_args converts it to a description string
+  expect_type(result$a, "character")
+  expect_equal(result$b, "text")
+})

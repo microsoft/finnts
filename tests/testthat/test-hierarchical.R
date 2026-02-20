@@ -282,3 +282,104 @@ test_that("get_hts_nodes returns nodes for standard hierarchy", {
   result <- get_hts_nodes(hts_obj, forecast_approach = "standard_hierarchy")
   expect_true(is.list(result))
 })
+
+# -- get_grouped_nodes tests --
+
+test_that("get_grouped_nodes creates grouping matrix", {
+  input_data <- data.frame(
+    Segment = c("A", "A", "B", "B"),
+    Country = c("US", "UK", "US", "UK")
+  )
+
+  result <- get_grouped_nodes(input_data, c("Segment", "Country"))
+  expect_true(is.matrix(result))
+  expect_equal(nrow(result), 2)
+  expect_equal(ncol(result), 4)
+  expect_equal(rownames(result), c("Segment", "Country"))
+})
+
+test_that("get_grouped_nodes with single variable", {
+  input_data <- data.frame(
+    Region = c("East", "West", "East", "West")
+  )
+
+  result <- get_grouped_nodes(input_data, "Region")
+  expect_true(is.matrix(result))
+  expect_equal(nrow(result), 1)
+})
+
+# -- get_standard_nodes tests --
+
+test_that("get_standard_nodes creates node list", {
+  input_data <- data.frame(
+    Area = c("A", "A", "B"),
+    Country = c("X", "Y", "Z")
+  )
+
+  result <- get_standard_nodes(input_data, c("Area", "Country"))
+  expect_true(is.list(result))
+  expect_true(length(result) >= 1)
+})
+
+test_that("get_standard_nodes with 3 levels", {
+  input_data <- data.frame(
+    Region = c("NA", "NA", "NA", "EU", "EU", "EU"),
+    Country = c("US", "US", "CA", "UK", "UK", "FR"),
+    City = c("NY", "LA", "TO", "LO", "MA", "PA")
+  )
+
+  result <- get_standard_nodes(input_data, c("Region", "Country", "City"))
+  expect_true(is.list(result))
+})
+
+# -- adjust_df tests --
+
+test_that("adjust_df with df return_type collects data", {
+  input_data <- tibble::tibble(x = 1:5, y = letters[1:5])
+  result <- adjust_df(input_data, return_type = "df")
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), 5)
+})
+
+# -- pick_right_hierarchy tests --
+
+test_that("pick_right_hierarchy routes to grouped_nodes", {
+  input_data <- data.frame(
+    Segment = c("A", "A", "B", "B"),
+    Country = c("US", "UK", "US", "UK")
+  )
+
+  result <- pick_right_hierarchy(input_data, c("Segment", "Country"), "grouped_hierarchy")
+  expect_true(is.matrix(result))
+})
+
+test_that("pick_right_hierarchy routes to standard_nodes", {
+  input_data <- data.frame(
+    Area = c("A", "A", "B"),
+    Country = c("X", "Y", "Z")
+  )
+
+  result <- pick_right_hierarchy(input_data, c("Area", "Country"), "standard_hierarchy")
+  expect_true(is.list(result))
+})
+
+# -- get_hts_nodes for grouped hierarchy --
+
+test_that("get_hts_nodes returns groups for grouped hierarchy", {
+  skip_if_not_installed("hts")
+
+  mat <- matrix(1:15, nrow = 5, ncol = 3)
+  colnames(mat) <- c("AX", "AY", "BX")
+  ts_data <- stats::ts(mat, start = c(2020, 1), frequency = 12)
+
+  groups <- matrix(
+    c("A", "A", "B",
+      "X", "Y", "X"),
+    nrow = 2, byrow = TRUE
+  )
+  rownames(groups) <- c("Group1", "Group2")
+
+  gts_obj <- hts::gts(ts_data, groups = groups) %>% suppressMessages()
+  result <- get_hts_nodes(gts_obj, forecast_approach = "grouped_hierarchy")
+  expect_true(!is.null(result))
+})

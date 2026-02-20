@@ -123,3 +123,56 @@ test_that("vip_cubist_fn produces variable importance scores", {
   expect_true("Variable" %in% names(result))
   expect_true("Importance" %in% names(result))
 })
+
+# -- boruta_fn tests --
+
+test_that("boruta_fn selects important features", {
+  set.seed(42)
+  n <- 100
+  x1 <- rnorm(n)
+  data <- tibble::tibble(
+    Date = seq(as.Date("2020-01-01"), by = "day", length.out = n),
+    Combo = rep("A", n),
+    Target = x1 * 5 + rnorm(n, sd = 0.1),
+    Feature_Strong = x1,
+    Feature_Noise = rnorm(n)
+  )
+
+  result <- boruta_fn(data = data, iterations = 50, seed = 42)
+  expect_type(result, "character")
+  expect_true(length(result) > 0)
+  expect_true("Feature_Strong" %in% result)
+})
+
+test_that("boruta_fn returns character vector", {
+  set.seed(123)
+  n <- 80
+  data <- tibble::tibble(
+    Date = seq(as.Date("2020-01-01"), by = "day", length.out = n),
+    Target = rnorm(n, 50, 10),
+    x1 = rnorm(n),
+    x2 = rnorm(n)
+  )
+  data$Target <- data$Target + 3 * data$x1
+
+  result <- boruta_fn(data = data, iterations = 20, seed = 123)
+  expect_type(result, "character")
+})
+
+# -- target_corr_fn edge cases --
+
+test_that("target_corr_fn with exact threshold boundary", {
+  set.seed(42)
+  n <- 200
+  x <- rnorm(n)
+  data <- tibble::tibble(
+    Combo = rep("A", n),
+    Date = seq.Date(as.Date("2020-01-01"), by = "day", length.out = n),
+    Target = x,
+    Feature_Perfect = x
+  )
+
+  result <- target_corr_fn(data, threshold = 0.99)
+  expect_s3_class(result, "tbl_df")
+  expect_true("Feature_Perfect" %in% result$term)
+})

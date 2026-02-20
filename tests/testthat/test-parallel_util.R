@@ -170,3 +170,21 @@ test_that("par_start adds parquet package when data_output is parquet", {
 
   expect_true("arrow" %in% par_info$packages)
 })
+
+test_that("par_start adds qs2 package when object_output is qs2", {
+  run_info <- list(
+    storage_object = NULL,
+    path = tempdir(),
+    data_output = "csv",
+    object_output = "qs2"
+  )
+
+  par_info <- par_start(
+    run_info = run_info,
+    parallel_processing = NULL,
+    num_cores = NULL,
+    task_length = 5
+  )
+
+  expect_true("qs2" %in% par_info$packages)
+})

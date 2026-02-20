@@ -337,3 +337,13 @@ test_that("check_input_data catches unevenly spaced month dates", {
     "historical date values are not evenly spaced"
   )
 })
+
+# -- check_input_type edge cases --
+
+test_that("check_input_type accepts NULL with NULL type", {
+  expect_silent(check_input_type("x", NULL, c("character", "NULL")))
+})
+
+test_that("check_input_type accepts vector of expected values", {
+  expect_silent(check_input_type("x", c("R1", "R2"), "character", c("R1", "R2", "R3")))
+})

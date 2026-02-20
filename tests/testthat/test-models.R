@@ -759,3 +759,160 @@ test_that("adjust_column_types converts numeric columns", {
   result <- adjust_column_types(data, prepped)
   expect_type(result$x, "double")
 })
+
+# -- Missing model constructor tests --
+
+test_that("meanf creates a workflow", {
+  train_data <- make_train_data()
+  result <- meanf(train_data, frequency = 12)
+  expect_s3_class(result, "workflow")
+})
+
+test_that("snaive creates a workflow", {
+  train_data <- make_train_data()
+  result <- snaive(train_data, frequency = 12)
+  expect_s3_class(result, "workflow")
+})
+
+test_that("get_recipe_timegpt creates a recipe", {
+  train_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12),
+    Combo = rep("A", 12),
+    Target = rnorm(12),
+    xreg1_original = rnorm(12)
+  )
+
+  result <- get_recipe_timegpt(train_data)
+  expect_s3_class(result, "recipe")
+})
+
+test_that("get_fit_wkflw_nocombo fits without Combo column", {
+  train_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 24),
+    Target = rnorm(24, mean = 100, sd = 10)
+  )
+
+  recipe_spec <- recipes::recipe(Target ~ Date, data = train_data)
+  model_spec <- parsnip::linear_reg() %>% parsnip::set_engine("lm")
+
+  result <- get_fit_wkflw_nocombo(train_data, model_spec, recipe_spec)
+  expect_s3_class(result, "workflow")
+  expect_true(workflows::is_trained_workflow(result))
+})
+
+test_that("nnetar_xregs creates a workflow", {
+  train_data <- make_train_data()
+  train_data$xreg1 <- rnorm(nrow(train_data))
+  result <- nnetar_xregs(train_data, frequency = 12, pca = FALSE)
+  expect_s3_class(result, "workflow")
+})
+
+test_that("prophet_boost creates a workflow", {
+  train_data <- make_train_data()
+  train_data$xreg1 <- rnorm(nrow(train_data))
+  result <- prophet_boost(train_data, pca = FALSE)
+  expect_s3_class(result, "workflow")
+})
+
+test_that("prophet_xregs creates a workflow", {
+  train_data <- make_train_data()
+  train_data$xreg1 <- rnorm(nrow(train_data))
+  result <- prophet_xregs(train_data, pca = FALSE)
+  expect_s3_class(result, "workflow")
+})
+
+test_that("undifference_forecast handles multiple Train_Test_IDs", {
+  original <- c(10, 20, 35, 45, 60, 75)
+  differenced <- diff(original)
+
+  recipe_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 4),
+    Target = differenced[1:4]
+  )
+
+  forecast_data <- tibble::tibble(
+    Date = c(as.Date("2020-04-01"), as.Date("2020-05-01")),
+    Target = differenced[4:5],
+    Forecast = c(14, 16),
+    Train_Test_ID = c(1, 2),
+    Combo = "A"
+  )
+
+  diff_tbl <- tibble::tibble(
+    Combo = "A",
+    Diff_Value1 = original[1],
+    Diff_Value2 = NA_real_
+  )
+
+  result <- undifference_forecast(forecast_data, recipe_data, diff_tbl)
+  expect_equal(length(unique(result$Train_Test_ID)), 2)
+})
+
+test_that("undifference_recipe handles double differencing", {
+  original <- c(10, 20, 35, 55, 80, 110, 145, 185)
+  differenced <- diff(diff(original))  # 6 values
+
+  recipe_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 8),
+    Target = c(differenced, 7, 8)  # 6 hist + 2 future
+  )
+
+  diff_tbl <- tibble::tibble(
+    Combo = "A",
+    Diff_Value1 = original[1],
+    Diff_Value2 = original[2]
+  )
+
+  result <- undifference_recipe(recipe_data, diff_tbl, as.Date("2020-07-01"))
+  expect_s3_class(result, "tbl_df")
+})
+
+test_that("undifference_recipe handles Target_Original column", {
+  original <- c(10, 20, 35, 45, 60, 75, 90)
+  differenced <- diff(original)  # 6 values
+
+  recipe_data <- tibble::tibble(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 8),
+    Target = c(differenced, 18, 20),
+    Target_Original = c(differenced + 1, 19, 21)
+  )
+
+  diff_tbl <- tibble::tibble(
+    Combo = "A",
+    Diff_Value1 = original[1],
+    Diff_Value2 = NA_real_
+  )
+
+  result <- undifference_recipe(recipe_data, diff_tbl, as.Date("2020-07-01"))
+  expect_true("Target_Original" %in% colnames(result))
+})
+
+test_that("adjust_column_types coerces factor to character", {
+  train_data <- tibble::tibble(
+    Combo = c("A", "B", "C"),
+    Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01")),
+    Target = c(10, 20, 30)
+  )
+
+  recipe_spec <- recipes::recipe(Target ~ ., data = train_data)
+
+  # Intentionally change a column type
+  test_data <- train_data
+  test_data$Combo <- factor(test_data$Combo)
+
+  result <- adjust_column_types(test_data, recipe_spec)
+  expect_type(result$Combo, "character")
+})
+
+test_that("negative_fcst_adj preserves positive forecasts", {
+  fcst_tbl <- tibble::tibble(
+    Combo = "A",
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 3),
+    Target = c(10, 20, 30),
+    Train_Test_ID = rep(1, 3),
+    Forecast = c(12, 22, 28)
+  )
+
+  result <- negative_fcst_adj(fcst_tbl, negative_forecast = FALSE)
+  expect_equal(result$Forecast, c(12, 22, 28))
+})

@@ -54,8 +54,8 @@ par_start <- function(run_info,
     add_packages <- c(add_packages, "arrow")
   }
 
-  if (run_info$object_output == "qs") {
-    add_packages <- c(add_packages, "qs")
+  if (run_info$object_output == "qs2") {
+    add_packages <- c(add_packages, "qs2")
   }
 
   # register cluster

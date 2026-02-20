@@ -195,3 +195,61 @@ test_that("adjust_combo_column handles missing Combo column", {
 
   expect_equal(ncol(result), 2)
 })
+
+# -- create_prediction_intervals with multiple models --
+
+test_that("create_prediction_intervals handles multiple Model_IDs", {
+  fcst_tbl <- tibble::tibble(
+    Combo = rep("A", 8),
+    Model_ID = c(rep("M1", 4), rep("M2", 4)),
+    Train_Test_ID = rep(c(1, 1, 2, 2), 2),
+    Target = c(100, 200, 100, 200, 100, 200, 100, 200),
+    Forecast = c(110, 210, 95, 195, 120, 220, 105, 205),
+    Horizon = rep(c(1, 2, 1, 2), 2)
+  )
+
+  train_test_split <- tibble::tibble(
+    Run_Type = c("Back_Test", "Future_Forecast"),
+    Train_Test_ID = c(2, 1)
+  )
+
+  result <- create_prediction_intervals(fcst_tbl, train_test_split)
+
+  # Should have interval columns for both models
+  m1_future <- result %>% dplyr::filter(Model_ID == "M1", Train_Test_ID == 1)
+  m2_future <- result %>% dplyr::filter(Model_ID == "M2", Train_Test_ID == 1)
+
+  expect_true(all(!is.na(m1_future$lo_80)))
+  expect_true(all(!is.na(m2_future$lo_80)))
+})
+
+# -- convert_weekly_to_daily with multiple weeks --
+
+test_that("convert_weekly_to_daily expands multiple weeks", {
+  fcst_tbl <- tibble::tibble(
+    Combo_ID = rep("C1", 2),
+    Model_ID = rep("M1", 2),
+    Model_Name = rep("model", 2),
+    Model_Type = rep("type", 2),
+    Recipe_ID = rep("R1", 2),
+    Train_Test_ID = rep(1, 2),
+    Hyperparameter_ID = rep("H1", 2),
+    Best_Model = rep("M1", 2),
+    Combo = rep("C1", 2),
+    Horizon = c(1, 2),
+    Date = as.Date(c("2020-01-06", "2020-01-13")),
+    Target = c(70, 140),
+    Forecast = c(70, 140),
+    lo_80 = c(60, 130),
+    lo_95 = c(50, 120),
+    hi_80 = c(80, 150),
+    hi_95 = c(90, 160)
+  )
+
+  result <- convert_weekly_to_daily(fcst_tbl, "week", weekly_to_daily = TRUE)
+
+  # Each week should expand to 7 daily rows
+  expect_equal(nrow(result), 14)
+  # Daily values should be 1/7 of weekly
+  expect_equal(result$Forecast[1], 10)
+})
