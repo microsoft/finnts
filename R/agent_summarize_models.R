@@ -7771,7 +7771,7 @@ summarize_model_xgboost <- function(wf) {
 #'
 #' @return A tibble with columns: section, name, value containing model details.
 #'
-#' #' @noRd
+#' @noRd
 summarize_model_timegpt <- function(wf) {
   digits <- 6
   scan_depth <- 6
