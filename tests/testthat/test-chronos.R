@@ -3,9 +3,6 @@
 # Skip all tests in this file on CRAN
 skip_on_cran()
 
-# ──────────────────────────────────────────────────────────────────────
-# Helper: check Chronos API credentials
-# ──────────────────────────────────────────────────────────────────────
 has_chronos_credentials <- function() {
   api_url <- Sys.getenv("CHRONOS_API_URL", unset = NA)
   api_token <- Sys.getenv("CHRONOS_API_TOKEN", unset = NA)
@@ -74,7 +71,7 @@ test_that("pad_chronos2_data pads combos with fewer than 3 rows", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   # Should have at least 3 rows for combo "A"
   expect_true(nrow(padded) >= 3)
@@ -92,7 +89,7 @@ test_that("pad_chronos2_data does not pad combos with 3+ rows", {
     y = c(10, 20, 30, 40)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   expect_equal(nrow(padded), 4)
   expect_equal(padded$y, c(10, 20, 30, 40))
@@ -105,7 +102,7 @@ test_that("pad_chronos2_data sets y = 0 for padded rows", {
     y = 42
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$y == 0))
@@ -119,7 +116,7 @@ test_that("pad_chronos2_data zeros out numeric exogenous columns in padded rows"
     temperature_original = 25.0
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$temperature_original == 0))
@@ -137,7 +134,7 @@ test_that("pad_chronos2_data works with multiple combos of different lengths", {
     y = c(10, 20, 30, 40, 50)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   # Combo A already has 4 rows — should remain 4
 
@@ -160,13 +157,32 @@ test_that("pad_chronos2_data creates backward-stepping dates", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df)
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
 
   # Should have a date before 2020-03-01
   expect_true(min(padded$Date) < as.Date("2020-03-01"))
+  # Padded date should be exactly one month before
+  expect_equal(min(padded$Date), as.Date("2020-02-01"))
   # Data should be sorted
-
   expect_true(all(diff(padded$Date) >= 0))
+})
+
+test_that("pad_chronos2_data uses calendar-aware monthly steps for single-row data", {
+  # Single row of monthly data — without date_type this would fall back to daily
+  train_df <- data.frame(
+    Date = as.Date("2020-03-01"),
+    Combo = "A",
+    y = 42
+  )
+
+  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+
+  expect_equal(nrow(padded), 3)
+  # Padded dates should be exactly 1 and 2 months before
+  expect_equal(
+    sort(padded$Date),
+    as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))
+  )
 })
 
 #Chronos 2 API Integration Tests
@@ -494,7 +510,7 @@ test_that("Chronos 2 Model pipeline integration test with external regressors", 
 
   prep_models(
     run_info = run_info,
-    models_to_run = "chronos2",
+    models_to_run = "chronos2"
   )
 
   train_models(
@@ -555,7 +571,7 @@ test_that("Chronos 2 Model pipeline integration test with future external regres
 
   prep_models(
     run_info = run_info,
-    models_to_run = "chronos2",
+    models_to_run = "chronos2"
   )
 
   train_models(

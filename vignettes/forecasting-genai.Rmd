@@ -62,7 +62,7 @@ result <- finnts:::chronos_forecast(
   quantile_levels = c(0.1, 0.5, 0.9)
 )
 
-> head(result)
+head(result)
 
 #
 #  unique_id         ds target_name predictions      0.1       0.5      0.9

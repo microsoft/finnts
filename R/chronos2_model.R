@@ -186,7 +186,9 @@ chronos2_model_predict_impl <- function(object, new_data, ...) {
   h <- periods_per_combo
 
   # Pad combos with fewer than 3 observations (Chronos 2 minimum requirement)
-  train_df <- pad_chronos2_data(train_df)
+  frequency <- object$frequency
+  date_type <- if (!is.null(frequency)) get_date_type(frequency) else NULL
+  train_df <- pad_chronos2_data(train_df, date_type)
 
   # Detect exogenous columns (_original suffix from finnts preprocessing)
   # Controller handles dropping all-NA columns from future_data
@@ -299,14 +301,17 @@ update.chronos2_model <- function(
 #' Pad Chronos 2 training data to minimum 3 rows per combo
 #'
 #' Chronos 2 requires at least 3 time points per series. During back-testing,
-#' early splits may have fewer. This pads short combos by repeating the
-#' earliest row (with y = 0) backward to reach the minimum.
+#' early splits may have fewer. This adds only the exact number of rows needed
+#' (with y = 0 and numerics = 0) before the earliest date to reach 3.
 #'
 #' @param train_df Data frame with columns: Date, Combo, y, and optionally others.
+#' @param date_type Character: "day", "week", "month", "quarter", or "year".
+#'   Used for calendar-aware date stepping. Falls back to inferring from the
+#'   data when NULL.
 #'
 #' @return Padded data frame with at least 3 rows per Combo.
 #' @noRd
-pad_chronos2_data <- function(train_df) {
+pad_chronos2_data <- function(train_df, date_type = NULL) {
   min_rows <- 3L
 
   combo_counts <- train_df %>%
@@ -322,12 +327,23 @@ pad_chronos2_data <- function(train_df) {
     return(train_df)
   }
 
-  # Detect the most common date step from the full data
-  all_dates <- sort(unique(train_df$Date))
-  if (length(all_dates) >= 2) {
-    date_step <- as.integer(diff(all_dates[1:2]))
-  } else {
-    date_step <- 1L # fallback to daily
+  # Validate date_type when provided
+  valid_date_types <- c("day", "week", "month", "quarter", "year")
+  if (!is.null(date_type) && !date_type %in% valid_date_types) {
+    stop(
+      "Unsupported date_type: '", date_type, "'. Expected one of: ",
+      paste(valid_date_types, collapse = ", ")
+    )
+  }
+
+  # Fallback: infer step from the data when date_type is unavailable
+  if (is.null(date_type)) {
+    all_dates <- sort(unique(train_df$Date))
+    if (length(all_dates) >= 2) {
+      date_step <- as.integer(diff(all_dates[1:2]))
+    } else {
+      date_step <- 1L
+    }
   }
 
   pad_rows <- lapply(seq_len(nrow(combo_counts)), function(i) {
@@ -336,8 +352,21 @@ pad_chronos2_data <- function(train_df) {
     earliest <- combo_counts$earliest_date[i]
     n_to_add <- min_rows - n_existing
 
-    # Create dates stepping backward from the earliest date
-    new_dates <- earliest - (seq_len(n_to_add) * date_step)
+    # Generate exactly n_to_add dates stepping backward
+    if (!is.null(date_type)) {
+      new_dates <- vapply(seq_len(n_to_add), function(k) {
+        as.character(switch(date_type,
+          "day"     = earliest - lubridate::days(k),
+          "week"    = earliest - lubridate::weeks(k),
+          "month"   = earliest - months(k),
+          "quarter" = earliest - months(k * 3),
+          "year"    = earliest - lubridate::years(k)
+        ))
+      }, character(1))
+      new_dates <- as.Date(new_dates)
+    } else {
+      new_dates <- earliest - (seq_len(n_to_add) * date_step)
+    }
 
     # Build a template row: same columns, y = 0, numerics = 0
     template <- train_df %>%
@@ -346,7 +375,6 @@ pad_chronos2_data <- function(train_df) {
 
     template$y <- 0
 
-    # Zero out all other numeric columns
     num_cols <- setdiff(
       names(template)[vapply(template, is.numeric, logical(1))],
       "y"
@@ -355,7 +383,6 @@ pad_chronos2_data <- function(train_df) {
       template[[col]] <- 0
     }
 
-    # Replicate the template for each new date
     pad <- template[rep(1, n_to_add), , drop = FALSE]
     pad$Date <- new_dates
     pad
