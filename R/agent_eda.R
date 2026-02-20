@@ -1781,7 +1781,7 @@ hierarchy_detect <- function(agent_info,
 #' @return string representation of the data frame in pipe table format
 #' @noRd
 make_pipe_table <- function(df) {
-  knitr::kable(df, format = "pipe") %>% paste(collapse = "\n")
+  suppressWarnings(knitr::kable(df, format = "pipe")) %>% paste(collapse = "\n")
 }
 
 

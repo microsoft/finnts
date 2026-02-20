@@ -792,6 +792,24 @@ save_best_agent_run <- function(agent_info) {
     stop("Error in save_best_agent_run(). No best run found for agent.", call. = FALSE)
   }
 
+  # verify all expected combos have agent_best_run files
+  expected_combos <- get_total_combos(agent_info)
+  existing_combos <- final_run_tbl %>%
+    dplyr::pull(combo) %>%
+    unique()
+
+  existing_hashes <- purrr::map_chr(existing_combos, hash_data)
+  missing_hashes <- setdiff(expected_combos, existing_hashes)
+
+  if (length(missing_hashes) > 0) {
+    stop(
+      "Error in save_best_agent_run(). Expected ", length(expected_combos),
+      " time series but only found ", length(existing_combos),
+      ". Missing combo hashes: ", paste(missing_hashes, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
   # remove unnecessary columns
   final_run_tbl <- final_run_tbl %>%
     dplyr::select(-dplyr::any_of(c("run_complete", "max_iterations")))
@@ -1553,7 +1571,7 @@ log_best_run <- function(agent_info,
       dplyr::pull(weighted_mape) %>%
       sd()
 
-    # load log file
+    # build log data frame (not saved to disk yet)
     log_df <- get_run_info(
       project_name = run_info$project_name,
       run_name = run_info$run_name,
@@ -1567,18 +1585,8 @@ log_best_run <- function(agent_info,
         agent_version = as.numeric(agent_info$agent_version),
         agent_forecast_approach = agent_info$forecast_approach
       )
-
-    # save the log file
-    write_data(
-      x = log_df,
-      combo = NULL,
-      run_info = run_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = NULL
-    )
   } else {
-    # load log file
+    # build log data frame (not saved to disk yet)
     log_df <- get_run_info(
       project_name = run_info$project_name,
       run_name = run_info$run_name,
@@ -1592,21 +1600,15 @@ log_best_run <- function(agent_info,
         agent_version = as.numeric(agent_info$agent_version),
         agent_forecast_approach = agent_info$forecast_approach
       )
-
-    # save the log file
-    write_data(
-      x = log_df,
-      combo = NULL,
-      run_info = run_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = NULL
-    )
   }
 
   # check if previous best run exists and is more accurate
   if (check_best_run) {
-    previous_runs <- load_run_results(agent_info = agent_info, combo = combo)
+    previous_runs <- load_run_results(
+      agent_info = agent_info,
+      combo = combo,
+      current_run_log = log_df
+    )
   } else {
     # skip best run check when running update forecast
     previous_runs <- NULL
@@ -1719,7 +1721,56 @@ log_best_run <- function(agent_info,
         next # don't log if the previous run was better
       }
     }
+
+    # verify that all expected agent_best_run files exist
+    if (combo == "all") {
+      # global model: use list_files since multiple combos are involved
+      existing_best_run_files <- list_files(
+        project_info$storage_object,
+        paste0(
+          project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
+          hash_data(agent_info$run_id), "*-agent_best_run.csv"
+        )
+      )
+      existing_count <- length(existing_best_run_files)
+    } else {
+      # local model: single combo, read the file directly
+      file_path <- paste0(
+        project_info$path, "/logs/",
+        hash_data(project_info$project_name), "-",
+        hash_data(agent_info$run_id), "-",
+        combo, "-agent_best_run.csv"
+      ) %>% fs::path_tidy()
+      best_run_check <- read_file(
+        run_info = project_info,
+        file_list = file_path,
+        return_type = "df"
+      )
+      existing_count <- if (nrow(best_run_check) > 0) 1L else 0L
+    }
+
+    expected_count <- length(combo_list)
+
+    if (existing_count < expected_count) {
+      stop(
+        "Error in log_best_run(). Expected ", expected_count,
+        " agent_best_run file(s) but only found ", existing_count,
+        ".",
+        call. = FALSE
+      )
+    }
   }
+
+  # save the run log only after best run logging succeeds
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
   return("Run logged successfully.")
 }
 
@@ -1818,11 +1869,15 @@ finalize_run <- function(agent_info,
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
+#' @param current_run_log Optional data frame of the current run's log entry
+#'   (not yet saved to disk). When supplied, it is appended to the on-disk runs
+#'   so the best-run comparison can include the current run.
 #'
 #' @return A tibble containing the previous run results or a message indicating no previous runs.
 #' @noRd
 load_run_results <- function(agent_info,
-                             combo = NULL) {
+                             combo = NULL,
+                             current_run_log = NULL) {
   # determine the combo value and columns to return
   if (is.null(combo)) {
     combo_value <- hash_data("all")
@@ -1862,6 +1917,31 @@ load_run_results <- function(agent_info,
     storage_object = agent_info$project_info$storage_object,
     path = agent_info$project_info$path
   )
+
+  # append the current run log if provided (not yet saved to disk)
+  if (!is.null(current_run_log) && "run_name" %in% names(current_run_log)) {
+    # remove the incomplete on-disk row for this run before appending
+    current_run_name <- current_run_log$run_name[[1]]
+    previous_runs <- previous_runs %>%
+      dplyr::filter(run_name != current_run_name)
+
+    # coerce date/datetime columns to character to avoid type mismatches
+    date_cols_prev <- names(previous_runs)[
+      purrr::map_lgl(previous_runs, ~ inherits(.x, c("Date", "POSIXt")))
+    ]
+    date_cols_curr <- names(current_run_log)[
+      purrr::map_lgl(current_run_log, ~ inherits(.x, c("Date", "POSIXt")))
+    ]
+    for (col in date_cols_prev) {
+      previous_runs[[col]] <- as.character(previous_runs[[col]])
+    }
+    for (col in date_cols_curr) {
+      current_run_log[[col]] <- as.character(current_run_log[[col]])
+    }
+
+    # bind_rows fills missing columns with NA in either direction
+    previous_runs <- dplyr::bind_rows(previous_runs, current_run_log)
+  }
 
   # filter previous runs based on the combo value and select relevant columns
   if ("run_name" %in% names(previous_runs) & "weighted_mape" %in% names(previous_runs) & "agent_version" %in% names(previous_runs)) {

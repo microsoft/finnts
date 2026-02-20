@@ -870,7 +870,7 @@ get_xregs_future_values_tbl <- function(data_tbl,
   for (variable in external_regressors) {
     temp <- data_tbl %>%
       dplyr::filter(Date > hist_end_date) %>%
-      dplyr::select(variable) %>%
+      dplyr::select(tidyselect::all_of(variable)) %>%
       tidyr::drop_na()
 
     if (nrow(temp) > 0) {
@@ -931,7 +931,7 @@ clean_outliers_missing_values <- function(df,
   df_clean <- df %>%
     dplyr::mutate(
       dplyr::across(
-        (where(is.numeric) & c("Target", external_regressors)),
+        (where(is.numeric) & tidyselect::all_of(c("Target", external_regressors))),
         correct_clean_func
       )
     )
@@ -1304,7 +1304,7 @@ multivariate_prep_recipe_1 <- function(data,
       if (column %in% external_regressors) {
         df_poly_column <- data %>%
           dplyr::select(tidyselect::all_of(column)) %>%
-          dplyr::rename(Col = column)
+          dplyr::rename(Col = tidyselect::all_of(column))
 
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3
@@ -1449,7 +1449,7 @@ multivariate_prep_recipe_2 <- function(data,
       if (column %in% external_regressors) {
         df_poly_column <- data %>%
           dplyr::select(tidyselect::all_of(column)) %>%
-          dplyr::rename(Col = column)
+          dplyr::rename(Col = tidyselect::all_of(column))
 
         temp_squared <- df_poly_column^2
         temp_cubed <- df_poly_column^3

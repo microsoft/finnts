@@ -435,7 +435,7 @@ write_data_type <- function(x,
     parquet = arrow::write_parquet(x, path),
     csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
     log = utils::write.csv(x, path, row.names = FALSE),
-    qs = qs::qsave(x, path)
+    qs2 = qs2::qs_save(x, path)
   )
 }
 
@@ -617,7 +617,7 @@ read_file <- function(run_info,
             tibble::tibble()
         }
       ),
-      qs = qs::qread(path)
+      qs2 = qs2::qs_read(path)
     )
   } else if (return_type == "sdf") {
     switch(file_ext,
