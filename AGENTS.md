@@ -60,7 +60,7 @@ When adding or changing user-facing behavior:
    - bump version in `DESCRIPTION` and `NEWS.md`
    - if behavior changed, add a bullet to `NEWS.md`
 
-## Coding conventions (edit to match your package)
+## Coding conventions
 - Prefer small, composable functions.
 - Keep exported functions stable; introduce breaking changes only as a last resort, **ask before adding**, with an explicit note in NEWS.
 - Avoid new dependencies unless necessary; **ask before adding** anything to `Imports`.

@@ -161,7 +161,6 @@ make_xgboost_multistep <- function() {
 
 #' XGBOOST Multistep Horizon
 #'
-#' @inheritParams parsnip::boost_tree
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param mtry mtry
@@ -534,7 +533,6 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 
 #' Bridge prediction Function for XGBOOST Multistep Horizon Models
 #'
-#' @inheritParams parsnip::predict.model_fit
 #' @param object model object
 #' @param new_data input data to predict
 #' @param ... Additional arguments passed to `predict.xgb.Booster()`

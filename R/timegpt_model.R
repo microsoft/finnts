@@ -100,7 +100,6 @@ make_timegpt_model <- function() {
 
 #' TimeGPT model specification
 #'
-#' @inheritParams parsnip::boost_tree
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param forecast_horizon forecast horizon
@@ -409,7 +408,6 @@ pad_time_series_data <- function(train_df, date_type, min_size = NULL) {
 
 #' Bridge prediction Function for TimeGPT Models
 #'
-#' @inheritParams parsnip::predict.model_fit
 #' @param object model object
 #' @param new_data input data to predict
 #' @param ... Additional arguments

@@ -119,7 +119,6 @@ make_svm_rbf_multistep <- function() {
 
 #' SVM-RBF Multistep Horizon
 #'
-#' @inheritParams parsnip::svm_rbf
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param cost A positive number for the cost of predicting
