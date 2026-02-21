@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.6.0.9022
+Version: 0.6.0.9023
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -43,6 +43,7 @@ Imports:
     glue, 
     glmnet,
     gtools,
+    hardhat,
     hts,
     kernlab,
     lubridate,

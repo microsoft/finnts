@@ -24,7 +24,7 @@ test_that("TimeGPT API key validation", {
   api_key <- Sys.getenv("NIXTLA_API_KEY")
 
   # Normalize URL
-  azure_url <- finnts:::normalize_url(azure_url)
+  azure_url <- normalize_url(azure_url)
   Sys.setenv(NIXTLA_BASE_URL = azure_url)
 
   # Setup client
@@ -604,7 +604,7 @@ test_that("pad_time_series_data preserves original y and external regressor valu
   original_date_range <- range(original_dates)
 
   # Pad the data (monthly data, min_size = 48)
-  padded_df <- finnts:::pad_time_series_data(train_df, date_type = "month", min_size = 48)
+  padded_df <- pad_time_series_data(train_df, date_type = "month", min_size = 48)
 
   # Verify padding occurred (should have >= 48 rows)
   expect_true(nrow(padded_df) >= 48,
@@ -653,7 +653,7 @@ test_that("pad_time_series_data preserves original y and external regressor valu
     temperature_original = rnorm(60, mean = 20, sd = 2)
   )
 
-  not_padded_df <- finnts:::pad_time_series_data(large_df, date_type = "month", min_size = 48)
+  not_padded_df <- pad_time_series_data(large_df, date_type = "month", min_size = 48)
 
   expect_equal(nrow(not_padded_df), 60,
     info = "Data above minimum size should not be padded"
@@ -680,7 +680,7 @@ test_that("pad_time_series_data works with multiple combos", {
   original_m2 <- train_df %>% dplyr::filter(Combo == "M2")
 
   # Pad the data
-  padded_df <- finnts:::pad_time_series_data(train_df, date_type = "month", min_size = 48)
+  padded_df <- pad_time_series_data(train_df, date_type = "month", min_size = 48)
 
   # Verify both combos were padded
   combo_counts <- padded_df %>%
@@ -892,11 +892,11 @@ test_that("TimeGPT uses long-horizon model for monthly forecasts > 24 months", {
   skip_if_not(has_timegpt_credentials(), "NIXTLA credentials not set")
 
   # First verify the helper function detects long horizon correctly
-  expect_true(finnts:::is_long_horizon_forecast(25, "month"),
+  expect_true(is_long_horizon_forecast(25, "month"),
     info = "Helper function: 25 months should be detected as long horizon (> 24)"
   )
 
-  expect_false(finnts:::is_long_horizon_forecast(12, "month"),
+  expect_false(is_long_horizon_forecast(12, "month"),
     info = "Helper function: 12 months should NOT be detected as long horizon (< 24)"
   )
 

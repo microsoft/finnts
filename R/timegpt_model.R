@@ -320,16 +320,22 @@ pad_time_series_data <- function(train_df, date_type, min_size = NULL) {
   }
 
   # For each combo, calculate how far back we need to go to add required rows
-  combos_to_pad <- combos_to_pad %>%
-    dplyr::mutate(
-      start_date = dplyr::case_when(
-        date_type == "day" ~ earliest_date - lubridate::days(rows_to_add),
-        date_type == "week" ~ earliest_date - lubridate::weeks(rows_to_add),
-        date_type == "month" ~ earliest_date - months(rows_to_add),
-        date_type == "quarter" ~ earliest_date - months(rows_to_add * 3),
-        date_type == "year" ~ earliest_date - lubridate::years(rows_to_add)
-      )
-    )
+  if (date_type == "day") {
+    combos_to_pad <- combos_to_pad %>%
+      dplyr::mutate(start_date = earliest_date - lubridate::days(rows_to_add))
+  } else if (date_type == "week") {
+    combos_to_pad <- combos_to_pad %>%
+      dplyr::mutate(start_date = earliest_date - lubridate::weeks(rows_to_add))
+  } else if (date_type == "month") {
+    combos_to_pad <- combos_to_pad %>%
+      dplyr::mutate(start_date = earliest_date - months(rows_to_add))
+  } else if (date_type == "quarter") {
+    combos_to_pad <- combos_to_pad %>%
+      dplyr::mutate(start_date = earliest_date - months(rows_to_add * 3))
+  } else if (date_type == "year") {
+    combos_to_pad <- combos_to_pad %>%
+      dplyr::mutate(start_date = earliest_date - lubridate::years(rows_to_add))
+  }
 
   # Create complete date sequences for each combo
   create_date_sequence <- function(start, end, by_type) {

@@ -1,5 +1,9 @@
+# tests/testthat/test-hierarchical.R
+# Tests for hierarchy.R functions
+
+# -- prep_hierarchical_data tests --
+
 test_that("prep_hierarchical_data returns correct grouped hierarchies", {
-  # Mock data setup
   data <- tibble::tibble(
     Segment = as.character(c(
       "Commercial", "Commercial", "Commercial", "Commercial", "Commercial", "Commercial",
@@ -38,7 +42,6 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
       remove = F
     )
 
-  # run prep hts function
   result_data <- prep_hierarchical_data(
     input_data = data,
     run_info = set_run_info(),
@@ -49,7 +52,6 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   ) %>%
     dplyr::filter(Date == "2020-01-01")
 
-  # Expected output setup
   expected_data <- tibble::tibble(
     Combo = as.character(c(
       "Total", "Segment_Commercial", "Segment_Consumer", "Country_United_States", "Country_UK",
@@ -70,12 +72,10 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
     Value_Segment_Product = c(1000, 300, 700, 1000, 1000, 400, 600, 100, 200, 100, 200, 300, 400, 300, 400)
   )
 
-  # Assertions
   expect_equal(result_data, expected_data)
 })
 
 test_that("prep_hierarchical_data returns correct standard hierarchies", {
-  # Mock data setup
   data <- tibble::tibble(
     Area = as.character(c("EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "EMEA", "United States", "United States", "United States", "United States")),
     Country = as.character(c("Croatia", "Croatia", "Croatia", "Croatia", "Greece", "Greece", "Greece", "Greece", "United States", "United States", "United States", "United States")),
@@ -91,7 +91,6 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
       remove = F
     )
 
-  # run prep hts function for standard hierarchy
   result_data <- prep_hierarchical_data(
     input_data = data,
     run_info = set_run_info(),
@@ -102,7 +101,6 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
   ) %>%
     dplyr::filter(Date == "2020-01-01")
 
-  # Expected output setup for a standard hierarchical forecast
   expected_data <- tibble::tibble(
     Combo = as.character(c("Total", "A", "B", "EMEA_Croatia", "EMEA_Greece", "United_States_United_States")),
     Date = as.Date(c("2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01")),
@@ -112,6 +110,276 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
     Value_Area = c(90, 90, 90, 20, 20, 70)
   )
 
-  # Assertions
   expect_equal(result_data, expected_data)
+})
+
+# -- summarize_standard_hierarchy tests --
+
+test_that("summarize_standard_hierarchy creates correct summary", {
+  skip_if_not_installed("hts")
+
+  original_combos <- c("A", "B", "C", "D")
+  nodes <- list(2, c(2, 2))
+
+  dummy_data <- matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), nrow = 3, ncol = 4)
+  colnames(dummy_data) <- original_combos
+  ts_data <- stats::ts(dummy_data, frequency = 12)
+  hts_obj <- hts::hts(ts_data, nodes = nodes) %>% suppressMessages()
+  S <- hts::smatrix(hts_obj)
+  hts_combos <- paste0("Level_", seq_len(nrow(S)))
+
+  result <- summarize_standard_hierarchy(original_combos, hts_combos, nodes)
+
+  expect_s3_class(result, "data.frame")
+  expect_true("Hierarchy_Level" %in% names(result))
+  expect_true("Level_Type" %in% names(result))
+  expect_true("Original_Combos" %in% names(result))
+  expect_true("Num_Bottom_Series" %in% names(result))
+  expect_true("Total" %in% result$Level_Type)
+  expect_true("Bottom" %in% result$Level_Type)
+  total_row <- result[result$Level_Type == "Total", ]
+  expect_equal(total_row$Num_Bottom_Series, 4)
+  bottom_rows <- result[result$Level_Type == "Bottom", ]
+  expect_true(all(bottom_rows$Num_Bottom_Series == 1))
+})
+
+test_that("summarize_standard_hierarchy orders by level type", {
+  skip_if_not_installed("hts")
+
+  original_combos <- c("A", "B", "C", "D")
+  nodes <- list(2, c(2, 2))
+
+  dummy_data <- matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12), nrow = 3, ncol = 4)
+  colnames(dummy_data) <- original_combos
+  ts_data <- stats::ts(dummy_data, frequency = 12)
+  hts_obj <- hts::hts(ts_data, nodes = nodes) %>% suppressMessages()
+  S <- hts::smatrix(hts_obj)
+  hts_combos <- paste0("Node_", seq_len(nrow(S)))
+
+  result <- summarize_standard_hierarchy(original_combos, hts_combos, nodes)
+
+  expect_equal(result$Level_Type[1], "Total")
+  expect_true(all(which(result$Level_Type == "Bottom") > which(result$Level_Type == "Total")))
+})
+
+# -- summarize_grouped_hierarchy tests --
+
+test_that("summarize_grouped_hierarchy creates correct summary", {
+  skip_if_not_installed("hts")
+
+  original_combos <- c("A_X", "A_Y", "B_X", "B_Y")
+
+  nodes <- matrix(
+    c("A", "A", "B", "B",
+      "X", "Y", "X", "Y"),
+    nrow = 2, byrow = TRUE
+  )
+  rownames(nodes) <- c("Group1", "Group2")
+
+  hts_combos <- c(
+    "Total",
+    "A", "B",
+    "X", "Y",
+    "A_X", "A_Y", "B_X", "B_Y"
+  )
+
+  result <- summarize_grouped_hierarchy(original_combos, hts_combos, nodes)
+
+  expect_s3_class(result, "data.frame")
+  expect_true("Hierarchy_Level" %in% names(result))
+  expect_true("Level_Type" %in% names(result))
+  expect_true("Total" %in% result$Level_Type)
+  expect_true("Group1" %in% result$Level_Type)
+  expect_true("Group2" %in% result$Level_Type)
+  expect_true("Bottom" %in% result$Level_Type)
+
+  total_row <- result[result$Level_Type == "Total", ]
+  expect_equal(total_row$Num_Bottom_Series, 4)
+
+  bottom_rows <- result[result$Level_Type == "Bottom", ]
+  expect_equal(nrow(bottom_rows), 4)
+  expect_true(all(bottom_rows$Num_Bottom_Series == 1))
+})
+
+test_that("summarize_grouped_hierarchy matches combos to groups", {
+  skip_if_not_installed("hts")
+
+  original_combos <- c("X1", "X2", "Y1")
+
+  nodes <- matrix(
+    c("X", "X", "Y"),
+    nrow = 1, byrow = TRUE
+  )
+  rownames(nodes) <- c("Category")
+
+  hts_combos <- c("Total", "X", "Y", "X1", "X2", "Y1")
+
+  result <- summarize_grouped_hierarchy(original_combos, hts_combos, nodes)
+
+  x_row <- result[result$Hierarchy_Level == "X", ]
+  expect_equal(x_row$Num_Bottom_Series, 2)
+
+  y_row <- result[result$Hierarchy_Level == "Y", ]
+  expect_equal(y_row$Num_Bottom_Series, 1)
+})
+
+# -- adjust_df tests --
+
+test_that("adjust_df returns data frame as-is for df return_type", {
+  df <- tibble::tibble(
+    Combo = rep("A", 5),
+    Date = seq(as.Date("2020-01-01"), by = "month", length.out = 5),
+    Target = c(1, 2, 3, 4, 5)
+  )
+
+  result <- adjust_df(df, return_type = "df")
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), 5)
+  expect_equal(result$Target, df$Target)
+})
+
+# -- get_hts tests --
+
+test_that("get_hts creates hts object for standard hierarchy", {
+  skip_if_not_installed("hts")
+
+  mat <- matrix(c(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), nrow = 5, ncol = 2)
+  colnames(mat) <- c("A", "B")
+  ts_data <- stats::ts(mat, start = c(2020, 1), frequency = 12)
+
+  result <- get_hts(ts_data, nodes = list(2), forecast_approach = "standard_hierarchy")
+  expect_true(inherits(result, "hts"))
+})
+
+test_that("get_hts creates gts object for grouped hierarchy", {
+  skip_if_not_installed("hts")
+
+  mat <- matrix(1:15, nrow = 5, ncol = 3)
+  colnames(mat) <- c("A_X", "A_Y", "B_X")
+  ts_data <- stats::ts(mat, start = c(2020, 1), frequency = 12)
+
+  groups <- matrix(
+    c("A", "A", "B",
+      "X", "Y", "X"),
+    nrow = 2, byrow = TRUE
+  )
+  rownames(groups) <- c("Group1", "Group2")
+
+  result <- get_hts(ts_data, nodes = groups, forecast_approach = "grouped_hierarchy")
+  expect_true(inherits(result, "gts"))
+})
+
+# -- get_hts_nodes tests --
+
+test_that("get_hts_nodes returns nodes for standard hierarchy", {
+  skip_if_not_installed("hts")
+
+  mat <- matrix(1:10, nrow = 5, ncol = 2)
+  colnames(mat) <- c("A", "B")
+  ts_data <- stats::ts(mat, start = c(2020, 1), frequency = 12)
+  hts_obj <- hts::hts(ts_data, nodes = list(2)) %>% suppressMessages()
+
+  result <- get_hts_nodes(hts_obj, forecast_approach = "standard_hierarchy")
+  expect_true(is.list(result))
+})
+
+# -- get_grouped_nodes tests --
+
+test_that("get_grouped_nodes creates grouping matrix", {
+  input_data <- data.frame(
+    Segment = c("A", "A", "B", "B"),
+    Country = c("US", "UK", "US", "UK")
+  )
+
+  result <- get_grouped_nodes(input_data, c("Segment", "Country"))
+  expect_true(is.matrix(result))
+  expect_equal(nrow(result), 2)
+  expect_equal(ncol(result), 4)
+  expect_equal(rownames(result), c("Segment", "Country"))
+})
+
+test_that("get_grouped_nodes with single variable", {
+  input_data <- data.frame(
+    Region = c("East", "West", "East", "West")
+  )
+
+  result <- get_grouped_nodes(input_data, "Region")
+  expect_true(is.matrix(result))
+  expect_equal(nrow(result), 1)
+})
+
+# -- get_standard_nodes tests --
+
+test_that("get_standard_nodes creates node list", {
+  input_data <- data.frame(
+    Area = c("A", "A", "B"),
+    Country = c("X", "Y", "Z")
+  )
+
+  result <- get_standard_nodes(input_data, c("Area", "Country"))
+  expect_true(is.list(result))
+  expect_true(length(result) >= 1)
+})
+
+test_that("get_standard_nodes with 3 levels", {
+  input_data <- data.frame(
+    Region = c("NA", "NA", "NA", "EU", "EU", "EU"),
+    Country = c("US", "US", "CA", "UK", "UK", "FR"),
+    City = c("NY", "LA", "TO", "LO", "MA", "PA")
+  )
+
+  result <- get_standard_nodes(input_data, c("Region", "Country", "City"))
+  expect_true(is.list(result))
+})
+
+# -- adjust_df tests --
+
+test_that("adjust_df with df return_type collects data", {
+  input_data <- tibble::tibble(x = 1:5, y = letters[1:5])
+  result <- adjust_df(input_data, return_type = "df")
+  expect_s3_class(result, "tbl_df")
+  expect_equal(nrow(result), 5)
+})
+
+# -- pick_right_hierarchy tests --
+
+test_that("pick_right_hierarchy routes to grouped_nodes", {
+  input_data <- data.frame(
+    Segment = c("A", "A", "B", "B"),
+    Country = c("US", "UK", "US", "UK")
+  )
+
+  result <- pick_right_hierarchy(input_data, c("Segment", "Country"), "grouped_hierarchy")
+  expect_true(is.matrix(result))
+})
+
+test_that("pick_right_hierarchy routes to standard_nodes", {
+  input_data <- data.frame(
+    Area = c("A", "A", "B"),
+    Country = c("X", "Y", "Z")
+  )
+
+  result <- pick_right_hierarchy(input_data, c("Area", "Country"), "standard_hierarchy")
+  expect_true(is.list(result))
+})
+
+# -- get_hts_nodes for grouped hierarchy --
+
+test_that("get_hts_nodes returns groups for grouped hierarchy", {
+  skip_if_not_installed("hts")
+
+  mat <- matrix(1:15, nrow = 5, ncol = 3)
+  colnames(mat) <- c("AX", "AY", "BX")
+  ts_data <- stats::ts(mat, start = c(2020, 1), frequency = 12)
+
+  groups <- matrix(
+    c("A", "A", "B",
+      "X", "Y", "X"),
+    nrow = 2, byrow = TRUE
+  )
+  rownames(groups) <- c("Group1", "Group2")
+
+  gts_obj <- hts::gts(ts_data, groups = groups) %>% suppressMessages()
+  result <- get_hts_nodes(gts_obj, forecast_approach = "grouped_hierarchy")
+  expect_true(!is.null(result))
 })
