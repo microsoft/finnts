@@ -63,6 +63,7 @@ test_that("par_start returns correct packages for sequential processing", {
 })
 
 test_that("par_start with local_machine creates cluster", {
+  skip_if(parallel::detectCores() <= 1, "Requires more than one core")
   run_info <- list(
     storage_object = NULL,
     path = tempdir(),
