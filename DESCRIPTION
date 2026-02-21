@@ -43,6 +43,7 @@ Imports:
     glue, 
     glmnet,
     gtools,
+    hardhat,
     hts,
     kernlab,
     lubridate,

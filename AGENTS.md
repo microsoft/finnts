@@ -48,6 +48,7 @@ When adding or changing user-facing behavior:
    - happy path
    - 1–2 edge cases
    - regression test for the bug/feature request (if applicable)
+   - avoid using finnts::: or finnts:: to call internal/exported functions; instead, call them directly (e.g. use `my_function()` instead of `finnts:::my_function()`).
 4. **Docs**:
    - update roxygen comments (`@param`, `@return`, `@examples`)
    - run `devtools::document()` so `man/*.Rd` stays in sync

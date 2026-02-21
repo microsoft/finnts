@@ -489,7 +489,7 @@ get_kfold_tune_grid <- function(train_data,
 #' @noRd
 get_space_filling_grid <- function(model_spec) {
   dials::grid_space_filling(
-    dials::parameters(model_spec),
+    hardhat::extract_parameter_set_dials(model_spec),
     size = 10
   )
 }
