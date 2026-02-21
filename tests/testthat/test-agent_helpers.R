@@ -128,6 +128,7 @@ test_that("does_param_set_exist works with subset of columns", {
 })
 
 test_that("extract_json_object parses simple JSON", {
+  skip_if_not_installed("jsonlite")
   raw <- '{"key": "value", "num": 42}'
   result <- extract_json_object(raw)
   expect_equal(result$key, "value")
@@ -135,12 +136,14 @@ test_that("extract_json_object parses simple JSON", {
 })
 
 test_that("extract_json_object strips code fences", {
+  skip_if_not_installed("jsonlite")
   raw <- '```json\n{"key": "value"}\n```'
   result <- extract_json_object(raw)
   expect_equal(result$key, "value")
 })
 
 test_that("extract_json_object handles surrounding text", {
+  skip_if_not_installed("jsonlite")
   raw <- 'Here is the JSON: {"answer": "yes"} and some more text.'
   result <- extract_json_object(raw)
   expect_equal(result$answer, "yes")

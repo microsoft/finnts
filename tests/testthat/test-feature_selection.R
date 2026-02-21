@@ -4,6 +4,7 @@
 # -- target_corr_fn tests --
 
 test_that("target_corr_fn returns correlated features", {
+  skip_if_not_installed("corrr")
   set.seed(123)
   n <- 50
   x1 <- rnorm(n)
@@ -23,6 +24,7 @@ test_that("target_corr_fn returns correlated features", {
 })
 
 test_that("target_corr_fn respects threshold", {
+  skip_if_not_installed("corrr")
   set.seed(42)
   n <- 50
   x1 <- rnorm(n)
@@ -41,6 +43,7 @@ test_that("target_corr_fn respects threshold", {
 })
 
 test_that("target_corr_fn handles single feature", {
+  skip_if_not_installed("corrr")
   set.seed(123)
   n <- 30
   data <- tibble::tibble(
@@ -55,6 +58,7 @@ test_that("target_corr_fn handles single feature", {
 })
 
 test_that("target_corr_fn handles no correlated features", {
+  skip_if_not_installed("corrr")
   set.seed(999)
   n <- 100
   data <- tibble::tibble(
@@ -72,6 +76,8 @@ test_that("target_corr_fn handles no correlated features", {
 # -- Variable importance function tests --
 
 test_that("vip_rf_fn produces variable importance scores", {
+  skip_if_not_installed("ranger")
+  skip_if_not_installed("vip")
   set.seed(42)
   data <- tibble::tibble(
     Date = seq(as.Date("2020-01-01"), by = "day", length.out = 100),
