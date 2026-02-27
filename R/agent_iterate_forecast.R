@@ -1925,18 +1925,16 @@ load_run_results <- function(agent_info,
     previous_runs <- previous_runs %>%
       dplyr::filter(run_name != current_run_name)
 
-    # coerce date/datetime columns to character to avoid type mismatches
-    date_cols_prev <- names(previous_runs)[
-      purrr::map_lgl(previous_runs, ~ inherits(.x, c("Date", "POSIXt")))
-    ]
-    date_cols_curr <- names(current_run_log)[
-      purrr::map_lgl(current_run_log, ~ inherits(.x, c("Date", "POSIXt")))
-    ]
-    for (col in date_cols_prev) {
-      previous_runs[[col]] <- as.character(previous_runs[[col]])
-    }
-    for (col in date_cols_curr) {
-      current_run_log[[col]] <- as.character(current_run_log[[col]])
+    # coerce shared columns to compatible types to avoid bind_rows errors
+    common_cols <- intersect(names(previous_runs), names(current_run_log))
+    for (col in common_cols) {
+      prev_class <- class(previous_runs[[col]])[[1]]
+      curr_class <- class(current_run_log[[col]])[[1]]
+      if (prev_class != curr_class) {
+        # coerce both to character when types disagree
+        previous_runs[[col]] <- as.character(previous_runs[[col]])
+        current_run_log[[col]] <- as.character(current_run_log[[col]])
+      }
     }
 
     # bind_rows fills missing columns with NA in either direction
