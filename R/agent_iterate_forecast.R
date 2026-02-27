@@ -253,6 +253,17 @@ iterate_forecast <- function(agent_info,
       .multicombine   = TRUE
     ) %op%
       {
+        
+        # write dummy data frame for logging testing
+        write_data(
+          x = tibble::tibble(Combo = x, Step = "Starting local model optimization"),
+          combo = hash_data(x),
+          run_info = project_info,
+          output_type = "data",
+          folder = "logs",
+          suffix = "-iteration_log"
+        )
+        
         message("[agent] Running local model optimization for combo: ", x)
 
         # ensure functions are available in the local environment
@@ -269,6 +280,7 @@ iterate_forecast <- function(agent_info,
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
           agent_info <- agent_info
+          list_files <- list_files
         }
 
         # rebuild llms when running on parallel workers
@@ -296,6 +308,16 @@ iterate_forecast <- function(agent_info,
         previous_runs <- load_run_results(
           agent_info = agent_info,
           combo = hash_data(x)
+        )
+        
+        # write dummy data frame for logging testing
+        write_data(
+          x = tibble::tibble(Combo = x, Step = "Checking previous runs for combo"),
+          combo = hash_data(x),
+          run_info = project_info,
+          output_type = "data",
+          folder = "logs",
+          suffix = "-iteration_log"
         )
 
         if (!tibble::is_tibble(previous_runs)) {
@@ -327,6 +349,16 @@ iterate_forecast <- function(agent_info,
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
         }
+        
+        # write dummy data frame for logging testing
+        write_data(
+          x = tibble::tibble(Combo = x, Step = "Finished local model optimization"),
+          combo = hash_data(x),
+          run_info = project_info,
+          output_type = "data",
+          folder = "logs",
+          suffix = "-iteration_log"
+        )
 
         return(data.frame(Combo = x))
       } %>% base::suppressPackageStartupMessages()
