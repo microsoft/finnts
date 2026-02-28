@@ -935,9 +935,15 @@ external_regressor_mapping <- function(data,
     var_combinations <- rbind(var_combinations, temp)
   }
 
+  # always include the full combination so the "All" level is present,
+  # even when length(combo_variables) > 10 and the loop caps at r = 10
+  full_combo <- paste0(combo_variables, collapse = "---")
+
   iter_list <- var_combinations %>%
     dplyr::pull(Var_Combo) %>%
-    c(combo_variables)
+    c(combo_variables) %>%
+    c(full_combo) %>%
+    unique()
 
   # get final mapping of regressor to combo var level
   regressor_mapping_tbl <- foreach::foreach(

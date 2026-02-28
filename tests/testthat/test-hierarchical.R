@@ -115,3 +115,57 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
   # Assertions
   expect_equal(result_data, expected_data)
 })
+
+test_that("prep_hierarchical_data works with more than 10 combo variables", {
+  # Build a small dataset with 11 combo variables to trigger the >10 cap
+  # in external_regressor_mapping()
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # 2 bottom-level combos x 3 dates = 6 rows
+  data <- tibble::tibble(
+    V1 = rep(c("A", "B"), each = n_dates),
+    V2 = rep("X", 2 * n_dates),
+    V3 = rep("X", 2 * n_dates),
+    V4 = rep("X", 2 * n_dates),
+    V5 = rep("X", 2 * n_dates),
+    V6 = rep("X", 2 * n_dates),
+    V7 = rep("X", 2 * n_dates),
+    V8 = rep("X", 2 * n_dates),
+    V9 = rep("X", 2 * n_dates),
+    V10 = rep("X", 2 * n_dates),
+    V11 = rep("X", 2 * n_dates),
+    Date = rep(dates, 2),
+    Target = c(1, 2, 3, 10, 20, 30),
+    Regressor1 = c(100, 101, 102, 100, 101, 102)
+  )
+
+  combo_variables <- paste0("V", 1:11)
+
+  data <- data %>%
+    tidyr::unite("Combo",
+      tidyselect::all_of(combo_variables),
+      sep = "--",
+      remove = FALSE
+    )
+
+  # should not error (previously failed with >10 combo variables)
+  result_data <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_variables,
+    external_regressors = c("Regressor1"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # verify "Total" aggregation exists
+  expect_true("Total" %in% result_data$Combo)
+
+  # verify bottom-level combos are present
+  expect_true(any(grepl("^A_", result_data$Combo)))
+  expect_true(any(grepl("^B_", result_data$Combo)))
+
+  # verify row count is reasonable (at least bottom + total)
+  expect_gt(nrow(result_data), 2 * n_dates)
+})
