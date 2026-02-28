@@ -1926,20 +1926,37 @@ load_run_results <- function(agent_info,
     previous_runs <- previous_runs %>%
       dplyr::filter(run_name != current_run_name)
 
+    # columns that must remain numeric for downstream arithmetic
+    numeric_cols <- c(
+      "weighted_mape", "model_avg_wmape", "model_median_wmape",
+      "model_std_wmape", "agent_version"
+    )
+
     # coerce shared columns to compatible types to avoid bind_rows errors
     common_cols <- intersect(names(previous_runs), names(current_run_log))
     for (col in common_cols) {
       prev_class <- class(previous_runs[[col]])[[1]]
       curr_class <- class(current_run_log[[col]])[[1]]
       if (prev_class != curr_class) {
-        # coerce both to character when types disagree
-        previous_runs[[col]] <- as.character(previous_runs[[col]])
-        current_run_log[[col]] <- as.character(current_run_log[[col]])
+        if (col %in% numeric_cols) {
+          # keep numeric columns numeric
+          previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+          current_run_log[[col]] <- as.numeric(current_run_log[[col]])
+        } else {
+          # coerce non-numeric columns to character when types disagree
+          previous_runs[[col]] <- as.character(previous_runs[[col]])
+          current_run_log[[col]] <- as.character(current_run_log[[col]])
+        }
       }
     }
 
     # bind_rows fills missing columns with NA in either direction
     previous_runs <- dplyr::bind_rows(previous_runs, current_run_log)
+
+    # enforce numeric type on key columns after merge
+    for (col in intersect(numeric_cols, names(previous_runs))) {
+      previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+    }
   }
 
   # filter previous runs based on the combo value and select relevant columns
@@ -1968,13 +1985,13 @@ load_run_results <- function(agent_info,
       suppressWarnings()
 
     best_idx <- earliest_min$run_number
-    best_wmape <- earliest_min$weighted_mape
-    best_model <- earliest_min$model_avg_wmape
+    best_wmape <- as.numeric(earliest_min$weighted_mape)
+    best_model <- as.numeric(earliest_min$model_avg_wmape)
 
     # look **after** that for runs whose weighted_mape is within +-10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
     if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
-      if (nrow(previous_runs_formatted) > 1) {
+      if (nrow(previous_runs_formatted) > 1 && !is.na(best_wmape) && is.finite(best_wmape)) {
         cand <- previous_runs_formatted %>%
           dplyr::filter(
             run_number > best_idx, # later runs only
