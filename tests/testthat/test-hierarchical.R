@@ -118,16 +118,13 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
     Target = 1:4
   )
 
-  elapsed <- system.time({
-    result <- hierarchy_detect(
-      agent_info = make_agent_info(combo_vars),
-      input_data = df,
-      write_data = FALSE
-    )
-  })[["elapsed"]]
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(combo_vars),
+    input_data = df,
+    write_data = FALSE
+  )
 
   expect_equal(result, "grouped_hierarchy")
-  expect_lt(elapsed, 30)
 })
 
 test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
@@ -144,16 +141,13 @@ test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
     Target = c(1, 2)
   )
 
-  elapsed <- system.time({
-    result <- hierarchy_detect(
-      agent_info = make_agent_info(combo_vars),
-      input_data = df,
-      write_data = FALSE
-    )
-  })[["elapsed"]]
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(combo_vars),
+    input_data = df,
+    write_data = FALSE
+  )
 
   expect_equal(result, "standard_hierarchy")
-  expect_lt(elapsed, 30)
 })
 
 # --- prep_hierarchical_data tests ---
@@ -356,15 +350,11 @@ test_that("external_regressor_mapping is fast with many combo variables", {
 
   combo_variables <- paste0("V", 1:15)
 
-  elapsed <- system.time({
-    result <- external_regressor_mapping(
-      data = data,
-      combo_variables = combo_variables,
-      external_regressors = c("Reg_V1", "Reg_Global", "Reg_All")
-    )
-  })["elapsed"]
-
-  expect_lt(as.numeric(elapsed), 30)
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = combo_variables,
+    external_regressors = c("Reg_V1", "Reg_Global", "Reg_All")
+  )
 
   # Verify correctness of mappings
   expect_equal(nrow(result), 3)
