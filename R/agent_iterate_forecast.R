@@ -269,6 +269,7 @@ iterate_forecast <- function(agent_info,
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
           agent_info <- agent_info
+          safe_dir_ls <- safe_dir_ls
           list_files <- list_files
         }
 
