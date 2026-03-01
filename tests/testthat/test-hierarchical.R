@@ -104,6 +104,7 @@ test_that("hierarchy_detect identifies grouped hierarchy (3 crossed vars)", {
 })
 
 test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
+  skip_on_cran()
   # 11 combo vars with a genuinely crossed (grouped) structure.
   # V1 and V2 each vary independently (many-to-many), so no single
   # nesting chain exists. V3-V11 are constant.
@@ -131,6 +132,7 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
 })
 
 test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
+  skip_on_cran()
   # 15-level strict nesting: V1 is constant root, V15 varies at the leaf
   combo_vars <- paste0("V", seq_len(15))
 
@@ -330,6 +332,7 @@ test_that("prep_hierarchical_data works with more than 10 combo variables", {
 # --- external_regressor_mapping tests ---
 
 test_that("external_regressor_mapping is fast with many combo variables", {
+  skip_on_cran()
   n_dates <- 4
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
 

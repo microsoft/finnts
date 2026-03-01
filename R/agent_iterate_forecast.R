@@ -1920,18 +1920,23 @@ load_run_results <- function(agent_info,
     path = agent_info$project_info$path
   )
 
+  # columns that must remain numeric for downstream arithmetic
+  numeric_cols <- c(
+    "weighted_mape", "model_avg_wmape", "model_median_wmape",
+    "model_std_wmape", "agent_version"
+  )
+
+  # coerce numeric columns unconditionally to prevent type errors downstream
+  for (col in intersect(numeric_cols, names(previous_runs))) {
+    previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+  }
+
   # append the current run log if provided (not yet saved to disk)
   if (!is.null(current_run_log) && "run_name" %in% names(current_run_log)) {
     # remove the incomplete on-disk row for this run before appending
     current_run_name <- current_run_log$run_name[[1]]
     previous_runs <- previous_runs %>%
       dplyr::filter(run_name != current_run_name)
-
-    # columns that must remain numeric for downstream arithmetic
-    numeric_cols <- c(
-      "weighted_mape", "model_avg_wmape", "model_median_wmape",
-      "model_std_wmape", "agent_version"
-    )
 
     # coerce shared columns to compatible types to avoid bind_rows errors
     common_cols <- intersect(names(previous_runs), names(current_run_log))

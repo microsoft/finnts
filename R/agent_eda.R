@@ -1720,7 +1720,6 @@ hierarchy_detect <- function(agent_info,
     # the other is mtm.
 
     # Step 1: identify equivalence classes (1:1 groups)
-    n_vars <- length(combo_vars)
 
     # union-find for equivalence classes
     parent <- stats::setNames(combo_vars, combo_vars)
