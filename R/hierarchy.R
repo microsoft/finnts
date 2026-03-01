@@ -924,13 +924,12 @@ external_regressor_mapping <- function(data,
   # helper: count unique (vars x Date x regressor) tuples
   count_unique <- function(var_list, regressor) {
     data %>%
-      tidyr::unite(Unique,
-        tidyselect::all_of(c(var_list, "Date", regressor)),
-        sep = "_"
+      dplyr::distinct(
+        dplyr::across(
+          tidyselect::all_of(c(var_list, "Date", regressor))
+        )
       ) %>%
-      dplyr::pull(Unique) %>%
-      unique() %>%
-      length()
+      nrow()
   }
 
   # get final mapping of regressor to combo var level
