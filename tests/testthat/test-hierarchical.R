@@ -104,6 +104,7 @@ test_that("hierarchy_detect identifies grouped hierarchy (3 crossed vars)", {
 })
 
 test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
+  skip_on_cran()
   # 11 combo vars with a genuinely crossed (grouped) structure.
   # V1 and V2 each vary independently (many-to-many), so no single
   # nesting chain exists. V3-V11 are constant.
@@ -118,16 +119,20 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
     Target = 1:4
   )
 
-  result <- hierarchy_detect(
-    agent_info = make_agent_info(combo_vars),
-    input_data = df,
-    write_data = FALSE
-  )
+  elapsed <- system.time({
+    result <- hierarchy_detect(
+      agent_info = make_agent_info(combo_vars),
+      input_data = df,
+      write_data = FALSE
+    )
+  })[["elapsed"]]
 
   expect_equal(result, "grouped_hierarchy")
+  expect_lt(elapsed, 30)
 })
 
 test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
+  skip_on_cran()
   # 15-level strict nesting: V1 is constant root, V15 varies at the leaf
   combo_vars <- paste0("V", seq_len(15))
 
@@ -141,13 +146,16 @@ test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
     Target = c(1, 2)
   )
 
-  result <- hierarchy_detect(
-    agent_info = make_agent_info(combo_vars),
-    input_data = df,
-    write_data = FALSE
-  )
+  elapsed <- system.time({
+    result <- hierarchy_detect(
+      agent_info = make_agent_info(combo_vars),
+      input_data = df,
+      write_data = FALSE
+    )
+  })[["elapsed"]]
 
   expect_equal(result, "standard_hierarchy")
+  expect_lt(elapsed, 30)
 })
 
 # --- prep_hierarchical_data tests ---
@@ -324,6 +332,7 @@ test_that("prep_hierarchical_data works with more than 10 combo variables", {
 # --- external_regressor_mapping tests ---
 
 test_that("external_regressor_mapping is fast with many combo variables", {
+  skip_on_cran()
   n_dates <- 4
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
 
@@ -350,11 +359,15 @@ test_that("external_regressor_mapping is fast with many combo variables", {
 
   combo_variables <- paste0("V", 1:15)
 
-  result <- external_regressor_mapping(
-    data = data,
-    combo_variables = combo_variables,
-    external_regressors = c("Reg_V1", "Reg_Global", "Reg_All")
-  )
+  elapsed <- system.time({
+    result <- external_regressor_mapping(
+      data = data,
+      combo_variables = combo_variables,
+      external_regressors = c("Reg_V1", "Reg_Global", "Reg_All")
+    )
+  })["elapsed"]
+
+  expect_lt(as.numeric(elapsed), 30)
 
   # Verify correctness of mappings
   expect_equal(nrow(result), 3)
