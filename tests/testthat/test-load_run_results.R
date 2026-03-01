@@ -4,8 +4,6 @@
 # These tests exercise the coercion + bind_rows logic directly, without
 # calling the full load_run_results() (which needs disk I/O via get_run_info).
 
-skip_on_cran()
-
 # helper: simulate the coercion + bind_rows logic from load_run_results
 coerce_and_bind <- function(previous_runs, current_run_log) {
   numeric_cols <- c(
