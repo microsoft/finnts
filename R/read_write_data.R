@@ -506,7 +506,7 @@ list_files <- function(storage_object,
 #' Concurrent calls to fs::dir_ls on ADLS-mounted paths (e.g. Synapse Spark)
 #' can trigger low-level C errors such as "Value of SET_STRING_ELT() must be a
 #' 'CHARSXP' not a 'NULL'". This wrapper retries with a small random back-off
-#' and validates that the result contains no NULL elements.
+#' and coerces the result to a plain character vector, dropping any NA entries.
 #'
 #' @param path directory to list
 #' @param glob glob pattern passed to fs::dir_ls
@@ -519,7 +519,7 @@ safe_dir_ls <- function(path, glob, max_retries = 3L) {
     result <- tryCatch(
       {
         res <- fs::dir_ls(path = path, glob = glob)
-        # validate: coerce to plain character and drop any NULL or NA entries
+        # coerce to plain character and drop any NA entries
         res <- as.character(res)
         if (any(is.na(res))) {
           res <- res[!is.na(res)]
@@ -534,7 +534,7 @@ safe_dir_ls <- function(path, glob, max_retries = 3L) {
         } else {
           stop(
             sprintf(
-              "list_files failed after %d attempts on path '%s' with glob '%s': %s",
+              "safe_dir_ls (fs::dir_ls) failed after %d attempts on path '%s' with glob '%s': %s",
               max_retries, path, glob, conditionMessage(e)
             ),
             call. = FALSE
