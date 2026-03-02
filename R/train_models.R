@@ -324,7 +324,7 @@ train_models <- function(run_info,
     .verbose = FALSE,
     .inorder = FALSE,
     .multicombine = TRUE,
-    .export = c("list_files"),
+    .export = c("list_files", "safe_dir_ls"),
     .noexport = NULL
   ) %op%
     {

@@ -485,8 +485,7 @@ list_files <- function(storage_object,
 
   files <- switch(class(storage_object)[[1]],
     "NULL" = if (grepl("*", file, fixed = TRUE)) {
-      fs::dir_ls(path = dir, glob = file)
-      # custom_ls(fs::path(dir, file))
+      safe_dir_ls(path = dir, glob = file)
     } else {
       path
     },
@@ -500,6 +499,57 @@ list_files <- function(storage_object,
   )
 
   return(files)
+}
+
+#' Retry-safe wrapper around fs::dir_ls for parallel / mounted filesystems
+#'
+#' Concurrent calls to fs::dir_ls on ADLS-mounted paths (e.g. Synapse Spark)
+#' can trigger low-level C errors such as "Value of SET_STRING_ELT() must be a
+#' 'CHARSXP' not a 'NULL'". This wrapper retries with a small random back-off
+#' and coerces the result to a plain character vector, dropping any NA entries.
+#'
+#' @param path directory to list
+#' @param glob glob pattern passed to fs::dir_ls
+#' @param max_retries maximum number of attempts (default 3)
+#'
+#' @return character vector of matching file paths
+#' @noRd
+safe_dir_ls <- function(path, glob, max_retries = 3L) {
+  for (attempt in seq_len(max_retries)) {
+    result <- tryCatch(
+      {
+        res <- fs::dir_ls(path = path, glob = glob)
+        # coerce to plain character and drop any NA entries
+        res <- as.character(res)
+        if (any(is.na(res))) {
+          res <- res[!is.na(res)]
+        }
+        res
+      },
+      error = function(e) {
+        if (attempt < max_retries) {
+          # random back-off to stagger concurrent retries
+          Sys.sleep(stats::runif(1, min = 0.5, max = 2))
+          NULL
+        } else {
+          stop(
+            sprintf(
+              "safe_dir_ls (fs::dir_ls) failed after %d attempts on path '%s' with glob '%s': %s",
+              max_retries, path, glob, conditionMessage(e)
+            ),
+            call. = FALSE
+          )
+        }
+      }
+    )
+
+    if (!is.null(result)) {
+      return(result)
+    }
+  }
+
+  # should not reach here, but return empty character as safe fallback
+  character(0)
 }
 
 #' Download file
@@ -827,7 +877,7 @@ custom_ls <- function(path) {
 
   # Non-Synapse: regular local listing
   if (!is_synapse_like(dir)) {
-    return(fs::dir_ls(path = dir, glob = glob))
+    return(safe_dir_ls(path = dir, glob = glob))
   }
 
   # Synapse: list with mssparkutils, then filter client-side

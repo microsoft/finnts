@@ -1710,24 +1710,109 @@ hierarchy_detect <- function(agent_info,
       paste0(pair_df$from, "->", pair_df$to)
     )
 
-    # detect hierarchy type
-    is_chain <- \(ord) {
-      purrr::map_lgl(
-        seq_len(length(ord) - 1L),
-        \(i) pair_tests[paste0(ord[i + 1L], "->", ord[i])] ==
-          "one-to-many"
-      ) %>% all()
+    # detect hierarchy type using a graph-based approach.
+    # A "standard" hierarchy exists when combo vars can be ordered into a
+    # chain where each consecutive pair has a one-to-many relationship.
+
+    # pair_test(from=a, to=b) == "one-to-many" means b determines a.
+    # Two variables are "equivalent" (1:1) if both directions are otm.
+    # Two variables are "strictly nested" if one direction is otm and
+    # the other is mtm.
+
+    # Step 1: identify equivalence classes (1:1 groups)
+
+    # union-find for equivalence classes
+    parent <- stats::setNames(combo_vars, combo_vars)
+    find_root <- function(x) {
+      while (parent[[x]] != x) {
+        parent[[x]] <<- parent[[parent[[x]]]]
+        x <- parent[[x]]
+      }
+      x
+    }
+    union_vars <- function(a, b) {
+      ra <- find_root(a)
+      rb <- find_root(b)
+      if (ra != rb) parent[[ra]] <<- rb
     }
 
-    chain_found <- gtools::permutations(
-      length(combo_vars),
-      length(combo_vars),
-      combo_vars
-    ) %>%
-      apply(1L, is_chain) %>%
-      any()
+    for (i in seq_len(nrow(pair_df))) {
+      a <- pair_df$from[i]
+      b <- pair_df$to[i]
+      if (pair_df$test[i] == "one-to-many") {
+        rev_key <- paste0(b, "->", a)
+        if (pair_tests[rev_key] == "one-to-many") {
+          # bidirectional otm = 1:1 equivalence
+          union_vars(a, b)
+        }
+      }
+    }
 
-    hierarchy_type <- if (chain_found) "standard" else "grouped"
+    # build equivalence groups
+    groups <- split(combo_vars, vapply(combo_vars, find_root, character(1)))
+    group_names <- names(groups)
+    n_groups <- length(groups)
+
+    if (n_groups == 1) {
+      # all variables are 1:1 equivalent — valid chain
+      hierarchy_type <- "standard"
+    } else {
+      # Step 2: build a DAG on the equivalence groups using strict
+      # nesting edges (otm in one direction, mtm in the other)
+      # Representative for each var
+      var_to_group <- stats::setNames(
+        vapply(combo_vars, find_root, character(1)), combo_vars
+      )
+
+      g_in_deg <- stats::setNames(rep(0L, n_groups), group_names)
+      g_out_deg <- stats::setNames(rep(0L, n_groups), group_names)
+      g_adj <- stats::setNames(
+        rep(list(character(0)), n_groups), group_names
+      )
+      seen_edges <- character(0)
+
+      for (i in seq_len(nrow(pair_df))) {
+        if (pair_df$test[i] == "one-to-many") {
+          a <- pair_df$from[i] # coarser (b determines a)
+          b <- pair_df$to[i]   # finer
+          ga <- var_to_group[a]
+          gb <- var_to_group[b]
+          if (ga == gb) next # same equivalence class
+          rev_key <- paste0(b, "->", a)
+          if (pair_tests[rev_key] == "many-to-many") {
+            # strict nesting: gb (finer) -> ga (coarser)
+            edge_key <- paste0(gb, "->", ga)
+            if (!edge_key %in% seen_edges) {
+              seen_edges <- c(seen_edges, edge_key)
+              g_in_deg[ga] <- g_in_deg[ga] + 1L
+              g_out_deg[gb] <- g_out_deg[gb] + 1L
+              g_adj[[gb]] <- c(g_adj[[gb]], ga)
+            }
+          }
+        }
+      }
+
+      # Step 3: check if the group DAG forms a single chain
+      roots <- names(g_in_deg[g_in_deg == 0])
+      leaves <- names(g_out_deg[g_out_deg == 0])
+
+      if (length(roots) == 1 && length(leaves) == 1 &&
+        length(seen_edges) == n_groups - 1 &&
+        all(g_out_deg <= 1)) {
+        # walk the chain from root to verify all groups are connected
+        current <- roots
+        visited <- 0L
+        while (length(current) == 1 && visited < n_groups) {
+          visited <- visited + 1L
+          current <- g_adj[[current]]
+        }
+        chain_found <- (visited == n_groups)
+      } else {
+        chain_found <- FALSE
+      }
+
+      hierarchy_type <- if (chain_found) "standard" else "grouped"
+    }
   }
 
   if (write_data) {
