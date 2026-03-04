@@ -170,6 +170,22 @@ execute_node <- function(node, ctx, chat) {
     ctx$last_error <- as.character(err)
 
     if (attempt > max_try) {
+      # graceful abort for reason_inputs when the LLM cannot propose valid params
+      if (identical(tool_name, "reason_inputs") &&
+        (grepl("unique lag period changes", ctx$last_error, fixed = TRUE) ||
+          grepl("unique rolling window period changes", ctx$last_error, fixed = TRUE) ||
+          grepl("Duplicate parameter set detected", ctx$last_error, fixed = TRUE))) {
+        abort_reason <- paste0(
+          ctx$last_error,
+          " Aborting optimization."
+        )
+        cli::cli_alert_info(
+          "Agent cannot propose new valid inputs after {attempt} attempt(s). Aborting gracefully: {abort_reason}"
+        )
+        ctx$results[[tool_name]] <- list(abort = "TRUE", reasoning = abort_reason)
+        return(list(ctx = ctx, ok = TRUE))
+      }
+
       stop(sprintf(
         "Tool '%s' failed after %d attempt(s):\n%s",
         tool_name, attempt, err

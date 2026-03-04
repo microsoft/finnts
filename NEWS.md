@@ -1,18 +1,6 @@
-# finnts 0.6.0.9023 (development version)
+# finnts 0.6.0.9024 (development version)
 
 ## Improvements
-- TimeGPT Integration
-  - Added TimeGPT in addition to existing model to support zero shot forecasting
-  - Added support for both historical and future external regressors
-  - Added timegpt-long-horizon model
-  - Added finetuning for depth and layers
-  - Enabled TimeGPT as a global model
-  - Added support for padding time series that don't meet minimum data requirements
-  - Integrated TimeGPT into the finn agent workflow
-
-- Updated Train Model function
-  - Added debug arg to trace error while training over various models
-  - Fixed differencing restoration for combo data in global models.
 
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
@@ -24,6 +12,20 @@
     - Added `get_best_agent_run()` to retrieve the run metadata information from an agent run. 
     - Added `get_summarized_models()` to retrieve model summary information from an agent run.
     - Added `get_eda_data()` to retrieve the exploratory data analysis results from an agent run.
+
+- New TimeGPT Integration
+  - Added TimeGPT in addition to existing model to support zero shot forecasting
+  - Added support for both historical and future external regressors
+  - Added timegpt-long-horizon model
+  - Added finetuning for depth and layers
+  - Enabled TimeGPT as a global model
+  - Added support for padding time series that don't meet minimum data requirements
+  - Integrated TimeGPT into the finn agent workflow
+
+- Updated Train Model function
+  - Added debug arg to trace error while training over various models
+  - Fixed differencing restoration for combo data in global models.
+    
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
   
 ## Breaking Changes
