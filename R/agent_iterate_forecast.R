@@ -1294,7 +1294,8 @@ reason_inputs <- function(agent_info,
     # only block proposals that introduce a genuinely new unique value beyond the limit
     existing_lag_values <- unique(previous_runs_tbl$lag_periods)
     proposed_lag <- check_inputs$lag_periods
-    if (!(proposed_lag %in% existing_lag_values) &&
+    if (!is.na(proposed_lag) &&
+      !isTRUE(proposed_lag %in% existing_lag_values) &&
       length(unique(c(existing_lag_values, proposed_lag))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
       stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
@@ -1304,7 +1305,8 @@ reason_inputs <- function(agent_info,
 
     existing_rolling_values <- unique(previous_runs_tbl$rolling_window_periods)
     proposed_rolling <- check_inputs$rolling_window_periods
-    if (!(proposed_rolling %in% existing_rolling_values) &&
+    if (!is.na(proposed_rolling) &&
+      !isTRUE(proposed_rolling %in% existing_rolling_values) &&
       length(unique(c(existing_rolling_values, proposed_rolling))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique rolling window period changes across all runs.")
       stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods or ABORT.",
