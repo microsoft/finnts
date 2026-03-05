@@ -269,6 +269,8 @@ iterate_forecast <- function(agent_info,
           load_run_results <- load_run_results
           get_total_run_count <- get_total_run_count
           agent_info <- agent_info
+          safe_dir_ls <- safe_dir_ls
+          list_files <- list_files
         }
 
         # rebuild llms when running on parallel workers
@@ -1042,7 +1044,10 @@ reason_inputs <- function(agent_info,
       dplyr::filter(best_run == "yes") %>%
       dplyr::pull(run_number)
 
-    lag_period_changes <- previous_run_results %>%
+    current_version_results <- previous_run_results %>%
+      dplyr::filter(agent_version == agent_info$agent_version)
+
+    lag_period_changes <- current_version_results %>%
       dplyr::select(lag_periods) %>%
       tidyr::drop_na(lag_periods) %>%
       dplyr::distinct() %>%
@@ -1051,7 +1056,7 @@ reason_inputs <- function(agent_info,
 
     lag_changes_allowed <- lag_period_changes < 3
 
-    rolling_window_changes <- previous_run_results %>%
+    rolling_window_changes <- current_version_results %>%
       dplyr::select(rolling_window_periods) %>%
       tidyr::drop_na(rolling_window_periods) %>%
       dplyr::distinct() %>%
@@ -1286,14 +1291,23 @@ reason_inputs <- function(agent_info,
     }
 
     # check if the proposed inputs violate the lag and rolling window change rules
-    if (length(unique(c(previous_runs_tbl$lag_periods, check_inputs$lag_periods))) > 4) {
+    # only block proposals that introduce a genuinely new unique value beyond the limit
+    existing_lag_values <- unique(previous_runs_tbl$lag_periods)
+    proposed_lag <- check_inputs$lag_periods
+    if (!is.na(proposed_lag) &&
+      !isTRUE(proposed_lag %in% existing_lag_values) &&
+      length(unique(c(existing_lag_values, proposed_lag))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
       stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
         call. = FALSE
       )
     }
 
-    if (length(unique(c(previous_runs_tbl$rolling_window_periods, check_inputs$rolling_window_periods))) > 4) {
+    existing_rolling_values <- unique(previous_runs_tbl$rolling_window_periods)
+    proposed_rolling <- check_inputs$rolling_window_periods
+    if (!is.na(proposed_rolling) &&
+      !isTRUE(proposed_rolling %in% existing_rolling_values) &&
+      length(unique(c(existing_rolling_values, proposed_rolling))) > 4) {
       cli::cli_alert_info("Cannot propose more than 3 unique rolling window period changes across all runs.")
       stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods or ABORT.",
         call. = FALSE
@@ -1918,6 +1932,17 @@ load_run_results <- function(agent_info,
     path = agent_info$project_info$path
   )
 
+  # columns that must remain numeric for downstream arithmetic
+  numeric_cols <- c(
+    "weighted_mape", "model_avg_wmape", "model_median_wmape",
+    "model_std_wmape", "agent_version"
+  )
+
+  # coerce numeric columns unconditionally to prevent type errors downstream
+  for (col in intersect(numeric_cols, names(previous_runs))) {
+    previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+  }
+
   # append the current run log if provided (not yet saved to disk)
   if (!is.null(current_run_log) && "run_name" %in% names(current_run_log)) {
     # remove the incomplete on-disk row for this run before appending
@@ -1925,22 +1950,31 @@ load_run_results <- function(agent_info,
     previous_runs <- previous_runs %>%
       dplyr::filter(run_name != current_run_name)
 
-    # coerce date/datetime columns to character to avoid type mismatches
-    date_cols_prev <- names(previous_runs)[
-      purrr::map_lgl(previous_runs, ~ inherits(.x, c("Date", "POSIXt")))
-    ]
-    date_cols_curr <- names(current_run_log)[
-      purrr::map_lgl(current_run_log, ~ inherits(.x, c("Date", "POSIXt")))
-    ]
-    for (col in date_cols_prev) {
-      previous_runs[[col]] <- as.character(previous_runs[[col]])
-    }
-    for (col in date_cols_curr) {
-      current_run_log[[col]] <- as.character(current_run_log[[col]])
+    # coerce shared columns to compatible types to avoid bind_rows errors
+    common_cols <- intersect(names(previous_runs), names(current_run_log))
+    for (col in common_cols) {
+      prev_class <- class(previous_runs[[col]])[[1]]
+      curr_class <- class(current_run_log[[col]])[[1]]
+      if (prev_class != curr_class) {
+        if (col %in% numeric_cols) {
+          # keep numeric columns numeric
+          previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+          current_run_log[[col]] <- as.numeric(current_run_log[[col]])
+        } else {
+          # coerce non-numeric columns to character when types disagree
+          previous_runs[[col]] <- as.character(previous_runs[[col]])
+          current_run_log[[col]] <- as.character(current_run_log[[col]])
+        }
+      }
     }
 
     # bind_rows fills missing columns with NA in either direction
     previous_runs <- dplyr::bind_rows(previous_runs, current_run_log)
+
+    # enforce numeric type on key columns after merge
+    for (col in intersect(numeric_cols, names(previous_runs))) {
+      previous_runs[[col]] <- as.numeric(previous_runs[[col]])
+    }
   }
 
   # filter previous runs based on the combo value and select relevant columns
@@ -1969,13 +2003,13 @@ load_run_results <- function(agent_info,
       suppressWarnings()
 
     best_idx <- earliest_min$run_number
-    best_wmape <- earliest_min$weighted_mape
-    best_model <- earliest_min$model_avg_wmape
+    best_wmape <- as.numeric(earliest_min$weighted_mape)
+    best_model <- as.numeric(earliest_min$model_avg_wmape)
 
     # look **after** that for runs whose weighted_mape is within +-10 %
     # of the initial best and pick the *lowest* model_avg_wmape overall
     if ("model_avg_wmape" %in% names(previous_runs_formatted)) {
-      if (nrow(previous_runs_formatted) > 1) {
+      if (nrow(previous_runs_formatted) > 1 && !is.na(best_wmape) && is.finite(best_wmape)) {
         cand <- previous_runs_formatted %>%
           dplyr::filter(
             run_number > best_idx, # later runs only

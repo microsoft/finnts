@@ -921,23 +921,16 @@ reconcile_hierarchical_data <- function(run_info,
 external_regressor_mapping <- function(data,
                                        combo_variables,
                                        external_regressors) {
-  # create var combinations list
-  var_combinations <- tibble::tibble()
-
-  for (number in 2:min(length(combo_variables), 10)) {
-    temp <- data.frame(gtools::combinations(v = combo_variables, n = length(combo_variables), r = number))
-
-    temp <- temp %>%
-      tidyr::unite(Var_Combo, tidyselect::all_of(colnames(temp)), sep = "---") %>%
-      dplyr::select(Var_Combo) %>%
-      tibble::tibble()
-
-    var_combinations <- rbind(var_combinations, temp)
+  # helper: count unique (vars x Date x regressor) tuples
+  count_unique <- function(var_list, regressor) {
+    data %>%
+      dplyr::distinct(
+        dplyr::across(
+          tidyselect::all_of(c(var_list, "Date", regressor))
+        )
+      ) %>%
+      nrow()
   }
-
-  iter_list <- var_combinations %>%
-    dplyr::pull(Var_Combo) %>%
-    c(combo_variables)
 
   # get final mapping of regressor to combo var level
   regressor_mapping_tbl <- foreach::foreach(
@@ -949,65 +942,43 @@ external_regressor_mapping <- function(data,
     .multicombine = TRUE,
     .noexport = NULL
   ) %do% {
-    # get unique values of regressor per combo variable iteration
-    var_unique_tbl <- foreach::foreach(
-      var = iter_list,
-      .combine = "rbind",
-      .errorhandling = "stop",
-      .verbose = FALSE,
-      .inorder = FALSE,
-      .multicombine = TRUE,
-      .noexport = NULL
-    ) %do% {
-      var_list <- strsplit(var, split = "---")[[1]]
-
-      if (length(var_list) == length(combo_variables)) {
-        var <- "All"
-      }
-
-      temp_unique <- data %>%
-        tidyr::unite(Unique, tidyselect::all_of(c(var_list, "Date", regressor)), sep = "_") %>%
-        dplyr::pull(Unique) %>%
-        unique() %>%
-        length()
-
-      return(data.frame(Var = var, Unique = temp_unique))
+    # check if regressor is global (same value per date across all combos)
+    if (length(unique(data$Date)) == data %>%
+      dplyr::select(Date, tidyselect::all_of(regressor)) %>%
+      dplyr::distinct() %>%
+      nrow()) {
+      return(data.frame(Regressor = regressor, Var = "Global"))
     }
 
-    # determine regressor mappings
-    if (length(unique(var_unique_tbl$Unique)) > 1) {
-      all_unique <- var_unique_tbl %>%
-        dplyr::filter(Var == "All") %>%
-        dplyr::pull(Unique)
+    # compute "All" unique count (full combo granularity)
+    all_unique <- count_unique(combo_variables, regressor)
 
-      regressor_test <- var_unique_tbl %>%
-        dplyr::filter(Unique < all_unique) %>%
-        dplyr::pull(Var)
+    # fast path: test each single combo variable first (O(n))
+    single_var_tbl <- data.frame(
+      Var = combo_variables,
+      Unique = vapply(combo_variables, function(v) {
+        count_unique(v, regressor)
+      }, numeric(1)),
+      stringsAsFactors = FALSE
+    )
 
-      if (length(unique(data$Date)) == data %>%
-        dplyr::select(Date, tidyselect::all_of(regressor)) %>%
-        dplyr::distinct() %>%
-        nrow()) {
-        regressor_test <- "Global"
-      } else if (length(regressor_test) > 1) {
-        combo_unique <- var_unique_tbl %>%
-          dplyr::filter(Var %in% combo_variables)
+    # find single vars that reduce unique count vs "All"
+    candidates <- single_var_tbl[single_var_tbl$Unique < all_unique, ]
 
-        min_val <- min(unique(combo_unique$Unique))
+    if (nrow(candidates) > 0) {
+      # pick all single variables with the fewest unique values
+      min_val <- min(candidates$Unique)
+      best_vars <- candidates$Var[candidates$Unique == min_val]
 
-        regressor_test <- combo_unique %>%
-          dplyr::filter(Unique == min_val) %>%
-          dplyr::pull(Var)
+      if (length(best_vars) > 1) {
+        return(data.frame(Regressor = regressor,
+                          Var = paste0(best_vars, collapse = "---")))
       }
-
-      if (length(regressor_test) > 1) {
-        regressor_test <- paste0(regressor_test, collapse = "---")
-      }
-
-      return(data.frame(Regressor = regressor, Var = regressor_test))
-    } else {
-      return(data.frame(Regressor = regressor, Var = "All"))
+      return(data.frame(Regressor = regressor, Var = best_vars))
     }
+
+    # no single variable reduces unique count
+    return(data.frame(Regressor = regressor, Var = "All"))
   }
 
   return(regressor_mapping_tbl)
