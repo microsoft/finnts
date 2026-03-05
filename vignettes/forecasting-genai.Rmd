@@ -35,40 +35,61 @@ Sys.setenv(CHRONOS_API_URL = "https://xyz.inference.ml.azure.com/score")
 Sys.setenv(CHRONOS_API_TOKEN = "your api key here")
 ```
 
-## Quick start with chronos2 API (standalone)
+## Using Chronos2 within finnts
+
+Chronos2 is available as a model within finnts unified workflow and can run as both a **local** (per time series) or **global** (across all time series) model. When running as a global model, Chronos2 learns patterns across all your time series simultaneously. 
 
 ```{r eval=FALSE}
+library(finnts)
 
-train_df <- data.frame(
-  Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
-  Combo = "1",
-  y = rnorm(48, mean = 100, sd = 10),
-  temperature_original = rnorm(48, mean = 20, sd = 5)
+# setup chronos2 api keys
+
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(
+    date >= "2010-01-01",
+    id == "M2"
+  ) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+run_info <- set_run_info(
+  project_name = "finnts_fcst",
+  run_name = "finn_sub_component_run"
 )
 
-new_data <- data.frame(
-  Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
-  Combo = "1",
-  temperature_original = c(22.0, 23.0, 21.0)
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
 )
 
-result <- finnts:::chronos_forecast(
-  train_df = train_df,
-  new_data = new_data,
-  model_type = "chronos2",
-  horizon = 3,
-  exogenous_cols = "temperature_original",
-  global = TRUE,
-  quantile_levels = c(0.1, 0.5, 0.9)
+prep_models(
+  run_info = run_info,
+  models_to_run = c("chronos2"),
 )
 
-head(result)
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
 
-#
-#  unique_id         ds target_name predictions      0.1       0.5      0.9
-# 1         1 2024-01-01           y    99.58167 86.67576  99.58167 112.1509
-# 2         1 2024-02-01           y   101.33984 88.47334 101.33984 113.9274
-# 3         1 2024-03-01           y    99.54839 86.45997  99.54839 112.2024
+final_models(run_info = run_info)
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+head(finn_output_tbl)
+
+# A tibble: 6 × 17
+#   Combo id    Model_ID            Model_Name Model_Type Recipe_ID Run_Type        Train_Test_ID Best_Model Horizon Date       Target Forecast lo_95 lo_80 hi_80 hi_95
+#   <chr> <chr> <chr>               <chr>      <chr>      <chr>     <chr>                   <dbl> <chr>        <dbl> <date>      <dbl>    <dbl> <dbl> <dbl> <dbl> <dbl>
+# 1 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              1 2015-07-01     NA    2342. 1573. 1840. 2844. 3111.
+# 2 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              2 2015-08-01     NA    2128. 1359. 1626. 2630. 2897.
+# 3 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              3 2015-09-01     NA    1849. 1080. 1347. 2351. 2618.
+# 4 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              4 2015-10-01     NA    1890. 1121. 1388. 2393. 2659.
+# 5 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              5 2015-11-01     NA    1868. 1098. 1365. 2370. 2637.
+# 6 M2    M2    chronos2--local--R1 chronos2   local      R1        Future_Forecast             1 Yes              6 2015-12-01     NA    1731.  961. 1228. 2233. 2500.
 ```
 
 ## Data Size Requirements and Automatic Padding
@@ -84,6 +105,11 @@ Chronos2 can run as both a **local** (per time series) or **global** (across all
 train_models(
   run_info = run_info,
   run_global_models = TRUE # Chronos2 will train on all combos together
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("chronos2"),
 )
 ```
 
@@ -274,5 +300,10 @@ TimeGPT can run as both a **local** (per time series) or **global** (across all 
 train_models(
   run_info = run_info,
   run_global_models = TRUE # TimeGPT will train on all combos together
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("timegpt"),
 )
 ```
