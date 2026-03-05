@@ -416,26 +416,50 @@ write_data <- function(x,
 #' Write object in specific file format
 #'
 #' @param x object to write to disk
-#' @param folder file path where outputs are written
+#' @param path file path where output is written
 #' @param type type of data output written to disk
+#' @param max_retries maximum number of write attempts before raising an error
 #'
-#' @return Object written to disk.
+#' @return Object written to disk (invisibly).
 #' @noRd
 write_data_type <- function(x,
                             path,
-                            type) {
+                            type,
+                            max_retries = 3L) {
   if (type == "csv") {
     if (nrow(x) == 1) {
       type <- "log"
     }
   }
 
-  switch(type,
-    rds = saveRDS(x, path),
-    parquet = arrow::write_parquet(x, path),
-    csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
-    log = utils::write.csv(x, path, row.names = FALSE),
-    qs2 = qs2::qs_save(x, path)
+  for (attempt in seq_len(max_retries)) {
+    result <- tryCatch(
+      {
+        switch(type,
+          rds = saveRDS(x, path),
+          parquet = arrow::write_parquet(x, path),
+          csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
+          log = utils::write.csv(x, path, row.names = FALSE),
+          qs2 = qs2::qs_save(x, path)
+        )
+        TRUE
+      },
+      error = function(e) e
+    )
+
+    if (isTRUE(result)) {
+      return(invisible(NULL))
+    }
+
+    if (attempt < max_retries) {
+      Sys.sleep(attempt * 2)
+    }
+  }
+
+  stop(
+    "Failed to write '", type, "' file after ", max_retries,
+    " attempt(s): ", conditionMessage(result),
+    call. = FALSE
   )
 }
 
