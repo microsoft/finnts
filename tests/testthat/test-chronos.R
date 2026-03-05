@@ -236,7 +236,7 @@ test_that("Chronos 2 works with historical-only external regressors through pars
     temperature_original = rnorm(48, mean = 20, sd = 5)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -272,7 +272,7 @@ test_that("Chronos 2 works with future external regressors through parsnip workf
     temperature_original = rnorm(48, mean = 20, sd = 5)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -308,7 +308,7 @@ test_that("Chronos 2 works with mixed external regressors through parsnip workfl
     holiday_original = sample(0:1, 48, replace = TRUE)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -345,7 +345,7 @@ test_that("Chronos 2 handles one-hot encoded external regressors through parsnip
     region_original = sample(c("North", "South", "East"), 48, replace = TRUE)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -380,7 +380,7 @@ test_that("Chronos 2 handles one-hot encoded external regressors (historical-onl
     region_original = sample(c("North", "South", "East"), 48, replace = TRUE)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -416,7 +416,7 @@ test_that("Chronos 2 handles mixed numeric and categorical external regressors t
     region_original = sample(c("North", "South", "East"), 48, replace = TRUE)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")
@@ -453,7 +453,7 @@ test_that("Chronos 2 handles mixed numeric and categorical external regressors w
     region_original = sample(c("North", "South", "East"), 48, replace = TRUE)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
     parsnip::set_engine("chronos2_model")

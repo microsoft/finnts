@@ -98,7 +98,7 @@ test_that("TimeGPT works with historical-only external regressors through parsni
   )
 
   # Get recipe (this tests recipe creation)
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -142,7 +142,7 @@ test_that("TimeGPT works with future external regressors (X_df) through parsnip 
   )
 
   # Get recipe
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -186,7 +186,7 @@ test_that("TimeGPT works with mixed external regressors (X_df + hist_exog_list) 
   )
 
   # Get recipe
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -230,7 +230,7 @@ test_that("TimeGPT handles one-hot encoded external regressors through parsnip w
   )
 
   # Get recipe (will one-hot encode region_original)
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -273,7 +273,7 @@ test_that("TimeGPT handles one-hot encoded external regressors (historical-only)
   )
 
   # Get recipe (will one-hot encode region_original)
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -317,7 +317,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors thr
   )
 
   # Get recipe (will one-hot encode region_original, keep temperature_original numeric)
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -362,7 +362,7 @@ test_that("TimeGPT handles mixed numeric and categorical external regressors wit
   )
 
   # Get recipe
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
@@ -836,7 +836,7 @@ test_that("TimeGPT tune parameters are assigned actual values after finalization
     Target = rnorm(48, mean = 100, sd = 10)
   )
 
-  recipe_spec <- get_recipe_timegpt(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
 
   # Create model spec with tune::tune() placeholders
   model_spec <- timegpt_model(

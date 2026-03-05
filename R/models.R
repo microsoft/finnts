@@ -272,13 +272,13 @@ get_recipe_configurable <- function(train_data,
     corr_fn()
 }
 
-#' Gets a recipe for TimeGPT with one-hot encoding
+#' Gets a recipe for foundation models with one-hot encoding
 #'
 #' @param train_data Training Data
 #'
-#' @return TimeGPT recipe with one-hot encoding
+#' @return Foundation model recipe with one-hot encoding
 #' @noRd
-get_recipe_timegpt <- function(train_data) {
+get_recipe_foundation_model <- function(train_data) {
   recipes::recipe(Target ~ ., data = train_data %>%
     dplyr::select(Target, Date, Combo, tidyselect::ends_with("_original"))) %>%
     recipes::step_dummy(recipes::all_nominal_predictors(), -Combo, one_hot = TRUE, id = "step_dummy_timegpt")
@@ -1383,7 +1383,7 @@ timegpt <- function(train_data,
                     horizon,
                     frequency = NULL) {
   recipe_spec_timegpt <- train_data %>%
-    get_recipe_timegpt()
+    get_recipe_foundation_model()
 
   # TimeGPT model specification
   model_spec_timegpt <- timegpt_model(
@@ -1415,7 +1415,7 @@ chronos2 <- function(train_data,
                      horizon,
                      frequency = NULL) {
   recipe_spec_chronos2 <- train_data %>%
-    get_recipe_timegpt()
+    get_recipe_foundation_model()
 
   model_spec_chronos2 <- chronos2_model(
     mode = "regression",
