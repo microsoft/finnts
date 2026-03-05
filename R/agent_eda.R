@@ -1815,6 +1815,22 @@ hierarchy_detect <- function(agent_info,
     }
   }
 
+  # downgrade grouped to none when any combo column has a single unique value
+  if (hierarchy_type == "grouped") {
+    n_unique <- vapply(combo_vars, function(v) length(unique(df[[v]])), integer(1))
+    constant_cols <- names(n_unique[n_unique == 1L])
+    if (length(constant_cols) > 0) {
+      warning(
+        "Grouped hierarchy downgraded to no hierarchy. The following combo ",
+        "variable(s) have only one unique value: ",
+        paste(constant_cols, collapse = ", "),
+        ".",
+        call. = FALSE
+      )
+      hierarchy_type <- "none"
+    }
+  }
+
   if (write_data) {
     # human-readable summary
     header <- switch(hierarchy_type,

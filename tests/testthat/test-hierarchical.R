@@ -107,7 +107,8 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
   skip_on_cran()
   # 11 combo vars with a genuinely crossed (grouped) structure.
   # V1 and V2 each vary independently (many-to-many), so no single
-  # nesting chain exists. V3-V11 are constant.
+  # nesting chain exists. V3-V11 are constant, which triggers the
+  # constant-column downgrade to bottoms_up.
   combo_vars <- paste0("V", seq_len(11))
 
   df <- tibble::tibble(
@@ -120,14 +121,17 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
   )
 
   elapsed <- system.time({
-    result <- hierarchy_detect(
-      agent_info = make_agent_info(combo_vars),
-      input_data = df,
-      write_data = FALSE
+    expect_warning(
+      result <- hierarchy_detect(
+        agent_info = make_agent_info(combo_vars),
+        input_data = df,
+        write_data = FALSE
+      ),
+      "Grouped hierarchy downgraded"
     )
   })[["elapsed"]]
 
-  expect_equal(result, "grouped_hierarchy")
+  expect_equal(result, "bottoms_up")
   expect_lt(elapsed, 30)
 })
 
@@ -156,6 +160,46 @@ test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
 
   expect_equal(result, "standard_hierarchy")
   expect_lt(elapsed, 30)
+})
+
+test_that("hierarchy_detect downgrades grouped to bottoms_up when a combo col is constant", {
+  # Segment x Product is crossed (grouped), but Region has only one value.
+  df <- tibble::tibble(
+    Segment = c("Commercial", "Commercial", "Consumer", "Consumer"),
+    Product = c("Office", "Xbox", "Office", "Xbox"),
+    Region  = "AMER",
+    Date    = as.Date("2020-01-01"),
+    Target  = c(10, 20, 30, 40)
+  )
+
+  expect_warning(
+    result <- hierarchy_detect(
+      agent_info = make_agent_info(c("Segment", "Product", "Region")),
+      input_data = df,
+      write_data = FALSE
+    ),
+    "Region"
+  )
+
+  expect_equal(result, "bottoms_up")
+})
+
+test_that("hierarchy_detect does not downgrade grouped when all cols have multiple values", {
+  # Segment x Product: no constant columns, should remain grouped
+  df <- tibble::tibble(
+    Segment = c("Commercial", "Commercial", "Consumer", "Consumer"),
+    Product = c("Office", "Xbox", "Office", "Xbox"),
+    Date    = as.Date("2020-01-01"),
+    Target  = c(10, 20, 30, 40)
+  )
+
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(c("Segment", "Product")),
+    input_data = df,
+    write_data = FALSE
+  )
+
+  expect_equal(result, "grouped_hierarchy")
 })
 
 # --- prep_hierarchical_data tests ---
