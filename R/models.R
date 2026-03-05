@@ -4,7 +4,7 @@
 #' @export
 list_models <- function() {
   list <- c(
-    "arima", "arima-boost", "arimax", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "arima", "arima-boost", "arimax", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timegpt", "xgboost"
   )
@@ -57,7 +57,7 @@ list_r2_models <- function() {
 #' @return list of models
 #' @noRd
 list_global_models <- function() {
-  list <- c("xgboost", "timegpt")
+  list <- c("xgboost", "chronos2", "timegpt")
 
   return(list)
 }
@@ -71,10 +71,22 @@ list_multivariate_models <- function() {
   list <- c(
     "cubist", "glmnet", "mars", "svm-poly", "svm-rbf", "xgboost",
     "arima-boost", "arimax", "prophet-boost", "prophet-xregs",
-    "nnetar-xregs", "timegpt"
+    "nnetar-xregs", "chronos2", "timegpt"
   )
 
   return(list)
+}
+
+#' List foundation models
+#'
+#' Foundation models (e.g. timegpt, chronos2) are multivariate/global but
+#' do not use traditional features. They need exceptions for feature
+#' selection and stationarity handling.
+#'
+#' @return character vector of foundation model names
+#' @noRd
+list_foundation_models <- function() {
+  c("timegpt", "chronos2")
 }
 
 #' List multistep models
@@ -260,13 +272,13 @@ get_recipe_configurable <- function(train_data,
     corr_fn()
 }
 
-#' Gets a recipe for TimeGPT with one-hot encoding
+#' Gets a recipe for foundation models with one-hot encoding
 #'
 #' @param train_data Training Data
 #'
-#' @return TimeGPT recipe with one-hot encoding
+#' @return Foundation model recipe with one-hot encoding
 #' @noRd
-get_recipe_timegpt <- function(train_data) {
+get_recipe_foundation_model <- function(train_data) {
   recipes::recipe(Target ~ ., data = train_data %>%
     dplyr::select(Target, Date, Combo, tidyselect::ends_with("_original"))) %>%
     recipes::step_dummy(recipes::all_nominal_predictors(), -Combo, one_hot = TRUE, id = "step_dummy_timegpt")
@@ -1371,7 +1383,7 @@ timegpt <- function(train_data,
                     horizon,
                     frequency = NULL) {
   recipe_spec_timegpt <- train_data %>%
-    get_recipe_timegpt()
+    get_recipe_foundation_model()
 
   # TimeGPT model specification
   model_spec_timegpt <- timegpt_model(
@@ -1386,6 +1398,35 @@ timegpt <- function(train_data,
   wflw_spec <- get_workflow_simple(
     model_spec_timegpt,
     recipe_spec_timegpt
+  )
+
+  return(wflw_spec)
+}
+
+#' Chronos 2 Model
+#'
+#' @param train_data Training Data
+#' @param horizon Forecast horizon
+#' @param frequency Frequency of Data
+#'
+#' @return Get the Chronos 2 based model
+#' @noRd
+chronos2 <- function(train_data,
+                     horizon,
+                     frequency = NULL) {
+  recipe_spec_chronos2 <- train_data %>%
+    get_recipe_foundation_model()
+
+  model_spec_chronos2 <- chronos2_model(
+    mode = "regression",
+    forecast_horizon = horizon,
+    frequency = frequency
+  ) %>%
+    parsnip::set_engine("chronos2_model")
+
+  wflw_spec <- get_workflow_simple(
+    model_spec_chronos2,
+    recipe_spec_chronos2
   )
 
   return(wflw_spec)

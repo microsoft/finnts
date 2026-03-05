@@ -1,4 +1,4 @@
-# finnts 0.6.0.9025 (development version)
+# finnts 0.6.0.9026 (development version)
 
 ## Improvements
 
@@ -12,6 +12,13 @@
     - Added `get_best_agent_run()` to retrieve the run metadata information from an agent run. 
     - Added `get_summarized_models()` to retrieve model summary information from an agent run.
     - Added `get_eda_data()` to retrieve the exploratory data analysis results from an agent run.
+
+- New Chronos2 Model Integration
+  - Added Chronos2, in addition to the existing model, to support zero-shot forecasting
+  - It supports both historical and future external regressors
+  - It can be used as a global model
+  - Added a Chronos controller, which will support other Chronos variant API POST requests as well
+  - Added two new package dependencies: `jsonlite` and `httr`
 
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting

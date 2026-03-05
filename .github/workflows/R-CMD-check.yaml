@@ -43,6 +43,9 @@ jobs:
       # Nixtla TimeGPT credentials for timegpt tests
       NIXTLA_BASE_URL: ${{ secrets.NIXTLA_BASE_URL }}
       NIXTLA_API_KEY: ${{ secrets.NIXTLA_API_KEY }}
+      # Chronos credentials for chronos controller integration tests
+      CHRONOS_API_URL: ${{ secrets.CHRONOS_API_URL }}
+      CHRONOS_API_TOKEN: ${{ secrets.CHRONOS_API_TOKEN }}
 
     steps:
       - uses: actions/checkout@v3
