@@ -111,17 +111,46 @@ check_input_data <- function(input_data,
     stop("target variable does not match a column header in input data")
   }
 
+  # external regressors match the input data
+  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
+    stop("external regressors do not match column headers in input data")
+  }
+
+  # 'Date' column is reserved for the time stamp
+  if ("Date" %in% combo_variables) {
+    stop("'Date' column cannot be used as a combo variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  if (target_variable == "Date") {
+    stop("'Date' column cannot be used as the target variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  if (!is.null(external_regressors) && "Date" %in% external_regressors) {
+    stop("'Date' column cannot be used as an external regressor. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  # combo variables must not be date-formatted columns
+  for (cv in combo_variables) {
+    if (inherits(input_data[[cv]], c("Date", "POSIXct", "POSIXlt"))) {
+      stop(
+        paste0("combo variable '", cv, "' is a date-formatted column and cannot be used as a combo variable"),
+        call. = FALSE
+      )
+    }
+  }
+
   # target variable is numeric
   if (!input_data %>%
     dplyr::rename(Target = tidyselect::all_of(target_variable)) %>%
     dplyr::pull(Target) %>%
     is.numeric()) {
     stop("Target variable in input data needs to be numeric")
-  }
-
-  # external regressors match the input data
-  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
-    stop("external regressors do not match column headers in input data")
   }
 
   # date column is labeled as "Date"

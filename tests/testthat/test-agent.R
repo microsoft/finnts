@@ -69,6 +69,40 @@ test_that("set_project_info creates valid project for agent", {
   expect_equal(project$date_type, "month")
 })
 
+test_that("set_project_info rejects 'Date' as combo variable", {
+  expect_error(
+    set_project_info(
+      project_name = "date_combo_test",
+      combo_variables = c("Date"),
+      target_variable = "value",
+      date_type = "month"
+    ),
+    "Date.*combo variable.*reserved for the time stamp"
+  )
+
+  expect_error(
+    set_project_info(
+      project_name = "date_combo_test",
+      combo_variables = c("id", "Date"),
+      target_variable = "value",
+      date_type = "month"
+    ),
+    "Date.*combo variable.*reserved for the time stamp"
+  )
+})
+
+test_that("set_project_info rejects 'Date' as target variable", {
+  expect_error(
+    set_project_info(
+      project_name = "date_target_test",
+      combo_variables = c("id"),
+      target_variable = "Date",
+      date_type = "month"
+    ),
+    "Date.*target variable.*reserved for the time stamp"
+  )
+})
+
 # * Test set_agent_info ----
 
 test_that("set_agent_info creates valid agent info object", {

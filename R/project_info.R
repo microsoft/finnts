@@ -68,6 +68,19 @@ set_project_info <- function(project_name = "finn_project",
   check_input_type("fiscal_year_start", fiscal_year_start, "numeric")
   check_input_type("weekly_to_daily", weekly_to_daily, "logical")
 
+  # 'Date' column is reserved for the time stamp
+  if ("Date" %in% combo_variables) {
+    stop("'Date' column cannot be used as a combo variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  if (target_variable == "Date") {
+    stop("'Date' column cannot be used as the target variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
   if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
     stop("`storage_object` must either be a NULL or a Azure Blob Storage,
           OneDrive, or SharePoint document library object")
