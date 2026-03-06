@@ -48,7 +48,10 @@ test_data_single <- timetk::m4_monthly %>%
   dplyr::filter(id == "M750") %>%
   dplyr::filter(date >= as.Date("2012-07-01"), date <= as.Date("2015-01-01")) %>%
   dplyr::rename(Date = date) %>%
-  dplyr::mutate(id = as.character(id))
+  dplyr::mutate(
+    id = as.character(id),
+    regressor1 = rnorm(dplyr::n())
+  )
 
 # * Test set_project_info ----
 
@@ -343,8 +346,8 @@ test_that("set_agent_info error lists changed inputs", {
 
   # change external_regressors from NULL to a value
   expect_agent_change_error(
-    "external_regressors.*expected.*NULL.*got.*Date",
-    forecast_horizon = 3, external_regressors = c("Date"),
+    "external_regressors.*expected.*NULL.*got.*regressor1",
+    forecast_horizon = 3, external_regressors = c("regressor1"),
     allow_hierarchical_forecast = FALSE,
     run_global_models = TRUE, run_local_models = TRUE,
     overwrite = FALSE

@@ -335,6 +335,72 @@ get_grouped_nodes <- function(input_data,
   }
   rownames(group_list) <- combo_variables
 
+  # Reorder rows to avoid hts::gts() / GmatrixG() dimension mismatch.
+  # GmatrixG() conditionally skips adding a "Total" row when the first
+  # row is all-constant (all 1s after integer encoding), and skips a
+  # "Bottom" row when the last row encodes as seq(1, m). But gts()
+  # unconditionally expects both in rownames, causing a dimnames error.
+  # Fix: move a non-constant row to position 1, and a row whose encoding
+  # != seq(1, m) to the last position. If no such row exists for the last
+  # position, append a constant guard row.
+  m <- ncol(group_list)
+  n <- nrow(group_list)
+
+  if (m > 1 && n >= 2) {
+    is_constant <- apply(group_list, 1, function(r) length(unique(r)) == 1L)
+    encodes_as_seq <- apply(group_list, 1, function(r) {
+      identical(as.integer(factor(r, levels = unique(r))), seq_len(m))
+    })
+
+    row_order <- seq_len(n)
+
+    # ensure first row is not constant
+    if (is_constant[row_order[1]]) {
+      non_const <- which(!is_constant[row_order])
+      if (length(non_const) > 0) {
+        pick <- non_const[1]
+        row_order <- c(row_order[pick], row_order[-pick])
+      }
+    }
+
+    # ensure last row does not encode as seq(1, m)
+    if (encodes_as_seq[row_order[n]]) {
+      safe <- which(!encodes_as_seq[row_order])
+      if (length(safe) > 0) {
+        pick <- safe[length(safe)]
+        row_order <- c(row_order[-pick], row_order[pick])
+      }
+    }
+
+    # re-check first row after the last-row swap
+    if (is_constant[row_order[1]]) {
+      non_const <- which(!is_constant[row_order])
+      if (length(non_const) > 0) {
+        pick <- non_const[1]
+        row_order <- c(row_order[pick], row_order[-pick])
+      }
+    }
+
+    group_list <- group_list[row_order, , drop = FALSE]
+
+    # If the last row still encodes as seq(1, m) (all rows have m unique
+    # values), append a constant guard row. This encodes as rep(1, m) which
+    # is never seq(1, m) for m > 1, preventing GmatrixG from skipping the
+    # Bottom row. The guard row adds one aggregation level equivalent to
+    # Total; it is harmless during reconciliation (combinef keep="bottom"
+    # discards it) and is never seen in final output.
+    last_row <- group_list[nrow(group_list), ]
+    last_encodes_seq <- identical(
+      as.integer(factor(last_row, levels = unique(last_row))),
+      seq_len(m)
+    )
+    if (last_encodes_seq) {
+      guard_row <- matrix(rep("_hts_guard_", m), nrow = 1)
+      rownames(guard_row) <- ".guard"
+      group_list <- rbind(group_list, guard_row)
+    }
+  }
+
   return(group_list)
 }
 
