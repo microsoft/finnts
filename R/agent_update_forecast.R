@@ -447,6 +447,22 @@ initial_checks <- function(agent_info) {
     }
   }
 
+  # check if forecast approach has changed
+  prev_approach <- unique(prev_agent_info$forecast_approach)
+  current_approach <- unique(agent_info$forecast_approach)
+
+  if (length(prev_approach) == 1 && length(current_approach) == 1 &&
+    prev_approach != current_approach) {
+    stop(
+      "Error in update_forecast(). Current forecast approach is '",
+      current_approach, "' but the previous agent run used '",
+      prev_approach, "'. Please ensure 'allow_hierarchical_forecast' in ",
+      "set_agent_info() produces the same forecast approach, or start a ",
+      "new agent run with iterate_forecast().",
+      call. = FALSE
+    )
+  }
+
   # get time series from previous agent run
   prev_run_combos <- get_total_combos(agent_info = prev_agent_info)
 

@@ -582,6 +582,69 @@ test_that("update_forecast error shows original combo names for new time series"
   expect_true("M1" %in% resolved)
 })
 
+# * Test update_forecast forecast approach mismatch ----
+
+test_that("update_forecast errors when forecast approach changes between runs", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_approach_mismatch_test",
+    path = NULL,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # Initial run with bottoms_up approach
+  initial_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2014-10-01"))
+
+  agent_info1 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = initial_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  iterate_forecast(
+    agent_info = agent_info1,
+    max_iter = 1,
+    seed = 123
+  )
+
+  # Update with same data but override forecast approach
+  updated_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2015-01-01"))
+
+  agent_info2 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = updated_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  # Manually override forecast approach to simulate a mismatch
+  agent_info2$forecast_approach <- "standard_hierarchy"
+
+  expect_error(
+    update_forecast(
+      agent_info = agent_info2,
+      allow_iterate_forecast = FALSE,
+      seed = 123
+    ),
+    "Current forecast approach is 'standard_hierarchy' but the previous agent run used 'bottoms_up'"
+  )
+})
+
 # * Test update_forecast workflow ----
 
 test_that("update_forecast completes with getter functions and ask_agent", {
