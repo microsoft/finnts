@@ -189,26 +189,36 @@ set_agent_info <- function(project_info,
     current_log_df <- tibble::tibble(
       project_name = project_info$project_name,
       forecast_horizon = forecast_horizon,
-      external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
-      hist_end_date = hist_end_date,
-      hist_start_date = hist_start_date,
-      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
-      back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
+      external_regressors = ifelse(is.null(external_regressors), NA_character_, paste(external_regressors, collapse = ", ")),
+      hist_end_date = if (is.null(hist_end_date)) as.Date(NA) else hist_end_date,
+      hist_start_date = if (is.null(hist_start_date)) as.Date(NA) else hist_start_date,
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA_real_, as.numeric(back_test_scenarios)),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA_real_, as.numeric(back_test_spacing)),
       combo_cleanup_date = if (is.null(combo_cleanup_date)) {
-        NA
+        as.Date(NA)
       } else {
         combo_cleanup_date
       },
-      forecast_approach = forecast_approach,
+      allow_hierarchical_forecast = allow_hierarchical_forecast,
       run_global_models = run_global_models,
       run_local_models = run_local_models
     ) %>%
       data.frame()
 
+    # build prev_log_df from saved log, mapping forecast_approach back to
+    # allow_hierarchical_forecast so the diff references the user-facing param
+    prev_log_raw <- agent_runs_tbl %>%
+      dplyr::select(tidyselect::any_of(
+        c(setdiff(colnames(current_log_df), "allow_hierarchical_forecast"), "forecast_approach")
+      ))
+    if ("forecast_approach" %in% colnames(prev_log_raw)) {
+      prev_log_raw <- prev_log_raw %>%
+        dplyr::mutate(allow_hierarchical_forecast = forecast_approach != "bottoms_up") %>%
+        dplyr::select(-forecast_approach)
+    }
     prev_log_df <- align_types(
       current_log_df,
-      agent_runs_tbl %>%
-        dplyr::select(tidyselect::any_of(colnames(current_log_df)))
+      prev_log_raw
     ) %>%
       data.frame()
 
@@ -228,9 +238,21 @@ set_agent_info <- function(project_info,
       }
     }
 
+    # ensure column order matches so hash comparison is reliable
+    prev_log_df <- prev_log_df[, colnames(current_log_df), drop = FALSE]
+
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'set_agent_info',
-           please revert back to original inputs or start new agent run with 'overwrite' argument set to TRUE.",
+      nullable <- c(
+        "external_regressors", "hist_end_date", "hist_start_date",
+        "back_test_scenarios", "back_test_spacing", "combo_cleanup_date"
+      )
+      diff_details <- format_input_diff(prev_log_df, current_log_df, nullable)
+      stop(
+        "Inputs have recently changed in 'set_agent_info'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start new agent run ",
+        "with 'overwrite' argument set to TRUE.",
         call. = FALSE
       )
     }
@@ -342,12 +364,12 @@ set_agent_info <- function(project_info,
       project_name = project_info$project_name,
       created = created_time,
       forecast_horizon = forecast_horizon,
-      external_regressors = ifelse(is.null(external_regressors), NA, paste(external_regressors, collapse = ", ")),
-      hist_end_date = ifelse(is.null(hist_end_date), NA, as.character(hist_end_date)),
-      hist_start_date = ifelse(is.null(hist_start_date), NA, as.character(hist_start_date)),
-      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, as.numeric(back_test_scenarios)),
-      back_test_spacing = ifelse(is.null(back_test_spacing), NA, as.numeric(back_test_spacing)),
-      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA, as.character(combo_cleanup_date)),
+      external_regressors = ifelse(is.null(external_regressors), NA_character_, paste(external_regressors, collapse = ", ")),
+      hist_end_date = ifelse(is.null(hist_end_date), NA_character_, as.character(hist_end_date)),
+      hist_start_date = ifelse(is.null(hist_start_date), NA_character_, as.character(hist_start_date)),
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA_real_, as.numeric(back_test_scenarios)),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA_real_, as.numeric(back_test_spacing)),
+      combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA_character_, as.character(combo_cleanup_date)),
       forecast_approach = forecast_approach,
       run_global_models = run_global_models,
       run_local_models = run_local_models

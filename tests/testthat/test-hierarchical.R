@@ -380,8 +380,10 @@ test_that("external_regressor_mapping is fast with many combo variables", {
   n_dates <- 4
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
 
-  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("P", "Q"),
-                      stringsAsFactors = FALSE)
+  grid <- expand.grid(
+    V1 = c("A", "B", "C"), V2 = c("P", "Q"),
+    stringsAsFactors = FALSE
+  )
   data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
     tibble::tibble(
       V1 = grid$V1[i], V2 = grid$V2[i],
@@ -393,7 +395,11 @@ test_that("external_regressor_mapping is fast with many combo variables", {
       Date = dates,
       # Reg_V1 varies by V1 and Date (maps to "V1")
       # Same Reg_V1 value for both V2 levels within same V1+Date
-      Reg_V1 = switch(grid$V1[i], A = 10, B = 20, C = 30) + seq_len(n_dates),
+      Reg_V1 = switch(grid$V1[i],
+        A = 10,
+        B = 20,
+        C = 30
+      ) + seq_len(n_dates),
       # Reg_Global is the same value per date across all combos (maps to "Global")
       Reg_Global = c(1, 2, 3, 4),
       # Reg_All varies per combo x date (maps to "All")

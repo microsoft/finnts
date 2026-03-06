@@ -1774,7 +1774,7 @@ hierarchy_detect <- function(agent_info,
       for (i in seq_len(nrow(pair_df))) {
         if (pair_df$test[i] == "one-to-many") {
           a <- pair_df$from[i] # coarser (b determines a)
-          b <- pair_df$to[i]   # finer
+          b <- pair_df$to[i] # finer
           ga <- var_to_group[a]
           gb <- var_to_group[b]
           if (ga == gb) next # same equivalence class

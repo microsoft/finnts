@@ -971,8 +971,10 @@ external_regressor_mapping <- function(data,
       best_vars <- candidates$Var[candidates$Unique == min_val]
 
       if (length(best_vars) > 1) {
-        return(data.frame(Regressor = regressor,
-                          Var = paste0(best_vars, collapse = "---")))
+        return(data.frame(
+          Regressor = regressor,
+          Var = paste0(best_vars, collapse = "---")
+        ))
       }
       return(data.frame(Regressor = regressor, Var = best_vars))
     }

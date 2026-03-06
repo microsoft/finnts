@@ -168,6 +168,223 @@ test_that("set_agent_info handles hierarchical forecast detection", {
   expect_equal(agent_info$forecast_approach, "bottoms_up")
 })
 
+# * Test input-changed error messages ----
+
+test_that("set_project_info error lists changed inputs", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_project_info(
+    project_name = "proj_change_test",
+    path = temp_path,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    data_output = "csv",
+    object_output = "rds",
+    weekly_to_daily = TRUE,
+    overwrite = TRUE
+  )
+
+  # helper for project change tests
+  expect_project_change_error <- function(field_regex, ...) {
+    expect_error(
+      set_project_info(
+        project_name = "proj_change_test",
+        path = temp_path,
+        ...
+      ),
+      regexp = field_regex
+    )
+  }
+
+  # change target_variable
+  expect_project_change_error(
+    "target_variable.*expected.*value.*got.*new_target",
+    combo_variables = c("id"), target_variable = "new_target",
+    date_type = "month", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change combo_variables
+  expect_project_change_error(
+    "combo_variables.*expected.*id.*got.*id, group",
+    combo_variables = c("id", "group"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change date_type
+  expect_project_change_error(
+    "date_type.*expected.*month.*got.*quarter",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "quarter", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change fiscal_year_start
+  expect_project_change_error(
+    "fiscal_year_start.*expected.*1.*got.*6",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 6, overwrite = FALSE
+  )
+
+  # change data_output
+  expect_project_change_error(
+    "data_output.*expected.*csv.*got.*parquet",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    data_output = "parquet", overwrite = FALSE
+  )
+
+  # change object_output
+  expect_project_change_error(
+    "object_output.*expected.*rds.*got.*qs2",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    object_output = "qs2", overwrite = FALSE
+  )
+
+  # change weekly_to_daily
+  expect_project_change_error(
+    "weekly_to_daily.*expected.*TRUE.*got.*FALSE",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    weekly_to_daily = FALSE, overwrite = FALSE
+  )
+})
+
+test_that("set_agent_info error lists changed inputs", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_change_test",
+    path = tempdir(),
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # baseline call establishes the log
+  set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = test_data_single,
+    forecast_horizon = 3,
+    external_regressors = NULL,
+    hist_end_date = NULL,
+    hist_start_date = NULL,
+    back_test_scenarios = NULL,
+    back_test_spacing = NULL,
+    combo_cleanup_date = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE,
+    run_local_models = TRUE,
+    overwrite = TRUE
+  )
+
+  # helper for agent change tests
+  expect_agent_change_error <- function(field_regex, ...) {
+    expect_error(
+      set_agent_info(
+        project_info = project,
+        driver_llm = driver_llm,
+        input_data = test_data_single,
+        ...
+      ),
+      regexp = field_regex
+    )
+  }
+
+  # change forecast_horizon
+  expect_agent_change_error(
+    "forecast_horizon.*expected.*3.*got.*6",
+    forecast_horizon = 6, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change external_regressors from NULL to a value
+  expect_agent_change_error(
+    "external_regressors.*expected.*NULL.*got.*Date",
+    forecast_horizon = 3, external_regressors = c("Date"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change hist_end_date from default (max date in data) to a different date
+  expect_agent_change_error(
+    "hist_end_date.*expected.*2015-01-01.*got.*2014-06-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    hist_end_date = as.Date("2014-06-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change hist_start_date from default (min date in data) to a different date
+  expect_agent_change_error(
+    "hist_start_date.*expected.*2012-07-01.*got.*2013-01-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    hist_start_date = as.Date("2013-01-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change back_test_scenarios from NULL to a value
+  expect_agent_change_error(
+    "back_test_scenarios.*expected.*NULL.*got.*2",
+    forecast_horizon = 3, external_regressors = NULL,
+    back_test_scenarios = 2,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change back_test_spacing from NULL to a value
+  expect_agent_change_error(
+    "back_test_spacing.*expected.*NULL.*got.*3",
+    forecast_horizon = 3, external_regressors = NULL,
+    back_test_spacing = 3,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change combo_cleanup_date from NULL to a date
+  expect_agent_change_error(
+    "combo_cleanup_date.*expected.*NULL.*got.*2014-01-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    combo_cleanup_date = as.Date("2014-01-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change run_global_models
+  expect_agent_change_error(
+    "run_global_models.*expected.*TRUE.*got.*FALSE",
+    forecast_horizon = 3, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = FALSE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change run_local_models
+  expect_agent_change_error(
+    "run_local_models.*expected.*TRUE.*got.*FALSE",
+    forecast_horizon = 3, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = FALSE,
+    overwrite = FALSE
+  )
+})
+
 # * Test iterate_forecast workflow ----
 
 test_that("iterate_forecast completes with all getter functions and ask_agent", {
