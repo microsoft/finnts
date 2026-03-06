@@ -454,19 +454,14 @@ initial_checks <- function(agent_info) {
   current_run_combos <- get_total_combos(agent_info = agent_info)
 
   # check if number of time series has changed
-  if (length(prev_run_combos) < length(current_run_combos)) {
-    stop("Error in update_forecast(). The number of time series has grown since last complted agent run, please remove new time series.",
+  new_combos <- setdiff(current_run_combos, prev_run_combos)
+
+  if (length(new_combos) > 0) {
+    resolved_names <- resolve_combo_hashes(agent_info, new_combos)
+    stop("Error in update_forecast(). The following time series have been added since last completed agent run: ",
+      paste(resolved_names, collapse = ", "), ". Please remove time series.",
       call. = FALSE
     )
-  } else {
-    new_combos <- setdiff(current_run_combos, prev_run_combos)
-
-    if (length(new_combos) > 0) {
-      stop("Error in update_forecast(). The following time series have been added since last completed agent run: ",
-        paste(new_combos, collapse = ", "), ". Please remove time series.",
-        call. = FALSE
-      )
-    }
   }
 
   # get best runs from previous agent run and filter on combos that haven't been updated for this version

@@ -458,6 +458,12 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
   expect_type(answer, "character")
   expect_true(nchar(answer) > 0)
 
+  # Test resolve_combo_hashes with single time series
+  combo_hashes <- get_total_combos(agent_info)
+  expect_length(combo_hashes, 1)
+  resolved <- resolve_combo_hashes(agent_info, combo_hashes)
+  expect_equal(resolved, "M750")
+
   # Test ask_agent input validation
   expect_error(
     ask_agent(
@@ -506,6 +512,74 @@ test_that("iterate_forecast validates parameters", {
     ),
     "weighted_mape_goal"
   )
+})
+
+# * Test update_forecast new combo detection ----
+
+test_that("update_forecast error shows original combo names for new time series", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_resolve_hash_test",
+    path = NULL,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # Initial run with single time series
+  initial_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2014-10-01"))
+
+  agent_info1 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = initial_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  iterate_forecast(
+    agent_info = agent_info1,
+    max_iter = 1,
+    seed = 123
+  )
+
+  # Update with 2 time series (adding M1)
+  updated_data <- test_data_multi %>%
+    dplyr::filter(Date <= as.Date("2015-01-01"))
+
+  agent_info2 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = updated_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  # Verify error message contains original combo name, not hash
+  expect_error(
+    update_forecast(
+      agent_info = agent_info2,
+      allow_iterate_forecast = FALSE,
+      seed = 123
+    ),
+    "M1"
+  )
+
+  # Verify resolve_combo_hashes works with 2 time series
+  combo_hashes <- get_total_combos(agent_info2)
+  expect_length(combo_hashes, 2)
+  resolved <- resolve_combo_hashes(agent_info2, combo_hashes)
+  expect_true("M750" %in% resolved)
+  expect_true("M1" %in% resolved)
 })
 
 # * Test update_forecast workflow ----
