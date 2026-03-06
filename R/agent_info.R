@@ -205,16 +205,18 @@ set_agent_info <- function(project_info,
     ) %>%
       data.frame()
 
-    # build prev_log_df from saved log, mapping forecast_approach back to
-    # allow_hierarchical_forecast so the diff references the user-facing param
+    # build prev_log_df from saved log
+    # keep forecast_approach as its own column and log/compare
+    # allow_hierarchical_forecast explicitly
     prev_log_raw <- agent_runs_tbl %>%
       dplyr::select(tidyselect::any_of(
-        c(setdiff(colnames(current_log_df), "allow_hierarchical_forecast"), "forecast_approach")
+        c(colnames(current_log_df), "forecast_approach")
       ))
-    if ("forecast_approach" %in% colnames(prev_log_raw)) {
-      prev_log_raw <- prev_log_raw %>%
-        dplyr::mutate(allow_hierarchical_forecast = forecast_approach != "bottoms_up") %>%
-        dplyr::select(-forecast_approach)
+
+    # for older logs that do not yet have allow_hierarchical_forecast recorded,
+    # default to the current value for backward compatibility
+    if (!"allow_hierarchical_forecast" %in% colnames(prev_log_raw)) {
+      prev_log_raw$allow_hierarchical_forecast <- allow_hierarchical_forecast
     }
     prev_log_df <- align_types(
       current_log_df,
