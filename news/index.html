@@ -62,7 +62,7 @@
       <a href="../articles/forecast-components.html">Using Individual finnts Forecast Components</a>
     </li>
     <li>
-      <a href="../articles/forecasting-genai.html">Forecasting with GenAI: TimeGPT in finnts</a>
+      <a href="../articles/forecasting-genai.html">Forecasting with GenAI</a>
     </li>
     <li>
       <a href="../articles/hierarchical-forecasting.html">Hierarchical Forecasting</a>
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9025" id="finnts-0609025-development-version">finnts 0.6.0.9025 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609025-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.6.0.9026" id="finnts-0609026-development-version">finnts 0.6.0.9026 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609026-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9025">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9025"></a></h3>
+<h3 id="improvements-0-6-0-9026">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9026"></a></h3>
 <ul><li>New AI Agent Capabilities
 <ul><li>
 <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> can use LLM’s to find the optimal combination of data and inputs to create the most accurate forecast.</li>
@@ -117,6 +117,14 @@
 <li>Added <code><a href="../reference/get_summarized_models.html">get_summarized_models()</a></code> to retrieve model summary information from an agent run.</li>
 <li>Added <code><a href="../reference/get_eda_data.html">get_eda_data()</a></code> to retrieve the exploratory data analysis results from an agent run.</li>
 </ul></li>
+</ul></li>
+<li>New Chronos2 Model Integration
+<ul><li>Added Chronos2, in addition to the existing model, to support zero-shot forecasting</li>
+<li>It supports both historical and future external regressors</li>
+<li>It can be used as a global model</li>
+<li>Added a Chronos controller, which will support other Chronos variant API POST requests as well</li>
+<li>Added two new package dependencies: <code>jsonlite</code> and <code>httr</code>
+</li>
 </ul></li>
 <li>New TimeGPT Integration
 <ul><li>Added TimeGPT in addition to existing model to support zero shot forecasting</li>
@@ -134,17 +142,17 @@
 <li>Updated how outliers are handled in <code><a href="../reference/prep_data.html">prep_data()</a></code>. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9025">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9025"></a></h3>
+<h3 id="breaking-changes-0-6-0-9026">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9026"></a></h3>
 <ul><li>Migrated from the <code>qs</code> package to <a href="https://CRAN.R-project.org/package=qs2" class="external-link"><code>qs2</code></a> for fast object serialization. The <code>qs2</code> package is actively maintained and CRAN-ready with improved compression. Files previously saved with <code>qs</code> format cannot be read by <code>qs2</code>; any cached <code>.qs</code> files from prior runs will need to be regenerated.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-6-0-9025">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9025"></a></h3>
+<h3 id="bug-fixes-0-6-0-9026">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9026"></a></h3>
 <ul><li>Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.</li>
 <li>Fixed weighted mape calculation when target variable has negative values.</li>
 <li>Fixed issue when reconciling standard hierarchical forecasts</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9025-1">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9025-1"></a></h3>
+<h3 id="breaking-changes-0-6-0-9026-1">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9026-1"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 </ul></div>

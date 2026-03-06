@@ -25,6 +25,9 @@
 <url><loc>https://microsoft.github.io/finnts/index.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/news/index.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/ask_agent.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos2_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos2_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos2_model_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_predict_impl.html</loc></url>
@@ -59,6 +62,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/predict.xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/prep_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/prep_models.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep.html</loc></url>
@@ -91,6 +95,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/translate.svm_poly_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.xgboost_multistep.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update.chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.glmnet_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.mars_multistep.html</loc></url>
