@@ -140,9 +140,12 @@ train_models <- function(run_info,
     unique()
 
   global_model_list <- list_global_models()
-  fs_model_list <- list_multivariate_models()
+  multivariate_model_list <- list_multivariate_models()
+  foundation_model_list <- list_foundation_models()
+  multistep_model_list <- list_multistep_models()
+  fs_model_list <- multivariate_model_list
   # Remove foundation models from feature selection list as they don't use traditional features
-  fs_model_list <- setdiff(fs_model_list, list_foundation_models())
+  fs_model_list <- setdiff(fs_model_list, foundation_model_list)
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
@@ -344,7 +347,7 @@ train_models <- function(run_info,
       if (combo_hash == "All-Data") {
         model_workflow_tbl <- model_workflow_tbl %>%
           dplyr::filter(
-            Model_Name %in% list_global_models(),
+            Model_Name %in% global_model_list,
             Model_Recipe %in% global_model_recipes
           )
       }
@@ -372,9 +375,10 @@ train_models <- function(run_info,
         box_cox <- box_cox
         undifference_forecast <- undifference_forecast
         undifference_recipe <- undifference_recipe
-        list_global_models <- list_global_models
-        list_multivariate_models <- list_multivariate_models
-        list_foundation_models <- list_foundation_models
+        global_model_list <- global_model_list
+        multivariate_model_list <- multivariate_model_list
+        foundation_model_list <- foundation_model_list
+        multistep_model_list <- multistep_model_list
       }
 
       if (feature_selection) {
@@ -512,7 +516,7 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          if (multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+          if (multistep_horizon & data_prep_recipe == "R1" & model %in% multistep_model_list) {
             updated_model_spec <- workflow %>%
               workflows::extract_spec_parsnip() %>%
               update(selected_features = final_features_list)
@@ -543,7 +547,7 @@ train_models <- function(run_info,
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
 
-        if (stationary & (!(model %in% list_multivariate_models()) || model %in% list_foundation_models())) {
+        if (stationary & (!(model %in% multivariate_model_list) || model %in% foundation_model_list)) {
           # undifference the data for a univariate model or foundation model
 
           hist_end_date <- model_train_test_tbl %>%
@@ -653,7 +657,7 @@ train_models <- function(run_info,
         }
 
         # undo differencing transformation
-        if (stationary & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
+        if (stationary & model %in% multivariate_model_list & !(model %in% foundation_model_list)) {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%
