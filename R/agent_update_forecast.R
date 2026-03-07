@@ -169,12 +169,12 @@ update_fcst_agent_workflow <- function(agent_info,
         # check if initial checks passed
         if (is.data.frame(results)) {
           return(list(ctx = ctx, `next` = "update_global_models"))
-        } else if (results == "no updates required" & forecast_approach == "bottoms_up") {
-          # if no updates required, stop the workflow
-          cli::cli_alert_info("No model updates required, stopping workflow.")
-          return(list(ctx = ctx, `next` = "stop"))
-        } else if (results == "no updates required" & forecast_approach != "bottoms_up") {
-          # if no updates required, stop the workflow
+        } else if (results == "no updates required" && forecast_approach == "bottoms_up") {
+          # if no updates required, skip to post-processing
+          cli::cli_alert_info("No model updates required, moving to save forecast.")
+          return(list(ctx = ctx, `next` = "save_agent_forecast"))
+        } else if (results == "no updates required" && forecast_approach != "bottoms_up") {
+          # if no updates required, skip to reconciliation and post-processing
           cli::cli_alert_info("No model updates required, moving to reconcile forecast.")
           return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
         } else {
@@ -234,7 +234,7 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if forecast iteration should be ran again
-        if (perc_worse >= 40 & allow_iterate_forecast) {
+        if (perc_worse >= 40 && allow_iterate_forecast) {
           cli::cli_alert_info("Poor performance detected: Running iterate_forecast() to improve results.")
           return(list(ctx = ctx, `next` = "iterate_forecast"))
         } else if (forecast_approach != "bottoms_up") {
@@ -445,6 +445,15 @@ initial_checks <- function(agent_info) {
         next # continue to next version
       }
     }
+  }
+
+  # ensure a completed previous run was found
+  if (!exists("prev_agent_info")) {
+    stop("Error in update_forecast(). No completed previous agent run found. ",
+      "Please ensure at least one prior agent version finished successfully ",
+      "before calling update_forecast().",
+      call. = FALSE
+    )
   }
 
   # check if forecast approach has changed
@@ -843,7 +852,23 @@ analyze_results <- function(agent_info) {
 
   # formatting checks
   if (nrow(latest_best_runs_tbl) != nrow(previous_best_run_tbl)) {
-    stop("Error in update_forecast(). The number of best runs has changed since last completed agent run, please check the results.",
+    latest_combos <- unique(latest_best_runs_tbl$combo)
+    previous_combos <- unique(previous_best_run_tbl$combo)
+    missing_combos <- setdiff(previous_combos, latest_combos)
+    extra_combos <- setdiff(latest_combos, previous_combos)
+    detail_parts <- character(0)
+    if (length(missing_combos) > 0) {
+      detail_parts <- c(detail_parts, paste0(
+        "Missing from current run: ", paste(missing_combos, collapse = ", ")
+      ))
+    }
+    if (length(extra_combos) > 0) {
+      detail_parts <- c(detail_parts, paste0(
+        "Extra in current run: ", paste(extra_combos, collapse = ", ")
+      ))
+    }
+    stop("Error in update_forecast(). The number of best runs has changed since ",
+      "last completed agent run. ", paste(detail_parts, collapse = ". "), ".",
       call. = FALSE
     )
   }
