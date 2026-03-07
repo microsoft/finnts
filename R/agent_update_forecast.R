@@ -1750,6 +1750,9 @@ fit_models <- function(run_info,
         )
     }
 
+    # clamp negative Target values for models that require non-negative data
+    prep_data <- clamp_negative_target(prep_data, model)
+
     # tune hyperparameters
     if (retune_hyperparameters) {
       set.seed(seed)

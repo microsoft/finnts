@@ -583,6 +583,9 @@ train_models <- function(run_info,
           }
         }
 
+        # clamp negative Target values for models that require non-negative data
+        prep_data <- clamp_negative_target(prep_data, model)
+
         # tune hyperparameters
         set.seed(seed)
 
@@ -881,6 +884,31 @@ train_models <- function(run_info,
     folder = "logs",
     suffix = NULL
   )
+}
+
+#' Clamp negative Target values to zero for models that require non-negative data
+#'
+#' @param data data frame containing a Target column
+#' @param model character string of model name
+#'
+#' @return data frame with negative Target values replaced by zero
+#' @noRd
+clamp_negative_target <- function(data, model) {
+  nonneg_models <- c("croston")
+
+  if (model %in% nonneg_models && any(data$Target < 0, na.rm = TRUE)) {
+    warning(
+      sprintf(
+        "Model '%s' requires non-negative Target values. %d negative values clamped to zero.",
+        model,
+        sum(data$Target < 0, na.rm = TRUE)
+      ),
+      call. = FALSE
+    )
+    data$Target <- replace(data$Target, which(data$Target < 0), 0)
+  }
+
+  return(data)
 }
 
 #' Function to convert negative forecasts to zero
