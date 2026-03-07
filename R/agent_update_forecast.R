@@ -1215,7 +1215,7 @@ update_forecast_combo <- function(agent_info,
     multistep_horizon = prev_run_log_tbl$multistep_horizon
   )
 
-  if (prev_run_log_tbl$box_cox || prev_run_log_tbl$stationary) {
+  if (isTRUE(prev_run_log_tbl$box_cox) || isTRUE(prev_run_log_tbl$stationary)) {
     combo_info_tbl <- read_file(new_run_info,
       file_list = paste0(
         new_run_info$path,
@@ -1597,7 +1597,10 @@ fit_models <- function(run_info,
     }
 
     # adjust workflow if forecast horizon changes for multistep model
-    if (prev_run_log_tbl$multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models() & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
+    if (is.na(prev_run_log_tbl$multistep_horizon)) {
+      warning("'multistep_horizon' is NA in previous run log, defaulting to FALSE for model: ", model)
+    }
+    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models() & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
       updated_model_spec <- workflow %>%
         workflows::extract_spec_parsnip() %>%
         update(
@@ -1628,7 +1631,10 @@ fit_models <- function(run_info,
     if (length(missing_cols) > 0 ||
       (as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
       # rerun feature selection if needed
-      if (prev_run_log_tbl$feature_selection) {
+      if (is.na(prev_run_log_tbl$feature_selection)) {
+        warning("'feature_selection' is NA in previous run log, defaulting to FALSE for model: ", model)
+      }
+      if (isTRUE(prev_run_log_tbl$feature_selection)) {
         fs_list <- prep_data %>%
           run_feature_selection(
             run_info = run_info,
@@ -1648,7 +1654,7 @@ fit_models <- function(run_info,
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
 
-        if (prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = fs_list)
         }
@@ -1666,13 +1672,13 @@ fit_models <- function(run_info,
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
 
-        if (prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = NULL)
         }
       }
 
-      if (prev_run_log_tbl$multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+      if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
         final_features_list <- unique(unlist(fs_list, use.names = FALSE))
         final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
 
@@ -1687,7 +1693,7 @@ fit_models <- function(run_info,
           workflows::update_model(updated_model_spec) %>%
           workflows::update_recipe(updated_recipe)
       } else {
-        if (prev_run_log_tbl$feature_selection & prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$feature_selection) & isTRUE(prev_run_log_tbl$multistep_horizon)) {
           final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
           final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
         } else {
@@ -1719,7 +1725,10 @@ fit_models <- function(run_info,
       dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
       tidyr::unnest(Hyperparameters)
 
-    if (prev_run_log_tbl$stationary & !(model %in% list_multivariate_models())) {
+    if (is.na(prev_run_log_tbl$stationary)) {
+      warning("'stationary' is NA in previous run log, defaulting to FALSE for model: ", model)
+    }
+    if (isTRUE(prev_run_log_tbl$stationary) & !(model %in% list_multivariate_models())) {
       # undifference the data for a univariate model
       prep_data <- prep_data %>%
         undifference_recipe(
@@ -1814,7 +1823,7 @@ fit_models <- function(run_info,
     }
 
     # undo differencing transformation
-    if (prev_run_log_tbl$stationary & model %in% list_multivariate_models()) {
+    if (isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models()) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -1841,7 +1850,10 @@ fit_models <- function(run_info,
     }
 
     # undo box-cox transformation
-    if (prev_run_log_tbl$box_cox) {
+    if (is.na(prev_run_log_tbl$box_cox)) {
+      warning("'box_cox' is NA in previous run log, defaulting to FALSE for model: ", model)
+    }
+    if (isTRUE(prev_run_log_tbl$box_cox)) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -2009,6 +2021,11 @@ reconcile <- function(initial_fcst,
                       run_info,
                       forecast_approach,
                       negative_forecast) {
+  if (is.na(negative_forecast)) {
+    warning("'negative_forecast' is NA in reconcile(), defaulting to FALSE")
+    negative_forecast <- FALSE
+  }
+
   hts_list <- read_file(run_info,
     path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_info.", run_info$object_output),
     return_type = "object"

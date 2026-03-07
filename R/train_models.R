@@ -888,6 +888,10 @@ negative_fcst_adj <- function(data,
     dplyr::mutate(Forecast = ifelse(is.na(Forecast), 0, Forecast)) # replace NA values
 
   # convert negative forecasts to zero
+  if (is.na(negative_forecast)) {
+    warning("'negative_forecast' is NA, defaulting to FALSE (negative forecasts will be set to zero)")
+    negative_forecast <- FALSE
+  }
   if (negative_forecast == FALSE) {
     fcst_final$Forecast <- replace(
       fcst_final$Forecast,
