@@ -223,8 +223,6 @@ prep_data <- function(run_info,
     clean_missing_values = clean_missing_values,
     clean_outliers = clean_outliers,
     forecast_approach = forecast_approach,
-    parallel_processing = ifelse(is.null(parallel_processing), NA, parallel_processing),
-    num_cores = ifelse(is.null(num_cores), NA, num_cores),
     fourier_periods = ifelse(is.null(fourier_periods), NA, paste(fourier_periods, collapse = "---")),
     lag_periods = ifelse(is.null(lag_periods), NA, paste(lag_periods, collapse = "---")),
     rolling_window_periods = ifelse(is.null(rolling_window_periods), NA, paste(rolling_window_periods, collapse = "---")),
@@ -239,7 +237,13 @@ prep_data <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
-      stop("Inputs have recently changed in 'prep_data', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df_aligned, current_log_df)
+      stop(
+        "Inputs have recently changed in 'prep_data'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     } else {

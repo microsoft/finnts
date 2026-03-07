@@ -289,6 +289,58 @@ test_that("set_project_info error lists changed inputs", {
   )
 })
 
+test_that("set_project_info warns instead of errors on path change", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_project_info(
+    project_name = "proj_path_warn_test",
+    path = temp_path,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    data_output = "csv",
+    object_output = "rds",
+    weekly_to_daily = TRUE,
+    overwrite = TRUE
+  )
+
+  # modify the stored log to have a different path value so a mismatch is
+
+  # detected when calling set_project_info again with the same path
+  log_file <- list.files(
+    file.path(temp_path, "logs"),
+    pattern = "-project\\.csv$",
+    full.names = TRUE
+  )
+  log_file <- log_file[grep(finnts:::hash_data("proj_path_warn_test"), log_file)]
+  log_data <- utils::read.csv(log_file, stringsAsFactors = FALSE)
+  log_data$path <- "/old/fake/path"
+  utils::write.csv(log_data, log_file, row.names = FALSE)
+
+  # calling again with same path but log has different stored path -> warn
+  expect_warning(
+    result <- set_project_info(
+      project_name = "proj_path_warn_test",
+      path = temp_path,
+      combo_variables = c("id"),
+      target_variable = "value",
+      date_type = "month",
+      fiscal_year_start = 1,
+      data_output = "csv",
+      object_output = "rds",
+      weekly_to_daily = TRUE,
+      overwrite = FALSE
+    ),
+    regexp = "path.*input has changed"
+  )
+
+  # should still return a valid project list
+  expect_type(result, "list")
+  expect_equal(result$path, temp_path)
+})
+
 test_that("set_agent_info error lists changed inputs", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
 

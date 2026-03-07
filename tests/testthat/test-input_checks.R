@@ -144,3 +144,126 @@ test_that("check_input_data rejects date-formatted combo variable", {
     "combo variable 'ts_col'.*date-formatted"
   )
 })
+
+# * Test set_run_info input change detection ----
+
+test_that("set_run_info error lists changed inputs", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_run_info(
+    project_name = "run_change_test",
+    run_name = "run_change_run",
+    path = temp_path,
+    data_output = "csv",
+    object_output = "rds",
+    add_unique_id = FALSE
+  )
+
+  # helper for run change tests
+  expect_run_change_error <- function(field_regex, ...) {
+    expect_error(
+      set_run_info(
+        project_name = "run_change_test",
+        run_name = "run_change_run",
+        path = temp_path,
+        add_unique_id = FALSE,
+        ...
+      ),
+      regexp = field_regex
+    )
+  }
+
+  # change data_output
+  expect_run_change_error(
+    "data_output.*expected.*csv.*got.*parquet",
+    data_output = "parquet", object_output = "rds"
+  )
+
+  # change object_output
+  expect_run_change_error(
+    "object_output.*expected.*rds.*got.*qs2",
+    data_output = "csv", object_output = "qs2"
+  )
+})
+
+test_that("set_run_info warns instead of errors on path change", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_run_info(
+    project_name = "run_path_warn_test",
+    run_name = "run_path_warn_run",
+    path = temp_path,
+    data_output = "csv",
+    object_output = "rds",
+    add_unique_id = FALSE
+  )
+
+  # modify the stored log to have a different path value
+  log_file <- list.files(
+    file.path(temp_path, "logs"),
+    pattern = paste0(
+      finnts:::hash_data("run_path_warn_test"), "-",
+      finnts:::hash_data("run_path_warn_run"), "\\.csv$"
+    ),
+    full.names = TRUE
+  )
+  log_data <- utils::read.csv(log_file, stringsAsFactors = FALSE)
+  log_data$path <- "/old/fake/path"
+  utils::write.csv(log_data, log_file, row.names = FALSE)
+
+  # calling again with same path but log has different stored path -> warn
+  expect_warning(
+    result <- set_run_info(
+      project_name = "run_path_warn_test",
+      run_name = "run_path_warn_run",
+      path = temp_path,
+      data_output = "csv",
+      object_output = "rds",
+      add_unique_id = FALSE
+    ),
+    regexp = "path.*input has changed"
+  )
+
+  # should still return a valid list
+  expect_type(result, "list")
+  expect_equal(result$path, temp_path)
+})
+
+# * Test format_input_diff ----
+
+test_that("format_input_diff reports changed fields", {
+  prev <- data.frame(
+    combo_variables = "id",
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 3,
+    stringsAsFactors = FALSE
+  )
+
+  # single change
+  curr <- prev
+  curr$date_type <- "quarter"
+  result <- finnts:::format_input_diff(prev, curr)
+  expect_match(result, "date_type")
+  expect_match(result, "expected.*month.*got.*quarter")
+
+  # multiple changes
+  curr2 <- prev
+  curr2$target_variable <- "revenue"
+  curr2$forecast_horizon <- 6
+  result2 <- finnts:::format_input_diff(prev, curr2)
+  expect_match(result2, "target_variable.*expected.*value.*got.*revenue")
+  expect_match(result2, "forecast_horizon.*expected.*3.*got.*6")
+
+  # no changes
+  result3 <- finnts:::format_input_diff(prev, prev)
+  expect_match(result3, "no column-level differences")
+
+  # nullable fields display NA as NULL
+  prev_na <- data.frame(external_regressors = NA_character_, stringsAsFactors = FALSE)
+  curr_na <- data.frame(external_regressors = "xreg1", stringsAsFactors = FALSE)
+  result4 <- finnts:::format_input_diff(prev_na, curr_na, nullable_fields = "external_regressors")
+  expect_match(result4, "expected.*NULL.*got.*xreg1")
+})
