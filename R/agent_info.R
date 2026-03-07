@@ -200,6 +200,7 @@ set_agent_info <- function(project_info,
         combo_cleanup_date
       },
       allow_hierarchical_forecast = allow_hierarchical_forecast,
+      forecast_approach = forecast_approach,
       run_global_models = run_global_models,
       run_local_models = run_local_models
     ) %>%
@@ -210,7 +211,7 @@ set_agent_info <- function(project_info,
     # allow_hierarchical_forecast explicitly
     prev_log_raw <- agent_runs_tbl %>%
       dplyr::select(tidyselect::any_of(
-        c(colnames(current_log_df), "forecast_approach")
+        colnames(current_log_df)
       ))
 
     # for older logs that do not yet have allow_hierarchical_forecast recorded,
