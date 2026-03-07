@@ -1044,6 +1044,9 @@ update_forecast_combo <- function(agent_info,
     path = project_info$path
   )
 
+  # validate all previous run log fields upfront
+  prev_run_log_tbl <- validate_prev_run_log(prev_run_log_tbl)
+
   # get best model list from previous run
   if (unique(prev_best_run_tbl$model_type) == "global") {
     # global model only runs xgboost with R1 recipe
@@ -1290,12 +1293,9 @@ update_forecast_combo <- function(agent_info,
   final_wmape <- final_fcst_tbl %>%
     dplyr::filter(Combo %in% combo_list) %>%
     calc_wmape()
-  
-  print(paste0("Previous WMAPE: ", round(prev_best_wmape, 4)))
-  print(paste0("Current WMAPE: ", round(final_wmape, 4)))
 
   # retune hyperparameters if +10% worse than previous best
-  if (final_wmape > (prev_best_wmape * 1.1)) {
+  if (!is.na(final_wmape) && !is.na(prev_best_wmape) && final_wmape > (prev_best_wmape * 1.1)) {
     cli::cli_progress_step("Retuning Model Hyperparameters")
 
     rm(final_model_tbl)
@@ -1597,10 +1597,7 @@ fit_models <- function(run_info,
     }
 
     # adjust workflow if forecast horizon changes for multistep model
-    if (is.na(prev_run_log_tbl$multistep_horizon)) {
-      warning("'multistep_horizon' is NA in previous run log, defaulting to FALSE for model: ", model)
-    }
-    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models() & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
+    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models() & !is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
       updated_model_spec <- workflow %>%
         workflows::extract_spec_parsnip() %>%
         update(
@@ -1629,11 +1626,7 @@ fit_models <- function(run_info,
     }
 
     if (length(missing_cols) > 0 ||
-      (as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
-      # rerun feature selection if needed
-      if (is.na(prev_run_log_tbl$feature_selection)) {
-        warning("'feature_selection' is NA in previous run log, defaulting to FALSE for model: ", model)
-      }
+      (!is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
       if (isTRUE(prev_run_log_tbl$feature_selection)) {
         fs_list <- prep_data %>%
           run_feature_selection(
@@ -1684,9 +1677,8 @@ fit_models <- function(run_info,
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
-          recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
           recipes::update_role(tidyselect::any_of(final_features_list), new_role = "predictor") %>%
-          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>% # ignore missing features
+          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>%
           base::suppressWarnings()
 
         workflow <- workflow %>%
@@ -1697,14 +1689,13 @@ fit_models <- function(run_info,
           final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
           final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
         } else {
-          final_features_list <- (unique(c(fs_list, "Date", "Date_index.num")))
+          final_features_list <- unique(c(unlist(fs_list, use.names = FALSE), "Date", "Date_index.num"))
         }
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
-          recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
           recipes::update_role(tidyselect::any_of(final_features_list), new_role = "predictor") %>%
-          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>% # ignore missing features
+          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>%
           base::suppressWarnings()
 
         workflow <- workflow %>%
@@ -1725,9 +1716,6 @@ fit_models <- function(run_info,
       dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
       tidyr::unnest(Hyperparameters)
 
-    if (is.na(prev_run_log_tbl$stationary)) {
-      warning("'stationary' is NA in previous run log, defaulting to FALSE for model: ", model)
-    }
     if (isTRUE(prev_run_log_tbl$stationary) & !(model %in% list_multivariate_models())) {
       # undifference the data for a univariate model
       prep_data <- prep_data %>%
@@ -1850,9 +1838,6 @@ fit_models <- function(run_info,
     }
 
     # undo box-cox transformation
-    if (is.na(prev_run_log_tbl$box_cox)) {
-      warning("'box_cox' is NA in previous run log, defaulting to FALSE for model: ", model)
-    }
     if (isTRUE(prev_run_log_tbl$box_cox)) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
@@ -2166,6 +2151,72 @@ calc_wmape <- function(forecast_tbl) {
     dplyr::ungroup() %>%
     dplyr::pull(weighted_mape) %>%
     mean(na.rm = TRUE)
+}
+
+#' Validate previous run log table
+#'
+#' Checks all fields of prev_run_log_tbl for NA values and applies sensible
+#' defaults. Issues a single consolidated warning listing any defaulted fields.
+#'
+#' @param prev_run_log_tbl A single-row tibble from get_run_info() for the
+#'   previous best run.
+#'
+#' @return The validated prev_run_log_tbl with NA fields replaced by defaults.
+#' @noRd
+validate_prev_run_log <- function(prev_run_log_tbl) {
+  # boolean fields default to FALSE when NA
+  boolean_fields <- c(
+    "box_cox", "stationary", "negative_forecast",
+    "clean_missing_values", "clean_outliers",
+    "multistep_horizon", "feature_selection",
+    "pca", "weekly_to_daily"
+  )
+
+  # character fields with safe defaults
+  character_defaults <- list(
+    forecast_approach = "bottoms_up"
+  )
+
+  # numeric fields with safe defaults
+  numeric_defaults <- list(
+    num_hyperparameters = 10
+  )
+
+  defaulted_fields <- character(0)
+
+  # validate boolean fields
+  for (field in boolean_fields) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- FALSE
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = FALSE"))
+    }
+  }
+
+  # validate character fields
+  for (field in names(character_defaults)) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- character_defaults[[field]]
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = '", character_defaults[[field]], "'"))
+    }
+  }
+
+  # validate numeric fields
+  for (field in names(numeric_defaults)) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- numeric_defaults[[field]]
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = ", numeric_defaults[[field]]))
+    }
+  }
+
+  if (length(defaulted_fields) > 0) {
+    warning(
+      "The following fields in the previous run log were NA and have been set to defaults: ",
+      paste(defaulted_fields, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  return(prev_run_log_tbl)
 }
 
 #' Adjust inputs for model fitting
