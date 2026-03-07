@@ -1290,6 +1290,9 @@ update_forecast_combo <- function(agent_info,
   final_wmape <- final_fcst_tbl %>%
     dplyr::filter(Combo %in% combo_list) %>%
     calc_wmape()
+  
+  print(paste0("Previous WMAPE: ", round(prev_best_wmape, 4)))
+  print(paste0("Current WMAPE: ", round(final_wmape, 4)))
 
   # retune hyperparameters if +10% worse than previous best
   if (final_wmape > (prev_best_wmape * 1.1)) {
