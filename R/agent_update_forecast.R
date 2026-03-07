@@ -1697,8 +1697,8 @@ fit_models <- function(run_info,
       }
 
       if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
-        final_features_list <- unique(unlist(fs_list, use.names = FALSE))
-        final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
+        final_features_list <- unique(as.character(unlist(fs_list, use.names = FALSE)))
+        final_features_list <- unique(c(final_features_list, "Date", "Date_index.num"))
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
@@ -1711,10 +1711,13 @@ fit_models <- function(run_info,
           workflows::update_recipe(updated_recipe)
       } else {
         if (isTRUE(prev_run_log_tbl$feature_selection) & isTRUE(prev_run_log_tbl$multistep_horizon)) {
-          final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
-          final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
+          # use max lag from fs_list as the best match for current forecast horizon
+          available_lags <- sort(as.numeric(gsub("model_lag_", "", names(fs_list))))
+          best_lag <- available_lags[length(available_lags)]
+          final_features_list <- fs_list[[paste0("model_lag_", best_lag)]]
+          final_features_list <- unique(c(as.character(unlist(final_features_list, use.names = FALSE)), "Date", "Date_index.num"))
         } else {
-          final_features_list <- unique(c(unlist(fs_list, use.names = FALSE), "Date", "Date_index.num"))
+          final_features_list <- unique(c(as.character(unlist(fs_list, use.names = FALSE)), "Date", "Date_index.num"))
         }
 
         updated_recipe <- workflow %>%
