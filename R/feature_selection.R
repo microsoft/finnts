@@ -73,7 +73,8 @@ run_feature_selection <- function(input_data,
     .init = list(),
     .noexport = NULL
   ) %do% {
-    # only keep historical data
+    # only keep historical data; drop any row with NAs in any column so
+    # feature-selection algorithms (LASSO, RF, etc.) receive clean input
     if (multistep_horizon) {
       input_data_lag <- multi_feature_selection(input_data,
         future_xregs,
@@ -81,10 +82,10 @@ run_feature_selection <- function(input_data,
         lag,
         target = TRUE
       ) %>%
-        tidyr::drop_na(Target)
+        tidyr::drop_na()
     } else {
       input_data_lag <- input_data %>%
-        tidyr::drop_na(Target)
+        tidyr::drop_na()
     }
 
     # skip lofo if there are too many features
@@ -173,16 +174,23 @@ run_feature_selection <- function(input_data,
     }
 
     # random forest feature importance
-    vip_rf_results <- vip_rf_fn(
-      input_data_lag,
-      seed
-    ) %>%
-      dplyr::rename(Feature = Variable) %>%
-      dplyr::mutate(
-        Vote = 1,
-        Auto_Accept = 0
-      ) %>%
-      dplyr::select(Feature, Vote, Auto_Accept)
+    vip_rf_results <- tryCatch(
+      {
+        vip_rf_fn(
+          input_data_lag,
+          seed
+        ) %>%
+          dplyr::rename(Feature = Variable) %>%
+          dplyr::mutate(
+            Vote = 1,
+            Auto_Accept = 0
+          ) %>%
+          dplyr::select(Feature, Vote, Auto_Accept)
+      },
+      error = function(e) {
+        tibble::tibble()
+      }
+    )
 
     # cubist feature importance
     vip_cubist_results <- tryCatch(
@@ -211,28 +219,32 @@ run_feature_selection <- function(input_data,
     }
 
     # lasso regression feature importance
-    vip_lm_initial <- vip_lm_fn(
-      input_data_lag,
-      seed
+    vip_lm_initial <- tryCatch(
+      vip_lm_fn(input_data_lag, seed),
+      error = function(e) tibble::tibble()
     )
 
-    missing_cols <- setdiff(
-      colnames(input_data_lag %>%
-        dplyr::select(-Combo, -Date, -Target)),
-      vip_lm_initial$Variable
-    )
+    if (nrow(vip_lm_initial) == 0) {
+      vip_lm_cols <- character(0)
+    } else {
+      missing_cols <- setdiff(
+        colnames(input_data_lag %>%
+          dplyr::select(-Combo, -Date, -Target)),
+        vip_lm_initial$Variable
+      )
 
-    cat_cols <- input_data_lag %>%
-      dplyr::select_if(is.character) %>%
-      dplyr::select(tidyselect::contains(missing_cols)) %>%
-      colnames()
+      cat_cols <- input_data_lag %>%
+        dplyr::select_if(is.character) %>%
+        dplyr::select(tidyselect::contains(missing_cols)) %>%
+        colnames()
 
-    vip_lm_cols <- input_data_lag %>%
-      dplyr::select(
-        tidyselect::contains(cat_cols),
-        tidyselect::any_of(vip_lm_initial$Variable)
-      ) %>%
-      colnames()
+      vip_lm_cols <- input_data_lag %>%
+        dplyr::select(
+          tidyselect::contains(cat_cols),
+          tidyselect::any_of(vip_lm_initial$Variable)
+        ) %>%
+        colnames()
+    }
 
     vip_lm_results <- tibble::tibble(
       Feature = vip_lm_cols,
@@ -261,6 +273,14 @@ run_feature_selection <- function(input_data,
       dplyr::filter(Votes >= votes_needed | Auto_Accept > 0) %>%
       dplyr::pull(Feature) %>%
       sort()
+
+    # fallback: if no features were selected, return all available features
+    # (equivalent to skipping feature selection rather than failing to train)
+    if (length(fs_list) == 0) {
+      fs_list <- input_data_lag %>%
+        dplyr::select(-Combo, -Target) %>%
+        colnames()
+    }
 
     element_name <- paste0("model_lag_", lag)
 

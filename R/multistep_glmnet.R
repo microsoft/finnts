@@ -328,11 +328,14 @@ glmnet_multistep_fit_impl <- function(x, y,
         selected_features_filtered <- selected_features
       }
 
-      xreg_tbl_final <- xreg_tbl_final %>%
-        dplyr::select(
-          tidyselect::any_of(selected_features_filtered),
-          tidyselect::contains(setdiff(selected_features_filtered, colnames(xreg_tbl_final)))
-        )
+      # only apply feature filtering if the list is non-empty
+      if (length(selected_features_filtered) > 0) {
+        xreg_tbl_final <- xreg_tbl_final %>%
+          dplyr::select(
+            tidyselect::any_of(selected_features_filtered),
+            tidyselect::contains(setdiff(selected_features_filtered, colnames(xreg_tbl_final)))
+          )
+      }
     }
 
     combined_df <- xreg_tbl_final %>%
