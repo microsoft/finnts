@@ -400,6 +400,9 @@ initial_checks <- function(agent_info) {
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)
 
+  # initialize to NULL; will be set inside the loop if a completed run is found
+  prev_agent_info <- NULL
+
   # loop through each agent version, until finding the last completed run with real results
   for (version in prev_agent_run_tbl$agent_version) {
     # create version specific agent info
@@ -444,7 +447,7 @@ initial_checks <- function(agent_info) {
   }
 
   # ensure a completed previous run was found
-  if (!exists("prev_agent_info")) {
+  if (is.null(prev_agent_info)) {
     stop("Error in update_forecast(). No completed previous agent run found. ",
       "Please ensure at least one prior agent version finished successfully ",
       "before calling update_forecast().",
