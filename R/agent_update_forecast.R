@@ -799,10 +799,6 @@ analyze_results <- function(agent_info) {
     )
   }
 
-  # calculate total time series that should have ran
-  total_combos <- get_total_combos(agent_info) %>%
-    length()
-
   # load previous agent run results (excluding current run)
   prev_agent_run_tbl <- read_file(
     run_info = agent_info$project_info,
@@ -833,12 +829,22 @@ analyze_results <- function(agent_info) {
     # get best run results for version
     temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
 
+    # get number of time series from this previous agent run
+    temp_combo_list <- get_total_combos(agent_info = temp_agent_info)
+
     if (nrow(temp_run_results) > 0) {
-      if (nrow(temp_run_results) == total_combos) { # ensure version finished successfully
+      if (length(unique(temp_run_results$combo)) == length(temp_combo_list)) { # ensure version finished successfully
         previous_best_run_tbl <- plyr::rbind.fill(previous_best_run_tbl, temp_run_results)
         counter <- counter + 1
       }
     }
+  }
+
+  # ensure at least one completed previous run was found
+  if (nrow(previous_best_run_tbl) == 0) {
+    stop("Error in analyze_results(). No completed previous agent runs found to compare against.",
+      call. = FALSE
+    )
   }
 
   # calc average weighted mape of previous best runs
@@ -850,35 +856,26 @@ analyze_results <- function(agent_info) {
   # get latest best run tbl
   latest_best_runs_tbl <- get_best_agent_run(agent_info = agent_info)
 
-  # formatting checks
-  if (nrow(latest_best_runs_tbl) != nrow(previous_best_run_tbl)) {
-    latest_combos <- unique(latest_best_runs_tbl$combo)
-    previous_combos <- unique(previous_best_run_tbl$combo)
-    missing_combos <- setdiff(previous_combos, latest_combos)
-    extra_combos <- setdiff(latest_combos, previous_combos)
-    detail_parts <- character(0)
-    if (length(missing_combos) > 0) {
-      detail_parts <- c(detail_parts, paste0(
-        "Missing from current run: ", paste(missing_combos, collapse = ", ")
-      ))
-    }
-    if (length(extra_combos) > 0) {
-      detail_parts <- c(detail_parts, paste0(
-        "Extra in current run: ", paste(extra_combos, collapse = ", ")
-      ))
-    }
-    stop("Error in update_forecast(). The number of best runs has changed since ",
-      "last completed agent run. ", paste(detail_parts, collapse = ". "), ".",
+  # compare only combos present in both current and previous runs
+  common_combos <- intersect(
+    unique(latest_best_runs_tbl$combo),
+    unique(previous_best_run_tbl$combo)
+  )
+
+  if (length(common_combos) == 0) {
+    stop("Error in analyze_results(). No common combos found between current and previous agent runs.",
       call. = FALSE
     )
   }
 
-  # join with previous best run tbl
+  # join with previous best run tbl on common combos
   best_run_compare_tbl <- latest_best_runs_tbl %>%
+    dplyr::filter(combo %in% common_combos) %>%
     dplyr::select(combo, weighted_mape) %>%
     dplyr::rename(latest_weighted_mape = weighted_mape) %>%
-    dplyr::left_join(
+    dplyr::inner_join(
       previous_best_run_tbl %>%
+        dplyr::filter(combo %in% common_combos) %>%
         dplyr::select(combo, weighted_mape) %>%
         dplyr::rename(previous_weighted_mape = weighted_mape),
       by = "combo"
@@ -1697,8 +1694,8 @@ fit_models <- function(run_info,
       }
 
       if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
-        final_features_list <- unique(as.character(unlist(fs_list, use.names = FALSE)))
-        final_features_list <- unique(c(final_features_list, "Date", "Date_index.num"))
+        final_features_list <- unique(unlist(fs_list, use.names = FALSE))
+        final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
@@ -1711,13 +1708,10 @@ fit_models <- function(run_info,
           workflows::update_recipe(updated_recipe)
       } else {
         if (isTRUE(prev_run_log_tbl$feature_selection) & isTRUE(prev_run_log_tbl$multistep_horizon)) {
-          # use max lag from fs_list as the best match for current forecast horizon
-          available_lags <- sort(as.numeric(gsub("model_lag_", "", names(fs_list))))
-          best_lag <- available_lags[length(available_lags)]
-          final_features_list <- fs_list[[paste0("model_lag_", best_lag)]]
-          final_features_list <- unique(c(as.character(unlist(final_features_list, use.names = FALSE)), "Date", "Date_index.num"))
+          final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
+          final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
         } else {
-          final_features_list <- unique(c(as.character(unlist(fs_list, use.names = FALSE)), "Date", "Date_index.num"))
+          final_features_list <- unique(c(unlist(fs_list, use.names = FALSE), "Date", "Date_index.num"))
         }
 
         updated_recipe <- workflow %>%
