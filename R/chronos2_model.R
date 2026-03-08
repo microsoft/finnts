@@ -82,7 +82,6 @@ make_chronos2_model <- function() {
 
 #' Chronos 2 model specification
 #'
-#' @inheritParams parsnip::boost_tree
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param forecast_horizon forecast horizon
@@ -92,10 +91,9 @@ make_chronos2_model <- function() {
 #' @keywords internal
 #' @export
 chronos2_model <- function(
-  mode = "regression",
-  forecast_horizon = NULL,
-  frequency = NULL
-) {
+    mode = "regression",
+    forecast_horizon = NULL,
+    frequency = NULL) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency)
@@ -126,11 +124,10 @@ chronos2_model <- function(
 #' @keywords internal
 #' @export
 chronos2_model_fit_impl <- function(
-  x,
-  y,
-  forecast_horizon = NULL,
-  frequency = NULL
-) {
+    x,
+    y,
+    forecast_horizon = NULL,
+    frequency = NULL) {
   # Build dataframe with target column
   train_df <- as.data.frame(x)
   train_df$y <- y
@@ -162,7 +159,6 @@ chronos2_model_fit_impl <- function(
 #' Prepares the training and future data, calls the Chronos API via
 #' \code{chronos_forecast()}, and returns the point predictions.
 #'
-#' @inheritParams parsnip::predict.model_fit
 #' @param object model object
 #' @param new_data input data to predict
 #' @param ... Additional arguments
@@ -252,13 +248,12 @@ print.chronos2_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.chronos2_model <- function(
-  object,
-  parameters = NULL,
-  forecast_horizon = NULL,
-  frequency = NULL,
-  fresh = FALSE,
-  ...
-) {
+    object,
+    parameters = NULL,
+    forecast_horizon = NULL,
+    frequency = NULL,
+    fresh = FALSE,
+    ...) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {

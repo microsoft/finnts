@@ -804,10 +804,11 @@ save_best_agent_run <- function(agent_info) {
   missing_hashes <- setdiff(expected_combos, existing_hashes)
 
   if (length(missing_hashes) > 0) {
+    resolved_names <- resolve_combo_hashes(agent_info, missing_hashes)
     stop(
       "Error in save_best_agent_run(). Expected ", length(expected_combos),
       " time series but only found ", length(existing_combos),
-      ". Missing combo hashes: ", paste(missing_hashes, collapse = ", "),
+      ". Missing combos: ", paste(resolved_names, collapse = ", "),
       call. = FALSE
     )
   }

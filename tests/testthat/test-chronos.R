@@ -128,8 +128,10 @@ test_that("pad_chronos2_data zeros out numeric exogenous columns in padded rows"
 
 test_that("pad_chronos2_data works with multiple combos of different lengths", {
   train_df <- data.frame(
-    Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01",
-                      "2020-01-01")),
+    Date = as.Date(c(
+      "2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01",
+      "2020-01-01"
+    )),
     Combo = c("A", "A", "A", "A", "B"),
     y = c(10, 20, 30, 40, 50)
   )
@@ -185,7 +187,7 @@ test_that("pad_chronos2_data uses calendar-aware monthly steps for single-row da
   )
 })
 
-#Chronos 2 API Integration Tests
+# Chronos 2 API Integration Tests
 
 test_that("Chronos 2 fit function works without external regressors", {
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")

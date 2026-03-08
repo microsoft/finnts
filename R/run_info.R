@@ -158,11 +158,33 @@ set_run_info <- function(project_name = "finn_project",
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'set_run_info',
-           please revert back to original inputs or start a
-           new run with 'set_run_info'",
-        call. = FALSE
-      )
+      # separate path changes from other input changes
+      current_no_path <- current_log_df[, colnames(current_log_df) != "path", drop = FALSE]
+      prev_no_path <- prev_log_df[, colnames(prev_log_df) != "path", drop = FALSE]
+      path_changed <- !identical(as.character(prev_log_df$path), as.character(current_log_df$path))
+      other_changed <- hash_data(current_no_path) != hash_data(prev_no_path)
+
+      if (other_changed) {
+        diff_details <- format_input_diff(prev_log_df, current_log_df)
+        stop(
+          "Inputs have recently changed in 'set_run_info'.\n",
+          "The following inputs differ from the previous run:\n",
+          diff_details, "\n",
+          "Please revert back to original inputs or start a ",
+          "new run with 'set_run_info'.",
+          call. = FALSE
+        )
+      }
+
+      if (path_changed) {
+        warning(
+          "The 'path' input has changed in 'set_run_info'.\n",
+          "- 'path': expected '", as.character(prev_log_df$path),
+          "', got '", as.character(current_log_df$path), "'\n",
+          "Continuing with the new path.",
+          call. = FALSE
+        )
+      }
     }
 
     output_list <- list(
