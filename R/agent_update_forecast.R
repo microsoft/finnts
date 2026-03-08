@@ -169,14 +169,10 @@ update_fcst_agent_workflow <- function(agent_info,
         # check if initial checks passed
         if (is.data.frame(results)) {
           return(list(ctx = ctx, `next` = "update_global_models"))
-        } else if (results == "no updates required" && forecast_approach == "bottoms_up") {
-          # if no updates required, skip to post-processing
-          cli::cli_alert_info("No model updates required, moving to save forecast.")
-          return(list(ctx = ctx, `next` = "save_agent_forecast"))
-        } else if (results == "no updates required" && forecast_approach != "bottoms_up") {
-          # if no updates required, skip to reconciliation and post-processing
-          cli::cli_alert_info("No model updates required, moving to reconcile forecast.")
-          return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
+        } else if (results == "no updates required") {
+          # if no updates required, save run metadata then proceed to post-processing
+          cli::cli_alert_info("No model updates required, saving run metadata before post-processing.")
+          return(list(ctx = ctx, `next` = "save_best_agent_run"))
         } else {
           stop("Error in initial checks.", call. = FALSE)
         }
