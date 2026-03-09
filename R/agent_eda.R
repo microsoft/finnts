@@ -1774,7 +1774,7 @@ hierarchy_detect <- function(agent_info,
       for (i in seq_len(nrow(pair_df))) {
         if (pair_df$test[i] == "one-to-many") {
           a <- pair_df$from[i] # coarser (b determines a)
-          b <- pair_df$to[i]   # finer
+          b <- pair_df$to[i] # finer
           ga <- var_to_group[a]
           gb <- var_to_group[b]
           if (ga == gb) next # same equivalence class
@@ -1812,22 +1812,6 @@ hierarchy_detect <- function(agent_info,
       }
 
       hierarchy_type <- if (chain_found) "standard" else "grouped"
-    }
-  }
-
-  # downgrade grouped to none when any combo column has a single unique value
-  if (hierarchy_type == "grouped") {
-    n_unique <- vapply(combo_vars, function(v) length(unique(df[[v]])), integer(1))
-    constant_cols <- names(n_unique[n_unique == 1L])
-    if (length(constant_cols) > 0) {
-      warning(
-        "Grouped hierarchy downgraded to no hierarchy. The following combo ",
-        "variable(s) have only one unique value: ",
-        paste(constant_cols, collapse = ", "),
-        ".",
-        call. = FALSE
-      )
-      hierarchy_type <- "none"
     }
   }
 
@@ -1919,6 +1903,63 @@ get_total_combos <- function(agent_info) {
     suppressWarnings()
 
   return(total_combo_list)
+}
+
+#' Resolve hashed combo identifiers back to original combo names
+#'
+#' @param agent_info agent information list
+#' @param combo_hashes character vector of hashed combo identifiers to resolve
+#'
+#' @return character vector of original combo names (falls back to hash if unresolvable)
+#' @noRd
+resolve_combo_hashes <- function(agent_info, combo_hashes) {
+  # metadata
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+
+  # list input data files for this agent run
+  input_files <- list_files(
+    project_info$storage_object,
+    paste0(
+      project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "*.", project_info$data_output
+    )
+  ) %>%
+    tibble::tibble(
+      Path = .
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
+    dplyr::ungroup() %>%
+    tidyr::separate(File, into = c("Project", "Agent_Run", "Combo"), sep = "-", remove = TRUE) %>%
+    dplyr::mutate(Combo = stringr::str_remove_all(Combo, "\\..*$")) %>%
+    dplyr::filter(Combo %in% combo_hashes) %>%
+    suppressWarnings()
+
+  # read each matching file to extract the original Combo column value
+  resolved <- purrr::map_chr(seq_len(nrow(input_files)), function(i) {
+    tryCatch(
+      {
+        df <- read_file(
+          run_info = project_info,
+          file_list = input_files$Path[i],
+          return_type = "df"
+        )
+        if ("Combo" %in% names(df) && nrow(df) > 0) {
+          unique(df$Combo)[1]
+        } else {
+          input_files$Combo[i]
+        }
+      },
+      error = function(e) {
+        input_files$Combo[i]
+      }
+    )
+  })
+
+  # for any hashes not found in files, return the hash as-is
+  unresolved <- setdiff(combo_hashes, input_files$Combo)
+  c(resolved, unresolved)
 }
 
 #' Get finished time series combos for EDA

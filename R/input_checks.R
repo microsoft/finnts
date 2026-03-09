@@ -1,3 +1,51 @@
+#' Format differences between two single-row log data frames
+#'
+#' @param prev_log_df previous log data frame (1 row)
+#' @param current_log_df current log data frame (1 row)
+#' @param nullable_fields character vector of column names whose NA values
+#'   should display as "NULL" in the diff output
+#'
+#' @return character string describing the differences
+#' @noRd
+format_input_diff <- function(prev_log_df, current_log_df, nullable_fields = character(0)) {
+  # helper to display NA as NULL for nullable fields
+  display_val <- function(val, col) {
+    txt <- as.character(val)
+    if (is.na(val) && col %in% nullable_fields) "NULL" else txt
+  }
+
+  cols <- intersect(colnames(prev_log_df), colnames(current_log_df))
+  diffs <- character(0)
+  for (col in cols) {
+    prev_val <- prev_log_df[[col]]
+    curr_val <- current_log_df[[col]]
+    if (!identical(as.character(prev_val), as.character(curr_val))) {
+      diffs <- c(diffs, paste0(
+        "- '", col, "': expected '", display_val(prev_val, col),
+        "', got '", display_val(curr_val, col), "'"
+      ))
+    }
+  }
+  # columns only in current
+  for (col in setdiff(colnames(current_log_df), colnames(prev_log_df))) {
+    curr_val <- current_log_df[[col]]
+    diffs <- c(diffs, paste0(
+      "- '", col, "': not previously set, got '", display_val(curr_val, col), "'"
+    ))
+  }
+  # columns only in previous
+  for (col in setdiff(colnames(prev_log_df), colnames(current_log_df))) {
+    prev_val <- prev_log_df[[col]]
+    diffs <- c(diffs, paste0(
+      "- '", col, "': expected '", display_val(prev_val, col), "', no longer set"
+    ))
+  }
+  if (length(diffs) == 0) {
+    return("(no column-level differences detected)")
+  }
+  paste(diffs, collapse = "\n")
+}
+
 #' Check input values
 #'
 #' @param input_name input name
@@ -63,17 +111,46 @@ check_input_data <- function(input_data,
     stop("target variable does not match a column header in input data")
   }
 
+  # external regressors match the input data
+  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
+    stop("external regressors do not match column headers in input data")
+  }
+
+  # 'Date' column is reserved for the time stamp
+  if ("Date" %in% combo_variables) {
+    stop("'Date' column cannot be used as a combo variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  if (target_variable == "Date") {
+    stop("'Date' column cannot be used as the target variable. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  if (!is.null(external_regressors) && "Date" %in% external_regressors) {
+    stop("'Date' column cannot be used as an external regressor. It is reserved for the time stamp.",
+      call. = FALSE
+    )
+  }
+
+  # combo variables must not be date-formatted columns
+  for (cv in combo_variables) {
+    if (inherits(input_data[[cv]], c("Date", "POSIXct", "POSIXlt"))) {
+      stop(
+        paste0("combo variable '", cv, "' is a date-formatted column and cannot be used as a combo variable"),
+        call. = FALSE
+      )
+    }
+  }
+
   # target variable is numeric
   if (!input_data %>%
     dplyr::rename(Target = tidyselect::all_of(target_variable)) %>%
     dplyr::pull(Target) %>%
     is.numeric()) {
     stop("Target variable in input data needs to be numeric")
-  }
-
-  # external regressors match the input data
-  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
-    stop("external regressors do not match column headers in input data")
   }
 
   # date column is labeled as "Date"

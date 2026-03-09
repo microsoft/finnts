@@ -125,7 +125,13 @@ final_models <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
-      stop("Inputs have recently changed in 'final_models', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df_aligned, current_log_df)
+      stop(
+        "Inputs have recently changed in 'final_models'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     } else {

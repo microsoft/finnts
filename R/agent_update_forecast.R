@@ -169,14 +169,10 @@ update_fcst_agent_workflow <- function(agent_info,
         # check if initial checks passed
         if (is.data.frame(results)) {
           return(list(ctx = ctx, `next` = "update_global_models"))
-        } else if (results == "no updates required" & forecast_approach == "bottoms_up") {
-          # if no updates required, stop the workflow
-          cli::cli_alert_info("No model updates required, stopping workflow.")
-          return(list(ctx = ctx, `next` = "stop"))
-        } else if (results == "no updates required" & forecast_approach != "bottoms_up") {
-          # if no updates required, stop the workflow
-          cli::cli_alert_info("No model updates required, moving to reconcile forecast.")
-          return(list(ctx = ctx, `next` = "reconcile_agent_forecast"))
+        } else if (results == "no updates required") {
+          # if no updates required, save run metadata then proceed to post-processing
+          cli::cli_alert_info("No model updates required, saving run metadata before post-processing.")
+          return(list(ctx = ctx, `next` = "save_best_agent_run"))
         } else {
           stop("Error in initial checks.", call. = FALSE)
         }
@@ -234,7 +230,7 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if forecast iteration should be ran again
-        if (perc_worse >= 40 & allow_iterate_forecast) {
+        if (perc_worse >= 40 && allow_iterate_forecast) {
           cli::cli_alert_info("Poor performance detected: Running iterate_forecast() to improve results.")
           return(list(ctx = ctx, `next` = "iterate_forecast"))
         } else if (forecast_approach != "bottoms_up") {
@@ -404,6 +400,9 @@ initial_checks <- function(agent_info) {
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)
 
+  # initialize to NULL; will be set inside the loop if a completed run is found
+  prev_agent_info <- NULL
+
   # loop through each agent version, until finding the last completed run with real results
   for (version in prev_agent_run_tbl$agent_version) {
     # create version specific agent info
@@ -447,6 +446,31 @@ initial_checks <- function(agent_info) {
     }
   }
 
+  # ensure a completed previous run was found
+  if (is.null(prev_agent_info)) {
+    stop("Error in update_forecast(). No completed previous agent run found. ",
+      "Please ensure at least one prior agent version finished successfully ",
+      "before calling update_forecast().",
+      call. = FALSE
+    )
+  }
+
+  # check if forecast approach has changed
+  prev_approach <- unique(prev_agent_info$forecast_approach)
+  current_approach <- unique(agent_info$forecast_approach)
+
+  if (length(prev_approach) == 1 && length(current_approach) == 1 &&
+    prev_approach != current_approach) {
+    stop(
+      "Error in update_forecast(). Current forecast approach is '",
+      current_approach, "' but the previous agent run used '",
+      prev_approach, "'. Please ensure 'allow_hierarchical_forecast' in ",
+      "set_agent_info() produces the same forecast approach, or start a ",
+      "new agent run with iterate_forecast().",
+      call. = FALSE
+    )
+  }
+
   # get time series from previous agent run
   prev_run_combos <- get_total_combos(agent_info = prev_agent_info)
 
@@ -454,19 +478,14 @@ initial_checks <- function(agent_info) {
   current_run_combos <- get_total_combos(agent_info = agent_info)
 
   # check if number of time series has changed
-  if (length(prev_run_combos) < length(current_run_combos)) {
-    stop("Error in update_forecast(). The number of time series has grown since last complted agent run, please remove new time series.",
+  new_combos <- setdiff(current_run_combos, prev_run_combos)
+
+  if (length(new_combos) > 0) {
+    resolved_names <- resolve_combo_hashes(agent_info, new_combos)
+    stop("Error in update_forecast(). The following time series have been added since last completed agent run: ",
+      paste(resolved_names, collapse = ", "), ". Please remove time series.",
       call. = FALSE
     )
-  } else {
-    new_combos <- setdiff(current_run_combos, prev_run_combos)
-
-    if (length(new_combos) > 0) {
-      stop("Error in update_forecast(). The following time series have been added since last completed agent run: ",
-        paste(new_combos, collapse = ", "), ". Please remove time series.",
-        call. = FALSE
-      )
-    }
   }
 
   # get best runs from previous agent run and filter on combos that haven't been updated for this version
@@ -779,10 +798,6 @@ analyze_results <- function(agent_info) {
     )
   }
 
-  # calculate total time series that should have ran
-  total_combos <- get_total_combos(agent_info) %>%
-    length()
-
   # load previous agent run results (excluding current run)
   prev_agent_run_tbl <- read_file(
     run_info = agent_info$project_info,
@@ -813,12 +828,22 @@ analyze_results <- function(agent_info) {
     # get best run results for version
     temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
 
+    # get number of time series from this previous agent run
+    temp_combo_list <- get_total_combos(agent_info = temp_agent_info)
+
     if (nrow(temp_run_results) > 0) {
-      if (nrow(temp_run_results) == total_combos) { # ensure version finished successfully
+      if (length(unique(temp_run_results$combo)) == length(temp_combo_list)) { # ensure version finished successfully
         previous_best_run_tbl <- plyr::rbind.fill(previous_best_run_tbl, temp_run_results)
         counter <- counter + 1
       }
     }
+  }
+
+  # ensure at least one completed previous run was found
+  if (nrow(previous_best_run_tbl) == 0) {
+    stop("Error in analyze_results(). No completed previous agent runs found to compare against.",
+      call. = FALSE
+    )
   }
 
   # calc average weighted mape of previous best runs
@@ -830,19 +855,26 @@ analyze_results <- function(agent_info) {
   # get latest best run tbl
   latest_best_runs_tbl <- get_best_agent_run(agent_info = agent_info)
 
-  # formatting checks
-  if (nrow(latest_best_runs_tbl) != nrow(previous_best_run_tbl)) {
-    stop("Error in update_forecast(). The number of best runs has changed since last completed agent run, please check the results.",
+  # compare only combos present in both current and previous runs
+  common_combos <- intersect(
+    unique(latest_best_runs_tbl$combo),
+    unique(previous_best_run_tbl$combo)
+  )
+
+  if (length(common_combos) == 0) {
+    stop("Error in analyze_results(). No common combos found between current and previous agent runs.",
       call. = FALSE
     )
   }
 
-  # join with previous best run tbl
+  # join with previous best run tbl on common combos
   best_run_compare_tbl <- latest_best_runs_tbl %>%
+    dplyr::filter(combo %in% common_combos) %>%
     dplyr::select(combo, weighted_mape) %>%
     dplyr::rename(latest_weighted_mape = weighted_mape) %>%
-    dplyr::left_join(
+    dplyr::inner_join(
       previous_best_run_tbl %>%
+        dplyr::filter(combo %in% common_combos) %>%
         dplyr::select(combo, weighted_mape) %>%
         dplyr::rename(previous_weighted_mape = weighted_mape),
       by = "combo"
@@ -1033,6 +1065,9 @@ update_forecast_combo <- function(agent_info,
     path = project_info$path
   )
 
+  # validate all previous run log fields upfront
+  prev_run_log_tbl <- validate_prev_run_log(prev_run_log_tbl)
+
   # get best model list from previous run
   if (unique(prev_best_run_tbl$model_type) == "global") {
     # global model only runs xgboost with R1 recipe
@@ -1204,7 +1239,7 @@ update_forecast_combo <- function(agent_info,
     multistep_horizon = prev_run_log_tbl$multistep_horizon
   )
 
-  if (prev_run_log_tbl$box_cox || prev_run_log_tbl$stationary) {
+  if (isTRUE(prev_run_log_tbl$box_cox) || isTRUE(prev_run_log_tbl$stationary)) {
     combo_info_tbl <- read_file(new_run_info,
       file_list = paste0(
         new_run_info$path,
@@ -1281,7 +1316,7 @@ update_forecast_combo <- function(agent_info,
     calc_wmape()
 
   # retune hyperparameters if +10% worse than previous best
-  if (final_wmape > (prev_best_wmape * 1.1)) {
+  if (!is.na(final_wmape) && !is.na(prev_best_wmape) && final_wmape > (prev_best_wmape * 1.1)) {
     cli::cli_progress_step("Retuning Model Hyperparameters")
 
     rm(final_model_tbl)
@@ -1583,7 +1618,7 @@ fit_models <- function(run_info,
     }
 
     # adjust workflow if forecast horizon changes for multistep model
-    if (prev_run_log_tbl$multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models() & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
+    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models() & !is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
       updated_model_spec <- workflow %>%
         workflows::extract_spec_parsnip() %>%
         update(
@@ -1612,9 +1647,8 @@ fit_models <- function(run_info,
     }
 
     if (length(missing_cols) > 0 ||
-      (as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
-      # rerun feature selection if needed
-      if (prev_run_log_tbl$feature_selection) {
+      (!is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
+      if (isTRUE(prev_run_log_tbl$feature_selection)) {
         fs_list <- prep_data %>%
           run_feature_selection(
             run_info = run_info,
@@ -1634,7 +1668,7 @@ fit_models <- function(run_info,
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
 
-        if (prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = fs_list)
         }
@@ -1652,39 +1686,37 @@ fit_models <- function(run_info,
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
 
-        if (prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
           updated_model_spec <- updated_model_spec %>%
             update(selected_features = NULL)
         }
       }
 
-      if (prev_run_log_tbl$multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+      if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
         final_features_list <- unique(unlist(fs_list, use.names = FALSE))
         final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
-          recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
           recipes::update_role(tidyselect::any_of(final_features_list), new_role = "predictor") %>%
-          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>% # ignore missing features
+          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>%
           base::suppressWarnings()
 
         workflow <- workflow %>%
           workflows::update_model(updated_model_spec) %>%
           workflows::update_recipe(updated_recipe)
       } else {
-        if (prev_run_log_tbl$feature_selection & prev_run_log_tbl$multistep_horizon) {
+        if (isTRUE(prev_run_log_tbl$feature_selection) & isTRUE(prev_run_log_tbl$multistep_horizon)) {
           final_features_list <- fs_list[[paste0("model_lag_", as.numeric(prev_run_log_tbl$forecast_horizon))]]
           final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
         } else {
-          final_features_list <- (unique(c(fs_list, "Date", "Date_index.num")))
+          final_features_list <- unique(c(unlist(fs_list, use.names = FALSE), "Date", "Date_index.num"))
         }
 
         updated_recipe <- workflow %>%
           workflows::extract_recipe(estimated = FALSE) %>%
-          recipes::remove_role(tidyselect::everything(), old_role = "predictor") %>%
           recipes::update_role(tidyselect::any_of(final_features_list), new_role = "predictor") %>%
-          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>% # ignore missing features
+          recipes::update_role(-tidyselect::any_of(c(final_features_list, "Target")), new_role = "ignore") %>%
           base::suppressWarnings()
 
         workflow <- workflow %>%
@@ -1705,7 +1737,7 @@ fit_models <- function(run_info,
       dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
       tidyr::unnest(Hyperparameters)
 
-    if (prev_run_log_tbl$stationary & !(model %in% list_multivariate_models())) {
+    if (isTRUE(prev_run_log_tbl$stationary) & !(model %in% list_multivariate_models())) {
       # undifference the data for a univariate model
       prep_data <- prep_data %>%
         undifference_recipe(
@@ -1713,6 +1745,9 @@ fit_models <- function(run_info,
           model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
         )
     }
+
+    # clamp negative Target values for models that require non-negative data
+    prep_data <- clamp_negative_target(prep_data, model)
 
     # tune hyperparameters
     if (retune_hyperparameters) {
@@ -1800,7 +1835,7 @@ fit_models <- function(run_info,
     }
 
     # undo differencing transformation
-    if (prev_run_log_tbl$stationary & model %in% list_multivariate_models()) {
+    if (isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models()) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -1827,7 +1862,7 @@ fit_models <- function(run_info,
     }
 
     # undo box-cox transformation
-    if (prev_run_log_tbl$box_cox) {
+    if (isTRUE(prev_run_log_tbl$box_cox)) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -1995,6 +2030,11 @@ reconcile <- function(initial_fcst,
                       run_info,
                       forecast_approach,
                       negative_forecast) {
+  if (is.na(negative_forecast)) {
+    warning("'negative_forecast' is NA in reconcile(), defaulting to FALSE")
+    negative_forecast <- FALSE
+  }
+
   hts_list <- read_file(run_info,
     path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_info.", run_info$object_output),
     return_type = "object"
@@ -2135,6 +2175,72 @@ calc_wmape <- function(forecast_tbl) {
     dplyr::ungroup() %>%
     dplyr::pull(weighted_mape) %>%
     mean(na.rm = TRUE)
+}
+
+#' Validate previous run log table
+#'
+#' Checks all fields of prev_run_log_tbl for NA values and applies sensible
+#' defaults. Issues a single consolidated warning listing any defaulted fields.
+#'
+#' @param prev_run_log_tbl A single-row tibble from get_run_info() for the
+#'   previous best run.
+#'
+#' @return The validated prev_run_log_tbl with NA fields replaced by defaults.
+#' @noRd
+validate_prev_run_log <- function(prev_run_log_tbl) {
+  # boolean fields default to FALSE when NA
+  boolean_fields <- c(
+    "box_cox", "stationary", "negative_forecast",
+    "clean_missing_values", "clean_outliers",
+    "multistep_horizon", "feature_selection",
+    "pca", "weekly_to_daily"
+  )
+
+  # character fields with safe defaults
+  character_defaults <- list(
+    forecast_approach = "bottoms_up"
+  )
+
+  # numeric fields with safe defaults
+  numeric_defaults <- list(
+    num_hyperparameters = 10
+  )
+
+  defaulted_fields <- character(0)
+
+  # validate boolean fields
+  for (field in boolean_fields) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- FALSE
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = FALSE"))
+    }
+  }
+
+  # validate character fields
+  for (field in names(character_defaults)) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- character_defaults[[field]]
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = '", character_defaults[[field]], "'"))
+    }
+  }
+
+  # validate numeric fields
+  for (field in names(numeric_defaults)) {
+    if (field %in% colnames(prev_run_log_tbl) && is.na(prev_run_log_tbl[[field]])) {
+      prev_run_log_tbl[[field]] <- numeric_defaults[[field]]
+      defaulted_fields <- c(defaulted_fields, paste0(field, " = ", numeric_defaults[[field]]))
+    }
+  }
+
+  if (length(defaulted_fields) > 0) {
+    warning(
+      "The following fields in the previous run log were NA and have been set to defaults: ",
+      paste(defaulted_fields, collapse = ", "),
+      call. = FALSE
+    )
+  }
+
+  return(prev_run_log_tbl)
 }
 
 #' Adjust inputs for model fitting

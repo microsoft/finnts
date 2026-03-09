@@ -140,9 +140,12 @@ train_models <- function(run_info,
     unique()
 
   global_model_list <- list_global_models()
-  fs_model_list <- list_multivariate_models()
+  multivariate_model_list <- list_multivariate_models()
+  foundation_model_list <- list_foundation_models()
+  multistep_model_list <- list_multistep_models()
+  fs_model_list <- multivariate_model_list
   # Remove foundation models from feature selection list as they don't use traditional features
-  fs_model_list <- setdiff(fs_model_list, list_foundation_models())
+  fs_model_list <- setdiff(fs_model_list, foundation_model_list)
 
   if (sum(model_workflow_list %in% global_model_list) == 0 & run_global_models) {
     run_global_models <- FALSE
@@ -247,7 +250,13 @@ train_models <- function(run_info,
       data.frame()
 
     if (hash_data(current_log_df) != hash_data(prev_log_df)) {
-      stop("Inputs have recently changed in 'train_models', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df, current_log_df)
+      stop(
+        "Inputs have recently changed in 'train_models'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     } else {
@@ -338,7 +347,7 @@ train_models <- function(run_info,
       if (combo_hash == "All-Data") {
         model_workflow_tbl <- model_workflow_tbl %>%
           dplyr::filter(
-            Model_Name %in% list_global_models(),
+            Model_Name %in% global_model_list,
             Model_Recipe %in% global_model_recipes
           )
       }
@@ -366,9 +375,10 @@ train_models <- function(run_info,
         box_cox <- box_cox
         undifference_forecast <- undifference_forecast
         undifference_recipe <- undifference_recipe
-        list_global_models <- list_global_models
-        list_multivariate_models <- list_multivariate_models
-        list_foundation_models <- list_foundation_models
+        global_model_list <- global_model_list
+        multivariate_model_list <- multivariate_model_list
+        foundation_model_list <- foundation_model_list
+        multistep_model_list <- multistep_model_list
       }
 
       if (feature_selection) {
@@ -506,7 +516,7 @@ train_models <- function(run_info,
             final_features_list <- fs_list$R2
           }
 
-          if (multistep_horizon & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+          if (multistep_horizon & data_prep_recipe == "R1" & model %in% multistep_model_list) {
             updated_model_spec <- workflow %>%
               workflows::extract_spec_parsnip() %>%
               update(selected_features = final_features_list)
@@ -537,7 +547,7 @@ train_models <- function(run_info,
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
 
-        if (stationary & (!(model %in% list_multivariate_models()) || model %in% list_foundation_models())) {
+        if (stationary & (!(model %in% multivariate_model_list) || model %in% foundation_model_list)) {
           # undifference the data for a univariate model or foundation model
 
           hist_end_date <- model_train_test_tbl %>%
@@ -572,6 +582,9 @@ train_models <- function(run_info,
               )
           }
         }
+
+        # clamp negative Target values for models that require non-negative data
+        prep_data <- clamp_negative_target(prep_data, model)
 
         # tune hyperparameters
         set.seed(seed)
@@ -647,7 +660,7 @@ train_models <- function(run_info,
         }
 
         # undo differencing transformation
-        if (stationary & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
+        if (stationary & model %in% multivariate_model_list & !(model %in% foundation_model_list)) {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%
@@ -873,6 +886,31 @@ train_models <- function(run_info,
   )
 }
 
+#' Clamp negative Target values to zero for models that require non-negative data
+#'
+#' @param data data frame containing a Target column
+#' @param model character string of model name
+#'
+#' @return data frame with negative Target values replaced by zero
+#' @noRd
+clamp_negative_target <- function(data, model) {
+  nonneg_models <- c("croston")
+
+  if (model %in% nonneg_models && any(data$Target < 0, na.rm = TRUE)) {
+    warning(
+      sprintf(
+        "Model '%s' requires non-negative Target values. %d negative values clamped to zero.",
+        model,
+        sum(data$Target < 0, na.rm = TRUE)
+      ),
+      call. = FALSE
+    )
+    data$Target <- replace(data$Target, which(data$Target < 0), 0)
+  }
+
+  return(data)
+}
+
 #' Function to convert negative forecasts to zero
 #'
 #' @param data data frame
@@ -888,6 +926,10 @@ negative_fcst_adj <- function(data,
     dplyr::mutate(Forecast = ifelse(is.na(Forecast), 0, Forecast)) # replace NA values
 
   # convert negative forecasts to zero
+  if (is.na(negative_forecast)) {
+    warning("'negative_forecast' is NA, defaulting to FALSE (negative forecasts will be set to zero)")
+    negative_forecast <- FALSE
+  }
   if (negative_forecast == FALSE) {
     fcst_final$Forecast <- replace(
       fcst_final$Forecast,
