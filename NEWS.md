@@ -19,6 +19,7 @@
   - It can be used as a global model
   - Added a Chronos controller, which will support other Chronos variant API POST requests as well
   - Added two new package dependencies: `jsonlite` and `httr`
+  - Integrated Chronos2 into the finn agent workflow with automatic availability detection
 
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting

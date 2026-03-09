@@ -29,7 +29,7 @@ Outliers are handled using the [ts_clean_vec](https://business-science.github.io
 ## Understanding "_original" Columns
 When you call get_prepped_data() to view your feature engineered data, you may notice columns with "_original" appended to their names (e.g. Price_original). These columns are created during the preprocessing pipeline that preserve the untransformed external regressor values. This happens after missing value and outlier cleaning, but before any transformations like Box-Cox or differencing are applied.
 
-TimeGPT  uses these "_original" columns for external regressors as it expects data in its original scale and distribution.
+TimeGPT and Chronos2 use these "_original" columns for external regressors as they expect data in its original scale and distribution.
 
 Models like XGBoost, LightGBM, Random Forest, etc., ignore the "_original" columns and use the transformed versions instead.
 
@@ -155,4 +155,4 @@ print(R2_prepped_data_tbl)
 
 ## Model Specific Preprocessing
 
-In addition to everything called out above, some models have their own specific transformations that need to be applied before training a model. For example, the "glmnet" model needs to transform categorical variables into continuous variables and center/scale the data before training. Each default model in finnts has their own preprocessing steps that ensure the data fed into the model has the best chance of producing a high quality forecast. The [recipes](https://recipes.tidymodels.org/) package is used to easily apply various preprocessing transformations needed before training a model. Additionally, TimeGPT automatically pads data with zeros when using Azure AI endpoints just before the API call to meet minimum data size requirements based on data frequency (see the [Forecasting with GenAI](forecasting-genai.html) vignette for details).
+In addition to everything called out above, some models have their own specific transformations that need to be applied before training a model. For example, the "glmnet" model needs to transform categorical variables into continuous variables and center/scale the data before training. Each default model in finnts has their own preprocessing steps that ensure the data fed into the model has the best chance of producing a high quality forecast. The [recipes](https://recipes.tidymodels.org/) package is used to easily apply various preprocessing transformations needed before training a model. Additionally, TimeGPT automatically pads data with zeros when using Azure AI endpoints just before the API call to meet minimum data size requirements based on data frequency, and Chronos2 pads combos with fewer than 3 observations to meet its minimum data requirements (see the [Forecasting with GenAI](forecasting-genai.html) vignette for details).

@@ -120,7 +120,8 @@ summarize_models <- function(agent_info,
     "xgboost" = summarize_model_xgboost,
     "nnetar-xregs" = summarize_model_nnetar,
     "prophet-xregs" = summarize_model_prophet,
-    "timegpt" = summarize_model_timegpt
+    "timegpt" = summarize_model_timegpt,
+    "chronos2" = summarize_model_chronos2
   )
 
   # Setup parallel processing
@@ -7870,6 +7871,123 @@ summarize_model_timegpt <- function(wf) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_variant", "timegpt-1-long-horizon"))
       }
     }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+
+#' Summarize a Chronos2 Workflow
+#'
+#' Extracts and summarizes key information from a fitted Chronos2 workflow,
+#' including model arguments, engine parameters, and api configuration details.
+#'
+#' @param wf A fitted tidymodels workflow containing a chronos2_model()
+#'   model with engine 'chronos2_model'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_model_chronos2 <- function(wf) {
+  digits <- 6
+  scan_depth <- 6
+
+  if (!inherits(wf, "workflow")) stop("summarize_model_chronos2() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "chronos2_model")) {
+    stop("summarize_model_chronos2() only supports chronos2_model() with engine 'chronos2_model'.")
+  }
+
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
+      return(format(rounded, scientific = FALSE, trim = TRUE))
+    }
+    as.character(x)
+  }
+
+  # Predictors / outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Flag external regressors (non-date predictors)
+  xreg_names <- character()
+  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    xreg_names <- names(mold$predictors)[!is_date]
+    if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
+      preds_tbl$value[preds_tbl$name %in% xreg_names] <-
+        paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [regressor]")
+    }
+  }
+
+  # Recipe steps - no significant preprocessing steps for Chronos2
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Model arguments
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Locate the chronos2 fit object
+  is_chronos2_fit <- function(o) {
+    inherits(o, "chronos2_model_fit") || (is.list(o) && !is.null(o$train_data) && !is.null(o$forecast_horizon))
+  }
+  chronos2_obj <- .find_obj(fit$fit, is_chronos2_fit, scan_depth)
+  if (is.null(chronos2_obj) && is_chronos2_fit(fit$fit)) chronos2_obj <- fit$fit
+
+  if (!is.null(chronos2_obj)) {
+    # Training data stats - external regressors
+    if (!is.null(chronos2_obj$train_data)) {
+      train_data <- chronos2_obj$train_data
+      original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
+      if (length(original_cols) > 0) {
+        clean_names <- gsub("_original$", "", original_cols)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", as.character(length(clean_names))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "external_regressors", paste(clean_names, collapse = ", ")))
+      } else {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
+      }
+
+      # Number of training observations
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(nrow(train_data))))
+
+      # Number of combos in training data
+      if ("Combo" %in% colnames(train_data)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
+      }
+    }
+
+    # API Details
+    api_url_set <- nzchar(Sys.getenv("CHRONOS_API_URL"))
+    api_token_set <- nzchar(Sys.getenv("CHRONOS_API_TOKEN"))
+    if (api_url_set && api_token_set) {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "api_configuration", "configured"))
+    } else {
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "api_configuration", "failed"))
+    }
+
+    # Model type
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos2"))
   }
 
   .assemble_output(
