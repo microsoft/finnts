@@ -140,16 +140,12 @@ prep_hierarchical_data <- function(input_data,
           temp_tbl <- input_data_adj %>%
             tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
             dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
-            dplyr::distinct()
+            dplyr::distinct() %>%
+            dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
+            dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE)) %>%
+            dplyr::ungroup()
 
-          if (length(value_level) > 1) {
-            temp_tbl <- temp_tbl %>%
-              dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
-              dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE)) %>%
-              dplyr::ungroup()
-
-            names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
-          }
+          names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
 
           colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
 
@@ -1020,9 +1016,21 @@ external_regressor_mapping <- function(data,
     all_unique <- count_unique(combo_variables, regressor)
 
     # fast path: test each single combo variable first (O(n))
+    # exclude variables with only 1 unique value since they provide
+    # no grouping information and would always appear as false candidates
+    multi_value_vars <- combo_variables[
+      vapply(combo_variables, function(v) {
+        dplyr::n_distinct(data[[v]]) > 1
+      }, logical(1))
+    ]
+
+    if (length(multi_value_vars) == 0) {
+      return(data.frame(Regressor = regressor, Var = "All"))
+    }
+
     single_var_tbl <- data.frame(
-      Var = combo_variables,
-      Unique = vapply(combo_variables, function(v) {
+      Var = multi_value_vars,
+      Unique = vapply(multi_value_vars, function(v) {
         count_unique(v, regressor)
       }, numeric(1)),
       stringsAsFactors = FALSE
