@@ -37,7 +37,7 @@
 
 ## Bug Fixes
 
--   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
+-   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.
 -   Fixed hierarchical issues when a combo variable contains a single unique value.
 -   Fixed issue when reconciling standard hierarchical forecasts.
 -   Fixed weighted mape calculation when target variable has negative values.

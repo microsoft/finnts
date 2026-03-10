@@ -142,8 +142,7 @@ prep_hierarchical_data <- function(input_data,
             dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
             dplyr::distinct() %>%
             dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
-            dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE)) %>%
-            dplyr::ungroup()
+            dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE), .groups = "drop")
 
           names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
 
