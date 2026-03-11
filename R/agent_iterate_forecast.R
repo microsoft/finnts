@@ -887,14 +887,8 @@ fcst_agent_workflow <- function(agent_info,
 
         # check if the LLM aborted the run
         if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
-          # check if any iterations have been completed
-          if (ctx$iter > 0) {
-            # proceed to finalize run step if there is existing run_info from previous iterations
-            return(list(ctx = ctx, `next` = "finalize_run"))
-          } else {
-            # skip finalize run step since run was aborted with no existing run_info
-            return(list(ctx = ctx, `next` = "stop"))
-          }
+          # always finalize to update max_iterations and run_complete in best_run file
+          return(list(ctx = ctx, `next` = "finalize_run"))
         } else {
           return(list(ctx = ctx, `next` = "submit_fcst_run"))
         }
@@ -990,7 +984,6 @@ fcst_agent_workflow <- function(agent_info,
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        run_info = "{results$submit_fcst_run}",
         combo = combo
       )
     ),
@@ -1796,46 +1789,24 @@ log_best_run <- function(agent_info,
 #' it updates all combo files. For local models, it updates a single combo file.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A character string representing the hashed combo. If NULL or "all", updates all combos for global models.
 #'
 #' @return Character string indicating success
 #' @noRd
 finalize_run <- function(agent_info,
-                         run_info,
                          combo = NULL) {
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   max_iter <- agent_info$max_iter
 
-  # load forecast to get combo list (always load to get original combo names)
-  if (is.null(combo)) {
-    combo <- "all"
-    combo_filter <- "All-Data"
-  } else {
-    combo_filter <- combo
-  }
-
-  back_test_tbl <- load_combo_forecast(
-    combo = combo_filter,
-    run_info = run_info
-  )
-
-  # get unique combo names (unhashed)
-  combo_list <- unique(back_test_tbl$Combo)
-
-  # for each combo, update the agent best run file
-  for (combo_name in combo_list) {
-    # hash the combo name for file operations
-    combo_hash <- hash_data(combo_name)
-
-    # load the current best run file for this combo
+  if (!is.null(combo)) {
+    # local combo: read best_run file directly
     best_run_file <- paste0(
       project_info$path, "/logs/",
       hash_data(project_info$project_name), "-",
       hash_data(agent_info$run_id), "-",
-      combo_hash, "-agent_best_run.", project_info$data_output
+      combo, "-agent_best_run.csv"
     ) %>% fs::path_tidy()
 
     best_run_tbl <- read_file(
@@ -1846,29 +1817,65 @@ finalize_run <- function(agent_info,
 
     if (nrow(best_run_tbl) == 0) {
       stop(
-        paste0(
-          "Error in finalize_run(). No best run file found for combo: ",
-          combo_name
-        ),
+        paste0("Error in finalize_run(). No best run file found for combo hash: ", combo),
         call. = FALSE
       )
     }
 
-    # skip updating for global runs that are less accurate than previous local best runs
-    if (best_run_tbl$model_type == "local" & combo == "all") {
-      next
+    write_data(
+      x = best_run_tbl %>% dplyr::mutate(max_iterations = max_iter, run_complete = TRUE),
+      combo = best_run_tbl$combo[[1]],
+      run_info = project_info,
+      output_type = "log",
+      folder = "logs",
+      suffix = "-agent_best_run"
+    )
+
+    return("Run finalized successfully.")
+  }
+
+  # global models: load all best_run files and update each one
+  best_run_tbl_all <- load_best_agent_run(agent_info = agent_info)
+
+  if (nrow(best_run_tbl_all) == 0) {
+    stop("Error in finalize_run(). No best run files found.", call. = FALSE)
+  }
+
+  combo_list <- best_run_tbl_all %>%
+    dplyr::filter(model_type == "global") %>%
+    dplyr::pull(combo) %>%
+    unique()
+
+  if (length(combo_list) == 0) { # when global models have been run but local models are always better
+    return("Run finalized successfully.")
+  }
+
+  for (combo_name in combo_list) {
+    combo_hash <- hash_data(combo_name)
+
+    best_run_file <- paste0(
+      project_info$path, "/logs/",
+      hash_data(project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-",
+      combo_hash, "-agent_best_run.csv"
+    ) %>% fs::path_tidy()
+
+    best_run_tbl <- read_file(
+      run_info = project_info,
+      file_list = best_run_file,
+      return_type = "df"
+    )
+
+    if (nrow(best_run_tbl) == 0) {
+      stop(
+        paste0("Error in finalize_run(). No best run file found for combo: ", combo_name),
+        call. = FALSE
+      )
     }
 
     # update max_iterations and run_complete
-    best_run_tbl_updated <- best_run_tbl %>%
-      dplyr::mutate(
-        max_iterations = max_iter,
-        run_complete = TRUE
-      )
-
-    # write the updated file back using the original combo name
     write_data(
-      x = best_run_tbl_updated,
+      x = best_run_tbl %>% dplyr::mutate(max_iterations = max_iter, run_complete = TRUE),
       combo = combo_name,
       run_info = project_info,
       output_type = "log",
