@@ -1857,7 +1857,7 @@ finalize_run <- function(agent_info,
       project_info$path, "/logs/",
       hash_data(project_info$project_name), "-",
       hash_data(agent_info$run_id), "-",
-      combo_hash, "-agent_best_run.", project_info$data_output
+      combo_hash, "-agent_best_run.csv"
     ) %>% fs::path_tidy()
 
     best_run_tbl <- read_file(

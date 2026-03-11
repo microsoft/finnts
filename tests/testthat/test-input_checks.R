@@ -1,8 +1,5 @@
 # tests/testthat/test-input_checks.R
 
-# Skip all tests in this file on CRAN
-skip_on_cran()
-
 # * Test data setup ----
 
 # Valid base dataset
