@@ -863,7 +863,7 @@ validate_best_model <- function(forecast_tbl, context = "forecast") {
 
   combos_missing <- forecast_tbl %>%
     dplyr::group_by(Combo) %>%
-    dplyr::summarise(has_best = any(Best_Model == "Yes"), .groups = "drop") %>%
+    dplyr::summarise(has_best = any(Best_Model == "Yes", na.rm = TRUE), .groups = "drop") %>%
     dplyr::filter(!has_best) %>%
     dplyr::pull(Combo)
 
