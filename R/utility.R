@@ -66,6 +66,7 @@ get_timestamp <- function() {
 # $params, $call) from xgb.Booster objects. These helpers use the new
 # accessor functions when available, falling back to legacy attribute access.
 
+#' @noRd
 get_xgb_feature_names <- function(model) {
   if (exists("xgb.feature_names", where = asNamespace("xgboost"), mode = "function")) {
     xgboost::xgb.feature_names(model)
@@ -74,6 +75,7 @@ get_xgb_feature_names <- function(model) {
   }
 }
 
+#' @noRd
 get_xgb_niter <- function(model) {
   if (exists("xgb.get.num.boosted.rounds", where = asNamespace("xgboost"), mode = "function")) {
     xgboost::xgb.get.num.boosted.rounds(model)
@@ -82,6 +84,7 @@ get_xgb_niter <- function(model) {
   }
 }
 
+#' @noRd
 get_xgb_params <- function(model) {
   if (exists("xgb.parameters", where = asNamespace("xgboost"), mode = "function")) {
     xgboost::xgb.parameters(model)
