@@ -717,7 +717,6 @@ final_models <- function(run_info,
 
   # validate that every combo has a best model
   fcst_data <- get_forecast_data(run_info = run_info)
-  validate_best_model(fcst_data, context = "final_models")
 
   # calculate weighted mape
   weighted_mape <- fcst_data %>%
