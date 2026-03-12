@@ -48,7 +48,10 @@ test_data_single <- timetk::m4_monthly %>%
   dplyr::filter(id == "M750") %>%
   dplyr::filter(date >= as.Date("2012-07-01"), date <= as.Date("2015-01-01")) %>%
   dplyr::rename(Date = date) %>%
-  dplyr::mutate(id = as.character(id))
+  dplyr::mutate(
+    id = as.character(id),
+    regressor1 = rnorm(dplyr::n())
+  )
 
 # * Test set_project_info ----
 
@@ -67,6 +70,40 @@ test_that("set_project_info creates valid project for agent", {
   expect_equal(project$combo_variables, c("id"))
   expect_equal(project$target_variable, "value")
   expect_equal(project$date_type, "month")
+})
+
+test_that("set_project_info rejects 'Date' as combo variable", {
+  expect_error(
+    set_project_info(
+      project_name = "date_combo_test",
+      combo_variables = c("Date"),
+      target_variable = "value",
+      date_type = "month"
+    ),
+    "Date.*combo variable.*reserved for the time stamp"
+  )
+
+  expect_error(
+    set_project_info(
+      project_name = "date_combo_test",
+      combo_variables = c("id", "Date"),
+      target_variable = "value",
+      date_type = "month"
+    ),
+    "Date.*combo variable.*reserved for the time stamp"
+  )
+})
+
+test_that("set_project_info rejects 'Date' as target variable", {
+  expect_error(
+    set_project_info(
+      project_name = "date_target_test",
+      combo_variables = c("id"),
+      target_variable = "Date",
+      date_type = "month"
+    ),
+    "Date.*target variable.*reserved for the time stamp"
+  )
 })
 
 # * Test set_agent_info ----
@@ -168,6 +205,275 @@ test_that("set_agent_info handles hierarchical forecast detection", {
   expect_equal(agent_info$forecast_approach, "bottoms_up")
 })
 
+# * Test input-changed error messages ----
+
+test_that("set_project_info error lists changed inputs", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_project_info(
+    project_name = "proj_change_test",
+    path = temp_path,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    data_output = "csv",
+    object_output = "rds",
+    weekly_to_daily = TRUE,
+    overwrite = TRUE
+  )
+
+  # helper for project change tests
+  expect_project_change_error <- function(field_regex, ...) {
+    expect_error(
+      set_project_info(
+        project_name = "proj_change_test",
+        path = temp_path,
+        ...
+      ),
+      regexp = field_regex
+    )
+  }
+
+  # change target_variable
+  expect_project_change_error(
+    "target_variable.*expected.*value.*got.*new_target",
+    combo_variables = c("id"), target_variable = "new_target",
+    date_type = "month", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change combo_variables
+  expect_project_change_error(
+    "combo_variables.*expected.*id.*got.*id, group",
+    combo_variables = c("id", "group"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change date_type
+  expect_project_change_error(
+    "date_type.*expected.*month.*got.*quarter",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "quarter", fiscal_year_start = 1, overwrite = FALSE
+  )
+
+  # change fiscal_year_start
+  expect_project_change_error(
+    "fiscal_year_start.*expected.*1.*got.*6",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 6, overwrite = FALSE
+  )
+
+  # change data_output
+  expect_project_change_error(
+    "data_output.*expected.*csv.*got.*parquet",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    data_output = "parquet", overwrite = FALSE
+  )
+
+  # change object_output
+  expect_project_change_error(
+    "object_output.*expected.*rds.*got.*qs2",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    object_output = "qs2", overwrite = FALSE
+  )
+
+  # change weekly_to_daily
+  expect_project_change_error(
+    "weekly_to_daily.*expected.*TRUE.*got.*FALSE",
+    combo_variables = c("id"), target_variable = "value",
+    date_type = "month", fiscal_year_start = 1,
+    weekly_to_daily = FALSE, overwrite = FALSE
+  )
+})
+
+test_that("set_project_info warns instead of errors on path change", {
+  temp_path <- tempdir()
+
+  # baseline call establishes the log
+  set_project_info(
+    project_name = "proj_path_warn_test",
+    path = temp_path,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    data_output = "csv",
+    object_output = "rds",
+    weekly_to_daily = TRUE,
+    overwrite = TRUE
+  )
+
+  # modify the stored log to have a different path value so a mismatch is
+
+  # detected when calling set_project_info again with the same path
+  log_file <- list.files(
+    file.path(temp_path, "logs"),
+    pattern = "-project\\.csv$",
+    full.names = TRUE
+  )
+  log_file <- log_file[grep(finnts:::hash_data("proj_path_warn_test"), log_file)]
+  log_data <- utils::read.csv(log_file, stringsAsFactors = FALSE)
+  log_data$path <- "/old/fake/path"
+  utils::write.csv(log_data, log_file, row.names = FALSE)
+
+  # calling again with same path but log has different stored path -> warn
+  expect_warning(
+    result <- set_project_info(
+      project_name = "proj_path_warn_test",
+      path = temp_path,
+      combo_variables = c("id"),
+      target_variable = "value",
+      date_type = "month",
+      fiscal_year_start = 1,
+      data_output = "csv",
+      object_output = "rds",
+      weekly_to_daily = TRUE,
+      overwrite = FALSE
+    ),
+    regexp = "path.*input has changed"
+  )
+
+  # should still return a valid project list
+  expect_type(result, "list")
+  expect_equal(result$path, temp_path)
+})
+
+test_that("set_agent_info error lists changed inputs", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_change_test",
+    path = tempdir(),
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    fiscal_year_start = 1,
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # baseline call establishes the log
+  set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = test_data_single,
+    forecast_horizon = 3,
+    external_regressors = NULL,
+    hist_end_date = NULL,
+    hist_start_date = NULL,
+    back_test_scenarios = NULL,
+    back_test_spacing = NULL,
+    combo_cleanup_date = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE,
+    run_local_models = TRUE,
+    overwrite = TRUE
+  )
+
+  # helper for agent change tests
+  expect_agent_change_error <- function(field_regex, ...) {
+    expect_error(
+      set_agent_info(
+        project_info = project,
+        driver_llm = driver_llm,
+        input_data = test_data_single,
+        ...
+      ),
+      regexp = field_regex
+    )
+  }
+
+  # change forecast_horizon
+  expect_agent_change_error(
+    "forecast_horizon.*expected.*3.*got.*6",
+    forecast_horizon = 6, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change external_regressors from NULL to a value
+  expect_agent_change_error(
+    "external_regressors.*expected.*NULL.*got.*regressor1",
+    forecast_horizon = 3, external_regressors = c("regressor1"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change hist_end_date from default (max date in data) to a different date
+  expect_agent_change_error(
+    "hist_end_date.*expected.*2015-01-01.*got.*2014-06-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    hist_end_date = as.Date("2014-06-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change hist_start_date from default (min date in data) to a different date
+  expect_agent_change_error(
+    "hist_start_date.*expected.*2012-07-01.*got.*2013-01-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    hist_start_date = as.Date("2013-01-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change back_test_scenarios from NULL to a value
+  expect_agent_change_error(
+    "back_test_scenarios.*expected.*NULL.*got.*2",
+    forecast_horizon = 3, external_regressors = NULL,
+    back_test_scenarios = 2,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change back_test_spacing from NULL to a value
+  expect_agent_change_error(
+    "back_test_spacing.*expected.*NULL.*got.*3",
+    forecast_horizon = 3, external_regressors = NULL,
+    back_test_spacing = 3,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change combo_cleanup_date from NULL to a date
+  expect_agent_change_error(
+    "combo_cleanup_date.*expected.*NULL.*got.*2014-01-01",
+    forecast_horizon = 3, external_regressors = NULL,
+    combo_cleanup_date = as.Date("2014-01-01"),
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change run_global_models
+  expect_agent_change_error(
+    "run_global_models.*expected.*TRUE.*got.*FALSE",
+    forecast_horizon = 3, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = FALSE, run_local_models = TRUE,
+    overwrite = FALSE
+  )
+
+  # change run_local_models
+  expect_agent_change_error(
+    "run_local_models.*expected.*TRUE.*got.*FALSE",
+    forecast_horizon = 3, external_regressors = NULL,
+    allow_hierarchical_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = FALSE,
+    overwrite = FALSE
+  )
+})
+
 # * Test iterate_forecast workflow ----
 
 test_that("iterate_forecast completes with all getter functions and ask_agent", {
@@ -241,6 +547,12 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
   expect_type(answer, "character")
   expect_true(nchar(answer) > 0)
 
+  # Test resolve_combo_hashes with single time series
+  combo_hashes <- get_total_combos(agent_info)
+  expect_length(combo_hashes, 1)
+  resolved <- resolve_combo_hashes(agent_info, combo_hashes)
+  expect_equal(resolved, "M750")
+
   # Test ask_agent input validation
   expect_error(
     ask_agent(
@@ -288,6 +600,137 @@ test_that("iterate_forecast validates parameters", {
       weighted_mape_goal = "not_numeric"
     ),
     "weighted_mape_goal"
+  )
+})
+
+# * Test update_forecast new combo detection ----
+
+test_that("update_forecast error shows original combo names for new time series", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_resolve_hash_test",
+    path = NULL,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # Initial run with single time series
+  initial_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2014-10-01"))
+
+  agent_info1 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = initial_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  iterate_forecast(
+    agent_info = agent_info1,
+    max_iter = 1,
+    seed = 123
+  )
+
+  # Update with 2 time series (adding M1)
+  updated_data <- test_data_multi %>%
+    dplyr::filter(Date <= as.Date("2015-01-01"))
+
+  agent_info2 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = updated_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  # Verify error message contains original combo name, not hash
+  expect_error(
+    update_forecast(
+      agent_info = agent_info2,
+      allow_iterate_forecast = FALSE,
+      seed = 123
+    ),
+    "M1"
+  )
+
+  # Verify resolve_combo_hashes works with 2 time series
+  combo_hashes <- get_total_combos(agent_info2)
+  expect_length(combo_hashes, 2)
+  resolved <- resolve_combo_hashes(agent_info2, combo_hashes)
+  expect_true("M750" %in% resolved)
+  expect_true("M1" %in% resolved)
+})
+
+# * Test update_forecast forecast approach mismatch ----
+
+test_that("update_forecast errors when forecast approach changes between runs", {
+  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+
+  project <- set_project_info(
+    project_name = "agent_approach_mismatch_test",
+    path = NULL,
+    combo_variables = c("id"),
+    target_variable = "value",
+    date_type = "month",
+    overwrite = TRUE
+  )
+
+  driver_llm <- create_test_llm()
+
+  # Initial run with bottoms_up approach
+  initial_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2014-10-01"))
+
+  agent_info1 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = initial_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  iterate_forecast(
+    agent_info = agent_info1,
+    max_iter = 1,
+    seed = 123
+  )
+
+  # Update with same data but override forecast approach
+  updated_data <- test_data_single %>%
+    dplyr::filter(Date <= as.Date("2015-01-01"))
+
+  agent_info2 <- set_agent_info(
+    project_info = project,
+    driver_llm = driver_llm,
+    input_data = updated_data,
+    forecast_horizon = 3,
+    overwrite = TRUE,
+    back_test_scenarios = 1,
+    back_test_spacing = 3
+  )
+
+  # Manually override forecast approach to simulate a mismatch
+  agent_info2$forecast_approach <- "standard_hierarchy"
+
+  expect_error(
+    update_forecast(
+      agent_info = agent_info2,
+      allow_iterate_forecast = FALSE,
+      seed = 123
+    ),
+    "Current forecast approach is 'standard_hierarchy' but the previous agent run used 'bottoms_up'"
   )
 })
 

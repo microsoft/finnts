@@ -255,7 +255,13 @@ train_test_split <- function(run_info,
       cli::cli_alert_info("Train Test Splits Already Created")
       return(cli::cli_progress_done())
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df, current_log_df)
+      stop(
+        "Inputs have recently changed in 'prep_models'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     }
@@ -504,7 +510,13 @@ model_workflows <- function(run_info,
       cli::cli_alert_info("Model Workflows Already Created")
       return(cli::cli_progress_done())
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df, current_log_df)
+      stop(
+        "Inputs have recently changed in 'prep_models'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     }
@@ -759,7 +771,13 @@ model_hyperparameters <- function(run_info,
       cli::cli_alert_info("Model Hyperparameters Already Created")
       return(cli::cli_progress_done())
     } else {
-      stop("Inputs have recently changed in 'prep_models', please revert back to original inputs or start a new run with 'set_run_info'",
+      diff_details <- format_input_diff(prev_log_df, current_log_df)
+      stop(
+        "Inputs have recently changed in 'prep_models'.\n",
+        "The following inputs differ from the previous run:\n",
+        diff_details, "\n",
+        "Please revert back to original inputs or start a ",
+        "new run with 'set_run_info'.",
         call. = FALSE
       )
     }

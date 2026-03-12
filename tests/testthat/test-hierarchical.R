@@ -107,8 +107,8 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
   skip_on_cran()
   # 11 combo vars with a genuinely crossed (grouped) structure.
   # V1 and V2 each vary independently (many-to-many), so no single
-  # nesting chain exists. V3-V11 are constant, which triggers the
-  # constant-column downgrade to bottoms_up.
+  # nesting chain exists. V3-V11 are constant but still valid for
+  # grouped hierarchy (get_grouped_nodes handles constant columns).
   combo_vars <- paste0("V", seq_len(11))
 
   df <- tibble::tibble(
@@ -121,17 +121,14 @@ test_that("hierarchy_detect handles 11 combo vars (grouped) without hanging", {
   )
 
   elapsed <- system.time({
-    expect_warning(
-      result <- hierarchy_detect(
-        agent_info = make_agent_info(combo_vars),
-        input_data = df,
-        write_data = FALSE
-      ),
-      "Grouped hierarchy downgraded"
+    result <- hierarchy_detect(
+      agent_info = make_agent_info(combo_vars),
+      input_data = df,
+      write_data = FALSE
     )
   })[["elapsed"]]
 
-  expect_equal(result, "bottoms_up")
+  expect_equal(result, "grouped_hierarchy")
   expect_lt(elapsed, 30)
 })
 
@@ -162,8 +159,10 @@ test_that("hierarchy_detect handles 15 combo vars (standard) without hanging", {
   expect_lt(elapsed, 30)
 })
 
-test_that("hierarchy_detect downgrades grouped to bottoms_up when a combo col is constant", {
-  # Segment x Product is crossed (grouped), but Region has only one value.
+test_that("hierarchy_detect keeps grouped when a combo col is constant", {
+  # Segment x Product is crossed (grouped), Region has only one value.
+  # get_grouped_nodes() handles constant columns via reorder + guard row,
+  # so hierarchy_detect should still return grouped_hierarchy.
   df <- tibble::tibble(
     Segment = c("Commercial", "Commercial", "Consumer", "Consumer"),
     Product = c("Office", "Xbox", "Office", "Xbox"),
@@ -172,16 +171,13 @@ test_that("hierarchy_detect downgrades grouped to bottoms_up when a combo col is
     Target  = c(10, 20, 30, 40)
   )
 
-  expect_warning(
-    result <- hierarchy_detect(
-      agent_info = make_agent_info(c("Segment", "Product", "Region")),
-      input_data = df,
-      write_data = FALSE
-    ),
-    "Region"
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(c("Segment", "Product", "Region")),
+    input_data = df,
+    write_data = FALSE
   )
 
-  expect_equal(result, "bottoms_up")
+  expect_equal(result, "grouped_hierarchy")
 })
 
 test_that("hierarchy_detect does not downgrade grouped when all cols have multiple values", {
@@ -373,6 +369,433 @@ test_that("prep_hierarchical_data works with more than 10 combo variables", {
   expect_gt(nrow(result_data), 2 * n_dates)
 })
 
+# --- grouped hierarchy hts::gts() robustness tests ---
+# These tests verify which data layouts succeed or fail with hts::gts()
+# due to GmatrixG() conditionally skipping Total/Bottom rows while gts()
+# unconditionally expects them in rownames.
+
+# Helper: build a minimal dataset ready for prep_hierarchical_data
+make_grouped_data <- function(combo_variables, grid, n_dates = 3) {
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    row <- grid[i, , drop = FALSE]
+    tbl <- tibble::as_tibble(row)
+    tbl <- tbl[rep(1, n_dates), ]
+    tbl$Date <- dates
+    tbl$Target <- seq_len(n_dates) + (i - 1) * 100
+    tbl
+  }))
+  data %>%
+    tidyr::unite("Combo",
+      tidyselect::all_of(combo_variables),
+      sep = "--",
+      remove = FALSE
+    )
+}
+
+test_that("grouped hierarchy succeeds: 2 crossed vars, no constant cols, m=4", {
+  # 2x2 cross => 4 bottom series, no constant columns
+  # First row NOT all-1s, last row NOT seq(1,4) => both Total & Bottom added
+
+  grid <- tidyr::expand_grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  )
+  combo_vars <- c("Segment", "Product")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds: 3 crossed vars, no constant cols, m=8", {
+  # 2x2x2 cross => 8 bottom series
+  grid <- tidyr::expand_grid(
+    Channel = c("Online", "Retail"),
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  )
+  combo_vars <- c("Channel", "Segment", "Product")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds: constant col in middle position, m=4", {
+  # Region is constant but sits in position 2 (not first).
+  # m=4 bottom series. Last var (Product) has 2 unique values != seq(1,4).
+  # First var (Segment) has 2 unique values != rep(1,4).
+  # Both Total and Bottom rows are added => no error.
+  grid <- tidyr::expand_grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  ) %>%
+    dplyr::mutate(Region = "AMER")
+  combo_vars <- c("Segment", "Region", "Product")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds: constant col last, m=4", {
+  # Region is constant and last. First var (Segment) is non-constant.
+  # Integer encoding of last row = all 1s != seq(1,4) => Bottom IS added.
+  # First row has 2 unique vals != all 1s => Total IS added.
+  grid <- tidyr::expand_grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  ) %>%
+    dplyr::mutate(Region = "AMER")
+  combo_vars <- c("Segment", "Product", "Region")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds: many constant cols in non-first positions, m=3", {
+  # V1 varies (3 values), V2-V5 are constant.
+  # First row (V1): 3 unique values != all 1s => Total IS added.
+  # Last row (V5): all 1s => not seq(1,3) => Bottom IS added.
+  # m=3 bottom series.
+  grid <- tibble::tibble(
+    V1 = c("A", "B", "C"),
+    V2 = "X", V3 = "X", V4 = "X", V5 = "X"
+  )
+  combo_vars <- paste0("V", 1:5)
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds with constant first combo variable", {
+  # Region is constant and FIRST in combo_variables.
+  grid <- tidyr::expand_grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  ) %>%
+    dplyr::mutate(Region = "AMER")
+  combo_vars <- c("Region", "Segment", "Product")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds with m=2 bottom series", {
+  # 2 bottom-level combos. Last variable (Product) has 2 unique values.
+  grid <- tibble::tibble(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  )
+  combo_vars <- c("Segment", "Product")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds with constant first col and m=2", {
+  # Region is constant and first, m=2 bottom series.
+  grid <- tibble::tibble(
+    Region = c("AMER", "AMER"),
+    Segment = c("Commercial", "Consumer")
+  )
+  combo_vars <- c("Region", "Segment")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds with multiple constant cols, m=3", {
+  # V1 and V3 are constant, V2 has 3 unique vals, m=3 bottom series.
+  grid <- tibble::tibble(
+    V1 = "X",
+    V2 = c("A", "B", "C"),
+    V3 = "Y"
+  )
+  combo_vars <- c("V1", "V2", "V3")
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds with many constant cols, m=2", {
+  # 11 combo vars, most constant, m=2 bottom series.
+  grid <- tibble::tibble(
+    Channel_Region = c("EMEA", "Asia"),
+    Channel_Territory = c("Central Europe", "ANZ"),
+    Accountability_L5 = c("Online Stores", "Managed Retail"),
+    ChannelCategory2 = "Xbox",
+    ChannelCategory3 = "Console",
+    ChannelCategory4 = c("X Series X", "X Series S"),
+    ChannelCategory5 = c("X Series X 2TB", "X Series S 512GB"),
+    PerspectiveMeasure = "SellThru",
+    Accountability_L3 = "CSO Region",
+    Accountability_L2 = "CSO WW Sales",
+    Accountability_L4 = c("Direct", "Partner")
+  )
+  combo_vars <- c(
+    "Channel_Region", "Channel_Territory", "Accountability_L5",
+    "ChannelCategory2", "ChannelCategory3", "ChannelCategory4",
+    "ChannelCategory5", "PerspectiveMeasure", "Accountability_L3",
+    "Accountability_L2", "Accountability_L4"
+  )
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+test_that("grouped hierarchy succeeds: same realistic dataset with m=3", {
+  # Same structure as above but with 3 bottom-level series.
+  # Last var (Accountability_L4) has 2 unique values != seq(1, 3).
+  # First var (Channel_Region) has 3 unique values != rep(1, 3).
+  # Both Total and Bottom rows added => no error.
+  grid <- tibble::tibble(
+    Channel_Region = c("EMEA", "Asia", "EMEA"),
+    Channel_Territory = c("Central Europe", "ANZ", "Southwest Europe"),
+    Accountability_L5 = c("Online Stores", "Managed Retail", "Managed Retail"),
+    ChannelCategory2 = "Xbox",
+    ChannelCategory3 = "Console",
+    ChannelCategory4 = c("X Series X", "X Series S", "X Series X"),
+    ChannelCategory5 = c("X Series X 2TB", "X Series S 512GB", "X Series X ODD"),
+    PerspectiveMeasure = "SellThru",
+    Accountability_L3 = "CSO Region",
+    Accountability_L2 = "CSO WW Sales",
+    Accountability_L4 = c("Direct", "Partner", "Partner")
+  )
+  combo_vars <- c(
+    "Channel_Region", "Channel_Territory", "Accountability_L5",
+    "ChannelCategory2", "ChannelCategory3", "ChannelCategory4",
+    "ChannelCategory5", "PerspectiveMeasure", "Accountability_L3",
+    "Accountability_L2", "Accountability_L4"
+  )
+  data <- make_grouped_data(combo_vars, grid)
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = NULL,
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  expect_true("Total" %in% result$Combo)
+  expect_gt(nrow(result), nrow(grid) * 3)
+})
+
+# --- end-to-end grouped hierarchy forecast test ---
+
+test_that("end-to-end grouped hierarchy forecast with constant and crossed combos", {
+  skip_on_cran()
+
+  # 4 bottom-level time series: Region is constant, Segment x Product
+  # are fully crossed (2x2 = 4 combos).
+  combo_vars <- c("Region", "Segment", "Product")
+  n_dates <- 24
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  grid <- tidyr::expand_grid(
+    Region = "AMER",
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox")
+  )
+
+  inp_data <- grid %>%
+    dplyr::slice(rep(seq_len(dplyr::n()), each = n_dates)) %>%
+    dplyr::mutate(
+      Date = rep(dates, nrow(grid)),
+      Revenue = seq_len(dplyr::n()) + 100
+    )
+
+  run_info <- set_run_info()
+
+  prep_data(
+    run_info = run_info,
+    input_data = inp_data,
+    combo_variables = combo_vars,
+    target_variable = "Revenue",
+    date_type = "month",
+    forecast_horizon = 3,
+    forecast_approach = "grouped_hierarchy",
+    recipes_to_run = "R1"
+  )
+
+  prep_models(
+    run_info = run_info,
+    models_to_run = "snaive",
+    back_test_scenarios = 1,
+    run_ensemble_models = FALSE
+  )
+
+  train_models(
+    run_info = run_info,
+    run_global_models = FALSE,
+    run_local_models = TRUE
+  )
+
+  final_models(
+    run_info = run_info,
+    average_models = FALSE
+  )
+
+  fcst <- get_forecast_data(run_info = run_info)
+
+  # 1. Combo variables appear as columns in the correct user-specified order
+  combo_col_positions <- match(combo_vars, colnames(fcst))
+  expect_true(all(!is.na(combo_col_positions)))
+  expect_equal(combo_col_positions, sort(combo_col_positions))
+
+  # Combo variables appear right after the Combo column
+  expect_equal(combo_col_positions, seq(2, 2 + length(combo_vars) - 1))
+
+  # 2. All original combo variable values are present
+  expect_true(all(unique(fcst$Region) == "AMER"))
+  expect_setequal(unique(fcst$Segment), c("Commercial", "Consumer"))
+  expect_setequal(unique(fcst$Product), c("Office", "Xbox"))
+
+  # 3. Only bottom-level combos in reconciled output (no "Total" or aggregated levels)
+  bottom_combos <- unique(fcst$Combo)
+  expect_false(any(grepl("Total", bottom_combos)))
+  expect_equal(length(bottom_combos), 4)
+
+  # 4. All 4 crossed combos are present
+  expected_combos <- sort(paste(grid$Region, grid$Segment, grid$Product, sep = "--"))
+  expect_setequal(sort(bottom_combos), expected_combos)
+
+  # 5. Backtest actuals match original input data
+  backtest <- fcst %>%
+    dplyr::filter(
+      Run_Type == "Back_Test",
+      Best_Model == "Yes"
+    ) %>%
+    dplyr::select(Combo, Date, Target) %>%
+    dplyr::distinct()
+
+  for (i in seq_len(nrow(backtest))) {
+    row <- backtest[i, ]
+    combo_parts <- strsplit(row$Combo, "--")[[1]]
+    names(combo_parts) <- combo_vars
+
+    original_val <- inp_data %>%
+      dplyr::filter(
+        Region == combo_parts["Region"],
+        Segment == combo_parts["Segment"],
+        Product == combo_parts["Product"],
+        Date == row$Date
+      ) %>%
+      dplyr::pull(Revenue)
+
+    expect_equal(
+      row$Target, original_val,
+      info = paste("Backtest actual mismatch for", row$Combo, "on", row$Date)
+    )
+  }
+
+  # 6. Future forecasts exist for all 4 combos
+  future <- fcst %>% dplyr::filter(Run_Type == "Future_Forecast")
+  expect_gt(nrow(future), 0)
+  expect_true(all(is.na(future$Target)))
+  expect_setequal(sort(unique(future$Combo)), expected_combos)
+})
+
 # --- external_regressor_mapping tests ---
 
 test_that("external_regressor_mapping is fast with many combo variables", {
@@ -380,8 +803,10 @@ test_that("external_regressor_mapping is fast with many combo variables", {
   n_dates <- 4
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
 
-  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("P", "Q"),
-                      stringsAsFactors = FALSE)
+  grid <- expand.grid(
+    V1 = c("A", "B", "C"), V2 = c("P", "Q"),
+    stringsAsFactors = FALSE
+  )
   data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
     tibble::tibble(
       V1 = grid$V1[i], V2 = grid$V2[i],
@@ -393,7 +818,11 @@ test_that("external_regressor_mapping is fast with many combo variables", {
       Date = dates,
       # Reg_V1 varies by V1 and Date (maps to "V1")
       # Same Reg_V1 value for both V2 levels within same V1+Date
-      Reg_V1 = switch(grid$V1[i], A = 10, B = 20, C = 30) + seq_len(n_dates),
+      Reg_V1 = switch(grid$V1[i],
+        A = 10,
+        B = 20,
+        C = 30
+      ) + seq_len(n_dates),
       # Reg_Global is the same value per date across all combos (maps to "Global")
       Reg_Global = c(1, 2, 3, 4),
       # Reg_All varies per combo x date (maps to "All")
