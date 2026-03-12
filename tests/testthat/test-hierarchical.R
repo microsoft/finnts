@@ -1883,3 +1883,76 @@ test_that("grouped hierarchy aggregation works with only 2 dates", {
   # should have more rows than just bottom combos (aggregated levels exist)
   expect_gt(nrow(result), nrow(grid) * 2)
 })
+
+# --- ensemble / reconciliation dedup regression tests ---
+
+test_that("ensemble prep produces no duplicate rows when models have fp Target discrepancies", {
+  # Simulate the scenario where different models return slightly different
+  # floating-point Target values for the same (Combo, Date, Train_Test_ID),
+  # e.g. croston returning 0 vs arima returning -2.91e-10.
+  initial_results <- tibble::tibble(
+    Combo_ID = rep("A_B", 6),
+    Combo = rep("A_B", 6),
+    Model_Name = c("arima", "arima", "croston", "croston", "cubist", "cubist"),
+    Recipe_ID = rep("R1", 6),
+    Date = rep(as.Date(c("2020-01-01", "2020-02-01")), 3),
+    Train_Test_ID = rep(c(1, 1), 3),
+    Target = c(-2.91e-10, 100, 0, 100, -2.91e-10, 100),
+    Forecast = c(1.5, 102, 0.1, 99, 2.0, 101)
+  )
+
+  target_tbl <- initial_results %>%
+    dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+    dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop")
+
+  prep_ensemble_tbl <- initial_results %>%
+    dplyr::select(-Target) %>%
+    dplyr::mutate(Suffix = ifelse(Combo_ID == "All-Data", "Global", "Local")) %>%
+    tidyr::unite(
+      col = "Model_Key",
+      c("Model_Name", "Recipe_ID", "Suffix"),
+      sep = "-",
+      remove = FALSE
+    ) %>%
+    tidyr::pivot_wider(
+      names_from = Model_Key, values_from = Forecast,
+      id_cols = c("Combo", "Date", "Train_Test_ID"), values_fill = 0
+    ) %>%
+    dplyr::left_join(target_tbl, by = c("Combo", "Date", "Train_Test_ID"))
+
+  # should have exactly 2 rows (one per date), not 4
+  expect_equal(nrow(prep_ensemble_tbl), 2)
+
+  # Target should be consolidated (mean of the fp-discrepant values)
+  expect_equal(
+    nrow(dplyr::distinct(prep_ensemble_tbl, Combo, Date, Train_Test_ID)),
+    nrow(prep_ensemble_tbl)
+  )
+})
+
+test_that("reconciliation pivot_wider produces numeric columns when model has duplicate forecasts", {
+  # Simulate duplicate (Combo, Date, Train_Test_ID) rows in Best-Model data,
+  # which previously caused pivot_wider to create list columns.
+  model_tbl <- tibble::tibble(
+    Combo = c(rep("A_X", 4), rep("B_Y", 4)),
+    Date = rep(as.Date(c("2020-01-01", "2020-01-01", "2020-02-01", "2020-02-01")), 2),
+    Train_Test_ID = rep(c(1, 1, 1, 1), 2),
+    Forecast = c(10, 10.0001, 20, 20, 30, 30, 40, 40.0001)
+  )
+
+  # apply the dedup fix: group_by + summarise before pivot_wider
+  forecast_tbl <- model_tbl %>%
+    dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+    dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
+
+  # all columns should be atomic (numeric), not list
+  for (col in setdiff(names(forecast_tbl), c("Date", "Train_Test_ID"))) {
+    expect_true(is.numeric(forecast_tbl[[col]]),
+      info = paste("Column", col, "should be numeric, not list")
+    )
+  }
+
+  # should have exactly 2 rows (one per date)
+  expect_equal(nrow(forecast_tbl), 2)
+})

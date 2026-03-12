@@ -964,7 +964,9 @@ reconcile_agent_forecast <- function(agent_info,
   # load hierarchical forecast
   hts_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info
-  ) %>%
+  )
+
+  hts_fcst_tbl <- hts_fcst_tbl %>%
     dplyr::filter(Best_Model == "Yes")
 
   # reconcile the forecast
@@ -2057,6 +2059,8 @@ reconcile <- function(initial_fcst,
 
       forecast_tbl <- initial_fcst %>%
         dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
+        dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+        dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
         tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
       forecast_tbl[is.na(forecast_tbl)] <- 0
@@ -2077,10 +2081,10 @@ reconcile <- function(initial_fcst,
           Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
           Residual = Target - Forecast_Adj
         ) %>%
-        dplyr::rowwise() %>%
         dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
-        dplyr::ungroup() %>%
         dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+        dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+        dplyr::summarise(Residual = mean(Residual, na.rm = TRUE), .groups = "drop") %>%
         tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
         tibble::as_tibble() %>%
         dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
@@ -2101,7 +2105,7 @@ reconcile <- function(initial_fcst,
       }
     },
     error = function(e) {
-      stop("The 'Best-Model' was not able to be properly reconciled.",
+      stop(paste0("The 'Best-Model' was not able to be properly reconciled. Underlying error: ", conditionMessage(e)),
         call. = FALSE
       )
     }
