@@ -454,7 +454,7 @@ xgboost_multistep_fit_impl <- function(x, y,
     )
 
     # create prediction
-    xgboost_fitted <- modeltime::xgboost_predict(fit_xgboost, newdata = xreg_tbl_final)
+    xgboost_fitted <- safe_xgb_predict(fit_xgboost, newdata = xreg_tbl_final)
 
     # append outputs
     element_name <- paste0("model_lag_", lag)
@@ -510,9 +510,9 @@ print.xgboost_multistep_fit_impl <- function(x, ...) {
   model_names <- names(x$models)
   for (model_name in model_names) {
     cat(paste("Model: ", model_name, "\n", sep = ""))
-    call_val <- x$models[[model_name]]$call
-    if (!is.null(call_val)) {
-      print(call_val)
+    params <- try(get_xgb_params(x$models[[model_name]]), silent = TRUE)
+    if (!inherits(params, "try-error") && !is.null(params)) {
+      print(params)
     }
     cat("---\n")
   }
@@ -660,7 +660,7 @@ xgboost_multistep_predict_impl <- function(object, new_data, ...) {
     mdl_name <- choose_model_for(e)
     mdl <- object$models[[mdl_name]]
 
-    preds <- modeltime::xgboost_predict(
+    preds <- safe_xgb_predict(
       mdl,
       newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(get_xgb_feature_names(mdl))),
       ...

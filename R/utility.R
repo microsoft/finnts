@@ -93,6 +93,25 @@ get_xgb_params <- function(model) {
   }
 }
 
+#' xgboost 3.x-safe predict wrapper for regression models
+#'
+#' Replaces modeltime::xgboost_predict() which accesses $params directly
+#' and crashes on xgboost >= 3.0. finnts only uses regression objectives
+#' so the switch on objective type is unnecessary.
+#'
+#' @param object An xgb.Booster model object
+#' @param newdata Data to predict on (data.frame or matrix)
+#' @param ... Additional arguments passed to predict
+#'
+#' @noRd
+safe_xgb_predict <- function(object, newdata, ...) {
+  if (!inherits(newdata, "xgb.DMatrix")) {
+    newdata <- as.matrix(newdata)
+    newdata <- xgboost::xgb.DMatrix(data = newdata, missing = NA)
+  }
+  stats::predict(object, newdata, ...)
+}
+
 
 # The functions below define the model information. These access the model
 # environment inside of parsnip so they have to be executed once parsnip has
