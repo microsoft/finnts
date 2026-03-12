@@ -964,7 +964,12 @@ reconcile_agent_forecast <- function(agent_info,
   # load hierarchical forecast
   hts_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info
-  ) %>%
+  )
+
+  # validate that every combo has a best model
+  validate_best_model(hts_fcst_tbl, context = "reconcile_agent_forecast")
+
+  hts_fcst_tbl <- hts_fcst_tbl %>%
     dplyr::filter(Best_Model == "Yes")
 
   # reconcile the forecast

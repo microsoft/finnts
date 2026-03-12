@@ -564,6 +564,8 @@ reconcile_hierarchical_data <- function(run_info,
     c("Best-Model") %>%
     suppressWarnings()
 
+  validate_best_model(unreconciled_tbl, context = "reconcile_hierarchical_data")
+
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     hist_tbl <- read_file(run_info,
       path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)

@@ -692,6 +692,9 @@ load_agent_forecast <- function(agent_info,
     stop(paste0("Error in load_agent_forecast(). Missing forecast data for combos: ", paste(missing_combos, collapse = ", ")), call. = FALSE)
   }
 
+  # validate that every combo has a best model
+  validate_best_model(final_fcst_tbl, context = "load_agent_forecast")
+
   # return final forecast table
   return(final_fcst_tbl)
 }
@@ -721,6 +724,9 @@ save_agent_forecast <- function(agent_info) {
   if (nrow(final_fcst_tbl) == 0) {
     stop("Error in save_agent_forecast(). No final forecast found for agent.", call. = FALSE)
   }
+
+  # validate that every combo has a best model
+  validate_best_model(final_fcst_tbl, context = "save_agent_forecast")
 
   # save the final forecast for the agent
   write_data(
@@ -1646,7 +1652,12 @@ log_best_run <- function(agent_info,
     back_test_tbl <- load_combo_forecast(
       combo = ifelse(combo == "all", "All-Data", combo),
       run_info = run_info
-    ) %>%
+    )
+
+    # validate that every combo has a best model
+    validate_best_model(back_test_tbl, context = "log_best_run")
+
+    back_test_tbl <- back_test_tbl %>%
       dplyr::filter(
         Best_Model == "Yes",
         Run_Type == "Back_Test"

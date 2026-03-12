@@ -183,11 +183,24 @@ final_models <- function(run_info,
   }
 
   # check if previous run is complete
-  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+  recon_complete <- TRUE
+  if (forecast_approach != "bottoms_up") {
+    recon_files <- list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*-reconciled.", run_info$data_output
+      )
+    )
+    recon_complete <- length(recon_files) > 0
+  }
+
+  if (length(combo_diff) == 0 & length(prev_combo_list) > 0 & recon_complete) {
     cli::cli_alert_info("Best Models Already Selected")
     return(cli::cli_progress_done())
   }
 
+  if (length(combo_diff) > 0) {
   # filter to only combos that need to be processed
   current_combo_list_final <- combo_diff %>%
     sample()
@@ -229,13 +242,14 @@ final_models <- function(run_info,
       if (run_local_models) {
         single_model_tbl <- tryCatch(
           {
-            read_file(run_info,
+            tbl <- read_file(run_info,
               path = paste0(
                 "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
                 "-", combo, "-single_models.", run_info$data_output
               ),
               return_type = "df"
             )
+            if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
           },
           warning = function(w) {
             # do nothing
@@ -250,13 +264,14 @@ final_models <- function(run_info,
       if (run_ensemble_models) {
         ensemble_model_tbl <- tryCatch(
           {
-            read_file(run_info,
+            tbl <- read_file(run_info,
               path = paste0(
                 "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
                 "-", combo, "-ensemble_models.", run_info$data_output
               ),
               return_type = "df"
             )
+            if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
           },
           warning = function(w) {
             # do nothing
@@ -271,13 +286,14 @@ final_models <- function(run_info,
       if (run_global_models) {
         global_model_tbl <- tryCatch(
           {
-            read_file(run_info,
+            tbl <- read_file(run_info,
               path = paste0(
                 "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
                 "-", combo, "-global_models.", run_info$data_output
               ),
               return_type = "df"
             )
+            if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
           },
           warning = function(w) {
             # do nothing
@@ -291,14 +307,30 @@ final_models <- function(run_info,
       local_model_tbl <- single_model_tbl %>%
         rbind(ensemble_model_tbl)
 
+      all_model_tbl <- local_model_tbl %>% rbind(global_model_tbl)
+
+      # error if no forecast data was found
+      if (is.null(all_model_tbl) || nrow(all_model_tbl) == 0) {
+        stop(paste0("No forecast data found for combo '", combo, "'."), call. = FALSE)
+      }
+
       # check if model averaging already happened
-      if ("Best_Model" %in% colnames(local_model_tbl %>% rbind(global_model_tbl))) {
+      if ("Best_Model" %in% colnames(all_model_tbl)) {
         return(data.frame(Combo_Hash = combo))
       }
 
+      # validate required columns before proceeding
+      required_cols <- c("Combo", "Model_ID", "Model_Name", "Model_Type", "Recipe_ID", "Train_Test_ID", "Date", "Forecast", "Target")
+      missing_cols <- setdiff(required_cols, colnames(all_model_tbl))
+      if (length(missing_cols) > 0) {
+        stop(paste0(
+          "Combo '", combo, "': forecast data is missing required columns: ",
+          paste(missing_cols, collapse = ", ")
+        ), call. = FALSE)
+      }
+
       # combine all forecasts
-      predictions_tbl <- local_model_tbl %>%
-        rbind(global_model_tbl) %>%
+      predictions_tbl <- all_model_tbl %>%
         dplyr::select(Combo, Model_ID, Model_Name, Model_Type, Recipe_ID, Train_Test_ID, Date, Forecast, Target) %>%
         dplyr::filter(Train_Test_ID %in% train_test_id_list) %>%
         adjust_combo_column()
@@ -666,6 +698,7 @@ final_models <- function(run_info,
       num_cores
     )
   }
+  } # end combo processing
 
   # reconcile hierarchical forecasts
   if (forecast_approach != "bottoms_up") {
@@ -682,8 +715,12 @@ final_models <- function(run_info,
     )
   }
 
+  # validate that every combo has a best model
+  fcst_data <- get_forecast_data(run_info = run_info)
+  validate_best_model(fcst_data, context = "final_models")
+
   # calculate weighted mape
-  weighted_mape <- get_forecast_data(run_info = run_info) %>%
+  weighted_mape <- fcst_data %>%
     dplyr::filter(
       Run_Type == "Back_Test",
       Best_Model == "Yes"
@@ -807,6 +844,40 @@ convert_weekly_to_daily <- function(fcst_tbl,
   }
 
   return(final_tbl)
+}
+
+#' Validate that every combo has at least one Best_Model = "Yes"
+#'
+#' @param forecast_tbl data frame with Combo and Best_Model columns
+#' @param context character string describing the calling function for error messages
+#'
+#' @return forecast_tbl invisibly if valid; otherwise stops with an error
+#' @noRd
+validate_best_model <- function(forecast_tbl, context = "forecast") {
+  if (!"Best_Model" %in% colnames(forecast_tbl)) {
+    stop(
+      paste0("Error in ", context, "(). Best_Model column is missing from forecast data."),
+      call. = FALSE
+    )
+  }
+
+  combos_missing <- forecast_tbl %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::summarise(has_best = any(Best_Model == "Yes"), .groups = "drop") %>%
+    dplyr::filter(!has_best) %>%
+    dplyr::pull(Combo)
+
+  if (length(combos_missing) > 0) {
+    stop(
+      paste0(
+        "Error in ", context, "(). The following combos are missing a best model (Best_Model == 'Yes'): ",
+        paste(combos_missing, collapse = ", ")
+      ),
+      call. = FALSE
+    )
+  }
+
+  invisible(forecast_tbl)
 }
 
 #' Check if there is a best model column and remove it
