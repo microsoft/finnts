@@ -1139,11 +1139,12 @@ reason_inputs <- function(agent_info,
 
   # Check foundation model availability
   fm_suffix <- get_foundation_model_suffix()
+  fm_global_suffix <- if (grepl("chronos2", fm_suffix)) "---chronos2" else ""
 
   # fill in missing fields with default values
   if (is.null(combo)) {
     default_values <- list(
-      models_to_run = paste0("xgboost"),
+      models_to_run = paste0("xgboost", fm_global_suffix),
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
