@@ -2,7 +2,7 @@
 
 # * read_file empty result handling ----
 
-test_that("read_file returns empty tibble for non-existent files", {
+test_that("read_file returns NULL or empty tibble for non-existent files", {
   tmp <- tempdir()
   run_info <- list(
     path = tmp,
