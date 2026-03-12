@@ -213,10 +213,11 @@ test_that("early return is blocked when reconciliation is incomplete", {
   )
   expect_true(length(combo_list) > 0)
 
-  # no reconciled files exist
+  # no Best-Model reconciled file exists
+  best_model_hash <- hash_data("Best-Model")
   recon_files <- list_files(
     run_info$storage_object,
-    paste0(run_info$path, "/forecasts/*", proj_hash, "-", run_hash, "*-reconciled.csv")
+    paste0(run_info$path, "/forecasts/*", proj_hash, "-", run_hash, "-", best_model_hash, "-reconciled.csv")
   )
   expect_equal(length(recon_files), 0)
 
@@ -239,14 +240,16 @@ test_that("early return fires when reconciliation is complete", {
   proj_hash <- hash_data(proj)
   run_hash <- hash_data(run)
 
-  # create average_models + reconciled files
+  best_model_hash <- hash_data("Best-Model")
+
+  # create average_models + Best-Model reconciled file
   file.create(file.path(
     tmp, "forecasts",
     paste0(proj_hash, "-", run_hash, "-comboA-average_models.csv")
   ))
   file.create(file.path(
     tmp, "forecasts",
-    paste0(proj_hash, "-", run_hash, "-BestModel-reconciled.csv")
+    paste0(proj_hash, "-", run_hash, "-", best_model_hash, "-reconciled.csv")
   ))
 
   run_info <- list(
@@ -260,7 +263,7 @@ test_that("early return fires when reconciliation is complete", {
 
   recon_files <- list_files(
     run_info$storage_object,
-    paste0(run_info$path, "/forecasts/*", proj_hash, "-", run_hash, "*-reconciled.csv")
+    paste0(run_info$path, "/forecasts/*", proj_hash, "-", run_hash, "-", best_model_hash, "-reconciled.csv")
   )
   expect_true(length(recon_files) > 0)
 
@@ -270,6 +273,56 @@ test_that("early return fires when reconciliation is complete", {
     recon_complete <- length(recon_files) > 0
   }
   expect_true(recon_complete)
+})
+
+test_that("early return is blocked when only non-Best-Model reconciled files exist", {
+  # Simulate: reconciled files exist for individual models but NOT for Best-Model.
+  # recon_complete should still be FALSE because Best-Model was not reconciled.
+  tmp <- file.path(tempdir(), paste0("fm_recon_partial_", Sys.getpid()))
+  dir.create(file.path(tmp, "forecasts"), recursive = TRUE, showWarnings = FALSE)
+  on.exit(unlink(tmp, recursive = TRUE), add = TRUE)
+
+  proj <- "proj3"
+  run <- "run3"
+  proj_hash <- hash_data(proj)
+  run_hash <- hash_data(run)
+  best_model_hash <- hash_data("Best-Model")
+
+  # create average_models file
+  file.create(file.path(
+    tmp, "forecasts",
+    paste0(proj_hash, "-", run_hash, "-comboA-average_models.csv")
+  ))
+
+  # create a reconciled file for an individual model (NOT Best-Model)
+  some_model_hash <- hash_data("arima--local--R1")
+  file.create(file.path(
+    tmp, "forecasts",
+    paste0(proj_hash, "-", run_hash, "-", some_model_hash, "-reconciled.csv")
+  ))
+
+  run_info <- list(
+    path = tmp,
+    storage_object = NULL,
+    project_name = proj,
+    run_name = run,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  # Best-Model reconciled file does not exist
+  recon_files <- list_files(
+    run_info$storage_object,
+    paste0(run_info$path, "/forecasts/*", proj_hash, "-", run_hash, "-", best_model_hash, "-reconciled.csv")
+  )
+  expect_equal(length(recon_files), 0)
+
+  forecast_approach <- "standard_hierarchy"
+  recon_complete <- TRUE
+  if (forecast_approach != "bottoms_up") {
+    recon_complete <- length(recon_files) > 0
+  }
+  expect_false(recon_complete)
 })
 
 test_that("early return fires for bottoms_up regardless of reconciled files", {

@@ -638,9 +638,9 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Forecast = ifelse(Forecast > 100000000000000, 100000000000000, Forecast)) %>%
-              dplyr::ungroup() %>%
+              dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+              dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
             forecast_tbl[is.na(forecast_tbl)] <- 0
@@ -661,10 +661,10 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
-              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+              dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+              dplyr::summarise(Residual = mean(Residual, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               dplyr::select(-Date, -Train_Test_ID) %>%
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
@@ -686,11 +686,11 @@ reconcile_hierarchical_data <- function(run_info,
           },
           error = function(e) {
             if (model != "Best-Model") {
-              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
               )
             } else {
-              stop("The 'Best-Model' was not able to be properly reconciled.",
+              stop(paste0("The 'Best-Model' was not able to be properly reconciled. Underlying error: ", conditionMessage(e)),
                 call. = FALSE
               )
             }
@@ -857,6 +857,8 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
+              dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+              dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
             forecast_tbl[is.na(forecast_tbl)] <- 0
@@ -877,10 +879,10 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
-              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+              dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+              dplyr::summarise(Residual = mean(Residual, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               tibble::as_tibble() %>%
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
@@ -902,11 +904,11 @@ reconcile_hierarchical_data <- function(run_info,
           },
           error = function(e) {
             if (model != "Best-Model") {
-              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
               )
             } else {
-              stop("The 'Best-Model' was not able to be properly reconciled.",
+              stop(paste0("The 'Best-Model' was not able to be properly reconciled. Underlying error: ", conditionMessage(e)),
                 call. = FALSE
               )
             }

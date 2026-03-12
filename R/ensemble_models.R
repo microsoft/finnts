@@ -212,7 +212,14 @@ ensemble_models <- function(run_info,
         rbind(global_model_tbl)
 
       # create training data for ensemble
+      # consolidate Target per (Combo, Date, Train_Test_ID) to avoid duplicate rows
+      # from models with slightly different floating-point Target values
+      target_tbl <- initial_results_final_tbl %>%
+        dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+        dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop")
+
       prep_ensemble_tbl <- initial_results_final_tbl %>%
+        dplyr::select(-Target) %>%
         dplyr::mutate(Suffix = ifelse(Combo_ID == "All-Data", "Global", "Local")) %>%
         tidyr::unite(
           col = "Model_Key",
@@ -222,8 +229,9 @@ ensemble_models <- function(run_info,
         ) %>%
         tidyr::pivot_wider(
           names_from = Model_Key, values_from = Forecast,
-          id_cols = c("Combo", "Date", "Train_Test_ID", "Target"), values_fill = 0
-        )
+          id_cols = c("Combo", "Date", "Train_Test_ID"), values_fill = 0
+        ) %>%
+        dplyr::left_join(target_tbl, by = c("Combo", "Date", "Train_Test_ID"))
 
       # ensemble models to run
       if (length(ensemble_model_list) < 1) {
