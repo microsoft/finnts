@@ -513,6 +513,8 @@ print.xgboost_multistep_fit_impl <- function(x, ...) {
     params <- try(get_xgb_params(x$models[[model_name]]), silent = TRUE)
     if (!inherits(params, "try-error") && !is.null(params)) {
       print(params)
+    } else {
+      cat("(model parameters not available)\n")
     }
     cat("---\n")
   }
