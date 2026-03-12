@@ -32,7 +32,6 @@ jobs:
           - {os: ubuntu-22.04,   r: 'release'}
           - {os: ubuntu-22.04,   r: 'oldrel-1'}
           - {os: ubuntu-22.04,   r: 'oldrel-2'}
-          - {os: ubuntu-22.04,   r: '4.1'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -60,7 +59,7 @@ jobs:
           
       - uses: r-lib/actions/setup-r-dependencies@v2
         with:
-          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0
+          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.5.0, energy=?ignore-before-r=4.5.0, qs2=?ignore
           needs: check
 
       - uses: r-lib/actions/check-r-package@v2
