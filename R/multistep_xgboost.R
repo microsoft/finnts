@@ -510,7 +510,10 @@ print.xgboost_multistep_fit_impl <- function(x, ...) {
   model_names <- names(x$models)
   for (model_name in model_names) {
     cat(paste("Model: ", model_name, "\n", sep = ""))
-    print(x$models[[model_name]]$call)
+    call_val <- x$models[[model_name]]$call
+    if (!is.null(call_val)) {
+      print(call_val)
+    }
     cat("---\n")
   }
   invisible(x)
@@ -659,7 +662,7 @@ xgboost_multistep_predict_impl <- function(object, new_data, ...) {
 
     preds <- modeltime::xgboost_predict(
       mdl,
-      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(mdl$feature_names)),
+      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(get_xgb_feature_names(mdl))),
       ...
     )
 

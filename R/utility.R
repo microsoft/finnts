@@ -61,6 +61,35 @@ get_timestamp <- function() {
   )
 }
 
+# xgboost 3.x compatibility helpers
+# xgboost >= 3.0 removed direct attribute access ($feature_names, $niter,
+# $params, $call) from xgb.Booster objects. These helpers use the new
+# accessor functions when available, falling back to legacy attribute access.
+
+get_xgb_feature_names <- function(model) {
+  if (exists("xgb.feature_names", where = asNamespace("xgboost"), mode = "function")) {
+    xgboost::xgb.feature_names(model)
+  } else {
+    model$feature_names
+  }
+}
+
+get_xgb_niter <- function(model) {
+  if (exists("xgb.get.num.boosted.rounds", where = asNamespace("xgboost"), mode = "function")) {
+    xgboost::xgb.get.num.boosted.rounds(model)
+  } else {
+    model$niter
+  }
+}
+
+get_xgb_params <- function(model) {
+  if (exists("xgb.parameters", where = asNamespace("xgboost"), mode = "function")) {
+    xgboost::xgb.parameters(model)
+  } else {
+    model$params
+  }
+}
+
 
 # The functions below define the model information. These access the model
 # environment inside of parsnip so they have to be executed once parsnip has

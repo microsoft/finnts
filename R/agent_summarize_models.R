@@ -1238,7 +1238,7 @@ summarize_model_arima_boost <- function(wf) {
 
     if (inherits(xgb_obj, "xgb.Booster")) {
       # Number of boosting rounds
-      niter <- try(xgb_obj$niter, silent = TRUE)
+      niter <- try(get_xgb_niter(xgb_obj), silent = TRUE)
       if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgb_nrounds", as.character(niter)))
 
@@ -1249,7 +1249,7 @@ summarize_model_arima_boost <- function(wf) {
       }
 
       # Get training parameters
-      params <- try(xgb_obj$params, silent = TRUE)
+      params <- try(get_xgb_params(xgb_obj), silent = TRUE)
       if (!inherits(params, "try-error") && !is.null(params) && is.list(params)) {
         param_names <- c("objective", "eval_metric", "tree_method")
 
@@ -4608,7 +4608,7 @@ summarize_model_prophet_boost <- function(wf) {
 
     if (inherits(xgb_obj, "xgb.Booster")) {
       # Number of boosting rounds (already in model_arg as trees, so don't duplicate)
-      niter <- try(xgb_obj$niter, silent = TRUE)
+      niter <- try(get_xgb_niter(xgb_obj), silent = TRUE)
       if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
         # Update args_tbl if trees was "auto"
         if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
@@ -4617,7 +4617,7 @@ summarize_model_prophet_boost <- function(wf) {
       }
 
       # Get training parameters
-      params <- try(xgb_obj$params, silent = TRUE)
+      params <- try(get_xgb_params(xgb_obj), silent = TRUE)
       if (!inherits(params, "try-error") && !is.null(params) && is.list(params)) {
         param_names <- c("objective", "eval_metric", "tree_method")
 
@@ -7572,13 +7572,13 @@ summarize_model_xgboost <- function(wf) {
 
         if (!is.null(inner_xgb) && inherits(inner_xgb, "xgb.Booster")) {
           # Number of rounds
-          niter <- try(inner_xgb$niter, silent = TRUE)
+          niter <- try(get_xgb_niter(inner_xgb), silent = TRUE)
           if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
             all_nrounds <- c(all_nrounds, niter)
           }
 
           # Number of features
-          feature_names <- try(inner_xgb$feature_names, silent = TRUE)
+          feature_names <- try(get_xgb_feature_names(inner_xgb), silent = TRUE)
           if (!inherits(feature_names, "try-error") && !is.null(feature_names)) {
             all_nfeatures <- c(all_nfeatures, length(feature_names))
           }
@@ -7670,7 +7670,7 @@ summarize_model_xgboost <- function(wf) {
 
       if (inherits(xgb_obj, "xgb.Booster")) {
         # Number of boosting rounds
-        niter <- try(xgb_obj$niter, silent = TRUE)
+        niter <- try(get_xgb_niter(xgb_obj), silent = TRUE)
         if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
           # Update args_tbl if trees was "auto"
           if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
@@ -7679,7 +7679,7 @@ summarize_model_xgboost <- function(wf) {
         }
 
         # Get training parameters from params list
-        params <- try(xgb_obj$params, silent = TRUE)
+        params <- try(get_xgb_params(xgb_obj), silent = TRUE)
         if (!inherits(params, "try-error") && !is.null(params) && is.list(params)) {
           # Extract only non-duplicate parameters (not already in model_arg)
           param_names <- c("objective", "eval_metric", "tree_method", "colsample_bytree")
