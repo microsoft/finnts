@@ -2132,7 +2132,9 @@ get_foundation_model_suffix <- function() {
 
   available <- available[!is.na(available)]
 
-  if (length(available) == 0) return("")
+  if (length(available) == 0) {
+    return("")
+  }
   paste0("---", paste(available, collapse = "---"))
 }
 
