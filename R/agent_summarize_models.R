@@ -209,6 +209,26 @@ summarize_models <- function(agent_info,
           }
         ) %>%
           suppressWarnings()
+        
+        # Also try to read average models forecast file
+        average_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-average_models.", project_info$data_output
+              )
+            ) %>%
+              adjust_combo_column()
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
+
+        # Combine global and average forecast data
+        forecast_tbl <- dplyr::bind_rows(forecast_tbl, average_forecast_tbl)
 
         # if no data, try reading a reconciled forecast file
         if (nrow(forecast_tbl) == 0) {
