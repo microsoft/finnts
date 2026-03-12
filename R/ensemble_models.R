@@ -216,7 +216,8 @@ ensemble_models <- function(run_info,
       # from models with slightly different floating-point Target values
       target_tbl <- initial_results_final_tbl %>%
         dplyr::group_by(Combo, Date, Train_Test_ID) %>%
-        dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop")
+        dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::mutate(Target = ifelse(is.nan(Target), NA_real_, Target))
 
       prep_ensemble_tbl <- initial_results_final_tbl %>%
         dplyr::select(-Target) %>%
