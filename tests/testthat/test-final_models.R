@@ -21,8 +21,6 @@ test_that("read_file returns NULL or empty tibble for non-existent files", {
   # read_file may return NULL or an empty tibble for missing files;
   # either way it must NOT have usable columns like Model_ID
   is_empty <- is.null(result) || nrow(result) == 0
-  # either way it must NOT have usable columns like Model_ID
-  is_empty <- is.null(result) || nrow(result) == 0
   expect_true(is_empty)
 })
 
