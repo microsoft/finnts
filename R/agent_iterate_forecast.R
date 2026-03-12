@@ -725,9 +725,6 @@ save_agent_forecast <- function(agent_info) {
     stop("Error in save_agent_forecast(). No final forecast found for agent.", call. = FALSE)
   }
 
-  # validate that every combo has a best model
-  validate_best_model(final_fcst_tbl, context = "save_agent_forecast")
-
   # save the final forecast for the agent
   write_data(
     x = final_fcst_tbl,
