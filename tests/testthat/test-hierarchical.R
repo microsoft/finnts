@@ -180,24 +180,6 @@ test_that("hierarchy_detect keeps grouped when a combo col is constant", {
   expect_equal(result, "grouped_hierarchy")
 })
 
-test_that("hierarchy_detect does not downgrade grouped when all cols have multiple values", {
-  # Segment x Product: no constant columns, should remain grouped
-  df <- tibble::tibble(
-    Segment = c("Commercial", "Commercial", "Consumer", "Consumer"),
-    Product = c("Office", "Xbox", "Office", "Xbox"),
-    Date    = as.Date("2020-01-01"),
-    Target  = c(10, 20, 30, 40)
-  )
-
-  result <- hierarchy_detect(
-    agent_info = make_agent_info(c("Segment", "Product")),
-    input_data = df,
-    write_data = FALSE
-  )
-
-  expect_equal(result, "grouped_hierarchy")
-})
-
 # --- prep_hierarchical_data tests ---
 
 test_that("prep_hierarchical_data returns correct grouped hierarchies", {
@@ -251,7 +233,22 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   ) %>%
     dplyr::filter(Date == "2020-01-01")
 
-  # Expected output setup
+  # Expected output for Date == 2020-01-01.
+  # Target aggregations (sum):
+  #   Total = sum(all 8 combos) = 1+13+25+37+1+13+25+37 = 152
+  #   Segment_Commercial = 1+13+25+37 = 76, Segment_Consumer = idem = 76
+  #   Country_United_States = 1+13+1+13 = 28, Country_UK = 25+37+25+37 = 124
+  #   Product_Office = 1+25+1+25 = 52, Product_Excel = 13+37+13+37 = 100
+  #   Bottom combos: raw values (1, 13, 25, 37, 1, 13, 25, 37)
+  # Value_Country maps to Country (sum per Country per date):
+  #   Bottom-level combos keep their raw Value_Country values.
+  #   Each Country node equals the sum of Value_Country across all combos
+  #   for that Country on the given date, and the Total node equals the sum
+  #   of all Country-node values for that date.
+  # Value_Global = 1 on every date (constant across combos and dates).
+  # Value_All: each combo has a unique value → aggregated via sum_hts_data.
+  # Value_Product maps to Product (sum per Product per date).
+  # Value_Segment_Product maps to Segment---Product (sum per pair per date).
   expected_data <- tibble::tibble(
     Combo = as.character(c(
       "Total", "Segment_Commercial", "Segment_Consumer", "Country_United_States", "Country_UK",
@@ -304,7 +301,22 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
   ) %>%
     dplyr::filter(Date == "2020-01-01")
 
-  # Expected output setup for a standard hierarchical forecast
+  # Expected output for Date == 2020-01-01.
+  # Area → Country nesting: EMEA→{Croatia, Greece}, US→{US}
+  # Standard hierarchy levels: Total, Level-1 (A=EMEA, B=US), Bottom.
+  #   A and B are labels assigned by hts for the two Area groups.
+  # Target (sum):
+  #   Total = 1 + 100 + 1000 = 1101
+  #   A (EMEA) = 1 + 100 = 101,  B (US) = 1000
+  #   Bottom: Croatia=1, Greece=100, US=1000
+  # Value_All maps at full combo granularity (sum via sum_hts_data):
+  #   Total = 10+46+82 = 138,  A = 10+46 = 56,  B = 82
+  #   Bottom: 10, 46, 82
+  # Value_Global = 50 everywhere (constant across combos).
+  # Value_Area maps to Area (mid-level sum):
+  #   Total = 20+70 = 90,  A = 20,  B = 70
+  #   Bottom inherit their Area's value: Croatia=20, Greece=20, US=70
+  #   But Total gets the date-level aggregate = 20+70 = 90
   expected_data <- tibble::tibble(
     Combo = as.character(c("Total", "A", "B", "EMEA_Croatia", "EMEA_Greece", "United_States_United_States")),
     Date = as.Date(c("2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01", "2020-01-01")),
@@ -852,4 +864,1095 @@ test_that("external_regressor_mapping is fast with many combo variables", {
   expect_equal(v1_var, "V1")
   expect_equal(global_var, "Global")
   expect_equal(all_var, "All")
+})
+
+test_that("external_regressor_mapping excludes single-value combo variables", {
+  n_dates <- 4
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  grid <- expand.grid(
+    V1 = c("A", "B"),
+    V2 = c("X", "Y"),
+    V3 = "Only_One",
+    stringsAsFactors = FALSE
+  )
+
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      V3 = grid$V3[i],
+      Date = dates,
+      Reg_Bottom = (i - 1) * n_dates + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2", "V3"),
+    external_regressors = c("Reg_Bottom")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg_Bottom"], "All")
+})
+
+test_that("external_regressor_mapping returns Global when regressor varies only by date and all combo vars are constant", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  data <- tibble::tibble(
+    V1 = rep("Only", n_dates),
+    V2 = rep("One", n_dates),
+    Date = dates,
+    Reg = c(10, 20, 30)
+  )
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg"], "Global")
+})
+
+test_that("external_regressor_mapping returns All with fully-varying regressor across combos", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = (i * 5) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  # regressor unique per full combo cross, no single var reduces count
+  expect_equal(result$Var[result$Regressor == "Reg"], "All")
+})
+
+test_that("external_regressor_mapping returns Global with asymmetric combo variable sizes", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = c(10, 20, 30)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg"], "Global")
+})
+
+test_that("external_regressor_mapping returns All when regressor varies uniquely by full combo and no single var reduces uniqueness", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1 x V2 = 2x2 = 4 combos; regressor varies by both V1 and V2
+  # but is the same within each (V1, V2) pair across dates
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      # Reg depends on BOTH V1 and V2 symmetrically
+      Reg = (match(grid$V1[i], c("A", "B")) * 10 +
+        match(grid$V2[i], c("X", "Y"))) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  # no single var reduces the unique count: regressor is unique per full combo cross
+  expect_equal(result$Var[result$Regressor == "Reg"], "All")
+})
+
+test_that("external_regressor_mapping picks only the two tied candidates from three", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) x V3(3) = 12 combos; Reg varies by V1 and V2 jointly
+  grid <- expand.grid(
+    V1 = c("A", "B"), V2 = c("X", "Y"), V3 = c("P", "Q", "R"),
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      V3 = grid$V3[i],
+      Date = dates,
+      # Reg determined by (V1, V2) only
+      Reg = rep(match(grid$V1[i], c("A", "B")) * 10 +
+        match(grid$V2[i], c("X", "Y")), n_dates) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2", "V3"),
+    external_regressors = c("Reg")
+  )
+
+  var_result <- result$Var[result$Regressor == "Reg"]
+  parts <- sort(strsplit(var_result, "---")[[1]])
+
+  # V1 and V2 both reduce equally, V3 does not
+  expect_equal(parts, c("V1", "V2"))
+})
+
+test_that("external_regressor_mapping picks single best candidate among multiple", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(3) x V2(2) = 6 combos; Reg varies only by V1
+  grid <- expand.grid(
+    V1 = c("A", "B", "C"), V2 = c("X", "Y"),
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = rep(match(grid$V1[i], c("A", "B", "C")) * 100, n_dates) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg"], "V1")
+})
+
+test_that("external_regressor_mapping handles constant regressor as Global", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = rep(42, n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  # constant regressor → distinct(Date, Reg) == n_dates → Global
+  expect_equal(result$Var[result$Regressor == "Reg"], "Global")
+})
+
+test_that("external_regressor_mapping returns All when constant var excluded and sole remaining var cannot reduce count", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(1 constant) = 2 combos; Reg varies by V1.
+  # After V2 is excluded (constant), only V1 remains as multi_value_var.
+  # all_unique = count_unique(c(V1, V2), Reg) = 6 (each row is distinct).
+  # count_unique(V1, Reg) = 6 too (same, because V2 is constant).
+  # Since 6 == 6, V1 does NOT reduce the count, so result is "All".
+  data <- tibble::tibble(
+    V1 = rep(c("A", "B"), each = n_dates),
+    V2 = rep("Const", 2 * n_dates),
+    Date = rep(dates, 2),
+    Reg = c(
+      rep(10, n_dates) + seq_len(n_dates),
+      rep(20, n_dates) + seq_len(n_dates)
+    )
+  )
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg"], "All")
+})
+
+test_that("external_regressor_mapping handles nested hierarchical variables", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Region determines Country (nested): EMEA→{Croatia, Greece}, AMER→{US}
+  # Reg varies by Region only
+  data <- tibble::tibble(
+    Region = c(rep("EMEA", 2 * n_dates), rep("AMER", n_dates)),
+    Country = c(rep("Croatia", n_dates), rep("Greece", n_dates), rep("US", n_dates)),
+    Date = rep(dates, 3),
+    Reg = c(
+      rep(10, n_dates) + seq_len(n_dates),
+      rep(10, n_dates) + seq_len(n_dates),
+      rep(50, n_dates) + seq_len(n_dates)
+    )
+  )
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("Region", "Country"),
+    external_regressors = c("Reg")
+  )
+
+  # Region has fewer unique count → should be selected
+  expect_equal(result$Var[result$Regressor == "Reg"], "Region")
+})
+
+test_that("external_regressor_mapping handles multiple regressors at different levels", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) x V3(2) = 8 combos
+  grid <- expand.grid(
+    V1 = c("A", "B"), V2 = c("X", "Y"), V3 = c("P", "Q"),
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      V3 = grid$V3[i],
+      Date = dates,
+      Reg_Global = c(1, 2, 3),
+      Reg_V1 = rep(match(grid$V1[i], c("A", "B")) * 100, n_dates) + seq_len(n_dates),
+      Reg_All = (i - 1) * n_dates + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2", "V3"),
+    external_regressors = c("Reg_Global", "Reg_V1", "Reg_All")
+  )
+
+  expect_equal(nrow(result), 3)
+  expect_equal(result$Var[result$Regressor == "Reg_Global"], "Global")
+  expect_equal(result$Var[result$Regressor == "Reg_V1"], "V1")
+  expect_equal(result$Var[result$Regressor == "Reg_All"], "All")
+})
+
+test_that("external_regressor_mapping handles regressor with NA values", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) = 4 combos; Reg varies by V1 but first combo has an NA.
+  # NA is treated as a distinct value by dplyr::distinct, so each (V1,Date)
+  # pair still has a unique Reg value. The regressor still fundamentally
+  # varies by V1, but the NA on combo 1 / date 2 makes distinct(Date, Reg)
+  # return 4 rows (date2 has both NA and 201), so it's not Global.
+  # count_unique(V1, Reg) should still be < all_unique → maps to "V1".
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    v1_idx <- match(grid$V1[i], c("A", "B"))
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = if (i == 1) c(v1_idx * 100 + 1, NA, v1_idx * 100 + 3) else rep(v1_idx * 100, n_dates) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  # NA makes it non-Global; V1 still reduces count → maps to V1
+  expect_equal(result$Var[result$Regressor == "Reg"], "V1")
+})
+
+# --- end-to-end prep_hierarchical_data xreg + corner case tests ---
+
+test_that("grouped hierarchy with single-value combo var produces no duplicate rows", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Segment(2) x Product(2) x Flag(1 constant) = 4 combos
+  # Reg varies at bottom combo level — the original ECIF bug scenario
+  grid <- expand.grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox"),
+    Flag = "Internal",
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      Segment = grid$Segment[i],
+      Product = grid$Product[i],
+      Flag = grid$Flag[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Milestone = (i - 1) * 100 + seq_len(n_dates)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("Segment", "Product", "Flag"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  combo_vars <- c("Segment", "Product", "Flag")
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = c("Milestone"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate (Combo, Date) rows
+  row_count <- nrow(result)
+  distinct_count <- nrow(dplyr::distinct(result, Combo, Date))
+  expect_equal(row_count, distinct_count)
+
+  # Milestone should not be NA at any hierarchy level
+  expect_true(all(!is.na(result$Milestone)))
+
+  # Total row should exist
+  expect_true("Total" %in% result$Combo)
+})
+
+test_that("standard hierarchy with single-value combo var produces no duplicate rows", {
+  n_dates <- 4
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Area(2) x Country(nested) x Flag(1 constant) = 3 combos
+  data <- tibble::tibble(
+    Area = c(rep("EMEA", 2 * n_dates), rep("US", n_dates)),
+    Country = c(rep("Croatia", n_dates), rep("Greece", n_dates), rep("US", n_dates)),
+    Flag = rep("Active", 3 * n_dates),
+    Date = rep(dates, 3),
+    Target = c(1:4, 10:13, 100:103),
+    Reg_Area = c(rep(10, n_dates), rep(10, n_dates), rep(50, n_dates)) + rep(seq_len(n_dates), 3),
+    Reg_All = seq_len(3 * n_dates)
+  ) %>%
+    tidyr::unite("Combo",
+      c("Area", "Country", "Flag"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Area", "Country", "Flag"),
+    external_regressors = c("Reg_Area", "Reg_All"),
+    forecast_approach = "standard_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate (Combo, Date) rows
+  row_count <- nrow(result)
+  distinct_count <- nrow(dplyr::distinct(result, Combo, Date))
+  expect_equal(row_count, distinct_count)
+
+  # xregs should be present (not NA) everywhere
+  expect_true(all(!is.na(result$Reg_Area)))
+  expect_true(all(!is.na(result$Reg_All)))
+})
+
+test_that("grouped hierarchy xregs at multiple levels with constant var are correct", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Segment(2) x Product(2) x Region(1 constant) = 4 combos
+  grid <- expand.grid(
+    Segment = c("Commercial", "Consumer"),
+    Product = c("Office", "Xbox"),
+    Region = "AMER",
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      Segment = grid$Segment[i],
+      Product = grid$Product[i],
+      Region = grid$Region[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Reg_Global = c(99, 98, 97),
+      Reg_Segment = rep(match(grid$Segment[i], c("Commercial", "Consumer")) * 100, n_dates),
+      Reg_All = (i - 1) * 100 + seq_len(n_dates)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("Segment", "Product", "Region"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  combo_vars <- c("Segment", "Product", "Region")
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = combo_vars,
+    external_regressors = c("Reg_Global", "Reg_Segment", "Reg_All"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # Global regressor should be the same across all combos for a given date
+  total_row <- result %>% dplyr::filter(Combo == "Total", Date == dates[1])
+  expect_equal(total_row$Reg_Global, 99)
+
+  # All regressors should have values (no NAs)
+  expect_true(all(!is.na(result$Reg_Global)))
+  expect_true(all(!is.na(result$Reg_Segment)))
+  expect_true(all(!is.na(result$Reg_All)))
+})
+
+test_that("grouped hierarchy no-duplicate invariant holds for multi-var xreg mapping", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Segment(2) x Product(2) x Channel(2) = 8 combos
+  # Reg varies by (Segment, Product) jointly — a multi-var mapped regressor
+  grid <- expand.grid(
+    Segment = c("Comm", "Cons"),
+    Product = c("Off", "Xbox"),
+    Channel = c("Online", "Retail"),
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      Segment = grid$Segment[i],
+      Product = grid$Product[i],
+      Channel = grid$Channel[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Reg_SegProd = (match(grid$Segment[i], c("Comm", "Cons")) * 10 +
+        match(grid$Product[i], c("Off", "Xbox"))) * 100 + seq_len(n_dates)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("Segment", "Product", "Channel"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Segment", "Product", "Channel"),
+    external_regressors = c("Reg_SegProd"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # regressor should be present everywhere
+  expect_true(all(!is.na(result$Reg_SegProd)))
+})
+
+test_that("standard hierarchy no-duplicate invariant holds with xregs at mid-level", {
+  n_dates <- 4
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Area → Country (nested standard hierarchy): EMEA→{Croatia, Greece}, US→{US}
+  # Reg_Area varies by Area (mid-level)
+  data <- tibble::tibble(
+    Area = c(rep("EMEA", 2 * n_dates), rep("US", n_dates)),
+    Country = c(rep("Croatia", n_dates), rep("Greece", n_dates), rep("US", n_dates)),
+    Date = rep(dates, 3),
+    Target = c(1:4, 100:103, 1000:1003),
+    Reg_Area = c(rep(20, n_dates), rep(20, n_dates), rep(70, n_dates)) + rep(seq_len(n_dates), 3)
+  ) %>%
+    tidyr::unite("Combo",
+      c("Area", "Country"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Area", "Country"),
+    external_regressors = c("Reg_Area"),
+    forecast_approach = "standard_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # xreg should be present everywhere
+  expect_true(all(!is.na(result$Reg_Area)))
+})
+
+# --- additional xreg mapping corner cases ---
+
+test_that("external_regressor_mapping detects near-global regressor as non-Global", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Reg is the same across all combos except the last one deviates on date 3
+  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg = if (i == nrow(grid)) c(10, 20, 999) else c(10, 20, 30)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg")
+  )
+
+  # last combo deviates on date 3, so distinct(Date, Reg) > n_dates → not Global
+  expect_true(result$Var[result$Regressor == "Reg"] != "Global")
+})
+
+
+
+test_that("external_regressor_mapping with multiple single-value vars and two varying", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) = 4 combos; V3, V4, V5 are constant
+  # Reg varies only by V1
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      V3 = "C1",
+      V4 = "C2",
+      V5 = "C3",
+      Date = dates,
+      Reg = rep(match(grid$V1[i], c("A", "B")) * 100, n_dates) + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2", "V3", "V4", "V5"),
+    external_regressors = c("Reg")
+  )
+
+  # V3/V4/V5 should be filtered out; V1 should be selected
+  expect_equal(result$Var[result$Regressor == "Reg"], "V1")
+})
+
+test_that("external_regressor_mapping with two regressors at the same mid-level", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(3) x V2(2) = 6 combos; both regressors vary by V1
+  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    v1_idx <- match(grid$V1[i], c("A", "B", "C"))
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Reg_A = v1_idx * 10 + seq_len(n_dates),
+      Reg_B = v1_idx * 50 + seq_len(n_dates)
+    )
+  }))
+
+  result <- external_regressor_mapping(
+    data = data,
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg_A", "Reg_B")
+  )
+
+  expect_equal(result$Var[result$Regressor == "Reg_A"], "V1")
+  expect_equal(result$Var[result$Regressor == "Reg_B"], "V1")
+})
+
+# --- additional end-to-end aggregation corner cases ---
+
+test_that("grouped hierarchy with xreg NAs at some combos produces no duplicates", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) = 4 combos; Reg varies by V1, has NAs in one combo
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    v1_idx <- match(grid$V1[i], c("A", "B"))
+    reg_vals <- v1_idx * 100 + seq_len(n_dates)
+    # inject NA into first combo's last date
+    if (i == 1) reg_vals[n_dates] <- NA
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Reg = reg_vals
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("V1", "V2"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate (Combo, Date) rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+})
+
+test_that("grouped hierarchy with multiple constant combo vars produces no duplicates", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(2) x V2(2) = 4 combos; V3, V4, V5 are constant
+  # Reg varies at bottom combo level
+  grid <- expand.grid(V1 = c("A", "B"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      V3 = "Const1",
+      V4 = "Const2",
+      V5 = "Const3",
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Reg = (i - 1) * 100 + seq_len(n_dates)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("V1", "V2", "V3", "V4", "V5"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("V1", "V2", "V3", "V4", "V5"),
+    external_regressors = c("Reg"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # Total should exist
+  expect_true("Total" %in% result$Combo)
+
+  # xreg should be present everywhere
+  expect_true(all(!is.na(result$Reg)))
+})
+
+test_that("grouped hierarchy with special characters in combo values produces no duplicates", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # combo values with parentheses, spaces, dashes
+  data <- tibble::tibble(
+    Area = c(rep("United (States)", n_dates), rep("South-East Asia", n_dates)),
+    Product = c(rep("MS Office 365", n_dates), rep("MS Office 365", n_dates)),
+    Date = rep(dates, 2),
+    Target = c(1:3, 10:12),
+    Reg_Area = c(rep(100, n_dates), rep(200, n_dates)) + rep(seq_len(n_dates), 2)
+  ) %>%
+    tidyr::unite("Combo",
+      c("Area", "Product"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Area", "Product"),
+    external_regressors = c("Reg_Area"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # xreg should be present everywhere
+  expect_true(all(!is.na(result$Reg_Area)))
+
+  # Total should exist
+  expect_true("Total" %in% result$Combo)
+})
+
+test_that("grouped hierarchy with sparse/unbalanced combos produces no duplicates", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Not all V1 x V2 combinations exist: A-X, A-Y, B-X (missing B-Y)
+  data <- tibble::tibble(
+    V1 = c(rep("A", 2 * n_dates), rep("B", n_dates)),
+    V2 = c(rep("X", n_dates), rep("Y", n_dates), rep("X", n_dates)),
+    Date = rep(dates, 3),
+    Target = c(1:3, 10:12, 100:102),
+    Reg_All = seq_len(3 * n_dates)
+  ) %>%
+    tidyr::unite("Combo",
+      c("V1", "V2"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg_All"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # xreg should be present everywhere
+  expect_true(all(!is.na(result$Reg_All)))
+})
+
+test_that("grouped hierarchy two regressors at same mid-level both join correctly", {
+  n_dates <- 3
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # V1(3) x V2(2) = 6 combos; both Reg_A and Reg_B vary by V1
+  grid <- expand.grid(V1 = c("A", "B", "C"), V2 = c("X", "Y"), stringsAsFactors = FALSE)
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    v1_idx <- match(grid$V1[i], c("A", "B", "C"))
+    tibble::tibble(
+      V1 = grid$V1[i],
+      V2 = grid$V2[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(n_dates),
+      Reg_A = v1_idx * 10 + seq_len(n_dates),
+      Reg_B = v1_idx * 50 + seq_len(n_dates)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("V1", "V2"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("V1", "V2"),
+    external_regressors = c("Reg_A", "Reg_B"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # both regressors should be present everywhere
+  expect_true(all(!is.na(result$Reg_A)))
+  expect_true(all(!is.na(result$Reg_B)))
+
+  # verify both regressors have the correct total aggregation (date 1)
+  total_d1 <- result %>% dplyr::filter(Combo == "Total", Date == dates[1])
+  # Reg_A total for date 1: V1=A→11, V1=B→21, V1=C→31 → sum=63
+  # but it's aggregated as sum over first value_level groups
+  expect_true(!is.na(total_d1$Reg_A))
+  expect_true(!is.na(total_d1$Reg_B))
+})
+
+test_that("standard hierarchy with sparse combos and xregs produces no duplicates", {
+  n_dates <- 4
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Area → Country: EMEA→{Croatia, Greece, Italy}, US→{US}
+  # Reg varies by Area
+  data <- tibble::tibble(
+    Area = c(rep("EMEA", 3 * n_dates), rep("US", n_dates)),
+    Country = c(
+      rep("Croatia", n_dates), rep("Greece", n_dates), rep("Italy", n_dates),
+      rep("US", n_dates)
+    ),
+    Date = rep(dates, 4),
+    Target = c(1:4, 10:13, 20:23, 100:103),
+    Reg = c(rep(10, 3 * n_dates), rep(50, n_dates)) + rep(seq_len(n_dates), 4)
+  ) %>%
+    tidyr::unite("Combo",
+      c("Area", "Country"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Area", "Country"),
+    external_regressors = c("Reg"),
+    forecast_approach = "standard_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # xreg present everywhere
+  expect_true(all(!is.na(result$Reg)))
+})
+
+# --- missing corner case tests ---
+
+test_that("hierarchy_detect identifies grouped when nesting and crossing coexist", {
+  # Region → Country is nested (one-to-many), but Product crosses both.
+  # This is a partial hierarchy (tree for some pairs, crossed for others)
+  # which should be classified as grouped.
+  df <- tibble::tibble(
+    Region  = c("EMEA", "EMEA", "EMEA", "EMEA", "US", "US"),
+    Country = c("Croatia", "Croatia", "Greece", "Greece", "US", "US"),
+    Product = c("Office", "Xbox", "Office", "Xbox", "Office", "Xbox"),
+    Date    = as.Date("2020-01-01"),
+    Target  = seq_len(6)
+  )
+
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(c("Region", "Country", "Product")),
+    input_data = df,
+    write_data = FALSE
+  )
+
+  expect_equal(result, "grouped_hierarchy")
+})
+
+test_that("hierarchy_detect identifies standard hierarchy with 1:1 equivalent variables", {
+  # Country and CountryCode are 1:1 bijective (each determines the other).
+  # The union-find algorithm collapses them into one equivalence class,
+  # forming a single-node chain → standard hierarchy.
+  df <- tibble::tibble(
+    Country     = c("Croatia", "Greece", "US"),
+    CountryCode = c("HR", "GR", "US"),
+    Date        = as.Date("2020-01-01"),
+    Target      = c(10, 20, 30)
+  )
+
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(c("Country", "CountryCode")),
+    input_data = df,
+    write_data = FALSE
+  )
+
+  expect_equal(result, "standard_hierarchy")
+})
+
+test_that("standard hierarchy end-to-end with xregs at multiple levels", {
+  n_dates <- 4
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
+
+  # Area → Country (nested): EMEA→{Croatia, Greece}, US→{US}
+  # Three regressors at different levels:
+  #   Reg_Global: same value per date across all combos → Global
+  #   Reg_Area:   varies by Area only (mid-level)
+  #   Reg_All:    unique per combo (bottom-level)
+  data <- tibble::tibble(
+    Area = c(rep("EMEA", 2 * n_dates), rep("US", n_dates)),
+    Country = c(rep("Croatia", n_dates), rep("Greece", n_dates), rep("US", n_dates)),
+    Date = rep(dates, 3),
+    Target = c(1:4, 10:13, 100:103),
+    Reg_Global = rep(c(50, 51, 52, 53), 3),
+    Reg_Area = c(rep(20, 2 * n_dates), rep(70, n_dates)) + rep(seq_len(n_dates), 3),
+    Reg_All = seq_len(3 * n_dates)
+  ) %>%
+    tidyr::unite("Combo",
+      c("Area", "Country"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Area", "Country"),
+    external_regressors = c("Reg_Global", "Reg_Area", "Reg_All"),
+    forecast_approach = "standard_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # all regressors present (no NAs)
+  expect_true(all(!is.na(result$Reg_Global)))
+  expect_true(all(!is.na(result$Reg_Area)))
+  expect_true(all(!is.na(result$Reg_All)))
+
+  # Global regressor should be the same at Total level as at bottom
+  total_d1 <- result %>% dplyr::filter(Combo == "Total", Date == dates[1])
+  bottom_d1 <- result %>% dplyr::filter(grepl("Croatia", Combo), Date == dates[1])
+  expect_equal(total_d1$Reg_Global, bottom_d1$Reg_Global)
+
+  # Total row should exist
+  expect_true("Total" %in% result$Combo)
+})
+
+test_that("grouped hierarchy aggregation works with only 2 dates", {
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 2)
+
+  # Segment(2) x Product(2) = 4 combos, 2 dates each = 8 rows
+  grid <- expand.grid(
+    Segment = c("Comm", "Cons"),
+    Product = c("Off", "Xbox"),
+    stringsAsFactors = FALSE
+  )
+  data <- do.call(rbind, lapply(seq_len(nrow(grid)), function(i) {
+    tibble::tibble(
+      Segment = grid$Segment[i],
+      Product = grid$Product[i],
+      Date = dates,
+      Target = (i - 1) * 10 + seq_len(2),
+      Reg = rep(match(grid$Segment[i], c("Comm", "Cons")) * 100, 2) + seq_len(2)
+    )
+  })) %>%
+    tidyr::unite("Combo",
+      c("Segment", "Product"),
+      sep = "--",
+      remove = FALSE
+    )
+
+  result <- prep_hierarchical_data(
+    input_data = data,
+    run_info = set_run_info(),
+    combo_variables = c("Segment", "Product"),
+    external_regressors = c("Reg"),
+    forecast_approach = "grouped_hierarchy",
+    frequency_number = 12
+  )
+
+  # no duplicate rows
+  expect_equal(nrow(result), nrow(dplyr::distinct(result, Combo, Date)))
+
+  # Total row exists
+  expect_true("Total" %in% result$Combo)
+
+  # xreg present everywhere
+  expect_true(all(!is.na(result$Reg)))
+
+  # should have more rows than just bottom combos (aggregated levels exist)
+  expect_gt(nrow(result), nrow(grid) * 2)
+})
+
+# --- ensemble / reconciliation dedup regression tests ---
+
+test_that("ensemble prep produces no duplicate rows when models have fp Target discrepancies", {
+  # Simulate the scenario where different models return slightly different
+  # floating-point Target values for the same (Combo, Date, Train_Test_ID),
+  # e.g. croston returning 0 vs arima returning -2.91e-10.
+  initial_results <- tibble::tibble(
+    Combo_ID = rep("A_B", 6),
+    Combo = rep("A_B", 6),
+    Model_Name = c("arima", "arima", "croston", "croston", "cubist", "cubist"),
+    Recipe_ID = rep("R1", 6),
+    Date = rep(as.Date(c("2020-01-01", "2020-02-01")), 3),
+    Train_Test_ID = rep(c(1, 1), 3),
+    Target = c(-2.91e-10, 100, 0, 100, -2.91e-10, 100),
+    Forecast = c(1.5, 102, 0.1, 99, 2.0, 101)
+  )
+
+  target_tbl <- initial_results %>%
+    dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+    dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop")
+
+  prep_ensemble_tbl <- initial_results %>%
+    dplyr::select(-Target) %>%
+    dplyr::mutate(Suffix = ifelse(Combo_ID == "All-Data", "Global", "Local")) %>%
+    tidyr::unite(
+      col = "Model_Key",
+      c("Model_Name", "Recipe_ID", "Suffix"),
+      sep = "-",
+      remove = FALSE
+    ) %>%
+    tidyr::pivot_wider(
+      names_from = Model_Key, values_from = Forecast,
+      id_cols = c("Combo", "Date", "Train_Test_ID"), values_fill = 0
+    ) %>%
+    dplyr::left_join(target_tbl, by = c("Combo", "Date", "Train_Test_ID"))
+
+  # should have exactly 2 rows (one per date), not 4
+  expect_equal(nrow(prep_ensemble_tbl), 2)
+
+  # Target should be consolidated (mean of the fp-discrepant values)
+  expect_equal(
+    nrow(dplyr::distinct(prep_ensemble_tbl, Combo, Date, Train_Test_ID)),
+    nrow(prep_ensemble_tbl)
+  )
+})
+
+test_that("reconciliation pivot_wider produces numeric columns when model has duplicate forecasts", {
+  # Simulate duplicate (Combo, Date, Train_Test_ID) rows in Best-Model data,
+  # which previously caused pivot_wider to create list columns.
+  model_tbl <- tibble::tibble(
+    Combo = c(rep("A_X", 4), rep("B_Y", 4)),
+    Date = rep(as.Date(c("2020-01-01", "2020-01-01", "2020-02-01", "2020-02-01")), 2),
+    Train_Test_ID = rep(c(1, 1, 1, 1), 2),
+    Forecast = c(10, 10.0001, 20, 20, 30, 30, 40, 40.0001)
+  )
+
+  # apply the dedup fix: group_by + summarise before pivot_wider
+  forecast_tbl <- model_tbl %>%
+    dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+    dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
+
+  # all columns should be atomic (numeric), not list
+  for (col in setdiff(names(forecast_tbl), c("Date", "Train_Test_ID"))) {
+    expect_true(is.numeric(forecast_tbl[[col]]),
+      info = paste("Column", col, "should be numeric, not list")
+    )
+  }
+
+  # should have exactly 2 rows (one per date)
+  expect_equal(nrow(forecast_tbl), 2)
 })

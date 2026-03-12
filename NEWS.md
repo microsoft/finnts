@@ -1,4 +1,4 @@
-# finnts 0.6.0.9027 (development version)
+# finnts 0.6.0.9030 (development version)
 
 ## Improvements
 
@@ -38,9 +38,12 @@
 
 ## Bug Fixes
 
--   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach. 
+-   Fixed hierarchical forecast reconciliation failure caused by floating-point Target discrepancies across models.
+-   Improved error messages during hierarchical reconciliation to include the underlying error for easier debugging.
+-   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.
+-   Fixed hierarchical issues when a combo variable contains a single unique value.
+-   Fixed issue when reconciling standard hierarchical forecasts.
 -   Fixed weighted mape calculation when target variable has negative values.
--   Fixed issue when reconciling standard hierarchical forecasts
   
 ## Breaking Changes
 

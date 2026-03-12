@@ -140,16 +140,11 @@ prep_hierarchical_data <- function(input_data,
           temp_tbl <- input_data_adj %>%
             tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
             dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
-            dplyr::distinct()
+            dplyr::distinct() %>%
+            dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
+            dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE), .groups = "drop")
 
-          if (length(value_level) > 1) {
-            temp_tbl <- temp_tbl %>%
-              dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
-              dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE)) %>%
-              dplyr::ungroup()
-
-            names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
-          }
+          names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
 
           colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
 
@@ -569,6 +564,8 @@ reconcile_hierarchical_data <- function(run_info,
     c("Best-Model") %>%
     suppressWarnings()
 
+  validate_best_model(unreconciled_tbl, context = "reconcile_hierarchical_data")
+
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     hist_tbl <- read_file(run_info,
       path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
@@ -641,9 +638,9 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Forecast = ifelse(Forecast > 100000000000000, 100000000000000, Forecast)) %>%
-              dplyr::ungroup() %>%
+              dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+              dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
             forecast_tbl[is.na(forecast_tbl)] <- 0
@@ -664,10 +661,10 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
-              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+              dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+              dplyr::summarise(Residual = mean(Residual, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               dplyr::select(-Date, -Train_Test_ID) %>%
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
@@ -689,11 +686,11 @@ reconcile_hierarchical_data <- function(run_info,
           },
           error = function(e) {
             if (model != "Best-Model") {
-              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
               )
             } else {
-              stop("The 'Best-Model' was not able to be properly reconciled.",
+              stop(paste0("The 'Best-Model' was not able to be properly reconciled. Underlying error: ", conditionMessage(e)),
                 call. = FALSE
               )
             }
@@ -860,6 +857,8 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
+              dplyr::group_by(Date, Train_Test_ID, Combo) %>%
+              dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
             forecast_tbl[is.na(forecast_tbl)] <- 0
@@ -880,10 +879,10 @@ reconcile_hierarchical_data <- function(run_info,
                 Forecast_Adj = ifelse((abs(Target) + 1) * residual_multiplier < abs(Forecast), (Target + 1) * residual_multiplier, Forecast), # prevent hts recon issues
                 Residual = Target - Forecast_Adj
               ) %>%
-              dplyr::rowwise() %>%
               dplyr::mutate(Residual = ifelse(Residual == 0, 0.0001, Residual)) %>%
-              dplyr::ungroup() %>%
               dplyr::select(Combo, Date, Train_Test_ID, Residual) %>%
+              dplyr::group_by(Combo, Date, Train_Test_ID) %>%
+              dplyr::summarise(Residual = mean(Residual, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Residual) %>%
               tibble::as_tibble() %>%
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
@@ -905,11 +904,11 @@ reconcile_hierarchical_data <- function(run_info,
           },
           error = function(e) {
             if (model != "Best-Model") {
-              warning(paste0("The model '", model, "' was not able to be reconciled, skipping..."),
+              warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
               )
             } else {
-              stop("The 'Best-Model' was not able to be properly reconciled.",
+              stop(paste0("The 'Best-Model' was not able to be properly reconciled. Underlying error: ", conditionMessage(e)),
                 call. = FALSE
               )
             }
@@ -1020,9 +1019,21 @@ external_regressor_mapping <- function(data,
     all_unique <- count_unique(combo_variables, regressor)
 
     # fast path: test each single combo variable first (O(n))
+    # exclude variables with only 1 unique value since they provide
+    # no grouping information and would always appear as false candidates
+    multi_value_vars <- combo_variables[
+      vapply(combo_variables, function(v) {
+        dplyr::n_distinct(data[[v]]) > 1
+      }, logical(1))
+    ]
+
+    if (length(multi_value_vars) == 0) {
+      return(data.frame(Regressor = regressor, Var = "All"))
+    }
+
     single_var_tbl <- data.frame(
-      Var = combo_variables,
-      Unique = vapply(combo_variables, function(v) {
+      Var = multi_value_vars,
+      Unique = vapply(multi_value_vars, function(v) {
         count_unique(v, regressor)
       }, numeric(1)),
       stringsAsFactors = FALSE

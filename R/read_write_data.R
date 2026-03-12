@@ -125,6 +125,8 @@ get_forecast_data <- function(run_info,
     ) %>%
     base::suppressWarnings()
 
+  validate_best_model(forecast_tbl, context = "get_forecast_data")
+
   return(forecast_tbl)
 }
 
