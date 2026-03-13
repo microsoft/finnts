@@ -7950,7 +7950,7 @@ chronos2_permutation_importance <- function(train_data,
   train_portion <- train_data %>%
     dplyr::group_by(Combo) %>%
     dplyr::arrange(Date) %>%
-    dplyr::slice(1:(dplyr::n() - h)) %>%
+    dplyr::slice_head(n = pmax(dplyr::n() - h, 0L)) %>%
     dplyr::ungroup()
 
   n_vals <- train_portion %>%
