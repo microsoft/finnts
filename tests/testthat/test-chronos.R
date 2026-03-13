@@ -71,7 +71,7 @@ test_that("pad_chronos2_data pads combos with fewer than 3 rows", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Should have at least 3 rows for combo "A"
   expect_true(nrow(padded) >= 3)
@@ -89,7 +89,7 @@ test_that("pad_chronos2_data does not pad combos with 3+ rows", {
     y = c(10, 20, 30, 40)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   expect_equal(nrow(padded), 4)
   expect_equal(padded$y, c(10, 20, 30, 40))
@@ -102,7 +102,7 @@ test_that("pad_chronos2_data sets y = 0 for padded rows", {
     y = 42
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$y == 0))
@@ -116,7 +116,7 @@ test_that("pad_chronos2_data zeros out numeric exogenous columns in padded rows"
     temperature_original = 25.0
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$temperature_original == 0))
@@ -136,7 +136,7 @@ test_that("pad_chronos2_data works with multiple combos of different lengths", {
     y = c(10, 20, 30, 40, 50)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Combo A already has 4 rows — should remain 4
 
@@ -159,7 +159,7 @@ test_that("pad_chronos2_data creates backward-stepping dates", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Should have a date before 2020-03-01
   expect_true(min(padded$Date) < as.Date("2020-03-01"))
@@ -177,7 +177,7 @@ test_that("pad_chronos2_data uses calendar-aware monthly steps for single-row da
     y = 42
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   expect_equal(nrow(padded), 3)
   # Padded dates should be exactly 1 and 2 months before
@@ -612,7 +612,7 @@ test_that("chronos_forecast sends request and returns forecast data frame", {
     Combo = "1"
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",
@@ -643,7 +643,7 @@ test_that("chronos_forecast includes exogenous columns in payload", {
     temperature_original = c(22.0, 23.0, 21.0)
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",
@@ -672,7 +672,7 @@ test_that("chronos_forecast works with multiple combos", {
     Combo = rep(c("M1", "M2"), each = 3)
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",

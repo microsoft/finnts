@@ -18,7 +18,7 @@ data_with_date_col$order_date <- seq.Date(as.Date("2020-01-01"), by = "month", l
 
 test_that("check_input_data passes with valid inputs", {
   expect_no_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("id"),
       target_variable = "value",
@@ -34,7 +34,7 @@ test_that("check_input_data passes with valid inputs", {
 
 test_that("check_input_data rejects 'Date' as combo variable", {
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("Date"),
       target_variable = "value",
@@ -48,7 +48,7 @@ test_that("check_input_data rejects 'Date' as combo variable", {
 
   # Also when 'Date' is among multiple combo variables
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("id", "Date"),
       target_variable = "value",
@@ -65,7 +65,7 @@ test_that("check_input_data rejects 'Date' as combo variable", {
 
 test_that("check_input_data rejects 'Date' as target variable", {
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("id"),
       target_variable = "Date",
@@ -82,7 +82,7 @@ test_that("check_input_data rejects 'Date' as target variable", {
 
 test_that("check_input_data rejects 'Date' as external regressor", {
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("id"),
       target_variable = "value",
@@ -96,7 +96,7 @@ test_that("check_input_data rejects 'Date' as external regressor", {
 
   # Also when 'Date' is among multiple xregs
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = valid_data,
       combo_variables = c("id"),
       target_variable = "value",
@@ -113,7 +113,7 @@ test_that("check_input_data rejects 'Date' as external regressor", {
 
 test_that("check_input_data rejects date-formatted combo variable", {
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = data_with_date_col,
       combo_variables = c("order_date"),
       target_variable = "value",
@@ -129,7 +129,7 @@ test_that("check_input_data rejects date-formatted combo variable", {
   data_posix <- valid_data
   data_posix$ts_col <- as.POSIXct(valid_data$Date)
   expect_error(
-    finnts:::check_input_data(
+    check_input_data(
       input_data = data_posix,
       combo_variables = c("ts_col"),
       target_variable = "value",
@@ -201,8 +201,8 @@ test_that("set_run_info warns instead of errors on path change", {
   log_file <- list.files(
     file.path(temp_path, "logs"),
     pattern = paste0(
-      finnts:::hash_data("run_path_warn_test"), "-",
-      finnts:::hash_data("run_path_warn_run"), "\\.csv$"
+      hash_data("run_path_warn_test"), "-",
+      hash_data("run_path_warn_run"), "\\.csv$"
     ),
     full.names = TRUE
   )
@@ -242,7 +242,7 @@ test_that("format_input_diff reports changed fields", {
   # single change
   curr <- prev
   curr$date_type <- "quarter"
-  result <- finnts:::format_input_diff(prev, curr)
+  result <- format_input_diff(prev, curr)
   expect_match(result, "date_type")
   expect_match(result, "expected.*month.*got.*quarter")
 
@@ -250,17 +250,17 @@ test_that("format_input_diff reports changed fields", {
   curr2 <- prev
   curr2$target_variable <- "revenue"
   curr2$forecast_horizon <- 6
-  result2 <- finnts:::format_input_diff(prev, curr2)
+  result2 <- format_input_diff(prev, curr2)
   expect_match(result2, "target_variable.*expected.*value.*got.*revenue")
   expect_match(result2, "forecast_horizon.*expected.*3.*got.*6")
 
   # no changes
-  result3 <- finnts:::format_input_diff(prev, prev)
+  result3 <- format_input_diff(prev, prev)
   expect_match(result3, "no column-level differences")
 
   # nullable fields display NA as NULL
   prev_na <- data.frame(external_regressors = NA_character_, stringsAsFactors = FALSE)
   curr_na <- data.frame(external_regressors = "xreg1", stringsAsFactors = FALSE)
-  result4 <- finnts:::format_input_diff(prev_na, curr_na, nullable_fields = "external_regressors")
+  result4 <- format_input_diff(prev_na, curr_na, nullable_fields = "external_regressors")
   expect_match(result4, "expected.*NULL.*got.*xreg1")
 })

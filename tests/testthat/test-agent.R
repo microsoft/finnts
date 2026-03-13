@@ -314,7 +314,7 @@ test_that("set_project_info warns instead of errors on path change", {
     pattern = "-project\\.csv$",
     full.names = TRUE
   )
-  log_file <- log_file[grep(finnts:::hash_data("proj_path_warn_test"), log_file)]
+  log_file <- log_file[grep(hash_data("proj_path_warn_test"), log_file)]
   log_data <- utils::read.csv(log_file, stringsAsFactors = FALSE)
   log_data$path <- "/old/fake/path"
   utils::write.csv(log_data, log_file, row.names = FALSE)

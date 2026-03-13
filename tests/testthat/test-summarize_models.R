@@ -87,7 +87,7 @@ trained_univariate <- get_trained_models(run_info = run_info_univariate)
 
 test_that("summarize arima without xregs", {
   wf <- get_model_workflow(trained_univariate, "arima")
-  result <- finnts:::summarize_model_arima(wf)
+  result <- summarize_model_arima(wf)
   validate_summary_output(result, "arima")
   expect_true("model_arg" %in% result$section)
   sections <- unique(result$section)
@@ -96,28 +96,28 @@ test_that("summarize arima without xregs", {
 
 test_that("summarize ets without xregs", {
   wf <- get_model_workflow(trained_univariate, "ets")
-  result <- finnts:::summarize_model_ets(wf)
+  result <- summarize_model_ets(wf)
   validate_summary_output(result, "ets")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize croston without xregs", {
   wf <- get_model_workflow(trained_univariate, "croston")
-  result <- finnts:::summarize_model_croston(wf)
+  result <- summarize_model_croston(wf)
   validate_summary_output(result, "croston")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize meanf without xregs", {
   wf <- get_model_workflow(trained_univariate, "meanf")
-  result <- finnts:::summarize_model_meanf(wf)
+  result <- summarize_model_meanf(wf)
   validate_summary_output(result, "meanf")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize snaive without xregs", {
   wf <- get_model_workflow(trained_univariate, "snaive")
-  result <- finnts:::summarize_model_snaive(wf)
+  result <- summarize_model_snaive(wf)
   validate_summary_output(result, "snaive")
   sp_row <- result %>% dplyr::filter(section == "model_arg", name == "seasonal_period")
   expect_equal(nrow(sp_row), 1)
@@ -125,28 +125,28 @@ test_that("summarize snaive without xregs", {
 
 test_that("summarize theta without xregs", {
   wf <- get_model_workflow(trained_univariate, "theta")
-  result <- finnts:::summarize_model_theta(wf)
+  result <- summarize_model_theta(wf)
   validate_summary_output(result, "theta")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize stlm-arima without xregs", {
   wf <- get_model_workflow(trained_univariate, "stlm-arima")
-  result <- finnts:::summarize_model_stlm_arima(wf)
+  result <- summarize_model_stlm_arima(wf)
   validate_summary_output(result, "stlm-arima")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize stlm-ets without xregs", {
   wf <- get_model_workflow(trained_univariate, "stlm-ets")
-  result <- finnts:::summarize_model_stlm_ets(wf)
+  result <- summarize_model_stlm_ets(wf)
   validate_summary_output(result, "stlm-ets")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize tbats without xregs", {
   wf <- get_model_workflow(trained_univariate, "tbats")
-  result <- finnts:::summarize_model_tbats(wf)
+  result <- summarize_model_tbats(wf)
   validate_summary_output(result, "tbats")
   expect_true("model_arg" %in% result$section)
 })
@@ -185,49 +185,49 @@ trained_multivariate <- get_trained_models(run_info = run_info_multivariate)
 
 test_that("summarize nnetar without xregs", {
   wf <- get_model_workflow(trained_multivariate, "nnetar")
-  result <- finnts:::summarize_model_nnetar(wf)
+  result <- summarize_model_nnetar(wf)
   validate_summary_output(result, "nnetar")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize prophet without xregs", {
   wf <- get_model_workflow(trained_multivariate, "prophet")
-  result <- finnts:::summarize_model_prophet(wf)
+  result <- summarize_model_prophet(wf)
   validate_summary_output(result, "prophet")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize arimax without xregs", {
   wf <- get_model_workflow(trained_multivariate, "arimax")
-  result <- finnts:::summarize_model_arimax(wf)
+  result <- summarize_model_arimax(wf)
   validate_summary_output(result, "arimax")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize arima-boost without xregs", {
   wf <- get_model_workflow(trained_multivariate, "arima-boost")
-  result <- finnts:::summarize_model_arima_boost(wf)
+  result <- summarize_model_arima_boost(wf)
   validate_summary_output(result, "arima-boost")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize prophet-boost without xregs", {
   wf <- get_model_workflow(trained_multivariate, "prophet-boost")
-  result <- finnts:::summarize_model_prophet_boost(wf)
+  result <- summarize_model_prophet_boost(wf)
   validate_summary_output(result, "prophet-boost")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize prophet-xregs without xregs", {
   wf <- get_model_workflow(trained_multivariate, "prophet-xregs")
-  result <- finnts:::summarize_model_prophet(wf)
+  result <- summarize_model_prophet(wf)
   validate_summary_output(result, "prophet-xregs")
   expect_true("model_arg" %in% result$section)
 })
 
 test_that("summarize nnetar-xregs without xregs", {
   wf <- get_model_workflow(trained_multivariate, "nnetar-xregs")
-  result <- finnts:::summarize_model_nnetar(wf)
+  result <- summarize_model_nnetar(wf)
   validate_summary_output(result, "nnetar-xregs")
   expect_true("model_arg" %in% result$section)
 })
@@ -264,7 +264,7 @@ trained_multistep <- get_trained_models(run_info = run_info_multistep)
 
 test_that("summarize xgboost multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "xgboost")
-  result <- finnts:::summarize_model_xgboost(wf)
+  result <- summarize_model_xgboost(wf)
   validate_summary_output(result, "xgboost-multistep")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -274,7 +274,7 @@ test_that("summarize xgboost multistep without xregs", {
 
 test_that("summarize cubist multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "cubist")
-  result <- finnts:::summarize_model_cubist(wf)
+  result <- summarize_model_cubist(wf)
   validate_summary_output(result, "cubist-multistep")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -284,18 +284,8 @@ test_that("summarize cubist multistep without xregs", {
 
 test_that("summarize glmnet multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "glmnet")
-  result <- finnts:::summarize_model_glmnet(wf)
+  result <- summarize_model_glmnet(wf)
   validate_summary_output(result, "glmnet-multistep")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
-  expect_equal(n_models_row$value[[1]], "2")
-})
-
-test_that("summarize mars multistep without xregs", {
-  wf <- get_model_workflow(trained_multistep, "mars")
-  result <- finnts:::summarize_model_mars(wf)
-  validate_summary_output(result, "mars-multistep")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
@@ -304,7 +294,7 @@ test_that("summarize mars multistep without xregs", {
 
 test_that("summarize svm-poly multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "svm-poly")
-  result <- finnts:::summarize_model_svm_poly(wf)
+  result <- summarize_model_svm_poly(wf)
   validate_summary_output(result, "svm-poly-multistep")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -314,7 +304,7 @@ test_that("summarize svm-poly multistep without xregs", {
 
 test_that("summarize svm-rbf multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "svm-rbf")
-  result <- finnts:::summarize_model_svm_rbf(wf)
+  result <- summarize_model_svm_rbf(wf)
   validate_summary_output(result, "svm-rbf-multistep")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -354,7 +344,7 @@ trained_standard_ml <- get_trained_models(run_info = run_info_standard_ml)
 
 test_that("summarize cubist non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "cubist")
-  result <- finnts:::summarize_model_cubist(wf)
+  result <- summarize_model_cubist(wf)
   validate_summary_output(result, "cubist-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   if (nrow(ms_rows) > 0) {
@@ -364,7 +354,7 @@ test_that("summarize cubist non-multistep without xregs", {
 
 test_that("summarize glmnet non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "glmnet")
-  result <- finnts:::summarize_model_glmnet(wf)
+  result <- summarize_model_glmnet(wf)
   validate_summary_output(result, "glmnet-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   if (nrow(ms_rows) > 0) {
@@ -374,7 +364,7 @@ test_that("summarize glmnet non-multistep without xregs", {
 
 test_that("summarize mars non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "mars")
-  result <- finnts:::summarize_model_mars(wf)
+  result <- summarize_model_mars(wf)
   validate_summary_output(result, "mars-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   if (nrow(ms_rows) > 0) {
@@ -384,7 +374,7 @@ test_that("summarize mars non-multistep without xregs", {
 
 test_that("summarize svm-poly non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "svm-poly")
-  result <- finnts:::summarize_model_svm_poly(wf)
+  result <- summarize_model_svm_poly(wf)
   validate_summary_output(result, "svm-poly-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   if (nrow(ms_rows) > 0) {
@@ -394,7 +384,7 @@ test_that("summarize svm-poly non-multistep without xregs", {
 
 test_that("summarize svm-rbf non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "svm-rbf")
-  result <- finnts:::summarize_model_svm_rbf(wf)
+  result <- summarize_model_svm_rbf(wf)
   validate_summary_output(result, "svm-rbf-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   if (nrow(ms_rows) > 0) {
@@ -445,7 +435,7 @@ trained_xgb_global <- get_trained_models(run_info = run_info_xgb_global)
 
 test_that("summarize xgboost non-multistep (global) without xregs", {
   wf <- get_model_workflow(trained_xgb_global, "xgboost")
-  result <- finnts:::summarize_model_xgboost(wf)
+  result <- summarize_model_xgboost(wf)
   validate_summary_output(result, "xgboost-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Standard")
@@ -493,7 +483,7 @@ trained_xregs_mv <- get_trained_models(run_info = run_info_xregs_mv)
 
 test_that("summarize arimax with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "arimax")
-  result <- finnts:::summarize_model_arimax(wf)
+  result <- summarize_model_arimax(wf)
   validate_summary_output(result, "arimax-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
@@ -501,7 +491,7 @@ test_that("summarize arimax with xregs", {
 
 test_that("summarize arima-boost with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "arima-boost")
-  result <- finnts:::summarize_model_arima_boost(wf)
+  result <- summarize_model_arima_boost(wf)
   validate_summary_output(result, "arima-boost-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
@@ -509,7 +499,7 @@ test_that("summarize arima-boost with xregs", {
 
 test_that("summarize prophet-boost with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "prophet-boost")
-  result <- finnts:::summarize_model_prophet_boost(wf)
+  result <- summarize_model_prophet_boost(wf)
   validate_summary_output(result, "prophet-boost-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
@@ -517,7 +507,7 @@ test_that("summarize prophet-boost with xregs", {
 
 test_that("summarize prophet-xregs with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "prophet-xregs")
-  result <- finnts:::summarize_model_prophet(wf)
+  result <- summarize_model_prophet(wf)
   validate_summary_output(result, "prophet-xregs-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
@@ -525,7 +515,7 @@ test_that("summarize prophet-xregs with xregs", {
 
 test_that("summarize nnetar-xregs with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "nnetar-xregs")
-  result <- finnts:::summarize_model_nnetar(wf)
+  result <- summarize_model_nnetar(wf)
   validate_summary_output(result, "nnetar-xregs-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
@@ -567,7 +557,7 @@ trained_xregs_ms <- get_trained_models(run_info = run_info_xregs_ms)
 
 test_that("summarize xgboost multistep with xregs and feature selection", {
   wf <- get_model_workflow(trained_xregs_ms, "xgboost")
-  result <- finnts:::summarize_model_xgboost(wf)
+  result <- summarize_model_xgboost(wf)
   validate_summary_output(result, "xgboost-multistep-xregs-fs")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -577,7 +567,7 @@ test_that("summarize xgboost multistep with xregs and feature selection", {
 
 test_that("summarize cubist multistep with xregs and feature selection", {
   wf <- get_model_workflow(trained_xregs_ms, "cubist")
-  result <- finnts:::summarize_model_cubist(wf)
+  result <- summarize_model_cubist(wf)
   validate_summary_output(result, "cubist-multistep-xregs-fs")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -587,18 +577,8 @@ test_that("summarize cubist multistep with xregs and feature selection", {
 
 test_that("summarize glmnet multistep with xregs and feature selection", {
   wf <- get_model_workflow(trained_xregs_ms, "glmnet")
-  result <- finnts:::summarize_model_glmnet(wf)
+  result <- summarize_model_glmnet(wf)
   validate_summary_output(result, "glmnet-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-test_that("summarize mars multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "mars")
-  result <- finnts:::summarize_model_mars(wf)
-  validate_summary_output(result, "mars-multistep-xregs-fs")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   preds <- result %>% dplyr::filter(section == "predictor")
@@ -607,7 +587,7 @@ test_that("summarize mars multistep with xregs and feature selection", {
 
 test_that("summarize svm-poly multistep with xregs and feature selection", {
   wf <- get_model_workflow(trained_xregs_ms, "svm-poly")
-  result <- finnts:::summarize_model_svm_poly(wf)
+  result <- summarize_model_svm_poly(wf)
   validate_summary_output(result, "svm-poly-multistep-xregs-fs")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -617,7 +597,7 @@ test_that("summarize svm-poly multistep with xregs and feature selection", {
 
 test_that("summarize svm-rbf multistep with xregs and feature selection", {
   wf <- get_model_workflow(trained_xregs_ms, "svm-rbf")
-  result <- finnts:::summarize_model_svm_rbf(wf)
+  result <- summarize_model_svm_rbf(wf)
   validate_summary_output(result, "svm-rbf-multistep-xregs-fs")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
@@ -648,7 +628,7 @@ test_that("summarize timegpt without xregs", {
     Target = rnorm(48, mean = 100, sd = 10)
   )
 
-  recipe_spec <- finnts:::get_recipe_simple(train_data)
+  recipe_spec <- get_recipe_simple(train_data)
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
     parsnip::set_engine("timegpt_model")
   wf <- workflows::workflow() %>%
@@ -656,7 +636,7 @@ test_that("summarize timegpt without xregs", {
     workflows::add_model(model_spec) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
 
-  result <- finnts:::summarize_model_timegpt(wf)
+  result <- summarize_model_timegpt(wf)
   validate_summary_output(result, "timegpt")
   expect_true("model_arg" %in% result$section)
 })
@@ -671,7 +651,7 @@ test_that("summarize timegpt with xregs", {
     temperature_original = rnorm(48, mean = 20, sd = 5)
   )
 
-  recipe_spec <- finnts:::get_recipe_foundation_model(train_data)
+  recipe_spec <- get_recipe_foundation_model(train_data)
   model_spec <- timegpt_model(forecast_horizon = 3) %>%
     parsnip::set_engine("timegpt_model")
   wf <- workflows::workflow() %>%
@@ -679,7 +659,7 @@ test_that("summarize timegpt with xregs", {
     workflows::add_model(model_spec) %>%
     generics::fit(train_data %>% dplyr::select(-Combo))
 
-  result <- finnts:::summarize_model_timegpt(wf)
+  result <- summarize_model_timegpt(wf)
   validate_summary_output(result, "timegpt-xregs")
   expect_true("model_arg" %in% result$section)
   xreg_rows <- result %>% dplyr::filter(
