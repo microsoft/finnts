@@ -7903,42 +7903,42 @@ summarize_model_timegpt <- function(wf) {
 
 #' Compute permutation-based feature importance for a chronos2 model
 #'
-#' Shuffles each regressor's values within each Combo (destroying temporal
-#' signal) and measures the RMSE increase relative to the baseline forecast.
-#' Repeated over multiple iterations for robustness.
+#' Uses `vip::vi(method = "permute")` with the fitted chronos2 parsnip object,
+#' following the same pattern as SVM models. Training data is sourced from
+#' `mold` (via `workflows::extract_mold(wf)`), matching how SVM and other
+#' models obtain their data for importance calculations.
 #'
-#' @param train_data Data frame with columns Date, Combo, y, and one or more
-#'   columns ending in `_original` (the external regressors).
-#' @param forecast_horizon Integer forecast horizon (number of holdout rows
-#'   per combo).
-#' @param frequency Numeric frequency passed to `get_date_type()` to determine
-#'   how to pad short combos.
-#' @param num_iterations Number of permutation iterations (default 3).
-#' @param base_seed Starting RNG seed for reproducibility (default 123).
+#' @param chronos2_obj A fitted `chronos2_model_fit` object (as extracted from
+#'   the parsnip fit).
+#' @param mold The result of `workflows::extract_mold(wf)`, containing
+#'   `$predictors` and `$outcomes`.
+#' @param nsim Number of permutation simulations (default 10, matching SVM).
 #'
-#' @return A named list. Each element is named after a regressor (with the
-#'   `_original` suffix stripped) and contains a list with:
-#'   \describe{
-#'     \item{raw_importance}{Mean relative RMSE increase across iterations.}
-#'     \item{stddev}{Standard deviation of per-iteration scores (NA if only 1 iteration).}
-#'     \item{n}{Number of successful iterations.}
-#'   }
-#'   Returns an empty list when importance cannot be computed.
+#' @return A tibble with columns `Variable` and `Importance` (scaled 0-100),
+#'   sorted descending by importance. Returns NULL when importance cannot be
+#'   computed.
 #'
 #' @noRd
-chronos2_permutation_importance <- function(train_data,
-                                            forecast_horizon,
-                                            frequency = NULL,
-                                            num_iterations = 3L,
-                                            base_seed = 123L) {
+chronos2_permutation_importance <- function(chronos2_obj,
+                                            mold,
+                                            nsim = 10L) {
+  # Source data from mold, same as SVM
+  train_x <- as.data.frame(mold$predictors)
+  train_y <- as.numeric(mold$outcomes[[1]])
+
+  forecast_horizon <- chronos2_obj$forecast_horizon
+
+  # Reconstruct the full training data frame from mold components
+  train_data <- train_x
+  train_data$y <- train_y
+
   original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
 
-  if (length(original_cols) == 0 || !all(c("y", "Date", "Combo") %in% colnames(train_data))) {
-    return(list())
+  if (length(original_cols) == 0 || !all(c("Date", "Combo") %in% colnames(train_data))) {
+    return(NULL)
   }
 
   h <- forecast_horizon
-  date_type_imp <- if (!is.null(frequency)) get_date_type(frequency) else NULL
 
   # Split into train/holdout: last h rows per combo as holdout
   holdout <- train_data %>%
@@ -7960,99 +7960,61 @@ chronos2_permutation_importance <- function(train_data,
   min_rows_per_combo <- if (length(n_vals) == 0L) 0L else min(n_vals)
 
   if (min_rows_per_combo < 3 || nrow(holdout) == 0) {
-    return(list())
+    return(NULL)
   }
 
-  actual_values <- holdout$y
-  train_padded <- pad_chronos2_data(train_portion, date_type_imp)
+  # Build a trimmed chronos2_model_fit that only sees the train portion
+  # so predict_impl generates a forecast over the holdout period
+  trimmed_obj <- chronos2_obj
+  trimmed_obj$train_data <- train_portion
 
-  # Baseline forecast: all regressors included
-  baseline_result <- chronos_forecast(
-    train_df = train_padded,
-    new_data = holdout,
-    model_type = "chronos2",
-    horizon = h,
-    exogenous_cols = original_cols,
-    global = TRUE,
-    quantile_levels = c(0.1, 0.5, 0.9)
-  )
-  baseline_preds <- as.numeric(baseline_result$predictions)
-  baseline_rmse <- sqrt(mean((actual_values - baseline_preds)^2, na.rm = TRUE))
+  # Prepare training data for vip (holdout regressors as the permutation surface,
+  # since chronos2 forecasts h future periods rather than scoring individual rows)
+  train_x <- as.data.frame(holdout[, original_cols, drop = FALSE])
+  train_y <- as.numeric(holdout$y)
 
-  # Pre-allocate a list of numeric vectors to collect per-iteration scores
-  importance_samples <- stats::setNames(
-    lapply(original_cols, function(x) numeric(0L)),
-    original_cols
-  )
-
-  # Helper: shuffle a single column within each Combo
-  .shuffle_col_within_combo <- function(df, col_name, seed) {
-    withr::with_seed(seed, {
-      combo_ids <- unique(df$Combo)
-      vals <- df[[col_name]]
-      for (cid in combo_ids) {
-        mask <- df$Combo == cid
-        n <- sum(mask)
-        if (n > 1L) {
-          vals[mask] <- vals[mask][sample.int(n)]
-        }
-      }
-      df[[col_name]] <- vals
-      df
-    })
-  }
-
-  for (iter in seq_len(num_iterations)) {
-    for (col_idx in seq_along(original_cols)) {
-      col <- original_cols[col_idx]
-
-      iter_seed <- base_seed + (iter - 1L) * length(original_cols) + col_idx
-
-      # permuting xreg col in both train and holdout, such that it never align as the original
-      train_permuted <- .shuffle_col_within_combo(train_padded, col, iter_seed)
-      holdout_permuted <- .shuffle_col_within_combo(holdout, col, iter_seed + 1000L)
-
-      perm_result <- tryCatch(
-        chronos_forecast(
-          train_df = train_permuted,
-          new_data = holdout_permuted,
-          model_type = "chronos2",
-          horizon = h,
-          exogenous_cols = original_cols,
-          global = TRUE,
-          quantile_levels = c(0.1, 0.5, 0.9)
-        ),
-        error = function(e) NULL
-      )
-
-      if (!is.null(perm_result)) {
-        perm_preds <- as.numeric(perm_result$predictions)
-        perm_rmse <- sqrt(mean((actual_values - perm_preds)^2, na.rm = TRUE))
-        rel_importance <- if (baseline_rmse > 1e-12) {
-          (perm_rmse - baseline_rmse) / baseline_rmse
-        } else {
-          0
-        }
-        importance_samples[[col]] <- c(importance_samples[[col]], rel_importance)
+  # Predict wrapper: vip passes the chronos2 fit object and (possibly permuted)
+  # features. We reconstruct the full new_data and call predict_impl.
+  pred_wrapper <- function(object, newdata) {
+    new_data <- holdout
+    for (col in original_cols) {
+      if (col %in% colnames(newdata)) {
+        new_data[[col]] <- newdata[[col]]
       }
     }
-  }
-
-  # Aggregate importance scores across iterations
-  importance_out <- list()
-  for (col in original_cols) {
-    samples <- importance_samples[[col]]
-    if (length(samples) > 0) {
-      clean_name <- gsub("_original$", "", col)
-      importance_out[[clean_name]] <- list(
-        raw_importance = mean(samples),
-        stddev = if (length(samples) > 1) sd(samples) else NA_real_,
-        n = length(samples)
-      )
+    pred <- tryCatch(
+      chronos2_model_predict_impl(object = object, new_data = new_data),
+      error = function(e) NULL
+    )
+    if (is.null(pred)) {
+      return(rep(NA_real_, nrow(newdata)))
     }
+    as.numeric(pred)
   }
 
-  importance_out
+  # Use vip::vi with the same pattern as SVM models
+  importance <- try(
+    vip::vi(
+      object = trimmed_obj,
+      method = "permute",
+      train = train_x,
+      target = train_y,
+      metric = "rmse",
+      pred_wrapper = pred_wrapper,
+      nsim = nsim,
+      scale = TRUE
+    ),
+    silent = TRUE
+  )
+
+  if (inherits(importance, "try-error") || is.null(importance) || nrow(importance) == 0) {
+    return(NULL)
+  }
+
+  # Clean regressor names: strip _original suffix
+  importance$Variable <- gsub("_original$", "", importance$Variable)
+
+  importance
 }
 
 
@@ -8070,6 +8032,7 @@ chronos2_permutation_importance <- function(train_data,
 summarize_model_chronos2 <- function(wf) {
   digits <- 6
   scan_depth <- 6
+  importance_threshold <- 1e-6
 
   if (!inherits(wf, "workflow")) stop("summarize_model_chronos2() expects a tidymodels workflow.")
   fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
@@ -8151,31 +8114,27 @@ summarize_model_chronos2 <- function(wf) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
       }
 
-      # Feature importance via permutation-based approach
-      if (length(original_cols) > 0 && "y" %in% colnames(train_data) &&
-        "Date" %in% colnames(train_data) && "Combo" %in% colnames(train_data)) {
+      # Feature importance via vip::vi permutation-based approach (data from mold)
+      if (length(original_cols) > 0 &&
+        !inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
         tryCatch(
           {
-            importance_result <- chronos2_permutation_importance(
-              train_data = train_data,
-              forecast_horizon = chronos2_obj$forecast_horizon,
-              frequency = chronos2_obj$frequency
+            importance <- chronos2_permutation_importance(
+              chronos2_obj = chronos2_obj,
+              mold = mold
             )
 
-            if (length(importance_result) > 0) {
-              raw_vals <- vapply(importance_result, function(x) x$raw_importance, numeric(1))
-              imp_order <- order(raw_vals, decreasing = TRUE)
-              sorted_names <- names(importance_result)[imp_order]
+            if (!is.null(importance) && nrow(importance) > 0) {
+              importance <- importance[importance$Importance > importance_threshold, ]
 
-              for (nm in sorted_names) {
-                importance_pct <- importance_result[[nm]]$raw_importance * 100
-                eng_tbl <- dplyr::bind_rows(
-                  eng_tbl,
-                  .kv("importance", nm, .format_numeric(importance_pct))
-                )
+              if (nrow(importance) > 0) {
+                for (i in seq_len(nrow(importance))) {
+                  eng_tbl <- dplyr::bind_rows(
+                    eng_tbl,
+                    .kv("importance", importance$Variable[i], .format_numeric(importance$Importance[i]))
+                  )
+                }
               }
-
-              eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "importance_method", "permutation"))
             }
           },
           error = function(e) {
