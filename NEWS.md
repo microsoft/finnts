@@ -19,6 +19,7 @@
   - It can be used as a global model
   - Added a Chronos controller, which will support other Chronos variant API POST requests as well
   - Added two new package dependencies: `jsonlite` and `httr`
+  - Integrated Chronos2 into the finn agent workflow
 
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
@@ -43,7 +44,8 @@
 -   Fixed hierarchical issues when a combo variable contains a single unique value.
 -   Fixed issue when reconciling standard hierarchical forecasts.
 -   Fixed weighted mape calculation when target variable has negative values.
--   Support for latest xgboost 3x version
+-   Support for latest xgboost 3x version.
+-   Fixed model summary for global models by considering average models too.
   
 ## Breaking Changes
 

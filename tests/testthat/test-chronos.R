@@ -534,6 +534,157 @@ test_that("Chronos 2 Model pipeline integration test with external regressors", 
   expect_true(any(grepl("temperature_original", train_data_cols)))
 })
 
+# Section 8 — chronos2_permutation_importance Unit Tests
+
+test_that("chronos2_permutation_importance returns NULL when no _original columns", {
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12)
+  y_vals <- rnorm(12, 100, 10)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A"),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance returns NULL when required columns missing", {
+  # Missing Date column in predictors
+  mold <- list(
+    predictors = data.frame(
+      Combo = "A",
+      temperature_original = rnorm(12, 20, 5)
+    ),
+    outcomes = tibble::tibble(value = rnorm(12, 100, 10))
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Combo = "A", y = rnorm(12)),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance returns NULL when too few rows per combo", {
+  # Only 4 rows with horizon=3 leaves 1 training row per combo (< 3)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 4)
+  y_vals <- rnorm(4, 100, 10)
+  temp <- rnorm(4, 20, 5)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A", temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance computes importance with API", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n)
+  y_vals <- 100 + 2 * temp + rnorm(n, sd = 3)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A", temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_true(all(c("Variable", "Importance") %in% colnames(result)))
+  expect_true("temperature" %in% result$Variable)
+  expect_type(result$Importance, "double")
+})
+
+test_that("chronos2_permutation_importance works with multiple regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  fuel <- rnorm(n, mean = 3, sd = 0.5)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n)
+  y_vals <- 100 + 2 * temp + 5 * fuel + rnorm(n, sd = 3)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A",
+                            temperature_original = temp, fuel_price_original = fuel),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals,
+                                 temperature_original = temp, fuel_price_original = fuel),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 2)
+  expect_true("temperature" %in% result$Variable)
+  expect_true("fuel_price" %in% result$Variable)
+})
+
+test_that("chronos2_permutation_importance works with multiple combos", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  dates <- rep(seq.Date(as.Date("2020-01-01"), by = "month", length.out = n), 2)
+  combos <- rep(c("A", "B"), each = n)
+  y_vals <- rnorm(n * 2, 100, 10)
+  temp <- rnorm(n * 2, 20, 5)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = combos, temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_true("temperature" %in% result$Variable)
+})
+
 test_that("Chronos 2 Model pipeline integration test with future external regressors", {
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 

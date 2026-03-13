@@ -1134,14 +1134,14 @@ reason_inputs <- function(agent_info,
     )
   }
 
-  # Check timegpt availability for defaults
-  timegpt_available <- check_timegpt_available()
-  timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
+  # Check foundation model availability
+  fm_suffix <- get_foundation_model_suffix()
+  fm_global_suffix <- if (grepl("chronos2", fm_suffix)) "---chronos2" else ""
 
   # fill in missing fields with default values
   if (is.null(combo)) {
     default_values <- list(
-      models_to_run = "xgboost",
+      models_to_run = paste0("xgboost", fm_global_suffix),
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
@@ -1158,7 +1158,7 @@ reason_inputs <- function(agent_info,
     )
   } else {
     default_values <- list(
-      models_to_run = paste0("arima---ets---tbats---stlm-arima---xgboost---glmnet", timegpt_model_suffix),
+      models_to_run = paste0("arima---ets---tbats---stlm-arima---xgboost---glmnet", fm_suffix),
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
@@ -1473,7 +1473,8 @@ submit_fcst_run <- function(agent_info,
     parallel_processing = parallel_processing,
     inner_parallel = inner_parallel,
     num_cores = num_cores,
-    seed = seed
+    seed = seed,
+    debug = FALSE
   )
 
   # evaluate models
@@ -2110,11 +2111,39 @@ get_total_run_count <- function(agent_info,
   return(nrow(total_runs))
 }
 
+#' Foundation model availability registry
+#'
+#' Returns a combined "---model1---model2" suffix string for all foundation
+#' models whose credentials are available. To add a new foundation model,
+#' add one entry to the `registry` list: name + check function.
+#'
+#' @return A single character string (possibly empty) with "---" prefixed
+#'   names of available foundation models.
+#' @noRd
+get_foundation_model_suffix <- function() {
+  registry <- list(
+    list(name = "timegpt", check = check_timegpt_available),
+    list(name = "chronos2", check = check_chronos2_available)
+  )
+
+  available <- vapply(registry, function(entry) {
+    if (entry$check()) entry$name else NA_character_
+  }, character(1))
+
+  available <- available[!is.na(available)]
+
+  if (length(available) == 0) {
+    return("")
+  }
+  paste0("---", paste(available, collapse = "---"))
+}
+
 #' TimeGPT Availability
 #'
-#' Checks if TimeGPT API key is set (via environment variable or option) and validates it by calling the Nixtla API.
+#' Checks if TimeGPT API key is set (via environment variable or option) and
+#' validates it by calling the Nixtla API.
 #'
-#' @return Logical indicating if TimeGPT is available, Returns FALSE if no key is found, validation fails, or any error occurs.
+#' @return Logical indicating if TimeGPT is available.
 #' @noRd
 check_timegpt_available <- function() {
   tryCatch(
@@ -2129,6 +2158,26 @@ check_timegpt_available <- function() {
       } else {
         nixtlar::nixtla_validate_api_key()
       }
+    },
+    error = function(e) {
+      FALSE
+    }
+  )
+}
+
+#' Chronos2 Availability
+#'
+#' Checks if Chronos2 API credentials are set (via environment variables).
+#'
+#' @return Logical indicating if Chronos2 is available.
+#' @noRd
+check_chronos2_available <- function() {
+  tryCatch(
+    {
+      api_url <- Sys.getenv("CHRONOS_API_URL")
+      api_token <- Sys.getenv("CHRONOS_API_TOKEN")
+
+      nzchar(api_url) && nzchar(api_token)
     },
     error = function(e) {
       FALSE
@@ -2332,14 +2381,13 @@ iterate_forecast_system_prompt <- function(agent_info,
   # load EDA results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
 
-  # Check timegpt availability
-  timegpt_available <- check_timegpt_available()
-  timegpt_model_suffix <- if (timegpt_available) "---timegpt" else ""
+  # Check foundation model availability
+  fm_suffix <- get_foundation_model_suffix()
 
-  # Model lists with conditional timegpt
-  models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", timegpt_model_suffix)
-  models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", timegpt_model_suffix)
-  models_rule_10c <- paste0("arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", timegpt_model_suffix)
+  # Model lists with conditional foundation models
+  models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", fm_suffix)
+  models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", fm_suffix)
+  models_rule_10c <- paste0("arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", fm_suffix)
 
   # create final prompt
   if (is.null(combo)) {
