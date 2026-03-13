@@ -458,8 +458,8 @@ rm(trained_xgb_global)
 set.seed(42)
 data_with_xregs <- data_no_xregs %>%
   dplyr::mutate(
-    xreg1 = rnorm(dplyr::n(), mean = 10, sd = 2),
-    xreg2 = rnorm(dplyr::n(), mean = 50, sd = 5)
+    xreg1 = value * 0.5 + rnorm(dplyr::n(), mean = 10, sd = 2),
+    xreg2 = value * -0.3 + rnorm(dplyr::n(), mean = 50, sd = 5)
   )
 
 run_info_xregs_mv <- set_run_info()

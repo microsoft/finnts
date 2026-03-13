@@ -1,4 +1,4 @@
-# finnts 0.6.0.9030 (development version)
+# finnts 0.6.0.9031 (development version)
 
 ## Improvements
 
@@ -43,6 +43,7 @@
 -   Fixed hierarchical issues when a combo variable contains a single unique value.
 -   Fixed issue when reconciling standard hierarchical forecasts.
 -   Fixed weighted mape calculation when target variable has negative values.
+-   Support for latest xgboost 3x version
   
 ## Breaking Changes
 

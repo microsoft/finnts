@@ -1012,12 +1012,12 @@ summarize_model_arimax <- function(wf) {
   }
 
   # Custom assembly for ARIMAX to handle xreg_coefficient section
-  out <- dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl) |>
+  out <- dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl) %>%
     dplyr::mutate(
       model_class = class(fit$fit)[1],
       engine = engine,
       .before = 1
-    ) |>
+    ) %>%
     dplyr::distinct(model_class, engine, section, name, value, .keep_all = TRUE)
 
   # Determine sections present for proper ordering
@@ -8141,12 +8141,12 @@ summarize_model_timegpt <- function(wf) {
 #' @noRd
 .assemble_output <- function(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
                              model_class, engine, unquote_values = FALSE, digits = 6) {
-  out <- dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl) |>
+  out <- dplyr::bind_rows(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl) %>%
     dplyr::mutate(
       model_class = model_class,
       engine = engine,
       .before = 1
-    ) |>
+    ) %>%
     dplyr::distinct(model_class, engine, section, name, value, .keep_all = TRUE)
 
   if (unquote_values) {
