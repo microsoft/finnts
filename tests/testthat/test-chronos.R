@@ -71,7 +71,7 @@ test_that("pad_chronos2_data pads combos with fewer than 3 rows", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Should have at least 3 rows for combo "A"
   expect_true(nrow(padded) >= 3)
@@ -89,7 +89,7 @@ test_that("pad_chronos2_data does not pad combos with 3+ rows", {
     y = c(10, 20, 30, 40)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   expect_equal(nrow(padded), 4)
   expect_equal(padded$y, c(10, 20, 30, 40))
@@ -102,7 +102,7 @@ test_that("pad_chronos2_data sets y = 0 for padded rows", {
     y = 42
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$y == 0))
@@ -116,7 +116,7 @@ test_that("pad_chronos2_data zeros out numeric exogenous columns in padded rows"
     temperature_original = 25.0
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   padded_rows <- padded %>% dplyr::filter(Date < as.Date("2020-03-01"))
   expect_true(all(padded_rows$temperature_original == 0))
@@ -136,7 +136,7 @@ test_that("pad_chronos2_data works with multiple combos of different lengths", {
     y = c(10, 20, 30, 40, 50)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Combo A already has 4 rows — should remain 4
 
@@ -159,7 +159,7 @@ test_that("pad_chronos2_data creates backward-stepping dates", {
     y = c(10, 20)
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   # Should have a date before 2020-03-01
   expect_true(min(padded$Date) < as.Date("2020-03-01"))
@@ -177,7 +177,7 @@ test_that("pad_chronos2_data uses calendar-aware monthly steps for single-row da
     y = 42
   )
 
-  padded <- finnts:::pad_chronos2_data(train_df, date_type = "month")
+  padded <- pad_chronos2_data(train_df, date_type = "month")
 
   expect_equal(nrow(padded), 3)
   # Padded dates should be exactly 1 and 2 months before
@@ -534,6 +534,157 @@ test_that("Chronos 2 Model pipeline integration test with external regressors", 
   expect_true(any(grepl("temperature_original", train_data_cols)))
 })
 
+# Section 8 — chronos2_permutation_importance Unit Tests
+
+test_that("chronos2_permutation_importance returns NULL when no _original columns", {
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12)
+  y_vals <- rnorm(12, 100, 10)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A"),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance returns NULL when required columns missing", {
+  # Missing Date column in predictors
+  mold <- list(
+    predictors = data.frame(
+      Combo = "A",
+      temperature_original = rnorm(12, 20, 5)
+    ),
+    outcomes = tibble::tibble(value = rnorm(12, 100, 10))
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Combo = "A", y = rnorm(12)),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance returns NULL when too few rows per combo", {
+  # Only 4 rows with horizon=3 leaves 1 training row per combo (< 3)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = 4)
+  y_vals <- rnorm(4, 100, 10)
+  temp <- rnorm(4, 20, 5)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A", temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold)
+
+  expect_null(result)
+})
+
+test_that("chronos2_permutation_importance computes importance with API", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n)
+  y_vals <- 100 + 2 * temp + rnorm(n, sd = 3)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A", temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_true(all(c("Variable", "Importance") %in% colnames(result)))
+  expect_true("temperature" %in% result$Variable)
+  expect_type(result$Importance, "double")
+})
+
+test_that("chronos2_permutation_importance works with multiple regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  fuel <- rnorm(n, mean = 3, sd = 0.5)
+  dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n)
+  y_vals <- 100 + 2 * temp + 5 * fuel + rnorm(n, sd = 3)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = "A",
+                            temperature_original = temp, fuel_price_original = fuel),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals,
+                                 temperature_original = temp, fuel_price_original = fuel),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 2)
+  expect_true("temperature" %in% result$Variable)
+  expect_true("fuel_price" %in% result$Variable)
+})
+
+test_that("chronos2_permutation_importance works with multiple combos", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  dates <- rep(seq.Date(as.Date("2020-01-01"), by = "month", length.out = n), 2)
+  combos <- rep(c("A", "B"), each = n)
+  y_vals <- rnorm(n * 2, 100, 10)
+  temp <- rnorm(n * 2, 20, 5)
+
+  mold <- list(
+    predictors = data.frame(Date = dates, Combo = combos, temperature_original = temp),
+    outcomes = tibble::tibble(y = y_vals)
+  )
+
+  obj <- structure(
+    list(train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
+         forecast_horizon = 3, frequency = 12),
+    class = "chronos2_model_fit"
+  )
+
+  result <- chronos2_permutation_importance(chronos2_obj = obj, mold = mold, nsim = 2L)
+
+  expect_s3_class(result, "data.frame")
+  expect_true("temperature" %in% result$Variable)
+})
+
 test_that("Chronos 2 Model pipeline integration test with future external regressors", {
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 
@@ -612,7 +763,7 @@ test_that("chronos_forecast sends request and returns forecast data frame", {
     Combo = "1"
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",
@@ -643,7 +794,7 @@ test_that("chronos_forecast includes exogenous columns in payload", {
     temperature_original = c(22.0, 23.0, 21.0)
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",
@@ -672,7 +823,7 @@ test_that("chronos_forecast works with multiple combos", {
     Combo = rep(c("M1", "M2"), each = 3)
   )
 
-  result <- finnts:::chronos_forecast(
+  result <- chronos_forecast(
     train_df = train_df,
     new_data = new_data,
     model_type = "chronos2",

@@ -1072,8 +1072,10 @@ update_forecast_combo <- function(agent_info,
 
   # get best model list from previous run
   if (unique(prev_best_run_tbl$model_type) == "global") {
-    # global model only runs xgboost with R1 recipe
-    model_id_list <- "xgboost--global--R1"
+    # derive global model IDs from the previous best run's models_to_run
+    prev_models <- adjust_inputs(prev_run_log_tbl$models_to_run)
+    global_models <- intersect(prev_models, list_global_models())
+    model_id_list <- paste0(global_models, "--global--R1")
   } else {
     # get previous forecast for local model
     prev_fcst_tbl <- load_combo_forecast(
@@ -1739,13 +1741,30 @@ fit_models <- function(run_info,
       dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
       tidyr::unnest(Hyperparameters)
 
-    if (isTRUE(prev_run_log_tbl$stationary) & !(model %in% list_multivariate_models())) {
-      # undifference the data for a univariate model
-      prep_data <- prep_data %>%
-        undifference_recipe(
-          combo_info_tbl,
-          model_train_test_tbl %>% dplyr::slice(1) %>% dplyr::pull(Train_End)
-        )
+    if (isTRUE(prev_run_log_tbl$stationary) &
+      (!(model %in% list_multivariate_models()) || model %in% list_foundation_models())) {
+      # undifference the data for a univariate model or foundation model
+      hist_end_date <- model_train_test_tbl %>%
+        dplyr::slice(1) %>%
+        dplyr::pull(Train_End)
+
+      if (combo == "All-Data") {
+        prep_data <- prep_data %>%
+          dplyr::group_by(Combo) %>%
+          dplyr::group_modify(function(.x, .y) {
+            combo_diff_tbl <- combo_info_tbl %>%
+              dplyr::filter(Combo == .y$Combo) %>%
+              dplyr::slice(1)
+            .x %>% undifference_recipe(combo_diff_tbl, hist_end_date)
+          }) %>%
+          dplyr::ungroup()
+      } else {
+        prep_data <- prep_data %>%
+          undifference_recipe(
+            combo_info_tbl,
+            hist_end_date
+          )
+      }
     }
 
     # clamp negative Target values for models that require non-negative data
@@ -1837,7 +1856,7 @@ fit_models <- function(run_info,
     }
 
     # undo differencing transformation
-    if (isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models()) {
+    if (isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%

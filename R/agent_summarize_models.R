@@ -120,7 +120,8 @@ summarize_models <- function(agent_info,
     "xgboost" = summarize_model_xgboost,
     "nnetar-xregs" = summarize_model_nnetar,
     "prophet-xregs" = summarize_model_prophet,
-    "timegpt" = summarize_model_timegpt
+    "timegpt" = summarize_model_timegpt,
+    "chronos2" = summarize_model_chronos2
   )
 
   # Setup parallel processing
@@ -208,6 +209,26 @@ summarize_models <- function(agent_info,
           }
         ) %>%
           suppressWarnings()
+
+        # Also try to read average models forecast file
+        average_forecast_tbl <- tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                forecast_hash_combo, "-average_models.", project_info$data_output
+              )
+            ) %>%
+              adjust_combo_column()
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        ) %>%
+          suppressWarnings()
+
+        # Combine global and average forecast data
+        forecast_tbl <- dplyr::bind_rows(forecast_tbl, average_forecast_tbl)
 
         # if no data, try reading a reconciled forecast file
         if (nrow(forecast_tbl) == 0) {
@@ -7870,6 +7891,266 @@ summarize_model_timegpt <- function(wf) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_variant", "timegpt-1-long-horizon"))
       }
     }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+
+#' Compute permutation-based feature importance for a chronos2 model
+#'
+#' Uses `vip::vi(method = "permute")` with the fitted chronos2 parsnip object,
+#' following the same pattern as SVM models. Training data is sourced from
+#' `mold` (via `workflows::extract_mold(wf)`), matching how SVM and other
+#' models obtain their data for importance calculations.
+#'
+#' @param chronos2_obj A fitted `chronos2_model_fit` object (as extracted from
+#'   the parsnip fit).
+#' @param mold The result of `workflows::extract_mold(wf)`, containing
+#'   `$predictors` and `$outcomes`.
+#' @param nsim Number of permutation simulations (default 10, matching SVM).
+#'
+#' @return A tibble with columns `Variable` and `Importance` (scaled 0-100),
+#'   sorted descending by importance. Returns NULL when importance cannot be
+#'   computed.
+#'
+#' @noRd
+chronos2_permutation_importance <- function(chronos2_obj,
+                                            mold,
+                                            nsim = 10L) {
+  # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
+  # we cannot pass these directly as train/target to vip because
+  # chronos2_model_predict_impl filters object$train_data to dates before
+  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip, 
+  #the prediction would be made on the same data and then filtered to nothing, 
+  #causing errors or zero rows.
+
+  # Instead, we use a holdout split: last h rows per combo become the
+  # permutation surface (train_x/train_y for vip), and the earlier portion
+  # stays as training context in a trimmed object.
+  train_x <- as.data.frame(mold$predictors)
+  train_y <- as.numeric(mold$outcomes[[1]])
+
+  forecast_horizon <- chronos2_obj$forecast_horizon
+
+  # Reconstruct the full training data frame from mold components
+  train_data <- train_x
+  train_data$y <- train_y
+
+  original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
+
+  if (length(original_cols) == 0 || !all(c("Date", "Combo") %in% colnames(train_data))) {
+    return(NULL)
+  }
+
+  h <- forecast_horizon
+
+  # Split into train/holdout: last h rows per combo as holdout
+  holdout <- train_data %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::arrange(Date) %>%
+    dplyr::slice_tail(n = h) %>%
+    dplyr::ungroup()
+
+  train_portion <- train_data %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::arrange(Date) %>%
+    dplyr::filter(dplyr::row_number() <= (dplyr::n() - h)) %>%
+    dplyr::ungroup()
+
+  n_vals <- train_portion %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+    dplyr::pull(n)
+  min_rows_per_combo <- if (length(n_vals) == 0L) 0L else min(n_vals)
+
+  if (min_rows_per_combo < 3 || nrow(holdout) == 0) {
+    return(NULL)
+  }
+
+  # Build a trimmed chronos2_model_fit that only sees the train portion
+  # so predict_impl generates a forecast over the holdout period
+  trimmed_obj <- chronos2_obj
+  trimmed_obj$train_data <- train_portion
+
+  # Prepare holdout data for vip (holdout regressors as the permutation surface,
+  holdout_x <- as.data.frame(holdout[, original_cols, drop = FALSE])
+  holdout_y <- as.numeric(holdout$y)
+
+  pred_wrapper <- function(object, newdata) {
+    new_data <- holdout
+    for (col in original_cols) {
+      if (col %in% colnames(newdata)) {
+        new_data[[col]] <- newdata[[col]]
+      }
+    }
+    pred <- tryCatch(
+      chronos2_model_predict_impl(object = object, new_data = new_data),
+      error = function(e) NULL
+    )
+    if (is.null(pred)) {
+      return(rep(NA_real_, nrow(newdata)))
+    }
+    as.numeric(pred)
+  }
+
+  importance <- try(
+    vip::vi(
+      object = trimmed_obj,
+      method = "permute",
+      train = holdout_x,
+      target = holdout_y,
+      metric = "rmse",
+      pred_wrapper = pred_wrapper,
+      nsim = nsim,
+      scale = TRUE
+    ),
+    silent = TRUE
+  )
+
+  if (inherits(importance, "try-error") || is.null(importance) || nrow(importance) == 0) {
+    return(NULL)
+  }
+
+  # Clean regressor names: strip _original suffix
+  importance$Variable <- gsub("_original$", "", importance$Variable)
+
+  importance
+}
+
+
+#' Summarize a Chronos2 Workflow
+#'
+#' Extracts and summarizes key information from a fitted Chronos2 workflow,
+#' including model arguments, engine parameters, and api configuration details.
+#'
+#' @param wf A fitted tidymodels workflow containing a chronos2_model()
+#'   model with engine 'chronos2_model'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_model_chronos2 <- function(wf) {
+  digits <- 6
+  scan_depth <- 6
+  importance_threshold <- 1e-6
+
+  if (!inherits(wf, "workflow")) stop("summarize_model_chronos2() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "chronos2_model")) {
+    stop("summarize_model_chronos2() only supports chronos2_model() with engine 'chronos2_model'.")
+  }
+
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
+      return(format(rounded, scientific = FALSE, trim = TRUE))
+    }
+    as.character(x)
+  }
+
+  # Predictors / outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # Flag external regressors (non-date predictors)
+  xreg_names <- character()
+  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
+    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
+    xreg_names <- setdiff(names(mold$predictors)[!is_date], "Combo")
+    if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
+      preds_tbl$value[preds_tbl$name %in% xreg_names] <-
+        paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [regressor]")
+    }
+  }
+
+  # Recipe steps - no significant preprocessing steps for Chronos2
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Model arguments
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Locate the chronos2 fit object
+  is_chronos2_fit <- function(o) {
+    inherits(o, "chronos2_model_fit") || (is.list(o) && !is.null(o$train_data) && !is.null(o$forecast_horizon))
+  }
+  chronos2_obj <- .find_obj(fit$fit, is_chronos2_fit, scan_depth)
+  if (is.null(chronos2_obj) && is_chronos2_fit(fit$fit)) chronos2_obj <- fit$fit
+
+  if (!is.null(chronos2_obj)) {
+    # Training data stats - external regressors
+    if (!is.null(chronos2_obj$train_data)) {
+      train_data <- chronos2_obj$train_data
+      original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
+      if (length(original_cols) > 0) {
+        clean_names <- gsub("_original$", "", original_cols)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", as.character(length(clean_names))))
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "external_regressors", paste(clean_names, collapse = ", ")))
+      } else {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
+      }
+
+      # Number of training observations
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(nrow(train_data))))
+
+      # Number of combos in training data
+      if ("Combo" %in% colnames(train_data)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
+      }
+
+      # Feature importance via vip::vi permutation-based approach (data from mold)
+      if (length(original_cols) > 0 &&
+        !inherits(mold, "try-error") && !is.null(mold$predictors) && !is.null(mold$outcomes)) {
+        tryCatch(
+          {
+            importance <- chronos2_permutation_importance(
+              chronos2_obj = chronos2_obj,
+              mold = mold
+            )
+
+            if (!is.null(importance) && nrow(importance) > 0) {
+              importance <- importance[importance$Importance > importance_threshold, ]
+
+              if (nrow(importance) > 0) {
+                for (i in seq_len(nrow(importance))) {
+                  eng_tbl <- dplyr::bind_rows(
+                    eng_tbl,
+                    .kv("importance", importance$Variable[i], .format_numeric(importance$Importance[i]))
+                  )
+                }
+              }
+            }
+          },
+          error = function(e) {
+            message("chronos2 importance calculation failed: ", conditionMessage(e))
+          }
+        )
+      }
+    }
+
+    # Model type
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos2"))
   }
 
   .assemble_output(
