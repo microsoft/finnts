@@ -7922,7 +7922,16 @@ summarize_model_timegpt <- function(wf) {
 chronos2_permutation_importance <- function(chronos2_obj,
                                             mold,
                                             nsim = 10L) {
-  # Source data from mold, same as SVM
+  # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
+  # we cannot pass these directly as train/target to vip because
+  # chronos2_model_predict_impl filters object$train_data to dates before
+  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip, 
+  #the prediction would be made on the same data and then filtered to nothing, 
+  #causing errors or zero rows.
+
+  # Instead, we use a holdout split: last h rows per combo become the
+  # permutation surface (train_x/train_y for vip), and the earlier portion
+  # stays as training context in a trimmed object.
   train_x <- as.data.frame(mold$predictors)
   train_y <- as.numeric(mold$outcomes[[1]])
 
@@ -7968,13 +7977,10 @@ chronos2_permutation_importance <- function(chronos2_obj,
   trimmed_obj <- chronos2_obj
   trimmed_obj$train_data <- train_portion
 
-  # Prepare training data for vip (holdout regressors as the permutation surface,
-  # since chronos2 forecasts h future periods rather than scoring individual rows)
-  train_x <- as.data.frame(holdout[, original_cols, drop = FALSE])
-  train_y <- as.numeric(holdout$y)
+  # Prepare holdout data for vip (holdout regressors as the permutation surface,
+  holdout_x <- as.data.frame(holdout[, original_cols, drop = FALSE])
+  holdout_y <- as.numeric(holdout$y)
 
-  # Predict wrapper: vip passes the chronos2 fit object and (possibly permuted)
-  # features. We reconstruct the full new_data and call predict_impl.
   pred_wrapper <- function(object, newdata) {
     new_data <- holdout
     for (col in original_cols) {
@@ -7992,13 +7998,12 @@ chronos2_permutation_importance <- function(chronos2_obj,
     as.numeric(pred)
   }
 
-  # Use vip::vi with the same pattern as SVM models
   importance <- try(
     vip::vi(
       object = trimmed_obj,
       method = "permute",
-      train = train_x,
-      target = train_y,
+      train = holdout_x,
+      target = holdout_y,
       metric = "rmse",
       pred_wrapper = pred_wrapper,
       nsim = nsim,
@@ -8142,15 +8147,6 @@ summarize_model_chronos2 <- function(wf) {
           }
         )
       }
-    }
-
-    # API Details
-    api_url_set <- nzchar(Sys.getenv("CHRONOS_API_URL"))
-    api_token_set <- nzchar(Sys.getenv("CHRONOS_API_TOKEN"))
-    if (api_url_set && api_token_set) {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "api_configuration", "configured"))
-    } else {
-      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "api_configuration", "failed"))
     }
 
     # Model type
