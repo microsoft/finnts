@@ -7901,6 +7901,160 @@ summarize_model_timegpt <- function(wf) {
 }
 
 
+#' Compute permutation-based feature importance for a chronos2 model
+#'
+#' Shuffles each regressor's values within each Combo (destroying temporal
+#' signal) and measures the RMSE increase relative to the baseline forecast.
+#' Repeated over multiple iterations for robustness.
+#'
+#' @param train_data Data frame with columns Date, Combo, y, and one or more
+#'   columns ending in `_original` (the external regressors).
+#' @param forecast_horizon Integer forecast horizon (number of holdout rows
+#'   per combo).
+#' @param frequency Numeric frequency passed to `get_date_type()` to determine
+#'   how to pad short combos.
+#' @param num_iterations Number of permutation iterations (default 3).
+#' @param base_seed Starting RNG seed for reproducibility (default 123).
+#'
+#' @return A named list. Each element is named after a regressor (with the
+#'   `_original` suffix stripped) and contains a list with:
+#'   \describe{
+#'     \item{raw_importance}{Mean relative RMSE increase across iterations.}
+#'     \item{stddev}{Standard deviation of per-iteration scores (NA if only 1 iteration).}
+#'     \item{n}{Number of successful iterations.}
+#'   }
+#'   Returns an empty list when importance cannot be computed.
+#'
+#' @noRd
+chronos2_permutation_importance <- function(train_data,
+                                            forecast_horizon,
+                                            frequency = NULL,
+                                            num_iterations = 3L,
+                                            base_seed = 123L) {
+  original_cols <- colnames(train_data)[grepl("_original", colnames(train_data))]
+
+  if (length(original_cols) == 0 || !all(c("y", "Date", "Combo") %in% colnames(train_data))) {
+    return(list())
+  }
+
+  h <- forecast_horizon
+  date_type_imp <- if (!is.null(frequency)) get_date_type(frequency) else NULL
+
+  # Split into train/holdout: last h rows per combo as holdout
+  holdout <- train_data %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::arrange(Date) %>%
+    dplyr::slice_tail(n = h) %>%
+    dplyr::ungroup()
+
+  train_portion <- train_data %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::arrange(Date) %>%
+    dplyr::slice(1:(dplyr::n() - h)) %>%
+    dplyr::ungroup()
+
+  n_vals <- train_portion %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+    dplyr::pull(n)
+  min_rows_per_combo <- if (length(n_vals) == 0L) 0L else min(n_vals)
+
+  if (min_rows_per_combo < 3 || nrow(holdout) == 0) {
+    return(list())
+  }
+
+  actual_values <- holdout$y
+  train_padded <- pad_chronos2_data(train_portion, date_type_imp)
+
+  # Baseline forecast: all regressors included
+  baseline_result <- chronos_forecast(
+    train_df = train_padded,
+    new_data = holdout,
+    model_type = "chronos2",
+    horizon = h,
+    exogenous_cols = original_cols,
+    global = TRUE,
+    quantile_levels = c(0.1, 0.5, 0.9)
+  )
+  baseline_preds <- as.numeric(baseline_result$predictions)
+  baseline_rmse <- sqrt(mean((actual_values - baseline_preds)^2, na.rm = TRUE))
+
+  # Pre-allocate a list of numeric vectors to collect per-iteration scores
+  importance_samples <- stats::setNames(
+    lapply(original_cols, function(x) numeric(0L)),
+    original_cols
+  )
+
+  # Helper: shuffle a single column within each Combo
+  .shuffle_col_within_combo <- function(df, col_name, seed) {
+    withr::with_seed(seed, {
+      combo_ids <- unique(df$Combo)
+      vals <- df[[col_name]]
+      for (cid in combo_ids) {
+        mask <- df$Combo == cid
+        n <- sum(mask)
+        if (n > 1L) {
+          vals[mask] <- vals[mask][sample.int(n)]
+        }
+      }
+      df[[col_name]] <- vals
+      df
+    })
+  }
+
+  for (iter in seq_len(num_iterations)) {
+    for (col_idx in seq_along(original_cols)) {
+      col <- original_cols[col_idx]
+
+      iter_seed <- base_seed + (iter - 1L) * length(original_cols) + col_idx
+
+      train_permuted <- .shuffle_col_within_combo(train_padded, col, iter_seed)
+      holdout_permuted <- .shuffle_col_within_combo(holdout, col, iter_seed + 1000L)
+
+      perm_result <- tryCatch(
+        chronos_forecast(
+          train_df = train_permuted,
+          new_data = holdout_permuted,
+          model_type = "chronos2",
+          horizon = h,
+          exogenous_cols = original_cols,
+          global = TRUE,
+          quantile_levels = c(0.1, 0.5, 0.9)
+        ),
+        error = function(e) NULL
+      )
+
+      if (!is.null(perm_result)) {
+        perm_preds <- as.numeric(perm_result$predictions)
+        perm_rmse <- sqrt(mean((actual_values - perm_preds)^2, na.rm = TRUE))
+        rel_importance <- if (baseline_rmse > 1e-12) {
+          (perm_rmse - baseline_rmse) / baseline_rmse
+        } else {
+          0
+        }
+        importance_samples[[col]] <- c(importance_samples[[col]], rel_importance)
+      }
+    }
+  }
+
+  # Aggregate importance scores across iterations
+  importance_out <- list()
+  for (col in original_cols) {
+    samples <- importance_samples[[col]]
+    if (length(samples) > 0) {
+      clean_name <- gsub("_original$", "", col)
+      importance_out[[clean_name]] <- list(
+        raw_importance = mean(samples),
+        stddev = if (length(samples) > 1) sd(samples) else NA_real_,
+        n = length(samples)
+      )
+    }
+  }
+
+  importance_out
+}
+
+
 #' Summarize a Chronos2 Workflow
 #'
 #' Extracts and summarizes key information from a fitted Chronos2 workflow,
@@ -7997,186 +8151,30 @@ summarize_model_chronos2 <- function(wf) {
       }
 
       # Feature importance via permutation-based approach
-      # Shuffles each regressor's values within each Combo (destroying temporal signal)
-      # and measures RMSE increase. Repeated over multiple iterations for robustness.
       if (length(original_cols) > 0 && "y" %in% colnames(train_data) &&
         "Date" %in% colnames(train_data) && "Combo" %in% colnames(train_data)) {
         tryCatch(
           {
-            h <- chronos2_obj$forecast_horizon
-            frequency <- chronos2_obj$frequency
-            date_type_imp <- if (!is.null(frequency)) get_date_type(frequency) else NULL
+            importance_result <- chronos2_permutation_importance(
+              train_data = train_data,
+              forecast_horizon = chronos2_obj$forecast_horizon,
+              frequency = chronos2_obj$frequency
+            )
 
-            # Split into train/holdout: last h rows per combo as holdout
-            holdout <- train_data %>%
-              dplyr::group_by(Combo) %>%
-              dplyr::arrange(Date) %>%
-              dplyr::slice_tail(n = h) %>%
-              dplyr::ungroup()
+            if (length(importance_result) > 0) {
+              raw_vals <- vapply(importance_result, function(x) x$raw_importance, numeric(1))
+              imp_order <- order(raw_vals, decreasing = TRUE)
+              sorted_names <- names(importance_result)[imp_order]
 
-            train_portion <- train_data %>%
-              dplyr::group_by(Combo) %>%
-              dplyr::arrange(Date) %>%
-              dplyr::slice(1:(dplyr::n() - h)) %>%
-              dplyr::ungroup()
-
-            n_vals <- train_portion %>%
-              dplyr::group_by(Combo) %>%
-              dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
-              dplyr::pull(n)
-            # Use 0L as sentinel when train_portion is empty so the >= 3 guard below skips importance
-            min_rows_per_combo <- if (length(n_vals) == 0L) 0L else min(n_vals)
-
-            if (min_rows_per_combo >= 3 && nrow(holdout) > 0) {
-              actual_values <- holdout$y
-              train_padded <- pad_chronos2_data(train_portion, date_type_imp)
-
-              # Baseline forecast: all regressors included
-              baseline_result <- chronos_forecast(
-                train_df = train_padded,
-                new_data = holdout,
-                model_type = "chronos2",
-                horizon = h,
-                exogenous_cols = original_cols,
-                global = TRUE,
-                quantile_levels = c(0.1, 0.5, 0.9)
-              )
-              baseline_preds <- as.numeric(baseline_result$predictions)
-              baseline_rmse <- sqrt(mean((actual_values - baseline_preds)^2, na.rm = TRUE))
-
-              # --- Permutation feature importance ---
-              # For each regressor, shuffle its values within each Combo (itemwise
-              # permutation) in both train and holdout data, then re-forecast with
-              # all regressors still present.
-              # Importance = (permuted_rmse - baseline_rmse) / baseline_rmse
-              # i.e., the relative % increase in RMSE when the regressor's signal
-              # is destroyed. Positive = good driver, negative = bad driver, zero = no effect.
-              # Repeat for num_iterations with different random seeds to get mean
-              # and stddev of importance scores.
-              num_iterations <- 3L
-              base_seed <- 123L
-
-              # Pre-allocate a list of numeric vectors to collect per-iteration scores
-              importance_samples <- stats::setNames(
-                lapply(original_cols, function(x) numeric(0L)),
-                original_cols
-              )
-
-              # Helper: shuffle a single column within each Combo (itemwise permutation).
-              # Saves the global RNG state on entry and restores it on exit via on.exit()
-              # to avoid side-effects on downstream code.
-              .shuffle_col_within_combo <- function(df, col_name, seed) {
-                old_seed <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
-                  get(".Random.seed", envir = globalenv(), inherits = FALSE)
-                } else {
-                  NULL
-                }
-                on.exit(
-                  {
-                    if (!is.null(old_seed)) {
-                      assign(".Random.seed", old_seed, envir = globalenv())
-                    }
-                  },
-                  add = TRUE
+              for (nm in sorted_names) {
+                importance_pct <- importance_result[[nm]]$raw_importance * 100
+                eng_tbl <- dplyr::bind_rows(
+                  eng_tbl,
+                  .kv("importance", nm, .format_numeric(importance_pct))
                 )
-                set.seed(seed)
-                combo_ids <- unique(df$Combo)
-                vals <- df[[col_name]]
-                for (cid in combo_ids) {
-                  mask <- df$Combo == cid
-                  vals[mask] <- sample(vals[mask])
-                }
-                df[[col_name]] <- vals
-                df
-              }
-
-              for (iter in seq_len(num_iterations)) {
-                for (col_idx in seq_along(original_cols)) {
-                  col <- original_cols[col_idx]
-
-                  # Unique seed per (iteration, feature) so every permutation differs
-                  iter_seed <- base_seed + (iter - 1L) * length(original_cols) + col_idx
-
-                  # Permute the regressor in both training and holdout data
-                  train_permuted <- .shuffle_col_within_combo(train_padded, col, iter_seed)
-                  holdout_permuted <- .shuffle_col_within_combo(holdout, col, iter_seed + 1000L)
-
-                  perm_result <- tryCatch(
-                    chronos_forecast(
-                      train_df = train_permuted,
-                      new_data = holdout_permuted,
-                      model_type = "chronos2",
-                      horizon = h,
-                      exogenous_cols = original_cols,
-                      global = TRUE,
-                      quantile_levels = c(0.1, 0.5, 0.9)
-                    ),
-                    error = function(e) NULL
-                  )
-
-                  if (!is.null(perm_result)) {
-                    perm_preds <- as.numeric(perm_result$predictions)
-                    perm_rmse <- sqrt(mean((actual_values - perm_preds)^2, na.rm = TRUE))
-                    # Relative importance: % increase in RMSE when the signal was destroyed
-                    # Formula: (permuted - baseline) / baseline
-                    rel_importance <- if (baseline_rmse > 1e-12) {
-                      (perm_rmse - baseline_rmse) / baseline_rmse
-                    } else {
-                      0
-                    }
-                    importance_samples[[col]] <- c(importance_samples[[col]], rel_importance)
-                  }
-                }
-              }
-
-              # Aggregate importance scores across iterations
-              importance_list <- list()
-              for (col in original_cols) {
-                samples <- importance_samples[[col]]
-                if (length(samples) > 0) {
-                  clean_name <- gsub("_original$", "", col)
-                  importance_list[[length(importance_list) + 1]] <- list(
-                    name = clean_name,
-                    raw_importance = mean(samples),
-                    stddev = if (length(samples) > 1) sd(samples) else NA_real_,
-                    n = length(samples)
-                  )
-                }
-              }
-
-              if (length(importance_list) > 0) {
-                raw_vals <- vapply(importance_list, function(x) x$raw_importance, numeric(1))
-
-                # Sort by importance descending (most impactful first)
-                imp_order <- order(raw_vals, decreasing = TRUE)
-
-                for (i in imp_order) {
-                  item <- importance_list[[i]]
-
-                  # Importance as relative % RMSE increase: (permuted - baseline) / baseline
-                  # Positive = regressor carried useful signal (shuffling hurt forecast)
-                  # Negative = regressor was harmful (shuffling improved forecast)
-                  # Zero     = regressor had no effect
-                  importance_pct <- item$raw_importance * 100
-
-                  eng_tbl <- dplyr::bind_rows(
-                    eng_tbl,
-                    .kv("importance", item$name, .format_numeric(importance_pct))
-                  )
-
-                  # Report stddev (also as %) to assess confidence
-                  # if (!is.na(item$stddev)) {
-                  #   stddev_pct <- item$stddev * 100
-                  #   eng_tbl <- dplyr::bind_rows(
-                  #     eng_tbl,
-                  #     .kv("engine_param", paste0("importance_stddev_", item$name), .format_numeric(stddev_pct))
-                  #   )
-                  # }
-                }
               }
 
               eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "importance_method", "permutation"))
-              # eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "importance_num_iterations", as.character(num_iterations)))
             }
           },
           error = function(e) {

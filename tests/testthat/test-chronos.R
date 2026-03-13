@@ -534,6 +534,143 @@ test_that("Chronos 2 Model pipeline integration test with external regressors", 
   expect_true(any(grepl("temperature_original", train_data_cols)))
 })
 
+# Section 8 — chronos2_permutation_importance Unit Tests
+
+test_that("chronos2_permutation_importance returns empty list when no _original columns", {
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12),
+    Combo = "A",
+    y = rnorm(12, 100, 10)
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12
+  )
+
+  expect_type(result, "list")
+  expect_length(result, 0)
+})
+
+test_that("chronos2_permutation_importance returns empty list when required columns missing", {
+  # Missing 'y' column
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12),
+    Combo = "A",
+    value = rnorm(12, 100, 10),
+    temperature_original = rnorm(12, 20, 5)
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12
+  )
+
+  expect_type(result, "list")
+  expect_length(result, 0)
+})
+
+test_that("chronos2_permutation_importance returns empty list when too few rows per combo", {
+  # Only 4 rows with horizon=3 leaves 1 training row per combo (< 3)
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 4),
+    Combo = "A",
+    y = rnorm(4, 100, 10),
+    temperature_original = rnorm(4, 20, 5)
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12
+  )
+
+  expect_type(result, "list")
+  expect_length(result, 0)
+})
+
+test_that("chronos2_permutation_importance computes importance with API", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = n),
+    Combo = "A",
+    y = 100 + 2 * temp + rnorm(n, sd = 3),
+    temperature_original = temp
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12,
+    num_iterations = 2L
+  )
+
+  expect_type(result, "list")
+  expect_true("temperature" %in% names(result))
+  expect_true("raw_importance" %in% names(result$temperature))
+  expect_true("stddev" %in% names(result$temperature))
+  expect_true("n" %in% names(result$temperature))
+  expect_equal(result$temperature$n, 2L)
+  expect_type(result$temperature$raw_importance, "double")
+})
+
+test_that("chronos2_permutation_importance works with multiple regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  temp <- rnorm(n, mean = 20, sd = 5)
+  fuel <- rnorm(n, mean = 3, sd = 0.5)
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = n),
+    Combo = "A",
+    y = 100 + 2 * temp + 5 * fuel + rnorm(n, sd = 3),
+    temperature_original = temp,
+    fuel_price_original = fuel
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12,
+    num_iterations = 2L
+  )
+
+  expect_type(result, "list")
+  expect_length(result, 2)
+  expect_true("temperature" %in% names(result))
+  expect_true("fuel_price" %in% names(result))
+})
+
+test_that("chronos2_permutation_importance works with multiple combos", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  set.seed(42)
+  n <- 24
+  train_data <- data.frame(
+    Date = rep(seq.Date(as.Date("2020-01-01"), by = "month", length.out = n), 2),
+    Combo = rep(c("A", "B"), each = n),
+    y = rnorm(n * 2, 100, 10),
+    temperature_original = rnorm(n * 2, 20, 5)
+  )
+
+  result <- finnts:::chronos2_permutation_importance(
+    train_data = train_data,
+    forecast_horizon = 3,
+    frequency = 12,
+    num_iterations = 2L
+  )
+
+  expect_type(result, "list")
+  expect_true("temperature" %in% names(result))
+})
+
 test_that("Chronos 2 Model pipeline integration test with future external regressors", {
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 
