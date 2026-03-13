@@ -8180,9 +8180,7 @@ summarize_model_chronos2 <- function(wf) {
             }
           },
           error = function(e) {
-            if (isTRUE(getOption("finnts.debug"))) {
-              message("chronos2 importance calculation failed: ", conditionMessage(e))
-            }
+            message("chronos2 importance calculation failed: ", conditionMessage(e))
           }
         )
       }
