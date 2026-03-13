@@ -657,9 +657,11 @@ xgboost_multistep_predict_impl <- function(object, new_data, ...) {
     mdl_name <- choose_model_for(e)
     mdl <- object$models[[mdl_name]]
 
+    feat_names <- xgb_get_feature_names(mdl)
+
     preds <- modeltime::xgboost_predict(
       mdl,
-      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(mdl$feature_names)),
+      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(feat_names)),
       ...
     )
 

@@ -451,7 +451,7 @@ lofo_fn <- function(run_info,
       data_lofo <- data
     } else {
       data_lofo <- data %>%
-        dplyr::select(-col)
+        dplyr::select(-tidyselect::all_of(col))
     }
 
     # xgboost model

@@ -61,6 +61,21 @@ get_timestamp <- function() {
   )
 }
 
+# Version-safe xgboost accessors (compatible with both 1.x and 3.x)
+xgb_get_niter <- function(model) {
+  tryCatch(
+    xgboost::xgb.get.num.boosted.rounds(model),
+    error = function(e) model$niter
+  )
+}
+
+xgb_get_feature_names <- function(model) {
+  tryCatch(
+    xgboost::getinfo(model, "feature_name"),
+    error = function(e) model$feature_names
+  )
+}
+
 
 # The functions below define the model information. These access the model
 # environment inside of parsnip so they have to be executed once parsnip has

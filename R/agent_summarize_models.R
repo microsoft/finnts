@@ -1238,8 +1238,8 @@ summarize_model_arima_boost <- function(wf) {
 
     if (inherits(xgb_obj, "xgb.Booster")) {
       # Number of boosting rounds
-      niter <- try(xgb_obj$niter, silent = TRUE)
-      if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+      niter <- xgb_get_niter(xgb_obj)
+      if (!is.null(niter) && is.finite(niter)) {
         eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "xgb_nrounds", as.character(niter)))
 
         # Update args_tbl if trees was "auto"
@@ -1862,8 +1862,9 @@ summarize_model_cubist <- function(wf) {
           importance <- try(vip::vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
-            # Filter out features with negligible importance
+            # Filter out features with negligible importance or NA variable names
             importance <- importance[importance$Importance > importance_threshold, ]
+            importance <- importance[!is.na(importance$Variable), ]
 
             if (nrow(importance) > 0) {
               for (i in seq_len(nrow(importance))) {
@@ -1953,8 +1954,9 @@ summarize_model_cubist <- function(wf) {
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
-          # Filter out features with negligible importance
+          # Filter out features with negligible importance or NA variable names
           importance <- importance[importance$Importance > importance_threshold, ]
+          importance <- importance[!is.na(importance$Variable), ]
 
           if (nrow(importance) > 0) {
             # vip::vi already returns sorted by Importance (descending)
@@ -4608,8 +4610,8 @@ summarize_model_prophet_boost <- function(wf) {
 
     if (inherits(xgb_obj, "xgb.Booster")) {
       # Number of boosting rounds (already in model_arg as trees, so don't duplicate)
-      niter <- try(xgb_obj$niter, silent = TRUE)
-      if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+      niter <- xgb_get_niter(xgb_obj)
+      if (!is.null(niter) && is.finite(niter)) {
         # Update args_tbl if trees was "auto"
         if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
           args_tbl$value[args_tbl$name == "trees"] <- as.character(niter)
@@ -7572,14 +7574,14 @@ summarize_model_xgboost <- function(wf) {
 
         if (!is.null(inner_xgb) && inherits(inner_xgb, "xgb.Booster")) {
           # Number of rounds
-          niter <- try(inner_xgb$niter, silent = TRUE)
-          if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+          niter <- xgb_get_niter(inner_xgb)
+          if (!is.null(niter) && is.finite(niter)) {
             all_nrounds <- c(all_nrounds, niter)
           }
 
           # Number of features
-          feature_names <- try(inner_xgb$feature_names, silent = TRUE)
-          if (!inherits(feature_names, "try-error") && !is.null(feature_names)) {
+          feature_names <- xgb_get_feature_names(inner_xgb)
+          if (!is.null(feature_names)) {
             all_nfeatures <- c(all_nfeatures, length(feature_names))
           }
 
@@ -7670,8 +7672,8 @@ summarize_model_xgboost <- function(wf) {
 
       if (inherits(xgb_obj, "xgb.Booster")) {
         # Number of boosting rounds
-        niter <- try(xgb_obj$niter, silent = TRUE)
-        if (!inherits(niter, "try-error") && !is.null(niter) && is.finite(niter)) {
+        niter <- xgb_get_niter(xgb_obj)
+        if (!is.null(niter) && is.finite(niter)) {
           # Update args_tbl if trees was "auto"
           if (args_tbl$value[args_tbl$name == "trees"] == "auto") {
             args_tbl$value[args_tbl$name == "trees"] <- as.character(niter)
