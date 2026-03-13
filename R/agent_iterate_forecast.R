@@ -1474,7 +1474,7 @@ submit_fcst_run <- function(agent_info,
     inner_parallel = inner_parallel,
     num_cores = num_cores,
     seed = seed,
-    debug = TRUE
+    debug = FALSE
   )
 
   # evaluate models

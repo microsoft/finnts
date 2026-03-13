@@ -7976,8 +7976,6 @@ summarize_model_chronos2 <- function(wf) {
   if (is.null(chronos2_obj) && is_chronos2_fit(fit$fit)) chronos2_obj <- fit$fit
 
   if (!is.null(chronos2_obj)) {
-    importance_threshold <- 1e-6
-
     # Training data stats - external regressors
     if (!is.null(chronos2_obj$train_data)) {
       train_data <- chronos2_obj$train_data
@@ -8022,11 +8020,12 @@ summarize_model_chronos2 <- function(wf) {
               dplyr::slice(1:(dplyr::n() - h)) %>%
               dplyr::ungroup()
 
-            min_rows_per_combo <- train_portion %>%
+            n_vals <- train_portion %>%
               dplyr::group_by(Combo) %>%
               dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
-              dplyr::pull(n) %>%
-              min()
+              dplyr::pull(n)
+            # Use 0L as sentinel when train_portion is empty so the >= 3 guard below skips importance
+            min_rows_per_combo <- if (length(n_vals) == 0L) 0L else min(n_vals)
 
             if (min_rows_per_combo >= 3 && nrow(holdout) > 0) {
               actual_values <- holdout$y
@@ -8063,8 +8062,23 @@ summarize_model_chronos2 <- function(wf) {
                 original_cols
               )
 
-              # Helper: shuffle a single column within each Combo (itemwise permutation)
+              # Helper: shuffle a single column within each Combo (itemwise permutation).
+              # Saves the global RNG state on entry and restores it on exit via on.exit()
+              # to avoid side-effects on downstream code.
               .shuffle_col_within_combo <- function(df, col_name, seed) {
+                old_seed <- if (exists(".Random.seed", envir = globalenv(), inherits = FALSE)) {
+                  get(".Random.seed", envir = globalenv(), inherits = FALSE)
+                } else {
+                  NULL
+                }
+                on.exit(
+                  {
+                    if (!is.null(old_seed)) {
+                      assign(".Random.seed", old_seed, envir = globalenv())
+                    }
+                  },
+                  add = TRUE
+                )
                 set.seed(seed)
                 combo_ids <- unique(df$Combo)
                 vals <- df[[col_name]]
@@ -8166,7 +8180,9 @@ summarize_model_chronos2 <- function(wf) {
             }
           },
           error = function(e) {
-            message("[PERMUTATION DEBUG] importance calculation failed: ", conditionMessage(e))
+            if (isTRUE(getOption("finnts.debug"))) {
+              message("chronos2 importance calculation failed: ", conditionMessage(e))
+            }
           }
         )
       }
