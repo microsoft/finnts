@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9030</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9031</span>
       </span>
     </div>
 
@@ -167,8 +167,9 @@ preprocessing pipeline that preserve the untransformed external
 regressor values. This happens after missing value and outlier cleaning,
 but before any transformations like Box-Cox or differencing are
 applied.</p>
-<p>TimeGPT uses these “_original” columns for external regressors as it
-expects data in its original scale and distribution.</p>
+<p>TimeGPT and Chronos2 use these “_original” columns for external
+regressors as they expect data in its original scale and
+distribution.</p>
 <p>Models like XGBoost, LightGBM, Random Forest, etc., ignore the
 “_original” columns and use the transformed versions instead.</p>
 <p><strong>Important Note:</strong> Avoid naming your external
@@ -435,8 +436,10 @@ a high quality forecast. The <a href="https://recipes.tidymodels.org/" class="ex
 easily apply various preprocessing transformations needed before
 training a model. Additionally, TimeGPT automatically pads data with
 zeros when using Azure AI endpoints just before the API call to meet
-minimum data size requirements based on data frequency (see the <a href="forecasting-genai.html">Forecasting with GenAI</a> vignette for
-details).</p>
+minimum data size requirements based on data frequency, and Chronos2
+pads combos with fewer than 3 observations to meet its minimum data
+requirements (see the <a href="forecasting-genai.html">Forecasting with
+GenAI</a> vignette for details).</p>
 </div>
   </div>
 
