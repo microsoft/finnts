@@ -1405,7 +1405,7 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
         Lag = date_type_lags
       ) %>%
         dplyr::mutate(
-          dCor = purrr::map2_dbl(Regressor, Lag, \(var, l) {
+          dCor = purrr::map2_dbl(Regressor, Lag, function(var, l) {
             x <- dplyr::lag(input_data_xreg[[var]], l)
             y <- input_data_xreg$Target
             keep <- !(is.na(x) | is.na(y))
@@ -1690,7 +1690,7 @@ hierarchy_detect <- function(agent_info,
         dplyr::count(!!rlang::sym(b), name = "n_parent") %>%
         dplyr::pull(n_parent) %>%
         {
-          \(x) if (any(x > 1)) "many-to-many" else "one-to-many"
+          function(x) if (any(x > 1)) "many-to-many" else "one-to-many"
         }()
     }
 
@@ -1824,7 +1824,7 @@ hierarchy_detect <- function(agent_info,
     )
 
     details <- pair_tests %>%
-      purrr::imap_chr(\(v, k) sprintf("%s: %s", k, v)) %>%
+      purrr::imap_chr(function(v, k) sprintf("%s: %s", k, v)) %>%
       paste(collapse = ", ")
 
     summary_text <- paste(header, details, sep = " ")

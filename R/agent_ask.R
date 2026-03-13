@@ -238,7 +238,7 @@ get_column_sanity_checklist <- function() {
 COLUMN SANITY CHECKS:
 - If Run_Type=='Future_Forecast', don't use Target (it's NA)
 - If computing errors, filter Run_Type=='Back_Test' AND !is.na(Target)
-- For summaries, use Best_Model=='Yes' unless need all candidates
+- For summaries, use Best_Model=='Yes' unless need all candidates (Best_Model only exists in get_agent_forecast and get_summarized_models, NOT in get_best_agent_run or get_eda_data)
 - Intervals (lo_*/hi_*) typically present only for future periods
 - Don't mix hierarchy and bottom metrics without get_hierarchy_summary() mapping
 - Use Model_ID (not Model_Name) as join key to get_summarized_models
