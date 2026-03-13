@@ -7950,7 +7950,7 @@ chronos2_permutation_importance <- function(train_data,
   train_portion <- train_data %>%
     dplyr::group_by(Combo) %>%
     dplyr::arrange(Date) %>%
-    dplyr::slice_head(n = pmax(dplyr::n() - h, 0L)) %>%
+    dplyr::filter(dplyr::row_number() <= (dplyr::n() - h)) %>%
     dplyr::ungroup()
 
   n_vals <- train_portion %>%
@@ -8008,6 +8008,7 @@ chronos2_permutation_importance <- function(train_data,
 
       iter_seed <- base_seed + (iter - 1L) * length(original_cols) + col_idx
 
+      # permuting xreg col in both train and holdout, such that it never align as the original
       train_permuted <- .shuffle_col_within_combo(train_padded, col, iter_seed)
       holdout_permuted <- .shuffle_col_within_combo(holdout, col, iter_seed + 1000L)
 
