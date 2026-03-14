@@ -1,6 +1,11 @@
 #' Update Forecast with Latest Data and Inputs
 #'
 #' This function updates the forecast agent with the latest data and inputs.
+#' If new time series are detected in the data (up to 20\% of existing series,
+#' with a floor of 10), simple forecasts are automatically created for them
+#' using default local model inputs without LLM involvement. If the number
+#' of new series exceeds the cap, an error directs the user to use
+#' `iterate_forecast()` instead.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
@@ -167,9 +172,9 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if initial checks passed
-        if (is.data.frame(results)) {
+        if (is.list(results) && !is.data.frame(results)) {
           return(list(ctx = ctx, `next` = "update_global_models"))
-        } else if (results == "no updates required") {
+        } else if (identical(results, "no updates required")) {
           # if no updates required, save run metadata then proceed to post-processing
           cli::cli_alert_info("No model updates required, saving run metadata before post-processing.")
           return(list(ctx = ctx, `next` = "save_best_agent_run"))
@@ -185,7 +190,7 @@ update_fcst_agent_workflow <- function(agent_info,
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        previous_best_run_tbl = "{results$initial_checks}",
+        previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
         parallel_processing = parallel_processing,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
@@ -194,12 +199,26 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_local_models = list(
       fn = "update_local_models",
-      `next` = "save_best_agent_run",
+      `next` = "forecast_new_combos",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        previous_best_run_tbl = "{results$initial_checks}",
+        previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
+        parallel_processing = parallel_processing,
+        inner_parallel = inner_parallel,
+        num_cores = num_cores,
+        seed = seed
+      )
+    ),
+    forecast_new_combos = list(
+      fn = "forecast_new_combos",
+      `next` = "save_best_agent_run",
+      retry_mode = "plain",
+      max_retry = 2,
+      args = list(
+        agent_info = agent_info,
+        new_combos = "{results$initial_checks$new_combos}",
         parallel_processing = parallel_processing,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
@@ -339,7 +358,8 @@ update_fcst_agent_workflow <- function(agent_info,
 #'
 #' @param agent_info A list containing the agent information.
 #'
-#' @return A data frame containing the previous best run information or a message indicating no updates are required.
+#' @return A list with `prev_best_runs_tbl` (data frame of previous best runs) and
+#'   `new_combos` (character vector of new combo hashes), or "no updates required".
 #' @noRd
 initial_checks <- function(agent_info) {
   # get metadata
@@ -477,15 +497,36 @@ initial_checks <- function(agent_info) {
   # get number of time series from current agent run
   current_run_combos <- get_total_combos(agent_info = agent_info)
 
-  # check if number of time series has changed
+  # check if new time series have been added
   new_combos <- setdiff(current_run_combos, prev_run_combos)
 
   if (length(new_combos) > 0) {
+
+    # allow a limited number of new series; cap at max(10, 20% of existing)
+    new_combo_limit <- max(10L, ceiling(length(prev_run_combos) * 0.20))
+
+    if (length(new_combos) > new_combo_limit) {
+      resolved_names <- resolve_combo_hashes(agent_info, new_combos)
+      stop(
+        "Error in update_forecast(). ", length(new_combos),
+        " new time series detected, which exceeds the limit of ",
+        new_combo_limit, " (20% of ", length(prev_run_combos),
+        " existing series, floor of 10). New series: ",
+        paste(resolved_names, collapse = ", "),
+        ". Please use iterate_forecast() instead, or reduce the number of new series.",
+        call. = FALSE
+      )
+    }
+
     resolved_names <- resolve_combo_hashes(agent_info, new_combos)
-    stop("Error in update_forecast(). The following time series have been added since last completed agent run: ",
-      paste(resolved_names, collapse = ", "), ". Please remove time series.",
-      call. = FALSE
+    cli::cli_alert_info(
+      "New time series detected: {paste(resolved_names, collapse = ', ')}. Creating simple forecasts using default local model inputs."
     )
+
+    # exclude new combos from unfinished_combos so they don't enter update_local_models
+    if (!is.null(unfinished_combos)) {
+      unfinished_combos <- setdiff(unfinished_combos, new_combos)
+    }
   }
 
   # get best runs from previous agent run and filter on combos that haven't been updated for this version
@@ -500,7 +541,7 @@ initial_checks <- function(agent_info) {
       dplyr::ungroup()
   }
 
-  if (nrow(prev_best_runs_tbl) == 0) {
+  if (nrow(prev_best_runs_tbl) == 0 && length(new_combos) == 0) {
     stop("Error in update_forecast(). No best runs found in previous agent run.",
       call. = FALSE
     )
@@ -511,20 +552,25 @@ initial_checks <- function(agent_info) {
     dplyr::pull(model_type) %>%
     unique()
 
-  if ("local" %in% model_type_list & !agent_info$run_local_models) {
-    stop("Error in update_forecast(). Previous agent run included local models, but current agent_info has run_local_models = FALSE. Please set run_local_models = TRUE to update local models.",
-      call. = FALSE
-    )
+  if (nrow(prev_best_runs_tbl) > 0) {
+    if ("local" %in% model_type_list & !agent_info$run_local_models) {
+      stop("Error in update_forecast(). Previous agent run included local models, but current agent_info has run_local_models = FALSE. Please set run_local_models = TRUE to update local models.",
+        call. = FALSE
+      )
+    }
+
+    if ("global" %in% model_type_list & !agent_info$run_global_models) {
+      stop("Error in update_forecast(). Previous agent run included global models, but current agent_info has run_global_models = FALSE. Please set run_global_models = TRUE to update global models.",
+        call. = FALSE
+      )
+    }
   }
 
-  if ("global" %in% model_type_list & !agent_info$run_global_models) {
-    stop("Error in update_forecast(). Previous agent run included global models, but current agent_info has run_global_models = FALSE. Please set run_global_models = TRUE to update global models.",
-      call. = FALSE
-    )
-  }
-
-  # return unfinished previous best runs
-  return(prev_best_runs_tbl)
+  # return unfinished previous best runs and any new combos
+  return(list(
+    prev_best_runs_tbl = prev_best_runs_tbl,
+    new_combos = new_combos
+  ))
 }
 
 #' Update Global Models
@@ -1006,6 +1052,148 @@ reconcile_agent_forecast <- function(agent_info,
     folder = "forecasts",
     suffix = "-reconciled"
   )
+}
+
+#' Forecast New Combos
+#'
+#' Creates simple forecasts for new time series that were not present in
+#' the previous agent run. Uses default local model inputs (matching the
+#' first-iteration defaults from iterate_forecast) without LLM involvement.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param new_combos Character vector of new combo hashes to forecast.
+#' @param parallel_processing Parallel processing mode.
+#' @param inner_parallel Logical indicating if inner parallel processing should be used.
+#' @param num_cores Numeric indicating the number of cores to use.
+#' @param seed Numeric seed for reproducibility.
+#'
+#' @return A character string indicating completion.
+#' @noRd
+forecast_new_combos <- function(agent_info,
+                                new_combos,
+                                parallel_processing,
+                                inner_parallel,
+                                num_cores,
+                                seed) {
+  if (length(new_combos) == 0) {
+    cli::cli_alert_info("No new time series to forecast, skipping...")
+    return("No new time series to forecast, skipping...")
+  }
+
+  cli::cli_alert_info("Forecasting {length(new_combos)} new time series with default local model inputs.")
+
+  # get metadata
+  project_info <- agent_info$project_info
+
+  # build default local model inputs (matching reason_inputs first-iteration defaults)
+  fm_suffix <- get_foundation_model_suffix()
+
+  default_inputs <- list(
+    models_to_run = strsplit(paste0("arima---ets---tbats---stlm-arima---xgboost---glmnet", fm_suffix), "---")[[1]],
+    external_regressors = "NULL",
+    clean_missing_values = TRUE,
+    clean_outliers = FALSE,
+    negative_forecast = FALSE,
+    forecast_approach = "bottoms_up",
+    stationary = TRUE,
+    feature_selection = FALSE,
+    multistep_horizon = FALSE,
+    seasonal_period = "NULL",
+    recipes_to_run = "R1",
+    lag_periods = "NULL",
+    rolling_window_periods = "NULL"
+  )
+
+  # agent adjustments to prevent serialization issues
+  agent_info_lean <- agent_info
+  agent_info_lean$driver_llm <- NULL
+  agent_info_lean$reason_llm <- NULL
+
+  # parallel setup
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = length(new_combos)
+  )
+
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+
+  on.exit(par_end(cl), add = TRUE)
+
+  timestamp <- format(Sys.time(), "%Y%m%d%H%M%S")
+
+  combo_tbl <- tryCatch(
+    {
+      foreach::foreach(
+        combo_hash = new_combos,
+        .packages = packages,
+        .errorhandling = "stop",
+        .inorder = FALSE,
+        .multicombine = TRUE
+      ) %op%
+        {
+          # check if combo already ran (in case of restart)
+          agent_best_run_tbl <- tryCatch(
+            {
+              read_file(agent_info_lean$project_info,
+                file_list = paste0(
+                  agent_info_lean$project_info$path, "/logs/",
+                  hash_data(agent_info_lean$project_info$project_name), "-",
+                  hash_data(agent_info_lean$run_id), "-",
+                  combo_hash, "-agent_best_run.csv"
+                ) %>%
+                  fs::path_tidy()
+              )
+            },
+            error = function(e) {
+              tibble::tibble()
+            }
+          )
+
+          if (nrow(agent_best_run_tbl) > 0) {
+            return(data.frame(Combo = combo_hash))
+          }
+
+          # run forecast with default inputs
+          run_info <- submit_fcst_run(
+            agent_info = agent_info_lean,
+            inputs = default_inputs,
+            combo = combo_hash,
+            timestamp = timestamp,
+            parallel_processing = NULL,
+            inner_parallel = inner_parallel,
+            num_cores = num_cores,
+            seed = seed
+          )
+
+          # get forecast output and calculate metrics
+          fcst_tbl <- get_fcst_output(run_info)
+          weighted_mape <- calculate_fcst_metrics(run_info, fcst_tbl)
+
+          # log the best run
+          log_best_run(
+            agent_info = agent_info_lean,
+            run_info = run_info,
+            weighted_mape = weighted_mape,
+            check_best_run = FALSE,
+            combo = combo_hash
+          )
+
+          return(data.frame(Combo = combo_hash))
+        } %>%
+        base::suppressPackageStartupMessages()
+    },
+    error = function(e) {
+      # hard abort: cancel parallel jobs immediately
+      cancel_parallel(par_info)
+      stop(e)
+    }
+  )
+
+  return("Finished Forecasting New Time Series")
 }
 
 #' Update Forecast for a Combo

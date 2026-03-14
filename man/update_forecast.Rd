@@ -49,6 +49,11 @@ Nothing
 }
 \description{
 This function updates the forecast agent with the latest data and inputs.
+If new time series are detected in the data (up to 20\\% of existing series,
+with a floor of 10), simple forecasts are automatically created for them
+using default local model inputs without LLM involvement. If the number
+of new series exceeds the cap, an error directs the user to use
+\code{iterate_forecast()} instead.
 }
 \examples{
 \dontrun{
