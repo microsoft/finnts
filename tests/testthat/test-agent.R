@@ -603,9 +603,9 @@ test_that("iterate_forecast validates parameters", {
   )
 })
 
-# * Test update_forecast new combo detection ----
+# * Test update_forecast new combo handling ----
 
-test_that("update_forecast error shows original combo names for new time series", {
+test_that("update_forecast creates simple forecasts for new time series within cap", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
 
   project <- set_project_info(
@@ -639,7 +639,7 @@ test_that("update_forecast error shows original combo names for new time series"
     seed = 123
   )
 
-  # Update with 2 time series (adding M1)
+  # Update with 2 time series (adding M1) — within the floor of 10
   updated_data <- test_data_multi %>%
     dplyr::filter(Date <= as.Date("2015-01-01"))
 
@@ -653,15 +653,24 @@ test_that("update_forecast error shows original combo names for new time series"
     back_test_spacing = 3
   )
 
-  # Verify error message contains original combo name, not hash
-  expect_error(
+  # Should succeed (1 new series is within cap of max(10, 20% of 1))
+  expect_no_error(
     update_forecast(
       agent_info = agent_info2,
       allow_iterate_forecast = FALSE,
       seed = 123
-    ),
-    "M1"
+    )
   )
+
+  # Verify forecast includes both original and new time series
+  forecast <- get_agent_forecast(agent_info = agent_info2)
+  expect_true("M750" %in% forecast$Combo)
+  expect_true("M1" %in% forecast$Combo)
+
+  # Verify best run includes both time series
+  best_run <- get_best_agent_run(agent_info = agent_info2)
+  expect_true("M750" %in% best_run$combo)
+  expect_true("M1" %in% best_run$combo)
 
   # Verify resolve_combo_hashes works with 2 time series
   combo_hashes <- get_total_combos(agent_info2)

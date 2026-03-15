@@ -1792,6 +1792,42 @@ hierarchy_detect <- function(agent_info,
         }
       }
 
+      # Step 2b: transitive reduction — remove edge u→v when v is
+      # reachable from u through other edges (e.g. city→region is
+      # redundant when city→country→region exists)
+      edges_to_drop <- character(0)
+      for (u in group_names) {
+        for (v in g_adj[[u]]) {
+          # BFS from u's other neighbours looking for v
+          queue <- setdiff(g_adj[[u]], v)
+          visited <- character(0)
+          reachable <- FALSE
+          while (length(queue) > 0 && !reachable) {
+            cur <- queue[1L]
+            queue <- queue[-1L]
+            if (cur %in% visited) next
+            visited <- c(visited, cur)
+            if (cur == v) {
+              reachable <- TRUE
+            } else {
+              queue <- c(queue, g_adj[[cur]])
+            }
+          }
+          if (reachable) {
+            edges_to_drop <- c(edges_to_drop, paste0(u, "->", v))
+          }
+        }
+      }
+      for (edge in edges_to_drop) {
+        parts <- strsplit(edge, "->", fixed = TRUE)[[1]]
+        u <- parts[1]
+        v <- parts[2]
+        g_adj[[u]] <- setdiff(g_adj[[u]], v)
+        g_in_deg[v] <- g_in_deg[v] - 1L
+        g_out_deg[u] <- g_out_deg[u] - 1L
+        seen_edges <- setdiff(seen_edges, edge)
+      }
+
       # Step 3: check if the group DAG forms a single chain
       roots <- names(g_in_deg[g_in_deg == 0])
       leaves <- names(g_out_deg[g_out_deg == 0])
