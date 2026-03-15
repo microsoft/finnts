@@ -566,6 +566,19 @@ initial_checks <- function(agent_info) {
     }
   }
 
+  # for hierarchical forecasting, filter out combos from the previous best
+  # runs that no longer exist in the current run's input data (hierarchy
+  # structure changes when bottom-level combos are added or removed, making
+  # old aggregation combos invalid)
+  if (agent_info$forecast_approach != "bottoms_up") {
+    prev_best_runs_tbl <- prev_best_runs_tbl %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(combo_hash = hash_data(combo)) %>%
+      dplyr::filter(model_type == "global" | combo_hash %in% current_run_combos) %>%
+      dplyr::select(-combo_hash) %>%
+      dplyr::ungroup()
+  }
+
   # return unfinished previous best runs and any new combos
   return(list(
     prev_best_runs_tbl = prev_best_runs_tbl,
