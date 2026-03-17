@@ -46,17 +46,45 @@ test_that("hierarchy_detect identifies standard hierarchy (2 combo vars)", {
 })
 
 test_that("hierarchy_detect identifies standard hierarchy (3 combo vars)", {
-  # Region -> Country -> City: strict 3-level nesting
+  # Region -> Country -> City: strict 3-level nesting with multiple children
   df <- tibble::tibble(
-    Region = rep(c("EMEA", "EMEA", "AMER"), each = 2),
-    Country = rep(c("UK", "Germany", "US"), each = 2),
-    City = rep(c("London", "Berlin", "NYC"), each = 2),
-    Date = rep(as.Date(c("2020-01-01", "2020-02-01")), 3),
-    Target = 1:6
+    Region  = c("West", "West", "West", "West", "West", "West",
+                "East", "East", "East"),
+    Country = c("USA", "USA", "USA", "UK", "UK", "UK",
+                "Japan", "Japan", "Japan"),
+    City    = c("Seattle", "New York", "Stilwell",
+                "London", "Manchester", "Leeds",
+                "Tokyo", "Osaka", "Hiroshima"),
+    Date    = as.Date("2020-01-01"),
+    Target  = 1:9
   )
 
   result <- hierarchy_detect(
     agent_info = make_agent_info(c("Region", "Country", "City")),
+    input_data = df,
+    write_data = FALSE
+  )
+
+  expect_equal(result, "standard_hierarchy")
+})
+
+test_that("hierarchy_detect identifies standard hierarchy (4 combo vars)", {
+  # Continent -> Region -> Country -> City: 4-level strict nesting
+  df <- tibble::tibble(
+    Continent = c("Americas", "Americas", "Americas", "Americas",
+                  "Europe", "Europe"),
+    Region    = c("North", "North", "South", "South",
+                  "West", "West"),
+    Country   = c("USA", "USA", "Brazil", "Brazil",
+                  "France", "France"),
+    City      = c("NYC", "LA", "Sao Paulo", "Rio",
+                  "Paris", "Lyon"),
+    Date      = as.Date("2020-01-01"),
+    Target    = 1:6
+  )
+
+  result <- hierarchy_detect(
+    agent_info = make_agent_info(c("Continent", "Region", "Country", "City")),
     input_data = df,
     write_data = FALSE
   )
