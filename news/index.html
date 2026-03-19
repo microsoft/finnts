@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9033</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9034</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9033" id="finnts-0609033-development-version">finnts 0.6.0.9033 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609033-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.6.0.9034" id="finnts-0609034-development-version">finnts 0.6.0.9034 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609034-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9033">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9033"></a></h3>
+<h3 id="improvements-0-6-0-9034">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9034"></a></h3>
 <ul><li>New AI Agent Capabilities
 <ul><li>
 <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> can use LLM’s to find the optimal combination of data and inputs to create the most accurate forecast.</li>
@@ -143,7 +143,7 @@
 <li>Updated how outliers are handled in <code><a href="../reference/prep_data.html">prep_data()</a></code>. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-6-0-9033">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9033"></a></h3>
+<h3 id="bug-fixes-0-6-0-9034">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9034"></a></h3>
 <ul><li>Fixed hierarchical forecast reconciliation failure caused by floating-point Target discrepancies across models.</li>
 <li>Improved error messages during hierarchical reconciliation to include the underlying error for easier debugging.</li>
 <li>Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.</li>
@@ -154,7 +154,7 @@
 <li>Fixed model summary for global models by considering average models too.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9033">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9033"></a></h3>
+<h3 id="breaking-changes-0-6-0-9034">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9034"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 <li>Migrated from the <code>qs</code> package to <a href="https://CRAN.R-project.org/package=qs2" class="external-link"><code>qs2</code></a> for fast object serialization. The <code>qs2</code> package is actively maintained and CRAN-ready with improved compression. Files previously saved with <code>qs</code> format cannot be read by <code>qs2</code>; any cached <code>.qs</code> files from prior runs will need to be regenerated.</li>
