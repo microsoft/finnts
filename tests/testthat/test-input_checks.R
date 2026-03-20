@@ -280,6 +280,8 @@ test_that("normalize_log_df converts all columns to character", {
   expect_true(all(sapply(result, is.character)))
   expect_equal(result$a, "1")
   expect_equal(result$b, "TRUE")
+  expect_equal(result$c, "2024-01-01")
+  expect_equal(result$d, "3.14")
   expect_equal(result$e, "hello")
 })
 
