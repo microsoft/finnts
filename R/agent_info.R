@@ -244,7 +244,7 @@ set_agent_info <- function(project_info,
     # ensure column order matches so hash comparison is reliable
     prev_log_df <- prev_log_df[, colnames(current_log_df), drop = FALSE]
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df))) {
       nullable <- c(
         "external_regressors", "hist_end_date", "hist_start_date",
         "back_test_scenarios", "back_test_spacing", "combo_cleanup_date"

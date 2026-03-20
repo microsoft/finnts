@@ -236,7 +236,7 @@ prep_data <- function(run_info,
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df_aligned))) {
       diff_details <- format_input_diff(prev_log_df_aligned, current_log_df)
       stop(
         "Inputs have recently changed in 'prep_data'.\n",

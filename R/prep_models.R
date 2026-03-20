@@ -251,7 +251,7 @@ train_test_split <- function(run_info,
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) == hash_data(normalize_log_df(prev_log_df))) {
       cli::cli_alert_info("Train Test Splits Already Created")
       return(cli::cli_progress_done())
     } else {
@@ -506,7 +506,7 @@ model_workflows <- function(run_info,
       dplyr::mutate(seasonal_period = ifelse(is.numeric(seasonal_period), as.character(seasonal_period), seasonal_period)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) == hash_data(normalize_log_df(prev_log_df))) {
       cli::cli_alert_info("Model Workflows Already Created")
       return(cli::cli_progress_done())
     } else {
@@ -767,7 +767,7 @@ model_hyperparameters <- function(run_info,
       dplyr::select(colnames(current_log_df)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) == hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) == hash_data(normalize_log_df(prev_log_df))) {
       cli::cli_alert_info("Model Hyperparameters Already Created")
       return(cli::cli_progress_done())
     } else {
