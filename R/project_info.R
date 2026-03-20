@@ -223,12 +223,12 @@ set_project_info <- function(project_name = "finn_project",
       dplyr::mutate(path = gsub("synfs(/notebook)?/\\d+", "synfs", path)) %>% # remove synapse id to prevent issues
       data.frame()
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df))) {
       # separate path changes from other input changes
       current_no_path <- current_log_df[, colnames(current_log_df) != "path", drop = FALSE]
       prev_no_path <- prev_log_df[, colnames(prev_log_df) != "path", drop = FALSE]
       path_changed <- !identical(as.character(prev_log_df$path), as.character(current_log_df$path))
-      other_changed <- hash_data(current_no_path) != hash_data(prev_no_path)
+      other_changed <- hash_data(normalize_log_df(current_no_path)) != hash_data(normalize_log_df(prev_no_path))
 
       if (other_changed) {
         diff_details <- format_input_diff(prev_log_df, current_log_df)
