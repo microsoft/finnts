@@ -501,7 +501,6 @@ initial_checks <- function(agent_info) {
   new_combos <- setdiff(current_run_combos, prev_run_combos)
 
   if (length(new_combos) > 0) {
-
     # allow a limited number of new series; cap at max(10, 20% of existing)
     new_combo_limit <- max(10L, ceiling(length(prev_run_combos) * 0.20))
 

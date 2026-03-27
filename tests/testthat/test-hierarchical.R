@@ -48,15 +48,21 @@ test_that("hierarchy_detect identifies standard hierarchy (2 combo vars)", {
 test_that("hierarchy_detect identifies standard hierarchy (3 combo vars)", {
   # Region -> Country -> City: strict 3-level nesting with multiple children
   df <- tibble::tibble(
-    Region  = c("West", "West", "West", "West", "West", "West",
-                "East", "East", "East"),
-    Country = c("USA", "USA", "USA", "UK", "UK", "UK",
-                "Japan", "Japan", "Japan"),
-    City    = c("Seattle", "New York", "Stilwell",
-                "London", "Manchester", "Leeds",
-                "Tokyo", "Osaka", "Hiroshima"),
-    Date    = as.Date("2020-01-01"),
-    Target  = 1:9
+    Region = c(
+      "West", "West", "West", "West", "West", "West",
+      "East", "East", "East"
+    ),
+    Country = c(
+      "USA", "USA", "USA", "UK", "UK", "UK",
+      "Japan", "Japan", "Japan"
+    ),
+    City = c(
+      "Seattle", "New York", "Stilwell",
+      "London", "Manchester", "Leeds",
+      "Tokyo", "Osaka", "Hiroshima"
+    ),
+    Date = as.Date("2020-01-01"),
+    Target = 1:9
   )
 
   result <- hierarchy_detect(
@@ -71,16 +77,24 @@ test_that("hierarchy_detect identifies standard hierarchy (3 combo vars)", {
 test_that("hierarchy_detect identifies standard hierarchy (4 combo vars)", {
   # Continent -> Region -> Country -> City: 4-level strict nesting
   df <- tibble::tibble(
-    Continent = c("Americas", "Americas", "Americas", "Americas",
-                  "Europe", "Europe"),
-    Region    = c("North", "North", "South", "South",
-                  "West", "West"),
-    Country   = c("USA", "USA", "Brazil", "Brazil",
-                  "France", "France"),
-    City      = c("NYC", "LA", "Sao Paulo", "Rio",
-                  "Paris", "Lyon"),
-    Date      = as.Date("2020-01-01"),
-    Target    = 1:6
+    Continent = c(
+      "Americas", "Americas", "Americas", "Americas",
+      "Europe", "Europe"
+    ),
+    Region = c(
+      "North", "North", "South", "South",
+      "West", "West"
+    ),
+    Country = c(
+      "USA", "USA", "Brazil", "Brazil",
+      "France", "France"
+    ),
+    City = c(
+      "NYC", "LA", "Sao Paulo", "Rio",
+      "Paris", "Lyon"
+    ),
+    Date = as.Date("2020-01-01"),
+    Target = 1:6
   )
 
   result <- hierarchy_detect(

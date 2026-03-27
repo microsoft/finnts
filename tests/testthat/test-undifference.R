@@ -174,8 +174,10 @@ test_that("undifference_recipe handles Target_Original with mid-vector NAs", {
 
 test_that("undifference_recipe handles double differencing with mid-vector NAs", {
   recipe_data <- tibble::tibble(
-    Date = as.Date(c("2024-01-01", "2024-02-01", "2024-03-01", "2024-04-01",
-                     "2024-05-01", "2024-06-01")),
+    Date = as.Date(c(
+      "2024-01-01", "2024-02-01", "2024-03-01", "2024-04-01",
+      "2024-05-01", "2024-06-01"
+    )),
     Target = c(1, 2, 3, NA, 5, NA)
   )
 
