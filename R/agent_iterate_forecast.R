@@ -2426,8 +2426,8 @@ iterate_forecast_system_prompt <- function(agent_info,
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
       6.  HIERARCHICAL RULES
           6-A.  IF run_count == 0 then set forecast_approach="bottoms_up"
-          6-B.  IF run_count > 0 AND hiearchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-          6-C.  IF hiearchy type == "none" then set forecast_approach="bottoms_up".
+          6-B.  IF run_count > 0 AND hierarchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
+          6-C.  IF hierarchy type == "none" then set forecast_approach="bottoms_up".
           6-D.  You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
           6-E.  You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
           6-F.  You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
