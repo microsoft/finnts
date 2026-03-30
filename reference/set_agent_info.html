@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9035</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9036</span>
       </span>
     </div>
 
@@ -121,6 +121,7 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <span>  back_test_spacing <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  combo_cleanup_date <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  allow_hierarchical_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  negative_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  run_global_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  reason_llm <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -174,6 +175,10 @@ It checks for existing runs and allows for overwriting if specified.</p>
 
 <dt id="arg-allow-hierarchical-forecast">allow_hierarchical_forecast<a class="anchor" aria-label="anchor" href="#arg-allow-hierarchical-forecast"></a></dt>
 <dd><p>Logical indicating whether to allow hierarchical forecasting</p></dd>
+
+
+<dt id="arg-negative-forecast">negative_forecast<a class="anchor" aria-label="anchor" href="#arg-negative-forecast"></a></dt>
+<dd><p>If TRUE, allow forecasts to dip below zero.</p></dd>
 
 
 <dt id="arg-run-global-models">run_global_models<a class="anchor" aria-label="anchor" href="#arg-run-global-models"></a></dt>
