@@ -1119,7 +1119,7 @@ reason_inputs <- function(agent_info,
   # check if all required fields are present
   required_fields <- c(
     "models_to_run", "external_regressors", "clean_missing_values",
-    "clean_outliers", "negative_forecast", "forecast_approach",
+    "clean_outliers", "forecast_approach",
     "stationary", "feature_selection", "multistep_horizon",
     "seasonal_period", "recipes_to_run", "lag_periods",
     "rolling_window_periods", "reasoning"
@@ -1145,7 +1145,6 @@ reason_inputs <- function(agent_info,
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
-      negative_forecast = FALSE,
       forecast_approach = "bottoms_up",
       stationary = TRUE,
       feature_selection = TRUE,
@@ -1162,7 +1161,6 @@ reason_inputs <- function(agent_info,
       external_regressors = "NULL",
       clean_missing_values = TRUE,
       clean_outliers = FALSE,
-      negative_forecast = FALSE,
       forecast_approach = "bottoms_up",
       stationary = FALSE,
       feature_selection = TRUE,
@@ -1190,7 +1188,6 @@ reason_inputs <- function(agent_info,
   }
   input_list$clean_missing_values <- as.logical(input_list$clean_missing_values)
   input_list$clean_outliers <- as.logical(input_list$clean_outliers)
-  input_list$negative_forecast <- as.logical(input_list$negative_forecast)
   input_list$forecast_approach <- as.character(input_list$forecast_approach)
   input_list$stationary <- as.logical(input_list$stationary)
   input_list$feature_selection <- as.logical(input_list$feature_selection)
@@ -1214,6 +1211,13 @@ reason_inputs <- function(agent_info,
     "NULL"
   } else {
     as.numeric(strsplit(input_list$rolling_window_periods, "---")[[1]])
+  }
+
+  # inject negative_forecast from agent_info (user-controlled, not LLM-decided)
+  input_list$negative_forecast <- if (!is.null(agent_info$negative_forecast)) {
+    agent_info$negative_forecast
+  } else {
+    FALSE
   }
 
   # make sure xregs look correct
@@ -2420,74 +2424,71 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary then set stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
-      6.  NEGATIVE FORECAST RULES
-          6-A.  IF EDA shows significant amount of negative values then set negative_forecast="TRUE".
-          6-B.  IF no negative values are present then set negative_forecast="FALSE".
-      7. HIERARCHICAL RULES
-          7-A. IF run_count == 0 then set forecast_approach="bottoms_up"
-          7-B. IF run_count > 0 AND hiearchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-          7-C. IF hiearchy type == "none" then set forecast_approach="bottoms_up".
-          7-D. You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
-          7-E. You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
-          7-F. You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
-      8. MISSING VALUES RULES
-          8-A. IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
-          8-B. IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
-          8-C. ALWAYS use "FALSE" if no missing values are detected
-      9. OUTLIER RULES
-          9-A. IF outliers are present AND run_count == 0 then set clean_outliers="FALSE"
-          9-B. IF outliers are present AND run_count > 0 AND *Step C is complete* then set clean_outliers="TRUE"
-          9-C. ALWAYS use "FALSE" if no outliers are detected
-      10. EXTERNAL REGRESSOR RULES
-          10-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
-          10-B. IF adding external regressors AND run_count == 0 then set external_regressors="NULL"
-          10-C  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run.
-          10-D. ALWAYS use "NULL" if no external regressors are needed.
-          10-E. ALWAYS start with the most promising external regressors based on distance correlation results.
-          10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used.
-          10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
-          10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
-          10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
-      11. FEATURE LAG RULES
-          11-A. IF run_count == 0 then set lag_periods = "NULL"
-          11-B. IF run_count > 0 AND *Step E is complete* -> use ACF and PCF results from EDA to select lag_periods.
-          11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
-          11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-          11-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
-          11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
-      12. ROLLING WINDOW LAGS
-          12-A. IF run_count == 0 then set rolling_window_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step F is complete* then set rolling_window_periods = "NULL" or a list of periods separated by "---".
-          12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
-          12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
-      13. PREVIOUS VERSION REPLAY RULES
-          13-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
+      6.  HIERARCHICAL RULES
+          6-A.  IF run_count == 0 then set forecast_approach="bottoms_up"
+          6-B.  IF run_count > 0 AND hierarchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
+          6-C.  IF hierarchy type == "none" then set forecast_approach="bottoms_up".
+          6-D.  You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
+          6-E.  You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
+          6-F.  You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
+      7.  MISSING VALUES RULES
+          7-A.  IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
+          7-B.  IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
+          7-C.  ALWAYS use "FALSE" if no missing values are detected
+      8.  OUTLIER RULES
+          8-A.  IF outliers are present AND run_count == 0 then set clean_outliers="FALSE"
+          8-B.  IF outliers are present AND run_count > 0 AND *Step C is complete* then set clean_outliers="TRUE"
+          8-C.  ALWAYS use "FALSE" if no outliers are detected
+      9.  EXTERNAL REGRESSOR RULES
+          9-A.  When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
+          9-B.  IF adding external regressors AND run_count == 0 then set external_regressors="NULL"
+          9-C.  IF adding external regressors AND run_count > 0 AND *Step D is complete*, add ONLY ONE new external regressor variable per run.
+          9-D.  ALWAYS use "NULL" if no external regressors are needed.
+          9-E.  ALWAYS start with the most promising external regressors based on distance correlation results.
+          9-F.  ALWAYS set feature_selection="TRUE" if any external regressors are used.
+          9-G.  IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
+          9-H.  ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
+          9-I.  You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
+          9-J.  IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+      10. FEATURE LAG RULES
+          10-A. IF run_count == 0 then set lag_periods = "NULL"
+          10-B. IF run_count > 0 AND *Step E is complete* -> use ACF and PCF results from EDA to select lag_periods.
+          10-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
+          10-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
+          10-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
+          10-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
+          10-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+      11. ROLLING WINDOW LAGS
+          11-A. IF run_count == 0 then set rolling_window_periods = "NULL"
+          11-B. IF run_count > 0 AND *Step F is complete* then set rolling_window_periods = "NULL" or a list of periods separated by "---".
+          11-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
+          11-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
+          11-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+      12. PREVIOUS VERSION REPLAY RULES
+          12-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
           YOU MUST first try the **full input set** from the best run of the most-recent previous agent version.
-          13-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
-          13-C. AFTER following 13-A AND 13-B, you MUST follow the decision tree below to propose a new set of parameters.
-          13-D. Using the full input set from a previous run counts as ONE parameter change.
-      14. An example value of "NULL|var1---var2" means YOU MUST either
+          12-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
+          12-C. AFTER following 12-A AND 12-B, you MUST follow the decision tree below to propose a new set of parameters.
+          12-D. Using the full input set from a previous run counts as ONE parameter change.
+      13. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
-      15. DECISION TREE RULES
-          15-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-          15-B. YOU MUST stop at the first step where a rule applies that has not been tried.
-          15-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
-          15-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
-      16. ABORT RULES
-          16-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
-          16-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
+      14. DECISION TREE RULES
+          14-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
+          14-B. YOU MUST stop at the first step where a rule applies that has not been tried.
+          14-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
+          14-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
+      15. ABORT RULES
+          15-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
+          15-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
 
-      -----ORDER OF OPERATIONS DECISION TREE (Rule 15)-----
-      Step A (Previous Version Replay - Rule 13)
-      -> Step B (Hierarchy - Rule 7)
-      -> Step C (Missing Values - Rule 8)
-      -> Step D (Outliers - Rule 9)
-      -> Step E (External Regressors - Rule 10)
-      -> Step F (Feature Lags - Rule 11)
-      -> Step G (Rolling Window Lags - Rule 12)
+      -----ORDER OF OPERATIONS DECISION TREE (Rule 14)-----
+      Step A (Previous Version Replay - Rule 12)
+      -> Step B (Hierarchy - Rule 6)
+      -> Step C (Missing Values - Rule 7)
+      -> Step D (Outliers - Rule 8)
+      -> Step E (External Regressors - Rule 9)
+      -> Step F (Feature Lags - Rule 10)
+      -> Step G (Rolling Window Lags - Rule 11)
 
       -----OUTPUT FORMAT-----
       <scratchpad>
@@ -2500,7 +2501,6 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "negative_forecast"     : "TRUE|FALSE",
         "forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy",
         "stationary"            : "TRUE|FALSE",
         "feature_selection"     : "TRUE|FALSE",
@@ -2509,7 +2509,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "rolling_window_periods" : "NULL|1---2---3",
         "reasoning"             : "...<=250 words..."
       }
-      // ---- abort schema (Rule 16) ----
+      // ---- abort schema (Rule 15) ----
       {
         "abort"     : "TRUE",
         "reasoning" : "...<=250 words explaining why no further improvement is likely..."
@@ -2559,83 +2559,80 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
       4.  IF data is not stationary -> stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 -> multistep_horizon="TRUE".
-      6.  NEGATIVE FORECAST RULES
-          8-A.  IF EDA shows significant amount of negative values -> negative_forecast="TRUE".
-          8-B.  IF no negative values are present -> negative_forecast="FALSE".
-      7.  MISSING VALUES RULES
-          10-A. IF missing values are present AND run_count == 0 AND *Step A is complete* -> clean_missing_values="FALSE"
-          10-B. IF missing values are present AND run_count > 0 -> clean_missing_values="TRUE"
-          10-C. ALWAYS use "FALSE" if no missing values are detected
-      8.  OUTLIER RULES
-          11-A. IF outliers are present AND run_count == 0 -> clean_outliers="FALSE"
-          11-C. ALWAYS use "FALSE" if no outliers are detected
-      9.  SEASONAL PERIOD RULES
-          9-A. IF run_count == 0 -> seasonal_period = "NULL"
-          9-B. IF run_count > 0 AND *Step C is complete* -> seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
-          9-C. You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
-          9-D. A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
-          9-E. There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
-          9-F. Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
-      10. FULL MODEL SWEEP RULES
-          10-A. IF run_count == 0 -> models_to_run = "<<models_rule_10a>>"
-          10-B. IF run_count > 0 AND *Step D is complete* -> models_to_run = "<<models_rule_10b>>"
-          10-C. AFTER applying rule 10-B, if wmape goal was not met -> models_to_run = "<<models_rule_10c>>"
-      11. EXTERNAL REGRESSOR RULES
-          11-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
-          11-B. IF adding external regressors AND run_count == 0 -> external_regressors="NULL"
-          11-C  IF adding external regressors AND run_count > 0 AND *Step E is complete*, add ONLY ONE new external regressor variable per run.
-          11-D. ALWAYS use "NULL" if no external regressors are needed.
-          11-E. ALWAYS start with the most promising external regressors based on distance correlation results.
-          11-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
-          11-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
-          11-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          11-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
-          11-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
-      12. FEATURE LAG RULES
-          12-A. IF run_count == 0 -> lag_periods = "NULL"
-          12-B. IF run_count > 0 AND *Step F is complete* -> use ACF and PCF results from EDA to select lag_periods.
-          12-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
-          12-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-          12-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          12-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
-          12-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
-      13. ROLLING WINDOW LAGS
-          13-A. IF run_count == 0 -> rolling_window_periods = "NULL"
-          13-B. IF run_count > 0 AND *Step G is complete* -> rolling_window_periods = "NULL" or a list of periods separated by "---".
-          13-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          13-D. A value of "NULL" means that rolling window lags are dedaulted to <<rolling_default>>.
-          13-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
-      14. RECIPE RULES
-          14-A. IF run_count == 0 -> recipes_to_run = "R1"
-          14-B. IF run_count > 0 AND *Step H is complete* -> recipes_to_run = "NULL" or "R1"
-          14-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
-      15. PREVIOUS VERSION REPLAY RULES
-          15-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
+      6.  MISSING VALUES RULES
+          6-A.  IF missing values are present AND run_count == 0 AND *Step A is complete* -> clean_missing_values="FALSE"
+          6-B.  IF missing values are present AND run_count > 0 -> clean_missing_values="TRUE"
+          6-C.  ALWAYS use "FALSE" if no missing values are detected
+      7.  OUTLIER RULES
+          7-A.  IF outliers are present AND run_count == 0 -> clean_outliers="FALSE"
+          7-B.  ALWAYS use "FALSE" if no outliers are detected
+      8.  SEASONAL PERIOD RULES
+          8-A.  IF run_count == 0 -> seasonal_period = "NULL"
+          8-B.  IF run_count > 0 AND *Step C is complete* -> seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
+          8-C.  You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
+          8-D.  A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
+          8-E.  There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
+          8-F.  Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
+      9.  FULL MODEL SWEEP RULES
+          9-A.  IF run_count == 0 -> models_to_run = "<<models_rule_10a>>"
+          9-B.  IF run_count > 0 AND *Step D is complete* -> models_to_run = "<<models_rule_10b>>"
+          9-C.  AFTER applying rule 9-B, if wmape goal was not met -> models_to_run = "<<models_rule_10c>>"
+      10. EXTERNAL REGRESSOR RULES
+          10-A. When choosing external_regressors, YOU MUST only select from the external regressors listed in the metadata. Separate multiple regressors with "---".
+          10-B. IF adding external regressors AND run_count == 0 -> external_regressors="NULL"
+          10-C. IF adding external regressors AND run_count > 0 AND *Step E is complete*, add ONLY ONE new external regressor variable per run.
+          10-D. ALWAYS use "NULL" if no external regressors are needed.
+          10-E. ALWAYS start with the most promising external regressors based on distance correlation results.
+          10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
+          10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
+          10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
+          10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
+          10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+      11. FEATURE LAG RULES
+          11-A. IF run_count == 0 -> lag_periods = "NULL"
+          11-B. IF run_count > 0 AND *Step F is complete* -> use ACF and PCF results from EDA to select lag_periods.
+          11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
+          11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
+          11-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
+          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
+          11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+      12. ROLLING WINDOW LAGS
+          12-A. IF run_count == 0 -> rolling_window_periods = "NULL"
+          12-B. IF run_count > 0 AND *Step G is complete* -> rolling_window_periods = "NULL" or a list of periods separated by "---".
+          12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
+          12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
+          12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+      13. RECIPE RULES
+          13-A. IF run_count == 0 -> recipes_to_run = "R1"
+          13-B. IF run_count > 0 AND *Step H is complete* -> recipes_to_run = "NULL" or "R1"
+          13-C. A value of "NULL" means that recipes are defaulted to <<recipe_default>>.
+      14. PREVIOUS VERSION REPLAY RULES
+          14-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
           YOU MUST first try the **full input set** from the best run of the most-recent previous agent version.
-          15-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
-          15-C. AFTER following 15-A AND 15-B, you MUST follow the decision tree below to propose a new set of parameters.
-          15-D. Using the full input set from a previous run counts as ONE parameter change.
-      16. An example value of "NULL|var1---var2" means YOU MUST either
+          14-B. IF that set has already been tried in the current version AND run_count < 4, choose the next best run, and so on.
+          14-C. AFTER following 14-A AND 14-B, you MUST follow the decision tree below to propose a new set of parameters.
+          14-D. Using the full input set from a previous run counts as ONE parameter change.
+      15. An example value of "NULL|var1---var2" means YOU MUST either
           include "NULL" or a list of variables separated by "---". NOT both.
-      17. DECISION TREE RULES
-          17-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
-          17-B. YOU MUST stop at the first step where a rule applies that has not been tried.
-          17-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
-          17-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
-      18. ABORT RULES
-          18-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
-          18-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
+      16. DECISION TREE RULES
+          16-A. YOU MUST follow the order of operations (decision tree) below when deciding on parameters.
+          16-B. YOU MUST stop at the first step where a rule applies that has not been tried.
+          16-C. YOU MUST exhaust all ideas on a step before moving to the next step in the decision tree.
+          16-D. YOU MUST learn from previous agent_version runs and EDA results to avoid repeating params that have not worked in the past.
+      17. ABORT RULES
+          17-A. AFTER completing the decision tree of options, ABORT IF you cannot propose a set that you believe will beat the weighted mape goal based on EDA results and weighted_mape from previous runs.
+          17-B. IF you ABORT, output the *abort-schema* instead of the normal parameter schema.
 
-      -----ORDER OF OPERATIONS DECISION TREE (Rule 17)-----
-      Step A (Previous Version Replay - Rule 15)
-      -> Step B (Missing Values - Rule 7)
-      -> Step C (Outliers - Rule 8)
-      -> Step D (Seasonal Period - Rule 9)
-      -> Step E (Full Model Sweep - Rule 10)
-      -> Step F (External Regressors - Rule 11)
-      -> Step G (Feature Lags - Rule 12)
-      -> Step H (Rolling Window Lags - Rule 13)
-      -> Step I (Recipes - Rule 14)
+      -----ORDER OF OPERATIONS DECISION TREE (Rule 16)-----
+      Step A (Previous Version Replay - Rule 14)
+      -> Step B (Missing Values - Rule 6)
+      -> Step C (Outliers - Rule 7)
+      -> Step D (Seasonal Period - Rule 8)
+      -> Step E (Full Model Sweep - Rule 9)
+      -> Step F (External Regressors - Rule 10)
+      -> Step G (Feature Lags - Rule 11)
+      -> Step H (Rolling Window Lags - Rule 12)
+      -> Step I (Recipes - Rule 13)
 
       -----OUTPUT FORMAT-----
       <scratchpad>
@@ -2648,7 +2645,6 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "negative_forecast"     : "TRUE|FALSE",
         "seasonal_period"       : "NULL|1---2---3",
         "models_to_run"         : "arima---ets---tbats---snaive---stlm-arima---xgboost",
         "stationary"            : "TRUE|FALSE",
@@ -2659,7 +2655,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "recipes_to_run"        : "R1|NULL",
         "reasoning"             : "...<=250 words..."
       }
-      // ---- abort schema (Rule 18) ----
+      // ---- abort schema (Rule 17) ----
       {
         "abort"     : "TRUE",
         "reasoning" : "...<=250 words explaining why no further improvement is likely..."

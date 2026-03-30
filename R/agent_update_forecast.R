@@ -501,7 +501,6 @@ initial_checks <- function(agent_info) {
   new_combos <- setdiff(current_run_combos, prev_run_combos)
 
   if (length(new_combos) > 0) {
-
     # allow a limited number of new series; cap at max(10, 20% of existing)
     new_combo_limit <- max(10L, ceiling(length(prev_run_combos) * 0.20))
 
@@ -1109,7 +1108,7 @@ forecast_new_combos <- function(agent_info,
     external_regressors = "NULL",
     clean_missing_values = TRUE,
     clean_outliers = FALSE,
-    negative_forecast = FALSE,
+    negative_forecast = if (!is.null(agent_info$negative_forecast)) agent_info$negative_forecast else FALSE,
     forecast_approach = "bottoms_up",
     stationary = TRUE,
     feature_selection = FALSE,

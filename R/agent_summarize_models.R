@@ -7927,9 +7927,9 @@ chronos2_permutation_importance <- function(chronos2_obj,
   # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
   # we cannot pass these directly as train/target to vip because
   # chronos2_model_predict_impl filters object$train_data to dates before
-  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip, 
-  #the prediction would be made on the same data and then filtered to nothing, 
-  #causing errors or zero rows.
+  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip,
+  # the prediction would be made on the same data and then filtered to nothing,
+  # causing errors or zero rows.
 
   # Instead, we use a holdout split: last h rows per combo become the
   # permutation surface (train_x/train_y for vip), and the earlier portion

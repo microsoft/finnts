@@ -546,8 +546,10 @@ test_that("chronos2_permutation_importance returns NULL when no _original column
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -567,8 +569,10 @@ test_that("chronos2_permutation_importance returns NULL when required columns mi
   )
 
   obj <- structure(
-    list(train_data = data.frame(Combo = "A", y = rnorm(12)),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Combo = "A", y = rnorm(12)),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -589,8 +593,10 @@ test_that("chronos2_permutation_importance returns NULL when too few rows per co
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -614,8 +620,10 @@ test_that("chronos2_permutation_importance computes importance with API", {
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -638,15 +646,21 @@ test_that("chronos2_permutation_importance works with multiple regressors", {
   y_vals <- 100 + 2 * temp + 5 * fuel + rnorm(n, sd = 3)
 
   mold <- list(
-    predictors = data.frame(Date = dates, Combo = "A",
-                            temperature_original = temp, fuel_price_original = fuel),
+    predictors = data.frame(
+      Date = dates, Combo = "A",
+      temperature_original = temp, fuel_price_original = fuel
+    ),
     outcomes = tibble::tibble(y = y_vals)
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals,
-                                 temperature_original = temp, fuel_price_original = fuel),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(
+        Date = dates, Combo = "A", y = y_vals,
+        temperature_original = temp, fuel_price_original = fuel
+      ),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -674,8 +688,10 @@ test_that("chronos2_permutation_importance works with multiple combos", {
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
