@@ -1825,9 +1825,10 @@ fit_models <- function(run_info,
     }
 
     # adjust workflow if forecast horizon changes for multistep model
-    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models() & !is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
-      updated_model_spec <- workflow %>%
-        workflows::extract_spec_parsnip() %>%
+    workflow_spec <- workflows::extract_spec_parsnip(workflow)
+    is_multistep_spec <- any(grepl("_multistep", class(workflow_spec)))
+    if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & is_multistep_spec & !is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon) {
+      updated_model_spec <- workflow_spec %>%
         update(
           forecast_horizon = forecast_horizon,
           lag_periods = get_lag_periods(
@@ -1874,11 +1875,6 @@ fit_models <- function(run_info,
 
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
-
-        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
-          updated_model_spec <- updated_model_spec %>%
-            update(selected_features = fs_list)
-        }
       } else {
         if ("Target_Original" %in% colnames(prep_data)) {
           fs_list <- prep_data %>%
@@ -1892,14 +1888,18 @@ fit_models <- function(run_info,
 
         updated_model_spec <- workflow %>%
           workflows::extract_spec_parsnip()
-
-        if (isTRUE(prev_run_log_tbl$multistep_horizon)) {
-          updated_model_spec <- updated_model_spec %>%
-            update(selected_features = NULL)
-        }
       }
 
-      if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & model %in% list_multistep_models()) {
+      is_multistep_spec <- any(grepl("_multistep", class(updated_model_spec)))
+      if (isTRUE(prev_run_log_tbl$feature_selection) & is_multistep_spec) {
+        updated_model_spec <- updated_model_spec %>%
+          update(selected_features = fs_list)
+      } else if (is_multistep_spec) {
+        updated_model_spec <- updated_model_spec %>%
+          update(selected_features = NULL)
+      }
+
+      if (isTRUE(prev_run_log_tbl$multistep_horizon) & data_prep_recipe == "R1" & is_multistep_spec) {
         final_features_list <- unique(unlist(fs_list, use.names = FALSE))
         final_features_list <- (unique(c(final_features_list, "Date", "Date_index.num")))
 
