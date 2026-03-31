@@ -140,6 +140,8 @@ test_that("set_agent_info creates valid agent info object", {
   expect_true("run_id" %in% names(agent_info))
   expect_true("agent_version" %in% names(agent_info))
   expect_true("forecast_approach" %in% names(agent_info))
+  expect_true("negative_forecast" %in% names(agent_info))
+  expect_equal(agent_info$negative_forecast, FALSE)
 })
 
 test_that("set_agent_info validates inputs correctly", {
@@ -175,6 +177,18 @@ test_that("set_agent_info validates inputs correctly", {
       forecast_horizon = 3
     ),
     "input_data"
+  )
+
+  # Test invalid negative_forecast
+  expect_error(
+    set_agent_info(
+      project_info = project,
+      driver_llm = driver_llm,
+      input_data = test_data_single,
+      forecast_horizon = 3,
+      negative_forecast = "yes"
+    ),
+    "negative_forecast"
   )
 })
 

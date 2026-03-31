@@ -891,7 +891,10 @@ analyze_results <- function(agent_info) {
 
     if (nrow(temp_run_results) > 0) {
       if (length(unique(temp_run_results$combo)) == length(temp_combo_list)) { # ensure version finished successfully
-        previous_best_run_tbl <- plyr::rbind.fill(previous_best_run_tbl, temp_run_results)
+        previous_best_run_tbl <- dplyr::bind_rows(
+          previous_best_run_tbl,
+          temp_run_results %>% dplyr::select(combo, weighted_mape)
+        )
         counter <- counter + 1
       }
     }
@@ -1105,7 +1108,7 @@ forecast_new_combos <- function(agent_info,
     external_regressors = "NULL",
     clean_missing_values = TRUE,
     clean_outliers = FALSE,
-    negative_forecast = FALSE,
+    negative_forecast = if (!is.null(agent_info$negative_forecast)) agent_info$negative_forecast else FALSE,
     forecast_approach = "bottoms_up",
     stationary = TRUE,
     feature_selection = FALSE,

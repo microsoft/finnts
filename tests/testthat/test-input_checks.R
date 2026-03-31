@@ -264,3 +264,65 @@ test_that("format_input_diff reports changed fields", {
   result4 <- format_input_diff(prev_na, curr_na, nullable_fields = "external_regressors")
   expect_match(result4, "expected.*NULL.*got.*xreg1")
 })
+
+# * Test normalize_log_df ----
+
+test_that("normalize_log_df converts all columns to character", {
+  df <- data.frame(
+    a = 1L,
+    b = TRUE,
+    c = as.Date("2024-01-01"),
+    d = 3.14,
+    e = "hello",
+    stringsAsFactors = FALSE
+  )
+  result <- normalize_log_df(df)
+  expect_true(all(sapply(result, is.character)))
+  expect_equal(result$a, "1")
+  expect_equal(result$b, "TRUE")
+  expect_equal(result$c, "2024-01-01")
+  expect_equal(result$d, "3.14")
+  expect_equal(result$e, "hello")
+})
+
+test_that("normalize_log_df produces identical hashes for type-different but value-same data frames", {
+  # simulate in-memory construction (native types)
+  current <- data.frame(
+    clean_missing_values = TRUE,
+    forecast_horizon = 3L,
+    hist_start_date = as.Date("2024-01-01"),
+    combo_variables = "region--segment",
+    stringsAsFactors = FALSE
+  )
+  # simulate CSV round-trip (auto-guessed types from vroom/read.csv)
+  prev <- data.frame(
+    clean_missing_values = "TRUE",
+    forecast_horizon = 3.0,
+    hist_start_date = "2024-01-01",
+    combo_variables = "region--segment",
+    stringsAsFactors = FALSE
+  )
+  # raw hashes should differ due to type differences
+  expect_false(hash_data(current) == hash_data(prev))
+  # normalized hashes should match since values are the same
+  expect_equal(
+    hash_data(normalize_log_df(current)),
+    hash_data(normalize_log_df(prev))
+  )
+})
+
+test_that("normalize_log_df still detects actual value changes", {
+  df1 <- data.frame(
+    forecast_horizon = 3,
+    date_type = "month",
+    stringsAsFactors = FALSE
+  )
+  df2 <- data.frame(
+    forecast_horizon = 6,
+    date_type = "month",
+    stringsAsFactors = FALSE
+  )
+  expect_false(
+    hash_data(normalize_log_df(df1)) == hash_data(normalize_log_df(df2))
+  )
+})

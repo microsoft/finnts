@@ -124,7 +124,7 @@ final_models <- function(run_info,
       dplyr::select(tidyselect::all_of(cols_check_list)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df_aligned)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df_aligned))) {
       diff_details <- format_input_diff(prev_log_df_aligned, current_log_df)
       stop(
         "Inputs have recently changed in 'final_models'.\n",

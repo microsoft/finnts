@@ -18,6 +18,7 @@
 #' @param run_global_models If TRUE, run multivariate models on the entire data
 #'   set (across all time series) as a global model. Default of NULL runs global models for all date types
 #'   except week and day.
+#' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models. Default is TRUE.
 #' @param reason_llm Optional Chat LLM object for reasoning tasks
@@ -63,6 +64,7 @@ set_agent_info <- function(project_info,
                            back_test_spacing = NULL,
                            combo_cleanup_date = NULL,
                            allow_hierarchical_forecast = FALSE,
+                           negative_forecast = FALSE,
                            run_global_models = NULL,
                            run_local_models = TRUE,
                            reason_llm = NULL,
@@ -85,6 +87,7 @@ set_agent_info <- function(project_info,
   check_input_type("back_test_spacing", back_test_spacing, c("numeric", "NULL"))
   check_input_type("combo_cleanup_date", combo_cleanup_date, c("Date", "NULL"))
   check_input_type("allow_hierarchical_forecast", allow_hierarchical_forecast, "logical")
+  check_input_type("negative_forecast", negative_forecast, "logical")
   check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
   check_input_type("run_local_models", run_local_models, "logical")
   check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
@@ -200,6 +203,7 @@ set_agent_info <- function(project_info,
         combo_cleanup_date
       },
       allow_hierarchical_forecast = allow_hierarchical_forecast,
+      negative_forecast = negative_forecast,
       forecast_approach = forecast_approach,
       run_global_models = run_global_models,
       run_local_models = run_local_models
@@ -236,6 +240,8 @@ set_agent_info <- function(project_info,
         }
       } else if (col == "run_local_models") {
         prev_log_df$run_local_models <- TRUE
+      } else if (col == "negative_forecast") {
+        prev_log_df$negative_forecast <- FALSE
       } else {
         prev_log_df[[col]] <- current_log_df[[col]]
       }
@@ -244,7 +250,7 @@ set_agent_info <- function(project_info,
     # ensure column order matches so hash comparison is reliable
     prev_log_df <- prev_log_df[, colnames(current_log_df), drop = FALSE]
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df))) {
       nullable <- c(
         "external_regressors", "hist_end_date", "hist_start_date",
         "back_test_scenarios", "back_test_spacing", "combo_cleanup_date"
@@ -290,6 +296,7 @@ set_agent_info <- function(project_info,
         as.Date(prev_log_df$combo_cleanup_date)
       },
       forecast_approach = prev_log_df$forecast_approach,
+      negative_forecast = as.logical(prev_log_df$negative_forecast),
       run_global_models = prev_log_df$run_global_models,
       run_local_models = prev_log_df$run_local_models,
       overwrite = overwrite
@@ -356,6 +363,7 @@ set_agent_info <- function(project_info,
       back_test_spacing = back_test_spacing,
       combo_cleanup_date = combo_cleanup_date,
       forecast_approach = forecast_approach,
+      negative_forecast = negative_forecast,
       run_global_models = run_global_models,
       run_local_models = run_local_models,
       overwrite = overwrite
@@ -374,6 +382,7 @@ set_agent_info <- function(project_info,
       back_test_spacing = ifelse(is.null(back_test_spacing), NA_real_, as.numeric(back_test_spacing)),
       combo_cleanup_date = ifelse(is.null(combo_cleanup_date), NA_character_, as.character(combo_cleanup_date)),
       forecast_approach = forecast_approach,
+      negative_forecast = negative_forecast,
       run_global_models = run_global_models,
       run_local_models = run_local_models
     )
@@ -419,6 +428,7 @@ set_agent_info <- function(project_info,
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
 #' @param allow_hierarchical_forecast Logical indicating whether to allow hierarchical forecasting
+#' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param run_global_models If TRUE, run multivariate models on the entire data
 #'   set (across all time series) as a global model. Default of NULL runs global models for all date types
 #'   except week and day.
@@ -443,6 +453,7 @@ set_agent_info_custom <- function(project_info,
                                   back_test_spacing = NULL,
                                   combo_cleanup_date = NULL,
                                   allow_hierarchical_forecast = FALSE,
+                                  negative_forecast = FALSE,
                                   run_global_models = NULL,
                                   run_local_models = TRUE,
                                   reason_llm = NULL,
@@ -471,6 +482,7 @@ set_agent_info_custom <- function(project_info,
     back_test_spacing = back_test_spacing,
     combo_cleanup_date = combo_cleanup_date,
     allow_hierarchical_forecast = allow_hierarchical_forecast,
+    negative_forecast = negative_forecast,
     run_global_models = run_global_models,
     run_local_models = run_local_models,
     reason_llm = reason_llm,

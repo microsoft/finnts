@@ -249,7 +249,7 @@ train_models <- function(run_info,
       dplyr::select(tidyselect::all_of(cols_check_list)) %>%
       data.frame()
 
-    if (hash_data(current_log_df) != hash_data(prev_log_df)) {
+    if (hash_data(normalize_log_df(current_log_df)) != hash_data(normalize_log_df(prev_log_df))) {
       diff_details <- format_input_diff(prev_log_df, current_log_df)
       stop(
         "Inputs have recently changed in 'train_models'.\n",
@@ -1006,6 +1006,31 @@ create_splits <- function(data, train_test_splits) {
   return(resamples)
 }
 
+#' Safe wrapper around timetk::diff_inv_vec
+#'
+#' timetk::diff_inv_vec silently drops mid-vector NAs, returning a shorter
+#' vector than the input. This wrapper preserves the original length by
+#' temporarily replacing non-leading NAs with 0 before undifferencing,
+#' then restoring NA at those positions.
+#'
+#' @param x numeric vector (differenced values, with leading NAs)
+#' @param num_diffs number of differences applied
+#' @param initial_value initial values for undifferencing
+#'
+#' @return numeric vector of the same length as x
+#' @noRd
+safe_diff_inv_vec <- function(x, num_diffs, initial_value) {
+  mid_na <- which(is.na(x) & seq_along(x) > num_diffs)
+  if (length(mid_na) > 0) {
+    x[mid_na] <- 0
+  }
+  result <- timetk::diff_inv_vec(x, difference = num_diffs, initial_values = initial_value)
+  if (length(mid_na) > 0) {
+    result[mid_na] <- NA_real_
+  }
+  result
+}
+
 #' Function to undifference forecast data
 #'
 #' @param forecast_data forecast data
@@ -1101,16 +1126,16 @@ undifference_forecast <- function(forecast_data,
         target_tbl <- combined_data %>%
           dplyr::select(-Forecast) %>%
           dplyr::filter(Date < fcst_start_date) %>%
-          dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
+          dplyr::mutate(Target = safe_diff_inv_vec(Target, num_diffs, initial_value))
       } else {
         target_tbl <- combined_data %>%
           dplyr::select(-Forecast) %>%
-          dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
+          dplyr::mutate(Target = safe_diff_inv_vec(Target, num_diffs, initial_value))
       }
 
       forecast_tbl <- combined_data %>%
         dplyr::select(-Target) %>%
-        dplyr::mutate(Forecast = timetk::diff_inv_vec(Forecast, difference = num_diffs, initial_values = initial_value))
+        dplyr::mutate(Forecast = safe_diff_inv_vec(Forecast, num_diffs, initial_value))
 
       final_forecast <- fcst_temp_tbl %>%
         dplyr::select(-Target, -Forecast) %>%
@@ -1163,7 +1188,7 @@ undifference_recipe <- function(recipe_data,
   # undifference the data
   undiff_recipe_data <- recipe_data %>%
     dplyr::filter(Date <= hist_end_date) %>%
-    dplyr::mutate(Target = timetk::diff_inv_vec(Target, difference = num_diffs, initial_values = initial_value))
+    dplyr::mutate(Target = safe_diff_inv_vec(Target, num_diffs, initial_value))
 
   # undifference Target_Original col if it exists
   if ("Target_Original" %in% colnames(undiff_recipe_data)) {
@@ -1174,7 +1199,7 @@ undifference_recipe <- function(recipe_data,
     }
 
     undiff_recipe_data <- undiff_recipe_data %>%
-      dplyr::mutate(Target_Original = timetk::diff_inv_vec(Target_Original, difference = num_diffs, initial_values = initial_value))
+      dplyr::mutate(Target_Original = safe_diff_inv_vec(Target_Original, num_diffs, initial_value))
   }
 
   # combine with future data and return

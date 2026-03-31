@@ -138,6 +138,7 @@ agent <- set_agent_info(
   forecast_horizon = 6, # number of future periods
   external_regressors = NULL, # e.g., c("Price","Promo")
   allow_hierarchical_forecast = FALSE, # set TRUE to let agent use hierarchies
+  negative_forecast = FALSE, # set TRUE to allow forecasts below zero
   overwrite = TRUE # start a fresh run_id if inputs changed
 )
 ```

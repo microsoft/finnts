@@ -16,6 +16,7 @@ set_agent_info(
   back_test_spacing = NULL,
   combo_cleanup_date = NULL,
   allow_hierarchical_forecast = FALSE,
+  negative_forecast = FALSE,
   run_global_models = NULL,
   run_local_models = TRUE,
   reason_llm = NULL,
@@ -44,6 +45,8 @@ set_agent_info(
 \item{combo_cleanup_date}{Optional Date object for combo cleanup}
 
 \item{allow_hierarchical_forecast}{Logical indicating whether to allow hierarchical forecasting}
+
+\item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 
 \item{run_global_models}{If TRUE, run multivariate models on the entire data
 set (across all time series) as a global model. Default of NULL runs global models for all date types

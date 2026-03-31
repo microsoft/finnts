@@ -1,3 +1,17 @@
+#' Normalize a data frame to all-character columns for reliable hashing
+#'
+#' Converts every column to character so that type differences introduced
+#' by CSV round-trips (e.g. logical vs character, integer vs double) do not
+#' cause false-positive hash mismatches.
+#'
+#' @param df a data frame
+#' @return a data.frame with all columns as character
+#' @noRd
+normalize_log_df <- function(df) {
+  df[] <- lapply(df, as.character)
+  data.frame(df, stringsAsFactors = FALSE)
+}
+
 #' Format differences between two single-row log data frames
 #'
 #' @param prev_log_df previous log data frame (1 row)
