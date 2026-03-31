@@ -121,7 +121,9 @@ summarize_models <- function(agent_info,
     "nnetar-xregs" = summarize_model_nnetar,
     "prophet-xregs" = summarize_model_prophet,
     "timegpt" = summarize_model_timegpt,
-    "chronos2" = summarize_model_chronos2
+    "chronos2" = summarize_model_chronos2,
+    "chronos-bolt-base" = summarize_model_chronos_bolt_base,
+    "chronos-bolt-tiny" = summarize_model_chronos_bolt_tiny
   )
 
   # Setup parallel processing
@@ -7927,9 +7929,9 @@ chronos2_permutation_importance <- function(chronos2_obj,
   # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
   # we cannot pass these directly as train/target to vip because
   # chronos2_model_predict_impl filters object$train_data to dates before
-  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip, 
-  #the prediction would be made on the same data and then filtered to nothing, 
-  #causing errors or zero rows.
+  # min(new_data$Date). Since mold dates overlap completely with train_data passed as train to vip,
+  # the prediction would be made on the same data and then filtered to nothing,
+  # causing errors or zero rows.
 
   # Instead, we use a holdout split: last h rows per combo become the
   # permutation surface (train_x/train_y for vip), and the earlier portion
@@ -8153,6 +8155,172 @@ summarize_model_chronos2 <- function(wf) {
 
     # Model type
     eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos2"))
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize a Chronos Bolt Base Workflow
+#'
+#' Extracts and summarizes key information from a fitted Chronos Bolt Base workflow.
+#' Unlike Chronos 2, Chronos Bolt Base does not support external regressors, so
+#' no importance or regressor sections are included.
+#'
+#' @param wf A fitted tidymodels workflow containing a chronos_bolt_base_model()
+#'   model with engine 'chronos_bolt_base_model'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_model_chronos_bolt_base <- function(wf) {
+  digits <- 6
+
+  if (!inherits(wf, "workflow")) stop("summarize_model_chronos_bolt_base() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "chronos_bolt_base_model")) {
+    stop("summarize_model_chronos_bolt_base() only supports chronos_bolt_base_model() with engine 'chronos_bolt_base_model'.")
+  }
+
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
+      return(format(rounded, scientific = FALSE, trim = TRUE))
+    }
+    as.character(x)
+  }
+
+  # Predictors / outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # No preprocessing steps for Chronos Bolt Base
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Model arguments
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  is_bolt_base_fit <- function(o) {
+    inherits(o, "chronos_bolt_base_model_fit") || (is.list(o) && !is.null(o$train_data) && !is.null(o$forecast_horizon))
+  }
+  bolt_obj <- .find_obj(fit$fit, is_bolt_base_fit, 6)
+  if (is.null(bolt_obj) && is_bolt_base_fit(fit$fit)) bolt_obj <- fit$fit
+
+  if (!is.null(bolt_obj)) {
+    if (!is.null(bolt_obj$train_data)) {
+      train_data <- bolt_obj$train_data
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(nrow(train_data))))
+
+      if ("Combo" %in% colnames(train_data)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
+      }
+    }
+
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos-bolt-base"))
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize a Chronos Bolt Tiny Workflow
+#'
+#' Extracts and summarizes key information from a fitted Chronos Bolt Tiny workflow.
+#' Unlike Chronos 2, Chronos Bolt Tiny does not support external regressors, so
+#' no importance or regressor sections are included.
+#'
+#' @param wf A fitted tidymodels workflow containing a chronos_bolt_tiny_model()
+#'   model with engine 'chronos_bolt_tiny_model'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_model_chronos_bolt_tiny <- function(wf) {
+  digits <- 6
+
+  if (!inherits(wf, "workflow")) stop("summarize_model_chronos_bolt_tiny() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "chronos_bolt_tiny_model")) {
+    stop("summarize_model_chronos_bolt_tiny() only supports chronos_bolt_tiny_model() with engine 'chronos_bolt_tiny_model'.")
+  }
+
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
+      return(format(rounded, scientific = FALSE, trim = TRUE))
+    }
+    as.character(x)
+  }
+
+  # Predictors / outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  # No preprocessing steps for Chronos Bolt Tiny
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Model arguments
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  is_bolt_tiny_fit <- function(o) {
+    inherits(o, "chronos_bolt_tiny_model_fit") || (is.list(o) && !is.null(o$train_data) && !is.null(o$forecast_horizon))
+  }
+  bolt_obj <- .find_obj(fit$fit, is_bolt_tiny_fit, 6)
+  if (is.null(bolt_obj) && is_bolt_tiny_fit(fit$fit)) bolt_obj <- fit$fit
+
+  if (!is.null(bolt_obj)) {
+    if (!is.null(bolt_obj$train_data)) {
+      train_data <- bolt_obj$train_data
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(nrow(train_data))))
+
+      if ("Combo" %in% colnames(train_data)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
+      }
+    }
+
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos-bolt-tiny"))
   }
 
   .assemble_output(

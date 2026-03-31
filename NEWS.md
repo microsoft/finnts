@@ -1,3 +1,10 @@
+# finnts 0.6.0.9034 (development version)
+
+## Improvements
+
+- Added `chronos-bolt-base` foundation model. Uses the same Chronos API as `chronos2` but does not support external regressors. Passes `model_type = "chronos-bolt-base"` to the API.
+- Added `chronos-bolt-tiny` foundation model. Lightweight Chronos model variant using the same API as `chronos2` and `chronos-bolt-base`. Does not support external regressors. Passes `model_type = "chronos-bolt-tiny"` to the API.
+
 # finnts 0.6.0.9033 (development version)
 
 ## Improvements

@@ -72,6 +72,12 @@ Sys.setenv(
 - Chronos2 Setup: In order to use Chronos2 model as part of agent forecast workflow, set the Chronos2 API credentials.
   - See [Chronos2 Setup section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#chronos2) for details.
 
+- Chronos Bolt Base Setup: Uses the same API credentials as Chronos2. It is a lighter-weight model that does not support external regressors and runs as a local model only.
+  - See [Chronos Bolt Base section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#chronos-bolt-base) for details.
+
+- Chronos Bolt Tiny Setup: Uses the same API credentials as Chronos2/Chronos Bolt Base. It is the smallest/fastest model variant that does not support external regressors and runs as a local model only.
+  - See [Chronos Bolt Tiny section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#chronos-bolt-tiny) for details.
+
 ---
 
 ## End-to-end: first run with the AI agent

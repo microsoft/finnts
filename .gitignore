@@ -39,4 +39,10 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 inst/doc
+
+
+# Copilot / Superpowers local config
 docs
+.github/copilot-instructions.md
+.github/prompts/
+.superpowers/

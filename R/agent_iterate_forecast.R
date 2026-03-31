@@ -2123,7 +2123,9 @@ get_total_run_count <- function(agent_info,
 get_foundation_model_suffix <- function() {
   registry <- list(
     list(name = "timegpt", check = check_timegpt_available),
-    list(name = "chronos2", check = check_chronos2_available)
+    list(name = "chronos2", check = check_chronos2_available),
+    list(name = "chronos-bolt-base", check = check_chronos2_available),
+    list(name = "chronos-bolt-tiny", check = check_chronos2_available)
   )
 
   available <- vapply(registry, function(entry) {

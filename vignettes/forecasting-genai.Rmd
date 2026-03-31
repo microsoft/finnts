@@ -113,6 +113,148 @@ prep_models(
 )
 ```
 
+## Chronos Bolt Base
+
+Chronos Bolt Base is a lighter-weight foundation model from the [Chronos family](https://huggingface.co/amazon/chronos-bolt-base) optimized for fast inference.
+
+- Zero-shot forecasts with prediction intervals.
+- Univariate only — **does not support external regressors**.
+- Runs as a **local** (per time series) model only — not global.
+- Uses the same Chronos API endpoint and credentials as Chronos2.
+
+### Authentication and Setup
+
+Chronos Bolt Base uses the same API endpoint and credentials as Chronos2. If you have already configured Chronos2, no additional setup is needed.
+
+```{r eval=FALSE}
+Sys.setenv(CHRONOS_API_URL = "https://xyz.inference.ml.azure.com/score")
+Sys.setenv(CHRONOS_API_TOKEN = "your api key here")
+```
+
+### Using Chronos Bolt Base within finnts
+
+```{r eval=FALSE}
+library(finnts)
+
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(
+    date >= "2010-01-01",
+    id == "M2"
+  ) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+run_info <- set_run_info(
+  project_name = "finnts_fcst",
+  run_name = "chronos_bolt_base_run"
+)
+
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("chronos-bolt-base"),
+)
+
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
+
+final_models(run_info = run_info)
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+head(finn_output_tbl)
+```
+
+### Key Differences from Chronos2
+
+| | Chronos2 | Chronos Bolt Base |
+|---|---|---|
+| External regressors | Yes (historical and future) | No |
+| Global model | Yes | No (local only) |
+| API credentials | CHRONOS_API_URL / CHRONOS_API_TOKEN | Same |
+| Data padding | Auto-pads to 3 rows | Same |
+
+## Chronos Bolt Tiny
+
+Chronos Bolt Tiny is the smallest and fastest model from the [Chronos family](https://huggingface.co/amazon/chronos-bolt-tiny), optimized for lowest resource usage and fastest inference.
+
+- Zero-shot forecasts with prediction intervals.
+- Univariate only — **does not support external regressors**.
+- Runs as a **local** (per time series) model only — not global.
+- Uses the same Chronos API endpoint and credentials as Chronos2 and Chronos Bolt Base.
+
+### Authentication and Setup
+
+Chronos Bolt Tiny uses the same API endpoint and credentials as Chronos2 and Chronos Bolt Base. If you have already configured Chronos2, no additional setup is needed.
+
+```{r eval=FALSE}
+Sys.setenv(CHRONOS_API_URL = "https://xyz.inference.ml.azure.com/score")
+Sys.setenv(CHRONOS_API_TOKEN = "your api key here")
+```
+
+### Using Chronos Bolt Tiny within finnts
+
+```{r eval=FALSE}
+library(finnts)
+
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(
+    date >= "2010-01-01",
+    id == "M2"
+  ) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+run_info <- set_run_info(
+  project_name = "finnts_fcst",
+  run_name = "chronos_bolt_tiny_run"
+)
+
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("chronos-bolt-tiny"),
+)
+
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
+
+final_models(run_info = run_info)
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+head(finn_output_tbl)
+```
+
+### Key Differences: Chronos Model Variants
+
+| | Chronos2 | Chronos Bolt Base | Chronos Bolt Tiny |
+|---|---|---|---|
+| External regressors | Yes (historical and future) | No | No |
+| Global model | Yes | No (local only) | No (local only) |
+| Model size | Largest | Medium | Smallest |
+| Inference speed | Standard | Fast | Fastest |
+| API credentials | CHRONOS_API_URL / CHRONOS_API_TOKEN | Same | Same |
+| Data padding | Auto-pads to 3 rows | Same | Same |
+
 ## TimeGPT
 
 TimeGPT is one such transformer based foundation model for time series developed by [Nixtla](https://nixtla.github.io/nixtlar/). It delivers:

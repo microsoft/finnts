@@ -4,7 +4,7 @@
 #' @export
 list_models <- function() {
   list <- c(
-    "arima", "arima-boost", "arimax", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
+    "arima", "arima-boost", "arimax", "chronos-bolt-base", "chronos-bolt-tiny", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timegpt", "xgboost"
   )
@@ -86,7 +86,7 @@ list_multivariate_models <- function() {
 #' @return character vector of foundation model names
 #' @noRd
 list_foundation_models <- function() {
-  c("timegpt", "chronos2")
+  c("timegpt", "chronos2", "chronos-bolt-base", "chronos-bolt-tiny")
 }
 
 #' List multistep models
@@ -1427,6 +1427,64 @@ chronos2 <- function(train_data,
   wflw_spec <- get_workflow_simple(
     model_spec_chronos2,
     recipe_spec_chronos2
+  )
+
+  return(wflw_spec)
+}
+
+#' Chronos Bolt Base Model
+#'
+#' @param train_data Training Data
+#' @param horizon Forecast horizon
+#' @param frequency Frequency of Data
+#'
+#' @return Get the Chronos Bolt Base model
+#' @noRd
+chronos_bolt_base <- function(train_data,
+                              horizon,
+                              frequency = NULL) {
+  recipe_spec_chronos_bolt_base <- train_data %>%
+    get_recipe_foundation_model()
+
+  model_spec_chronos_bolt_base <- chronos_bolt_base_model(
+    mode = "regression",
+    forecast_horizon = horizon,
+    frequency = frequency
+  ) %>%
+    parsnip::set_engine("chronos_bolt_base_model")
+
+  wflw_spec <- get_workflow_simple(
+    model_spec_chronos_bolt_base,
+    recipe_spec_chronos_bolt_base
+  )
+
+  return(wflw_spec)
+}
+
+#' Chronos Bolt Tiny Model
+#'
+#' @param train_data Training Data
+#' @param horizon Forecast horizon
+#' @param frequency Frequency of Data
+#'
+#' @return Get the Chronos Bolt Tiny model
+#' @noRd
+chronos_bolt_tiny <- function(train_data,
+                              horizon,
+                              frequency = NULL) {
+  recipe_spec_chronos_bolt_tiny <- train_data %>%
+    get_recipe_foundation_model()
+
+  model_spec_chronos_bolt_tiny <- chronos_bolt_tiny_model(
+    mode = "regression",
+    forecast_horizon = horizon,
+    frequency = frequency
+  ) %>%
+    parsnip::set_engine("chronos_bolt_tiny_model")
+
+  wflw_spec <- get_workflow_simple(
+    model_spec_chronos_bolt_tiny,
+    recipe_spec_chronos_bolt_tiny
   )
 
   return(wflw_spec)

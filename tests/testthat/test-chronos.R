@@ -546,8 +546,10 @@ test_that("chronos2_permutation_importance returns NULL when no _original column
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -567,8 +569,10 @@ test_that("chronos2_permutation_importance returns NULL when required columns mi
   )
 
   obj <- structure(
-    list(train_data = data.frame(Combo = "A", y = rnorm(12)),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Combo = "A", y = rnorm(12)),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -589,8 +593,10 @@ test_that("chronos2_permutation_importance returns NULL when too few rows per co
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -614,8 +620,10 @@ test_that("chronos2_permutation_importance computes importance with API", {
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = "A", y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -638,15 +646,21 @@ test_that("chronos2_permutation_importance works with multiple regressors", {
   y_vals <- 100 + 2 * temp + 5 * fuel + rnorm(n, sd = 3)
 
   mold <- list(
-    predictors = data.frame(Date = dates, Combo = "A",
-                            temperature_original = temp, fuel_price_original = fuel),
+    predictors = data.frame(
+      Date = dates, Combo = "A",
+      temperature_original = temp, fuel_price_original = fuel
+    ),
     outcomes = tibble::tibble(y = y_vals)
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = "A", y = y_vals,
-                                 temperature_original = temp, fuel_price_original = fuel),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(
+        Date = dates, Combo = "A", y = y_vals,
+        temperature_original = temp, fuel_price_original = fuel
+      ),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -674,8 +688,10 @@ test_that("chronos2_permutation_importance works with multiple combos", {
   )
 
   obj <- structure(
-    list(train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
-         forecast_horizon = 3, frequency = 12),
+    list(
+      train_data = data.frame(Date = dates, Combo = combos, y = y_vals, temperature_original = temp),
+      forecast_horizon = 3, frequency = 12
+    ),
     class = "chronos2_model_fit"
   )
 
@@ -835,4 +851,258 @@ test_that("chronos_forecast works with multiple combos", {
 
   expect_s3_class(result, "data.frame")
   expect_equal(nrow(result), 6) # 3 periods × 2 combos
+})
+
+# Chronos Bolt Base Model Unit Tests (no API call needed)
+
+test_that("Chronos Bolt Base model can be initialized", {
+  model <- chronos_bolt_base_model(forecast_horizon = 6)
+
+  expect_s3_class(model, "chronos_bolt_base_model")
+  expect_equal(model$mode, "regression")
+})
+
+test_that("Chronos Bolt Base fit function stores training data and parameters", {
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
+    Combo = "1"
+  )
+  y <- rnorm(10, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_base_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  expect_s3_class(fit, "chronos_bolt_base_model_fit")
+  expect_true("train_data" %in% names(fit))
+  expect_equal(nrow(fit$train_data), 10)
+  expect_equal(fit$forecast_horizon, 3)
+  expect_equal(fit$frequency, 12)
+  expect_true("y" %in% colnames(fit$train_data))
+  expect_equal(fit$train_data$y, y)
+})
+
+test_that("Chronos Bolt Base fit function rejects empty data", {
+  x <- data.frame(Date = as.Date(character(0)), Combo = character(0))
+  y <- numeric(0)
+
+  expect_error(
+    chronos_bolt_base_model_fit_impl(x, y, forecast_horizon = 3),
+    "at least one row"
+  )
+})
+
+test_that("Chronos Bolt Base fit does NOT preserve external regressors in train_data columns used for prediction", {
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
+    Combo = "1",
+    temperature_original = rnorm(10, mean = 20, sd = 5)
+  )
+  y <- rnorm(10, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_base_model_fit_impl(x, y, forecast_horizon = 3)
+
+  expect_s3_class(fit, "chronos_bolt_base_model_fit")
+  expect_equal(nrow(fit$train_data), 10)
+})
+
+# Chronos Bolt Base API Integration Tests
+
+test_that("Chronos Bolt Base fit function works without external regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1"
+  )
+  y <- rnorm(48, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_base_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  expect_s3_class(fit, "chronos_bolt_base_model_fit")
+  expect_true("train_data" %in% names(fit))
+  expect_equal(nrow(fit$train_data), 48)
+})
+
+test_that("Chronos Bolt Base predict function works without external regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1"
+  )
+  y <- rnorm(48, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_base_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
+    Combo = "1"
+  )
+
+  preds <- chronos_bolt_base_model_predict_impl(fit, new_data)
+
+  expect_type(preds, "double")
+  expect_length(preds, 3)
+  expect_true(all(!is.na(preds)))
+})
+
+test_that("Chronos Bolt Base ignores external regressors even when present in data", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1",
+    Target = rnorm(48, mean = 100, sd = 10),
+    temperature_original = rnorm(48, mean = 20, sd = 5)
+  )
+
+  recipe_spec <- get_recipe_foundation_model(train_data)
+
+  model_spec <- chronos_bolt_base_model(forecast_horizon = 3, frequency = 12) %>%
+    parsnip::set_engine("chronos_bolt_base_model")
+
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec)
+
+  wf_fit <- parsnip::fit(wf, data = train_data)
+
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
+    Combo = "1",
+    temperature_original = c(22.0, 23.0, 21.0)
+  )
+
+  preds <- predict(wf_fit, new_data)
+
+  expect_s3_class(preds, "data.frame")
+  expect_true(".pred" %in% colnames(preds))
+  expect_equal(nrow(preds), 3)
+  expect_true(all(!is.na(preds$.pred)))
+})
+
+# Chronos Bolt Tiny Model Unit Tests (no API call needed)
+
+test_that("Chronos Bolt Tiny model can be initialized", {
+  model <- chronos_bolt_tiny_model(forecast_horizon = 6)
+
+  expect_s3_class(model, "chronos_bolt_tiny_model")
+  expect_equal(model$mode, "regression")
+})
+
+test_that("Chronos Bolt Tiny fit function stores training data and parameters", {
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
+    Combo = "1"
+  )
+  y <- rnorm(10, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_tiny_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  expect_s3_class(fit, "chronos_bolt_tiny_model_fit")
+  expect_true("train_data" %in% names(fit))
+  expect_equal(nrow(fit$train_data), 10)
+  expect_equal(fit$forecast_horizon, 3)
+  expect_equal(fit$frequency, 12)
+  expect_true("y" %in% colnames(fit$train_data))
+  expect_equal(fit$train_data$y, y)
+})
+
+test_that("Chronos Bolt Tiny fit function rejects empty data", {
+  x <- data.frame(Date = as.Date(character(0)), Combo = character(0))
+  y <- numeric(0)
+
+  expect_error(
+    chronos_bolt_tiny_model_fit_impl(x, y, forecast_horizon = 3),
+    "at least one row"
+  )
+})
+
+test_that("Chronos Bolt Tiny fit does NOT preserve external regressors in train_data columns used for prediction", {
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
+    Combo = "1",
+    temperature_original = rnorm(10, mean = 20, sd = 5)
+  )
+  y <- rnorm(10, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_tiny_model_fit_impl(x, y, forecast_horizon = 3)
+
+  expect_s3_class(fit, "chronos_bolt_tiny_model_fit")
+  expect_equal(nrow(fit$train_data), 10)
+})
+
+# Chronos Bolt Tiny API Integration Tests
+
+test_that("Chronos Bolt Tiny fit function works without external regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1"
+  )
+  y <- rnorm(48, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_tiny_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  expect_s3_class(fit, "chronos_bolt_tiny_model_fit")
+  expect_true("train_data" %in% names(fit))
+  expect_equal(nrow(fit$train_data), 48)
+})
+
+test_that("Chronos Bolt Tiny predict function works without external regressors", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  x <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1"
+  )
+  y <- rnorm(48, mean = 100, sd = 10)
+
+  fit <- chronos_bolt_tiny_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
+
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
+    Combo = "1"
+  )
+
+  preds <- chronos_bolt_tiny_model_predict_impl(fit, new_data)
+
+  expect_type(preds, "double")
+  expect_length(preds, 3)
+  expect_true(all(!is.na(preds)))
+})
+
+test_that("Chronos Bolt Tiny ignores external regressors even when present in data", {
+  skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
+
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+    Combo = "1",
+    Target = rnorm(48, mean = 100, sd = 10),
+    temperature_original = rnorm(48, mean = 20, sd = 5)
+  )
+
+  recipe_spec <- get_recipe_foundation_model(train_data)
+
+  model_spec <- chronos_bolt_tiny_model(forecast_horizon = 3, frequency = 12) %>%
+    parsnip::set_engine("chronos_bolt_tiny_model")
+
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec)
+
+  wf_fit <- parsnip::fit(wf, data = train_data)
+
+  new_data <- data.frame(
+    Date = seq.Date(as.Date("2024-01-01"), by = "month", length.out = 3),
+    Combo = "1",
+    temperature_original = c(22.0, 23.0, 21.0)
+  )
+
+  preds <- predict(wf_fit, new_data)
+
+  expect_s3_class(preds, "data.frame")
+  expect_true(".pred" %in% colnames(preds))
+  expect_equal(nrow(preds), 3)
+  expect_true(all(!is.na(preds$.pred)))
 })
