@@ -133,10 +133,12 @@ chronos_bolt_base_model_fit_impl <- function(
   forecast_horizon = NULL,
   frequency = NULL
 ) {
-  # Build dataframe with target column
+  # Build dataframe with only the required columns (Date, Combo, target)
+  # External regressors are not supported and are excluded here
   train_df <- as.data.frame(x)
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
+  train_df <- train_df[, intersect(c("Date", "Combo", "y"), names(train_df))]
 
   if (!is.data.frame(train_df)) {
     stop("Input 'x' must be convertible to a data frame.")
@@ -204,7 +206,7 @@ chronos_bolt_base_model_predict_impl <- function(object, new_data, ...) {
     model_type      = "chronos-bolt-base",
     horizon         = h,
     exogenous_cols  = exogenous_cols,
-    global          = TRUE,
+    global          = FALSE,
     quantile_levels = c(0.1, 0.5, 0.9)
   )
 

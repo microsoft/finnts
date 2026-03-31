@@ -79,9 +79,10 @@ list_multivariate_models <- function() {
 
 #' List foundation models
 #'
-#' Foundation models (e.g. timegpt, chronos2) are multivariate/global but
-#' do not use traditional features. They need exceptions for feature
-#' selection and stationarity handling.
+#' Foundation models do not use traditional features. They need exceptions
+#' for feature selection and stationarity handling. Some (e.g. timegpt,
+#' chronos2) support global/multivariate training; others (e.g.
+#' chronos-bolt-base, chronos-bolt-tiny) are local/univariate only.
 #'
 #' @return character vector of foundation model names
 #' @noRd

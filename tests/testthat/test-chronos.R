@@ -890,7 +890,7 @@ test_that("Chronos Bolt Base fit function rejects empty data", {
   )
 })
 
-test_that("Chronos Bolt Base fit does NOT preserve external regressors in train_data columns used for prediction", {
+test_that("Chronos Bolt Base fit does NOT preserve external regressors in train_data", {
   x <- data.frame(
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
     Combo = "1",
@@ -902,6 +902,8 @@ test_that("Chronos Bolt Base fit does NOT preserve external regressors in train_
 
   expect_s3_class(fit, "chronos_bolt_base_model_fit")
   expect_equal(nrow(fit$train_data), 10)
+  expect_false("temperature_original" %in% names(fit$train_data))
+  expect_true(all(names(fit$train_data) %in% c("Date", "Combo", "y")))
 })
 
 # Chronos Bolt Base API Integration Tests
@@ -1017,7 +1019,7 @@ test_that("Chronos Bolt Tiny fit function rejects empty data", {
   )
 })
 
-test_that("Chronos Bolt Tiny fit does NOT preserve external regressors in train_data columns used for prediction", {
+test_that("Chronos Bolt Tiny fit does NOT preserve external regressors in train_data", {
   x <- data.frame(
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 10),
     Combo = "1",
@@ -1029,6 +1031,8 @@ test_that("Chronos Bolt Tiny fit does NOT preserve external regressors in train_
 
   expect_s3_class(fit, "chronos_bolt_tiny_model_fit")
   expect_equal(nrow(fit$train_data), 10)
+  expect_false("temperature_original" %in% names(fit$train_data))
+  expect_true(all(names(fit$train_data) %in% c("Date", "Combo", "y")))
 })
 
 # Chronos Bolt Tiny API Integration Tests
