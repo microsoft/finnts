@@ -617,9 +617,9 @@ test_that("iterate_forecast validates parameters", {
   )
 })
 
-# * Test update_forecast new combo handling ----
+# * Test update_forecast new combo and failure recovery handling ----
 
-test_that("update_forecast creates simple forecasts for new time series within cap", {
+test_that("update_forecast recovers failed series and forecasts new series", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
 
   project <- set_project_info(
@@ -633,7 +633,7 @@ test_that("update_forecast creates simple forecasts for new time series within c
 
   driver_llm <- create_test_llm()
 
-  # Initial run with single time series
+  # Initial run with single time series (M750)
   initial_data <- test_data_single %>%
     dplyr::filter(Date <= as.Date("2014-10-01"))
 
@@ -653,7 +653,17 @@ test_that("update_forecast creates simple forecasts for new time series within c
     seed = 123
   )
 
-  # Update with 2 time series (adding M1) — within the floor of 10
+  # Delete trained models file for M750 to simulate a failure during update
+  models_dir <- file.path(project$path, "models")
+  model_files <- list.files(models_dir, pattern = "single_models", full.names = TRUE)
+  expect_true(length(model_files) > 0,
+    info = "Expected trained model files to exist after iterate_forecast"
+  )
+  file.remove(model_files)
+
+  # Update with 2 time series (adding M1)
+  # M750 should fail to update (missing trained models) and be re-forecast
+  # M1 is a brand-new series and should be forecast with defaults
   updated_data <- test_data_multi %>%
     dplyr::filter(Date <= as.Date("2015-01-01"))
 
@@ -667,7 +677,9 @@ test_that("update_forecast creates simple forecasts for new time series within c
     back_test_spacing = 3
   )
 
-  # Should succeed (1 new series is within cap of max(10, 20% of 1))
+  # Should succeed — M750 failure is within the limit (1 out of 1 = 100%,
+  # but floor of 10 applies so limit is 10) and both M750 + M1 route
+  # through forecast_new_combos with default settings
   expect_no_error(
     update_forecast(
       agent_info = agent_info2,
@@ -676,7 +688,7 @@ test_that("update_forecast creates simple forecasts for new time series within c
     )
   )
 
-  # Verify forecast includes both original and new time series
+  # Verify forecast includes both the recovered (M750) and new (M1) series
   forecast <- get_agent_forecast(agent_info = agent_info2)
   expect_true("M750" %in% forecast$Combo)
   expect_true("M1" %in% forecast$Combo)

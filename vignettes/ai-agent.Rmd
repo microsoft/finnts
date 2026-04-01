@@ -291,6 +291,8 @@ answer <- ask_agent(
 What `update_forecast()` does:
 
 - **Rebuilds global** models first (if used), then updates local series that need it.
+- **Handles new time series**: If new series appear in the data (up to 20% of existing series, floor of 10), simple forecasts are created automatically using default local model inputs—no LLM involvement needed.
+- **Handles failed time series**: If individual time series fail during the global or local model update (e.g., due to data issues or model errors), they are automatically re-forecast using the same default local model inputs as new series. If more than 20% of existing series (floor of 10) fail to update, the run errors out and directs you to use `iterate_forecast()` to retrain from scratch.
 - Compares WMAPE to a trailing baseline of previous runs. If >40% of series are **>20% worse** than the previous run WMAPE, and `allow_iterate_forecast = TRUE`, it will **invoke the iterate loop** (bounded by `max_iter`) to recover accuracy.
 - Re-runs reconciliation if hierarchy is in play.
 

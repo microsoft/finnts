@@ -1,10 +1,10 @@
-# finnts 0.6.0.9038 (development version)
+# finnts 0.6.0.9039 (development version)
 
 ## Improvements
 
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
-  - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.
+  - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
   - `ask_agent()` can be used to ask questions about the forecast, data, or models to get insights.
   - Helper functions `set_project_info()` and `set_agent_info` to assist in iterating and updating forecasts. 
   - New functions to retrieve information from agent runs:
