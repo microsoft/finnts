@@ -615,7 +615,8 @@ initial_checks <- function(agent_info) {
 #' @param num_cores Numeric indicating the number of cores to use for parallel processing.
 #' @param seed Numeric seed for reproducibility.
 #'
-# @return A character string indicating the completion of the update process.
+#' @return A list with `status` (character) and `failed_combos` (character vector
+#'   of combo hashes that failed during the global model update).
 #' @noRd
 update_global_models <- function(agent_info,
                                  previous_best_run_tbl,
@@ -713,7 +714,8 @@ update_global_models <- function(agent_info,
 #' @param num_cores Numeric indicating the number of cores to use for parallel processing.
 #' @param seed Numeric seed for reproducibility.
 #'
-#' @return Nothing
+#' @return A list with `status` (character) and `failed_combos` (character vector
+#'   of combo hashes that failed during the local model update).
 #' @noRd
 update_local_models <- function(agent_info,
                                 previous_best_run_tbl,
