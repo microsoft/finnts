@@ -55,6 +55,13 @@ using default local model inputs without LLM involvement. If the number
 of new series exceeds the cap, an error directs the user to use
 \code{iterate_forecast()} instead.
 }
+\details{
+If individual time series fail during the global or local model update
+process, they are automatically re-forecast using default local model
+inputs (the same treatment as new time series). If more than 20\\% of
+existing series (with a floor of 3) fail to update, an error is raised
+directing the user to use \code{iterate_forecast()} instead.
+}
 \examples{
 \dontrun{
 # load example data
