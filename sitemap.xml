@@ -28,6 +28,12 @@
 <url><loc>https://microsoft.github.io/finnts/reference/chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos2_model_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos2_model_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_base_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_base_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_base_model_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_predict_impl.html</loc></url>
@@ -63,6 +69,8 @@
 <url><loc>https://microsoft.github.io/finnts/reference/prep_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/prep_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.chronos2_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.chronos_bolt_base_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.chronos_bolt_tiny_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep.html</loc></url>
@@ -96,6 +104,8 @@
 <url><loc>https://microsoft.github.io/finnts/reference/translate.svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.chronos2_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update.chronos_bolt_base_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update.chronos_bolt_tiny_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.glmnet_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.mars_multistep.html</loc></url>
