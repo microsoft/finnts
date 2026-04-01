@@ -172,16 +172,17 @@ final_models(run_info = run_info)
 
 finn_output_tbl <- get_forecast_data(run_info = run_info)
 head(finn_output_tbl)
+# A tibble: 6 × 17
+#  Combo id    Model_ID  Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon Date       Target Forecast lo_95
+#   <chr> <chr> <chr>     <chr>      <chr>      <chr>     <chr>            <dbl> <chr>        <dbl> <date>      <dbl>    <dbl> <dbl>
+# 1 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              1 2015-07-01     NA     2192 1401.
+# 2 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              2 2015-08-01     NA     2080 1289.
+# 3 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              3 2015-09-01     NA     2000 1209.
+# 4 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              4 2015-10-01     NA     2048 1257.
+# 5 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              5 2015-11-01     NA     1976 1185.
+# 6 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              6 2015-12-01     NA     1864 1073.
+# # ℹ 3 more variables: lo_80 <dbl>, hi_80 <dbl>, hi_95 <dbl>
 ```
-
-### Key Differences from Chronos2
-
-| | Chronos2 | Chronos Bolt Base |
-|---|---|---|
-| External regressors | Yes (historical and future) | No |
-| Global model | Yes | No (local only) |
-| API credentials | CHRONOS_API_URL / CHRONOS_API_TOKEN | Same |
-| Data padding | Auto-pads to 3 rows | Same |
 
 ## Chronos Bolt Tiny
 
@@ -242,18 +243,17 @@ final_models(run_info = run_info)
 
 finn_output_tbl <- get_forecast_data(run_info = run_info)
 head(finn_output_tbl)
+# A tibble: 6 × 17
+#   Combo id    Model_ID  Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon Date       Target Forecast lo_95
+#   <chr> <chr> <chr>     <chr>      <chr>      <chr>     <chr>            <dbl> <chr>        <dbl> <date>      <dbl>    <dbl> <dbl>
+# 1 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              1 2015-07-01     NA     2192 1411.
+# 2 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              2 2015-08-01     NA     2096 1315.
+# 3 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              3 2015-09-01     NA     2064 1283.
+# 4 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              4 2015-10-01     NA     2080 1299.
+# 5 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              5 2015-11-01     NA     2024 1243.
+# 6 M2    M2    chronos-… chronos-b… local      R1        Future_…             1 Yes              6 2015-12-01     NA     1936 1155.
+# # ℹ 3 more variables: lo_80 <dbl>, hi_80 <dbl>, hi_95 <dbl>
 ```
-
-### Key Differences: Chronos Model Variants
-
-| | Chronos2 | Chronos Bolt Base | Chronos Bolt Tiny |
-|---|---|---|---|
-| External regressors | Yes (historical and future) | No | No |
-| Global model | Yes | No (local only) | No (local only) |
-| Model size | Largest | Medium | Smallest |
-| Inference speed | Standard | Fast | Fastest |
-| API credentials | CHRONOS_API_URL / CHRONOS_API_TOKEN | Same | Same |
-| Data padding | Auto-pads to 3 rows | Same | Same |
 
 ## TimeGPT
 
