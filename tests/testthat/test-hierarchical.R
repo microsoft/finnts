@@ -1490,7 +1490,6 @@ test_that("external_regressor_mapping detects near-global regressor as non-Globa
 })
 
 
-
 test_that("external_regressor_mapping with multiple single-value vars and two varying", {
   n_dates <- 3
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
