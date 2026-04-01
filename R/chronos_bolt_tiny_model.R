@@ -1,17 +1,20 @@
-# Chronos 2 Model Implementation
+# Chronos Bolt Tiny Model Implementation
 
-#' Initialize custom Chronos 2 parsnip model
+#' Initialize custom Chronos Bolt Tiny parsnip model
 #'
 #' @return NA
 #' @noRd
-make_chronos2_model <- function() {
-  parsnip::set_new_model("chronos2_model")
-  parsnip::set_model_mode(model = "chronos2_model", mode = "regression")
+make_chronos_bolt_tiny_model <- function() {
+  parsnip::set_new_model("chronos_bolt_tiny_model")
+  parsnip::set_model_mode(
+    model = "chronos_bolt_tiny_model",
+    mode = "regression"
+  )
 
   # Model arguments
   parsnip::set_model_arg(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     parsnip = "forecast_horizon",
     original = "forecast_horizon",
     func = list(fun = "forecast_horizon"),
@@ -19,8 +22,8 @@ make_chronos2_model <- function() {
   )
 
   parsnip::set_model_arg(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     parsnip = "frequency",
     original = "frequency",
     func = list(fun = "frequency"),
@@ -28,20 +31,20 @@ make_chronos2_model <- function() {
   )
 
   parsnip::set_model_engine(
-    model = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
     mode = "regression",
-    eng = "chronos2_model"
+    eng = "chronos_bolt_tiny_model"
   )
 
   parsnip::set_dependency(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     pkg = "finnts"
   )
 
   parsnip::set_encoding(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     mode = "regression",
     options = list(
       predictor_indicators = "none",
@@ -52,26 +55,26 @@ make_chronos2_model <- function() {
   )
 
   parsnip::set_fit(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     mode = "regression",
     value = list(
       interface = "data.frame",
       protect = c("x", "y"),
-      func = c(pkg = "finnts", fun = "chronos2_model_fit_impl"),
+      func = c(pkg = "finnts", fun = "chronos_bolt_tiny_model_fit_impl"),
       defaults = list()
     )
   )
 
   parsnip::set_pred(
-    model = "chronos2_model",
-    eng = "chronos2_model",
+    model = "chronos_bolt_tiny_model",
+    eng = "chronos_bolt_tiny_model",
     mode = "regression",
     type = "numeric",
     value = list(
       pre = NULL,
       post = NULL,
-      func = c(pkg = "finnts", fun = "chronos2_model_predict_impl"),
+      func = c(pkg = "finnts", fun = "chronos_bolt_tiny_model_predict_impl"),
       args = list(
         object = rlang::expr(object$fit),
         new_data = rlang::expr(new_data)
@@ -80,17 +83,17 @@ make_chronos2_model <- function() {
   )
 }
 
-#' Chronos 2 model specification
+#' Chronos Bolt Tiny model specification
 #'
 #' @param mode A single character string for the type of model.
 #'  The only possible value for this model is "regression".
 #' @param forecast_horizon forecast horizon
 #' @param frequency frequency of data
 #'
-#' @return Get Chronos 2 model
+#' @return Get Chronos Bolt Tiny model
 #' @keywords internal
 #' @export
-chronos2_model <- function(
+chronos_bolt_tiny_model <- function(
   mode = "regression",
   forecast_horizon = NULL,
   frequency = NULL
@@ -101,7 +104,7 @@ chronos2_model <- function(
   )
 
   parsnip::new_model_spec(
-    "chronos2_model",
+    "chronos_bolt_tiny_model",
     args = args,
     eng_args = NULL,
     mode = mode,
@@ -110,9 +113,9 @@ chronos2_model <- function(
   )
 }
 
-#' Fit Chronos 2 model
+#' Fit Chronos Bolt Tiny model
 #'
-#' Since Chronos 2 is a foundation model with no local training,
+#' Since Chronos Bolt Tiny is a foundation model with no local training,
 #' the fit step simply stores the training data and parameters
 #' for use during prediction.
 #'
@@ -121,19 +124,21 @@ chronos2_model <- function(
 #' @param forecast_horizon forecast horizon
 #' @param frequency frequency of data
 #'
-#' @return Fitted Chronos 2 model object
+#' @return Fitted Chronos Bolt Tiny model object
 #' @keywords internal
 #' @export
-chronos2_model_fit_impl <- function(
+chronos_bolt_tiny_model_fit_impl <- function(
   x,
   y,
   forecast_horizon = NULL,
   frequency = NULL
 ) {
-  # Build dataframe with target column
+  # Build dataframe with only the required columns (Date, Combo, target)
+  # External regressors are not supported and are excluded here
   train_df <- as.data.frame(x)
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
+  train_df <- train_df[, intersect(c("Date", "Combo", "y"), names(train_df))]
 
   if (!is.data.frame(train_df)) {
     stop("Input 'x' must be convertible to a data frame.")
@@ -152,11 +157,11 @@ chronos2_model_fit_impl <- function(
     frequency = frequency
   )
 
-  class(fit_obj) <- "chronos2_model_fit"
+  class(fit_obj) <- "chronos_bolt_tiny_model_fit"
   return(fit_obj)
 }
 
-#' Bridge prediction function for Chronos 2 Models
+#' Bridge prediction function for Chronos Bolt Tiny Models
 #'
 #' Prepares the training and future data, calls the Chronos API via
 #' \code{chronos_forecast()}, and returns the point predictions.
@@ -168,7 +173,7 @@ chronos2_model_fit_impl <- function(
 #' @return numeric vector of predictions
 #' @keywords internal
 #' @export
-chronos2_model_predict_impl <- function(object, new_data, ...) {
+chronos_bolt_tiny_model_predict_impl <- function(object, new_data, ...) {
   # Prepare training data
   full_train_df <- object$train_data
   test_start <- min(new_data$Date, na.rm = TRUE)
@@ -177,30 +182,31 @@ chronos2_model_predict_impl <- function(object, new_data, ...) {
   num_combos_in_new <- length(unique(new_data$Combo))
 
   if (num_combos_in_new == 0) {
-    stop("No unique combos found in new_data$Combo. Cannot calculate periods per combo.")
+    stop(
+      "No unique combos found in new_data$Combo. ",
+      "Cannot calculate periods per combo."
+    )
   }
 
   periods_per_combo <- nrow(new_data) / num_combos_in_new
   h <- periods_per_combo
 
-  # Pad combos with fewer than 3 observations (Chronos 2 minimum requirement)
+  # Pad combos with fewer than 3 observations (Chronos minimum requirement)
   frequency <- object$frequency
   date_type <- if (!is.null(frequency)) get_date_type(frequency) else NULL
   train_df <- pad_chronos2_data(train_df, date_type)
 
-  # Detect exogenous columns (_original suffix from finnts preprocessing)
-  # Controller handles dropping all-NA columns from future_data
-  exogenous_cols <- colnames(train_df)[grepl("_original", colnames(train_df))]
-  if (length(exogenous_cols) == 0) exogenous_cols <- NULL
+  # Chronos Bolt Tiny does NOT support external regressors
+  exogenous_cols <- NULL
 
   # Call the Chronos API via the controller
   result_df <- chronos_forecast(
     train_df        = train_df,
     new_data        = new_data,
-    model_type      = "chronos2",
+    model_type      = "chronos-bolt-tiny",
     horizon         = h,
     exogenous_cols  = exogenous_cols,
-    global          = TRUE,
+    global          = FALSE,
     quantile_levels = c(0.1, 0.5, 0.9)
   )
 
@@ -210,15 +216,20 @@ chronos2_model_predict_impl <- function(object, new_data, ...) {
   # Validate forecast length
   if (nrow(result_df) != expected_length) {
     stop(sprintf(
-      "Chronos 2 forecast length (%d) does not match expected (%d). train_df has %d combos, %d periods per combo.",
-      nrow(result_df), expected_length, num_combos_in_train, h
+      paste0(
+        "Chronos Bolt Tiny forecast length (%d) ",
+        "does not match expected (%d). ",
+        "train_df has %d combos, %d periods per combo."
+      ),
+      nrow(result_df), expected_length,
+      num_combos_in_train, h
     ))
   }
 
   return(as.numeric(result_df$predictions))
 }
 
-#' Print custom Chronos 2 model
+#' Print custom Chronos Bolt Tiny model
 #'
 #' @param x model object
 #' @param ... Additional arguments
@@ -226,7 +237,7 @@ chronos2_model_predict_impl <- function(object, new_data, ...) {
 #' @return Prints model info
 #' @keywords internal
 #' @export
-print.chronos2_model <- function(x, ...) {
+print.chronos_bolt_tiny_model <- function(x, ...) {
   parsnip::model_printer(x, ...)
 
   if (!is.null(x$method$fit$args)) {
@@ -236,7 +247,7 @@ print.chronos2_model <- function(x, ...) {
   invisible(x)
 }
 
-#' Update parameter in custom Chronos 2 model
+#' Update parameter in custom Chronos Bolt Tiny model
 #'
 #' @param object model object
 #' @param parameters parameters
@@ -249,7 +260,7 @@ print.chronos2_model <- function(x, ...) {
 #' @keywords internal
 #' @importFrom stats update
 #' @export
-update.chronos2_model <- function(
+update.chronos_bolt_tiny_model <- function(
   object,
   parameters = NULL,
   forecast_horizon = NULL,
@@ -287,105 +298,11 @@ update.chronos2_model <- function(
   }
 
   parsnip::new_model_spec(
-    "chronos2_model",
+    "chronos_bolt_tiny_model",
     args = object$args,
     eng_args = object$eng_args,
     mode = object$mode,
     method = NULL,
     engine = object$engine
   )
-}
-
-#' Pad Chronos 2 training data to minimum 3 rows per combo
-#'
-#' Chronos 2 requires at least 3 time points per series. During back-testing,
-#' early splits may have fewer. This adds only the exact number of rows needed
-#' (with y = 0 and numerics = 0) before the earliest date to reach 3.
-#'
-#' @param train_df Data frame with columns: Date, Combo, y, and optionally others.
-#' @param date_type Character: "day", "week", "month", "quarter", or "year".
-#'   Used for calendar-aware date stepping. Falls back to inferring from the
-#'   data when NULL.
-#'
-#' @return Padded data frame with at least 3 rows per Combo.
-#' @noRd
-pad_chronos2_data <- function(train_df, date_type = NULL) {
-  min_rows <- 3L
-
-  combo_counts <- train_df %>%
-    dplyr::group_by(Combo) %>%
-    dplyr::summarise(
-      n_rows = dplyr::n(),
-      earliest_date = min(Date, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::filter(n_rows < min_rows)
-
-  if (nrow(combo_counts) == 0) {
-    return(train_df)
-  }
-
-  # Validate date_type when provided
-  valid_date_types <- c("day", "week", "month", "quarter", "year")
-  if (!is.null(date_type) && !date_type %in% valid_date_types) {
-    stop(
-      "Unsupported date_type: '", date_type, "'. Expected one of: ",
-      paste(valid_date_types, collapse = ", ")
-    )
-  }
-
-  # Fallback: infer step from the data when date_type is unavailable
-  if (is.null(date_type)) {
-    all_dates <- sort(unique(train_df$Date))
-    if (length(all_dates) >= 2) {
-      date_step <- as.integer(diff(all_dates[1:2]))
-    } else {
-      date_step <- 1L
-    }
-  }
-
-  pad_rows <- lapply(seq_len(nrow(combo_counts)), function(i) {
-    combo_name <- combo_counts$Combo[i]
-    n_existing <- combo_counts$n_rows[i]
-    earliest <- combo_counts$earliest_date[i]
-    n_to_add <- min_rows - n_existing
-
-    # Generate exactly n_to_add dates stepping backward
-    if (!is.null(date_type)) {
-      new_dates <- vapply(seq_len(n_to_add), function(k) {
-        as.character(switch(date_type,
-          "day"     = earliest - lubridate::days(k),
-          "week"    = earliest - lubridate::weeks(k),
-          "month"   = earliest - months(k),
-          "quarter" = earliest - months(k * 3),
-          "year"    = earliest - lubridate::years(k)
-        ))
-      }, character(1))
-      new_dates <- as.Date(new_dates)
-    } else {
-      new_dates <- earliest - (seq_len(n_to_add) * date_step)
-    }
-
-    # Build a template row: same columns, y = 0, numerics = 0
-    template <- train_df %>%
-      dplyr::filter(Combo == combo_name) %>%
-      dplyr::slice(1)
-
-    template$y <- 0
-
-    num_cols <- setdiff(
-      names(template)[vapply(template, is.numeric, logical(1))],
-      "y"
-    )
-    for (col in num_cols) {
-      template[[col]] <- 0
-    }
-
-    pad <- template[rep(1, n_to_add), , drop = FALSE]
-    pad$Date <- new_dates
-    pad
-  })
-
-  dplyr::bind_rows(train_df, pad_rows) %>%
-    dplyr::arrange(Combo, Date)
 }

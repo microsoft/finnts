@@ -1,4 +1,4 @@
-# finnts 0.6.0.9037 (development version)
+# finnts 0.6.0.9038 (development version)
 
 ## Improvements
 
@@ -20,6 +20,8 @@
   - Added a Chronos controller, which will support other Chronos variant API POST requests as well
   - Added two new package dependencies: `jsonlite` and `httr`
   - Integrated Chronos2 into the finn agent workflow
+  - Added `chronos-bolt-base` foundation model. Uses the same Chronos API as `chronos2` but does not support external regressors. Passes `model_type = "chronos-bolt-base"` to the API.
+  - Added `chronos-bolt-tiny` foundation model. Lightweight Chronos model variant using the same API as `chronos2` and `chronos-bolt-base`. Does not support external regressors. Passes `model_type = "chronos-bolt-tiny"` to the API.
 
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
