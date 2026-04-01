@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9038</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9039</span>
       </span>
     </div>
 
@@ -504,6 +504,19 @@ and create a <strong>new agent run</strong> with updated
 <li>
 <strong>Rebuilds global</strong> models first (if used), then
 updates local series that need it.</li>
+<li>
+<strong>Handles new time series</strong>: If new series appear in
+the data (up to 20% of existing series, floor of 10), simple forecasts
+are created automatically using default local model inputs—no LLM
+involvement needed.</li>
+<li>
+<strong>Handles failed time series</strong>: If individual time
+series fail during the global or local model update (e.g., due to data
+issues or model errors), they are automatically re-forecast using the
+same default local model inputs as new series. If more than 20% of
+existing series (floor of 10) fail to update, the run errors out and
+directs you to use <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> to retrain from
+scratch.</li>
 <li>Compares WMAPE to a trailing baseline of previous runs. If &gt;40%
 of series are <strong>&gt;20% worse</strong> than the previous run
 WMAPE, and <code>allow_iterate_forecast = TRUE</code>, it will

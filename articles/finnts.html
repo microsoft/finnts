@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9038</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9039</span>
       </span>
     </div>
 
@@ -307,7 +307,13 @@ vignettes.</p>
 </h3>
 <p>After the agent runs <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>, we can use the
 previously trained models to get updated forecasts with new data. This
-makes it easy to get updated forecasts fast.</p>
+makes it easy to get updated forecasts fast. New time series that appear
+in the data are automatically forecast using default local model inputs.
+If individual time series fail during the update process, they are also
+re-forecast with defaults rather than stopping the entire run. If too
+many series fail (&gt;20% of existing series, with a minimum of 10
+failed series), the run will error and direct you to use
+<code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> instead.</p>
 <div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># set up agent with updated data</span></span>
 <span><span class="co"># overwrite creates a new version of the agent, which is required when running update_forecast()</span></span>

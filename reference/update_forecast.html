@@ -28,7 +28,7 @@ iterate_forecast() instead."><meta property="og:image" content="https://microsof
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9038</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9039</span>
       </span>
     </div>
 
@@ -178,6 +178,14 @@ greater than number of cores on machine minus 1.</p></dd>
     <div id="value">
     <h2>Value</h2>
     <p>Nothing</p>
+    </div>
+    <div id="details">
+    <h2>Details</h2>
+    <p>If individual time series fail during the global or local model update
+process, they are automatically re-forecast using default local model
+inputs (the same treatment as new time series). If more than 20\<!-- % of -->
+existing series (with a floor of 10) fail to update, an error is raised
+directing the user to use <code><a href="iterate_forecast.html">iterate_forecast()</a></code> instead.</p>
     </div>
 
     <div id="ref-examples">
