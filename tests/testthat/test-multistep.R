@@ -266,3 +266,61 @@ test_that("xgboost multistep prediction count matches horizon", {
 
   expect_true(all(forecast_counts$n == fh))
 })
+
+# Unit tests: selected_features and multistep spec classification ----
+
+test_that("multistep specs are correctly identified by class", {
+  multistep_specs <- list(
+    cubist   = cubist_multistep(),
+    mars     = mars_multistep(),
+    glmnet   = glmnet_multistep(),
+    svm_poly = svm_poly_multistep(),
+    svm_rbf  = svm_rbf_multistep(),
+    xgboost  = xgboost_multistep()
+  )
+
+  for (name in names(multistep_specs)) {
+    spec <- multistep_specs[[name]]
+    expect_true(
+      any(grepl("_multistep", class(spec))),
+      label = paste(name, "multistep spec has _multistep class")
+    )
+  }
+
+  standard_specs <- list(
+    cubist_rules = parsnip::cubist_rules(),
+    mars         = parsnip::mars(),
+    glmnet       = parsnip::linear_reg() %>% parsnip::set_engine("glmnet"),
+    svm_poly     = parsnip::svm_poly(),
+    svm_rbf      = parsnip::svm_rbf(),
+    xgboost      = parsnip::boost_tree() %>% parsnip::set_engine("xgboost")
+  )
+
+  for (name in names(standard_specs)) {
+    spec <- standard_specs[[name]]
+    expect_false(
+      any(grepl("_multistep", class(spec))),
+      label = paste(name, "standard spec does not have _multistep class")
+    )
+  }
+})
+
+test_that("update(selected_features) works on multistep specs", {
+  spec <- cubist_multistep(forecast_horizon = 3)
+
+  updated <- update(spec, selected_features = list(model_lag_1 = c("a", "b")))
+  expect_no_error(updated)
+  expect_s3_class(updated, "cubist_multistep")
+
+  updated_null <- update(spec, selected_features = NULL)
+  expect_no_error(updated_null)
+  expect_s3_class(updated_null, "cubist_multistep")
+})
+
+test_that("update(selected_features) errors on standard parsnip specs", {
+  standard_spec <- parsnip::cubist_rules()
+
+  expect_error(
+    update(standard_spec, selected_features = list(model_lag_1 = c("a", "b")))
+  )
+})
