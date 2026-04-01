@@ -812,9 +812,8 @@ test_that("validate_run_outputs errors when trained models are missing", {
   )
 
   # create forecast files so forecast validation passes
-  proj_hash <- digest::digest(project_name, algo = "xxhash64")
-  run_hash <- digest::digest(run_name, algo = "xxhash64")
-  tts_hash <- digest::digest(run_name, algo = "xxhash64")
+  proj_hash <- hash_data(project_name)
+  run_hash <- hash_data(run_name)
 
   fs::dir_create(fs::path(temp_dir, "forecasts"))
   fs::dir_create(fs::path(temp_dir, "prep_models"))
