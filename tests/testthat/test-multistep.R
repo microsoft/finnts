@@ -290,10 +290,10 @@ test_that("multistep specs are correctly identified by class", {
   standard_specs <- list(
     cubist_rules = parsnip::cubist_rules(),
     mars         = parsnip::mars(),
-    glmnet       = parsnip::linear_reg(engine = "glmnet"),
+    glmnet       = parsnip::linear_reg() %>% parsnip::set_engine("glmnet"),
     svm_poly     = parsnip::svm_poly(),
     svm_rbf      = parsnip::svm_rbf(),
-    xgboost      = parsnip::boost_tree(engine = "xgboost")
+    xgboost      = parsnip::boost_tree() %>% parsnip::set_engine("xgboost")
   )
 
   for (name in names(standard_specs)) {
