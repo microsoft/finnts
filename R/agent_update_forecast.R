@@ -1802,6 +1802,12 @@ update_forecast_combo <- function(agent_info,
     suffix = NULL
   )
 
+  # validate that all outputs can be loaded before logging best run
+  validate_run_outputs(
+    run_info = new_run_info,
+    combo = if (combo == "All-Data") NULL else hash_data(combo)
+  )
+
   final_log_results <- log_best_run(
     agent_info = agent_info,
     run_info = new_run_info,
