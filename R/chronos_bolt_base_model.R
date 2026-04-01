@@ -94,10 +94,9 @@ make_chronos_bolt_base_model <- function() {
 #' @keywords internal
 #' @export
 chronos_bolt_base_model <- function(
-  mode = "regression",
-  forecast_horizon = NULL,
-  frequency = NULL
-) {
+    mode = "regression",
+    forecast_horizon = NULL,
+    frequency = NULL) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency)
@@ -128,11 +127,10 @@ chronos_bolt_base_model <- function(
 #' @keywords internal
 #' @export
 chronos_bolt_base_model_fit_impl <- function(
-  x,
-  y,
-  forecast_horizon = NULL,
-  frequency = NULL
-) {
+    x,
+    y,
+    forecast_horizon = NULL,
+    frequency = NULL) {
   # Build dataframe with only the required columns (Date, Combo, target)
   # External regressors are not supported and are excluded here
   train_df <- as.data.frame(x)
@@ -261,13 +259,12 @@ print.chronos_bolt_base_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.chronos_bolt_base_model <- function(
-  object,
-  parameters = NULL,
-  forecast_horizon = NULL,
-  frequency = NULL,
-  fresh = FALSE,
-  ...
-) {
+    object,
+    parameters = NULL,
+    forecast_horizon = NULL,
+    frequency = NULL,
+    fresh = FALSE,
+    ...) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {

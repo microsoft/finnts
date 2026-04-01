@@ -23,9 +23,13 @@ serialized_contains_credential <- function(obj, patterns) {
   any(vapply(patterns, function(p) {
     p_bytes <- charToRaw(p)
     p_len <- length(p_bytes)
-    if (p_len == 0L || p_len > length(raw_bytes)) return(FALSE)
+    if (p_len == 0L || p_len > length(raw_bytes)) {
+      return(FALSE)
+    }
     for (i in seq_len(length(raw_bytes) - p_len + 1L)) {
-      if (all(raw_bytes[i:(i + p_len - 1L)] == p_bytes)) return(TRUE)
+      if (all(raw_bytes[i:(i + p_len - 1L)] == p_bytes)) {
+        return(TRUE)
+      }
     }
     FALSE
   }, logical(1)))
@@ -348,9 +352,13 @@ file_contains_credential <- function(path, patterns) {
   any(vapply(patterns, function(p) {
     p_bytes <- charToRaw(p)
     p_len <- length(p_bytes)
-    if (p_len == 0L || p_len > length(raw_bytes)) return(FALSE)
+    if (p_len == 0L || p_len > length(raw_bytes)) {
+      return(FALSE)
+    }
     for (i in seq_len(length(raw_bytes) - p_len + 1L)) {
-      if (all(raw_bytes[i:(i + p_len - 1L)] == p_bytes)) return(TRUE)
+      if (all(raw_bytes[i:(i + p_len - 1L)] == p_bytes)) {
+        return(TRUE)
+      }
     }
     FALSE
   }, logical(1)))

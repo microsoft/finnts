@@ -111,12 +111,11 @@ make_timegpt_model <- function() {
 #' @keywords internal
 #' @export
 timegpt_model <- function(
-  mode = "regression",
-  forecast_horizon = NULL,
-  frequency = NULL,
-  finetune_steps = NULL,
-  finetune_depth = NULL
-) {
+    mode = "regression",
+    forecast_horizon = NULL,
+    frequency = NULL,
+    finetune_steps = NULL,
+    finetune_depth = NULL) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency),
@@ -147,13 +146,12 @@ timegpt_model <- function(
 #' @keywords internal
 #' @export
 timegpt_model_fit_impl <- function(
-  x,
-  y,
-  forecast_horizon = NULL,
-  frequency = NULL,
-  finetune_steps = NULL,
-  finetune_depth = NULL
-) {
+    x,
+    y,
+    forecast_horizon = NULL,
+    frequency = NULL,
+    finetune_steps = NULL,
+    finetune_depth = NULL) {
   # build dataframe for timegpt nixtla forecast client
   train_df <- as.data.frame(x)
 
@@ -575,15 +573,14 @@ print.timegpt_model <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.timegpt_model <- function(
-  object,
-  parameters = NULL,
-  forecast_horizon = NULL,
-  fresh = FALSE,
-  frequency = NULL,
-  finetune_steps = NULL,
-  finetune_depth = NULL,
-  ...
-) {
+    object,
+    parameters = NULL,
+    forecast_horizon = NULL,
+    fresh = FALSE,
+    frequency = NULL,
+    finetune_steps = NULL,
+    finetune_depth = NULL,
+    ...) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {

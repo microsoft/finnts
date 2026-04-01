@@ -932,5 +932,3 @@ test_that("full agent workflow with multiple time series completes successfully"
   expect_type(answer1, "character")
   expect_true(nchar(answer1) > 0)
 })
-
-
