@@ -771,6 +771,266 @@ test_that("update_forecast errors when forecast approach changes between runs", 
 
 # * Test update_forecast workflow ----
 
+# * Test validate_run_outputs ----
+
+test_that("validate_run_outputs errors when forecast data is missing", {
+  temp_dir <- tempfile("validate_test_")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+  fs::dir_create(temp_dir)
+
+  run_info <- list(
+    project_name = "test_project_local",
+    run_name = "test_run_1",
+    storage_object = NULL,
+    path = temp_dir,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  expect_error(
+    validate_run_outputs(run_info = run_info, combo = "abc123"),
+    "Failed to load forecast data.*Cannot log this as a best agent run"
+  )
+})
+
+test_that("validate_run_outputs errors when trained models are missing", {
+  temp_dir <- tempfile("validate_test_")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+  fs::dir_create(temp_dir)
+
+  project_name <- "test_project_local"
+  run_name <- "test_run_2"
+  combo_hash <- "abc123"
+
+  run_info <- list(
+    project_name = project_name,
+    run_name = run_name,
+    storage_object = NULL,
+    path = temp_dir,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  # create forecast files so forecast validation passes
+  proj_hash <- hash_data(project_name)
+  run_hash <- hash_data(run_name)
+
+  fs::dir_create(fs::path(temp_dir, "forecasts"))
+  fs::dir_create(fs::path(temp_dir, "prep_models"))
+
+  # write a minimal single_models forecast
+  fcst_df <- tibble::tibble(
+    Combo = "TestCombo",
+    Date = as.Date("2024-01-01"),
+    Model_ID = "arima--local--R1",
+    Model_Name = "arima",
+    Model_Type = "local",
+    Recipe_ID = "R1",
+    Train_Test_ID = 1,
+    Forecast = 100,
+    Target = 100,
+    Best_Model = "Yes",
+    Combo_ID = combo_hash,
+    Hyperparameter_ID = "hp1"
+  )
+  vroom::vroom_write(
+    fcst_df,
+    fs::path(temp_dir, "forecasts", paste0(proj_hash, "-", run_hash, "-", combo_hash, "-single_models.csv")),
+    delim = ","
+  )
+
+  # write a minimal train_test_split
+  tts_df <- tibble::tibble(Run_Type = "Back_Test", Train_Test_ID = 1)
+  vroom::vroom_write(
+    tts_df,
+    fs::path(temp_dir, "prep_models", paste0(proj_hash, "-", run_hash, "-train_test_split.csv")),
+    delim = ","
+  )
+
+  expect_error(
+    validate_run_outputs(run_info = run_info, combo = combo_hash),
+    "Failed to load trained models.*Cannot log this as a best agent run"
+  )
+})
+
+test_that("validate_run_outputs errors when prep model objects are missing", {
+  temp_dir <- tempfile("validate_test_")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+  fs::dir_create(temp_dir)
+
+  project_name <- "test_project_local"
+  run_name <- "test_run_3"
+  combo_hash <- "abc123"
+
+  run_info <- list(
+    project_name = project_name,
+    run_name = run_name,
+    storage_object = NULL,
+    path = temp_dir,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  proj_hash <- digest::digest(project_name, algo = "xxhash64")
+  run_hash <- digest::digest(run_name, algo = "xxhash64")
+
+  fs::dir_create(fs::path(temp_dir, "forecasts"))
+  fs::dir_create(fs::path(temp_dir, "prep_models"))
+  fs::dir_create(fs::path(temp_dir, "models"))
+
+  # write a minimal single_models forecast
+  fcst_df <- tibble::tibble(
+    Combo = "TestCombo",
+    Date = as.Date("2024-01-01"),
+    Model_ID = "arima--local--R1",
+    Model_Name = "arima",
+    Model_Type = "local",
+    Recipe_ID = "R1",
+    Train_Test_ID = 1,
+    Forecast = 100,
+    Target = 100,
+    Best_Model = "Yes",
+    Combo_ID = combo_hash,
+    Hyperparameter_ID = "hp1"
+  )
+  vroom::vroom_write(
+    fcst_df,
+    fs::path(temp_dir, "forecasts", paste0(proj_hash, "-", run_hash, "-", combo_hash, "-single_models.csv")),
+    delim = ","
+  )
+
+  # write train_test_split
+  tts_df <- tibble::tibble(Run_Type = "Back_Test", Train_Test_ID = 1)
+  vroom::vroom_write(
+    tts_df,
+    fs::path(temp_dir, "prep_models", paste0(proj_hash, "-", run_hash, "-train_test_split.csv")),
+    delim = ","
+  )
+
+  # write trained models
+  models_df <- tibble::tibble(
+    Model_ID = "arima--local--R1",
+    Model_Name = "arima",
+    Model_Type = "local",
+    Recipe_ID = "R1",
+    Model_Fit = list(NULL)
+  )
+  saveRDS(
+    models_df,
+    fs::path(temp_dir, "models", paste0(proj_hash, "-", run_hash, "-", combo_hash, "-single_models.rds"))
+  )
+
+  # prep_models is missing model_hyperparameters and model_workflows
+  expect_error(
+    validate_run_outputs(run_info = run_info, combo = combo_hash),
+    "Failed to load prep model object.*Cannot log this as a best agent run"
+  )
+})
+
+test_that("validate_run_outputs succeeds when all outputs exist", {
+  temp_dir <- tempfile("validate_test_")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+  fs::dir_create(temp_dir)
+
+  project_name <- "test_project_local"
+  run_name <- "test_run_4"
+  combo_hash <- "abc123"
+
+  run_info <- list(
+    project_name = project_name,
+    run_name = run_name,
+    storage_object = NULL,
+    path = temp_dir,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  proj_hash <- digest::digest(project_name, algo = "xxhash64")
+  run_hash <- digest::digest(run_name, algo = "xxhash64")
+
+  fs::dir_create(fs::path(temp_dir, "forecasts"))
+  fs::dir_create(fs::path(temp_dir, "prep_models"))
+  fs::dir_create(fs::path(temp_dir, "models"))
+
+  # write forecast
+  fcst_df <- tibble::tibble(
+    Combo = "TestCombo",
+    Date = as.Date("2024-01-01"),
+    Model_ID = "arima--local--R1",
+    Model_Name = "arima",
+    Model_Type = "local",
+    Recipe_ID = "R1",
+    Train_Test_ID = 1,
+    Forecast = 100,
+    Target = 100,
+    Best_Model = "Yes",
+    Combo_ID = combo_hash,
+    Hyperparameter_ID = "hp1"
+  )
+  vroom::vroom_write(
+    fcst_df,
+    fs::path(temp_dir, "forecasts", paste0(proj_hash, "-", run_hash, "-", combo_hash, "-single_models.csv")),
+    delim = ","
+  )
+
+  # write train_test_split
+  tts_df <- tibble::tibble(Run_Type = "Back_Test", Train_Test_ID = 1)
+  vroom::vroom_write(
+    tts_df,
+    fs::path(temp_dir, "prep_models", paste0(proj_hash, "-", run_hash, "-train_test_split.csv")),
+    delim = ","
+  )
+
+  # write trained models
+  models_df <- tibble::tibble(
+    Model_ID = "arima--local--R1",
+    Model_Name = "arima",
+    Model_Type = "local",
+    Recipe_ID = "R1",
+    Model_Fit = list(NULL)
+  )
+  saveRDS(
+    models_df,
+    fs::path(temp_dir, "models", paste0(proj_hash, "-", run_hash, "-", combo_hash, "-single_models.rds"))
+  )
+
+  # write model_hyperparameters and model_workflows
+  hp_df <- tibble::tibble(Model_Name = "arima", Hyperparameter = "default")
+  saveRDS(
+    hp_df,
+    fs::path(temp_dir, "prep_models", paste0(proj_hash, "-", run_hash, "-model_hyperparameters.rds"))
+  )
+
+  wf_df <- tibble::tibble(Model_Name = "arima", Workflow = list(NULL))
+  saveRDS(
+    wf_df,
+    fs::path(temp_dir, "prep_models", paste0(proj_hash, "-", run_hash, "-model_workflows.rds"))
+  )
+
+  expect_true(validate_run_outputs(run_info = run_info, combo = combo_hash))
+})
+
+test_that("validate_run_outputs works for global models (combo = NULL)", {
+  temp_dir <- tempfile("validate_test_")
+  on.exit(unlink(temp_dir, recursive = TRUE), add = TRUE)
+  fs::dir_create(temp_dir)
+
+  run_info <- list(
+    project_name = "test_project_global",
+    run_name = "test_run_5",
+    storage_object = NULL,
+    path = temp_dir,
+    data_output = "csv",
+    object_output = "rds"
+  )
+
+  # global models (combo = NULL) should error on missing forecast
+  expect_error(
+    validate_run_outputs(run_info = run_info, combo = NULL),
+    "Failed to load forecast data.*Cannot log this as a best agent run"
+  )
+})
+
 test_that("update_forecast completes with getter functions and ask_agent", {
   skip_if_not(has_llm_credentials(), "LLM credentials not available")
 
