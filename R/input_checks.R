@@ -77,7 +77,8 @@ check_input_type <- function(input_name,
     stop(
       paste0(
         "invalid type for input name '", input_name, "', needs to be of type ",
-        glue::glue_collapse(type, " or ")
+        glue::glue_collapse(type, " or "),
+        " but got '", paste(class(input_value), collapse = "/"), "'"
       ),
       call. = FALSE
     )
@@ -117,17 +118,33 @@ check_input_data <- function(input_data,
                              parallel_processing) {
   # data combo names match the input data
   if (sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
-    stop("combo variables do not match column headers in input data")
+    missing_vars <- setdiff(combo_variables, colnames(input_data))
+    stop(
+      "combo variables do not match column headers in input data. ",
+      "Missing columns: ", paste(missing_vars, collapse = ", "), ". ",
+      "Available columns: ", paste(colnames(input_data), collapse = ", "),
+      call. = FALSE
+    )
   }
 
   # target variable name matches the input data
   if (!(target_variable %in% colnames(input_data))) {
-    stop("target variable does not match a column header in input data")
+    stop(
+      "target variable '", target_variable, "' does not match a column header in input data. ",
+      "Available columns: ", paste(colnames(input_data), collapse = ", "),
+      call. = FALSE
+    )
   }
 
   # external regressors match the input data
   if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
-    stop("external regressors do not match column headers in input data")
+    missing_xregs <- setdiff(external_regressors, colnames(input_data))
+    stop(
+      "external regressors do not match column headers in input data. ",
+      "Missing columns: ", paste(missing_xregs, collapse = ", "), ". ",
+      "Available columns: ", paste(colnames(input_data), collapse = ", "),
+      call. = FALSE
+    )
   }
 
   # 'Date' column is reserved for the time stamp
@@ -184,7 +201,14 @@ check_input_data <- function(input_data,
 
   # ensure month, quarter, year data repeats on the same day of each period
   if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
-    stop("historical date values are not evenly spaced")
+    unique_days <- unique(format(input_data$Date, format = "%d"))
+    stop(
+      "historical date values are not evenly spaced. ",
+      "For '", date_type, "' data, all dates must fall on the same day of the month ",
+      "(e.g., all on the 1st). Found dates on day(s): ",
+      paste(sort(unique_days), collapse = ", "),
+      call. = FALSE
+    )
   }
 
   # fiscal year start formatting
@@ -221,7 +245,14 @@ check_input_data <- function(input_data,
     dplyr::collect()
 
   if (nrow(duplicate_tbl) > 1) {
-    stop("duplicate rows have been detected in the input data",
+    dup_count <- nrow(duplicate_tbl)
+    dup_sample <- utils::head(duplicate_tbl, 5)
+    stop(
+      "duplicate rows have been detected in the input data. ",
+      "Found ", dup_count, " duplicate rows based on combo variables and Date. ",
+      "Sample duplicate dates: ",
+      paste(unique(dup_sample$Date), collapse = ", "), ". ",
+      "Remove duplicate rows so each combo-date combination is unique.",
       call. = FALSE
     )
   }
