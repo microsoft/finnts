@@ -15,8 +15,11 @@ test_that("prep_data grouped_hierarchy with mixed xreg future coverage has no NA
     dplyr::slice(rep(seq_len(dplyr::n()), each = length(all_dates))) %>%
     dplyr::mutate(
       Date = rep(all_dates, nrow(combos)),
-      Revenue = rep(runif(length(all_dates), 100, 500), nrow(combos)) +
-        rnorm(dplyr::n(), 0, 10)
+      Revenue = dplyr::if_else(
+        Date <= as.Date("2024-06-01"),
+        rep(runif(length(all_dates), 100, 500), nrow(combos)) + rnorm(dplyr::n(), 0, 10),
+        NA_real_
+      )
     )
 
   # Regressor_A: future values for ALL combos (fully covered)
@@ -50,6 +53,7 @@ test_that("prep_data grouped_hierarchy with mixed xreg future coverage has no NA
     date_type = "month",
     forecast_horizon = 3,
     external_regressors = c("Regressor_A", "Regressor_B"),
+    hist_end_date = as.Date("2024-06-01"),
     forecast_approach = "grouped_hierarchy",
     recipes_to_run = "R1",
     multistep_horizon = TRUE

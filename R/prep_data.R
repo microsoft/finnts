@@ -315,11 +315,11 @@ prep_data <- function(run_info,
     global_future <- c()
     for (xr in external_regressors) {
       has_future <- initial_prep_tbl %>%
-        dplyr::filter(Date > hist_end_date) %>%
-        dplyr::select(tidyselect::all_of(xr)) %>%
-        tidyr::drop_na() %>%
-        nrow()
-      if (has_future > 0) {
+        dplyr::filter(Date > hist_end_date, !is.na(.data[[xr]])) %>%
+        dplyr::summarise(n = dplyr::n()) %>%
+        dplyr::collect() %>%
+        dplyr::pull(n)
+      if (isTRUE(has_future > 0)) {
         global_future <- c(global_future, xr)
       }
     }
