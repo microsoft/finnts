@@ -1492,7 +1492,121 @@ submit_fcst_run <- function(agent_info,
     num_cores = num_cores
   )
 
+  # validate that all outputs can be loaded before proceeding
+  validate_run_outputs(
+    run_info = run_info,
+    combo = combo
+  )
+
   return(run_info)
+}
+
+#' Validate that all expected outputs from a forecast run can be loaded
+#'
+#' Checks that forecast data, trained model objects, and prep model objects
+#' (train_test_split, model_hyperparameters, model_workflows) are readable
+#' from disk. Stops with a descriptive error if any output cannot be loaded.
+#'
+#' @param run_info A list containing run information (project_name, run_name,
+#'   storage_object, path, data_output, object_output).
+#' @param combo A character string of the combo hash for local models, or NULL
+#'   for global models.
+#'
+#' @return TRUE invisibly if all outputs are valid.
+#' @noRd
+validate_run_outputs <- function(run_info, combo = NULL) {
+  # determine combo hash for file paths
+  if (is.null(combo)) {
+    forecast_combo <- "All-Data"
+    model_combo_hash <- hash_data("All-Data")
+  } else {
+    forecast_combo <- combo
+    model_combo_hash <- combo
+  }
+
+  # validate forecast data
+  fcst_tbl <- tryCatch(
+    load_combo_forecast(
+      combo = forecast_combo,
+      run_info = run_info
+    ),
+    error = function(e) NULL
+  ) %>%
+    base::suppressWarnings()
+
+  if (is.null(fcst_tbl) || nrow(fcst_tbl) == 0) {
+    stop(
+      "Failed to load forecast data for run '", run_info$run_name,
+      "' (combo: ", forecast_combo, "). ",
+      "Cannot log this as a best agent run.",
+      call. = FALSE
+    )
+  }
+
+  # validate trained models
+  trained_models_tbl <- tryCatch(
+    read_file(
+      run_info = run_info,
+      file_list = paste0(
+        run_info$path, "/models/",
+        hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "-",
+        model_combo_hash, "-single_models.",
+        run_info$object_output
+      ) %>% fs::path_tidy(),
+      return_type = "df"
+    ),
+    error = function(e) NULL
+  ) %>%
+    base::suppressWarnings()
+
+  if (is.null(trained_models_tbl) || nrow(trained_models_tbl) == 0) {
+    stop(
+      "Failed to load trained models for run '", run_info$run_name,
+      "' (combo: ", forecast_combo, "). ",
+      "Cannot log this as a best agent run.",
+      call. = FALSE
+    )
+  }
+
+  # validate prep model objects
+  data_path <- paste0(
+    run_info$path,
+    "/prep_models/", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name)
+  )
+
+  prep_files <- list(
+    train_test_split = paste0(data_path, "-train_test_split.", run_info$data_output),
+    model_hyperparameters = paste0(data_path, "-model_hyperparameters.", run_info$object_output),
+    model_workflows = paste0(data_path, "-model_workflows.", run_info$object_output)
+  )
+
+  for (file_name in names(prep_files)) {
+    file_path <- fs::path_tidy(prep_files[[file_name]])
+
+    result <- tryCatch(
+      read_file(
+        run_info = run_info,
+        file_list = file_path,
+        return_type = "df"
+      ),
+      error = function(e) NULL
+    ) %>%
+      base::suppressWarnings()
+
+    if (is.null(result) || (is.data.frame(result) && nrow(result) == 0)) {
+      stop(
+        "Failed to load prep model object '", file_name,
+        "' for run '", run_info$run_name,
+        "' (combo: ", forecast_combo, "). ",
+        "Cannot log this as a best agent run.",
+        call. = FALSE
+      )
+    }
+  }
+
+  invisible(TRUE)
 }
 
 #' Get forecast output from a Finn run

@@ -131,7 +131,7 @@ agent_run_results <- get_best_agent_run(agent_info = agent, full_run_info = TRUE
 
 ### 5. Update Forecast
 
-After the agent runs `iterate_forecast()`, we can use the previously trained models to get updated forecasts with new data. This makes it easy to get updated forecasts fast. 
+After the agent runs `iterate_forecast()`, we can use the previously trained models to get updated forecasts with new data. This makes it easy to get updated forecasts fast. New time series that appear in the data are automatically forecast using default local model inputs. If individual time series fail during the update process, they are also re-forecast with defaults rather than stopping the entire run. If too many series fail (>20% of existing series, with a minimum of 10 failed series), the run will error and direct you to use `iterate_forecast()` instead.
 
 ```{r, eval = FALSE}
 # set up agent with updated data

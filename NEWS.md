@@ -1,10 +1,10 @@
-# finnts 0.6.0.9038 (development version)
+# finnts 0.6.0.9041 (development version)
 
 ## Improvements
 
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
-  - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.
+  - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
   - `ask_agent()` can be used to ask questions about the forecast, data, or models to get insights.
   - Helper functions `set_project_info()` and `set_agent_info` to assist in iterating and updating forecasts. 
   - New functions to retrieve information from agent runs:
@@ -48,7 +48,8 @@
 -   Fixed weighted mape calculation when target variable has negative values.
 -   Support for latest xgboost 3x version.
 -   Fixed model summary for global models by considering average models too.
-  
+-   Fixed issue when future values of external regressors exist in some series but not all, leading to missing data issues when training a global model.
+
 ## Breaking Changes
 
 - `experiment_name` within `set_run_info()` has been changed to `project_name` to comply with new AI agent capabilities. 

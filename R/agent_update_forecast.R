@@ -7,6 +7,12 @@
 #' of new series exceeds the cap, an error directs the user to use
 #' `iterate_forecast()` instead.
 #'
+#' If individual time series fail during the global or local model update
+#' process, they are automatically re-forecast using default local model
+#' inputs (the same treatment as new time series). If more than 20\% of
+#' existing series (with a floor of 10) fail to update, an error is raised
+#' directing the user to use `iterate_forecast()` instead.
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
 #' @param allow_iterate_forecast Logical indicating if the forecast iteration
@@ -199,7 +205,7 @@ update_fcst_agent_workflow <- function(agent_info,
     ),
     update_local_models = list(
       fn = "update_local_models",
-      `next` = "forecast_new_combos",
+      `next` = "check_update_failures",
       retry_mode = "plain",
       max_retry = 3,
       args = list(
@@ -211,6 +217,18 @@ update_fcst_agent_workflow <- function(agent_info,
         seed = seed
       )
     ),
+    check_update_failures = list(
+      fn = "check_update_failures",
+      `next` = "forecast_new_combos",
+      retry_mode = "plain",
+      max_retry = 1,
+      args = list(
+        agent_info = agent_info,
+        previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
+        global_failed_combos = "{results$update_global_models$failed_combos}",
+        local_failed_combos = "{results$update_local_models$failed_combos}"
+      )
+    ),
     forecast_new_combos = list(
       fn = "forecast_new_combos",
       `next` = "save_best_agent_run",
@@ -219,6 +237,7 @@ update_fcst_agent_workflow <- function(agent_info,
       args = list(
         agent_info = agent_info,
         new_combos = "{results$initial_checks$new_combos}",
+        failed_combos = "{results$check_update_failures}",
         parallel_processing = parallel_processing,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
@@ -596,7 +615,8 @@ initial_checks <- function(agent_info) {
 #' @param num_cores Numeric indicating the number of cores to use for parallel processing.
 #' @param seed Numeric seed for reproducibility.
 #'
-# @return A character string indicating the completion of the update process.
+#' @return A list with `status` (character) and `failed_combos` (character vector
+#'   of combo hashes that failed during the global model update).
 #' @noRd
 update_global_models <- function(agent_info,
                                  previous_best_run_tbl,
@@ -613,27 +633,43 @@ update_global_models <- function(agent_info,
 
   if (nrow(previous_best_run_global_tbl) == 0) {
     cli::cli_alert_info("No global models to update, skipping...")
-    return("No global models to update, skipping...")
+    return(list(status = "No global models to update, skipping...", failed_combos = character(0)))
   }
 
   # start forecast update process
-  if (identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
-    results <- callr::r(
-      function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
-        .libPaths(libs)
-        # make sure the child has no leftover backend
-        try(doParallel::stopImplicitCluster(), silent = TRUE)
-        foreach::registerDoSEQ()
+  global_error <- tryCatch(
+    {
+      if (identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
+        callr::r(
+          function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
+            .libPaths(libs)
+            # make sure the child has no leftover backend
+            try(doParallel::stopImplicitCluster(), silent = TRUE)
+            foreach::registerDoSEQ()
 
-        # ensure namespace is fully initialized
-        ns <- loadNamespace("finnts", lib.loc = libs)
-        attachNamespace(ns) # similar effect to library()
+            # ensure namespace is fully initialized
+            ns <- loadNamespace("finnts", lib.loc = libs)
+            attachNamespace(ns) # similar effect to library()
 
-        # grab function from namespace
-        fn <- getFromNamespace("update_forecast_combo", "finnts")
+            # grab function from namespace
+            fn <- getFromNamespace("update_forecast_combo", "finnts")
 
-        # call function
-        fn(
+            # call function
+            fn(
+              agent_info = agent_info,
+              prev_best_run_tbl = previous_best_run_global_tbl,
+              parallel_processing = parallel_processing,
+              num_cores = num_cores,
+              inner_parallel = inner_parallel,
+              seed = seed
+            )
+          },
+          args = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+          libpath = .libPaths(),
+          stdout = "|", stderr = "|", show = TRUE, supervise = TRUE
+        )
+      } else {
+        update_forecast_combo(
           agent_info = agent_info,
           prev_best_run_tbl = previous_best_run_global_tbl,
           parallel_processing = parallel_processing,
@@ -641,27 +677,30 @@ update_global_models <- function(agent_info,
           inner_parallel = inner_parallel,
           seed = seed
         )
-      },
-      args = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
-      libpath = .libPaths(),
-      stdout = "|", stderr = "|", show = TRUE, supervise = TRUE
-    )
-  } else {
-    results <- update_forecast_combo(
-      agent_info = agent_info,
-      prev_best_run_tbl = previous_best_run_global_tbl,
-      parallel_processing = parallel_processing,
-      num_cores = num_cores,
-      inner_parallel = inner_parallel,
-      seed = seed
-    )
-  }
+      }
+      NULL # no error
+    },
+    error = function(e) {
+      e
+    }
+  )
 
   # clean up any clusters
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   try(foreach::registerDoSEQ(), silent = TRUE)
 
-  return("Finished Global Model Update")
+  if (!is.null(global_error)) {
+    # extract individual combos that were covered by the global model
+    failed_global_combos <- unique(previous_best_run_global_tbl$combo)
+    failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
+    cli::cli_alert_warning(
+      "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {conditionMessage(global_error)}"
+    )
+    cli::cli_alert_info("Failed combos will be re-forecast using default local model inputs.")
+    return(list(status = "Global model update failed", failed_combos = failed_hashes))
+  }
+
+  return(list(status = "Finished Global Model Update", failed_combos = character(0)))
 }
 
 #' Update Local Models
@@ -675,7 +714,8 @@ update_global_models <- function(agent_info,
 #' @param num_cores Numeric indicating the number of cores to use for parallel processing.
 #' @param seed Numeric seed for reproducibility.
 #'
-#' @return Nothing
+#' @return A list with `status` (character) and `failed_combos` (character vector
+#'   of combo hashes that failed during the local model update).
 #' @noRd
 update_local_models <- function(agent_info,
                                 previous_best_run_tbl,
@@ -692,7 +732,7 @@ update_local_models <- function(agent_info,
 
   if (nrow(previous_best_run_local_tbl) == 0) {
     cli::cli_alert_info("No local models to update, skipping...")
-    return("No local models to update, skipping...")
+    return(list(status = "No local models to update, skipping...", failed_combos = character(0)))
   }
 
   prev_run_id <- unique(previous_best_run_local_tbl$agent_run_id)[[1]]
@@ -715,7 +755,7 @@ update_local_models <- function(agent_info,
 
     if (nrow(previous_best_run_local_tbl) == 0) {
       # stop if no updates required
-      return("no updates required")
+      return(list(status = "no updates required", failed_combos = character(0)))
     }
   } else {
     # do nothing
@@ -750,13 +790,13 @@ update_local_models <- function(agent_info,
 
   on.exit(par_end(cl), add = TRUE)
 
-  combo_tbl <- tryCatch(
+  combo_results <- tryCatch(
     {
       foreach::foreach(
         combo = local_combo_list,
         .packages = packages,
-        .errorhandling = "stop",
-        .inorder = FALSE,
+        .errorhandling = "pass",
+        .inorder = TRUE,
         .multicombine = TRUE
       ) %op%
         {
@@ -794,23 +834,13 @@ update_local_models <- function(agent_info,
           )
 
           # run update forecast for combo
-          results <- tryCatch(
-            {
-              update_forecast_combo(
-                agent_info = agent_info_lean,
-                prev_best_run_tbl = prev_run,
-                parallel_processing = NULL,
-                num_cores = num_cores,
-                inner_parallel = inner_parallel,
-                seed = seed
-              )
-            },
-            error = function(e) {
-              stop(sprintf(
-                "Combo '%s' failed. Error Message: %s.",
-                combo, e
-              ))
-            }
+          update_forecast_combo(
+            agent_info = agent_info_lean,
+            prev_best_run_tbl = prev_run,
+            parallel_processing = NULL,
+            num_cores = num_cores,
+            inner_parallel = inner_parallel,
+            seed = seed
           )
 
           return(data.frame(Combo = hash_data(combo)))
@@ -826,7 +856,83 @@ update_local_models <- function(agent_info,
     }
   )
 
-  return("Finished Local Model Update")
+  # separate successes from failures
+  failed_combos <- character(0)
+  for (i in seq_along(combo_results)) {
+    result <- combo_results[[i]]
+    if (inherits(result, "error") || inherits(result, "simpleError") || inherits(result, "condition")) {
+      failed_combo <- local_combo_list[[i]]
+      failed_hash <- hash_data(failed_combo)
+      err_msg <- conditionMessage(result)
+      cli::cli_alert_warning(
+        "Local model update failed for combo '{failed_combo}'. Error: {err_msg}"
+      )
+      failed_combos <- c(failed_combos, failed_hash)
+    }
+  }
+
+  if (length(failed_combos) > 0) {
+    cli::cli_alert_info(
+      "{length(failed_combos)} local combo{?s} failed and will be re-forecast using default local model inputs."
+    )
+  }
+
+  return(list(status = "Finished Local Model Update", failed_combos = failed_combos))
+}
+
+#' Check Update Failures
+#'
+#' Validates that the number of failed combos during the global and local model
+#' update steps does not exceed the allowed threshold (20\% of existing combos,
+#' with a floor of 10). If the threshold is exceeded, an error is raised. Otherwise,
+#' the failed combos are returned so they can be re-forecast using default inputs.
+#'
+#' @param agent_info A list containing the agent information.
+#' @param previous_best_run_tbl A data frame of the previous best run results.
+#' @param global_failed_combos Character vector of combo hashes that failed
+#'   during global model update.
+#' @param local_failed_combos Character vector of combo hashes that failed
+#'   during local model update.
+#'
+#' @return A character vector of all failed combo hashes that should be
+#'   re-forecast using default local model inputs.
+#' @noRd
+check_update_failures <- function(agent_info,
+                                  previous_best_run_tbl,
+                                  global_failed_combos,
+                                  local_failed_combos) {
+  failed_combos <- unique(c(global_failed_combos, local_failed_combos))
+
+  if (length(failed_combos) == 0) {
+    return(character(0))
+  }
+
+  # count total existing combos from the previous best run
+  total_combos <- length(unique(previous_best_run_tbl$combo))
+
+  # hardcoded 20% failure limit with a floor of 10
+
+  failure_limit <- max(10L, ceiling(total_combos * 0.20))
+
+  if (length(failed_combos) > failure_limit) {
+    resolved_names <- resolve_combo_hashes(agent_info, failed_combos)
+    stop(
+      "Error in update_forecast(). ",
+      length(failed_combos), " time series failed to update, which exceeds ",
+      "the limit of ", failure_limit, " (20% of ", total_combos,
+      " existing series, floor of 10). Failed series: ",
+      paste(resolved_names, collapse = ", "),
+      ". Please use iterate_forecast() instead to retrain all models from scratch.",
+      call. = FALSE
+    )
+  }
+
+  resolved_names <- resolve_combo_hashes(agent_info, failed_combos)
+  cli::cli_alert_info(
+    "{length(failed_combos)} time series failed to update and will be re-forecast using default local model inputs: {paste(resolved_names, collapse = ', ')}"
+  )
+
+  return(failed_combos)
 }
 
 #' Analyze Results of Agent Run
@@ -1072,11 +1178,15 @@ reconcile_agent_forecast <- function(agent_info,
 #' Forecast New Combos
 #'
 #' Creates simple forecasts for new time series that were not present in
-#' the previous agent run. Uses default local model inputs (matching the
-#' first-iteration defaults from iterate_forecast) without LLM involvement.
+#' the previous agent run, and any existing time series that failed during
+#' the global or local model update process. Uses default local model inputs
+#' (matching the first-iteration defaults from iterate_forecast) without
+#' LLM involvement.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param new_combos Character vector of new combo hashes to forecast.
+#' @param failed_combos Character vector of combo hashes that failed during
+#'   the update process and need to be re-forecast with default inputs.
 #' @param parallel_processing Parallel processing mode.
 #' @param inner_parallel Logical indicating if inner parallel processing should be used.
 #' @param num_cores Numeric indicating the number of cores to use.
@@ -1086,16 +1196,35 @@ reconcile_agent_forecast <- function(agent_info,
 #' @noRd
 forecast_new_combos <- function(agent_info,
                                 new_combos,
+                                failed_combos = character(0),
                                 parallel_processing,
                                 inner_parallel,
                                 num_cores,
                                 seed) {
-  if (length(new_combos) == 0) {
-    cli::cli_alert_info("No new time series to forecast, skipping...")
-    return("No new time series to forecast, skipping...")
+  # merge new and failed combos
+  all_combos <- unique(c(new_combos, failed_combos))
+
+  if (length(all_combos) == 0) {
+    cli::cli_alert_info("No new or failed time series to forecast, skipping...")
+    return("No new or failed time series to forecast, skipping...")
   }
 
-  cli::cli_alert_info("Forecasting {length(new_combos)} new time series with default local model inputs.")
+  n_new <- length(new_combos)
+  n_failed <- length(failed_combos)
+
+  if (n_new > 0 && n_failed > 0) {
+    cli::cli_alert_info(
+      "Forecasting {length(all_combos)} time series with default local model inputs ({n_new} new, {n_failed} failed update{?s})."
+    )
+  } else if (n_failed > 0) {
+    cli::cli_alert_info(
+      "Forecasting {n_failed} failed time series with default local model inputs."
+    )
+  } else {
+    cli::cli_alert_info(
+      "Forecasting {n_new} new time series with default local model inputs."
+    )
+  }
 
   # get metadata
   project_info <- agent_info$project_info
@@ -1129,7 +1258,7 @@ forecast_new_combos <- function(agent_info,
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = length(new_combos)
+    task_length = length(all_combos)
   )
 
   cl <- par_info$cl
@@ -1143,7 +1272,7 @@ forecast_new_combos <- function(agent_info,
   combo_tbl <- tryCatch(
     {
       foreach::foreach(
-        combo_hash = new_combos,
+        combo_hash = all_combos,
         .packages = packages,
         .errorhandling = "stop",
         .inorder = FALSE,
@@ -1671,6 +1800,12 @@ update_forecast_combo <- function(agent_info,
     output_type = "log",
     folder = "logs",
     suffix = NULL
+  )
+
+  # validate that all outputs can be loaded before logging best run
+  validate_run_outputs(
+    run_info = new_run_info,
+    combo = if (combo == "All-Data") NULL else hash_data(combo)
   )
 
   final_log_results <- log_best_run(

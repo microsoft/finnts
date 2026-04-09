@@ -308,6 +308,26 @@ prep_data <- function(run_info,
   filtered_initial_prep_tbl <- initial_prep_tbl %>% # filter input data on combos that haven't completed running
     dplyr::filter(Combo %in% current_combo_list_final)
 
+  # compute global xregs_future_values_list across all combos so every combo
+  # keeps the same raw xreg columns in recipe output (prevents NA when combined)
+  global_xregs_future_list <- NULL
+  if (!is.null(external_regressors) && length(external_regressors) > 0) {
+    global_future <- c()
+    for (xr in external_regressors) {
+      has_future <- initial_prep_tbl %>%
+        dplyr::filter(Date > hist_end_date, !is.na(.data[[xr]])) %>%
+        dplyr::summarise(n = dplyr::n()) %>%
+        dplyr::collect() %>%
+        dplyr::pull(n)
+      if (isTRUE(has_future > 0)) {
+        global_future <- c(global_future, xr)
+      }
+    }
+    if (length(global_future) > 0) {
+      global_xregs_future_list <- global_future
+    }
+  }
+
   # parallel run info
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     par_info <- par_start(
@@ -349,20 +369,9 @@ prep_data <- function(run_info,
           dplyr::filter(Combo == combo) %>%
           dplyr::collect()
 
-        # external regressor handling
-        xregs_future_tbl <- get_xregs_future_values_tbl(
-          initial_prep_combo_tbl,
-          external_regressors,
-          hist_end_date
-        )
-
-        if (length(colnames(xregs_future_tbl)) > 2) {
-          xregs_future_list <- xregs_future_tbl %>%
-            dplyr::select(-Date, -Combo) %>%
-            colnames()
-        } else {
-          xregs_future_list <- NULL
-        }
+        # build join table for xregs that have future values globally
+        xregs_future_tbl <- initial_prep_combo_tbl %>%
+          dplyr::select(Combo, Date, tidyselect::any_of(global_xregs_future_list))
 
         # initial data prep
         initial_tbl <- initial_prep_combo_tbl %>%
@@ -371,7 +380,7 @@ prep_data <- function(run_info,
             Combo,
             Date,
             Target,
-            tidyselect::all_of(setdiff(external_regressors, xregs_future_list))
+            tidyselect::all_of(setdiff(external_regressors, global_xregs_future_list))
           ) %>%
           dplyr::group_by(Combo) %>%
           timetk::pad_by_time(Date,
@@ -413,7 +422,7 @@ prep_data <- function(run_info,
             dplyr::mutate(Target_Original = ifelse(Date > hist_end_date, NA, Target_Original))
         }
 
-        # preserve raw external regressors for TimeGPT
+        # preserve raw external regressors for foundation models that use raw xregs as features
         xreg_raw_df <- NULL
         if (!is.null(external_regressors) && length(external_regressors) > 0) {
           xreg_raw_df <- initial_tbl %>%
@@ -469,7 +478,7 @@ prep_data <- function(run_info,
         if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
           R1 <- initial_tbl %>%
             multivariate_prep_recipe_1(external_regressors,
-              xregs_future_values_list = xregs_future_list,
+              xregs_future_values_list = global_xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
               get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
               get_rolling_window_periods(rolling_window_periods, date_type),
@@ -492,7 +501,7 @@ prep_data <- function(run_info,
         if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
           R2 <- initial_tbl %>%
             multivariate_prep_recipe_2(external_regressors,
-              xregs_future_values_list = xregs_future_list,
+              xregs_future_values_list = global_xregs_future_list,
               get_fourier_periods(fourier_periods, date_type),
               get_lag_periods(lag_periods, date_type, forecast_horizon),
               get_rolling_window_periods(rolling_window_periods, date_type),
@@ -536,20 +545,9 @@ prep_data <- function(run_info,
             Combo_Hash = hash_data(combo)
           )
 
-          # handle external regressors
-          xregs_future_tbl <- get_xregs_future_values_tbl(
-            df,
-            external_regressors,
-            hist_end_date
-          )
-
-          if (length(colnames(xregs_future_tbl)) > 2) {
-            xregs_future_list <- xregs_future_tbl %>%
-              dplyr::select(-Date, -Combo) %>%
-              colnames()
-          } else {
-            xregs_future_list <- NULL
-          }
+          # build join table for xregs that have future values globally
+          xregs_future_tbl <- df %>%
+            dplyr::select(Combo, Date, tidyselect::any_of(global_xregs_future_list))
 
           # initial data prep
           initial_tbl <- df %>%
@@ -558,7 +556,7 @@ prep_data <- function(run_info,
               Combo,
               Date,
               Target,
-              tidyselect::all_of(external_regressors)
+              tidyselect::all_of(setdiff(external_regressors, global_xregs_future_list))
             ) %>%
             dplyr::group_by(Combo) %>%
             timetk::pad_by_time(Date,
@@ -656,7 +654,7 @@ prep_data <- function(run_info,
           if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
             R1 <- initial_tbl %>%
               multivariate_prep_recipe_1(external_regressors,
-                xregs_future_values_list = xregs_future_list,
+                xregs_future_values_list = global_xregs_future_list,
                 get_fourier_periods(fourier_periods, date_type),
                 get_lag_periods(lag_periods, date_type, forecast_horizon, multistep_horizon, TRUE),
                 get_rolling_window_periods(rolling_window_periods, date_type),
@@ -679,7 +677,7 @@ prep_data <- function(run_info,
           if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
             R2 <- initial_tbl %>%
               multivariate_prep_recipe_2(external_regressors,
-                xregs_future_values_list = xregs_future_list,
+                xregs_future_values_list = global_xregs_future_list,
                 get_fourier_periods(fourier_periods, date_type),
                 get_lag_periods(lag_periods, date_type, forecast_horizon),
                 get_rolling_window_periods(rolling_window_periods, date_type),
@@ -702,7 +700,6 @@ prep_data <- function(run_info,
         },
         group_by = "Combo",
         context = list(
-          get_xregs_future_values_tbl = get_xregs_future_values_tbl,
           external_regressors = external_regressors,
           clean_missing_values = clean_missing_values,
           clean_outliers_missing_values = clean_outliers_missing_values,
@@ -732,7 +729,8 @@ prep_data <- function(run_info,
           box_cox = box_cox,
           stationary = stationary,
           make_stationary = make_stationary,
-          apply_box_cox = apply_box_cox
+          apply_box_cox = apply_box_cox,
+          global_xregs_future_list = global_xregs_future_list
         )
       )
   }
@@ -1279,6 +1277,7 @@ make_stationary <- function(df) {
 #' @param rolling_window_periods list of rolling window periods
 #' @param hist_end_date hist end date
 #' @param date_type date_type
+#' @param xreg_raw_df data frame of raw external regressor values for use in foundation models
 #'
 #' @return tbl with R1 feature engineering applied
 #' @noRd
@@ -1386,7 +1385,6 @@ multivariate_prep_recipe_1 <- function(data,
 
   is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
   data_lag_window[is.na(data_lag_window)] <- 0.00
-
 
   if (!is.null(xreg_raw_df) && !is.null(external_regressors) && length(external_regressors) > 0) {
     for (xr in external_regressors) {
