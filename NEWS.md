@@ -1,4 +1,4 @@
-# finnts 0.6.0.9041 (development version)
+# finnts 0.6.0.9042 (development version)
 
 ## Improvements
 
@@ -49,6 +49,7 @@
 -   Support for latest xgboost 3x version.
 -   Fixed model summary for global models by considering average models too.
 -   Fixed issue when future values of external regressors exist in some series but not all, leading to missing data issues when training a global model.
+- Fixed model summary bugs for chronos models.
 
 ## Breaking Changes
 
