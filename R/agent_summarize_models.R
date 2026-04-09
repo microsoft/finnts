@@ -8073,24 +8073,15 @@ summarize_model_chronos2 <- function(wf) {
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
 
-  # Flag external regressors (non-date predictors)
+  # Identify external regressors (non-date predictors)
   xreg_names <- character()
   if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
     is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
     xreg_names <- setdiff(names(mold$predictors)[!is_date], "Combo")
-    if (length(xreg_names) > 0 && nrow(preds_tbl) > 0) {
-      preds_tbl$value[preds_tbl$name %in% xreg_names] <-
-        paste0(preds_tbl$value[preds_tbl$name %in% xreg_names], " [regressor]")
-    }
   }
 
   # Recipe steps - no significant preprocessing steps for Chronos2
   steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-
-  # Model arguments
-  arg_names <- c("forecast_horizon", "frequency")
-  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
-  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
@@ -8101,6 +8092,14 @@ summarize_model_chronos2 <- function(wf) {
   }
   chronos2_obj <- .find_obj(fit$fit, is_chronos2_fit, scan_depth)
   if (is.null(chronos2_obj) && is_chronos2_fit(fit$fit)) chronos2_obj <- fit$fit
+
+  # Model arguments - resolve from fit object to avoid unresolved quosures
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- if (!is.null(chronos2_obj) && !is.null(chronos2_obj[[nm]])) chronos2_obj[[nm]] else .chr1(spec$args[[nm]])
+    .format_numeric(as.character(val))
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   if (!is.null(chronos2_obj)) {
     # Training data stats - external regressors
@@ -8206,16 +8205,13 @@ summarize_model_chronos_bolt_base <- function(wf) {
 
   # Predictors / outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
-  preds_tbl <- .extract_predictors(mold)
+  # Chronos Bolt Base does not use external regressors, keep only structural columns
+  preds_tbl <- .extract_predictors(mold) %>%
+    dplyr::filter(.data$name %in% c("Date", "Combo"))
   outs_tbl <- .extract_outcomes(mold)
 
   # No preprocessing steps for Chronos Bolt Base
   steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-
-  # Model arguments
-  arg_names <- c("forecast_horizon", "frequency")
-  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
-  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
@@ -8225,6 +8221,14 @@ summarize_model_chronos_bolt_base <- function(wf) {
   }
   bolt_obj <- .find_obj(fit$fit, is_bolt_base_fit, 6)
   if (is.null(bolt_obj) && is_bolt_base_fit(fit$fit)) bolt_obj <- fit$fit
+
+  # Model arguments - resolve from fit object to avoid unresolved quosures
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- if (!is.null(bolt_obj) && !is.null(bolt_obj[[nm]])) bolt_obj[[nm]] else .chr1(spec$args[[nm]])
+    .format_numeric(as.character(val))
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   if (!is.null(bolt_obj)) {
     if (!is.null(bolt_obj$train_data)) {
@@ -8289,16 +8293,13 @@ summarize_model_chronos_bolt_tiny <- function(wf) {
 
   # Predictors / outcomes
   mold <- try(workflows::extract_mold(wf), silent = TRUE)
-  preds_tbl <- .extract_predictors(mold)
+  # Chronos Bolt Tiny does not use external regressors, keep only structural columns
+  preds_tbl <- .extract_predictors(mold) %>%
+    dplyr::filter(.data$name %in% c("Date", "Combo"))
   outs_tbl <- .extract_outcomes(mold)
 
   # No preprocessing steps for Chronos Bolt Tiny
   steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
-
-  # Model arguments
-  arg_names <- c("forecast_horizon", "frequency")
-  arg_vals <- vapply(arg_names, function(nm) .format_numeric(.chr1(spec$args[[nm]])), FUN.VALUE = character(1))
-  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   # Engine params
   eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
@@ -8308,6 +8309,14 @@ summarize_model_chronos_bolt_tiny <- function(wf) {
   }
   bolt_obj <- .find_obj(fit$fit, is_bolt_tiny_fit, 6)
   if (is.null(bolt_obj) && is_bolt_tiny_fit(fit$fit)) bolt_obj <- fit$fit
+
+  # Model arguments - resolve from fit object to avoid unresolved quosures
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- if (!is.null(bolt_obj) && !is.null(bolt_obj[[nm]])) bolt_obj[[nm]] else .chr1(spec$args[[nm]])
+    .format_numeric(as.character(val))
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
 
   if (!is.null(bolt_obj)) {
     if (!is.null(bolt_obj$train_data)) {
