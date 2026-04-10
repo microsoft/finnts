@@ -1,4 +1,4 @@
-# finnts 0.6.0.9041 (development version)
+# finnts 0.6.0.9042 (development version)
 
 ## Improvements
 
