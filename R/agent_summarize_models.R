@@ -8073,13 +8073,6 @@ summarize_model_chronos2 <- function(wf) {
   preds_tbl <- .extract_predictors(mold)
   outs_tbl <- .extract_outcomes(mold)
 
-  # Identify external regressors (non-date predictors)
-  xreg_names <- character()
-  if (!inherits(mold, "try-error") && !is.null(mold$predictors) && ncol(mold$predictors) > 0) {
-    is_date <- vapply(mold$predictors, function(col) inherits(col, c("Date", "POSIXct", "POSIXt")), logical(1))
-    xreg_names <- setdiff(names(mold$predictors)[!is_date], "Combo")
-  }
-
   # Recipe steps - no significant preprocessing steps for Chronos2
   steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
 

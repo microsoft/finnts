@@ -667,3 +667,151 @@ test_that("summarize timegpt with xregs", {
   )
   expect_gt(nrow(xreg_rows), 0)
 })
+
+# * Chronos model summarize ----
+
+chronos_train_data <- data.frame(
+  Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+  Combo = "1",
+  Target = rnorm(48, mean = 100, sd = 10),
+  temperature_original = rnorm(48, mean = 20, sd = 5)
+)
+
+test_that("summarize chronos2 with xregs resolves args and reports regressors", {
+  recipe_spec <- get_recipe_foundation_model(chronos_train_data)
+  model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
+    parsnip::set_engine("chronos2_model")
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec) %>%
+    generics::fit(chronos_train_data)
+
+  result <- summarize_model_chronos2(wf)
+  validate_summary_output(result, "chronos2")
+
+  fh_row <- result %>% dplyr::filter(section == "model_arg", name == "forecast_horizon")
+  expect_equal(nrow(fh_row), 1)
+  expect_equal(unname(fh_row$value), "3")
+
+  freq_row <- result %>% dplyr::filter(section == "model_arg", name == "frequency")
+  expect_equal(nrow(freq_row), 1)
+  expect_equal(unname(freq_row$value), "12")
+
+  mt_row <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
+  expect_equal(nrow(mt_row), 1)
+  expect_equal(unname(mt_row$value), "chronos2")
+
+  nobs_row <- result %>% dplyr::filter(section == "engine_param", name == "n_training_obs")
+  expect_equal(nrow(nobs_row), 1)
+  expect_equal(unname(nobs_row$value), "48")
+
+  nxreg_row <- result %>% dplyr::filter(section == "engine_param", name == "n_external_regressors")
+  expect_equal(nrow(nxreg_row), 1)
+  expect_gt(as.integer(nxreg_row$value), 0)
+
+  # External regressors listed in engine params
+  xreg_list_row <- result %>% dplyr::filter(section == "engine_param", name == "external_regressors")
+  expect_equal(nrow(xreg_list_row), 1)
+  expect_true(grepl("temperature", xreg_list_row$value))
+
+  # Predictor row for the xreg column exists
+  xreg_pred <- result %>% dplyr::filter(section == "predictor", name == "temperature_original")
+  expect_equal(nrow(xreg_pred), 1)
+
+  # Importance rows present when external regressors exist
+  imp_rows <- result %>% dplyr::filter(section == "importance")
+  expect_gt(nrow(imp_rows), 0)
+})
+
+chronos_train_data_no_xregs <- data.frame(
+  Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 48),
+  Combo = "1",
+  Target = rnorm(48, mean = 100, sd = 10)
+)
+
+test_that("summarize chronos2 without xregs reports zero regressors", {
+  recipe_spec <- get_recipe_simple(chronos_train_data_no_xregs)
+  model_spec <- chronos2_model(forecast_horizon = 3, frequency = 12) %>%
+    parsnip::set_engine("chronos2_model")
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec) %>%
+    generics::fit(chronos_train_data_no_xregs %>% dplyr::select(-Combo))
+
+  result <- summarize_model_chronos2(wf)
+  validate_summary_output(result, "chronos2-no-xregs")
+
+  nxreg_row <- result %>% dplyr::filter(section == "engine_param", name == "n_external_regressors")
+  expect_equal(nrow(nxreg_row), 1)
+  expect_equal(unname(nxreg_row$value), "0")
+})
+
+test_that("summarize chronos-bolt-base resolves args and filters predictors to Date/Combo", {
+  recipe_spec <- get_recipe_foundation_model(chronos_train_data)
+  model_spec <- chronos_bolt_base_model(forecast_horizon = 6, frequency = 12) %>%
+    parsnip::set_engine("chronos_bolt_base_model")
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec) %>%
+    generics::fit(chronos_train_data)
+
+  result <- summarize_model_chronos_bolt_base(wf)
+  validate_summary_output(result, "chronos-bolt-base")
+
+  fh_row <- result %>% dplyr::filter(section == "model_arg", name == "forecast_horizon")
+  expect_equal(nrow(fh_row), 1)
+  expect_equal(unname(fh_row$value), "6")
+
+  freq_row <- result %>% dplyr::filter(section == "model_arg", name == "frequency")
+  expect_equal(nrow(freq_row), 1)
+  expect_equal(unname(freq_row$value), "12")
+
+  preds <- result %>% dplyr::filter(section == "predictor")
+  expect_true(all(preds$name %in% c("Date", "Combo")))
+
+  mt_row <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
+  expect_equal(nrow(mt_row), 1)
+  expect_equal(unname(mt_row$value), "chronos-bolt-base")
+
+  nobs_row <- result %>% dplyr::filter(section == "engine_param", name == "n_training_obs")
+  expect_equal(nrow(nobs_row), 1)
+
+  nxreg_row <- result %>% dplyr::filter(section == "engine_param", name == "n_external_regressors")
+  expect_equal(nrow(nxreg_row), 1)
+  expect_equal(unname(nxreg_row$value), "0")
+})
+
+test_that("summarize chronos-bolt-tiny resolves args and filters predictors to Date/Combo", {
+  recipe_spec <- get_recipe_foundation_model(chronos_train_data)
+  model_spec <- chronos_bolt_tiny_model(forecast_horizon = 4, frequency = 12) %>%
+    parsnip::set_engine("chronos_bolt_tiny_model")
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec) %>%
+    generics::fit(chronos_train_data)
+
+  result <- summarize_model_chronos_bolt_tiny(wf)
+  validate_summary_output(result, "chronos-bolt-tiny")
+
+  fh_row <- result %>% dplyr::filter(section == "model_arg", name == "forecast_horizon")
+  expect_equal(nrow(fh_row), 1)
+  expect_equal(unname(fh_row$value), "4")
+
+  freq_row <- result %>% dplyr::filter(section == "model_arg", name == "frequency")
+  expect_equal(nrow(freq_row), 1)
+  expect_equal(unname(freq_row$value), "12")
+
+  preds <- result %>% dplyr::filter(section == "predictor")
+  expect_true(all(preds$name %in% c("Date", "Combo")))
+
+  mt_row <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
+  expect_equal(nrow(mt_row), 1)
+  expect_equal(unname(mt_row$value), "chronos-bolt-tiny")
+
+  nobs_row <- result %>% dplyr::filter(section == "engine_param", name == "n_training_obs")
+  expect_equal(nrow(nobs_row), 1)
+
+  nxreg_row <- result %>% dplyr::filter(section == "engine_param", name == "n_external_regressors")
+  expect_equal(nrow(nxreg_row), 1)
+  expect_equal(unname(nxreg_row$value), "0")
+})
