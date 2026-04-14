@@ -919,7 +919,7 @@ clean_outliers_missing_values <- function(df,
   }
 
   correct_clean_func <- function(col) {
-    if (clean_missing_values & sum(!is.na(col)) < 2) {
+    if (sum(!is.na(col)) < 2) {
       col
     } else if (clean_outliers) {
       timetk::ts_clean_vec(col, period = frequency_number)
