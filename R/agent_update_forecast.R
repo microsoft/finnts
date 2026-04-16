@@ -2402,11 +2402,11 @@ reconcile <- function(initial_fcst,
 
   tryCatch(
     {
-      # floor small/negative forecasts to prevent slow nonnegative reconciliation
+      # floor near-zero forecasts to prevent slow nonnegative reconciliation
       if (!negative_forecast) {
         initial_fcst <- initial_fcst %>%
           dplyr::mutate(
-            Forecast = ifelse(Forecast <= 0.001, 0.001, Forecast)
+            Forecast = ifelse(Forecast > -0.0001 & Forecast < 0.0001, 0.0001, Forecast)
           )
       }
 
