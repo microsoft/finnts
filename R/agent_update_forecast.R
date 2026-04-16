@@ -310,9 +310,7 @@ update_fcst_agent_workflow <- function(agent_info,
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        project_info = project_info,
-        parallel_processing = parallel_processing,
-        num_cores = num_cores
+        project_info = project_info
       )
     ),
     save_hierarchy_summary = list(
@@ -1065,19 +1063,13 @@ analyze_results <- function(agent_info) {
 #'
 #' @param agent_info A list containing the agent information.
 #' @param project_info A list containing the project information.
-#' @param parallel_processing A character value indicating the type of parallel processing to use.
-#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
 #'
 #' @return Nothing
 #' @noRd
 reconcile_agent_forecast <- function(agent_info,
-                                     project_info,
-                                     parallel_processing = NULL,
-                                     num_cores = NULL) {
+                                     project_info) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
-  check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
-  check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   # load best run settings
   run_inputs <- get_best_agent_run(
@@ -2410,6 +2402,14 @@ reconcile <- function(initial_fcst,
 
   tryCatch(
     {
+      # floor small/negative forecasts to prevent slow nonnegative reconciliation
+      if (!negative_forecast) {
+        initial_fcst <- initial_fcst %>%
+          dplyr::mutate(
+            Forecast = ifelse(Forecast <= 0.001, 0.001, Forecast)
+          )
+      }
+
       run_type_tbl <- initial_fcst %>%
         dplyr::select(Train_Test_ID, Run_Type) %>%
         dplyr::distinct()

@@ -636,6 +636,14 @@ reconcile_hierarchical_data <- function(run_info,
                 rbind(snaive_tbl)
             }
 
+            # floor small/negative forecasts to prevent slow nonnegative reconciliation
+            if (!negative_forecast) {
+              model_tbl <- model_tbl %>%
+                dplyr::mutate(
+                  Forecast = ifelse(Forecast <= 0.001, 0.001, Forecast)
+                )
+            }
+
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
               dplyr::mutate(Forecast = ifelse(Forecast > 100000000000000, 100000000000000, Forecast)) %>%
@@ -853,6 +861,14 @@ reconcile_hierarchical_data <- function(run_info,
 
               model_tbl <- model_tbl %>%
                 rbind(snaive_tbl)
+            }
+
+            # floor small/negative forecasts to prevent slow nonnegative reconciliation
+            if (!negative_forecast) {
+              model_tbl <- model_tbl %>%
+                dplyr::mutate(
+                  Forecast = ifelse(Forecast <= 0.001, 0.001, Forecast)
+                )
             }
 
             forecast_tbl <- model_tbl %>%

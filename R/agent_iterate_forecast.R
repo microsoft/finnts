@@ -349,9 +349,7 @@ iterate_forecast <- function(agent_info,
 
     reconcile_agent_forecast(
       agent_info = agent_info,
-      project_info = project_info,
-      parallel_processing = parallel_processing,
-      num_cores = num_cores
+      project_info = project_info
     )
 
     message("[agent] Saving Hierarchy Summary")

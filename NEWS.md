@@ -1,4 +1,4 @@
-# finnts 0.6.0.9043 (development version)
+# finnts 0.6.0.9044 (development version)
 
 ## Improvements
 
@@ -50,6 +50,7 @@
 -   Fixed model summary for global models by considering average models too.
 -   Fixed issue when future values of external regressors exist in some series but not all, leading to missing data issues when training a global model.
 -   Fixed issue around NA handling with external regressors. 
+-   Fixed issue when reconciling hierarchical forecasts that are very close to zero.
 
 ## Breaking Changes
 
