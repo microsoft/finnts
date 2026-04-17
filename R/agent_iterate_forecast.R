@@ -1363,16 +1363,21 @@ submit_fcst_run <- function(agent_info,
   if (!is.null(parallel_processing)) {
     if (!is.null(combo) & parallel_processing == "spark") {
       # turn off parallel processing when running single combo
+      final_parallel <- NULL
       parallel_processing <- NULL
       prep_parallel <- NULL
     } else if (is.null(combo) & parallel_processing == "spark") {
       # local parallel process instead of spark on global models
+      # use spark when doing model averaging on multiple global models
+      final_parallel <- "spark"
       parallel_processing <- NULL
       prep_parallel <- "local_machine"
     } else {
+      final_parallel <- parallel_processing
       prep_parallel <- parallel_processing
     }
   } else {
+    final_parallel <- parallel_processing
     prep_parallel <- parallel_processing
   }
 
@@ -1479,13 +1484,24 @@ submit_fcst_run <- function(agent_info,
     debug = FALSE
   )
 
+  # use spark for model averaging only when multiple global models are run
+  if (identical(final_parallel, "spark") && global_models) {
+    global_model_count <- length(intersect(
+      null_converter(inputs$models_to_run),
+      list_global_models()
+    ))
+    if (global_model_count <= 1) {
+      final_parallel <- NULL
+    }
+  }
+
   # evaluate models
   final_models(
     run_info = run_info,
     average_models = TRUE,
     max_model_average = 3,
     weekly_to_daily = project_info$weekly_to_daily,
-    parallel_processing = parallel_processing,
+    parallel_processing = final_parallel,
     inner_parallel = inner_parallel,
     num_cores = num_cores
   )
