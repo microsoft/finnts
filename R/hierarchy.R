@@ -640,7 +640,7 @@ reconcile_hierarchical_data <- function(run_info,
             if (!negative_forecast) {
               model_tbl <- model_tbl %>%
                 dplyr::mutate(
-                  Forecast = ifelse(Forecast > -0.0001 & Forecast < 0.0001, 0.0001, Forecast)
+                  Forecast = ifelse(Forecast > -0.001 & Forecast < 0.001, 0.001, Forecast)
                 )
             }
 
@@ -867,7 +867,7 @@ reconcile_hierarchical_data <- function(run_info,
             if (!negative_forecast) {
               model_tbl <- model_tbl %>%
                 dplyr::mutate(
-                  Forecast = ifelse(Forecast > -0.0001 & Forecast < 0.0001, 0.0001, Forecast)
+                  Forecast = ifelse(Forecast > -0.001 & Forecast < 0.001, 0.001, Forecast)
                 )
             }
 

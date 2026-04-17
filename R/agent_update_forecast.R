@@ -2406,7 +2406,7 @@ reconcile <- function(initial_fcst,
       if (!negative_forecast) {
         initial_fcst <- initial_fcst %>%
           dplyr::mutate(
-            Forecast = ifelse(Forecast > -0.0001 & Forecast < 0.0001, 0.0001, Forecast)
+            Forecast = ifelse(Forecast > -0.001 & Forecast < 0.001, 0.001, Forecast)
           )
       }
 
