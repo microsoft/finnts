@@ -6,7 +6,7 @@ list_models <- function() {
   list <- c(
     "arima", "arima-boost", "arimax", "chronos-bolt-base", "chronos-bolt-tiny", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
-    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timegpt", "xgboost"
+    "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timesfm", "timegpt", "xgboost"
   )
 
   return(list)
@@ -87,7 +87,7 @@ list_multivariate_models <- function() {
 #' @return character vector of foundation model names
 #' @noRd
 list_foundation_models <- function() {
-  c("timegpt", "chronos2", "chronos-bolt-base", "chronos-bolt-tiny")
+  c("timegpt", "chronos2", "chronos-bolt-base", "chronos-bolt-tiny", "timesfm")
 }
 
 #' List multistep models
@@ -1486,6 +1486,35 @@ chronos_bolt_tiny <- function(train_data,
   wflw_spec <- get_workflow_simple(
     model_spec_chronos_bolt_tiny,
     recipe_spec_chronos_bolt_tiny
+  )
+
+  return(wflw_spec)
+}
+
+#' TimesFM Model
+#'
+#' @param train_data Training Data
+#' @param horizon Forecast horizon
+#' @param frequency Frequency of Data
+#'
+#' @return Get the TimesFM model
+#' @noRd
+timesfm <- function(train_data,
+                    horizon,
+                    frequency = NULL) {
+  recipe_spec_timesfm <- train_data %>%
+    get_recipe_foundation_model()
+
+  model_spec_timesfm <- timesfm_model(
+    mode = "regression",
+    forecast_horizon = horizon,
+    frequency = frequency
+  ) %>%
+    parsnip::set_engine("timesfm_model")
+
+  wflw_spec <- get_workflow_simple(
+    model_spec_timesfm,
+    recipe_spec_timesfm
   )
 
   return(wflw_spec)

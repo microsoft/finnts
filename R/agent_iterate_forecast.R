@@ -2257,7 +2257,8 @@ get_foundation_model_suffix <- function() {
     list(name = "timegpt", check = check_timegpt_available),
     list(name = "chronos2", check = check_chronos2_available),
     list(name = "chronos-bolt-base", check = check_chronos2_available),
-    list(name = "chronos-bolt-tiny", check = check_chronos2_available)
+    list(name = "chronos-bolt-tiny", check = check_chronos2_available),
+    list(name = "timesfm", check = check_timesfm_available)
   )
 
   available <- vapply(registry, function(entry) {
@@ -2310,6 +2311,26 @@ check_chronos2_available <- function() {
     {
       api_url <- Sys.getenv("CHRONOS_API_URL")
       api_token <- Sys.getenv("CHRONOS_API_TOKEN")
+
+      nzchar(api_url) && nzchar(api_token)
+    },
+    error = function(e) {
+      FALSE
+    }
+  )
+}
+
+#' TimesFM Availability
+#'
+#' Checks if TimesFM API credentials are set (via environment variables).
+#'
+#' @return Logical indicating if TimesFM is available.
+#' @noRd
+check_timesfm_available <- function() {
+  tryCatch(
+    {
+      api_url <- Sys.getenv("TIMESFM_API_URL")
+      api_token <- Sys.getenv("TIMESFM_API_TOKEN")
 
       nzchar(api_url) && nzchar(api_token)
     },

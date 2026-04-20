@@ -123,7 +123,8 @@ summarize_models <- function(agent_info,
     "timegpt" = summarize_model_timegpt,
     "chronos2" = summarize_model_chronos2,
     "chronos-bolt-base" = summarize_model_chronos_bolt_base,
-    "chronos-bolt-tiny" = summarize_model_chronos_bolt_tiny
+    "chronos-bolt-tiny" = summarize_model_chronos_bolt_tiny,
+    "timesfm" = summarize_model_timesfm
   )
 
   # Setup parallel processing
@@ -8323,6 +8324,93 @@ summarize_model_chronos_bolt_tiny <- function(wf) {
     }
 
     eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "chronos-bolt-tiny"))
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize a TimesFM Workflow
+#'
+#' Extracts and summarizes key information from a fitted TimesFM workflow.
+#' TimesFM does not support external regressors, so no importance or
+#' regressor sections are included.
+#'
+#' @param wf A fitted tidymodels workflow containing a timesfm_model()
+#'   model with engine 'timesfm_model'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'
+#' @noRd
+summarize_model_timesfm <- function(wf) {
+  digits <- 6
+
+  if (!inherits(wf, "workflow")) stop("summarize_model_timesfm() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "timesfm_model")) {
+    stop("summarize_model_timesfm() only supports timesfm_model() with engine 'timesfm_model'.")
+  }
+
+  .format_numeric <- function(x) {
+    if (is.character(x) && (x == "auto" || x == "")) {
+      return(x)
+    }
+    x_num <- suppressWarnings(as.numeric(x))
+    if (!is.na(x_num) && is.finite(x_num)) {
+      rounded <- round(x_num, digits)
+      if (rounded == floor(rounded)) {
+        return(as.character(as.integer(rounded)))
+      }
+      return(format(rounded, scientific = FALSE, trim = TRUE))
+    }
+    as.character(x)
+  }
+
+  # Predictors / outcomes
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold) %>%
+    dplyr::filter(.data$name %in% c("Date", "Combo"))
+  outs_tbl <- .extract_outcomes(mold)
+
+  # No preprocessing steps for TimesFM
+  steps_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  # Engine params
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  is_timesfm_fit <- function(o) {
+    inherits(o, "timesfm_model_fit") || (is.list(o) && !is.null(o$train_data) && !is.null(o$forecast_horizon))
+  }
+  tfm_obj <- .find_obj(fit$fit, is_timesfm_fit, 6)
+  if (is.null(tfm_obj) && is_timesfm_fit(fit$fit)) tfm_obj <- fit$fit
+
+  # Model arguments
+  arg_names <- c("forecast_horizon", "frequency")
+  arg_vals <- vapply(arg_names, function(nm) {
+    val <- if (!is.null(tfm_obj) && !is.null(tfm_obj[[nm]])) tfm_obj[[nm]] else .chr1(spec$args[[nm]])
+    .format_numeric(as.character(val))
+  }, FUN.VALUE = character(1))
+  args_tbl <- tibble::tibble(section = "model_arg", name = arg_names, value = arg_vals)
+
+  if (!is.null(tfm_obj)) {
+    if (!is.null(tfm_obj$train_data)) {
+      train_data <- tfm_obj$train_data
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_external_regressors", "0"))
+      eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_training_obs", as.character(nrow(train_data))))
+
+      if ("Combo" %in% colnames(train_data)) {
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "n_combos", as.character(length(unique(train_data$Combo)))))
+      }
+    }
+
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "model_type", "timesfm"))
   }
 
   .assemble_output(

@@ -23,6 +23,12 @@
   - Added `chronos-bolt-base` foundation model. Uses the same Chronos API as `chronos2` but does not support external regressors. Passes `model_type = "chronos-bolt-base"` to the API.
   - Added `chronos-bolt-tiny` foundation model. Lightweight Chronos model variant using the same API as `chronos2` and `chronos-bolt-base`. Does not support external regressors. Passes `model_type = "chronos-bolt-tiny"` to the API.
 
+- New TimesFM Integration
+  - Added TimesFM as a new foundation model for zero-shot time series forecasting
+  - TimesFM is a local-only model (not global) that does not support external regressors
+  - Uses its own API endpoint, configured via `TIMESFM_API_URL` and `TIMESFM_API_TOKEN` environment variables
+  - Supports daily, weekly, monthly, and yearly frequency data
+
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
   - Added support for both historical and future external regressors

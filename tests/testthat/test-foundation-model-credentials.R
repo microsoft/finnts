@@ -10,6 +10,8 @@ fake_chronos_url <- "https://fake-chronos-test-endpoint.example.com/api/v1"
 fake_chronos_token <- "fake_chronos_token_abc123xyz789_DONOTLEAK"
 fake_nixtla_url <- "https://fake-nixtla-test-endpoint.example.com/"
 fake_nixtla_key <- "fake_nixtla_key_def456uvw012_DONOTLEAK"
+fake_timesfm_url <- "https://fake-timesfm-test-endpoint.example.com/api/v1"
+fake_timesfm_token <- "fake_timesfm_token_abc123xyz789_DONOTLEAK"
 
 # Helper: recursively search all character values in a nested list/object
 contains_credential <- function(obj, patterns) {
@@ -47,7 +49,13 @@ timegpt_patterns <- c(
   "NIXTLA_BASE_URL", "NIXTLA_API_KEY"
 )
 
-all_patterns <- c(chronos_patterns, timegpt_patterns)
+# TimesFM credential patterns
+timesfm_patterns <- c(
+  fake_timesfm_url, fake_timesfm_token,
+  "TIMESFM_API_URL", "TIMESFM_API_TOKEN"
+)
+
+all_patterns <- c(chronos_patterns, timegpt_patterns, timesfm_patterns)
 
 # Sample training data used across tests
 sample_x <- data.frame(
@@ -304,6 +312,64 @@ test_that("TimeGPT workflow fit does not contain API credentials", {
   )
 })
 
+# TimesFM
+
+test_that("TimesFM fit object does not contain API credentials", {
+  withr::local_envvar(
+    TIMESFM_API_URL = fake_timesfm_url,
+    TIMESFM_API_TOKEN = fake_timesfm_token
+  )
+
+  fit <- timesfm_model_fit_impl(
+    sample_x, sample_y,
+    forecast_horizon = 3, frequency = 12
+  )
+
+  expect_false(
+    contains_credential(fit, timesfm_patterns),
+    info = "TimesFM fit object must not contain API credentials"
+  )
+  expect_false(
+    serialized_contains_credential(fit, timesfm_patterns),
+    info = "Serialized TimesFM fit object must not contain API credentials"
+  )
+})
+
+test_that("TimesFM workflow fit does not contain API credentials", {
+  withr::local_envvar(
+    TIMESFM_API_URL = fake_timesfm_url,
+    TIMESFM_API_TOKEN = fake_timesfm_token
+  )
+
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 24),
+    Combo = "1",
+    Target = seq_len(24) * 1.5
+  )
+
+  recipe_spec <- get_recipe_foundation_model(train_data)
+
+  model_spec <- timesfm_model(
+    forecast_horizon = 3, frequency = 12
+  ) %>%
+    parsnip::set_engine("timesfm_model")
+
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec)
+
+  wf_fit <- parsnip::fit(wf, data = train_data)
+
+  expect_false(
+    contains_credential(wf_fit, timesfm_patterns),
+    info = "TimesFM workflow fit must not contain API credentials"
+  )
+  expect_false(
+    serialized_contains_credential(wf_fit, timesfm_patterns),
+    info = "Serialized TimesFM workflow fit must not contain API credentials"
+  )
+})
+
 # Cross-model: no credential from ANY foundation model leaks
 
 test_that("No foundation model fit object contains credentials from any provider", {
@@ -311,7 +377,9 @@ test_that("No foundation model fit object contains credentials from any provider
     CHRONOS_API_URL = fake_chronos_url,
     CHRONOS_API_TOKEN = fake_chronos_token,
     NIXTLA_BASE_URL = fake_nixtla_url,
-    NIXTLA_API_KEY = fake_nixtla_key
+    NIXTLA_API_KEY = fake_nixtla_key,
+    TIMESFM_API_URL = fake_timesfm_url,
+    TIMESFM_API_TOKEN = fake_timesfm_token
   )
 
   fits <- list(
@@ -331,6 +399,10 @@ test_that("No foundation model fit object contains credentials from any provider
       sample_x, sample_y,
       forecast_horizon = 3, frequency = 12,
       finetune_steps = 0, finetune_depth = 1
+    ),
+    timesfm = timesfm_model_fit_impl(
+      sample_x, sample_y,
+      forecast_horizon = 3, frequency = 12
     )
   )
 
@@ -592,5 +664,44 @@ test_that("TimeGPT workflow fit does not leak credentials set via R options", {
   expect_false(
     file_contains_credential(tmp, timegpt_patterns),
     info = "TimeGPT RDS file must not leak credentials set via R options"
+  )
+})
+
+test_that("TimesFM workflow fit saved to disk does not leak credentials", {
+  withr::local_envvar(
+    TIMESFM_API_URL = fake_timesfm_url,
+    TIMESFM_API_TOKEN = fake_timesfm_token
+  )
+
+  train_data <- data.frame(
+    Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 24),
+    Combo = "1",
+    Target = seq_len(24) * 1.5
+  )
+
+  recipe_spec <- get_recipe_foundation_model(train_data)
+
+  model_spec <- timesfm_model(forecast_horizon = 3, frequency = 12) %>%
+    parsnip::set_engine("timesfm_model")
+
+  wf <- workflows::workflow() %>%
+    workflows::add_recipe(recipe_spec) %>%
+    workflows::add_model(model_spec)
+
+  wf_fit <- parsnip::fit(wf, data = train_data)
+
+  tmp <- tempfile(fileext = ".rds")
+  on.exit(unlink(tmp), add = TRUE)
+  saveRDS(wf_fit, tmp)
+
+  expect_false(
+    file_contains_credential(tmp, timesfm_patterns),
+    info = "TimesFM RDS file on disk must not contain API credentials"
+  )
+
+  reloaded <- readRDS(tmp)
+  expect_false(
+    contains_credential(reloaded, timesfm_patterns),
+    info = "Reloaded TimesFM workflow must not contain API credentials"
   )
 })

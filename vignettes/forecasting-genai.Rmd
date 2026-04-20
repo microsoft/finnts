@@ -255,6 +255,75 @@ head(finn_output_tbl)
 # # ℹ 3 more variables: lo_80 <dbl>, hi_80 <dbl>, hi_95 <dbl>
 ```
 
+## TimesFM
+
+[TimesFM](https://github.com/google-research/timesfm) is a foundation model for time series forecasting developed by Google Research. It delivers zero-shot forecasts across different domains and frequencies.
+
+- Zero-shot forecasts without any local training.
+- Univariate only — **does not support external regressors**.
+- Runs as a **local** (per time series) model only — not global.
+
+### Authentication and Setup
+
+TimesFM requires its own API endpoint and token, configured via environment variables:
+
+```{r eval=FALSE}
+Sys.setenv(TIMESFM_API_URL = "https://your-timesfm-endpoint.inference.ml.azure.com/score")
+Sys.setenv(TIMESFM_API_TOKEN = "your api key here")
+```
+
+### Using TimesFM within finnts
+
+```{r eval=FALSE}
+library(finnts)
+
+hist_data <- timetk::m4_monthly %>%
+  dplyr::filter(
+    date >= "2010-01-01",
+    id == "M2"
+  ) %>%
+  dplyr::rename(Date = date) %>%
+  dplyr::mutate(id = as.character(id))
+
+run_info <- set_run_info(
+  project_name = "finnts_fcst",
+  run_name = "timesfm_run"
+)
+
+prep_data(
+  run_info = run_info,
+  input_data = hist_data,
+  combo_variables = c("id"),
+  target_variable = "value",
+  date_type = "month",
+  forecast_horizon = 6
+)
+
+prep_models(
+  run_info = run_info,
+  models_to_run = c("timesfm"),
+)
+
+train_models(
+  run_info = run_info,
+  run_global_models = FALSE
+)
+
+final_models(run_info = run_info)
+
+finn_output_tbl <- get_forecast_data(run_info = run_info)
+head(finn_output_tbl)
+# A tibble: 6 × 17
+#   Combo id    Model_ID  Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon Date       Target Forecast lo_95
+#   <chr> <chr> <chr>     <chr>      <chr>      <chr>     <chr>            <dbl> <chr>        <dbl> <date>      <dbl>    <dbl> <dbl>
+# 1 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              1 2015-07-01     NA    2394. 1730.
+# 2 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              2 2015-08-01     NA    2082. 1418.
+# 3 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              3 2015-09-01     NA    1977. 1313.
+# 4 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              4 2015-10-01     NA    2025. 1360.
+# 5 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              5 2015-11-01     NA    1841. 1177.
+# 6 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              6 2015-12-01     NA    1672. 1008.
+```
+
 ## TimeGPT
 
 TimeGPT is one such transformer based foundation model for time series developed by [Nixtla](https://nixtla.github.io/nixtlar/). It delivers:
