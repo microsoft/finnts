@@ -123,6 +123,7 @@ test_that("parse_timesfm_response parses successful response", {
 
   mock_response <- structure(
     list(
+      url = "",
       status_code = 200L,
       content = charToRaw(mock_body),
       headers = list(`content-type` = "application/json")
@@ -140,6 +141,7 @@ test_that("parse_timesfm_response parses successful response", {
 test_that("parse_timesfm_response errors on non-2xx status", {
   mock_response <- structure(
     list(
+      url = "",
       status_code = 500L,
       content = charToRaw('{"error": "internal"}'),
       headers = list(`content-type` = "application/json")
