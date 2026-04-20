@@ -65,7 +65,7 @@ test_that("get_timesfm_env returns value when variable is set", {
 
 # Frequency mapping
 
-test_that("map_timesfm_freq maps finnts frequency numbers to TimesFM freq strings", {
+test_that("map_timesfm_freq maps finnts freq numbers", {
   expect_equal(map_timesfm_freq(365.25), "D")
   expect_equal(map_timesfm_freq(52.17857), "W")
   expect_equal(map_timesfm_freq(12), "MS")
@@ -210,7 +210,11 @@ test_that("validate_timesfm_inputs rejects missing new_data columns", {
 })
 
 test_that("validate_timesfm_inputs rejects empty train_df", {
-  train <- data.frame(Date = as.Date(character()), Combo = character(), y = numeric())
+  train <- data.frame(
+    Date = as.Date(character()),
+    Combo = character(),
+    y = numeric()
+  )
   new_data <- data.frame(Date = Sys.Date(), Combo = "A")
   expect_error(validate_timesfm_inputs(train, new_data, 3), "no rows")
 })
@@ -219,7 +223,10 @@ test_that("validate_timesfm_inputs rejects invalid horizon", {
   train <- data.frame(Date = Sys.Date(), Combo = "A", y = 1)
   new_data <- data.frame(Date = Sys.Date(), Combo = "A")
   expect_error(validate_timesfm_inputs(train, new_data, -1), "positive integer")
-  expect_error(validate_timesfm_inputs(train, new_data, "abc"), "positive integer")
+  expect_error(
+    validate_timesfm_inputs(train, new_data, "abc"),
+    "positive integer"
+  )
 })
 
 # Float target values
@@ -229,8 +236,10 @@ test_that("TimesFM fit stores float target values correctly", {
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 12),
     Combo = "1"
   )
-  y <- c(100.123, 200.456, 300.789, 99.001, 50.555, 75.999,
-         123.456, 789.012, 0.001, 999.999, 42.42, 1.1)
+  y <- c(
+    100.123, 200.456, 300.789, 99.001, 50.555, 75.999,
+    123.456, 789.012, 0.001, 999.999, 42.42, 1.1
+  )
 
   fit <- timesfm_model_fit_impl(x, y, forecast_horizon = 3, frequency = 12)
 
@@ -244,7 +253,8 @@ test_that("TimesFM fit stores float target values correctly", {
 test_that("TimesFM fit and predict works with real API", {
   skip_on_cran()
   skip_if(
-    !nzchar(Sys.getenv("TIMESFM_API_URL")) || !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
+    !nzchar(Sys.getenv("TIMESFM_API_URL")) ||
+      !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
     "TIMESFM_API_URL and TIMESFM_API_TOKEN not set"
   )
 
@@ -271,7 +281,8 @@ test_that("TimesFM fit and predict works with real API", {
 test_that("TimesFM workflow fit with external regressors present", {
   skip_on_cran()
   skip_if(
-    !nzchar(Sys.getenv("TIMESFM_API_URL")) || !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
+    !nzchar(Sys.getenv("TIMESFM_API_URL")) ||
+      !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
     "TIMESFM_API_URL and TIMESFM_API_TOKEN not set"
   )
 

@@ -93,9 +93,10 @@ make_timesfm_model <- function() {
 #' @keywords internal
 #' @export
 timesfm_model <- function(
-    mode = "regression",
-    forecast_horizon = NULL,
-    frequency = NULL) {
+  mode = "regression",
+  forecast_horizon = NULL,
+  frequency = NULL
+) {
   args <- list(
     forecast_horizon = rlang::enquo(forecast_horizon),
     frequency = rlang::enquo(frequency)
@@ -126,10 +127,11 @@ timesfm_model <- function(
 #' @keywords internal
 #' @export
 timesfm_model_fit_impl <- function(
-    x,
-    y,
-    forecast_horizon = NULL,
-    frequency = NULL) {
+  x,
+  y,
+  forecast_horizon = NULL,
+  frequency = NULL
+) {
   train_df <- as.data.frame(x)
   train_df$y <- y
   train_df <- tibble::as_tibble(train_df)
@@ -153,7 +155,7 @@ timesfm_model_fit_impl <- function(
   )
 
   class(fit_obj) <- "timesfm_model_fit"
-  return(fit_obj)
+  fit_obj
 }
 
 #' Bridge prediction function for TimesFM Models
@@ -171,7 +173,7 @@ timesfm_model_fit_impl <- function(
 timesfm_model_predict_impl <- function(object, new_data, ...) {
   full_train_df <- object$train_data
   test_start <- min(new_data$Date, na.rm = TRUE)
-  train_df <- full_train_df %>% dplyr::filter(Date < test_start)
+  train_df <- full_train_df |> dplyr::filter(Date < test_start)
 
   num_combos_in_new <- length(unique(new_data$Combo))
 
@@ -211,7 +213,7 @@ timesfm_model_predict_impl <- function(object, new_data, ...) {
     ))
   }
 
-  return(as.numeric(result_df$forecast))
+  as.numeric(result_df$forecast)
 }
 
 #' Validate TimesFM prediction inputs
@@ -280,7 +282,8 @@ get_timesfm_env <- function(var_name) {
 #' TimesFM accepts: "D" (daily), "W" (weekly), "MS" (monthly start),
 #' "YS" (yearly start).
 #'
-#' @param frequency Numeric. finnts frequency number (365.25, 52.17857, 12, 4, 1).
+#' @param frequency Numeric. finnts frequency number
+#'   (365.25, 52.17857, 12, 4, 1).
 #'
 #' @return Character. TimesFM frequency string.
 #' @noRd
@@ -298,7 +301,7 @@ map_timesfm_freq <- function(frequency) {
     "MS"
   )
 
-  return(freq_str)
+  freq_str
 }
 
 #' Build the TimesFM API request payload
@@ -374,10 +377,18 @@ parse_timesfm_response <- function(response) {
   }
 
   raw_text <- httr::content(response, as = "text", encoding = "UTF-8")
-  result <- jsonlite::fromJSON(raw_text, simplifyVector = TRUE, simplifyDataFrame = TRUE)
+  result <- jsonlite::fromJSON(
+    raw_text,
+    simplifyVector = TRUE,
+    simplifyDataFrame = TRUE
+  )
 
   if (!is.data.frame(result)) {
-    stop("Unexpected API response format: expected a JSON array of objects.", call. = FALSE)
+    stop(
+      "Unexpected API response format: ",
+      "expected a JSON array of objects.",
+      call. = FALSE
+    )
   }
 
   result
@@ -432,12 +443,13 @@ print.timesfm_model_fit_impl <- function(x, ...) {
 #' @importFrom stats update
 #' @export
 update.timesfm_model <- function(
-    object,
-    parameters = NULL,
-    forecast_horizon = NULL,
-    frequency = NULL,
-    fresh = FALSE,
-    ...) {
+  object,
+  parameters = NULL,
+  forecast_horizon = NULL,
+  frequency = NULL,
+  fresh = FALSE,
+  ...
+) {
   eng_args <- object$eng_args
 
   if (!is.null(parameters)) {
