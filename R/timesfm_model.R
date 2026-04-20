@@ -280,7 +280,7 @@ get_timesfm_env <- function(var_name) {
 #' Map finnts frequency number to TimesFM freq string
 #'
 #' TimesFM accepts: "D" (daily), "W" (weekly), "MS" (monthly start),
-#' "YS" (yearly start).
+#' "QS" (quarterly start), "YS" (yearly start).
 #'
 #' @param frequency Numeric. finnts frequency number
 #'   (365.25, 52.17857, 12, 4, 1).
@@ -409,23 +409,6 @@ print.timesfm_model <- function(x, ...) {
     print(parsnip::show_call(x))
   }
 
-  invisible(x)
-}
-
-#' Print custom TimesFM fit object
-#'
-#' @param x model fit object
-#' @param ... Additional arguments
-#'
-#' @return Prints fit info
-#' @keywords internal
-#' @export
-print.timesfm_model_fit_impl <- function(x, ...) {
-  cat("TimesFM Model Fit\n")
-  cat("---\n")
-  cat("Training data rows:", nrow(x$train_data), "\n")
-  cat("Forecast horizon:", x$forecast_horizon, "\n")
-  cat("Frequency:", x$frequency, "\n")
   invisible(x)
 }
 

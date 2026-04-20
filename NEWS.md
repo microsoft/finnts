@@ -1,4 +1,4 @@
-# finnts 0.6.0.9046 (development version)
+# finnts 0.6.0.9047 (development version)
 
 ## Improvements
 
@@ -27,7 +27,7 @@
   - Added TimesFM as a new foundation model for zero-shot time series forecasting
   - TimesFM is a local-only model (not global) that does not support external regressors
   - Uses its own API endpoint, configured via `TIMESFM_API_URL` and `TIMESFM_API_TOKEN` environment variables
-  - Supports daily, weekly, monthly, and yearly frequency data
+  - Supports daily, weekly, monthly, quarterly, and yearly frequency data
 
 - New TimeGPT Integration
   - Added TimeGPT in addition to existing model to support zero shot forecasting
