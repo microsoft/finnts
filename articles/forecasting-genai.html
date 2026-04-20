@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9046</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9047</span>
       </span>
     </div>
 
@@ -418,6 +418,82 @@ no additional setup is needed.</p>
 </div>
 </div>
 <div class="section level2">
+<h2 id="timesfm">TimesFM<a class="anchor" aria-label="anchor" href="#timesfm"></a>
+</h2>
+<p><a href="https://github.com/google-research/timesfm" class="external-link">TimesFM</a> is a
+foundation model for time series forecasting developed by Google
+Research. It delivers zero-shot forecasts across different domains and
+frequencies.</p>
+<ul>
+<li>Zero-shot forecasts without any local training.</li>
+<li>Univariate only — <strong>does not support external
+regressors</strong>.</li>
+<li>Runs as a <strong>local</strong> (per time series) model only — not
+global.</li>
+</ul>
+<div class="section level3">
+<h3 id="authentication-and-setup-3">Authentication and Setup<a class="anchor" aria-label="anchor" href="#authentication-and-setup-3"></a>
+</h3>
+<p>TimesFM requires its own API endpoint and token, configured via
+environment variables:</p>
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>TIMESFM_API_URL <span class="op">=</span> <span class="st">"https://your-timesfm-endpoint.inference.ml.azure.com/score"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>TIMESFM_API_TOKEN <span class="op">=</span> <span class="st">"your api key here"</span><span class="op">)</span></span></code></pre></div>
+</div>
+<div class="section level3">
+<h3 id="using-timesfm-within-finnts">Using TimesFM within finnts<a class="anchor" aria-label="anchor" href="#using-timesfm-within-finnts"></a>
+</h3>
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span></span>
+<span>    <span class="va">date</span> <span class="op">&gt;=</span> <span class="st">"2010-01-01"</span>,</span>
+<span>    <span class="va">id</span> <span class="op">==</span> <span class="st">"M2"</span></span>
+<span>  <span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
+<span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
+<span>  project_name <span class="op">=</span> <span class="st">"finnts_fcst"</span>,</span>
+<span>  run_name <span class="op">=</span> <span class="st">"timesfm_run"</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/prep_data.html">prep_data</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
+<span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"id"</span><span class="op">)</span>,</span>
+<span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
+<span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
+<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"timesfm"</span><span class="op">)</span>,</span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/train_models.html">train_models</a></span><span class="op">(</span></span>
+<span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="fu"><a href="../reference/final_models.html">final_models</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">finn_output_tbl</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_forecast_data.html">get_forecast_data</a></span><span class="op">(</span>run_info <span class="op">=</span> <span class="va">run_info</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">finn_output_tbl</span><span class="op">)</span></span>
+<span><span class="co"># A tibble: 6 × 17</span></span>
+<span><span class="co">#   Combo id    Model_ID  Model_Name Model_Type Recipe_ID Run_Type Train_Test_ID Best_Model Horizon Date       Target Forecast lo_95</span></span>
+<span><span class="co">#   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;     &lt;chr&gt;      &lt;chr&gt;      &lt;chr&gt;     &lt;chr&gt;            &lt;dbl&gt; &lt;chr&gt;        &lt;dbl&gt; &lt;date&gt;      &lt;dbl&gt;    &lt;dbl&gt; &lt;dbl&gt;</span></span>
+<span><span class="co"># 1 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              1 2015-07-01     NA    2394. 1730.</span></span>
+<span><span class="co"># 2 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              2 2015-08-01     NA    2082. 1418.</span></span>
+<span><span class="co"># 3 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              3 2015-09-01     NA    1977. 1313.</span></span>
+<span><span class="co"># 4 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              4 2015-10-01     NA    2025. 1360.</span></span>
+<span><span class="co"># 5 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              5 2015-11-01     NA    1841. 1177.</span></span>
+<span><span class="co"># 6 M2    M2    timesfm-… timesfm    local      R1        Future_…             1 Yes              6 2015-12-01     NA    1672. 1008.</span></span></code></pre></div>
+</div>
+</div>
+<div class="section level2">
 <h2 id="timegpt">TimeGPT<a class="anchor" aria-label="anchor" href="#timegpt"></a>
 </h2>
 <p>TimeGPT is one such transformer based foundation model for time
@@ -431,7 +507,7 @@ required.</li>
 </ul>
 </div>
 <div class="section level2">
-<h2 id="authentication-and-setup-3">Authentication and Setup<a class="anchor" aria-label="anchor" href="#authentication-and-setup-3"></a>
+<h2 id="authentication-and-setup-4">Authentication and Setup<a class="anchor" aria-label="anchor" href="#authentication-and-setup-4"></a>
 </h2>
 <p>You can setup TimeGPT via either of the following:</p>
 <ul>
@@ -447,7 +523,7 @@ API</a></li>
 <div class="section level4">
 <h4 id="option-a-environment-variables">Option A: Environment variables<a class="anchor" aria-label="anchor" href="#option-a-environment-variables"></a>
 </h4>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># In R (or add to .Renviron)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>NIXTLA_BASE_URL <span class="op">=</span> <span class="st">"https://your-azure-deployed-timegen.azure.com/"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>NIXTLA_API_KEY <span class="op">=</span> <span class="st">"your_api_key_here"</span><span class="op">)</span></span>
@@ -456,7 +532,7 @@ API</a></li>
 <div class="section level4">
 <h4 id="option-b-using-nixtlar-helper">Option B: Using nixtlar helper<a class="anchor" aria-label="anchor" href="#option-b-using-nixtlar-helper"></a>
 </h4>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://nixtla.github.io/nixtlar/reference/nixtla_client_setup.html" class="external-link">nixtla_client_setup</a></span><span class="op">(</span></span>
@@ -472,13 +548,13 @@ API</a></li>
 <div class="section level4">
 <h4 id="option-a-environment-variable">Option A: Environment variable<a class="anchor" aria-label="anchor" href="#option-a-environment-variable"></a>
 </h4>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span>NIXTLA_API_KEY <span class="op">=</span> <span class="st">"your_api_key_here"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level4">
 <h4 id="option-b-using-nixtlar-helper-1">Option B: Using nixtlar helper<a class="anchor" aria-label="anchor" href="#option-b-using-nixtlar-helper-1"></a>
 </h4>
-<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://nixtla.github.io/nixtlar/reference/nixtla_set_api_key.html" class="external-link">nixtla_set_api_key</a></span><span class="op">(</span>api_key <span class="op">=</span> <span class="st">"Your API key here"</span><span class="op">)</span></span></code></pre></div>
@@ -488,7 +564,7 @@ API</a></li>
 <div class="section level2">
 <h2 id="quick-start-with-nixtlar-standalone">Quick start with nixtlar (standalone)<a class="anchor" aria-label="anchor" href="#quick-start-with-nixtlar-standalone"></a>
 </h2>
-<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
 <span></span>
@@ -513,7 +589,7 @@ can run as both a <strong>local</strong> (per time series) or
 <strong>global</strong> (across all time series) model. When running as
 a global model, TimeGPT learns patterns across all your time series
 simultaneously.</p>
-<div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># setup timegpt api keys</span></span>
@@ -631,7 +707,7 @@ depth/layers (range: 1-5)</li>
 <code>num_hyperparameters</code> in <code><a href="../reference/prep_models.html">prep_models()</a></code>. The
 tuning process uses validation splits to find optimal values, then
 refits the model with the best parameters.</p>
-<div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb16"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/prep_models.html">prep_models</a></span><span class="op">(</span></span>
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
 <span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"timegpt"</span><span class="op">)</span>,</span>
@@ -645,7 +721,7 @@ refits the model with the best parameters.</p>
 <strong>global</strong> (across all time series) model. When running as
 a global model, TimeGPT learns patterns across all your time series
 simultaneously.</p>
-<div class="sourceCode" id="cb15"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb17"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Run TimeGPT as a global model</span></span>
 <span><span class="fu"><a href="../reference/train_models.html">train_models</a></span><span class="op">(</span></span>
 <span>  run_info <span class="op">=</span> <span class="va">run_info</span>,</span>
