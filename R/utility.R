@@ -96,4 +96,5 @@ xgb_get_feature_names <- function(model) {
   make_chronos2_model()
   make_chronos_bolt_base_model()
   make_chronos_bolt_tiny_model()
+  make_timesfm_model()
 }

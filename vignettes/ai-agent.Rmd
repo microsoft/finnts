@@ -78,6 +78,9 @@ Sys.setenv(
 - Chronos Bolt Tiny Setup: Uses the same API credentials as Chronos2/Chronos Bolt Base. It is the smallest/fastest model variant that does not support external regressors and runs as a local model only.
   - See [Chronos Bolt Tiny section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#chronos-bolt-tiny) for details.
 
+- TimesFM Setup: Uses its own API endpoint (`TIMESFM_API_URL` and `TIMESFM_API_TOKEN`). It is a local-only model that does not support external regressors.
+  - See [TimesFM section](https://microsoft.github.io/finnts/articles/forecasting-genai.html#timesfm) for details.
+
 ---
 
 ## End-to-end: first run with the AI agent
