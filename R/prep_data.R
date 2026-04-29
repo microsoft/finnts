@@ -148,7 +148,6 @@ prep_data <- function(run_info,
   if (is.null(hist_end_date)) {
     hist_end_date <- input_data %>%
       dplyr::select(Date) %>%
-      dplyr::distinct() %>%
       dplyr::collect() %>%
       dplyr::distinct() %>%
       dplyr::filter(Date == max(Date)) %>%
@@ -159,7 +158,6 @@ prep_data <- function(run_info,
   if (is.null(hist_start_date)) {
     hist_start_date <- input_data %>%
       dplyr::select(Date) %>%
-      dplyr::distinct() %>%
       dplyr::collect() %>%
       dplyr::distinct() %>%
       dplyr::filter(Date == min(Date)) %>%

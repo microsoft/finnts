@@ -397,7 +397,7 @@ write_data <- function(x,
   }
 
   # write to final folder output
-  if (inherits(run_info$storage_object, c("blob_container", "ms_drive", "NULL")) & !is.null(run_info$path)) {
+  if (inherits(run_info$storage_object, c("blob_container", "ms_drive", "NULL")) && !is.null(run_info$path)) {
     if (is.null(run_info$storage_object)) {
       fs::dir_create(run_info$path, folder)
     }

@@ -18,6 +18,12 @@
   - It supports both historical and future external regressors
   - It can be used as a global model
   - Added a Chronos controller, which will support other Chronos variant API POST requests as well
+
+## Code Quality
+
+- Replaced vectorized `&`/`|` operators with scalar `&&`/`||` in `if()` conditions throughout `input_checks.R`, `run_info.R`, and `read_write_data.R` to follow idiomatic R style and ensure correct short-circuit evaluation.
+- Removed redundant `dplyr::distinct()` calls in `prep_data.R` when computing historical start/end dates (deduplication after `collect()` is sufficient).
+
   - Added two new package dependencies: `jsonlite` and `httr`
   - Integrated Chronos2 into the finn agent workflow
   - Added `chronos-bolt-base` foundation model. Uses the same Chronos API as `chronos2` but does not support external regressors. Passes `model_type = "chronos-bolt-base"` to the API.

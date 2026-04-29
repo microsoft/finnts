@@ -84,7 +84,7 @@ check_input_type <- function(input_name,
     )
   }
 
-  if (!is.null(expected_value) & !is.null(input_value)) {
+  if (!is.null(expected_value) && !is.null(input_value)) {
     if (!sum(input_value %in% expected_value)) {
       stop(
         paste0(
@@ -137,7 +137,7 @@ check_input_data <- function(input_data,
   }
 
   # external regressors match the input data
-  if (!is.null(external_regressors) & sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
+  if (!is.null(external_regressors) && sum(external_regressors %in% colnames(input_data)) != length(external_regressors)) {
     missing_xregs <- setdiff(external_regressors, colnames(input_data))
     stop(
       "external regressors do not match column headers in input data. ",
@@ -200,7 +200,7 @@ check_input_data <- function(input_data,
   }
 
   # ensure month, quarter, year data repeats on the same day of each period
-  if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
+  if ((date_type != "day" && date_type != "week") && length(unique(format(input_data$Date, format = "%d"))) != 1) {
     unique_days <- unique(format(input_data$Date, format = "%d"))
     stop(
       "historical date values are not evenly spaced. ",
@@ -217,13 +217,13 @@ check_input_data <- function(input_data,
   }
 
   # input_data is correct type for parallel processing
-  if (inherits(input_data, c("data.frame", "tbl")) & is.null(parallel_processing)) {
+  if (inherits(input_data, c("data.frame", "tbl")) && is.null(parallel_processing)) {
     # do nothing
-  } else if (inherits(input_data, "tbl_spark") & is.null(parallel_processing)) {
+  } else if (inherits(input_data, "tbl_spark") && is.null(parallel_processing)) {
     stop("spark data frames should run with spark parallel processing",
       call. = FALSE
     )
-  } else if (inherits(input_data, "tbl_spark") & parallel_processing != "spark") {
+  } else if (inherits(input_data, "tbl_spark") && parallel_processing != "spark") {
     stop("spark data frames should run with spark parallel processing",
       call. = FALSE
     )
@@ -276,7 +276,7 @@ check_parallel_processing <- function(run_info,
 
   if (parallel_processing %in% c("local_machine", "spark") == FALSE) {
     stop("parallel processing input must be one of these values: NULL, 'local_machine', 'azure_batch', 'spark'")
-  } else if (parallel_processing == "local_machine" & inner_parallel) {
+  } else if (parallel_processing == "local_machine" && inner_parallel) {
     stop("cannot run parallel process (inner_parallel input) within another parallel process (parallel_processing input) on a local machine. Please set inner_parallel to FALSE or run in spark")
   } else if (parallel_processing == "spark") {
     if (!exists("sc")) {

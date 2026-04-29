@@ -59,7 +59,7 @@ set_run_info <- function(project_name = "finn_project",
     stop("`path` must either be a NULL or a string")
   }
 
-  if (inherits(storage_object, c("blob_container", "ms_drive")) &
+  if (inherits(storage_object, c("blob_container", "ms_drive")) &&
     is.null(path)) {
     path <- ""
   }
@@ -78,7 +78,7 @@ set_run_info <- function(project_name = "finn_project",
     fs::dir_create(tempdir(), prep_models_folder)
     fs::dir_create(tempdir(), models_folder)
     fs::dir_create(tempdir(), forecasts_folder)
-  } else if (is.null(storage_object) & substr(path, 1, 6) == "/synfs") {
+  } else if (is.null(storage_object) && substr(path, 1, 6) == "/synfs") {
     temp_path <- stringr::str_replace(path, "/synfs/", "synfs:/")
 
     if (!dir.exists(fs::path(path, prep_data_folder) %>% as.character())) {
@@ -141,7 +141,7 @@ set_run_info <- function(project_name = "finn_project",
   ) %>%
     base::suppressWarnings()
 
-  if (nrow(log_df) > 0 & add_unique_id == FALSE) {
+  if (nrow(log_df) > 0 && add_unique_id == FALSE) {
     # check if input values have changed
     current_log_df <- tibble::tibble(
       project_name = project_name,
@@ -289,7 +289,7 @@ get_run_info <- function(project_name = NULL,
     stop("`path` must either be a NULL or a string")
   }
 
-  if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
+  if (inherits(storage_object, c("blob_container", "ms_drive")) && is.null(path)) {
     path <- ""
   }
 
@@ -312,7 +312,7 @@ get_run_info <- function(project_name = NULL,
   )
 
   # read run metadata
-  if (!is.null(project_name) & !is.null(run_name) & !is.null(path)) {
+  if (!is.null(project_name) && !is.null(run_name) && !is.null(path)) {
     # read specific file path
     file_path <- paste0(
       path,
