@@ -97,10 +97,12 @@ Come up with 1-3 concrete, focused improvements for the selected category. Prior
 Create a new branch following the naming convention:
 
 ```
-agent/review/{category}-improvements
+agent/{YYYY-MM-DD}/{category}-improvements
 ```
 
-Where `{category}` is one of: `code-quality`, `security`, `performance`, `documentation`, `test-coverage`, `ml-forecasting`.
+Where `{YYYY-MM-DD}` is today's date (e.g., `2026-04-29`) and `{category}` is one of: `code-quality`, `security`, `performance`, `documentation`, `test-coverage`, `ml-forecasting`.
+
+For example: `agent/2026-04-29/code-quality-improvements`
 
 Implement the identified improvements:
 
