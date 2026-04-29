@@ -38,7 +38,7 @@ The categories to cycle through (in order) are:
 3. **performance** — Performance optimizations (vectorization, memory efficiency, algorithm improvements, parallel processing)
 4. **documentation** — Documentation & docstrings (roxygen2 comments, vignettes, README, examples, parameter descriptions)
 5. **test-coverage** — Test coverage gaps (missing unit tests, edge cases, integration tests, regression tests)
-6. **ml-forecasting** — ML Forecasting (model selection, feature engineering, cross-validation, interpretability, metrics)
+6. **ml-forecasting** — ML Forecasting (new model algorithms, model selection, feature engineering, cross-validation, interpretability, metrics)
 
 ## Round-Robin Category Selection
 
@@ -80,7 +80,7 @@ Based on the selected improvement category, perform a focused analysis:
 - **performance**: Look for non-vectorized loops, unnecessary data copies, inefficient joins, missing parallelization opportunities, memory-heavy operations on large datasets
 - **documentation**: Look for missing or incomplete roxygen2 documentation, undocumented parameters, missing return value descriptions, missing examples, outdated vignettes
 - **test-coverage**: Look for untested functions, missing edge case tests, functions with complex logic but no tests, missing error condition tests
-- **ml-forecasting**: Look for opportunities to improve model selection heuristics, feature engineering pipelines, cross-validation strategies, forecast accuracy metrics, model interpretability, ensemble methods
+- **ml-forecasting**: Look for opportunities to add new forecasting model algorithms, improve model selection heuristics, feature engineering pipelines, cross-validation strategies, forecast accuracy metrics, model interpretability, ensemble methods
 
 ### Step 3: Identify Improvements
 
@@ -155,3 +155,4 @@ After completing your work (whether you created a PR or not), update the cache-m
 - **Be conservative**: When in doubt, make the safer choice
 - **Use noop when appropriate**: If you analyze a category and determine no meaningful improvements can be made right now, call the `noop` safe output with an explanation. This is perfectly acceptable and shows you did the work.
 - **Branch cleanup**: Use the branch naming convention exactly as specified so maintainers can easily identify automated improvement PRs
+- **Minimize dependencies**: Keep new package dependencies to a minimum. Only add a new dependency if it is truly required to implement the improvement and there is no reasonable way to achieve the same result with existing dependencies or base R
