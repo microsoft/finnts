@@ -149,6 +149,8 @@ build_future_payload <- function(new_data, exogenous_cols) {
 }
 
 #' Maximum number of retry attempts for transient Chronos API failures.
+#' With this value set to 3, the total number of attempts is 4 (1 original + 3
+#' retries).
 #' @noRd
 CHRONOS_MAX_RETRIES <- 3L
 
@@ -157,7 +159,9 @@ CHRONOS_MAX_RETRIES <- 3L
 #' serialises the payload to JSON, sends the request, and parses
 #' the response into a data frame. Retries up to \code{CHRONOS_MAX_RETRIES}
 #' times on transient failures (HTTP 429, 5xx, or connection errors) using
-#' exponential backoff with jitter.
+#' exponential backoff with jitter. The total number of attempts is
+#' \code{CHRONOS_MAX_RETRIES + 1} (1 original attempt plus up to
+#' \code{CHRONOS_MAX_RETRIES} retries).
 #'
 #' @param payload A named list representing the full API request body.
 #'

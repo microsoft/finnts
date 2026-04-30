@@ -2488,7 +2488,7 @@ null_converter <- function(x) {
   if (length(x) > 1) {
     return(x)
   }
-  if (is.na(x) || x == "NULL") {
+  if (is.na(x) || identical(x, "NULL")) {
     return(NULL)
   }
   x
