@@ -1,4 +1,4 @@
-# finnts 0.6.0.9047 (development version)
+# finnts 0.6.0.9048 (development version)
 
 ## Improvements
 
@@ -46,6 +46,9 @@
 
 ## Bug Fixes
 
+-   Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.
+-   Fixed `null_converter()` crash in agent workflow when input is `NA`.
+-   Added retry with exponential backoff (up to 3 retries) for Chronos and TimesFM API calls on transient failures (HTTP 429, 5xx, connection errors).
 -   Fixed hierarchical forecast reconciliation failure caused by floating-point Target discrepancies across models.
 -   Improved error messages during hierarchical reconciliation to include the underlying error for easier debugging.
 -   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.

@@ -148,10 +148,20 @@ build_future_payload <- function(new_data, exogenous_cols) {
   out
 }
 
+#' Maximum number of retry attempts for transient Chronos API failures.
+#' With this value set to 3, the total number of attempts is 4 (1 original + 3
+#' retries).
+#' @noRd
+CHRONOS_MAX_RETRIES <- 3L
+
 #' Send a POST request to the Chronos API
 #'
 #' serialises the payload to JSON, sends the request, and parses
-#' the response into a data frame.
+#' the response into a data frame. Retries up to \code{CHRONOS_MAX_RETRIES}
+#' times on transient failures (HTTP 429, 5xx, or connection errors) using
+#' exponential backoff with jitter. The total number of attempts is
+#' \code{CHRONOS_MAX_RETRIES + 1} (1 original attempt plus up to
+#' \code{CHRONOS_MAX_RETRIES} retries).
 #'
 #' @param payload A named list representing the full API request body.
 #'
@@ -163,17 +173,74 @@ send_chronos_request <- function(payload) {
 
   body_json <- jsonlite::toJSON(payload, auto_unbox = TRUE, dataframe = "rows")
 
-  response <- httr::POST(
-    url = api_url,
-    httr::add_headers(
-      Authorization = paste("Bearer", api_token),
-      `Content-Type` = "application/json"
-    ),
-    body = body_json,
-    encode = "raw"
-  )
+  attempt <- 0L
+  max_retries <- CHRONOS_MAX_RETRIES
 
-  parse_chronos_response(response)
+  repeat {
+    attempt <- attempt + 1L
+
+    response <- tryCatch(
+      httr::POST(
+        url = api_url,
+        httr::add_headers(
+          Authorization = paste("Bearer", api_token),
+          `Content-Type` = "application/json"
+        ),
+        body = body_json,
+        encode = "raw"
+      ),
+      error = function(e) e
+    )
+
+    # connection-level error (timeout, DNS, etc.)
+    if (inherits(response, "error")) {
+      if (attempt > max_retries) {
+        stop(
+          sprintf(
+            "Chronos API request failed after %d attempts. Last error: %s",
+            attempt, conditionMessage(response)
+          ),
+          call. = FALSE
+        )
+      }
+      chronos_backoff_wait(attempt)
+      next
+    }
+
+    status <- httr::status_code(response)
+
+    # non-retryable client error (4xx except 429)
+    if (status >= 400 && status < 500 && status != 429L) {
+      return(parse_chronos_response(response))
+    }
+
+    # success
+    if (status >= 200 && status < 300) {
+      return(parse_chronos_response(response))
+    }
+
+    # retryable: 429 (rate limit) or 5xx (server error)
+    if (attempt > max_retries) {
+      return(parse_chronos_response(response))
+    }
+
+    chronos_backoff_wait(attempt)
+  }
+}
+
+#' Exponential backoff with jitter
+#'
+#' Waits 2^attempt seconds plus uniform random jitter (0-1s).
+#' Capped at 30 seconds.
+#'
+#' @param attempt Integer. Current attempt number (1-based).
+#' @noRd
+chronos_backoff_wait <- function(attempt) {
+  wait_secs <- min(2^attempt + stats::runif(1), 30)
+  cli::cli_alert_warning(
+    "Chronos API: transient failure, retrying in {round(wait_secs, 1)}s (attempt {attempt})..."
+  )
+  Sys.sleep(wait_secs)
 }
 
 #' Read and validate a Chronos environment variable
