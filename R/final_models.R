@@ -371,6 +371,8 @@ final_models <- function(run_info,
             Combo = character(),
             Model_ID = character(),
             fold_count = integer(),
+            actual_ids = I(list()),
+            missing_ids = I(list()),
             stringsAsFactors = FALSE
           )
           model_back_test_coverage <- data.frame(
