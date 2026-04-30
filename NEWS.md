@@ -2,6 +2,9 @@
 
 ## Improvements
 
+- Security: `set_run_info()` now validates `project_name` and `run_name` to reject empty strings, path separator characters (`/`, `\`, `..`), and names longer than 128 characters. This prevents log file corruption and path traversal-style inputs.
+- Security: Fixed use of vectorized `&` operator in `check_input_type()` scalar condition; now uses short-circuit `&&` as intended.
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  

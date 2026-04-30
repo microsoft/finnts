@@ -46,8 +46,34 @@ set_run_info <- function(project_name = "finn_project",
   check_input_type("data_output", data_output, "character", c("csv", "parquet"))
   check_input_type("object_output", object_output, "character", c("rds", "qs2"))
 
+  if (!inherits(project_name, "character") || !nzchar(trimws(project_name))) {
+    stop("`project_name` must be a non-empty string", call. = FALSE)
+  }
+
+  if (grepl("[/\\\\]|\\.\\.", project_name)) {
+    stop("`project_name` must not contain path separators ('/', '\\\\') or '..'", call. = FALSE)
+  }
+
+  if (nchar(project_name) > 128L) {
+    stop("`project_name` must not exceed 128 characters", call. = FALSE)
+  }
+
   if (!inherits(run_name, c("NULL", "character"))) {
     stop("`run_name` must either be a NULL or a string")
+  }
+
+  if (!is.null(run_name)) {
+    if (!nzchar(trimws(run_name))) {
+      stop("`run_name` must be a non-empty string when provided", call. = FALSE)
+    }
+
+    if (grepl("[/\\\\]|\\.\\.", run_name)) {
+      stop("`run_name` must not contain path separators ('/', '\\\\') or '..'", call. = FALSE)
+    }
+
+    if (nchar(run_name) > 128L) {
+      stop("`run_name` must not exceed 128 characters", call. = FALSE)
+    }
   }
 
   if (!inherits(storage_object, c("blob_container", "ms_drive", "NULL"))) {
