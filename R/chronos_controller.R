@@ -211,7 +211,7 @@ send_chronos_request <- function(payload) {
 
     # non-retryable client error (4xx except 429)
     if (status >= 400 && status < 500 && status != 429L) {
-      parse_chronos_response(response)
+      return(parse_chronos_response(response))
     }
 
     # success
@@ -221,7 +221,7 @@ send_chronos_request <- function(payload) {
 
     # retryable: 429 (rate limit) or 5xx (server error)
     if (attempt > max_retries) {
-      parse_chronos_response(response)
+      return(parse_chronos_response(response))
     }
 
     chronos_backoff_wait(attempt)

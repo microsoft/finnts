@@ -390,7 +390,7 @@ send_timesfm_request <- function(payload) {
 
     # non-retryable client error (4xx except 429)
     if (status >= 400 && status < 500 && status != 429L) {
-      parse_timesfm_response(response)
+      return(parse_timesfm_response(response))
     }
 
     # success
@@ -400,7 +400,7 @@ send_timesfm_request <- function(payload) {
 
     # retryable: 429 (rate limit) or 5xx (server error)
     if (attempt > max_retries) {
-      parse_timesfm_response(response)
+      return(parse_timesfm_response(response))
     }
 
     timesfm_backoff_wait(attempt)
