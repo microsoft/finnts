@@ -203,7 +203,7 @@ send_chronos_request <- function(payload) {
           call. = FALSE
         )
       }
-      backoff_wait(attempt)
+      chronos_backoff_wait(attempt)
       next
     }
 
@@ -224,7 +224,7 @@ send_chronos_request <- function(payload) {
       parse_chronos_response(response)
     }
 
-    backoff_wait(attempt)
+    chronos_backoff_wait(attempt)
   }
 }
 
@@ -235,7 +235,7 @@ send_chronos_request <- function(payload) {
 #'
 #' @param attempt Integer. Current attempt number (1-based).
 #' @noRd
-backoff_wait <- function(attempt) {
+chronos_backoff_wait <- function(attempt) {
   wait_secs <- min(2^attempt + stats::runif(1), 30)
   cli::cli_alert_warning(
     "Chronos API: transient failure, retrying in {round(wait_secs, 1)}s (attempt {attempt})..."

@@ -303,3 +303,141 @@ test_that("TimesFM workflow fit with external regressors present", {
   fit_obj <- workflows::extract_fit_parsnip(wf_fit)$fit
   expect_false("temperature_original" %in% colnames(fit_obj$train_data))
 })
+
+# * send_timesfm_request retry logic ----
+
+make_timesfm_mock_response <- function(status_code, body = "[]") {
+  structure(
+    list(
+      url = "https://example.com/api",
+      status_code = as.integer(status_code),
+      content = charToRaw(body),
+      headers = list(`content-type` = "application/json")
+    ),
+    class = "response"
+  )
+}
+
+test_that("send_timesfm_request retries connection errors and fails after 4 total attempts", {
+  call_count <- 0L
+  withr::with_envvar(
+    c(TIMESFM_API_URL = "https://example.com", TIMESFM_API_TOKEN = "test-token"),
+    {
+      local_mocked_bindings(
+        POST = function(...) {
+          call_count <<- call_count + 1L
+          stop("connection refused")
+        },
+        .package = "httr"
+      )
+      local_mocked_bindings(
+        timesfm_backoff_wait = function(attempt) invisible(NULL)
+      )
+      expect_error(
+        send_timesfm_request(list(x = 1)),
+        "failed after 4 attempts"
+      )
+      expect_equal(call_count, 4L)
+    }
+  )
+})
+
+test_that("send_timesfm_request retries on HTTP 429 and succeeds on second attempt", {
+  call_count <- 0L
+  success_body <- '[{"unique_id": "s1", "ds": "2026-01-01"}]'
+  withr::with_envvar(
+    c(TIMESFM_API_URL = "https://example.com", TIMESFM_API_TOKEN = "test-token"),
+    {
+      local_mocked_bindings(
+        POST = function(...) {
+          call_count <<- call_count + 1L
+          if (call_count == 1L) {
+            make_timesfm_mock_response(429L, '{"error": "rate limited"}')
+          } else {
+            make_timesfm_mock_response(200L, success_body)
+          }
+        },
+        .package = "httr"
+      )
+      local_mocked_bindings(
+        timesfm_backoff_wait = function(attempt) invisible(NULL)
+      )
+      result <- send_timesfm_request(list(x = 1))
+      expect_equal(call_count, 2L)
+      expect_true(is.data.frame(result))
+    }
+  )
+})
+
+test_that("send_timesfm_request retries on HTTP 500 and succeeds on second attempt", {
+  call_count <- 0L
+  success_body <- '[{"unique_id": "s1", "ds": "2026-01-01"}]'
+  withr::with_envvar(
+    c(TIMESFM_API_URL = "https://example.com", TIMESFM_API_TOKEN = "test-token"),
+    {
+      local_mocked_bindings(
+        POST = function(...) {
+          call_count <<- call_count + 1L
+          if (call_count == 1L) {
+            make_timesfm_mock_response(500L, '{"error": "internal server error"}')
+          } else {
+            make_timesfm_mock_response(200L, success_body)
+          }
+        },
+        .package = "httr"
+      )
+      local_mocked_bindings(
+        timesfm_backoff_wait = function(attempt) invisible(NULL)
+      )
+      result <- send_timesfm_request(list(x = 1))
+      expect_equal(call_count, 2L)
+      expect_true(is.data.frame(result))
+    }
+  )
+})
+
+test_that("send_timesfm_request does not retry on non-retryable 4xx errors", {
+  call_count <- 0L
+  withr::with_envvar(
+    c(TIMESFM_API_URL = "https://example.com", TIMESFM_API_TOKEN = "test-token"),
+    {
+      local_mocked_bindings(
+        POST = function(...) {
+          call_count <<- call_count + 1L
+          make_timesfm_mock_response(400L, '{"error": "bad request"}')
+        },
+        .package = "httr"
+      )
+      local_mocked_bindings(
+        timesfm_backoff_wait = function(attempt) invisible(NULL)
+      )
+      expect_error(
+        send_timesfm_request(list(x = 1)),
+        "HTTP 400"
+      )
+      expect_equal(call_count, 1L)
+    }
+  )
+})
+
+test_that("send_timesfm_request total attempts equals TIMESFM_MAX_RETRIES + 1 for persistent errors", {
+  # with TIMESFM_MAX_RETRIES = 3, exactly 4 total attempts (1 original + 3 retries)
+  call_count <- 0L
+  withr::with_envvar(
+    c(TIMESFM_API_URL = "https://example.com", TIMESFM_API_TOKEN = "test-token"),
+    {
+      local_mocked_bindings(
+        POST = function(...) {
+          call_count <<- call_count + 1L
+          stop("network unreachable")
+        },
+        .package = "httr"
+      )
+      local_mocked_bindings(
+        timesfm_backoff_wait = function(attempt) invisible(NULL)
+      )
+      expect_error(send_timesfm_request(list(x = 1)))
+      expect_equal(call_count, 4L)
+    }
+  )
+})

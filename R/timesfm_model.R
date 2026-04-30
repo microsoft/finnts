@@ -329,7 +329,18 @@ build_timesfm_payload <- function(train_df, horizon, freq) {
   )
 }
 
+#' Maximum number of retry attempts for transient TimesFM API failures.
+#' With this value set to 3, the total number of attempts is 4 (1 original + 3
+#' retries).
+#' @noRd
+TIMESFM_MAX_RETRIES <- 3L
+
 #' Send a POST request to the TimesFM API
+#'
+#' Serialises the payload to JSON, sends the request, and parses
+#' the response into a data frame. Retries up to \code{TIMESFM_MAX_RETRIES}
+#' times on transient failures (HTTP 429, 5xx, or connection errors) using
+#' exponential backoff with jitter.
 #'
 #' @param payload A named list representing the full API request body.
 #'
@@ -341,17 +352,74 @@ send_timesfm_request <- function(payload) {
 
   body_json <- jsonlite::toJSON(payload, auto_unbox = TRUE, dataframe = "rows")
 
-  response <- httr::POST(
-    url = api_url,
-    httr::add_headers(
-      Authorization = paste("Bearer", api_token),
-      `Content-Type` = "application/json"
-    ),
-    body = body_json,
-    encode = "raw"
-  )
+  attempt <- 0L
+  max_retries <- TIMESFM_MAX_RETRIES
 
-  parse_timesfm_response(response)
+  repeat {
+    attempt <- attempt + 1L
+
+    response <- tryCatch(
+      httr::POST(
+        url = api_url,
+        httr::add_headers(
+          Authorization = paste("Bearer", api_token),
+          `Content-Type` = "application/json"
+        ),
+        body = body_json,
+        encode = "raw"
+      ),
+      error = function(e) e
+    )
+
+    # connection-level error (timeout, DNS, etc.)
+    if (inherits(response, "error")) {
+      if (attempt > max_retries) {
+        stop(
+          sprintf(
+            "TimesFM API request failed after %d attempts. Last error: %s",
+            attempt, conditionMessage(response)
+          ),
+          call. = FALSE
+        )
+      }
+      timesfm_backoff_wait(attempt)
+      next
+    }
+
+    status <- httr::status_code(response)
+
+    # non-retryable client error (4xx except 429)
+    if (status >= 400 && status < 500 && status != 429L) {
+      parse_timesfm_response(response)
+    }
+
+    # success
+    if (status >= 200 && status < 300) {
+      return(parse_timesfm_response(response))
+    }
+
+    # retryable: 429 (rate limit) or 5xx (server error)
+    if (attempt > max_retries) {
+      parse_timesfm_response(response)
+    }
+
+    timesfm_backoff_wait(attempt)
+  }
+}
+
+#' Exponential backoff with jitter for TimesFM API
+#'
+#' Waits 2^attempt seconds plus uniform random jitter (0-1s).
+#' Capped at 30 seconds.
+#'
+#' @param attempt Integer. Current attempt number (1-based).
+#' @noRd
+timesfm_backoff_wait <- function(attempt) {
+  wait_secs <- min(2^attempt + stats::runif(1), 30)
+  cli::cli_alert_warning(
+    "TimesFM API: transient failure, retrying in {round(wait_secs, 1)}s (attempt {attempt})..."
+  )
+  Sys.sleep(wait_secs)
 }
 
 #' Parse the HTTP response from the TimesFM API

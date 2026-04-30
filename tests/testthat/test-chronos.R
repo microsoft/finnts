@@ -214,7 +214,7 @@ test_that("send_chronos_request retries connection errors and fails after 4 tota
         .package = "httr"
       )
       local_mocked_bindings(
-        backoff_wait = function(attempt) invisible(NULL)
+        chronos_backoff_wait = function(attempt) invisible(NULL)
       )
       expect_error(
         send_chronos_request(list(x = 1)),
@@ -243,7 +243,7 @@ test_that("send_chronos_request retries on HTTP 429 and succeeds on second attem
         .package = "httr"
       )
       local_mocked_bindings(
-        backoff_wait = function(attempt) invisible(NULL)
+        chronos_backoff_wait = function(attempt) invisible(NULL)
       )
       result <- send_chronos_request(list(x = 1))
       expect_equal(call_count, 2L)
@@ -270,7 +270,7 @@ test_that("send_chronos_request retries on HTTP 500 and succeeds on second attem
         .package = "httr"
       )
       local_mocked_bindings(
-        backoff_wait = function(attempt) invisible(NULL)
+        chronos_backoff_wait = function(attempt) invisible(NULL)
       )
       result <- send_chronos_request(list(x = 1))
       expect_equal(call_count, 2L)
@@ -292,7 +292,7 @@ test_that("send_chronos_request does not retry on non-retryable 4xx errors", {
         .package = "httr"
       )
       local_mocked_bindings(
-        backoff_wait = function(attempt) invisible(NULL)
+        chronos_backoff_wait = function(attempt) invisible(NULL)
       )
       expect_error(
         send_chronos_request(list(x = 1)),
@@ -317,7 +317,7 @@ test_that("send_chronos_request total attempts equals CHRONOS_MAX_RETRIES + 1 fo
         .package = "httr"
       )
       local_mocked_bindings(
-        backoff_wait = function(attempt) invisible(NULL)
+        chronos_backoff_wait = function(attempt) invisible(NULL)
       )
       expect_error(send_chronos_request(list(x = 1)))
       expect_equal(call_count, 4L)
