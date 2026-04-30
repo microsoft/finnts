@@ -336,11 +336,51 @@ final_models <- function(run_info,
           dplyr::filter(Train_Test_ID %in% train_test_id_list) %>%
           adjust_combo_column()
 
+        # identify models with incomplete back test coverage. tune::fit_resamples
+        # silently drops folds that error out (transient API failures from
+        # foundation model endpoints, etc). a model with missing folds would
+        # otherwise be evaluated on a smaller, often easier sample than its
+        # competitors and could win Best_Model unfairly. flag these models so
+        # downstream Best_Model selection excludes them, while still keeping
+        # their partial rows in the output for visibility.
+        expected_fold_count <- length(train_test_id_list)
+        model_fold_coverage <- predictions_tbl %>%
+          dplyr::group_by(Combo, Model_ID) %>%
+          dplyr::summarise(
+            fold_count = dplyr::n_distinct(Train_Test_ID),
+            .groups = "drop"
+          )
+
+        partial_models_tbl <- model_fold_coverage %>%
+          dplyr::filter(fold_count < expected_fold_count)
+
+        if (nrow(partial_models_tbl) > 0) {
+          for (i in seq_len(nrow(partial_models_tbl))) {
+            partial_combo <- partial_models_tbl$Combo[i]
+            partial_model_id <- partial_models_tbl$Model_ID[i]
+            actual_ids <- predictions_tbl %>%
+              dplyr::filter(Combo == partial_combo, Model_ID == partial_model_id) %>%
+              dplyr::pull(Train_Test_ID) %>%
+              unique()
+            missing_ids <- setdiff(train_test_id_list, actual_ids)
+            cli::cli_alert_warning(
+              "Combo '{partial_combo}': model '{partial_model_id}' produced only {length(actual_ids)} of {expected_fold_count} back test folds (missing fold IDs: {paste(sort(missing_ids), collapse = ', ')}). Excluding from Best_Model selection."
+            )
+          }
+        }
+
+        complete_model_ids <- model_fold_coverage %>%
+          dplyr::filter(fold_count == expected_fold_count) %>%
+          dplyr::pull(Model_ID) %>%
+          unique()
+
         # get model list
         if (!is.null(local_model_tbl)) {
           local_model_list <- local_model_tbl %>%
             dplyr::pull(Model_ID) %>%
             unique()
+          local_model_list <- intersect(local_model_list, complete_model_ids)
+          if (length(local_model_list) == 0) local_model_list <- NULL
         } else {
           local_model_list <- NULL
         }
@@ -349,11 +389,20 @@ final_models <- function(run_info,
           global_model_list <- global_model_tbl %>%
             dplyr::pull(Model_ID) %>%
             unique()
+          global_model_list <- intersect(global_model_list, complete_model_ids)
+          if (length(global_model_list) == 0) global_model_list <- NULL
         } else {
           global_model_list <- NULL
         }
 
         final_model_list <- c(local_model_list, global_model_list)
+
+        if (length(final_model_list) == 0) {
+          stop(paste0(
+            "Combo '", combo, "': no models produced complete back test coverage (",
+            expected_fold_count, " folds expected). Cannot select Best_Model."
+          ), call. = FALSE)
+        }
 
         # simple model averaging
         if (average_models & length(final_model_list) > 1) {
@@ -464,7 +513,16 @@ final_models <- function(run_info,
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4))
 
+        # build allow-list of Model_IDs eligible to win Best_Model: individual
+        # models with complete back test coverage plus any model averages
+        # (averages_tbl was already constructed from complete models only).
+        eligible_model_ids <- unique(c(
+          final_model_list,
+          if (!is.null(averages_tbl)) unique(averages_tbl$Model_ID) else character(0)
+        ))
+
         best_model_mape <- back_test_mape %>%
+          dplyr::filter(Model_ID %in% eligible_model_ids) %>%
           dplyr::group_by(Model_ID, Combo) %>%
           dplyr::mutate(
             Combo_Total = sum(abs(Target), na.rm = TRUE),
@@ -583,7 +641,34 @@ final_models <- function(run_info,
             )
           }
         } else { # choose the most accurate individual model and write outputs
-          final_model_tbl <- tibble::tibble(Model_ID = final_model_list) %>%
+          # build allow-list of every Model_ID that appears in the per-model
+          # outputs (complete + partial). complete models that win Best_Model
+          # get "Yes"; everything else (including partial-coverage models)
+          # gets "No". this mirrors the prior contract that every row in
+          # *_models.csv has a non-NA Best_Model flag.
+          all_single_model_ids <- if (!is.null(single_model_tbl)) {
+            unique(single_model_tbl$Model_ID)
+          } else {
+            character(0)
+          }
+          all_ensemble_model_ids <- if (!is.null(ensemble_model_tbl)) {
+            unique(ensemble_model_tbl$Model_ID)
+          } else {
+            character(0)
+          }
+          all_global_model_ids <- if (!is.null(global_model_tbl)) {
+            unique(global_model_tbl$Model_ID)
+          } else {
+            character(0)
+          }
+          all_known_model_ids <- unique(c(
+            final_model_list,
+            all_single_model_ids,
+            all_ensemble_model_ids,
+            all_global_model_ids
+          ))
+
+          final_model_tbl <- tibble::tibble(Model_ID = all_known_model_ids) %>%
             dplyr::left_join(
               best_model_final_tbl %>%
                 dplyr::select(Model_ID, Best_Model),

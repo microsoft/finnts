@@ -2482,13 +2482,16 @@ extract_json_object <- function(raw_text) {
 #' @return NULL if "NULL", otherwise returns the input vector.
 #' @noRd
 null_converter <- function(x) {
+  if (is.null(x) || length(x) == 0) {
+    return(NULL)
+  }
   if (length(x) > 1) {
     return(x)
-  } else if (x == "NULL") {
-    return(NULL)
-  } else {
-    return(x)
   }
+  if (is.na(x) || x == "NULL") {
+    return(NULL)
+  }
+  x
 }
 
 #' Create the system prompt for the forecasting agent
