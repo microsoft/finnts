@@ -1113,6 +1113,44 @@ test_that("update_forecast completes with getter functions and ask_agent", {
   expect_true(nchar(answer) > 0)
 })
 
+# * Test null_converter ----
+
+test_that("null_converter returns NULL for NULL input", {
+  expect_null(null_converter(NULL))
+})
+
+test_that("null_converter returns NULL for zero-length vector", {
+  expect_null(null_converter(character(0)))
+  expect_null(null_converter(integer(0)))
+})
+
+test_that("null_converter returns NULL for the string 'NULL'", {
+  expect_null(null_converter("NULL"))
+})
+
+test_that("null_converter returns NULL for NA inputs", {
+  expect_null(null_converter(NA))
+  expect_null(null_converter(NA_character_))
+  expect_null(null_converter(NA_real_))
+})
+
+test_that("null_converter passes through non-NULL character values", {
+  expect_equal(null_converter("foo"), "foo")
+  expect_equal(null_converter("arima"), "arima")
+})
+
+test_that("null_converter passes through vectors with length > 1", {
+  x <- c("a", "b", "c")
+  expect_equal(null_converter(x), x)
+})
+
+test_that("null_converter does not error for non-character scalars", {
+  # numeric and logical scalars should not cause errors or spurious NA
+  expect_equal(null_converter(42L), 42L)
+  expect_equal(null_converter(3.14), 3.14)
+  expect_equal(null_converter(FALSE), FALSE)
+})
+
 # * Integration test ----
 
 test_that("full agent workflow with multiple time series completes successfully", {

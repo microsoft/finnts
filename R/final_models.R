@@ -338,41 +338,71 @@ final_models <- function(run_info,
 
         # identify models with incomplete back test coverage. tune::fit_resamples
         # silently drops folds that error out (transient API failures from
-        # foundation model endpoints, etc). a model with missing folds would
-        # otherwise be evaluated on a smaller, often easier sample than its
-        # competitors and could win Best_Model unfairly. flag these models so
-        # downstream Best_Model selection excludes them, while still keeping
-        # their partial rows in the output for visibility.
-        expected_fold_count <- length(train_test_id_list)
-        model_fold_coverage <- predictions_tbl %>%
-          dplyr::group_by(Combo, Model_ID) %>%
-          dplyr::summarise(
-            fold_count = dplyr::n_distinct(Train_Test_ID),
-            .groups = "drop"
-          )
+        # foundation model endpoints, etc). a model with missing back test
+        # folds would otherwise be evaluated on a smaller, often easier sample
+        # than its competitors and could win Best_Model unfairly. flag these
+        # models so downstream Best_Model selection excludes them, while still
+        # keeping their partial rows in the output for visibility. only back
+        # test Train_Test_ID values are considered here; future forecast output
+        # is not part of back test fold coverage.
+        back_test_id_list <- setdiff(train_test_id_list, 1)
+        expected_back_test_fold_count <- length(back_test_id_list)
 
-        partial_models_tbl <- model_fold_coverage %>%
-          dplyr::filter(fold_count < expected_fold_count)
+        if (expected_back_test_fold_count > 0) {
+          model_back_test_coverage <- predictions_tbl %>%
+            dplyr::filter(Train_Test_ID %in% back_test_id_list) %>%
+            dplyr::group_by(Combo, Model_ID) %>%
+            dplyr::summarise(
+              fold_count = dplyr::n_distinct(Train_Test_ID),
+              actual_ids = list(sort(unique(Train_Test_ID))),
+              .groups = "drop"
+            )
+
+          partial_models_tbl <- model_back_test_coverage %>%
+            dplyr::filter(fold_count < expected_back_test_fold_count) %>%
+            dplyr::mutate(
+              missing_ids = lapply(
+                actual_ids,
+                function(ids) sort(setdiff(back_test_id_list, ids))
+              )
+            )
+        } else {
+          partial_models_tbl <- data.frame(
+            Combo = character(),
+            Model_ID = character(),
+            fold_count = integer(),
+            stringsAsFactors = FALSE
+          )
+          model_back_test_coverage <- data.frame(
+            Combo = character(),
+            Model_ID = character(),
+            fold_count = integer(),
+            stringsAsFactors = FALSE
+          )
+        }
 
         if (nrow(partial_models_tbl) > 0) {
           for (i in seq_len(nrow(partial_models_tbl))) {
             partial_combo <- partial_models_tbl$Combo[i]
             partial_model_id <- partial_models_tbl$Model_ID[i]
-            actual_ids <- predictions_tbl %>%
-              dplyr::filter(Combo == partial_combo, Model_ID == partial_model_id) %>%
-              dplyr::pull(Train_Test_ID) %>%
-              unique()
-            missing_ids <- setdiff(train_test_id_list, actual_ids)
+            actual_ids <- partial_models_tbl$actual_ids[[i]]
+            missing_ids <- partial_models_tbl$missing_ids[[i]]
             cli::cli_alert_warning(
-              "Combo '{partial_combo}': model '{partial_model_id}' produced only {length(actual_ids)} of {expected_fold_count} back test folds (missing fold IDs: {paste(sort(missing_ids), collapse = ', ')}). Excluding from Best_Model selection."
+              "Combo '{partial_combo}': model '{partial_model_id}' produced only {length(actual_ids)} of {expected_back_test_fold_count} back test folds (missing fold IDs: {paste(missing_ids, collapse = ', ')}). Excluding from Best_Model selection."
             )
           }
         }
 
-        complete_model_ids <- model_fold_coverage %>%
-          dplyr::filter(fold_count == expected_fold_count) %>%
-          dplyr::pull(Model_ID) %>%
-          unique()
+        complete_model_ids <- if (expected_back_test_fold_count > 0) {
+          model_back_test_coverage %>%
+            dplyr::filter(fold_count == expected_back_test_fold_count) %>%
+            dplyr::pull(Model_ID) %>%
+            unique()
+        } else {
+          predictions_tbl %>%
+            dplyr::pull(Model_ID) %>%
+            unique()
+        }
 
         # get model list
         if (!is.null(local_model_tbl)) {
@@ -400,7 +430,7 @@ final_models <- function(run_info,
         if (length(final_model_list) == 0) {
           stop(paste0(
             "Combo '", combo, "': no models produced complete back test coverage (",
-            expected_fold_count, " folds expected). Cannot select Best_Model."
+            expected_back_test_fold_count, " folds expected). Cannot select Best_Model."
           ), call. = FALSE)
         }
 
