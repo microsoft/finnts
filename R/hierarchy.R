@@ -31,17 +31,10 @@ prep_hierarchical_data <- function(input_data,
       dplyr::select(tidyselect::all_of(combo_variables)) %>%
       dplyr::distinct()
 
-    hierarchy_length_tbl <- tibble::tibble()
-
-    for (variable in combo_variables) {
-      hierarchy_length_tbl <- rbind(
-        hierarchy_length_tbl,
-        tibble::tibble(
-          Variable = variable,
-          Count = length(unique(combo_tbl_temp[[variable]]))
-        )
-      )
-    }
+    hierarchy_length_tbl <- tibble::tibble(
+      Variable = combo_variables,
+      Count = vapply(combo_variables, function(v) length(unique(combo_tbl_temp[[v]])), integer(1))
+    )
 
     hierarchy_order <- hierarchy_length_tbl %>%
       dplyr::arrange(Count) %>%
@@ -408,21 +401,14 @@ get_grouped_nodes <- function(input_data,
 #' @noRd
 get_standard_nodes <- function(input_data,
                                combo_variables) {
-  hierarchy_length_tbl <- tibble::tibble()
+  hierarchy_length_tbl <- tibble::tibble(
+    Variable = combo_variables,
+    Count = vapply(combo_variables, function(v) length(unique(input_data[[v]])), integer(1))
+  )
 
   node_list <- list()
 
   num <- 1
-
-  for (variable in combo_variables) {
-    hierarchy_length_tbl <- rbind(
-      hierarchy_length_tbl,
-      tibble::tibble(
-        Variable = variable,
-        Count = length(unique(input_data[[variable]]))
-      )
-    )
-  }
 
   hierarchy_combo_variables <- hierarchy_length_tbl %>%
     dplyr::arrange(Count) %>%

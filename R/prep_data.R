@@ -867,21 +867,13 @@ combo_cleanup_fn <- function(df,
 get_xregs_future_values_tbl <- function(data_tbl,
                                         external_regressors,
                                         hist_end_date) {
-  xregs_future_values_list <- c()
+  future_xreg_data <- data_tbl %>%
+    dplyr::filter(Date > hist_end_date) %>%
+    dplyr::select(tidyselect::all_of(external_regressors))
 
-  for (variable in external_regressors) {
-    temp <- data_tbl %>%
-      dplyr::filter(Date > hist_end_date) %>%
-      dplyr::select(tidyselect::all_of(variable)) %>%
-      tidyr::drop_na()
-
-    if (nrow(temp) > 0) {
-      xregs_future_values_list <- append(
-        xregs_future_values_list,
-        variable
-      )
-    }
-  }
+  xregs_future_values_list <- names(
+    Filter(function(col) any(!is.na(col)), future_xreg_data)
+  )
 
   data_tbl %>%
     dplyr::select(
@@ -1378,13 +1370,11 @@ multivariate_prep_recipe_1 <- function(data,
     dplyr::select(-tidyselect::all_of(numeric_xregs))
 
 
-  is.na(data_lag_window) <- sapply(
-    data_lag_window,
-    is.infinite
-  )
-
-  is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
-  data_lag_window[is.na(data_lag_window)] <- 0.00
+  data_lag_window <- data_lag_window %>%
+    dplyr::mutate(dplyr::across(
+      dplyr::where(is.numeric),
+      ~ dplyr::if_else(is.infinite(.) | is.nan(.) | is.na(.), 0, .)
+    ))
 
   if (!is.null(xreg_raw_df) && !is.null(external_regressors) && length(external_regressors) > 0) {
     for (xr in external_regressors) {
@@ -1534,13 +1524,11 @@ multivariate_prep_recipe_2 <- function(data,
       timetk::tk_augment_fourier(Date, .periods = fourier_periods, .K = 2) %>% # add fourier series
       dplyr::select(-tidyselect::all_of(numeric_xregs)) # drop xregs that do not contain future values
 
-    is.na(data_lag_window) <- sapply(
-      data_lag_window,
-      is.infinite
-    )
-
-    is.na(data_lag_window) <- sapply(data_lag_window, is.nan)
-    data_lag_window[is.na(data_lag_window)] <- 0.00
+    data_lag_window <- data_lag_window %>%
+      dplyr::mutate(dplyr::across(
+        dplyr::where(is.numeric),
+        ~ dplyr::if_else(is.infinite(.) | is.nan(.) | is.na(.), 0, .)
+      ))
 
     # combine transformed data
     data_trans <- rbind(data_trans, data_lag_window)

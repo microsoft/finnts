@@ -2,6 +2,12 @@
 
 ## Improvements
 
+- Performance: vectorized `get_xregs_future_values_tbl()` to filter data once instead of once per external regressor.
+- Performance: replaced sequential `sapply`-based Inf/NaN/NA replacement with a single `dplyr::mutate(across(...))` pass in R1 and R2 feature engineering recipes.
+- Performance: replaced growing-object `for`/`rbind` loops in `get_standard_nodes()` and `get_grouped_nodes()` (hierarchy) with vectorized `tibble::tibble()` construction.
+
+## Improvements
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
