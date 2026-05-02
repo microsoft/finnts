@@ -1,9 +1,19 @@
 #' Get Final Forecast Data
 #'
-#' @param run_info run info using the [set_run_info()] function
-#' @param return_type return type
+#' Returns the final forecast results produced by [forecast_time_series()] or
+#' [final_models()], including both future forecasts and back-test results for
+#' every model trained.
 #'
-#' @return table of final forecast results
+#' @param run_info run info using the [set_run_info()] function
+#' @param return_type Type of object to return. Use `"df"` (default) to return a
+#'   local tibble/data frame, or `"sdf"` to return a Spark data frame via
+#'   sparklyr (requires an active Spark session).
+#'
+#' @return A tibble (or Spark data frame when `return_type = "sdf"`) containing
+#'   forecast results. Key columns include `Combo`, the combo-variable columns,
+#'   `Date`, `Model_ID`, `Forecast`, `Target`, `Best_Model`, `Run_Type`
+#'   (`"Future_Forecast"` or `"Back_Test"`), and prediction interval columns
+#'   (`lo_80`, `lo_95`, `hi_80`, `hi_95`).
 #'
 #' @examples
 #' \donttest{
@@ -132,9 +142,15 @@ get_forecast_data <- function(run_info,
 
 #' Get Final Trained Models
 #'
+#' Returns a tibble of all trained model objects and their associated metadata
+#' produced by [train_models()]. Each row corresponds to one trained model
+#' workflow for a specific time series combination.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #'
-#' @return table of final trained models
+#' @return A tibble with one row per trained model, containing model metadata
+#'   such as `Combo`, `Model_ID`, `Recipe_ID`, `Train_Test_ID`, and a list
+#'   column of serialized model workflow objects.
 #'
 #' @examples
 #' \donttest{
@@ -196,10 +212,16 @@ get_trained_models <- function(run_info) {
 #' Get Prepped Data
 #'
 #' @param run_info run info using the [set_run_info()] function
-#' @param recipe recipe to return. Either a value of "R1" or "R2"
-#' @param return_type return type
+#' @param recipe Recipe whose prepped data should be returned. `"R1"` is the
+#'   standard recipe (lag and rolling-window features); `"R2"` is an extended
+#'   recipe that also includes second-order lag and interaction features.
+#' @param return_type Type of object to return. Use `"df"` (default) to return a
+#'   local tibble/data frame, or `"sdf"` to return a Spark data frame via
+#'   sparklyr (requires an active Spark session).
 #'
-#' @return table of prepped data
+#' @return A tibble (or Spark data frame when `return_type = "sdf"`) of the
+#'   feature-engineered data for the requested recipe, with one row per
+#'   time series / date combination.
 #'
 #' @examples
 #' \donttest{
@@ -270,9 +292,15 @@ get_prepped_data <- function(run_info,
 
 #' Get Prepped Model Info
 #'
+#' Returns a tibble of model preparation metadata produced by [prep_models()],
+#' including the model workflows, hyperparameter grids, and train/test split
+#' definitions that will be (or were) used during model training.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #'
-#' @return table with data related to model workflows, hyperparameters, and back testing
+#' @return A tibble with one row per model/hyperparameter/train-test-split
+#'   combination, containing columns such as `Model_ID`, `Recipe_ID`,
+#'   `Hyperparameter_ID`, `Train_Test_ID`, and the serialized model workflow.
 #'
 #' @examples
 #' \donttest{

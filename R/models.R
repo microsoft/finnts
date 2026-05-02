@@ -1,6 +1,11 @@
 #' List all available models
 #'
-#' @return list of models
+#' Returns a character vector of all model names that can be passed to the
+#' `models_to_run` or `models_not_to_run` arguments of [forecast_time_series()],
+#' [prep_models()], and related functions.
+#'
+#' @return A character vector of model name strings (e.g. `"arima"`, `"ets"`,
+#'   `"xgboost"`, etc.)
 #' @export
 list_models <- function() {
   list <- c(

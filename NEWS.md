@@ -2,6 +2,12 @@
 
 ## Improvements
 
+- Documentation improvements
+  - Improved roxygen2 docs for `get_forecast_data()`: the `return_type` parameter now documents valid values (`"df"` / `"sdf"`) and the `@return` describes the key output columns.
+  - Improved roxygen2 docs for `get_prepped_data()`: the `return_type` and `recipe` parameters now include full descriptions, and `@return` describes the shape of the output.
+  - Improved roxygen2 docs for `get_trained_models()` and `get_prepped_models()`: added a description sentence and a more informative `@return` tag.
+  - Improved `list_models()` docs: added a description of when to use the function and a more informative `@return` tag.
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
