@@ -2,6 +2,8 @@
 
 ## Improvements
 
+- Added unit tests for previously untested pure helper functions: `get_frequency_number`, `get_fourier_periods`, `get_lag_periods`, `get_rolling_window_periods`, `get_date_regex`, and `check_input_type`.
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
