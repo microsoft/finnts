@@ -307,3 +307,54 @@ test_that("Best_Model wMAPE is computed from complete-fold models only", {
     dplyr::pull(Rolling_MAPE)
   expect_equal(winner_wmape, saboteur$complete_wmape, tolerance = 1e-3)
 })
+
+test_that("calc_error_metric returns correct values for all supported metrics", {
+  forecast <- c(110, 90, 0, 200)
+  target   <- c(100, 100, 0.1, 100)
+
+  mape  <- calc_error_metric(forecast, target, "MAPE")
+  smape <- calc_error_metric(forecast, target, "SMAPE")
+  mae   <- calc_error_metric(forecast, target, "MAE")
+
+  # MAPE: |F - A| / |A|
+  expect_equal(mape,  round(abs((forecast - target) / abs(target)), 4))
+  # SMAPE: 2*|F-A| / (|F| + |A|)
+  expect_equal(smape, round(2 * abs(forecast - target) / (abs(target) + abs(forecast)), 4))
+  # MAE: |F - A|
+  expect_equal(mae, round(abs(forecast - target), 4))
+
+  expect_error(
+    calc_error_metric(forecast, target, "RMSE"),
+    "must be one of"
+  )
+})
+
+test_that("final_models rejects invalid model_selection_metric", {
+  skip_on_cran()
+
+  run_info <- train_two_models()
+  expect_error(
+    final_models(run_info = run_info, model_selection_metric = "RMSE"),
+    "'model_selection_metric' must be one of"
+  )
+})
+
+test_that("final_models runs successfully with SMAPE and MAE metrics", {
+  skip_on_cran()
+
+  # SMAPE
+  run_info_smape <- train_two_models()
+  expect_no_error(
+    suppressMessages(
+      final_models(run_info = run_info_smape, average_models = FALSE, model_selection_metric = "SMAPE")
+    )
+  )
+
+  # MAE
+  run_info_mae <- train_two_models()
+  expect_no_error(
+    suppressMessages(
+      final_models(run_info = run_info_mae, average_models = FALSE, model_selection_metric = "MAE")
+    )
+  )
+})

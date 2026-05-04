@@ -72,6 +72,9 @@
 #' @param feature_selection Implement feature selection before model training
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 #'   up to higher temporal levels like month or quarter.
+#' @param model_selection_metric Metric used to rank models and select the best one during back testing. Options are
+#'   `"MAPE"` (default), `"SMAPE"`, and `"MAE"`. `"SMAPE"` is bounded and handles over- and under-forecasts more
+#'   symmetrically. `"MAE"` is useful when target values are at or near zero.
 #' @param seed Set seed for random number generator. Numeric value.
 #' @param run_model_parallel If TRUE, runs model training in parallel, only works when parallel_processing is set to
 #'   'local_machine' or 'spark'. Recommended to use a value of FALSE and leverage
@@ -140,6 +143,7 @@ forecast_time_series <- function(run_info = NULL,
                                  max_model_average = 3,
                                  feature_selection = FALSE,
                                  weekly_to_daily = TRUE,
+                                 model_selection_metric = "MAPE",
                                  seed = 123,
                                  run_model_parallel = FALSE,
                                  return_data = TRUE,
@@ -214,6 +218,7 @@ forecast_time_series <- function(run_info = NULL,
     average_models = average_models,
     max_model_average = max_model_average,
     weekly_to_daily = weekly_to_daily,
+    model_selection_metric = model_selection_metric,
     parallel_processing = parallel_processing,
     inner_parallel = inner_parallel,
     num_cores = num_cores

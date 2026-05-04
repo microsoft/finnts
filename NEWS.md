@@ -2,6 +2,14 @@
 
 ## Improvements
 
+- Added `model_selection_metric` parameter to `final_models()` and `forecast_time_series()` to allow
+  choosing the error metric used to select the best model during back testing. Supported options are
+  `"MAPE"` (default, backward-compatible), `"SMAPE"` (symmetric, bounded alternative that handles
+  over- and under-forecasts more evenly), and `"MAE"` (useful when target values are at or near zero
+  and percentage-based metrics are not meaningful).
+
+## Improvements
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  

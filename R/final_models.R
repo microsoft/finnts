@@ -11,6 +11,13 @@
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by
 #'   evenly splitting across each day of week. Helps when aggregating
 #'   up to higher temporal levels like month or quarter.
+#' @param model_selection_metric Metric used to rank models and select the best
+#'   one during back testing. Options are `"MAPE"` (default), `"SMAPE"`, and
+#'   `"MAE"`. `"MAPE"` is the mean absolute percentage error. `"SMAPE"` is the
+#'   symmetric mean absolute percentage error, which is bounded and handles
+#'   over- and under-forecasts more symmetrically. `"MAE"` is the mean absolute
+#'   error, which is useful when target values are at or near zero and
+#'   percentage-based metrics are not meaningful.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
 #'   leverages all cores on current machine Finn is running on. 'spark'
@@ -62,6 +69,7 @@ final_models <- function(run_info,
                          average_models = TRUE,
                          max_model_average = 3,
                          weekly_to_daily = TRUE,
+                         model_selection_metric = "MAPE",
                          parallel_processing = NULL,
                          inner_parallel = FALSE,
                          num_cores = NULL) {
@@ -72,6 +80,18 @@ final_models <- function(run_info,
   check_input_type("average_models", average_models, "logical")
   check_input_type("max_model_average", max_model_average, "numeric")
   check_input_type("num_cores", num_cores, c("NULL", "numeric"))
+  check_input_type("model_selection_metric", model_selection_metric, "character")
+  valid_metrics <- c("MAPE", "SMAPE", "MAE")
+  if (!model_selection_metric %in% valid_metrics) {
+    stop(
+      paste0(
+        "'model_selection_metric' must be one of: ",
+        paste(valid_metrics, collapse = ", "),
+        ". Got: '", model_selection_metric, "'."
+      ),
+      call. = FALSE
+    )
+  }
   check_parallel_processing(
     run_info,
     parallel_processing,
@@ -108,14 +128,15 @@ final_models <- function(run_info,
   }
 
   # define columns to check for input changes
-  cols_check_list <- c("average_models", "max_model_average")
+  cols_check_list <- c("average_models", "max_model_average", "model_selection_metric")
 
   # check if input values have changed from previous run
   if (all(cols_check_list %in% colnames(prev_log_df))) {
     # create current log
     current_log_df <- tibble::tibble(
       average_models = average_models,
-      max_model_average = max_model_average
+      max_model_average = max_model_average,
+      model_selection_metric = model_selection_metric
     ) %>%
       data.frame()
 
@@ -510,10 +531,10 @@ final_models <- function(run_info,
           avg_back_test_mape <- averages_tbl %>%
             dplyr::mutate(
               Train_Test_ID = as.numeric(Train_Test_ID),
-              Target = ifelse(Target == 0, 0.1, Target)
+              Target = if (model_selection_metric == "MAPE") ifelse(Target == 0, 0.1, Target) else Target
             ) %>%
             dplyr::filter(Train_Test_ID != 1) %>%
-            dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
+            dplyr::mutate(MAPE = calc_error_metric(Forecast, Target, model_selection_metric))
 
           avg_best_model_mape <- avg_back_test_mape %>%
             dplyr::group_by(Model_ID, Combo) %>%
@@ -540,10 +561,10 @@ final_models <- function(run_info,
         back_test_mape <- final_predictions_tbl %>%
           dplyr::mutate(
             Train_Test_ID = as.numeric(Train_Test_ID),
-            Target = ifelse(Target == 0, 0.1, Target)
+            Target = if (model_selection_metric == "MAPE") ifelse(Target == 0, 0.1, Target) else Target
           ) %>%
           dplyr::filter(Train_Test_ID != 1) %>%
-          dplyr::mutate(MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4))
+          dplyr::mutate(MAPE = calc_error_metric(Forecast, Target, model_selection_metric))
 
         # build allow-list of Model_IDs eligible to win Best_Model: individual
         # models with complete back test coverage plus any model averages
@@ -836,17 +857,17 @@ final_models <- function(run_info,
   # validate that every combo has a best model
   fcst_data <- get_forecast_data(run_info = run_info)
 
-  # calculate weighted mape
+  # calculate weighted back-test metric (always reported as weighted_mape in the log for compatibility)
   weighted_mape <- fcst_data %>%
     dplyr::filter(
       Run_Type == "Back_Test",
       Best_Model == "Yes"
     ) %>%
     dplyr::mutate(
-      Target = ifelse(Target == 0, 0.1, Target)
+      Target = if (model_selection_metric == "MAPE") ifelse(Target == 0, 0.1, Target) else Target
     ) %>%
     dplyr::mutate(
-      MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4),
+      MAPE = calc_error_metric(Forecast, Target, model_selection_metric),
       Total = sum(abs(Target), na.rm = TRUE),
       Weight = (MAPE * abs(Target)) / Total
     ) %>%
@@ -863,6 +884,7 @@ final_models <- function(run_info,
       average_models = average_models,
       max_model_average = max_model_average,
       weekly_to_daily = weekly_to_daily,
+      model_selection_metric = model_selection_metric,
       weighted_mape = round(weighted_mape, digits = 4)
     )
 
@@ -1023,4 +1045,26 @@ adjust_combo_column <- function(input_data) {
       dplyr::mutate(Combo = ifelse(Combo, as.character("T"), as.character("F")))
   }
   return(input_data)
+}
+
+#' Compute a per-row error metric for model selection
+#'
+#' @param forecast numeric vector of forecast values
+#' @param target numeric vector of actual values
+#' @param metric one of "MAPE", "SMAPE", or "MAE"
+#'
+#' @return numeric vector of per-row metric values, rounded to 4 decimal places
+#' @noRd
+calc_error_metric <- function(forecast, target, metric) {
+  switch(metric,
+    "MAPE"  = round(abs((forecast - target) / abs(target)), digits = 4),
+    "SMAPE" = round(2 * abs(forecast - target) / (abs(target) + abs(forecast)), digits = 4),
+    "MAE"   = round(abs(forecast - target), digits = 4),
+    stop(
+      paste0(
+        "'model_selection_metric' must be one of: MAPE, SMAPE, MAE. Got: '", metric, "'."
+      ),
+      call. = FALSE
+    )
+  )
 }
