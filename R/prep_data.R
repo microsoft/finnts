@@ -172,7 +172,7 @@ prep_data <- function(run_info,
     tidyr::unite("Combo",
       tidyselect::all_of(combo_variables),
       sep = "--",
-      remove = F
+      remove = FALSE
     ) %>%
     dplyr::rename("Target" = tidyselect::all_of(target_variable)) %>%
     dplyr::select(c(
@@ -295,7 +295,7 @@ prep_data <- function(run_info,
   }
 
   # check if previous run is complete
-  if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
+  if (length(combo_diff) == 0 && length(prev_combo_list) > 0) {
     cli::cli_alert_info("Data Already Prepped")
     return(cli::cli_progress_done())
   }
@@ -475,7 +475,7 @@ prep_data <- function(run_info,
           run_all_recipes_override <- FALSE
         }
 
-        if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+        if (is.null(recipes_to_run) || "R1" %in% recipes_to_run || run_all_recipes_override) {
           R1 <- initial_tbl %>%
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = global_xregs_future_list,
@@ -498,7 +498,7 @@ prep_data <- function(run_info,
           )
         }
 
-        if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+        if ((is.null(recipes_to_run) && date_type %in% c("month", "quarter", "year")) || "R2" %in% recipes_to_run || run_all_recipes_override) {
           R2 <- initial_tbl %>%
             multivariate_prep_recipe_2(external_regressors,
               xregs_future_values_list = global_xregs_future_list,
@@ -651,7 +651,7 @@ prep_data <- function(run_info,
             run_all_recipes_override <- FALSE
           }
 
-          if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+          if (is.null(recipes_to_run) || "R1" %in% recipes_to_run || run_all_recipes_override) {
             R1 <- initial_tbl %>%
               multivariate_prep_recipe_1(external_regressors,
                 xregs_future_values_list = global_xregs_future_list,
@@ -674,7 +674,7 @@ prep_data <- function(run_info,
             )
           }
 
-          if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+          if ((is.null(recipes_to_run) && date_type %in% c("month", "quarter", "year")) || "R2" %in% recipes_to_run || run_all_recipes_override) {
             R2 <- initial_tbl %>%
               multivariate_prep_recipe_2(external_regressors,
                 xregs_future_values_list = global_xregs_future_list,
@@ -1145,7 +1145,7 @@ apply_box_cox <- function(df) {
 
   for (column_name in names(df)) {
     # Only check numeric columns with more than 2 unique values
-    if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
+    if (is.numeric(df[[column_name]]) && length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
         dplyr::select(Date, tidyselect::all_of(column_name)) %>%
         dplyr::rename(Column = tidyselect::all_of(column_name))
@@ -1213,7 +1213,7 @@ make_stationary <- function(df) {
 
   for (column_name in names(df)) {
     # Only check numeric columns with more than 2 unique values
-    if (is.numeric(df[[column_name]]) & length(unique(df[[column_name]])) > 2) {
+    if (is.numeric(df[[column_name]]) && length(unique(df[[column_name]])) > 2) {
       temp_tbl <- df %>%
         dplyr::select(Date, tidyselect::all_of(column_name)) %>%
         dplyr::rename(Column = tidyselect::all_of(column_name))
@@ -1299,7 +1299,7 @@ multivariate_prep_recipe_1 <- function(data,
     if (is.numeric(dplyr::select(data, tidyselect::all_of(column))[[1]])) {
       column_names_final <- c(column)
 
-      if ((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
+      if ((column %in% external_regressors) && !(column %in% xregs_future_values_list)) {
         numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
         column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
       }
@@ -1443,7 +1443,7 @@ multivariate_prep_recipe_2 <- function(data,
     if (is.numeric(dplyr::select(data, tidyselect::all_of(column))[[1]])) {
       column_names_final <- c(column)
 
-      if ((column %in% external_regressors) & !(column %in% xregs_future_values_list)) {
+      if ((column %in% external_regressors) && !(column %in% xregs_future_values_list)) {
         numeric_xregs <- c(numeric_xregs, stringr::str_c(column, c("", "_squared", "_cubed", "_log")))
         column_names_final <- stringr::str_c(column, c("", "_squared", "_cubed", "_log"))
       }

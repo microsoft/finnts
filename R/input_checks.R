@@ -217,9 +217,9 @@ check_input_data <- function(input_data,
   }
 
   # input_data is correct type for parallel processing
-  if (inherits(input_data, c("data.frame", "tbl")) & is.null(parallel_processing)) {
+  if (inherits(input_data, c("data.frame", "tbl")) && is.null(parallel_processing)) {
     # do nothing
-  } else if (inherits(input_data, "tbl_spark") & is.null(parallel_processing)) {
+  } else if (inherits(input_data, "tbl_spark") && is.null(parallel_processing)) {
     stop("spark data frames should run with spark parallel processing",
       call. = FALSE
     )
@@ -236,7 +236,7 @@ check_input_data <- function(input_data,
     tidyr::unite("Combo",
       tidyselect::all_of(combo_variables),
       sep = "--",
-      remove = F
+      remove = FALSE
     ) %>%
     dplyr::group_by(Combo, Date) %>%
     dplyr::filter(dplyr::n() > 1) %>%

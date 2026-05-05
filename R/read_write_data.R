@@ -388,7 +388,7 @@ write_data <- function(x,
   temp_path <- NULL
 
   if (inherits(run_info$storage_object, c("blob_container", "ms_drive")) ||
-    (inherits(run_info$storage_object, "NULL") & is.null(run_info$path))) {
+    (inherits(run_info$storage_object, "NULL") && is.null(run_info$path))) {
     fs::dir_create(tempdir(), folder)
 
     temp_path <- paste0(fs::path(tempdir(), folder), "\\", project_name, "-", run_name, combo_hash, suffix, ".", file_type)

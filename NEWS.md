@@ -2,6 +2,8 @@
 
 ## Improvements
 
+- Code quality: replaced `T`/`F` abbreviations with `TRUE`/`FALSE` in `tidyr::unite()` calls, and replaced single `&`/`|` operators with `&&`/`||` in scalar `if()` conditions across multiple files for correctness and clarity.
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  

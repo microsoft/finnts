@@ -602,9 +602,9 @@ model_workflows <- function(run_info,
   # models to run
   ml_models <- list_models()
 
-  if (is.null(models_to_run) & is.null(models_not_to_run)) {
+  if (is.null(models_to_run) && is.null(models_not_to_run)) {
     # do nothing, using existing ml_models list
-  } else if (is.null(models_to_run) & !is.null(models_not_to_run)) {
+  } else if (is.null(models_to_run) && !is.null(models_not_to_run)) {
     ml_models <- setdiff(ml_models, models_not_to_run)
   } else {
     if (!is.null(models_not_to_run)) {

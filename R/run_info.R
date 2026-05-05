@@ -289,7 +289,7 @@ get_run_info <- function(project_name = NULL,
     stop("`path` must either be a NULL or a string")
   }
 
-  if (inherits(storage_object, c("blob_container", "ms_drive")) & is.null(path)) {
+  if (inherits(storage_object, c("blob_container", "ms_drive")) && is.null(path)) {
     path <- ""
   }
 

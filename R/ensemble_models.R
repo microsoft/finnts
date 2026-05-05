@@ -226,7 +226,7 @@ ensemble_models <- function(run_info,
           col = "Model_Key",
           c("Model_Name", "Recipe_ID", "Suffix"),
           sep = "-",
-          remove = F
+          remove = FALSE
         ) %>%
         tidyr::pivot_wider(
           names_from = Model_Key, values_from = Forecast,

@@ -113,7 +113,7 @@ prep_hierarchical_data <- function(input_data,
           tidyr::unite("Combo",
             tidyselect::all_of(combo_variables),
             sep = "_",
-            remove = F
+            remove = FALSE
           ) %>%
           dplyr::select(Date, Combo, tidyselect::all_of(regressor_var)) %>%
           dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))

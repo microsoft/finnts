@@ -141,7 +141,7 @@ set_agent_info <- function(project_info,
     tidyr::unite("Combo",
       tidyselect::all_of(combo_variables),
       sep = "--",
-      remove = F
+      remove = FALSE
     ) %>%
     dplyr::rename("Target" = tidyselect::all_of(target_variable)) %>%
     dplyr::select(c(
