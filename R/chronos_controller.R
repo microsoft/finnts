@@ -169,6 +169,7 @@ CHRONOS_MAX_RETRIES <- 3L
 #' @noRd
 send_chronos_request <- function(payload) {
   api_url <- get_chronos_env("CHRONOS_API_URL")
+  validate_https_url(api_url, "CHRONOS_API_URL")
   api_token <- get_chronos_env("CHRONOS_API_TOKEN")
 
   body_json <- jsonlite::toJSON(payload, auto_unbox = TRUE, dataframe = "rows")
@@ -241,6 +242,29 @@ chronos_backoff_wait <- function(attempt) {
     "Chronos API: transient failure, retrying in {round(wait_secs, 1)}s (attempt {attempt})..."
   )
   Sys.sleep(wait_secs)
+}
+
+#' Validate that an API URL uses HTTPS
+#'
+#' Stops with an informative error if the URL does not start with \code{https://}.
+#' This prevents Bearer tokens from being sent over unencrypted connections.
+#'
+#' @param url Character. The URL to validate.
+#' @param env_var_name Character. The environment variable name, used in the
+#'   error message.
+#' @return Invisibly returns \code{NULL} on success.
+#' @noRd
+validate_https_url <- function(url, env_var_name) {
+  if (!grepl("^https://", url)) {
+    stop(
+      sprintf(
+        "'%s' must use HTTPS to protect credentials in transit. Got: '%s'",
+        env_var_name, url
+      ),
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
 }
 
 #' Read and validate a Chronos environment variable

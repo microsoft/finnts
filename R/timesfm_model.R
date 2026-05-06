@@ -348,6 +348,7 @@ TIMESFM_MAX_RETRIES <- 3L
 #' @noRd
 send_timesfm_request <- function(payload) {
   api_url <- get_timesfm_env("TIMESFM_API_URL")
+  validate_https_url(api_url, "TIMESFM_API_URL")
   api_token <- get_timesfm_env("TIMESFM_API_TOKEN")
 
   body_json <- jsonlite::toJSON(payload, auto_unbox = TRUE, dataframe = "rows")

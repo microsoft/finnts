@@ -705,3 +705,50 @@ test_that("TimesFM workflow fit saved to disk does not leak credentials", {
     info = "Reloaded TimesFM workflow must not contain API credentials"
   )
 })
+
+# * HTTPS URL enforcement tests ----
+
+test_that("validate_https_url passes for valid HTTPS URLs", {
+  expect_no_error(validate_https_url("https://api.example.com/v1", "TEST_URL"))
+  expect_no_error(validate_https_url("https://fake-endpoint.azure.com/", "TEST_URL"))
+})
+
+test_that("validate_https_url rejects HTTP URLs", {
+  expect_error(
+    validate_https_url("http://api.example.com/v1", "CHRONOS_API_URL"),
+    regexp = "CHRONOS_API_URL.*must use HTTPS",
+    fixed = FALSE
+  )
+})
+
+test_that("validate_https_url rejects non-URL values", {
+  expect_error(
+    validate_https_url("not-a-url", "TIMESFM_API_URL"),
+    regexp = "TIMESFM_API_URL.*must use HTTPS",
+    fixed = FALSE
+  )
+})
+
+test_that("send_chronos_request rejects HTTP URL", {
+  withr::local_envvar(
+    CHRONOS_API_URL = "http://insecure-endpoint.example.com/api",
+    CHRONOS_API_TOKEN = "fake_token"
+  )
+  expect_error(
+    send_chronos_request(list()),
+    regexp = "CHRONOS_API_URL.*must use HTTPS",
+    fixed = FALSE
+  )
+})
+
+test_that("send_timesfm_request rejects HTTP URL", {
+  withr::local_envvar(
+    TIMESFM_API_URL = "http://insecure-endpoint.example.com/api",
+    TIMESFM_API_TOKEN = "fake_token"
+  )
+  expect_error(
+    send_timesfm_request(list()),
+    regexp = "TIMESFM_API_URL.*must use HTTPS",
+    fixed = FALSE
+  )
+})

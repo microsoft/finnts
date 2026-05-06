@@ -2,6 +2,11 @@
 
 ## Improvements
 
+- Security: API endpoints for Chronos and TimesFM now require HTTPS to protect
+  Bearer tokens from being sent over unencrypted connections. An informative
+  error is raised if an HTTP URL is configured in `CHRONOS_API_URL` or
+  `TIMESFM_API_URL`.
+
 - New AI Agent Capabilities
   - `iterate_forecast()` can use LLM's to find the optimal combination of data and inputs to create the most accurate forecast. 
   - `update_forecast()` can take previously trained models from `iterate_forecast()` to create forecasts on new data fast.  
