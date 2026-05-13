@@ -30,7 +30,7 @@ read_fcst_file <- function(path) {
   if (ext == "parquet") {
     arrow::read_parquet(path)
   } else {
-    suppressMessages(vroom::vroom(path, show_col_types = FALSE))
+    suppressMessages(vroom::vroom(path, show_col_types = FALSE, altrep = FALSE))
   }
 }
 
