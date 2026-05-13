@@ -108,7 +108,8 @@ final_models <- function(run_info,
   }
 
   # define columns to check for input changes
-  cols_check_list <- c("average_models", "max_model_average")
+  cols_check_list <- c("average_models", "max_model_average", 
+                       "weekly_to_daily", "weighted_mape")
 
   # check if input values have changed from previous run
   if (all(cols_check_list %in% colnames(prev_log_df))) {
