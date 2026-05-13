@@ -30,7 +30,7 @@ read_fcst_file <- function(path) {
   if (ext == "parquet") {
     arrow::read_parquet(path)
   } else {
-    suppressMessages(readr::read_csv(path, show_col_types = FALSE))
+    suppressMessages(vroom::vroom(path, show_col_types = FALSE, altrep = FALSE))
   }
 }
 
@@ -39,7 +39,7 @@ write_fcst_file <- function(x, path) {
   if (ext == "parquet") {
     arrow::write_parquet(x, path)
   } else {
-    readr::write_csv(x, path)
+    vroom::vroom_write(x, path, delim = ",")
   }
 }
 
