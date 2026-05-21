@@ -1719,8 +1719,37 @@ update_forecast_combo <- function(agent_info,
       folder = "forecasts",
       suffix = "-reconciled"
     )
+  } else if (combo == "All-Data") {
+    # bottoms_up global: write per-combo forecast files
+    for (combo_name in unique(write_fcst_tbl$Combo)) {
+      combo_fcst <- write_fcst_tbl %>%
+        dplyr::filter(Combo == combo_name) %>%
+        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
+
+      write_data(
+        x = combo_fcst %>%
+          dplyr::filter(Recipe_ID != "simple_average"),
+        combo = combo_name,
+        run_info = new_run_info,
+        output_type = "data",
+        folder = "forecasts",
+        suffix = "-global_models"
+      )
+
+      if ("simple_average" %in% unique(combo_fcst$Recipe_ID)) {
+        write_data(
+          x = combo_fcst %>%
+            dplyr::filter(Recipe_ID == "simple_average"),
+          combo = combo_name,
+          run_info = new_run_info,
+          output_type = "data",
+          folder = "forecasts",
+          suffix = "-average_models"
+        )
+      }
+    }
   } else {
-    # bottoms_up global or local: write single models
+    # local models: write single models per combo
     write_data(
       x = write_fcst_tbl %>%
         dplyr::filter(Recipe_ID != "simple_average") %>%
@@ -1732,7 +1761,6 @@ update_forecast_combo <- function(agent_info,
       suffix = "-single_models"
     )
 
-    # write average models if simple_average was used
     if ("simple_average" %in% unique(write_fcst_tbl$Recipe_ID)) {
       write_data(
         x = write_fcst_tbl %>%
