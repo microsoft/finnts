@@ -1700,9 +1700,58 @@ update_forecast_combo <- function(agent_info,
     suffix = "-single_models"
   )
 
-  if ("simple_average" %in% unique(final_fcst_tbl$Recipe_ID)) {
+  # filter to relevant combos for global models
+  if (combo == "All-Data") {
+    write_fcst_tbl <- final_fcst_tbl %>%
+      dplyr::filter(Combo %in% combo_list)
+  } else {
+    write_fcst_tbl <- final_fcst_tbl
+  }
+
+  if (combo == "All-Data" & prev_run_log_tbl$forecast_approach != "bottoms_up") {
+    # hierarchical: reconciliation in adjust_forecast() already replaced the data
     write_data(
-      x = final_fcst_tbl %>%
+      x = write_fcst_tbl %>%
+        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
+      combo = "Best-Model",
+      run_info = new_run_info,
+      output_type = "data",
+      folder = "forecasts",
+      suffix = "-reconciled"
+    )
+  } else if (combo == "All-Data") {
+    # bottoms_up global: write per-combo forecast files
+    for (combo_name in unique(write_fcst_tbl$Combo)) {
+      combo_fcst <- write_fcst_tbl %>%
+        dplyr::filter(Combo == combo_name) %>%
+        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
+
+      write_data(
+        x = combo_fcst %>%
+          dplyr::filter(Recipe_ID != "simple_average"),
+        combo = combo_name,
+        run_info = new_run_info,
+        output_type = "data",
+        folder = "forecasts",
+        suffix = "-global_models"
+      )
+
+      if ("simple_average" %in% unique(combo_fcst$Recipe_ID)) {
+        write_data(
+          x = combo_fcst %>%
+            dplyr::filter(Recipe_ID == "simple_average"),
+          combo = combo_name,
+          run_info = new_run_info,
+          output_type = "data",
+          folder = "forecasts",
+          suffix = "-average_models"
+        )
+      }
+    }
+  } else {
+    # local models: write single models per combo
+    write_data(
+      x = write_fcst_tbl %>%
         dplyr::filter(Recipe_ID != "simple_average") %>%
         convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
       combo = combo_id,
@@ -1712,50 +1761,16 @@ update_forecast_combo <- function(agent_info,
       suffix = "-single_models"
     )
 
-    write_data(
-      x = final_fcst_tbl %>%
-        dplyr::filter(Recipe_ID == "simple_average") %>%
-        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-      combo = combo_id,
-      run_info = new_run_info,
-      output_type = "data",
-      folder = "forecasts",
-      suffix = "-average_models"
-    )
-  } else if (combo == "All-Data" & prev_run_log_tbl$forecast_approach != "bottoms_up") {
-    write_data(
-      x = final_fcst_tbl %>%
-        dplyr::filter(Combo %in% combo_list) %>%
-        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-      combo = "Best-Model",
-      run_info = new_run_info,
-      output_type = "data",
-      folder = "forecasts",
-      suffix = "-reconciled"
-    )
-  } else {
-    if (combo == "All-Data") {
-      for (combo_name in combo_list) {
-        write_data(
-          x = final_fcst_tbl %>%
-            dplyr::filter(Combo == combo_name) %>%
-            convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
-          combo = combo_name,
-          run_info = new_run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-global_models"
-        )
-      }
-    } else {
+    if ("simple_average" %in% unique(write_fcst_tbl$Recipe_ID)) {
       write_data(
-        x = final_fcst_tbl %>%
+        x = write_fcst_tbl %>%
+          dplyr::filter(Recipe_ID == "simple_average") %>%
           convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
         combo = combo_id,
         run_info = new_run_info,
         output_type = "data",
         folder = "forecasts",
-        suffix = "-single_models"
+        suffix = "-average_models"
       )
     }
   }
