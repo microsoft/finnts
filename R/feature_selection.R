@@ -38,6 +38,14 @@ run_feature_selection <- function(input_data,
       dplyr::select(-Target_Original)
   }
 
+  # drop raw external regressor copies (kept only for foundation models and
+  # removed before standard model training); they can contain NA values that
+  # break feature selection routines like Boruta
+  if (any(grepl("_original$", colnames(input_data)))) {
+    input_data <- input_data %>%
+      dplyr::select(-tidyselect::ends_with("_original"))
+  }
+
   # check for multiple time series
   if (length(unique(input_data$Combo)) > 1) {
     global <- TRUE
