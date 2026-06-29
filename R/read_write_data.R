@@ -342,6 +342,14 @@ get_prepped_models <- function(run_info) {
 #' @return hashed value
 #' @noRd
 hash_data <- function(x) {
+  # normalize the string encoding marker so identical bytes hash the same
+  # regardless of how the text was read (e.g. read.csv marks combos as
+  # "unknown" while vroom marks them "UTF-8"), which otherwise produces
+  # different digests for non-ASCII combo names and breaks file lookups
+  if (is.character(x)) {
+    Encoding(x) <- "unknown"
+  }
+
   digest::digest(object = x, algo = "xxhash64")
 }
 
