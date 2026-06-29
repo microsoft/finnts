@@ -15,7 +15,7 @@ articles:
   models-used-in-finnts: models-used-in-finnts.html
   parallel-processing: parallel-processing.html
   tips-for-production: tips-for-production.html
-last_built: 2026-06-26T20:41Z
+last_built: 2026-06-29T18:58Z
 urls:
   reference: https://microsoft.github.io/finnts/reference
   article: https://microsoft.github.io/finnts/articles
