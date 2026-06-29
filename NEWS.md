@@ -46,6 +46,7 @@
 
 ## Bug Fixes
 
+-   Fixed `subscript out of bounds` failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. `read.csv` vs `vroom`), so input data, EDA, and forecast outputs resolve to the same file.
 -   Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.
 -   Fixed `null_converter()` crash in agent workflow when input is `NA`.
 -   Added retry with exponential backoff (up to 3 retries) for Chronos and TimesFM API calls on transient failures (HTTP 429, 5xx, connection errors).
