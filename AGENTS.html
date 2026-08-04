@@ -163,7 +163,10 @@
 <h2 id="coding-conventions">Coding conventions<a class="anchor" aria-label="anchor" href="#coding-conventions"></a></h2>
 <ul><li>Prefer small, composable functions.</li>
 <li>Keep exported functions stable; introduce breaking changes only as a last resort, <strong>ask before adding</strong>, with an explicit note in NEWS.</li>
-<li>Avoid new dependencies unless necessary; <strong>ask before adding</strong> anything to <code>Imports</code>.</li>
+<li>Prefer base R and packages already declared in <code>Depends</code>, <code>Imports</code>, or <code>Suggests</code> before adding a dependency.</li>
+<li>A new package dependency is allowed only for a concrete new feature when existing dependencies and a small, maintainable custom implementation are inadequate, unsafe, or would recreate substantial mature functionality.</li>
+<li>Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers. Do not vendor third-party source code.</li>
+<li>A dependency-changing pull request must document the alternatives considered, why the package is necessary, maintenance/security/license implications, why it belongs in <code>Imports</code> or <code>Suggests</code>, and any required version constraint. It must also pass a clean-library installation and <code>devtools::check()</code>.</li>
 <li>Comments:
 <ul><li>Use short <code># description</code> style comments. Do <strong>not</strong> use decorative separator lines (e.g. <code># ----------</code>, <code># =========</code>, <code># ****</code>).</li>
 <li>Keep comments concise and descriptive, matching the existing style throughout the package.</li>
@@ -180,7 +183,7 @@
 <h2 id="boundaries--safety-rails">Boundaries / safety rails<a class="anchor" aria-label="anchor" href="#boundaries--safety-rails"></a></h2>
 <ul><li>Do <strong>not</strong> commit secrets (tokens, keys), local paths, or machine-specific config.</li>
 <li>Do <strong>not</strong> edit <code>NAMESPACE</code> or <code>man/*.Rd</code> by hand if roxygen2 is in use.</li>
-<li>Do <strong>not</strong> add new package dependencies without explicit approval.</li>
+<li>Do <strong>not</strong> add package dependencies outside the feature-only dependency policy above.</li>
 <li>Do <strong>not</strong> silence failing tests by deleting or weakening them; fix the underlying issue.</li>
 <li>Do <strong>not</strong> create code/functions that delete files.</li>
 </ul></div>
@@ -205,7 +208,7 @@
 </div>
 
 <div class="pkgdown">
-  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.0.</p>
+  <p></p><p>Site built with <a href="https://pkgdown.r-lib.org/" class="external-link">pkgdown</a> 2.2.1.</p>
 </div>
 
       </footer></div>
