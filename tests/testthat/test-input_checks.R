@@ -269,11 +269,7 @@ test_that("check_input_data rejects uneven day-of-month spacing for month data",
 
 test_that("check_input_data does not apply day-of-month spacing check to week data", {
   data_uneven <- valid_data
-  data_uneven$Date <- as.Date(c(
-    "2020-01-01", "2020-02-02", "2020-03-03", "2020-04-04",
-    "2020-05-05", "2020-06-06", "2020-07-07", "2020-08-08",
-    "2020-09-09", "2020-10-10", "2020-11-11", "2020-12-12"
-  ))
+  data_uneven$Date <- seq.Date(as.Date("2020-01-01"), by = "week", length.out = 12)
   expect_no_error(
     check_input_data(
       input_data = data_uneven,
