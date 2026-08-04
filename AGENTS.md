@@ -63,7 +63,10 @@ When adding or changing user-facing behavior:
 ## Coding conventions
 - Prefer small, composable functions.
 - Keep exported functions stable; introduce breaking changes only as a last resort, **ask before adding**, with an explicit note in NEWS.
-- Avoid new dependencies unless necessary; **ask before adding** anything to `Imports`.
+- Prefer base R and packages already declared in `Depends`, `Imports`, or `Suggests` before adding a dependency.
+- A new package dependency is allowed only for a concrete new feature when existing dependencies and a small, maintainable custom implementation are inadequate, unsafe, or would recreate substantial mature functionality.
+- Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers. Do not vendor third-party source code.
+- A dependency-changing pull request must document the alternatives considered, why the package is necessary, maintenance/security/license implications, why it belongs in `Imports` or `Suggests`, and any required version constraint. It must also pass a clean-library installation and `devtools::check()`.
 - Comments:
   - Use short `# description` style comments. Do **not** use decorative separator lines (e.g. `# ----------`, `# =========`, `# ****`).
   - Keep comments concise and descriptive, matching the existing style throughout the package.
@@ -76,7 +79,7 @@ When adding or changing user-facing behavior:
 ## Boundaries / safety rails
 - Do **not** commit secrets (tokens, keys), local paths, or machine-specific config.
 - Do **not** edit `NAMESPACE` or `man/*.Rd` by hand if roxygen2 is in use.
-- Do **not** add new package dependencies without explicit approval.
+- Do **not** add package dependencies outside the feature-only dependency policy above.
 - Do **not** silence failing tests by deleting or weakening them; fix the underlying issue.
 - Do **not** create code/functions that delete files.
 
