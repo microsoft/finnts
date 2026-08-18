@@ -615,6 +615,7 @@ arima_boost <- function(train_data,
 #' @param horizon horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get the cubist model
 #' @noRd
@@ -623,7 +624,8 @@ cubist <- function(train_data,
                    multistep,
                    horizon,
                    external_regressors,
-                   frequency) {
+                   frequency,
+                   lag_periods = NULL) {
   if (multistep) {
     recipe_spec_cubist <- train_data %>%
       get_recipe_configurable(
@@ -640,7 +642,7 @@ cubist <- function(train_data,
       max_rules = tune::tune(),
       forecast_horizon = horizon,
       external_regressors = external_regressors,
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE)
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE)
     ) %>%
       parsnip::set_engine("cubist_multistep_horizon")
   } else {
@@ -730,6 +732,7 @@ ets <- function(train_data,
 #' @param horizon horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get the GLM Net model
 #' @noRd
@@ -738,7 +741,8 @@ glmnet <- function(train_data,
                    multistep,
                    horizon,
                    external_regressors,
-                   frequency) {
+                   frequency,
+                   lag_periods = NULL) {
   # create model recipe and spec
   if (multistep) {
     recipe_spec_glmnet <- train_data %>%
@@ -756,7 +760,7 @@ glmnet <- function(train_data,
       mixture = tune::tune(),
       forecast_horizon = horizon,
       external_regressors = external_regressors,
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE)
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE)
     ) %>%
       parsnip::set_engine("glmnet_multistep_horizon")
   } else {
@@ -795,6 +799,7 @@ glmnet <- function(train_data,
 #' @param horizon horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get the Mars model spec
 #' @noRd
@@ -803,7 +808,8 @@ mars <- function(train_data,
                  multistep,
                  horizon,
                  external_regressors,
-                 frequency) {
+                 frequency,
+                 lag_periods = NULL) {
   if (multistep) {
     recipe_spec_mars <- train_data %>%
       get_recipe_configurable(
@@ -818,7 +824,7 @@ mars <- function(train_data,
       prune_method = tune::tune(),
       forecast_horizon = horizon,
       external_regressors = external_regressors,
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE)
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE)
     ) %>%
       parsnip::set_engine("mars_multistep_horizon")
   } else {
@@ -1157,6 +1163,7 @@ stlm_ets <- function(train_data,
 #' @param horizon forecast horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get SVM Poly model
 #' @noRd
@@ -1166,7 +1173,8 @@ svm_poly <- function(train_data,
                      multistep,
                      horizon,
                      external_regressors,
-                     frequency) {
+                     frequency,
+                     lag_periods = NULL) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
@@ -1198,7 +1206,7 @@ svm_poly <- function(train_data,
       degree = tune::tune(),
       margin = tune::tune(),
       scale_factor = tune::tune(),
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE),
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon
     ) %>%
@@ -1239,6 +1247,7 @@ svm_poly <- function(train_data,
 #' @param horizon forecast horizon
 #' @param external_regressors external regressors
 #' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get SVM RBF model
 #' @noRd
@@ -1248,7 +1257,8 @@ svm_rbf <- function(train_data,
                     multistep,
                     horizon,
                     external_regressors,
-                    frequency) {
+                    frequency,
+                    lag_periods = NULL) {
   if (model_type == "ensemble") {
     recipe_spec_svm <- train_data %>%
       get_recipe_configurable(
@@ -1278,7 +1288,7 @@ svm_rbf <- function(train_data,
       cost = tune::tune(),
       rbf_sigma = tune::tune(),
       margin = tune::tune(),
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE),
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon
     ) %>%
@@ -1527,7 +1537,8 @@ timesfm <- function(train_data,
 #' @param multistep multistep horizon
 #' @param horizon forecast horizon
 #' @param external_regressors external regressors
-#' @param frequency
+#' @param frequency frequency
+#' @param lag_periods lag periods
 #'
 #' @return Get XGBoost model
 #' @noRd
@@ -1536,7 +1547,8 @@ xgboost <- function(train_data,
                     multistep,
                     horizon,
                     external_regressors,
-                    frequency) {
+                    frequency,
+                    lag_periods = NULL) {
   # create model recipe and spec
   if (multistep) {
     recipe_spec_xgboost <- train_data %>%
@@ -1548,7 +1560,7 @@ xgboost <- function(train_data,
       )
 
     model_spec_xgboost <- xgboost_multistep(
-      lag_periods = get_lag_periods(NULL, get_date_type(frequency), horizon, TRUE),
+      lag_periods = get_lag_periods(lag_periods, get_date_type(frequency), horizon, TRUE),
       external_regressors = external_regressors,
       forecast_horizon = horizon,
       mode = "regression",

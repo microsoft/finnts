@@ -1974,7 +1974,7 @@ fit_models <- function(run_info,
         update(
           forecast_horizon = forecast_horizon,
           lag_periods = get_lag_periods(
-            lag_periods = NULL,
+            lag_periods = adjust_inputs(prev_run_log_tbl$lag_periods, convert_numeric = TRUE),
             date_type = prev_run_log_tbl$date_type,
             forecast_horizon = forecast_horizon,
             multistep_horizon = TRUE
@@ -2012,7 +2012,8 @@ fit_models <- function(run_info,
             fast = FALSE,
             forecast_horizon = forecast_horizon,
             external_regressors = adjust_inputs(prev_run_log_tbl$external_regressors),
-            multistep_horizon = prev_run_log_tbl$multistep_horizon
+            multistep_horizon = prev_run_log_tbl$multistep_horizon,
+            lag_periods = adjust_inputs(prev_run_log_tbl$lag_periods, convert_numeric = TRUE)
           )
 
         updated_model_spec <- workflow %>%

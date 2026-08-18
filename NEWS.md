@@ -1,4 +1,4 @@
-# finnts 0.6.0.9053 (development version)
+# finnts 0.6.0.9054 (development version)
 
 ## Improvements
 
@@ -62,6 +62,10 @@
 -   Fixed issue around NA handling with external regressors. 
 -   Fixed issue when reconciling hierarchical forecasts that are very close to zero.
 -   Fixed issue when checking if best models have been selected before. 
+-   Fixed multistep Cubist, GLMnet, MARS, polynomial SVM, and radial SVM failures caused by non-unique fiscal date-index joins expanding assessment rows.
+-   Multistep prediction now preserves one prediction per original assessment row and fails explicitly on missing, duplicated, padded, truncated, recycled, or non-finite output.
+-   Removed XGBoost multistep prediction padding and truncation that previously masked row-alignment defects.
+-   Custom multistep `lag_periods` now propagate consistently through feature engineering, feature selection, model training, and forecast updates. Lag lists that do not cover the forecast horizon automatically include the horizon as a final boundary.
 
 ## Breaking Changes
 

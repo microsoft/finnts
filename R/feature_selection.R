@@ -10,6 +10,7 @@
 #' @param forecast_horizon forecast horizon
 #' @param external_regressors external reressors
 #' @param multistep_horizon multistep horizon forecast
+#' @param lag_periods lag periods
 #'
 #' @return list of best features to use
 #' @noRd
@@ -22,7 +23,8 @@ run_feature_selection <- function(input_data,
                                   seed = 123,
                                   forecast_horizon,
                                   external_regressors,
-                                  multistep_horizon = FALSE) {
+                                  multistep_horizon = FALSE,
+                                  lag_periods = NULL) {
   # check for more than one unique target value
   if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
     # just return the date features
@@ -61,7 +63,7 @@ run_feature_selection <- function(input_data,
 
   # run feature selection
   if (multistep_horizon) {
-    initial_lag_periods <- get_lag_periods(NULL, date_type, forecast_horizon, TRUE)
+    initial_lag_periods <- get_lag_periods(lag_periods, date_type, forecast_horizon, TRUE)
 
     iteration_list <- get_multi_lags(
       initial_lag_periods,

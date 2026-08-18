@@ -28,7 +28,8 @@ utils::globalVariables(c(
   "to", "total_rows", "weighted_mape", "Analysis_Type", "Metric", "Value_Numeric",
   "is_stationary", "outlier_pct", "model_class", "section", "value", "Hierarchy_Level",
   "Sort_Order", "run_id", "date_type", "file_path", "models_to_run", "underscore_count",
-  "max_iterations", "run_complete", "has_best", "fold_count", "actual_ids", "missing_ids"
+  "max_iterations", "run_complete", "has_best", "fold_count", "actual_ids", "missing_ids",
+  ".finnts_row", ".finnts_horizon", ".finnts_combo", ".finnts_date"
 ))
 
 #' @importFrom magrittr %>%

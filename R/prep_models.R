@@ -482,6 +482,12 @@ model_workflows <- function(run_info,
   } else {
     unlist(strsplit(log_df$external_regressors, split = "---"))
   }
+  lag_periods <- if (!"lag_periods" %in% colnames(log_df) ||
+    length(log_df$lag_periods) == 0 || is.na(log_df$lag_periods[[1]])) {
+    NULL
+  } else {
+    as.numeric(unlist(strsplit(as.character(log_df$lag_periods[[1]]), split = "---")))
+  }
 
   if (is.null(pca) & date_type %in% c("day", "week")) {
     pca <- TRUE
@@ -662,7 +668,8 @@ model_workflows <- function(run_info,
         "model_type" = "single",
         "pca" = pca,
         "multistep" = multistep_horizon,
-        "external_regressors" = external_regressors
+        "external_regressors" = external_regressors,
+        "lag_periods" = lag_periods
       )
     } else {
       avail_arg_list <- list(
