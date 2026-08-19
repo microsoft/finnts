@@ -20,7 +20,7 @@ library(dplyr)
 
 reactable::reactable(
   data.frame() %>%
-    rbind(data.frame(Model = "arima", Type = "univariate, local", Underlying.Package = "modeltime, forecast", Description = "Regression model that is based on finding relationships between lagged values of the target variable you are trying to forecast.")) %>%
+    rbind(data.frame(Model = "arima", Type = "univariate, local", Underlying.Package = "finnts, modeltime, forecast", Description = "Adaptive ARIMA model. Daily data uses a bounded fast engine that compares nonseasonal, weekly-difference, annual-difference, and Fourier strategies. Other frequencies use classic auto-ARIMA.")) %>%
     rbind(data.frame(Model = "arima-boost", Type = "multivariate, local", Underlying.Package = "modeltime, forecast, xgboost", Description = "Arima model (refer to arima) that models the trend compoent of target variable, then uses xgboost model (refer to xgboost) to train on the remaining residuals.")) %>%
     rbind(data.frame(Model = "arimax", Type = "multivariate, local", Underlying.Package = "modeltime, forecast", Description = "ARIMA model that incorporates external regressors and other engineered features.")) %>%
     rbind(data.frame(Model = "chronos-bolt-base", Type = "univariate, local", Underlying.Package = "finnts, huggingface/chronos-bolt-base", Description = "Lighter-weight Chronos foundation model optimized for fast inference. Provides zero-shot forecasts but does not support external regressors or global training.")) %>%
@@ -67,6 +67,12 @@ reactable::reactable(
 -   **Univariate models** only use the date and target variable values when producing a forecast. They are mostly common on various statistical forecasting models like arima and ets.
 
 -   **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette.
+
+### Adaptive Daily ARIMA
+
+Users select ARIMA with `models_to_run = "arima"` for every date type. Daily workflows use the `arima_fast` engine under the hood. The engine compares a bounded set of frequency-one ARIMA candidates over an internal holdout: nonseasonal levels and differences, weekly differences, 364- and 365-day differences, and Fourier regressors with ARIMA errors. It chooses the simplest strategy within 2% of the best validation accuracy and refits it on the supplied history. Candidate search is capped, and candidate failures fall through to another successful strategy or a deterministic drift fallback. It never creates a period-365 seasonal state-space model.
+
+Weekly, monthly, quarterly, and yearly workflows continue to use the classic `auto_arima` engine. The public model name and `arima--local--R1` model ID do not change. Saved workflows retain the selected strategy for later prediction, and agent model summaries report the actual engine, strategy, transformed and effective ARIMA orders, Fourier or seasonal settings, validation accuracy, candidate scores, and fallback status.
 
 ### Global vs Local Models
 

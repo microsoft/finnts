@@ -512,18 +512,28 @@ get_latin_hypercube_grid <- function(model_spec) {
 #'
 #' @param train_data Training Data
 #' @param frequency Frequency of Data
+#' @param horizon Forecast horizon
 #'
 #' @return Get the ARIMA based model
 #' @noRd
 arima <- function(train_data,
-                  frequency) {
+                  frequency,
+                  horizon = NULL) {
   recipe_simple <- train_data %>%
     get_recipe_simple()
 
-  model_spec_arima <- modeltime::arima_reg(
-    seasonal_period = frequency
-  ) %>%
-    parsnip::set_engine("auto_arima")
+  if (identical(get_date_type(frequency), "day")) {
+    model_spec_arima <- arima_fast_model(
+      forecast_horizon = horizon,
+      frequency = frequency
+    ) %>%
+      parsnip::set_engine("arima_fast")
+  } else {
+    model_spec_arima <- modeltime::arima_reg(
+      seasonal_period = frequency
+    ) %>%
+      parsnip::set_engine("auto_arima")
+  }
 
   wflw_spec <- get_workflow_simple(
     model_spec_arima,

@@ -44,6 +44,14 @@
     
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
 
+- Adaptive daily ARIMA to reduce runtime
+  - Users continue to select `"arima"`; daily workflows now use the bounded `arima_fast` engine while non-daily workflows retain classic `auto_arima` behavior.
+  - The daily engine validates nonseasonal, weekly-difference, 364/365-day-difference, and Fourier-with-ARIMA-errors strategies on an internal holdout, then refits the simplest competitive strategy. Finn's outer back-tests continue to score original targets when outlier cleaning is enabled.
+  - Daily candidate searches use nonseasonal frequency-one ARIMA fits and never construct the expensive period-365 seasonal state-space model.
+  - Candidate failures fall through to another validation-successful strategy or a deterministic drift fallback. No model timeout or process-termination behavior was added.
+  - Agent model summaries identify the actual engine, selected strategy, transformed and effective ARIMA orders, Fourier/seasonal settings, validation WMAPE, candidate scores, and fallback status.
+  - Added `forecast` as a direct `Imports` dependency. It was already transitively required by `modeltime`; using its mature ARIMA implementation avoids reimplementing numerical estimation. This adds no new runtime service, credential, or network surface and retains the package's existing open-source dependency chain.
+
 ## Bug Fixes
 
 -   Fixed `subscript out of bounds` failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. `read.csv` vs `vroom`), so input data, EDA, and forecast outputs resolve to the same file.

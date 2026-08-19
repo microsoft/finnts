@@ -38,6 +38,7 @@ Imports:
     earth,
     feasts,
     foreach,
+    forecast,
     fs,
     generics,
     glue, 
