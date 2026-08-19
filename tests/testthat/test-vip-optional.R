@@ -23,6 +23,47 @@ test_that("feature selection reports how to install vip when unavailable", {
   )
 })
 
+test_that("optional feature packages have actionable installation guidance", {
+  expect_error(
+    require_optional_package(
+      "finntsPackageThatDoesNotExist",
+      "feature selection"
+    ),
+    "install\\.packages\\(\\\"finntsPackageThatDoesNotExist\\\"\\)"
+  )
+})
+
+test_that("feature selection preflights its complete optional package stack", {
+  observed_packages <- character()
+  local_mocked_bindings(
+    vip_available = function() TRUE,
+    require_optional_package = function(package, context) {
+      observed_packages <<- c(observed_packages, package)
+      invisible(TRUE)
+    },
+    multi_future_xreg_check = function(...) stop("preflight complete"),
+    .package = "finnts"
+  )
+  input_data <- tibble::tibble(
+    Date = as.Date(c("2025-01-01", "2025-02-01")),
+    Combo = "A",
+    Target = c(1, 2)
+  )
+
+  expect_error(
+    run_feature_selection(
+      input_data = input_data,
+      run_info = NULL,
+      train_test_data = NULL,
+      date_type = "month",
+      forecast_horizon = 1,
+      external_regressors = NULL
+    ),
+    "preflight complete"
+  )
+  expect_identical(observed_packages, c("Boruta", "corrr", "ranger"))
+})
+
 test_that("Chronos2 importance is optional when vip is unavailable", {
   local_mocked_bindings(
     vip_available = function() FALSE,
@@ -72,6 +113,7 @@ test_that("model summarization warns once when vip is unavailable", {
 test_that("vip 0.5 supports all feature-selection adapters", {
   skip_on_cran()
   skip_if_not_installed("vip", minimum_version = "0.5.0")
+  skip_if_not_installed("ranger")
 
   feature_data <- tibble::tibble(
     Date = seq.Date(as.Date("2021-01-01"), by = "month", length.out = 48),
@@ -98,6 +140,27 @@ test_that("vip 0.5 supports all feature-selection adapters", {
     expect_gt(nrow(importance), 0)
     expect_true(all(is.finite(importance$Importance)), info = model_name)
   }
+})
+
+test_that("Boruta feature selection uses the ranger importance adapter", {
+  skip_if_not_installed("Boruta", minimum_version = "8.0.0")
+  skip_if_not_installed("ranger")
+
+  set.seed(123)
+  feature_one <- seq_len(40)
+  feature_data <- tibble::tibble(
+    Target = 4 * feature_one + stats::rnorm(40, sd = 0.1),
+    Feature_One = feature_one,
+    Feature_Two = stats::rnorm(40)
+  )
+
+  result <- boruta_fn(
+    data = feature_data,
+    iterations = 11
+  )
+
+  expect_type(result, "character")
+  expect_true(all(result %in% c("Feature_One", "Feature_Two")))
 })
 
 test_that("vip 0.5 supports multistep Cubist summary importance", {

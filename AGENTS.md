@@ -19,12 +19,14 @@ Prefer the repo's existing dependency workflow:
 - Otherwise:
   - `R -q -e 'install.packages("devtools"); devtools::install_deps(dependencies = TRUE)'`
 
-### Optional vip dependency
+### Optional feature selection dependencies
 - `vip (>= 0.5.0)` is a suggested package from `https://bgreenwell.r-universe.dev` and requires R 4.1 or newer.
+- Feature selection also requires the suggested `Boruta`, `corrr`, and `ranger` packages. Keep `ranger` declared directly because Boruta 10.0 no longer installs it as a strong dependency.
+- Use Boruta's `getImpRfZ` ranger adapter to preserve FinnTS behavior across Boruta 10.0 and later; do not rely on Boruta's changing default importance provider.
 - FinnTS must install, load, and pass its CRAN-style check without `vip`; never move it to `Imports`, `Depends`, or `LinkingTo` without an explicit packaging decision.
 - Feature selection may require `vip` and must fail early with actionable installation guidance when it is unavailable.
 - Model summaries must retain non-importance sections without `vip`; only variable-importance output may be omitted.
-- Keep both maintained-`vip` compatibility coverage and the explicit no-`vip` CI check.
+- Keep both maintained-`vip` compatibility coverage and the explicit CI check without any feature-selection packages.
 
 ### Dev loop
 - Document (roxygen): `R -q -e 'devtools::document()'`
@@ -42,6 +44,7 @@ Prefer the repo's existing dependency workflow:
 - Do not repeat full `prep_data()` / `prep_models()` / `train_models()` pipelines only to manufacture downstream test input. Prefer deterministic artifacts, one directly finalized fit, or an immutable prepared template copied into an isolated test directory.
 
 ### Multistep validation
+- Automatic MARS tuning must exclude `prune_method = "cv"`; explicit multistep CV pruning must supply a bounded `nfold` value.
 - Cover all supported `date_type` values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.
 - The daily multistep matrix is part of the standard test suite and must pass after changing lag generation, feature selection, multistep fitting, or prediction.
 - Preserve both daily paths: all six adapters with explicit lags/outlier cleaning and GLMnet with automatic lags/raw data.

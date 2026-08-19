@@ -18,11 +18,11 @@ Finn leverages multiple techniques of feature selection to ensure only the best 
 
 ## Optional Dependency
 
-Feature selection requires `vip` 0.5.0 or newer, which requires R 4.1 or newer and is distributed from its maintainer's r-universe repository. Install it before enabling feature selection:
+Feature selection requires the optional `Boruta`, `corrr`, `ranger`, and `vip` packages. `vip` 0.5.0 or newer requires R 4.1 or newer and is distributed from its maintainer's r-universe repository. Install the optional stack before enabling feature selection:
 
 ```{r, eval = FALSE}
 install.packages(
-  "vip",
+  c("Boruta", "corrr", "ranger", "vip"),
   repos = c(
     "https://bgreenwell.r-universe.dev",
     "https://cloud.r-project.org"
@@ -30,7 +30,7 @@ install.packages(
 )
 ```
 
-FinnTS remains installable without `vip`, but requesting feature selection without it produces an actionable error before feature-selection models are fitted.
+FinnTS remains installable without these packages, but requesting feature selection with a missing dependency produces an actionable error before feature-selection models are fitted.
 
 ## Feature Selection Techniques
 
@@ -48,7 +48,7 @@ This technique is used for yearly, quarterly, and monthly data. It's turned off 
 
 ### Boruta
 
-Uses the [Boruta](https://CRAN.R-project.org/package=Boruta) package. It finds relevant features by comparing original attributes' importance with importance achievable at random, estimated using their permuted copies (shadows).
+Uses the [Boruta](https://CRAN.R-project.org/package=Boruta) package with its ranger importance adapter. This preserves the established FinnTS behavior across Boruta 10.0, which changed its default importance provider. Boruta finds relevant features by comparing original attributes' importance with importance achievable at random, estimated using their permuted copies (shadows).
 
 Boruta is not ran for daily or weekly data, in order to save time.
 

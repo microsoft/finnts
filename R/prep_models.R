@@ -918,6 +918,13 @@ model_hyperparameters <- function(run_info,
           dials::finalize(recipe_features, force = FALSE)
       }
 
+      if (model == "mars") {
+        parameters <- stats::update(
+          parameters,
+          prune_method = mars_automatic_prune_method()
+        )
+      }
+
       set.seed(seed)
 
       grid <- suppressWarnings(

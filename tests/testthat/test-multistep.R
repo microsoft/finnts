@@ -196,6 +196,52 @@ test_that("update(selected_features) errors on standard parsnip specs", {
   )
 })
 
+test_that("automatic MARS grids exclude cross-validation pruning", {
+  prune_methods <- dials::grid_regular(
+    mars_automatic_prune_method(),
+    levels = 10
+  )$prune_method
+
+  expect_setequal(
+    prune_methods,
+    c("backward", "none", "exhaustive", "forward", "seqrep")
+  )
+  expect_false("cv" %in% prune_methods)
+})
+
+test_that("multistep MARS supports explicit cross-validation pruning", {
+  rows <- 36
+  outcome <- 100 + seq_len(rows) + sin(seq_len(rows) / 3)
+  dates <- seq(as.Date("2020-01-01"), by = "month", length.out = rows)
+  predictors <- tibble::tibble(
+    Date = dates,
+    Date_index.num = as.numeric(dates),
+    Target_lag1 = outcome - 1,
+    Target_lag2 = outcome - 2
+  )
+
+  fit <- mars_multistep_fit_impl(
+    x = predictors,
+    y = outcome,
+    nprune = 5,
+    degree = 1,
+    pmethod = "cv",
+    lag_periods = c(1, 2),
+    forecast_horizon = 2
+  )
+
+  expect_s3_class(fit, "mars_multistep_fit_impl")
+  expect_equal(names(fit$models), c("model_lag_1", "model_lag_2"))
+  expect_true(all(is.finite(fit$data$.fitted)))
+
+  prediction <- predict(
+    fit,
+    new_data = predictors[seq_len(2), , drop = FALSE]
+  )
+  expect_equal(nrow(prediction), 2)
+  expect_true(all(is.finite(prediction$.pred)))
+})
+
 test_that("multistep lag boundaries cover every supported date frequency", {
   cases <- tibble::tribble(
     ~date_type, ~forecast_horizon, ~expected_lags,
@@ -281,6 +327,7 @@ test_that("multistep feature selection uses custom lag boundaries", {
   }
   testthat::local_mocked_bindings(
     vip_available = function() TRUE,
+    require_optional_package = function(...) invisible(TRUE),
     target_corr_fn = function(data, threshold) {
       tibble::tibble(term = feature_names(data))
     },

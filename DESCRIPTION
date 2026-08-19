@@ -74,7 +74,7 @@ Imports:
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
-    Boruta,
+    Boruta (>= 8.0.0),
     caret,
     corrr,
     ellmer, 
@@ -83,6 +83,7 @@ Suggests:
     Microsoft365R,
     notebookutils, 
     qs2,
+    ranger,
     reactable,
     rmarkdown,
     sparklyr,

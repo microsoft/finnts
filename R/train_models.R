@@ -9,8 +9,9 @@
 #'   local models.
 #' @param global_model_recipes Recipes to use in global models.
 #' @param feature_selection Implement feature selection before model training.
-#'   This requires the optional `vip` package from
-#'   <https://bgreenwell.r-universe.dev> and R 4.1 or newer.
+#'   This requires the optional `Boruta`, `corrr`, `ranger`, and `vip` packages.
+#'   `vip` is available from <https://bgreenwell.r-universe.dev> and requires R
+#'   4.1 or newer.
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'

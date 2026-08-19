@@ -64,12 +64,17 @@ jobs:
           
       - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
         with:
-          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0
+          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, ranger=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0
           needs: check
 
-      - name: Verify maintained vip version
+      - name: Verify feature-selection dependencies
         run: |
-          stopifnot(utils::packageVersion("vip") >= "0.5.0")
+          stopifnot(
+            utils::packageVersion("vip") >= "0.5.0",
+            utils::packageVersion("Boruta") >= "8.0.0",
+            requireNamespace("ranger", quietly = TRUE),
+            "getImpRfZ" %in% getNamespaceExports("Boruta")
+          )
         shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
@@ -88,7 +93,7 @@ jobs:
 
   R-CMD-check-without-vip:
     runs-on: ubuntu-22.04
-    name: ubuntu-22.04 (release, without vip)
+    name: ubuntu-22.04 (release, without feature-selection packages)
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -108,12 +113,17 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
         with:
-          extra-packages: any::rcmdcheck, vip=?ignore
+          extra-packages: any::rcmdcheck, vip=?ignore, Boruta=?ignore, corrr=?ignore, ranger=?ignore
           needs: check
 
-      - name: Verify vip is unavailable
+      - name: Verify feature-selection packages are unavailable
         run: |
-          stopifnot(!requireNamespace("vip", quietly = TRUE))
+          stopifnot(all(!vapply(
+            c("vip", "Boruta", "corrr", "ranger"),
+            requireNamespace,
+            logical(1),
+            quietly = TRUE
+          )))
         shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@d3c5be51b12e724e68f33216ca3c148b66d5f0b6 # v2.12.1
@@ -127,5 +137,5 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@main
         with:
-          name: ubuntu-release-without-vip-results
+          name: ubuntu-release-without-feature-selection-results
           path: check

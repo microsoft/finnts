@@ -54,12 +54,16 @@
 
 - Updated optional variable-importance support for `vip` 0.5.0. `vip` remains
   in `Suggests` and is resolved from its maintainer's r-universe repository.
-  FinnTS continues to install and run without it: feature selection now fails
-  early with installation guidance, while model summaries retain all sections
-  except variable importance.
+  `ranger` is now declared directly in `Suggests`, and Boruta feature selection
+  uses Boruta's ranger adapter to preserve behavior after Boruta 10.0 changed
+  its default importance provider. FinnTS continues to install and run without
+  these optional packages: feature selection now fails early with installation
+  guidance, while model summaries retain all sections except variable
+  importance.
 
 ## Bug Fixes
 
+-   Prevented random MARS tuning failures when `prune_method = "cv"` was selected without the required folds. Automatic grids now use the five non-CV pruning methods, while explicit multistep CV pruning supplies a bounded fold count.
 -   Fixed `subscript out of bounds` failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. `read.csv` vs `vroom`), so input data, EDA, and forecast outputs resolve to the same file.
 -   Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.
 -   Fixed `null_converter()` crash in agent workflow when input is `NA`.

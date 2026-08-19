@@ -7,6 +7,28 @@ vip_available <- function() {
     utils::packageVersion("vip") >= "0.5.0"
 }
 
+#' Require an optional CRAN package for an operation
+#'
+#' @param package Package name.
+#' @param context Description of the operation that requires the package.
+#'
+#' @return Invisibly returns TRUE when the package is available.
+#' @noRd
+require_optional_package <- function(package, context) {
+  if (requireNamespace(package, quietly = TRUE)) {
+    return(invisible(TRUE))
+  }
+
+  stop(
+    paste0(
+      "Package '", package, "' is required for ", context,
+      " but is not installed. Install it with install.packages(\"",
+      package, "\")."
+    ),
+    call. = FALSE
+  )
+}
+
 #' Calculate variable importance when vip is available
 #'
 #' @param ... Arguments passed to [vip::vi()].

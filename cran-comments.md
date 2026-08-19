@@ -26,10 +26,21 @@ All `vip` usage is conditional. The package installs, loads, and passes its
 CRAN-style test profile without `vip`. Feature selection reports actionable
 installation guidance only when requested, while model summaries retain all
 non-importance sections. A dedicated CI job verifies this no-`vip` path with
-`_R_CHECK_FORCE_SUGGESTS_=false`.
+`_R_CHECK_FORCE_SUGGESTS_=false` while also excluding the other optional
+feature-selection packages (`Boruta`, `corrr`, and `ranger`).
 
 `vip` requires R 4.1 or newer, while FinnTS continues to support its core
 workflows on R 4.0 without this optional package.
+
+`ranger` is also declared directly in `Suggests` because FinnTS invokes its
+parsnip engine during optional feature selection and uses Boruta's ranger
+importance adapter. Boruta 10.0 moved `ranger` from a strong dependency to
+`Suggests` and changed its default provider to `fru`; relying on that default
+both changed established behavior and produced cross-platform failures on the
+package's prepared feature data. Pinning an older Boruta release was rejected
+because it would prevent normal dependency updates. `ranger` is a mature CRAN
+package under GPL-3 and remains optional, so this declaration adds no new
+dependency to FinnTS installation or its core workflows.
 
 ## Downstream dependencies
 There are currently no downstream dependencies for this package
