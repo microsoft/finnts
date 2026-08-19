@@ -1,4 +1,4 @@
-# finnts 0.6.0.9054 (development version)
+# finnts 0.6.0.9055 (development version)
 
 ## Improvements
 
@@ -51,6 +51,12 @@
   - Candidate failures fall through to another validation-successful strategy or a deterministic drift fallback. No model timeout or process-termination behavior was added.
   - Agent model summaries identify the actual engine, selected strategy, transformed and effective ARIMA orders, Fourier/seasonal settings, validation WMAPE, candidate scores, and fallback status.
   - Added `forecast` as a direct `Imports` dependency. It was already transitively required by `modeltime`; using its mature ARIMA implementation avoids reimplementing numerical estimation. This adds no new runtime service, credential, or network surface and retains the package's existing open-source dependency chain.
+
+- Updated optional variable-importance support for `vip` 0.5.0. `vip` remains
+  in `Suggests` and is resolved from its maintainer's r-universe repository.
+  FinnTS continues to install and run without it: feature selection now fails
+  early with installation guidance, while model summaries retain all sections
+  except variable importance.
 
 ## Bug Fixes
 

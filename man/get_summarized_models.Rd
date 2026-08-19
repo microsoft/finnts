@@ -10,10 +10,16 @@ get_summarized_models(agent_info)
 \item{agent_info}{Agent info from \code{set_agent_info()}}
 }
 \value{
-A tibble containing the summarized models for the agent.
+A tibble containing the summarized models for the agent. The
+\code{importance} section is omitted when \code{vip} was unavailable during summary
+generation.
 }
 \description{
-This function retrieves the final summarized model info (hyperparameters, recipe steps, feature importance, etc.) after agent completes its run.
+This function retrieves the final summarized model info (hyperparameters,
+recipe steps, feature importance, etc.) after an agent completes its run.
+Variable-importance rows are included when the optional \code{vip} package was
+available while summaries were generated; all other summary sections remain
+available without it.
 }
 \examples{
 \dontrun{

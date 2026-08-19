@@ -34,6 +34,8 @@ run_feature_selection <- function(input_data,
     return(fs_list)
   }
 
+  require_vip("feature selection")
+
   # check if outlier cleaning has been applied
   if ("Target_Original" %in% colnames(input_data)) {
     input_data <- input_data %>%
@@ -304,6 +306,8 @@ target_corr_fn <- function(data,
 #' @noRd
 vip_rf_fn <- function(data,
                       seed = 123) {
+  require_vip("random forest feature selection")
+
   rf_mod <- parsnip::rand_forest(mode = "regression", trees = 100) %>%
     parsnip::set_engine("ranger", importance = "impurity")
 
@@ -335,6 +339,8 @@ vip_rf_fn <- function(data,
 #' @noRd
 vip_lm_fn <- function(data,
                       seed = 123) {
+  require_vip("linear regression feature selection")
+
   model_spec_lm <- parsnip::linear_reg(
     penalty = 0.01
   ) %>%
@@ -371,6 +377,8 @@ vip_lm_fn <- function(data,
 #' @noRd
 vip_cubist_fn <- function(data,
                           seed = 123) {
+  require_vip("Cubist feature selection")
+
   model_spec_cubist <- parsnip::cubist_rules(
     mode = "regression",
     committees = 25

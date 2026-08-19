@@ -19,6 +19,13 @@ Prefer the repo's existing dependency workflow:
 - Otherwise:
   - `R -q -e 'install.packages("devtools"); devtools::install_deps(dependencies = TRUE)'`
 
+### Optional vip dependency
+- `vip (>= 0.5.0)` is a suggested package from `https://bgreenwell.r-universe.dev` and requires R 4.1 or newer.
+- FinnTS must install, load, and pass its CRAN-style check without `vip`; never move it to `Imports`, `Depends`, or `LinkingTo` without an explicit packaging decision.
+- Feature selection may require `vip` and must fail early with actionable installation guidance when it is unavailable.
+- Model summaries must retain non-importance sections without `vip`; only variable-importance output may be omitted.
+- Keep both maintained-`vip` compatibility coverage and the explicit no-`vip` CI check.
+
 ### Dev loop
 - Document (roxygen): `R -q -e 'devtools::document()'`
 - Run tests: `R -q -e 'devtools::test()'`

@@ -34,6 +34,22 @@ To get a bug fix or to use a feature from the development version, you can insta
 devtools::install_github("microsoft/finnts")
 ```
 
+### Optional variable importance support
+
+Feature selection and model-summary variable importance use `vip` 0.5.0 or newer. Because `vip` is distributed from its maintainer's r-universe repository, install it separately when you need those capabilities:
+
+``` r
+install.packages(
+  "vip",
+  repos = c(
+    "https://bgreenwell.r-universe.dev",
+    "https://cloud.r-project.org"
+  )
+)
+```
+
+`vip` 0.5.0 requires R 4.1 or newer. FinnTS still installs and runs its default forecasting workflows without `vip`: requesting feature selection produces an installation error, while model summaries omit only variable-importance rows.
+
 ## Usage
 
 ``` r

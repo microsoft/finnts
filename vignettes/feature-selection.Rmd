@@ -16,6 +16,22 @@ knitr::opts_chunk$set(
 
 Finn leverages multiple techniques of feature selection to ensure only the best features are used in individual model training. This speeds up run time while also improving model accuracy. Feature selection can be enabled by setting `feature_selection` to TRUE in either `forecast_time_series()` or `train_models()`. By default it's turned off, meaning every feature in each feature engineering recipe will be used in model training.
 
+## Optional Dependency
+
+Feature selection requires `vip` 0.5.0 or newer, which requires R 4.1 or newer and is distributed from its maintainer's r-universe repository. Install it before enabling feature selection:
+
+```{r, eval = FALSE}
+install.packages(
+  "vip",
+  repos = c(
+    "https://bgreenwell.r-universe.dev",
+    "https://cloud.r-project.org"
+  )
+)
+```
+
+FinnTS remains installable without `vip`, but requesting feature selection without it produces an actionable error before feature-selection models are fitted.
+
 ## Feature Selection Techniques
 
 Below are the techniques used in the feature selection process.
@@ -38,7 +54,7 @@ Boruta is not ran for daily or weekly data, in order to save time.
 
 ### Model Variable Importance
 
-Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the [vip](https://koalaverse.github.io/vip/index.html) package. For each model, any feature with a variable importance score above zero is flagged as important.
+Multiple models (cubist, glmnet, ranger) are trained on the entire training data. These models are then fed into the variable importance function within the [vip](https://bgreenwell.r-universe.dev/vip) package. For each model, any feature with a variable importance score above zero is flagged as important.
 
 ## Voting Process
 

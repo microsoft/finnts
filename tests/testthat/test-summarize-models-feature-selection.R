@@ -1,4 +1,5 @@
 skip_on_cran()
+skip_if_not_installed("vip", minimum_version = "0.5.0")
 
 run_path <- tempfile("finnts-summary-feature-selection-")
 dir.create(run_path)

@@ -179,6 +179,7 @@ test_that("summarize arima-boost without xregs", {
   result <- summarize_model_arima_boost(wf)
   validate_summary_output(result, "arima-boost")
   expect_true("model_arg" %in% result$section)
+  expect_importance_output(result, "arima-boost")
 })
 
 test_that("summarize prophet-boost without xregs", {
@@ -186,6 +187,7 @@ test_that("summarize prophet-boost without xregs", {
   result <- summarize_model_prophet_boost(wf)
   validate_summary_output(result, "prophet-boost")
   expect_true("model_arg" %in% result$section)
+  expect_importance_output(result, "prophet-boost")
 })
 
 test_that("summarize prophet-xregs without xregs", {
@@ -239,6 +241,7 @@ test_that("summarize xgboost multistep without xregs", {
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
   expect_equal(n_models_row$value[[1]], "2")
+  expect_importance_output(result, "xgboost-multistep")
 })
 
 test_that("summarize cubist multistep without xregs", {
@@ -259,6 +262,7 @@ test_that("summarize glmnet multistep without xregs", {
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
   expect_equal(n_models_row$value[[1]], "2")
+  expect_importance_output(result, "glmnet-multistep")
 })
 
 test_that("summarize mars multistep without xregs", {
@@ -269,6 +273,7 @@ test_that("summarize mars multistep without xregs", {
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
   expect_equal(n_models_row$value[[1]], "2")
+  expect_importance_output(result, "mars-multistep")
 })
 
 test_that("summarize svm-poly multistep without xregs", {
@@ -279,6 +284,7 @@ test_that("summarize svm-poly multistep without xregs", {
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
   expect_equal(n_models_row$value[[1]], "2")
+  expect_importance_output(result, "svm-poly-multistep")
 })
 
 test_that("summarize svm-rbf multistep without xregs", {
@@ -289,6 +295,7 @@ test_that("summarize svm-rbf multistep without xregs", {
   expect_equal(ms_rows$value[[1]], "Multistep Horizon")
   n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
   expect_equal(n_models_row$value[[1]], "2")
+  expect_importance_output(result, "svm-rbf-multistep")
 })
 
 rm(trained_multistep)
@@ -305,6 +312,7 @@ test_that("summarize cubist non-multistep without xregs", {
   if (nrow(ms_rows) > 0) {
     expect_false(ms_rows$value[1] == "Multistep Horizon")
   }
+  expect_importance_output(result, "cubist-standard")
 })
 
 test_that("summarize glmnet non-multistep without xregs", {
@@ -315,6 +323,7 @@ test_that("summarize glmnet non-multistep without xregs", {
   if (nrow(ms_rows) > 0) {
     expect_false(ms_rows$value[1] == "Multistep Horizon")
   }
+  expect_importance_output(result, "glmnet-standard")
 })
 
 test_that("summarize mars non-multistep without xregs", {
@@ -325,6 +334,7 @@ test_that("summarize mars non-multistep without xregs", {
   if (nrow(ms_rows) > 0) {
     expect_false(ms_rows$value[1] == "Multistep Horizon")
   }
+  expect_importance_output(result, "mars-standard")
 })
 
 test_that("summarize svm-poly non-multistep without xregs", {
@@ -335,6 +345,7 @@ test_that("summarize svm-poly non-multistep without xregs", {
   if (nrow(ms_rows) > 0) {
     expect_false(ms_rows$value[1] == "Multistep Horizon")
   }
+  expect_importance_output(result, "svm-poly-standard")
 })
 
 test_that("summarize svm-rbf non-multistep without xregs", {
@@ -345,6 +356,7 @@ test_that("summarize svm-rbf non-multistep without xregs", {
   if (nrow(ms_rows) > 0) {
     expect_false(ms_rows$value[1] == "Multistep Horizon")
   }
+  expect_importance_output(result, "svm-rbf-standard")
 })
 
 rm(trained_standard_ml)
@@ -390,6 +402,22 @@ test_that("summarize xgboost non-multistep (global) without xregs", {
   validate_summary_output(result, "xgboost-standard")
   ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
   expect_equal(ms_rows$value[[1]], "Standard")
+  expect_importance_output(result, "xgboost-standard")
+})
+
+test_that("xgboost summary omits only importance when vip is unavailable", {
+  local_mocked_bindings(
+    vip_available = function() FALSE,
+    .package = "finnts"
+  )
+
+  wf <- get_model_workflow(trained_xgb_global, "xgboost")
+  result <- summarize_model_xgboost(wf)
+
+  validate_summary_output(result, "xgboost-without-vip")
+  expect_false("importance" %in% result$section)
+  expect_true("engine_param" %in% result$section)
+  expect_true("predictor" %in% result$section)
 })
 
 rm(trained_xgb_global)
@@ -445,6 +473,7 @@ test_that("summarize arima-boost with xregs", {
   validate_summary_output(result, "arima-boost-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
+  expect_importance_output(result, "arima-boost-xregs")
 })
 
 test_that("summarize prophet-boost with xregs", {
@@ -453,6 +482,7 @@ test_that("summarize prophet-boost with xregs", {
   validate_summary_output(result, "prophet-boost-xregs")
   preds <- result %>% dplyr::filter(section == "predictor")
   expect_gt(nrow(preds), 0)
+  expect_importance_output(result, "prophet-boost-xregs")
 })
 
 test_that("summarize prophet-xregs with xregs", {

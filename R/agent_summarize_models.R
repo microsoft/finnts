@@ -1,10 +1,16 @@
 #' Get the trained model summaries info for an agent
 #'
-#' This function retrieves the final summarized model info (hyperparameters, recipe steps, feature importance, etc.) after agent completes its run.
+#' This function retrieves the final summarized model info (hyperparameters,
+#' recipe steps, feature importance, etc.) after an agent completes its run.
+#' Variable-importance rows are included when the optional `vip` package was
+#' available while summaries were generated; all other summary sections remain
+#' available without it.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return A tibble containing the summarized models for the agent.
+#' @return A tibble containing the summarized models for the agent. The
+#'   `importance` section is omitted when `vip` was unavailable during summary
+#'   generation.
 #' @examples
 #' \dontrun{
 #' # load example data
@@ -66,6 +72,8 @@ get_summarized_models <- function(agent_info) {
 #'
 #' Summarizes trained models for each time series in the best agent run by extracting
 #' model details, hyperparameters, and diagnostics into a structured format.
+#' When the optional `vip` package is unavailable, variable importance is
+#' omitted and all other supported summary sections are retained.
 #'
 #' @param agent_info Agent info from [set_agent_info()]
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -86,6 +94,17 @@ summarize_models <- function(agent_info,
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+
+  if (!vip_available()) {
+    warning(
+      paste0(
+        "Package 'vip' 0.5.0 or newer is not available; variable importance ",
+        "will be omitted from model summaries. See the finnts installation ",
+        "documentation for the optional vip setup."
+      ),
+      call. = FALSE
+    )
+  }
 
   # Get project info
   project_info <- agent_info$project_info
@@ -1446,7 +1465,7 @@ summarize_model_arima_boost <- function(wf) {
       }
 
       # Variable importance
-      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2014,7 +2033,7 @@ summarize_model_cubist <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance or NA variable names
@@ -2105,7 +2124,7 @@ summarize_model_cubist <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(cubist_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(cubist_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2802,7 +2821,7 @@ summarize_model_glmnet <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_glmnet, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_glmnet, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -3068,7 +3087,7 @@ summarize_model_glmnet <- function(wf) {
       }
 
       # Variable importance using vip::vi()
-      importance <- try(vip::vi(glmnet_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(glmnet_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -3258,7 +3277,7 @@ summarize_model_mars <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_mars, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_mars, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -3399,7 +3418,7 @@ summarize_model_mars <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(mars_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(mars_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -4817,7 +4836,7 @@ summarize_model_prophet_boost <- function(wf) {
       }
 
       # Variable importance (don't add count since the importance section shows all features)
-      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -6052,7 +6071,7 @@ summarize_model_svm_poly <- function(wf) {
             }
 
             importance <- try(
-              vip::vi(
+              vip_vi(
                 object = inner_ksvm,
                 method = "permute",
                 train = train_x,
@@ -6258,7 +6277,7 @@ summarize_model_svm_poly <- function(wf) {
           }
 
           importance <- try(
-            vip::vi(
+            vip_vi(
               object = svm_obj,
               method = "permute",
               train = train_x,
@@ -6473,7 +6492,7 @@ summarize_model_svm_rbf <- function(wf) {
             }
 
             importance <- try(
-              vip::vi(
+              vip_vi(
                 object = inner_ksvm,
                 method = "permute",
                 train = train_x,
@@ -6664,7 +6683,7 @@ summarize_model_svm_rbf <- function(wf) {
           }
 
           importance <- try(
-            vip::vi(
+            vip_vi(
               object = svm_obj,
               method = "permute",
               train = train_x,
@@ -7741,7 +7760,7 @@ summarize_model_xgboost <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_xgb, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_xgb, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -7881,7 +7900,7 @@ summarize_model_xgboost <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -8058,6 +8077,10 @@ summarize_model_timegpt <- function(wf) {
 chronos2_permutation_importance <- function(chronos2_obj,
                                             mold,
                                             nsim = 10L) {
+  if (!vip_available()) {
+    return(NULL)
+  }
+
   # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
   # we cannot pass these directly as train/target to vip because
   # chronos2_model_predict_impl filters object$train_data to dates before
@@ -8135,7 +8158,7 @@ chronos2_permutation_importance <- function(chronos2_obj,
   }
 
   importance <- try(
-    vip::vi(
+    vip_vi(
       object = trimmed_obj,
       method = "permute",
       train = holdout_x,

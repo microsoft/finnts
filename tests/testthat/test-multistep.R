@@ -280,6 +280,7 @@ test_that("multistep feature selection uses custom lag boundaries", {
     setdiff(colnames(data), c("Combo", "Date", "Target"))
   }
   testthat::local_mocked_bindings(
+    vip_available = function() TRUE,
     target_corr_fn = function(data, threshold) {
       tibble::tibble(term = feature_names(data))
     },
