@@ -19,11 +19,11 @@ has_llm_credentials <- function() {
 
 # Create a no-call Chat for deterministic tests or a real provider for live tests.
 create_test_llm <- function(live = FALSE) {
-  testthat::skip_if_not_installed("ellmer")
-
   if (!live) {
-    return(ellmer::chat_openai(model = "gpt-4o-mini", api_key = "test-key"))
+    return(structure(list(), class = "Chat"))
   }
+
+  testthat::skip_if_not_installed("ellmer")
 
   if (!has_llm_credentials()) {
     testthat::skip("LLM credentials not available")
