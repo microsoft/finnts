@@ -459,7 +459,8 @@ eda_agent_workflow <- function(agent_info,
   )
 
   # call the agent graph
-  run_graph(agent_info$llm, workflow)
+  workflow_llm <- new_llm_session(agent_info$llm)
+  run_graph(workflow_llm, workflow)
 }
 
 #' Load EDA results for a specific agent run for iterate forecast reasoning

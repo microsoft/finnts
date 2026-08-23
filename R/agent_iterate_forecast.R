@@ -2,7 +2,7 @@ check_agent_ellmer_version <- function() {
   if (!requireNamespace("ellmer", quietly = TRUE) ||
     utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
     stop(
-      "Agent workflows require ellmer 0.4.0 or later.",
+      "Agent workflows require the 'ellmer' package version 0.4.0 or later. Install or upgrade it with install.packages(\"ellmer\").",
       call. = FALSE
     )
   }
@@ -14,7 +14,7 @@ new_llm_session <- function(llm) {
   if (!requireNamespace("ellmer", quietly = TRUE) ||
     utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
     stop(
-      "Agent workflows require ellmer 0.4.0 or later.",
+      "Agent workflows require the 'ellmer' package version 0.4.0 or later. Install or upgrade it with install.packages(\"ellmer\").",
       call. = FALSE
     )
   }

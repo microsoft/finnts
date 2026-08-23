@@ -361,7 +361,8 @@ update_fcst_agent_workflow <- function(agent_info,
   )
 
   # run the graph
-  run_graph(agent_info$llm, workflow, init_ctx)
+  workflow_llm <- new_llm_session(agent_info$llm)
+  run_graph(workflow_llm, workflow, init_ctx)
 }
 
 #' Initial Checks for Update Forecast

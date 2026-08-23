@@ -37,6 +37,47 @@ test_that("new LLM sessions are clean and independent", {
   expect_equal(llm$get_system_prompt(), "template prompt")
 })
 
+test_that("EDA and update graphs receive isolated LLM sessions", {
+  skip_if_not_installed("ellmer", minimum_version = "0.4.0")
+
+  llm <- create_serializable_agent_chat("template-test-key", "template-model")
+  llm$set_system_prompt("template prompt")
+  observed_sessions <- list()
+
+  local_mocked_bindings(
+    run_graph = function(chat, workflow, init_ctx = list(node = "start")) {
+      observed_sessions[[length(observed_sessions) + 1L]] <<- list(
+        is_template = identical(chat, llm),
+        system_prompt = chat$get_system_prompt(),
+        turn_count = length(chat$get_turns())
+      )
+      chat$set_system_prompt("workflow prompt")
+      invisible(init_ctx)
+    }
+  )
+
+  agent_info <- list(llm = llm)
+  eda_agent_workflow(
+    agent_info = agent_info,
+    parallel_processing = NULL,
+    num_cores = 1
+  )
+  update_fcst_agent_workflow(
+    agent_info = agent_info,
+    project_info = list(),
+    parallel_processing = NULL,
+    inner_parallel = FALSE,
+    num_cores = 1
+  )
+
+  expect_length(observed_sessions, 2)
+  expect_false(any(vapply(observed_sessions, function(session) session$is_template, logical(1))))
+  expect_true(all(vapply(observed_sessions, function(session) is.null(session$system_prompt), logical(1))))
+  expect_equal(vapply(observed_sessions, function(session) session$turn_count, integer(1)), c(0L, 0L))
+  expect_equal(llm$get_system_prompt(), "template prompt")
+  expect_length(llm$get_turns(), 0)
+})
+
 test_that("ellmer LLM template survives RDS serialization", {
   skip_if_not_installed("ellmer", minimum_version = "0.4.0")
 
