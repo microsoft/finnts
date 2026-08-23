@@ -1,16 +1,4 @@
-check_parallel_ellmer_version <- function() {
-  if (!requireNamespace("ellmer", quietly = TRUE) ||
-    utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
-    stop(
-      "Parallel agent workflows require ellmer 0.4.0 or later on the driver and every worker.",
-      call. = FALSE
-    )
-  }
-
-  invisible(NULL)
-}
-
-clone_agent_info_chats <- function(agent_info) {
+check_agent_ellmer_version <- function() {
   if (!requireNamespace("ellmer", quietly = TRUE) ||
     utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
     stop(
@@ -19,18 +7,22 @@ clone_agent_info_chats <- function(agent_info) {
     )
   }
 
-  combo_agent_info <- agent_info
-  combo_agent_info$driver_llm <- agent_info$driver_llm$clone(deep = TRUE)
-  combo_agent_info$driver_llm$set_system_prompt(NULL)
-  combo_agent_info$driver_llm$set_turns(list())
+  invisible(NULL)
+}
 
-  if (!is.null(agent_info$reason_llm)) {
-    combo_agent_info$reason_llm <- agent_info$reason_llm$clone(deep = TRUE)
-    combo_agent_info$reason_llm$set_system_prompt(NULL)
-    combo_agent_info$reason_llm$set_turns(list())
+new_llm_session <- function(llm) {
+  if (!requireNamespace("ellmer", quietly = TRUE) ||
+    utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
+    stop(
+      "Agent workflows require ellmer 0.4.0 or later.",
+      call. = FALSE
+    )
   }
 
-  combo_agent_info
+  session <- llm$clone(deep = TRUE)
+  session$set_system_prompt(NULL)
+  session$set_turns(list())
+  session
 }
 
 #' Run the Finn Agent Forecast Iteration Process
@@ -45,7 +37,7 @@ clone_agent_info_chats <- function(agent_info) {
 #'   leverages all cores on current machine Finn is running on. 'spark'
 #'   runs time series in parallel on a spark cluster in Azure Databricks or
 #'   Azure Synapse. Parallel agent workflows require ellmer 0.4.0 or later on
-#'   the driver and every worker.
+#'   the main process and every worker.
 #' @param inner_parallel Run components of forecast process inside a specific
 #'   time series in parallel. Can only be used if parallel_processing is
 #'   set to NULL or 'spark'.
@@ -73,12 +65,12 @@ clone_agent_info_chats <- function(agent_info) {
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
 #' )
@@ -109,7 +101,7 @@ iterate_forecast <- function(agent_info,
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   if (!is.null(parallel_processing)) {
-    check_parallel_ellmer_version()
+    check_agent_ellmer_version()
   }
 
   # get project info
@@ -284,8 +276,6 @@ iterate_forecast <- function(agent_info,
       {
         message("[agent] Running local model optimization for combo: ", x)
 
-        combo_agent_info <- clone_agent_info_chats(agent_info)
-
         # ensure functions are available in the local environment
         if (inner_parallel) {
           run_graph <- run_graph
@@ -306,7 +296,7 @@ iterate_forecast <- function(agent_info,
 
         # adjust max iterations based on previous runs
         previous_runs <- load_run_results(
-          agent_info = combo_agent_info,
+          agent_info = agent_info,
           combo = hash_data(x)
         )
 
@@ -314,7 +304,7 @@ iterate_forecast <- function(agent_info,
           max_iter_adj <- max_iter
         } else {
           prev_run_count <- previous_runs %>%
-            dplyr::filter(agent_version == combo_agent_info$agent_version) %>%
+            dplyr::filter(agent_version == agent_info$agent_version) %>%
             nrow()
 
           max_iter_adj <- max_iter - prev_run_count
@@ -327,7 +317,7 @@ iterate_forecast <- function(agent_info,
 
           # run the local model workflow
           fcst_results <- fcst_agent_workflow(
-            agent_info = combo_agent_info,
+            agent_info = agent_info,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
             parallel_processing = NULL,
@@ -411,12 +401,12 @@ iterate_forecast <- function(agent_info,
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
 #' )
@@ -475,12 +465,12 @@ get_agent_forecast <- function(agent_info) {
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
 #' )
@@ -862,15 +852,11 @@ fcst_agent_workflow <- function(agent_info,
                                 num_cores,
                                 max_iter = 3,
                                 seed = 123) {
-  # create a fresh session for the reasoning LLM
-  if (!is.null(agent_info$reason_llm)) {
-    agent_info$reason_llm <- agent_info$reason_llm$clone()
-  } else {
-    agent_info$reason_llm <- agent_info$driver_llm$clone()
-  }
+  # create one fresh session for this series and all of its iterations
+  agent_info$llm <- new_llm_session(agent_info$llm)
 
   # add LLM system prompt for EDA info
-  agent_info$reason_llm <- agent_info$reason_llm$set_system_prompt(iterate_forecast_system_prompt(
+  agent_info$llm <- agent_info$llm$set_system_prompt(iterate_forecast_system_prompt(
     agent_info = agent_info,
     combo = combo,
     weighted_mape_goal = weighted_mape_goal
@@ -1010,7 +996,7 @@ fcst_agent_workflow <- function(agent_info,
   )
 
   # run the graph
-  run_graph(agent_info$driver_llm, workflow, init_ctx)
+  run_graph(agent_info$llm, workflow, init_ctx)
 }
 
 #' Generate Finn run inputs for the reasoning LLM
@@ -1027,11 +1013,7 @@ reason_inputs <- function(agent_info,
                           weighted_mape_goal,
                           last_error = NULL) {
   # get metadata
-  if (!is.null(agent_info$reason_llm)) {
-    llm <- agent_info$reason_llm
-  } else {
-    llm <- agent_info$driver_llm
-  }
+  llm <- agent_info$llm
 
   project_info <- agent_info$project_info
 

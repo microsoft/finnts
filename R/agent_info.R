@@ -5,7 +5,7 @@
 #'  It checks for existing runs and allows for overwriting if specified.
 #'
 #' @param project_info A Finn project from `set_project_info()`
-#' @param driver_llm A Chat LLM object
+#' @param llm A Chat LLM object used as the template for isolated agent sessions
 #' @param input_data A data frame or tibble containing the input data
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
@@ -21,7 +21,6 @@
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models. Default is TRUE.
-#' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #'
 #' @return A list containing the agent run information
@@ -42,19 +41,19 @@
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
 #' )
 #' }
 #' @export
 set_agent_info <- function(project_info,
-                           driver_llm,
+                           llm,
                            input_data,
                            forecast_horizon,
                            external_regressors = NULL,
@@ -67,7 +66,6 @@ set_agent_info <- function(project_info,
                            negative_forecast = FALSE,
                            run_global_models = NULL,
                            run_local_models = TRUE,
-                           reason_llm = NULL,
                            overwrite = FALSE) {
   # get metadata
   combo_variables <- project_info$combo_variables
@@ -77,7 +75,7 @@ set_agent_info <- function(project_info,
 
   # check inputs
   check_input_type("project_info", project_info, "list")
-  check_input_type("driver_llm", driver_llm, "Chat")
+  check_input_type("llm", llm, "Chat")
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame"))
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
@@ -90,7 +88,6 @@ set_agent_info <- function(project_info,
   check_input_type("negative_forecast", negative_forecast, "logical")
   check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
   check_input_type("run_local_models", run_local_models, "logical")
-  check_input_type("reason_llm", reason_llm, c("Chat", "NULL"))
   check_input_type("overwrite", overwrite, "logical")
 
   check_input_data(
@@ -270,8 +267,7 @@ set_agent_info <- function(project_info,
       agent_version = agent_runs_tbl$agent_version,
       run_id = agent_runs_tbl$run_id,
       project_info = project_info,
-      driver_llm = driver_llm,
-      reason_llm = reason_llm,
+      llm = llm,
       forecast_horizon = prev_log_df$forecast_horizon,
       external_regressors = if (is.na(prev_log_df$external_regressors)) {
         NULL
@@ -353,8 +349,7 @@ set_agent_info <- function(project_info,
       agent_version = agent_version,
       run_id = agent_run_id,
       project_info = project_info,
-      driver_llm = driver_llm,
-      reason_llm = reason_llm,
+      llm = llm,
       forecast_horizon = forecast_horizon,
       external_regressors = external_regressors,
       hist_end_date = hist_end_date,
@@ -418,7 +413,7 @@ set_agent_info <- function(project_info,
 #' you may need to rerun forecasts multiple times with the same or updated parameters.
 #'
 #' @param project_info A Finn project from `set_project_info()`
-#' @param driver_llm A Chat LLM object
+#' @param llm A Chat LLM object used as the template for isolated agent sessions
 #' @param input_data A data frame or tibble containing the input data
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
@@ -434,7 +429,6 @@ set_agent_info <- function(project_info,
 #'   except week and day.
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models. Default is TRUE.
-#' @param reason_llm Optional Chat LLM object for reasoning tasks
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #' @param request_id A unique identifier for the agent run request
 #' @param agent_action A character string indicating the action: "iterate_forecast" or
@@ -443,7 +437,7 @@ set_agent_info <- function(project_info,
 #' @return A list containing the agent run information
 #' @noRd
 set_agent_info_custom <- function(project_info,
-                                  driver_llm,
+                                  llm,
                                   input_data,
                                   forecast_horizon,
                                   external_regressors = NULL,
@@ -456,7 +450,6 @@ set_agent_info_custom <- function(project_info,
                                   negative_forecast = FALSE,
                                   run_global_models = NULL,
                                   run_local_models = TRUE,
-                                  reason_llm = NULL,
                                   overwrite = FALSE,
                                   request_id,
                                   agent_action) {
@@ -472,7 +465,7 @@ set_agent_info_custom <- function(project_info,
   # set agent info args
   agent_args <- list(
     project_info = project_info,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = input_data,
     forecast_horizon = forecast_horizon,
     external_regressors = external_regressors,
@@ -485,7 +478,6 @@ set_agent_info_custom <- function(project_info,
     negative_forecast = negative_forecast,
     run_global_models = run_global_models,
     run_local_models = run_local_models,
-    reason_llm = reason_llm,
     overwrite = overwrite
   )
 

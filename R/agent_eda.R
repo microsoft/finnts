@@ -459,7 +459,7 @@ eda_agent_workflow <- function(agent_info,
   )
 
   # call the agent graph
-  run_graph(agent_info$driver_llm, workflow)
+  run_graph(agent_info$llm, workflow)
 }
 
 #' Load EDA results for a specific agent run for iterate forecast reasoning

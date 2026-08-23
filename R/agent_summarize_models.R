@@ -22,12 +22,12 @@
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6
 #' )

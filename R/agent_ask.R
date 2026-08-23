@@ -51,8 +51,8 @@ ask_agent <- function(agent_info,
   check_input_type("question", question, "character")
 
   # Get LLM from agent_info
-  if (is.null(agent_info$driver_llm)) {
-    stop("No driver_llm found in agent_info. Please ensure agent_info was created with set_agent_info() and includes a driver_llm.",
+  if (is.null(agent_info$llm)) {
+    stop("No llm found in agent_info. Please ensure agent_info was created with set_agent_info() and includes an llm.",
       call. = FALSE
     )
   }
@@ -255,7 +255,7 @@ COLUMN SANITY CHECKS:
 ask_agent_workflow <- function(agent_info,
                                question) {
   # Clone the LLM for this workflow
-  agent_info$driver_llm <- agent_info$driver_llm$clone()
+  agent_info$llm <- new_llm_session(agent_info$llm)
 
   # Get tool specification once
   tool_spec <- get_tool_spec(agent_info)
@@ -287,7 +287,7 @@ OUTPUTS
 - Final answer: plain text for finance readers (no markdown)."
   )
 
-  agent_info$driver_llm <- agent_info$driver_llm$set_system_prompt(system_prompt)
+  agent_info$llm <- agent_info$llm$set_system_prompt(system_prompt)
 
   # Store workflow parameters in agent_info for tool access
   agent_info$workflow_params <- list(
@@ -380,7 +380,7 @@ OUTPUTS
   )
 
   # Run the workflow
-  final_ctx <- run_graph(agent_info$driver_llm, workflow, init_ctx)
+  final_ctx <- run_graph(agent_info$llm, workflow, init_ctx)
 
   # Return the final answer and analysis results
   return(list(
@@ -398,7 +398,7 @@ OUTPUTS
 #' @return List of analysis steps
 #' @noRd
 create_analysis_plan <- function(agent_info, question) {
-  llm <- agent_info$driver_llm
+  llm <- agent_info$llm
 
   # Determine hierarchy note
   hierarchy_note <- if (agent_info$forecast_approach != "bottoms_up") {
@@ -546,7 +546,7 @@ execute_analysis_step <- function(agent_info,
   }
 
   current_step <- analysis_plan[[step_index]]
-  llm <- agent_info$driver_llm
+  llm <- agent_info$llm
 
   cli::cli_progress_step("Executing: {current_step$description}")
 
@@ -848,7 +848,7 @@ summarize_analysis_results <- function(analysis_results, max_rows = 20) {
 #' @return Character string with the answer
 #' @noRd
 generate_final_answer <- function(agent_info, question, analysis_results) {
-  llm <- agent_info$driver_llm
+  llm <- agent_info$llm
 
   # Summarize analysis results (cap token usage)
   full_context <- summarize_analysis_results(analysis_results, max_rows = 20)

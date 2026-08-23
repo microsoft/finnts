@@ -309,8 +309,8 @@ check_agent_info <- function(agent_info) {
 
   # check if agent_info has required list elements
   required_elements <- c(
-    "agent_version", "run_id", "project_info", "driver_llm",
-    "reason_llm", "forecast_horizon", "external_regressors",
+    "agent_version", "run_id", "project_info", "llm",
+    "forecast_horizon", "external_regressors",
     "hist_end_date", "back_test_scenarios", "back_test_spacing",
     "combo_cleanup_date", "overwrite"
   )

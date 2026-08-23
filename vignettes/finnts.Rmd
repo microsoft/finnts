@@ -65,7 +65,7 @@ In order to use the agent, we must first connect it to a LLM using the [ellmer](
 
 ```{r, eval = FALSE}
 # connect to LLM via Azure AI
-driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 ```
 
 Now we can use that LLM inside of our agent when setting it up. 
@@ -81,7 +81,7 @@ project <- set_project_info(
 
 agent <- set_agent_info(
   project_info = project,
-  driver_llm = driver_llm,
+  llm = llm,
   input_data = hist_data,
   forecast_horizon = 12,
   hist_end_date = as.Date("2014-12-01")
@@ -138,7 +138,7 @@ After the agent runs `iterate_forecast()`, we can use the previously trained mod
 # overwrite creates a new version of the agent, which is required when running update_forecast()
 agent <- set_agent_info(
   project_info = project,
-  driver_llm = driver_llm,
+  llm = llm,
   input_data = hist_data,
   forecast_horizon = 6,
   hist_end_date = as.Date("2015-06-01"),

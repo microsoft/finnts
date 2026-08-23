@@ -6,7 +6,7 @@
 \usage{
 set_agent_info(
   project_info,
-  driver_llm,
+  llm,
   input_data,
   forecast_horizon,
   external_regressors = NULL,
@@ -19,14 +19,13 @@ set_agent_info(
   negative_forecast = FALSE,
   run_global_models = NULL,
   run_local_models = TRUE,
-  reason_llm = NULL,
   overwrite = FALSE
 )
 }
 \arguments{
 \item{project_info}{A Finn project from \code{set_project_info()}}
 
-\item{driver_llm}{A Chat LLM object}
+\item{llm}{A Chat LLM object used as the template for isolated agent sessions}
 
 \item{input_data}{A data frame or tibble containing the input data}
 
@@ -55,8 +54,6 @@ except week and day.}
 \item{run_local_models}{If TRUE, run models by individual time series as
 local models. Default is TRUE.}
 
-\item{reason_llm}{Optional Chat LLM object for reasoning tasks}
-
 \item{overwrite}{Logical indicating whether to overwrite existing agent run info}
 }
 \value{
@@ -84,12 +81,12 @@ project <- set_project_info(
 )
 
 # set up LLM
-driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 
 # set up agent info
 agent_info <- set_agent_info(
   project_info = project,
-  driver_llm = driver_llm,
+  llm = llm,
   input_data = hist_data,
   forecast_horizon = 6
 )

@@ -52,12 +52,12 @@
 #' )
 #'
 #' # set up LLM
-#' driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+#' llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 #'
 #' # set up agent info
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6,
 #'   hist_end_date = as.Date("2014-12-01")
@@ -73,7 +73,7 @@
 #' # update the forecast with latest data and inputs
 #' agent_info <- set_agent_info(
 #'   project_info = project,
-#'   driver_llm = driver_llm,
+#'   llm = llm,
 #'   input_data = hist_data,
 #'   forecast_horizon = 6,
 #'   hist_end_date = as.Date("2014-12-01"),
@@ -157,11 +157,6 @@ update_fcst_agent_workflow <- function(agent_info,
                                        allow_iterate_forecast = TRUE,
                                        weighted_mape_goal = 0.1,
                                        seed = 123) {
-  # create a fresh session for the reasoning LLM
-  if (!is.null(agent_info$reason_llm)) {
-    agent_info$reason_llm <- agent_info$reason_llm$clone()
-  }
-
   # construct the workflow
   workflow <- list(
     start = list(
@@ -366,7 +361,7 @@ update_fcst_agent_workflow <- function(agent_info,
   )
 
   # run the graph
-  run_graph(agent_info$driver_llm, workflow, init_ctx)
+  run_graph(agent_info$llm, workflow, init_ctx)
 }
 
 #' Initial Checks for Update Forecast
@@ -453,8 +448,7 @@ initial_checks <- function(agent_info) {
       storage_object = project_info$storage_object,
       path = project_info$path,
       forecast_approach = temp_agent_tbl$forecast_approach,
-      driver_llm = agent_info$driver_llm,
-      reason_llm = agent_info$reason_llm,
+      llm = agent_info$llm,
       forecast_horizon = temp_agent_tbl$forecast_horizon,
       external_regressors = temp_agent_tbl$external_regressors,
       hist_end_date = temp_agent_tbl$hist_end_date,
@@ -771,8 +765,7 @@ update_local_models <- function(agent_info,
 
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
-  agent_info_lean$driver_llm <- NULL
-  agent_info_lean$reason_llm <- NULL
+  agent_info_lean$llm <- NULL
 
   # start forecast update process
   par_info <- par_start(
@@ -1242,8 +1235,7 @@ forecast_new_combos <- function(agent_info,
 
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
-  agent_info_lean$driver_llm <- NULL
-  agent_info_lean$reason_llm <- NULL
+  agent_info_lean$llm <- NULL
 
   # parallel setup
   par_info <- par_start(

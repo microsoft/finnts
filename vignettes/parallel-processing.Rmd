@@ -22,9 +22,9 @@ If `parallel_processing` is set to NULL and `inner_parallel` is set to TRUE with
 
 ## Parallel AI Agent Workflows
 
-Every `iterate_forecast()` time-series combo receives independent driver and reasoning Chat objects with empty conversation history, whether combos run sequentially or in parallel. Parallel runs require ellmer 0.4.0 or later on the driver and every worker. Finn sends the configured Chats through the standard `foreach` serialization path, then creates the per-combo deep clones. This preserves separate providers, models, parameters, tools, and credentials without rebuilding Chat objects through internal ellmer APIs.
+`set_agent_info()` accepts one `llm` Chat as an immutable configuration template. Every `iterate_forecast()` time-series combo receives an independent, empty-history session cloned from that template, whether combos run sequentially or in parallel. For parallel execution, Finn sends the template through the standard `foreach` serialization path and creates each deep clone inside the series workflow after it reaches the worker. A session persists across iterations for its own series but is never shared with another series.
 
-Install the same supported ellmer version in the driver and worker R libraries. With Azure OpenAI API-key authentication, the default ellmer 0.4 credential callback is serialized with the Chat, so worker task payloads must be treated as sensitive. A custom `credentials` callback that reads an environment variable or obtains a token at request time requires that credential source to be available from every worker process.
+Parallel runs require ellmer 0.4.0 or later in the main process and every worker R library. The public `Chat$clone(deep = TRUE)` method preserves the provider, model, parameters, tools, and credentials without rebuilding Chat objects through internal ellmer APIs. With Azure OpenAI API-key authentication, the default ellmer 0.4 credential callback is serialized with the template, so worker task payloads must be treated as sensitive. A custom `credentials` callback that reads an environment variable or obtains a token at request time requires that credential source to be available from every worker process.
 
 ## Within Azure using Spark
 
