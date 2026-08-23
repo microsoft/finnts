@@ -335,6 +335,8 @@ If you pass `external_regressors = c("Price","Promo", ...)`:
 - `inner_parallel = TRUE` parallelizes work **inside** a combo (useful when outer parallelism is `NULL` or `"spark"`).  
 - `num_cores = NULL` defaults to *all cores minus one*.
 
+Every time-series combo receives independent driver and reasoning Chat objects with empty conversation history, whether execution is sequential or parallel. Parallel runs require ellmer 0.4.0 or later on the driver and every worker; Finn serializes the configured Chats through `foreach` before creating the per-combo deep clones.
+
 ---
 
 ## Reading artifacts directly (optional)

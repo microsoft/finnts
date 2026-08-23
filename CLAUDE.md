@@ -10,4 +10,6 @@
 - If a request is ambiguous, ask the smallest number of clarifying questions needed, then proceed conservatively.
 
 ## Notes
+- Agent code must create fresh, empty-history driver and reasoning Chat clones for every time-series combo. Parallel code must preserve the ellmer 0.4+ serialization path through `foreach` and avoid internal ellmer APIs or provider credential mutation.
+- PSOCK tests under `devtools::test()` may need a test-only `.export` for internal helpers because `pkgload::load_all()` differs from an installed namespace. Verify the installed package in a temporary library before adding `.export` to production code.
 - If this repo grows, move large topic rules into `.claude/rules/*.md` (testing, style, release).

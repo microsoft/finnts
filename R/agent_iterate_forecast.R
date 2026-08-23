@@ -1,3 +1,38 @@
+check_parallel_ellmer_version <- function() {
+  if (!requireNamespace("ellmer", quietly = TRUE) ||
+    utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
+    stop(
+      "Parallel agent workflows require ellmer 0.4.0 or later on the driver and every worker.",
+      call. = FALSE
+    )
+  }
+
+  invisible(NULL)
+}
+
+clone_agent_info_chats <- function(agent_info) {
+  if (!requireNamespace("ellmer", quietly = TRUE) ||
+    utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
+    stop(
+      "Agent workflows require ellmer 0.4.0 or later.",
+      call. = FALSE
+    )
+  }
+
+  combo_agent_info <- agent_info
+  combo_agent_info$driver_llm <- agent_info$driver_llm$clone(deep = TRUE)
+  combo_agent_info$driver_llm$set_system_prompt(NULL)
+  combo_agent_info$driver_llm$set_turns(list())
+
+  if (!is.null(agent_info$reason_llm)) {
+    combo_agent_info$reason_llm <- agent_info$reason_llm$clone(deep = TRUE)
+    combo_agent_info$reason_llm$set_system_prompt(NULL)
+    combo_agent_info$reason_llm$set_turns(list())
+  }
+
+  combo_agent_info
+}
+
 #' Run the Finn Agent Forecast Iteration Process
 #'
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
@@ -9,7 +44,8 @@
 #'   forecasts each individual time series one after another. 'local_machine'
 #'   leverages all cores on current machine Finn is running on. 'spark'
 #'   runs time series in parallel on a spark cluster in Azure Databricks or
-#'   Azure Synapse.
+#'   Azure Synapse. Parallel agent workflows require ellmer 0.4.0 or later on
+#'   the driver and every worker.
 #' @param inner_parallel Run components of forecast process inside a specific
 #'   time series in parallel. Can only be used if parallel_processing is
 #'   set to NULL or 'spark'.
@@ -71,6 +107,10 @@ iterate_forecast <- function(agent_info,
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("inner_parallel", inner_parallel, "logical")
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+
+  if (!is.null(parallel_processing)) {
+    check_parallel_ellmer_version()
+  }
 
   # get project info
   project_info <- agent_info$project_info
@@ -221,17 +261,6 @@ iterate_forecast <- function(agent_info,
   } else {
     message("[agent] Starting Local Model Iteration Workflow")
 
-    # parallel processing adjustments
-    if (!is.null(parallel_processing)) {
-      if (!is.null(agent_info$reason_llm)) {
-        llm_info <- agent_info$reason_llm$get_provider()@api_key
-      } else {
-        llm_info <- agent_info$driver_llm$get_provider()@api_key
-      }
-    } else {
-      llm_info <- NULL
-    }
-
     # parallel setup
     par_info <- par_start(
       run_info            = project_info,
@@ -255,6 +284,8 @@ iterate_forecast <- function(agent_info,
       {
         message("[agent] Running local model optimization for combo: ", x)
 
+        combo_agent_info <- clone_agent_info_chats(agent_info)
+
         # ensure functions are available in the local environment
         if (inner_parallel) {
           run_graph <- run_graph
@@ -273,30 +304,9 @@ iterate_forecast <- function(agent_info,
           list_files <- list_files
         }
 
-        # rebuild llms when running on parallel workers
-        if (!is.null(parallel_processing)) {
-          # driver LLM
-          driver_llm <- agent_info$driver_llm
-          driver_provider <- driver_llm$get_provider()
-          driver_provider@api_key <- llm_info
-          driver_llm <- ellmer:::Chat$new(driver_provider)
-
-          agent_info$driver_llm <- driver_llm
-
-          # reason LLM
-          if (!is.null(agent_info$reason_llm)) {
-            reason_llm <- agent_info$reason_llm
-            reason_provider <- reason_llm$get_provider()
-            reason_provider@api_key <- llm_info
-            reason_llm <- ellmer:::Chat$new(reason_provider)
-
-            agent_info$reason_llm <- reason_llm
-          }
-        }
-
         # adjust max iterations based on previous runs
         previous_runs <- load_run_results(
-          agent_info = agent_info,
+          agent_info = combo_agent_info,
           combo = hash_data(x)
         )
 
@@ -304,7 +314,7 @@ iterate_forecast <- function(agent_info,
           max_iter_adj <- max_iter
         } else {
           prev_run_count <- previous_runs %>%
-            dplyr::filter(agent_version == agent_info$agent_version) %>%
+            dplyr::filter(agent_version == combo_agent_info$agent_version) %>%
             nrow()
 
           max_iter_adj <- max_iter - prev_run_count
@@ -317,7 +327,7 @@ iterate_forecast <- function(agent_info,
 
           # run the local model workflow
           fcst_results <- fcst_agent_workflow(
-            agent_info = agent_info,
+            agent_info = combo_agent_info,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
             parallel_processing = NULL,

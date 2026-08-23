@@ -20,6 +20,12 @@ When `parallel_processing` within `forecast_time_series()` is set to "local_mach
 
 If `parallel_processing` is set to NULL and `inner_parallel` is set to TRUE within `forecast_time_series`, then each time series is ran sequentially but the hyperparameter tuning, model refitting, and model averaging is ran in parallel. This works great for data that has a limited number of time series where you want to run a lot of back testing and build dozens of models within Finn.
 
+## Parallel AI Agent Workflows
+
+Every `iterate_forecast()` time-series combo receives independent driver and reasoning Chat objects with empty conversation history, whether combos run sequentially or in parallel. Parallel runs require ellmer 0.4.0 or later on the driver and every worker. Finn sends the configured Chats through the standard `foreach` serialization path, then creates the per-combo deep clones. This preserves separate providers, models, parameters, tools, and credentials without rebuilding Chat objects through internal ellmer APIs.
+
+Install the same supported ellmer version in the driver and worker R libraries. With Azure OpenAI API-key authentication, the default ellmer 0.4 credential callback is serialized with the Chat, so worker task payloads must be treated as sensitive. A custom `credentials` callback that reads an environment variable or obtains a token at request time requires that credential source to be available from every worker process.
+
 ## Within Azure using Spark
 
 To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set `parallel_processing` to "spark" within `forecast_time_series()`. This will run each time series in parallel across a spark compute cluster.
