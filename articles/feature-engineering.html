@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9053</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9054</span>
       </span>
     </div>
 
@@ -279,16 +279,19 @@ set with a forecast horizon of 3, finnts will take engineered features
 like lags and rolling window features but only use those lags that are
 for periods equal to or greater than 3. You can also run a multistep
 horizon approach by setting <code>multistep_horizon</code> to TRUE in
-<code><a href="../reference/prep_models.html">prep_models()</a></code>. The multistep approach will create features
+<code><a href="../reference/prep_data.html">prep_data()</a></code>. The multistep approach will create features
 that can be used by specific multivariate models that optimize for each
 period in a forecast horizon. More on this in the “models used in
-finnts” vignette. Recursive forecasting is not supported in finnts
-multivariate machine learning models, since feeding forecast outputs as
-features to create another forecast adds complex layers of uncertainty
-that can easily spiral out of control and produce poor forecasts. NA
-values created by generating lag features are filled “up”. This results
-in the first initial periods of a time series having some data leakage
-but the effect should be small if the time series is long enough.</p>
+finnts” vignette. Multistep prediction preserves the original assessment
+row and date through recipe processing and requires exactly one
+prediction for every assessment row. Recursive forecasting is not
+supported in finnts multivariate machine learning models, since feeding
+forecast outputs as features to create another forecast adds complex
+layers of uncertainty that can easily spiral out of control and produce
+poor forecasts. NA values created by generating lag features are filled
+“up”. This results in the first initial periods of a time series having
+some data leakage but the effect should be small if the time series is
+long enough.</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span></span>

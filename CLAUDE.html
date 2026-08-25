@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9053</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9054</span>
       </span>
     </div>
 
@@ -107,6 +107,9 @@
 <li>Prefer running <code>devtools::test()</code> after code changes, and <code>devtools::check()</code> before finalizing.</li>
 <li>If you change roxygen comments, run <code>devtools::document()</code> and include generated diffs.</li>
 <li>Keep changes minimal: avoid drive-by refactors unless explicitly requested.</li>
+<li>For multistep changes, test all supported date frequencies plus exact submodel routing, training rows, and lag-feature eligibility; the required daily multistep matrix runs in the standard suite.</li>
+<li>Keep CRAN test runs deterministic and under the documented runtime budget. Preserve all existing <code>skip_on_cran()</code> markers, including non-network tests. Non-CRAN runs automatically execute all credentialed provider and agent stress tests.</li>
+<li>Reuse directly fitted workflows or isolated artifact fixtures in downstream tests instead of repeating full forecast pipelines.</li>
 <li>If a request is ambiguous, ask the smallest number of clarifying questions needed, then proceed conservatively.</li>
 </ul></div>
 <div class="section level2">

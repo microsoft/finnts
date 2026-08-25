@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9053</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9054</span>
       </span>
     </div>
 
@@ -125,6 +125,23 @@
 </li>
 <li>Full check: <code>R -q -e 'devtools::check()'</code>
 </li>
+</ul></div>
+<div class="section level3">
+<h3 id="test-profiles-and-runtime">Test profiles and runtime<a class="anchor" aria-label="anchor" href="#test-profiles-and-runtime"></a></h3>
+<ul><li>The CRAN profile is deterministic and must never call live LLM or foundation-model endpoints, even when credentials are present.</li>
+<li>Simulate CRAN skips with <code>R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'</code>.</li>
+<li>Optional runtime gates are <code>FINNTS_TEST_TIME_LIMIT_SECONDS</code> for the full suite and <code>FINNTS_TEST_FILE_TIME_LIMIT_SECONDS</code> per file; keep the CRAN profile below ten minutes and use 90 seconds as the per-file budget for the restored <code>fit_resamples()</code> path.</li>
+<li>Non-CRAN runs automatically execute every live Agent, Chronos, TimeGPT/Nixtla, and TimesFM test when that provider’s credentials are available; there are no additional opt-in flags.</li>
+<li>Preserve every existing <code>testthat::skip_on_cran()</code> marker, including deterministic, integration, performance, and credential-security tests. Do not remove one solely because a test was optimized or does not use a network connection.</li>
+<li>Live tests must skip on CRAN before checking credentials or invoking a provider. Credentials must never override CRAN skipping.</li>
+<li>The existing R CMD check matrix supplies its configured Agent, Nixtla, and Chronos credentials, so those live tests run automatically. Other provider tests run when their credentials are present in the environment. Fork pull requests cannot receive repository secrets and therefore skip live tests.</li>
+<li>Do not repeat full <code><a href="reference/prep_data.html">prep_data()</a></code> / <code><a href="reference/prep_models.html">prep_models()</a></code> / <code><a href="reference/train_models.html">train_models()</a></code> pipelines only to manufacture downstream test input. Prefer deterministic artifacts, one directly finalized fit, or an immutable prepared template copied into an isolated test directory.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="multistep-validation">Multistep validation<a class="anchor" aria-label="anchor" href="#multistep-validation"></a></h3>
+<ul><li>Cover all supported <code>date_type</code> values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.</li>
+<li>The daily multistep matrix is part of the standard test suite and must pass after changing lag generation, feature selection, multistep fitting, or prediction.</li>
+<li>Preserve both daily paths: all six adapters with explicit lags/outlier cleaning and GLMnet with automatic lags/raw data.</li>
 </ul></div>
 <div class="section level3">
 <h3 id="style--lint">Style / lint<a class="anchor" aria-label="anchor" href="#style--lint"></a></h3>

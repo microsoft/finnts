@@ -24,6 +24,9 @@
 <url><loc>https://microsoft.github.io/finnts/authors.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/index.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/news/index.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/arima_fast_model.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/arima_fast_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/arima_fast_model_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/ask_agent.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos2_model_fit_impl.html</loc></url>
@@ -68,6 +71,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/predict.xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/prep_data.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/prep_models.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.arima_fast_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.chronos_bolt_base_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.chronos_bolt_tiny_model.html</loc></url>
@@ -107,6 +111,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/translate.svm_poly_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.svm_rbf_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/translate.xgboost_multistep.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/update.arima_fast_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.chronos2_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.chronos_bolt_base_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.chronos_bolt_tiny_model.html</loc></url>
