@@ -13,4 +13,6 @@
 - If a request is ambiguous, ask the smallest number of clarifying questions needed, then proceed conservatively.
 
 ## Notes
+- Agent code must treat `agent_info$llm` as an immutable Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&A. Parallel code must clone inside the series workflow after `foreach` dispatch, preserve the ellmer 0.4+ serialization path, and avoid internal ellmer APIs or provider credential mutation.
+- PSOCK tests under `devtools::test()` may need a test-only `.export` for internal helpers because `pkgload::load_all()` differs from an installed namespace. Verify the installed package in a temporary library before adding `.export` to production code.
 - If this repo grows, move large topic rules into `.claude/rules/*.md` (testing, style, release).

@@ -124,11 +124,11 @@ test_that("set_agent_info creates valid agent info object", {
     fiscal_year_start = 1
   )
 
-  driver_llm <- create_test_llm()
+  llm <- create_test_llm()
 
   agent_info <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = test_data_single,
     forecast_horizon = 3,
     external_regressors = NULL,
@@ -138,7 +138,7 @@ test_that("set_agent_info creates valid agent info object", {
 
   expect_type(agent_info, "list")
   expect_true("project_info" %in% names(agent_info))
-  expect_true("driver_llm" %in% names(agent_info))
+  expect_true("llm" %in% names(agent_info))
   expect_true("forecast_horizon" %in% names(agent_info))
   expect_equal(agent_info$forecast_horizon, 3)
   expect_true("run_id" %in% names(agent_info))
@@ -157,13 +157,13 @@ test_that("set_agent_info validates inputs correctly", {
     date_type = "month"
   )
 
-  driver_llm <- create_test_llm()
+  llm <- create_test_llm()
 
   # Test invalid forecast_horizon
   expect_error(
     set_agent_info(
       project_info = project,
-      driver_llm = driver_llm,
+      llm = llm,
       input_data = test_data_single,
       forecast_horizon = "3" # should be numeric
     ),
@@ -174,7 +174,7 @@ test_that("set_agent_info validates inputs correctly", {
   expect_error(
     set_agent_info(
       project_info = project,
-      driver_llm = driver_llm,
+      llm = llm,
       input_data = "not a data frame",
       forecast_horizon = 3
     ),
@@ -185,7 +185,7 @@ test_that("set_agent_info validates inputs correctly", {
   expect_error(
     set_agent_info(
       project_info = project,
-      driver_llm = driver_llm,
+      llm = llm,
       input_data = test_data_single,
       forecast_horizon = 3,
       negative_forecast = "yes"
@@ -203,11 +203,11 @@ test_that("set_agent_info handles hierarchical forecast detection", {
     date_type = "month"
   )
 
-  driver_llm <- create_test_llm()
+  llm <- create_test_llm()
 
   agent_info <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = test_data_multi,
     forecast_horizon = 3,
     allow_hierarchical_forecast = TRUE,
@@ -366,12 +366,12 @@ test_that("set_agent_info error lists changed inputs", {
     overwrite = TRUE
   )
 
-  driver_llm <- create_test_llm()
+  llm <- create_test_llm()
 
   # baseline call establishes the log
   set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = test_data_single,
     forecast_horizon = 3,
     external_regressors = NULL,
@@ -391,7 +391,7 @@ test_that("set_agent_info error lists changed inputs", {
     expect_error(
       set_agent_info(
         project_info = project,
-        driver_llm = driver_llm,
+        llm = llm,
         input_data = test_data_single,
         ...
       ),
@@ -500,11 +500,11 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
     fiscal_year_start = 1
   )
 
-  driver_llm <- create_test_llm(live = TRUE)
+  llm <- create_test_llm(live = TRUE)
 
   agent_info <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = test_data_single,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -584,11 +584,11 @@ test_that("iterate_forecast validates parameters", {
     date_type = "month"
   )
 
-  driver_llm <- create_test_llm()
+  llm <- create_test_llm()
 
   agent_info <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = test_data_single,
     forecast_horizon = 3,
     overwrite = TRUE
@@ -627,7 +627,7 @@ test_that("update_forecast recovers failed series and forecasts new series", {
     overwrite = TRUE
   )
 
-  driver_llm <- create_test_llm(live = TRUE)
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with single time series (M750)
   initial_data <- test_data_single %>%
@@ -635,7 +635,7 @@ test_that("update_forecast recovers failed series and forecasts new series", {
 
   agent_info1 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = initial_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -665,7 +665,7 @@ test_that("update_forecast recovers failed series and forecasts new series", {
 
   agent_info2 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = updated_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -716,7 +716,7 @@ test_that("update_forecast errors when forecast approach changes between runs", 
     overwrite = TRUE
   )
 
-  driver_llm <- create_test_llm(live = TRUE)
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with bottoms_up approach
   initial_data <- test_data_single %>%
@@ -724,7 +724,7 @@ test_that("update_forecast errors when forecast approach changes between runs", 
 
   agent_info1 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = initial_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -744,7 +744,7 @@ test_that("update_forecast errors when forecast approach changes between runs", 
 
   agent_info2 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = updated_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -1038,7 +1038,7 @@ test_that("update_forecast completes with getter functions and ask_agent", {
     date_type = "month"
   )
 
-  driver_llm <- create_test_llm(live = TRUE)
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with data through 2014-10-01
   initial_data <- test_data_single %>%
@@ -1046,7 +1046,7 @@ test_that("update_forecast completes with getter functions and ask_agent", {
 
   agent_info1 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = initial_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -1066,7 +1066,7 @@ test_that("update_forecast completes with getter functions and ask_agent", {
 
   agent_info2 <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
+    llm = llm,
     input_data = updated_data,
     forecast_horizon = 3,
     overwrite = TRUE,
@@ -1162,14 +1162,12 @@ test_that("full agent workflow with multiple time series completes successfully"
     fiscal_year_start = 1
   )
 
-  driver_llm <- create_test_llm(live = TRUE)
-  reason_llm <- create_test_llm(live = TRUE) # Can be same as driver
+  llm <- create_test_llm(live = TRUE)
 
   # Step 1: Set up agent
   agent_info <- set_agent_info(
     project_info = project,
-    driver_llm = driver_llm,
-    reason_llm = reason_llm,
+    llm = llm,
     input_data = test_data_multi,
     forecast_horizon = 3,
     external_regressors = NULL,

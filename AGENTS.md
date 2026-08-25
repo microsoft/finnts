@@ -33,6 +33,10 @@ Prefer the repo's existing dependency workflow:
 - Run tests: `R -q -e 'devtools::test()'`
 - Full check: `R -q -e 'devtools::check()'`
 
+### Parallel test caveat
+- `devtools::test()` runs against `pkgload::load_all()`, which does not always expose non-exported package helpers to PSOCK `foreach` workers like an installed package namespace does.
+- A test-only `.export` may therefore be needed even when production code does not need one. Before adding `.export` to production for a missing-helper error, install the current source into a temporary library and reproduce the same `foreach` call from the installed namespace.
+
 ### Test profiles and runtime
 - The CRAN profile is deterministic and must never call live LLM or foundation-model endpoints, even when credentials are present.
 - Simulate CRAN skips with `R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'`.
@@ -88,6 +92,7 @@ When adding or changing user-facing behavior:
 ## Coding conventions
 - Prefer small, composable functions.
 - Keep exported functions stable; introduce breaking changes only as a last resort, **ask before adding**, with an explicit note in NEWS.
+- Agent workflows accept one `llm` Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&A. Never mutate the template. For parallel forecasts, let `foreach` serialize the template and use the public `Chat$clone(deep = TRUE)` method inside each series workflow after it reaches the worker. A series session may persist across its own iterations but must never be shared across series. Parallel workflows require ellmer 0.4.0 or later in the main process and every worker; do not call internal ellmer constructors or mutate provider credential fields.
 - Prefer base R and packages already declared in `Depends`, `Imports`, or `Suggests` before adding a dependency.
 - A new package dependency is allowed only for a concrete new feature when existing dependencies and a small, maintainable custom implementation are inadequate, unsafe, or would recreate substantial mature functionality.
 - Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers. Do not vendor third-party source code.

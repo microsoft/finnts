@@ -61,7 +61,7 @@ hist_data <- timetk::m4_monthly %>%
   dplyr::mutate(id = as.character(id))
   
 # connect LLM
-driver_llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
+llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 
 # set up new forecast project and agent run
 project <- set_project_info(project_name = "Demo_Project", 
@@ -70,7 +70,7 @@ project <- set_project_info(project_name = "Demo_Project",
                             date_type = "month")
                             
 agent <- set_agent_info(project_info = project,
-                        driver_llm = driver_llm,
+                        llm = llm,
                         input_data = hist_data,
                         forecast_horizon = 6)
 
