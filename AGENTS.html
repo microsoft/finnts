@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9054</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
       </span>
     </div>
 
@@ -118,6 +118,17 @@
 <p>Prefer the repo’s existing dependency workflow: - If <code>renv.lock</code> exists: - <code>R -q -e 'install.packages("renv"); renv::restore()'</code> - Otherwise: - <code>R -q -e 'install.packages("devtools"); devtools::install_deps(dependencies = TRUE)'</code></p>
 </div>
 <div class="section level3">
+<h3 id="optional-feature-selection-dependencies">Optional feature selection dependencies<a class="anchor" aria-label="anchor" href="#optional-feature-selection-dependencies"></a></h3>
+<ul><li>
+<code>vip (&gt;= 0.5.0)</code> is a suggested package from <code>https://bgreenwell.r-universe.dev</code> and requires R 4.1 or newer.</li>
+<li>Feature selection also requires the suggested <code>Boruta</code>, <code>corrr</code>, and <code>ranger</code> packages. Keep <code>ranger</code> declared directly because Boruta 10.0 no longer installs it as a strong dependency.</li>
+<li>Use Boruta’s <code>getImpRfZ</code> ranger adapter to preserve FinnTS behavior across Boruta 10.0 and later; do not rely on Boruta’s changing default importance provider.</li>
+<li>FinnTS must install, load, and pass its CRAN-style check without <code>vip</code>; never move it to <code>Imports</code>, <code>Depends</code>, or <code>LinkingTo</code> without an explicit packaging decision.</li>
+<li>Feature selection may require <code>vip</code> and must fail early with actionable installation guidance when it is unavailable.</li>
+<li>Model summaries must retain non-importance sections without <code>vip</code>; only variable-importance output may be omitted.</li>
+<li>Keep both maintained-<code>vip</code> compatibility coverage and the explicit CI check without any feature-selection packages.</li>
+</ul></div>
+<div class="section level3">
 <h3 id="dev-loop">Dev loop<a class="anchor" aria-label="anchor" href="#dev-loop"></a></h3>
 <ul><li>Document (roxygen): <code>R -q -e 'devtools::document()'</code>
 </li>
@@ -139,7 +150,8 @@
 </ul></div>
 <div class="section level3">
 <h3 id="multistep-validation">Multistep validation<a class="anchor" aria-label="anchor" href="#multistep-validation"></a></h3>
-<ul><li>Cover all supported <code>date_type</code> values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.</li>
+<ul><li>Automatic MARS tuning must exclude <code>prune_method = "cv"</code>; explicit multistep CV pruning must supply a bounded <code>nfold</code> value.</li>
+<li>Cover all supported <code>date_type</code> values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.</li>
 <li>The daily multistep matrix is part of the standard test suite and must pass after changing lag generation, feature selection, multistep fitting, or prediction.</li>
 <li>Preserve both daily paths: all six adapters with explicit lags/outlier cleaning and GLMnet with automatic lags/raw data.</li>
 </ul></div>

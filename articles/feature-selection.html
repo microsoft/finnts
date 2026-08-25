@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9054</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
       </span>
     </div>
 
@@ -138,6 +138,26 @@ TRUE in either <code><a href="../reference/forecast_time_series.html">forecast_t
 feature in each feature engineering recipe will be used in model
 training.</p>
 <div class="section level2">
+<h2 id="optional-dependency">Optional Dependency<a class="anchor" aria-label="anchor" href="#optional-dependency"></a>
+</h2>
+<p>Feature selection requires the optional <code>Boruta</code>,
+<code>corrr</code>, <code>ranger</code>, and <code>vip</code> packages.
+<code>vip</code> 0.5.0 or newer requires R 4.1 or newer and is
+distributed from its maintainer’s r-universe repository. Install the
+optional stack before enabling feature selection:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Boruta"</span>, <span class="st">"corrr"</span>, <span class="st">"ranger"</span>, <span class="st">"vip"</span><span class="op">)</span>,</span>
+<span>  repos <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span></span>
+<span>    <span class="st">"https://bgreenwell.r-universe.dev"</span>,</span>
+<span>    <span class="st">"https://cloud.r-project.org"</span></span>
+<span>  <span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>FinnTS remains installable without these packages, but requesting
+feature selection with a missing dependency produces an actionable error
+before feature-selection models are fitted.</p>
+</div>
+<div class="section level2">
 <h2 id="feature-selection-techniques">Feature Selection Techniques<a class="anchor" aria-label="anchor" href="#feature-selection-techniques"></a>
 </h2>
 <p>Below are the techniques used in the feature selection process.</p>
@@ -166,10 +186,12 @@ features, lofo is also turned off to keep runtime low.</p>
 <div class="section level3">
 <h3 id="boruta">Boruta<a class="anchor" aria-label="anchor" href="#boruta"></a>
 </h3>
-<p>Uses the <a href="https://CRAN.R-project.org/package=Boruta" class="external-link">Boruta</a> package. It
-finds relevant features by comparing original attributes’ importance
-with importance achievable at random, estimated using their permuted
-copies (shadows).</p>
+<p>Uses the <a href="https://CRAN.R-project.org/package=Boruta" class="external-link">Boruta</a> package with
+its ranger importance adapter. This preserves the established FinnTS
+behavior across Boruta 10.0, which changed its default importance
+provider. Boruta finds relevant features by comparing original
+attributes’ importance with importance achievable at random, estimated
+using their permuted copies (shadows).</p>
 <p>Boruta is not ran for daily or weekly data, in order to save
 time.</p>
 </div>
@@ -178,8 +200,8 @@ time.</p>
 </h3>
 <p>Multiple models (cubist, glmnet, ranger) are trained on the entire
 training data. These models are then fed into the variable importance
-function within the <a href="https://koalaverse.github.io/vip/index.html" class="external-link">vip</a> package. For
-each model, any feature with a variable importance score above zero is
+function within the <a href="https://bgreenwell.r-universe.dev/vip" class="external-link">vip</a> package. For each
+model, any feature with a variable importance score above zero is
 flagged as important.</p>
 </div>
 </div>
