@@ -24,6 +24,21 @@ Prefer the repo's existing dependency workflow:
 - Run tests: `R -q -e 'devtools::test()'`
 - Full check: `R -q -e 'devtools::check()'`
 
+### Test profiles and runtime
+- The CRAN profile is deterministic and must never call live LLM or foundation-model endpoints, even when credentials are present.
+- Simulate CRAN skips with `R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'`.
+- Optional runtime gates are `FINNTS_TEST_TIME_LIMIT_SECONDS` for the full suite and `FINNTS_TEST_FILE_TIME_LIMIT_SECONDS` per file; keep the CRAN profile below ten minutes and use 90 seconds as the per-file budget for the restored `fit_resamples()` path.
+- Non-CRAN runs automatically execute every live Agent, Chronos, TimeGPT/Nixtla, and TimesFM test when that provider's credentials are available; there are no additional opt-in flags.
+- Preserve every existing `testthat::skip_on_cran()` marker, including deterministic, integration, performance, and credential-security tests. Do not remove one solely because a test was optimized or does not use a network connection.
+- Live tests must skip on CRAN before checking credentials or invoking a provider. Credentials must never override CRAN skipping.
+- The existing R CMD check matrix supplies its configured Agent, Nixtla, and Chronos credentials, so those live tests run automatically. Other provider tests run when their credentials are present in the environment. Fork pull requests cannot receive repository secrets and therefore skip live tests.
+- Do not repeat full `prep_data()` / `prep_models()` / `train_models()` pipelines only to manufacture downstream test input. Prefer deterministic artifacts, one directly finalized fit, or an immutable prepared template copied into an isolated test directory.
+
+### Multistep validation
+- Cover all supported `date_type` values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.
+- The daily multistep matrix is part of the standard test suite and must pass after changing lag generation, feature selection, multistep fitting, or prediction.
+- Preserve both daily paths: all six adapters with explicit lags/outlier cleaning and GLMnet with automatic lags/raw data.
+
 ### Style / lint
 - Format: `R -q -e 'if (requireNamespace("styler", quietly=TRUE)) styler::style_pkg()'`
 - Lint:   `R -q -e 'if (requireNamespace("lintr", quietly=TRUE)) lintr::lint_package()'`

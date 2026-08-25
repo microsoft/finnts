@@ -606,85 +606,15 @@ predict.xgboost_multistep_fit_impl <- function(object, new_data, ...) {
 #   return(final_prediction)
 # }
 xgboost_multistep_predict_impl <- function(object, new_data, ...) {
-  # 1) Build a per-date timeline for THIS assessment set
-  date_tbl <- new_data %>%
-    dplyr::select(Date, Date_index.num) %>%
-    dplyr::distinct() %>%
-    dplyr::arrange(Date) %>%
-    dplyr::mutate(Run_Number = dplyr::row_number())
-
-  n_dates <- nrow(date_tbl) # unique dates in this assessment
-  h_horizon <- nrow(new_data) # rows to predict (series x dates)
-
-  # 2) Bake xregs and attach Run_Number + row order
-  xreg_recipe <- object$extras$xreg_recipe
-  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe, new_data, format = "tbl") %>%
-    dplyr::left_join(date_tbl, by = "Date_index.num") %>%
-    dplyr::mutate(Row_Num = dplyr::row_number())
-
-  # 3) Build a deterministic, bounded lag sequence
-  lag_seq <- names(object$models) %>%
-    purrr::map_dbl(~ as.numeric(stringr::str_extract(.x, "[0-9]+"))) %>%
-    sort() %>%
-    unique() %>%
-    pmin(n_dates) # never exceed available dates in THIS split
-
-  if (length(lag_seq) == 0) lag_seq <- n_dates
-
-  # Non-overlapping segments: [1..lag1], [lag1+1..lag2], ...
-  seg_ends <- lag_seq
-  seg_starts <- c(1, head(seg_ends, -1) + 1)
-
-  # Helper: choose a fitted model for a given segment end
-  choose_model_for <- function(target_end) {
-    avail <- names(object$models) %>%
-      purrr::map_dbl(~ as.numeric(stringr::str_extract(.x, "[0-9]+")))
-    idx <- which(avail >= target_end)
-    chosen <- if (length(idx)) min(avail[idx]) else max(avail)
-    paste0("model_lag_", chosen)
-  }
-
-  final_prediction <- tibble::tibble()
-
-  for (i in seq_along(seg_ends)) {
-    s <- seg_starts[i]
-    e <- seg_ends[i]
-    if (s > e || s > n_dates) next
-
-    xreg_tbl_temp <- xreg_tbl %>% dplyr::filter(Run_Number >= s, Run_Number <= e)
-    if (!nrow(xreg_tbl_temp)) next
-
-    mdl_name <- choose_model_for(e)
-    mdl <- object$models[[mdl_name]]
-
-    feat_names <- xgb_get_feature_names(mdl)
-
-    preds <- modeltime::xgboost_predict(
-      mdl,
-      newdata = xreg_tbl_temp %>% dplyr::select(tidyselect::any_of(feat_names)),
-      ...
-    )
-
-    final_prediction <- dplyr::bind_rows(
-      final_prediction,
-      tibble::tibble(.pred = preds, Row_Num = xreg_tbl_temp$Row_Num)
-    )
-  }
-
-  # 4) De-dup (just in case) and enforce 1:1 with input rows
-  final_prediction <- final_prediction %>%
-    dplyr::arrange(Row_Num) %>%
-    dplyr::distinct(Row_Num, .keep_all = TRUE)
-
-  if (nrow(final_prediction) > h_horizon) {
-    final_prediction <- dplyr::slice(final_prediction, 1:h_horizon)
-  } else if (nrow(final_prediction) < h_horizon) {
-    last_val <- if (nrow(final_prediction)) utils::tail(final_prediction$.pred, 1) else 0
-    final_prediction <- dplyr::bind_rows(
-      final_prediction,
-      tibble::tibble(.pred = rep(last_val, h_horizon - nrow(final_prediction)))
-    )
-  }
-
-  final_prediction$.pred
+  multistep_predict_rows(
+    object = object,
+    new_data = new_data,
+    predict_model = function(model, data) {
+      modeltime::xgboost_predict(model, newdata = data, ...)
+    },
+    prepare_model_data = function(model, data) {
+      data %>% dplyr::select(tidyselect::all_of(xgb_get_feature_names(model)))
+    },
+    return_type = "vector"
+  )
 }

@@ -100,6 +100,12 @@ train_models <- function(run_info,
   } else {
     unlist(strsplit(log_df$external_regressors, split = "---"))
   }
+  lag_periods <- if (!"lag_periods" %in% colnames(log_df) ||
+    length(log_df$lag_periods) == 0 || is.na(log_df$lag_periods[[1]])) {
+    NULL
+  } else {
+    as.numeric(unlist(strsplit(as.character(log_df$lag_periods[[1]]), split = "---")))
+  }
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
     run_global_models <- FALSE
@@ -414,7 +420,8 @@ train_models <- function(run_info,
               fast = FALSE,
               forecast_horizon = forecast_horizon,
               external_regressors = external_regressors,
-              multistep_horizon = multistep_horizon
+              multistep_horizon = multistep_horizon,
+              lag_periods = lag_periods
             )
 
           fs_list <- append(fs_list, list(R1 = R1_fs_list))

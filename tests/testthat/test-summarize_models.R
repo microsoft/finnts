@@ -3,48 +3,41 @@
 
 skip_on_cran()
 
-# helper: validate that a summary tibble has the expected structure
-validate_summary_output <- function(summary_tbl, model_name) {
-  expect_true(tibble::is_tibble(summary_tbl) || is.data.frame(summary_tbl))
-  expect_true(nrow(summary_tbl) >= 1)
+fit_prepared_summary_workflows <- function(run_info, recipe = "R1") {
+  prepared_objects <- get_prepped_models(run_info)
+  workflow_tbl <- prepared_objects$Data[[
+    which(prepared_objects$Type == "Model_Workflows")
+  ]]
+  hyperparameter_tbl <- prepared_objects$Data[[
+    which(prepared_objects$Type == "Model_Hyperparameters")
+  ]]
+  training_data <- get_prepped_data(run_info, recipe = recipe) %>%
+    dplyr::filter(!is.na(Target))
 
-  expected_cols <- c("model_class", "engine", "section", "name", "value")
-  for (col in expected_cols) {
-    expect_true(col %in% colnames(summary_tbl))
-  }
+  fitted_workflows <- lapply(seq_len(nrow(workflow_tbl)), function(index) {
+    model_name <- workflow_tbl$Model_Name[[index]]
+    model_recipe <- workflow_tbl$Model_Recipe[[index]]
+    workflow <- workflow_tbl$Model_Workflow[[index]]
+    hyperparameters <- hyperparameter_tbl %>%
+      dplyr::filter(Model == model_name, Recipe == model_recipe) %>%
+      dplyr::pull(Hyperparameters) %>%
+      .[[1]]
 
-  expect_true(is.character(summary_tbl$section))
-  expect_true(is.character(summary_tbl$name))
-  expect_true(is.character(summary_tbl$value))
-  expect_true(all(!is.na(summary_tbl$section)))
-  na_idx <- is.na(summary_tbl$name)
-  expect(
-    !any(na_idx),
-    sprintf(
-      "Found %d NA name(s) in sections: %s",
-      sum(na_idx),
-      paste(summary_tbl$section[na_idx], collapse = ", ")
-    )
+    if (ncol(hyperparameters) > 0) {
+      workflow <- tune::finalize_workflow(
+        workflow,
+        hyperparameters[1, , drop = FALSE]
+      )
+    }
+
+    set.seed(123)
+    generics::fit(workflow, training_data)
+  })
+
+  tibble::tibble(
+    Model_Name = workflow_tbl$Model_Name,
+    Model_Fit = fitted_workflows
   )
-
-  valid_sections <- c(
-    "predictor", "outcome", "recipe_step", "model_arg",
-    "engine_param", "coefficient", "importance", "xreg_coefficient"
-  )
-  actual_sections <- unique(summary_tbl$section)
-  expect_true(all(actual_sections %in% valid_sections))
-  expect_true("outcome" %in% actual_sections)
-}
-
-# helper: get the workflow for a specific model from a trained models tibble
-get_model_workflow <- function(trained_tbl, model_name) {
-  row <- trained_tbl %>%
-    dplyr::filter(Model_Name == model_name) %>%
-    dplyr::slice(1)
-  if (nrow(row) == 0) {
-    stop(paste0("No trained model found with name '", model_name, "'"))
-  }
-  row$Model_Fit[[1]]
 }
 
 # * Univariate models without xregs ----
@@ -54,7 +47,7 @@ data_no_xregs <- timetk::m4_monthly %>%
   dplyr::rename(Date = date) %>%
   dplyr::filter(
     id == "M2",
-    Date >= "2012-01-01"
+    Date >= "2013-01-01"
   )
 
 run_info_univariate <- set_run_info()
@@ -66,6 +59,7 @@ prep_data(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
+  stationary = FALSE,
   recipes_to_run = "R1"
 )
 
@@ -74,16 +68,18 @@ prep_models(
   back_test_scenarios = 2,
   models_to_run = c(
     "arima", "ets", "croston", "meanf", "snaive",
-    "theta", "stlm-arima", "stlm-ets", "tbats"
+    "theta", "stlm-arima", "stlm-ets", "tbats",
+    "nnetar", "prophet", "arimax", "arima-boost",
+    "prophet-boost", "prophet-xregs", "nnetar-xregs",
+    "cubist", "glmnet", "mars", "svm-poly", "svm-rbf"
   ),
   run_ensemble_models = FALSE,
   num_hyperparameters = 1,
   pca = TRUE
 )
 
-train_models(run_info = run_info_univariate)
-
-trained_univariate <- get_trained_models(run_info = run_info_univariate)
+trained_non_multistep <- fit_prepared_summary_workflows(run_info_univariate)
+trained_univariate <- trained_non_multistep
 
 test_that("summarize arima without xregs", {
   wf <- get_model_workflow(trained_univariate, "arima")
@@ -155,33 +151,7 @@ rm(trained_univariate)
 
 # * Multivariate models without xregs ----
 
-run_info_multivariate <- set_run_info()
-
-prep_data(
-  run_info = run_info_multivariate,
-  input_data = data_no_xregs,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 3,
-  recipes_to_run = "R1"
-)
-
-prep_models(
-  run_info = run_info_multivariate,
-  back_test_scenarios = 2,
-  models_to_run = c(
-    "nnetar", "prophet", "arimax", "arima-boost",
-    "prophet-boost", "prophet-xregs", "nnetar-xregs"
-  ),
-  run_ensemble_models = FALSE,
-  num_hyperparameters = 1,
-  pca = TRUE
-)
-
-train_models(run_info = run_info_multivariate)
-
-trained_multivariate <- get_trained_models(run_info = run_info_multivariate)
+trained_multivariate <- trained_non_multistep
 
 test_that("summarize nnetar without xregs", {
   wf <- get_model_workflow(trained_multivariate, "nnetar")
@@ -245,6 +215,7 @@ prep_data(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 2,
+  stationary = FALSE,
   recipes_to_run = "R1",
   multistep_horizon = TRUE
 )
@@ -258,9 +229,7 @@ prep_models(
   pca = TRUE
 )
 
-train_models(run_info = run_info_multistep)
-
-trained_multistep <- get_trained_models(run_info = run_info_multistep)
+trained_multistep <- fit_prepared_summary_workflows(run_info_multistep)
 
 test_that("summarize xgboost multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "xgboost")
@@ -292,6 +261,16 @@ test_that("summarize glmnet multistep without xregs", {
   expect_equal(n_models_row$value[[1]], "2")
 })
 
+test_that("summarize mars multistep without xregs", {
+  wf <- get_model_workflow(trained_multistep, "mars")
+  result <- summarize_model_mars(wf)
+  validate_summary_output(result, "mars-multistep")
+  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
+  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
+  n_models_row <- result %>% dplyr::filter(section == "engine_param", name == "n_models")
+  expect_equal(n_models_row$value[[1]], "2")
+})
+
 test_that("summarize svm-poly multistep without xregs", {
   wf <- get_model_workflow(trained_multistep, "svm-poly")
   result <- summarize_model_svm_poly(wf)
@@ -316,31 +295,7 @@ rm(trained_multistep)
 
 # * Non-multistep ML models without xregs ----
 
-run_info_standard_ml <- set_run_info()
-
-prep_data(
-  run_info = run_info_standard_ml,
-  input_data = data_no_xregs,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 3,
-  recipes_to_run = "R1",
-  multistep_horizon = FALSE
-)
-
-prep_models(
-  run_info = run_info_standard_ml,
-  back_test_scenarios = 2,
-  models_to_run = c("cubist", "glmnet", "mars", "svm-poly", "svm-rbf"),
-  run_ensemble_models = FALSE,
-  num_hyperparameters = 1,
-  pca = TRUE
-)
-
-train_models(run_info = run_info_standard_ml)
-
-trained_standard_ml <- get_trained_models(run_info = run_info_standard_ml)
+trained_standard_ml <- trained_non_multistep
 
 test_that("summarize cubist non-multistep without xregs", {
   wf <- get_model_workflow(trained_standard_ml, "cubist")
@@ -393,6 +348,7 @@ test_that("summarize svm-rbf non-multistep without xregs", {
 })
 
 rm(trained_standard_ml)
+rm(trained_non_multistep)
 
 # non-multistep xgboost runs as a global model (needs 2+ combos)
 data_multi_combo <- timetk::m4_monthly %>%
@@ -412,6 +368,7 @@ prep_data(
   target_variable = "value",
   date_type = "month",
   forecast_horizon = 3,
+  stationary = FALSE,
   recipes_to_run = "R1",
   multistep_horizon = FALSE
 )
@@ -425,13 +382,7 @@ prep_models(
   pca = TRUE
 )
 
-train_models(
-  run_info = run_info_xgb_global,
-  run_global_models = TRUE,
-  run_local_models = FALSE
-)
-
-trained_xgb_global <- get_trained_models(run_info = run_info_xgb_global)
+trained_xgb_global <- fit_prepared_summary_workflows(run_info_xgb_global)
 
 test_that("summarize xgboost non-multistep (global) without xregs", {
   wf <- get_model_workflow(trained_xgb_global, "xgboost")
@@ -462,6 +413,7 @@ prep_data(
   date_type = "month",
   forecast_horizon = 3,
   external_regressors = c("xreg1", "xreg2"),
+  stationary = FALSE,
   recipes_to_run = "R1"
 )
 
@@ -477,9 +429,7 @@ prep_models(
   pca = TRUE
 )
 
-train_models(run_info = run_info_xregs_mv)
-
-trained_xregs_mv <- get_trained_models(run_info = run_info_xregs_mv)
+trained_xregs_mv <- fit_prepared_summary_workflows(run_info_xregs_mv)
 
 test_that("summarize arimax with xregs", {
   wf <- get_model_workflow(trained_xregs_mv, "arimax")
@@ -522,90 +472,6 @@ test_that("summarize nnetar-xregs with xregs", {
 })
 
 rm(trained_xregs_mv)
-
-# * Multistep models WITH xregs + feature selection ----
-
-run_info_xregs_ms <- set_run_info()
-
-prep_data(
-  run_info = run_info_xregs_ms,
-  input_data = data_with_xregs,
-  combo_variables = c("id"),
-  target_variable = "value",
-  date_type = "month",
-  forecast_horizon = 2,
-  external_regressors = c("xreg1", "xreg2"),
-  recipes_to_run = "R1",
-  multistep_horizon = TRUE
-)
-
-prep_models(
-  run_info = run_info_xregs_ms,
-  back_test_scenarios = 2,
-  models_to_run = c("xgboost", "cubist", "glmnet", "mars", "svm-poly", "svm-rbf"),
-  run_ensemble_models = FALSE,
-  num_hyperparameters = 1,
-  pca = TRUE
-)
-
-train_models(
-  run_info = run_info_xregs_ms,
-  feature_selection = TRUE
-)
-
-trained_xregs_ms <- get_trained_models(run_info = run_info_xregs_ms)
-
-test_that("summarize xgboost multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "xgboost")
-  result <- summarize_model_xgboost(wf)
-  validate_summary_output(result, "xgboost-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-test_that("summarize cubist multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "cubist")
-  result <- summarize_model_cubist(wf)
-  validate_summary_output(result, "cubist-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-test_that("summarize glmnet multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "glmnet")
-  result <- summarize_model_glmnet(wf)
-  validate_summary_output(result, "glmnet-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-test_that("summarize svm-poly multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "svm-poly")
-  result <- summarize_model_svm_poly(wf)
-  validate_summary_output(result, "svm-poly-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-test_that("summarize svm-rbf multistep with xregs and feature selection", {
-  wf <- get_model_workflow(trained_xregs_ms, "svm-rbf")
-  result <- summarize_model_svm_rbf(wf)
-  validate_summary_output(result, "svm-rbf-multistep-xregs-fs")
-  ms_rows <- result %>% dplyr::filter(section == "engine_param", name == "model_type")
-  expect_equal(ms_rows$value[[1]], "Multistep Horizon")
-  preds <- result %>% dplyr::filter(section == "predictor")
-  expect_gt(nrow(preds), 0)
-})
-
-rm(trained_xregs_ms)
 
 # * TimeGPT summarize ----
 

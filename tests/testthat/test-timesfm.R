@@ -252,13 +252,17 @@ test_that("TimesFM fit stores float target values correctly", {
 
 # Integration tests (require real API credentials)
 
-test_that("TimesFM fit and predict works with real API", {
-  skip_on_cran()
-  skip_if(
+skip_live_timesfm_test <- function() {
+  testthat::skip_if(
     !nzchar(Sys.getenv("TIMESFM_API_URL")) ||
       !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
     "TIMESFM_API_URL and TIMESFM_API_TOKEN not set"
   )
+}
+
+test_that("TimesFM fit and predict works with real API", {
+  skip_on_cran()
+  skip_live_timesfm_test()
 
   x <- data.frame(
     Date = seq.Date(as.Date("2020-01-01"), by = "month", length.out = 24),
@@ -282,11 +286,7 @@ test_that("TimesFM fit and predict works with real API", {
 
 test_that("TimesFM workflow fit with external regressors present", {
   skip_on_cran()
-  skip_if(
-    !nzchar(Sys.getenv("TIMESFM_API_URL")) ||
-      !nzchar(Sys.getenv("TIMESFM_API_TOKEN")),
-    "TIMESFM_API_URL and TIMESFM_API_TOKEN not set"
-  )
+  skip_live_timesfm_test()
 
   train_data <- data.frame(
     Target = sin(seq_len(24) * pi / 6) * 100 + 500,

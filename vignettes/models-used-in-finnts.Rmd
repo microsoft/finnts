@@ -20,7 +20,7 @@ library(dplyr)
 
 reactable::reactable(
   data.frame() %>%
-    rbind(data.frame(Model = "arima", Type = "univariate, local", Underlying.Package = "modeltime, forecast", Description = "Regression model that is based on finding relationships between lagged values of the target variable you are trying to forecast.")) %>%
+    rbind(data.frame(Model = "arima", Type = "univariate, local", Underlying.Package = "finnts, modeltime, forecast", Description = "Adaptive ARIMA model. Daily data uses a bounded fast engine that compares nonseasonal, weekly-difference, annual-difference, and Fourier strategies. Other frequencies use classic auto-ARIMA.")) %>%
     rbind(data.frame(Model = "arima-boost", Type = "multivariate, local", Underlying.Package = "modeltime, forecast, xgboost", Description = "Arima model (refer to arima) that models the trend compoent of target variable, then uses xgboost model (refer to xgboost) to train on the remaining residuals.")) %>%
     rbind(data.frame(Model = "arimax", Type = "multivariate, local", Underlying.Package = "modeltime, forecast", Description = "ARIMA model that incorporates external regressors and other engineered features.")) %>%
     rbind(data.frame(Model = "chronos-bolt-base", Type = "univariate, local", Underlying.Package = "finnts, huggingface/chronos-bolt-base", Description = "Lighter-weight Chronos foundation model optimized for fast inference. Provides zero-shot forecasts but does not support external regressors or global training.")) %>%
@@ -68,6 +68,12 @@ reactable::reactable(
 
 -   **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette.
 
+### Adaptive Daily ARIMA
+
+Users select ARIMA with `models_to_run = "arima"` for every date type. Daily workflows use the `arima_fast` engine under the hood. The engine compares a bounded set of frequency-one ARIMA candidates over an internal holdout: nonseasonal levels and differences, weekly differences, 364- and 365-day differences, and Fourier regressors with ARIMA errors. It chooses the simplest strategy within 2% of the best validation accuracy and refits it on the supplied history. Candidate search is capped, and candidate failures fall through to another successful strategy or a deterministic drift fallback. It never creates a period-365 seasonal state-space model.
+
+Weekly, monthly, quarterly, and yearly workflows continue to use the classic `auto_arima` engine. The public model name and `arima--local--R1` model ID do not change. Saved workflows retain the selected strategy for later prediction, and agent model summaries report the actual engine, strategy, transformed and effective ARIMA orders, Fourier or seasonal settings, validation accuracy, candidate scores, and fallback status.
+
 ### Global vs Local Models
 
 -   **Global models** take the entire data set across all individual time series and model them all at once within a single model. Global models are only ran if the input data contains more than one individual time series.
@@ -80,7 +86,7 @@ Ensemble models are trained on predictions made by individual models. For exampl
 
 ### Multistep Horizon Models
 
-By default within `prep_models()`, the `multistep_horizon` argument is set to FALSE. If set to TRUE, a multistep horizon approach is taken for specific multivariate models trained on the R1 feature engineering recipe. Below are the models that can run as multistep. 
+By default within `prep_data()`, the `multistep_horizon` argument is set to FALSE. If set to TRUE, a multistep horizon approach is taken for specific multivariate models trained on the R1 feature engineering recipe. Below are the models that can run as multistep.
 
 - cubist
 - glmnet
@@ -89,7 +95,9 @@ By default within `prep_models()`, the `multistep_horizon` argument is set to FA
 - svm-rbf
 - xgboost
 
-A multistep model optimizes for each period in a forecast horizon. Let's take an example of a monthly data set with a forecast horizon of 3. When creating the features for the R1 recipe, finnts will create lags of 1, 2, 3, 6, 9, 12 months. Then when training a multistep model it will iteratively use specific features to train the model. First it will train a model on the first forecast horizon (H1), where it will use all available feature lags. Then for H2 it will use lags of 2 or more. Finally for H3 it will use lags of 3 or more. So the final model is actually a collection of multiple models that each trained on a specific horizon. This lets the model optimize for using all available data when creating the forecast. So in our example, one glmnet model actually has three separate horizon specific models under the hood. 
+A multistep model optimizes for each period in a forecast horizon. Let's take an example of a monthly data set with a forecast horizon of 3. When creating the features for the R1 recipe, finnts will create lags of 1, 2, 3, 6, 9, 12 months. Then when training a multistep model it will iteratively use specific features to train the model. First it will train a model on the first forecast horizon (H1), where it will use all available feature lags. Then for H2 it will use lags of 2 or more. Finally for H3 it will use lags of 3 or more. So the final model is actually a collection of multiple models that each trained on a specific horizon. This lets the model optimize for using all available data when creating the forecast. So in our example, one glmnet model actually has three separate horizon specific models under the hood. Custom `lag_periods` define the same boundaries for feature engineering, feature selection, and fitted submodels. If the largest custom lag is shorter than the forecast horizon, finnts adds the forecast horizon as the final boundary so every requested forecast row is covered.
+
+During prediction, finnts retains an explicit assessment-row identity and assigns each row to the smallest fitted horizon model that covers it. Prediction output must map one-to-one to the original combo, date, and row. Finn stops with an actionable error if a model returns missing, duplicated, padded, truncated, recycled, or non-finite predictions.
 
 A few more things to mention. If `multistep_horizon` is TRUE then other multivariate models like arima-boost or prophet-xregs will not run a multistep horizon approach. Instead they will use lags that are equal to or greater than the forecast horizon. One set of hyperparameters will be chosen for each multistep model, meaning glmnet will only use one combination of final hyperparameters and apply it to each horizon model. Multistep models are not ran for the R2 recipe, since it has it's own way of dealing with multiple horizons. Finally if `feature_selection` is turned on, it will be ran for each horizon specific model, meaning for a 3 month forecast horizon the feature selection process will be ran 3 times. One for each combination of features tied to a specific horizon. 
 

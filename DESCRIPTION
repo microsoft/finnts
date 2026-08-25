@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.6.0.9053
+Version: 0.6.0.9054
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -38,6 +38,7 @@ Imports:
     earth,
     feasts,
     foreach,
+    forecast,
     fs,
     generics,
     glue, 
