@@ -1,10 +1,16 @@
 #' Get the trained model summaries info for an agent
 #'
-#' This function retrieves the final summarized model info (hyperparameters, recipe steps, feature importance, etc.) after agent completes its run.
+#' This function retrieves the final summarized model info (hyperparameters,
+#' recipe steps, feature importance, etc.) after an agent completes its run.
+#' Variable-importance rows are included when the optional `vip` package was
+#' available while summaries were generated; all other summary sections remain
+#' available without it.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return A tibble containing the summarized models for the agent.
+#' @return A tibble containing the summarized models for the agent. The
+#'   `importance` section is omitted when `vip` was unavailable during summary
+#'   generation.
 #' @examples
 #' \dontrun{
 #' # load example data
@@ -66,6 +72,8 @@ get_summarized_models <- function(agent_info) {
 #'
 #' Summarizes trained models for each time series in the best agent run by extracting
 #' model details, hyperparameters, and diagnostics into a structured format.
+#' When the optional `vip` package is unavailable, variable importance is
+#' omitted and all other supported summary sections are retained.
 #'
 #' @param agent_info Agent info from [set_agent_info()]
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -86,6 +94,17 @@ summarize_models <- function(agent_info,
   check_agent_info(agent_info = agent_info)
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
+
+  if (!vip_available()) {
+    warning(
+      paste0(
+        "Package 'vip' 0.5.0 or newer is not available; variable importance ",
+        "will be omitted from model summaries. See the finnts installation ",
+        "documentation for the optional vip setup."
+      ),
+      call. = FALSE
+    )
+  }
 
   # Get project info
   project_info <- agent_info$project_info
@@ -448,13 +467,140 @@ summarize_models <- function(agent_info,
   )
 }
 
+summarize_model_arima_fast <- function(fit, preds_tbl, outs_tbl, steps_tbl, digits) {
+  object <- fit$fit
+  model <- object$model
+  p <- q <- d <- NA_integer_
+
+  if (!is.null(model) && length(model$arma) >= 7L) {
+    p <- as.integer(model$arma[1])
+    q <- as.integer(model$arma[2])
+    d <- as.integer(model$arma[6])
+  }
+
+  seasonal_lag <- as.integer(object$seasonal_lag)
+  transformed_order <- if (all(is.finite(c(p, d, q)))) {
+    sprintf("(%d,%d,%d)", p, d, q)
+  } else {
+    "not_available"
+  }
+  effective_order <- if (seasonal_lag > 0L && all(is.finite(c(p, d, q)))) {
+    sprintf("(%d,%d,%d)(0,1,0)[%d]", p, d, q, seasonal_lag)
+  } else if ((object$week_k > 0L || object$year_k > 0L) && all(is.finite(c(p, d, q)))) {
+    sprintf(
+      "Fourier(weekly K=%d, annual K=%d) + ARIMA(%d,%d,%d) errors",
+      object$week_k, object$year_k, p, d, q
+    )
+  } else {
+    transformed_order
+  }
+
+  args_tbl <- tibble::tibble(
+    section = "model_arg",
+    name = c(
+      "non_seasonal_ar", "non_seasonal_differences", "non_seasonal_ma",
+      "seasonal_ar", "seasonal_differences", "seasonal_ma", "seasonal_period"
+    ),
+    value = as.character(c(
+      p, d, q,
+      0L, if (seasonal_lag > 0L) 1L else 0L, 0L,
+      if (seasonal_lag > 0L) seasonal_lag else 1L
+    ))
+  )
+
+  validation_wmape <- if (is.finite(object$validation_wmape)) {
+    as.character(signif(object$validation_wmape, digits))
+  } else {
+    "not_available"
+  }
+  eng_tbl <- tibble::tibble(
+    section = "engine_param",
+    name = c(
+      "requested_model", "actual_engine", "strategy", "transformed_order_str",
+      "effective_order_str", "seasonal_lag", "fourier_week_k", "fourier_year_k",
+      "validation_wmape", "candidate_count", "fallback"
+    ),
+    value = c(
+      "arima", "arima_fast", object$strategy, transformed_order,
+      effective_order, as.character(seasonal_lag), as.character(object$week_k),
+      as.character(object$year_k), validation_wmape,
+      as.character(object$candidate_count), as.character(isTRUE(object$fallback))
+    )
+  )
+
+  if (!is.null(object$candidate_scores) && nrow(object$candidate_scores) > 0L) {
+    score_rows <- object$candidate_scores %>%
+      dplyr::mutate(
+        section = "engine_param",
+        name = paste0("candidate_wmape.", .data$strategy),
+        value = ifelse(
+          is.finite(.data$score),
+          as.character(signif(.data$score, digits)),
+          "failed"
+        )
+      ) %>%
+      dplyr::select(tidyselect::all_of(c("section", "name", "value")))
+    eng_tbl <- dplyr::bind_rows(eng_tbl, score_rows)
+
+    error_rows <- object$candidate_scores %>%
+      dplyr::filter(!is.na(.data$error), nzchar(.data$error)) %>%
+      dplyr::transmute(
+        section = "engine_param",
+        name = paste0("candidate_error.", .data$strategy),
+        value = as.character(.data$error)
+      )
+    eng_tbl <- dplyr::bind_rows(eng_tbl, error_rows)
+  }
+
+  if (!is.null(model)) {
+    for (name in c("aic", "aicc", "bic", "sigma2", "loglik", "method", "nobs")) {
+      value <- try(model[[name]], silent = TRUE)
+      if (!inherits(value, "try-error") && !is.null(value)) {
+        value <- if (is.numeric(value)) as.character(signif(value, digits)) else .chr1(value)
+        eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", name, value))
+      }
+    }
+
+    coefficients <- try(model$coef, silent = TRUE)
+    if (!inherits(coefficients, "try-error") && length(coefficients) > 0L) {
+      coefficient_names <- names(coefficients)
+      if (is.null(coefficient_names)) {
+        coefficient_names <- paste0("coef[", seq_along(coefficients), "]")
+      }
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        tibble::tibble(
+          section = "coefficient",
+          name = coefficient_names,
+          value = as.character(signif(as.numeric(coefficients), digits))
+        )
+      )
+    }
+
+    residuals <- try(model$residuals, silent = TRUE)
+    if (!inherits(residuals, "try-error") && length(residuals) > 0L) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "residuals.mean", as.character(signif(mean(residuals, na.rm = TRUE), digits))),
+        .kv("engine_param", "residuals.sd", as.character(signif(stats::sd(residuals, na.rm = TRUE), digits)))
+      )
+    }
+  }
+
+  .assemble_output(
+    preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(object)[1], "arima_fast",
+    unquote_values = FALSE, digits = digits
+  )
+}
+
 #' Summarize an ARIMA Workflow
 #'
 #' Extracts and summarizes key information from a fitted ARIMA workflow,
 #' including model arguments, engine parameters, coefficients, and diagnostics.
 #'
 #' @param wf A fitted tidymodels workflow containing a modeltime::arima_reg()
-#'   model with engine 'auto_arima' or 'arima'.
+#'   model with engine 'auto_arima', 'arima', or 'arima_fast'.
 #'
 #' @return A tibble with columns: section, name, value containing model details.
 #'
@@ -471,8 +617,8 @@ summarize_model_arima <- function(wf) {
 
   spec <- fit$spec
   engine <- if (is.null(spec$engine)) "" else spec$engine
-  if (!engine %in% c("auto_arima", "arima")) {
-    stop("summarize_model_arima() only supports modeltime::arima_reg() with engines 'auto_arima' or 'arima'.")
+  if (!engine %in% c("auto_arima", "arima", "arima_fast")) {
+    stop("summarize_model_arima() only supports ARIMA workflows with engines 'auto_arima', 'arima', or 'arima_fast'.")
   }
 
   # Vectorized: TRUE for bare symbol-like tokens
@@ -505,6 +651,10 @@ summarize_model_arima <- function(wf) {
     .extract_recipe_steps(preproc)
   } else {
     tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  if (identical(engine, "arima_fast")) {
+    return(summarize_model_arima_fast(fit, preds_tbl, outs_tbl, steps_tbl, digits))
   }
 
   # parsnip ARIMA args
@@ -1315,7 +1465,7 @@ summarize_model_arima_boost <- function(wf) {
       }
 
       # Variable importance
-      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -1883,7 +2033,7 @@ summarize_model_cubist <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_cubist, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance or NA variable names
@@ -1974,7 +2124,7 @@ summarize_model_cubist <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(cubist_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(cubist_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -2671,7 +2821,7 @@ summarize_model_glmnet <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_glmnet, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_glmnet, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -2937,7 +3087,7 @@ summarize_model_glmnet <- function(wf) {
       }
 
       # Variable importance using vip::vi()
-      importance <- try(vip::vi(glmnet_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(glmnet_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -3127,7 +3277,7 @@ summarize_model_mars <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_mars, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_mars, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -3268,7 +3418,7 @@ summarize_model_mars <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(mars_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(mars_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -4686,7 +4836,7 @@ summarize_model_prophet_boost <- function(wf) {
       }
 
       # Variable importance (don't add count since the importance section shows all features)
-      importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+      importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
       importance_list <- list()
 
       if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -5921,7 +6071,7 @@ summarize_model_svm_poly <- function(wf) {
             }
 
             importance <- try(
-              vip::vi(
+              vip_vi(
                 object = inner_ksvm,
                 method = "permute",
                 train = train_x,
@@ -6127,7 +6277,7 @@ summarize_model_svm_poly <- function(wf) {
           }
 
           importance <- try(
-            vip::vi(
+            vip_vi(
               object = svm_obj,
               method = "permute",
               train = train_x,
@@ -6342,7 +6492,7 @@ summarize_model_svm_rbf <- function(wf) {
             }
 
             importance <- try(
-              vip::vi(
+              vip_vi(
                 object = inner_ksvm,
                 method = "permute",
                 train = train_x,
@@ -6533,7 +6683,7 @@ summarize_model_svm_rbf <- function(wf) {
           }
 
           importance <- try(
-            vip::vi(
+            vip_vi(
               object = svm_obj,
               method = "permute",
               train = train_x,
@@ -7610,7 +7760,7 @@ summarize_model_xgboost <- function(wf) {
           }
 
           # Variable importance using vip::vi()
-          importance <- try(vip::vi(inner_xgb, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+          importance <- try(vip_vi(inner_xgb, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
 
           if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
             # Filter out features with negligible importance
@@ -7750,7 +7900,7 @@ summarize_model_xgboost <- function(wf) {
         }
 
         # Variable importance using vip::vi()
-        importance <- try(vip::vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
+        importance <- try(vip_vi(xgb_obj, scale = TRUE) %>% suppressWarnings(), silent = TRUE)
         importance_list <- list()
 
         if (!inherits(importance, "try-error") && !is.null(importance) && nrow(importance) > 0) {
@@ -7927,6 +8077,10 @@ summarize_model_timegpt <- function(wf) {
 chronos2_permutation_importance <- function(chronos2_obj,
                                             mold,
                                             nsim = 10L) {
+  if (!vip_available()) {
+    return(NULL)
+  }
+
   # mold$predictors contains the same training rows/dates as chronos2_obj$train_data.
   # we cannot pass these directly as train/target to vip because
   # chronos2_model_predict_impl filters object$train_data to dates before
@@ -8004,7 +8158,7 @@ chronos2_permutation_importance <- function(chronos2_obj,
   }
 
   importance <- try(
-    vip::vi(
+    vip_vi(
       object = trimmed_obj,
       method = "permute",
       train = holdout_x,

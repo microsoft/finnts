@@ -10,6 +10,7 @@
 #' @param forecast_horizon forecast horizon
 #' @param external_regressors external reressors
 #' @param multistep_horizon multistep horizon forecast
+#' @param lag_periods lag periods
 #'
 #' @return list of best features to use
 #' @noRd
@@ -22,7 +23,8 @@ run_feature_selection <- function(input_data,
                                   seed = 123,
                                   forecast_horizon,
                                   external_regressors,
-                                  multistep_horizon = FALSE) {
+                                  multistep_horizon = FALSE,
+                                  lag_periods = NULL) {
   # check for more than one unique target value
   if (input_data %>% tidyr::drop_na(Target) %>% dplyr::pull(Target) %>% unique() %>% length() < 2) {
     # just return the date features
@@ -30,6 +32,11 @@ run_feature_selection <- function(input_data,
       dplyr::select(tidyselect::contains("Date"))
 
     return(fs_list)
+  }
+
+  require_vip("feature selection")
+  for (package in c("Boruta", "corrr", "ranger")) {
+    require_optional_package(package, "feature selection")
   }
 
   # check if outlier cleaning has been applied
@@ -61,7 +68,7 @@ run_feature_selection <- function(input_data,
 
   # run feature selection
   if (multistep_horizon) {
-    initial_lag_periods <- get_lag_periods(NULL, date_type, forecast_horizon, TRUE)
+    initial_lag_periods <- get_lag_periods(lag_periods, date_type, forecast_horizon, TRUE)
 
     iteration_list <- get_multi_lags(
       initial_lag_periods,
@@ -302,6 +309,9 @@ target_corr_fn <- function(data,
 #' @noRd
 vip_rf_fn <- function(data,
                       seed = 123) {
+  require_vip("random forest feature selection")
+  require_optional_package("ranger", "random forest feature selection")
+
   rf_mod <- parsnip::rand_forest(mode = "regression", trees = 100) %>%
     parsnip::set_engine("ranger", importance = "impurity")
 
@@ -333,6 +343,8 @@ vip_rf_fn <- function(data,
 #' @noRd
 vip_lm_fn <- function(data,
                       seed = 123) {
+  require_vip("linear regression feature selection")
+
   model_spec_lm <- parsnip::linear_reg(
     penalty = 0.01
   ) %>%
@@ -369,6 +381,8 @@ vip_lm_fn <- function(data,
 #' @noRd
 vip_cubist_fn <- function(data,
                           seed = 123) {
+  require_vip("Cubist feature selection")
+
   model_spec_cubist <- parsnip::cubist_rules(
     mode = "regression",
     committees = 25
@@ -406,8 +420,16 @@ vip_cubist_fn <- function(data,
 boruta_fn <- function(data,
                       iterations = 100,
                       seed = 123) {
+  require_optional_package("Boruta", "Boruta feature selection")
+  require_optional_package("ranger", "Boruta feature selection")
+
   set.seed(seed)
-  Boruta::Boruta(Target ~ ., data = data, maxRuns = iterations) %>%
+  Boruta::Boruta(
+    Target ~ .,
+    data = data,
+    maxRuns = iterations,
+    getImp = Boruta::getImpRfZ
+  ) %>%
     Boruta::getSelectedAttributes()
 }
 

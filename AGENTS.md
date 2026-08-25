@@ -19,6 +19,15 @@ Prefer the repo's existing dependency workflow:
 - Otherwise:
   - `R -q -e 'install.packages("devtools"); devtools::install_deps(dependencies = TRUE)'`
 
+### Optional feature selection dependencies
+- `vip (>= 0.5.0)` is a suggested package from `https://bgreenwell.r-universe.dev` and requires R 4.1 or newer.
+- Feature selection also requires the suggested `Boruta`, `corrr`, and `ranger` packages. Keep `ranger` declared directly because Boruta 10.0 no longer installs it as a strong dependency.
+- Use Boruta's `getImpRfZ` ranger adapter to preserve FinnTS behavior across Boruta 10.0 and later; do not rely on Boruta's changing default importance provider.
+- FinnTS must install, load, and pass its CRAN-style check without `vip`; never move it to `Imports`, `Depends`, or `LinkingTo` without an explicit packaging decision.
+- Feature selection may require `vip` and must fail early with actionable installation guidance when it is unavailable.
+- Model summaries must retain non-importance sections without `vip`; only variable-importance output may be omitted.
+- Keep both maintained-`vip` compatibility coverage and the explicit CI check without any feature-selection packages.
+
 ### Dev loop
 - Document (roxygen): `R -q -e 'devtools::document()'`
 - Run tests: `R -q -e 'devtools::test()'`
@@ -27,6 +36,22 @@ Prefer the repo's existing dependency workflow:
 ### Parallel test caveat
 - `devtools::test()` runs against `pkgload::load_all()`, which does not always expose non-exported package helpers to PSOCK `foreach` workers like an installed package namespace does.
 - A test-only `.export` may therefore be needed even when production code does not need one. Before adding `.export` to production for a missing-helper error, install the current source into a temporary library and reproduce the same `foreach` call from the installed namespace.
+
+### Test profiles and runtime
+- The CRAN profile is deterministic and must never call live LLM or foundation-model endpoints, even when credentials are present.
+- Simulate CRAN skips with `R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'`.
+- Optional runtime gates are `FINNTS_TEST_TIME_LIMIT_SECONDS` for the full suite and `FINNTS_TEST_FILE_TIME_LIMIT_SECONDS` per file; keep the CRAN profile below ten minutes and use 90 seconds as the per-file budget for the restored `fit_resamples()` path.
+- Non-CRAN runs automatically execute every live Agent, Chronos, TimeGPT/Nixtla, and TimesFM test when that provider's credentials are available; there are no additional opt-in flags.
+- Preserve every existing `testthat::skip_on_cran()` marker, including deterministic, integration, performance, and credential-security tests. Do not remove one solely because a test was optimized or does not use a network connection.
+- Live tests must skip on CRAN before checking credentials or invoking a provider. Credentials must never override CRAN skipping.
+- The existing R CMD check matrix supplies its configured Agent, Nixtla, and Chronos credentials, so those live tests run automatically. Other provider tests run when their credentials are present in the environment. Fork pull requests cannot receive repository secrets and therefore skip live tests.
+- Do not repeat full `prep_data()` / `prep_models()` / `train_models()` pipelines only to manufacture downstream test input. Prefer deterministic artifacts, one directly finalized fit, or an immutable prepared template copied into an isolated test directory.
+
+### Multistep validation
+- Automatic MARS tuning must exclude `prune_method = "cv"`; explicit multistep CV pruning must supply a bounded `nfold` value.
+- Cover all supported `date_type` values and assert exact horizon-to-submodel routing, training rows, lag-feature eligibility, and forecast row identity.
+- The daily multistep matrix is part of the standard test suite and must pass after changing lag generation, feature selection, multistep fitting, or prediction.
+- Preserve both daily paths: all six adapters with explicit lags/outlier cleaning and GLMnet with automatic lags/raw data.
 
 ### Style / lint
 - Format: `R -q -e 'if (requireNamespace("styler", quietly=TRUE)) styler::style_pkg()'`

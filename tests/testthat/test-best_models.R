@@ -43,32 +43,87 @@ write_fcst_file <- function(x, path) {
   }
 }
 
-train_two_models <- function() {
-  data <- modeltime::m750 %>%
-    dplyr::rename(Date = date) %>%
-    dplyr::mutate(id = as.character(id)) %>%
-    dplyr::filter(Date >= "2012-01-01")
-
-  run_info <- set_run_info()
-
-  prep_data(
-    run_info = run_info,
-    input_data = data,
-    combo_variables = "id",
-    target_variable = "value",
-    date_type = "month",
-    forecast_horizon = 3
+make_best_models_fixture <- function() {
+  run_path <- tempfile("finnts-best-models-")
+  dir.create(run_path)
+  run_info <- set_run_info(
+    project_name = "best_models_test",
+    run_name = "partial_fold_coverage",
+    path = run_path,
+    add_unique_id = FALSE
   )
 
-  prep_models(
+  log_path <- paste0(
+    "logs/", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name), ".csv"
+  )
+  log_data <- finnts:::read_file(run_info, path = log_path, return_type = "df") %>%
+    dplyr::mutate(
+      date_type = "month",
+      combo_variables = "Series",
+      forecast_approach = "bottoms_up",
+      negative_forecast = FALSE,
+      run_global_models = FALSE,
+      run_local_models = TRUE,
+      run_ensemble_models = FALSE
+    )
+  finnts:::write_data(
+    log_data,
+    combo = NULL,
     run_info = run_info,
-    models_to_run = c("meanf", "snaive"),
-    back_test_scenarios = 4
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
   )
 
-  train_models(
+  splits <- tibble::tibble(
+    Run_Type = c("Future_Forecast", rep("Back_Test", 3)),
+    Train_Test_ID = 1:4,
+    Train_End = as.Date("2023-12-01") - c(0, 31, 62, 93),
+    Test_End = as.Date("2024-03-01") - c(0, 31, 62, 93)
+  )
+  finnts:::write_data(
+    splits,
+    combo = NULL,
     run_info = run_info,
-    run_global_models = FALSE
+    output_type = "data",
+    folder = "prep_models",
+    suffix = "-train_test_split"
+  )
+
+  forecasts <- tidyr::expand_grid(
+    Model_Name = c("meanf", "snaive"),
+    Train_Test_ID = 1:4,
+    Horizon = 1:3
+  ) %>%
+    dplyr::mutate(
+      Combo_ID = "Synthetic",
+      Combo = "Synthetic",
+      Model_Type = "local",
+      Recipe_ID = "R1",
+      Model_ID = paste(Model_Name, Model_Type, Recipe_ID, sep = "--"),
+      Hyperparameter_ID = 1,
+      Date = as.Date("2024-01-01") + ((Train_Test_ID - 1) * 31) + Horizon,
+      Target = ifelse(Train_Test_ID == 1, NA_real_, 100 + Horizon),
+      Forecast = dplyr::case_when(
+        Train_Test_ID == 1 ~ 100 + Horizon,
+        Model_Name == "meanf" ~ Target * 1.10,
+        Train_Test_ID == 2 ~ Target * 1.01,
+        Train_Test_ID == 3 ~ Target * 1.20,
+        TRUE ~ Target * 1.30
+      )
+    ) %>%
+    dplyr::select(
+      Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID,
+      Train_Test_ID, Hyperparameter_ID, Combo, Horizon, Date, Target, Forecast
+    )
+  finnts:::write_data(
+    forecasts,
+    combo = "Synthetic",
+    run_info = run_info,
+    output_type = "data",
+    folder = "forecasts",
+    suffix = "-single_models"
   )
 
   run_info
@@ -77,7 +132,8 @@ train_two_models <- function() {
 test_that("final_models excludes models with partial back test coverage from Best_Model selection", {
   skip_on_cran()
 
-  run_info <- train_two_models()
+  run_info <- make_best_models_fixture()
+  on.exit(unlink(run_info$path, recursive = TRUE), add = TRUE)
   single_models_path <- locate_single_models_file(run_info)
 
   fcst_tbl <- read_fcst_file(single_models_path)
@@ -141,7 +197,8 @@ test_that("final_models excludes models with partial back test coverage from Bes
 test_that("final_models errors when no model has complete back test coverage", {
   skip_on_cran()
 
-  run_info <- train_two_models()
+  run_info <- make_best_models_fixture()
+  on.exit(unlink(run_info$path, recursive = TRUE), add = TRUE)
   single_models_path <- locate_single_models_file(run_info)
 
   fcst_tbl <- read_fcst_file(single_models_path)
@@ -195,7 +252,8 @@ test_that("Best_Model wMAPE is computed from complete-fold models only", {
       )
   }
 
-  run_info <- train_two_models()
+  run_info <- make_best_models_fixture()
+  on.exit(unlink(run_info$path, recursive = TRUE), add = TRUE)
   single_models_path <- locate_single_models_file(run_info)
   fcst_tbl <- read_fcst_file(single_models_path)
 

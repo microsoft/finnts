@@ -1007,6 +1007,10 @@ get_lag_periods <- function(lag_periods,
                             multistep_horizon = FALSE,
                             feature_engineering = FALSE) {
   if (!is.null(lag_periods)) {
+    lag_periods <- as.numeric(unlist(lag_periods, use.names = FALSE))
+    if (multistep_horizon && max(lag_periods) < forecast_horizon) {
+      return(unique(c(lag_periods, forecast_horizon)))
+    }
     return(lag_periods)
   }
   oplist <- switch(date_type,

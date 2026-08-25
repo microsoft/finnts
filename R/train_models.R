@@ -8,7 +8,10 @@
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models.
 #' @param global_model_recipes Recipes to use in global models.
-#' @param feature_selection Implement feature selection before model training
+#' @param feature_selection Implement feature selection before model training.
+#'   This requires the optional `Boruta`, `corrr`, `ranger`, and `vip` packages.
+#'   `vip` is available from <https://bgreenwell.r-universe.dev> and requires R
+#'   4.1 or newer.
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
@@ -99,6 +102,12 @@ train_models <- function(run_info,
     NULL
   } else {
     unlist(strsplit(log_df$external_regressors, split = "---"))
+  }
+  lag_periods <- if (!"lag_periods" %in% colnames(log_df) ||
+    length(log_df$lag_periods) == 0 || is.na(log_df$lag_periods[[1]])) {
+    NULL
+  } else {
+    as.numeric(unlist(strsplit(as.character(log_df$lag_periods[[1]]), split = "---")))
   }
 
   if (is.null(run_global_models) & date_type %in% c("day", "week")) {
@@ -414,7 +423,8 @@ train_models <- function(run_info,
               fast = FALSE,
               forecast_horizon = forecast_horizon,
               external_regressors = external_regressors,
-              multistep_horizon = multistep_horizon
+              multistep_horizon = multistep_horizon,
+              lag_periods = lag_periods
             )
 
           fs_list <- append(fs_list, list(R1 = R1_fs_list))

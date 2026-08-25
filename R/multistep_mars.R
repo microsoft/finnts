@@ -325,13 +325,26 @@ mars_multistep_fit_impl <- function(x, y,
   models <- list()
   model_predictions <- list()
 
-  mars_reg_spec <- parsnip::mars(
-    mode = "regression",
-    num_terms = nprune,
-    prod_degree = degree,
-    prune_method = pmethod
-  ) %>%
-    parsnip::set_engine("earth")
+  uses_cross_validation <- identical(as.character(pmethod), "cv")
+
+  if (uses_cross_validation) {
+    nfold <- min(5L, nrow(xreg_tbl))
+    if (nfold < 2L) {
+      stop(
+        "MARS cross-validation pruning requires at least two training rows.",
+        call. = FALSE
+      )
+    }
+  } else {
+    mars_reg_spec <- parsnip::mars(
+      mode = "regression",
+      num_terms = nprune,
+      prod_degree = degree,
+      prune_method = pmethod
+    )
+    mars_reg_spec <- mars_reg_spec %>%
+      parsnip::set_engine("earth")
+  }
 
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
     # get final features based on lag
@@ -358,15 +371,28 @@ mars_multistep_fit_impl <- function(x, y,
         )
     }
 
-    combined_df <- xreg_tbl_final %>%
-      dplyr::mutate(Target = outcome)
-
     # fit model
-    fit_mars <- mars_reg_spec %>%
-      generics::fit(Target ~ ., data = combined_df)
+    if (uses_cross_validation) {
+      earth_args <- list(
+        x = as.matrix(xreg_tbl_final),
+        y = outcome,
+        degree = degree,
+        pmethod = pmethod,
+        nfold = nfold
+      )
+      if (!is.null(nprune)) {
+        earth_args$nprune <- nprune
+      }
+      fit_mars <- do.call(earth::earth, earth_args)
+    } else {
+      combined_df <- xreg_tbl_final %>%
+        dplyr::mutate(Target = outcome)
+      fit_mars <- mars_reg_spec %>%
+        generics::fit(Target ~ ., data = combined_df)
+    }
 
     # create prediction
-    mars_fitted <- predict(fit_mars, combined_df)
+    mars_fitted <- predict(fit_mars, xreg_tbl_final)
 
     # append outputs
     element_name <- paste0("model_lag_", lag)
@@ -454,61 +480,10 @@ predict.mars_multistep_fit_impl <- function(object, new_data, ...) {
 #' @keywords internal
 #' @export
 mars_multistep_predict_impl <- function(object, new_data, ...) {
-  # Date Mapping Table
-  date_tbl <- new_data %>%
-    dplyr::select(Date, Date_index.num) %>%
-    dplyr::distinct() %>%
-    dplyr::arrange(Date) %>%
-    dplyr::mutate(Run_Number = dplyr::row_number())
-
-  # PREPARE INPUTS
-  xreg_recipe <- object$extras$xreg_recipe
-  h_horizon <- nrow(new_data)
-
-  # XREG
-  xreg_tbl <- modeltime::bake_xreg_recipe(xreg_recipe,
-    new_data,
-    format = "tbl"
-  ) %>%
-    dplyr::left_join(date_tbl, by = "Date_index.num") %>%
-    dplyr::mutate(Row_Num = dplyr::row_number())
-
-  # PREDICTIONS
-  final_prediction <- tibble::tibble()
-  start_val <- 1
-
-  for (model_name in names(object$models)) {
-    if (start_val > nrow(date_tbl)) {
-      break
-    }
-
-    lag_number <- stringr::str_extract(model_name, "[0-9]+")
-
-    mars_model <- object$models[[model_name]]
-
-    xreg_tbl_final <- xreg_tbl %>%
-      dplyr::filter(
-        Run_Number >= as.numeric(start_val),
-        Run_Number <= as.numeric(lag_number)
-      )
-
-    if (!is.null(xreg_tbl)) {
-      preds_mars <- predict(mars_model, xreg_tbl_final)
-    } else {
-      preds_mars <- rep(0, h_horizon)
-    }
-
-    preds_mars <- preds_mars %>%
-      dplyr::mutate(Row_Num = xreg_tbl_final$Row_Num)
-
-    start_val <- as.numeric(lag_number) + 1
-    final_prediction <- rbind(final_prediction, preds_mars)
-  }
-
-  # Ensure it's sorted correctly for global models
-  final_prediction <- final_prediction %>%
-    dplyr::arrange(Row_Num) %>%
-    dplyr::select(.pred)
-
-  return(final_prediction)
+  multistep_predict_rows(
+    object = object,
+    new_data = new_data,
+    predict_model = function(model, data) predict(model, data, ...),
+    return_type = "tibble"
+  )
 }

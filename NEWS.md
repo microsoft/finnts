@@ -1,4 +1,4 @@
-# finnts 0.6.0.9054 (development version)
+# finnts 0.6.0.9056 (development version)
 
 ## Improvements
 
@@ -44,8 +44,26 @@
     
 - Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
 
+- Adaptive daily ARIMA to reduce runtime
+  - Users continue to select `"arima"`; daily workflows now use the bounded `arima_fast` engine while non-daily workflows retain classic `auto_arima` behavior.
+  - The daily engine validates nonseasonal, weekly-difference, 364/365-day-difference, and Fourier-with-ARIMA-errors strategies on an internal holdout, then refits the simplest competitive strategy. Finn's outer back-tests continue to score original targets when outlier cleaning is enabled.
+  - Daily candidate searches use nonseasonal frequency-one ARIMA fits and never construct the expensive period-365 seasonal state-space model.
+  - Candidate failures fall through to another validation-successful strategy or a deterministic drift fallback. No model timeout or process-termination behavior was added.
+  - Agent model summaries identify the actual engine, selected strategy, transformed and effective ARIMA orders, Fourier/seasonal settings, validation WMAPE, candidate scores, and fallback status.
+  - Added `forecast` as a direct `Imports` dependency. It was already transitively required by `modeltime`; using its mature ARIMA implementation avoids reimplementing numerical estimation. This adds no new runtime service, credential, or network surface and retains the package's existing open-source dependency chain.
+
+- Updated optional variable-importance support for `vip` 0.5.0. `vip` remains
+  in `Suggests` and is resolved from its maintainer's r-universe repository.
+  `ranger` is now declared directly in `Suggests`, and Boruta feature selection
+  uses Boruta's ranger adapter to preserve behavior after Boruta 10.0 changed
+  its default importance provider. FinnTS continues to install and run without
+  these optional packages: feature selection now fails early with installation
+  guidance, while model summaries retain all sections except variable
+  importance.
+
 ## Bug Fixes
 
+-   Prevented random MARS tuning failures when `prune_method = "cv"` was selected without the required folds. Automatic grids now use the five non-CV pruning methods, while explicit multistep CV pruning supplies a bounded fold count.
 -   Fixed `subscript out of bounds` failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. `read.csv` vs `vroom`), so input data, EDA, and forecast outputs resolve to the same file.
 -   Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.
 -   Fixed `null_converter()` crash in agent workflow when input is `NA`.
@@ -62,6 +80,10 @@
 -   Fixed issue around NA handling with external regressors. 
 -   Fixed issue when reconciling hierarchical forecasts that are very close to zero.
 -   Fixed issue when checking if best models have been selected before. 
+-   Fixed multistep Cubist, GLMnet, MARS, polynomial SVM, and radial SVM failures caused by non-unique fiscal date-index joins expanding assessment rows.
+-   Multistep prediction now preserves one prediction per original assessment row and fails explicitly on missing, duplicated, padded, truncated, recycled, or non-finite output.
+-   Removed XGBoost multistep prediction padding and truncation that previously masked row-alignment defects.
+-   Custom multistep `lag_periods` now propagate consistently through feature engineering, feature selection, model training, and forecast updates. Lag lists that do not cover the forecast horizon automatically include the horizon as a final boundary.
 
 ## Breaking Changes
 

@@ -69,7 +69,10 @@
 #' @param average_models If TRUE, create simple averages of individual models.
 #' @param max_model_average Max number of models to average together. Will create model averages for 2 models up until input value
 #'   or max number of models ran.
-#' @param feature_selection Implement feature selection before model training
+#' @param feature_selection Implement feature selection before model training.
+#'   This requires the optional `Boruta`, `corrr`, `ranger`, and `vip` packages.
+#'   `vip` is available from <https://bgreenwell.r-universe.dev> and requires R
+#'   4.1 or newer.
 #' @param weekly_to_daily If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 #'   up to higher temporal levels like month or quarter.
 #' @param seed Set seed for random number generator. Numeric value.

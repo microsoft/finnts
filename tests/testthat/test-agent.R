@@ -1,6 +1,5 @@
 # tests/testthat/test-agent.R
 
-# Skip all tests in this file on CRAN
 skip_on_cran()
 
 # Helper function to check if LLM credentials are available
@@ -18,20 +17,27 @@ has_llm_credentials <- function() {
   return(azure_ok || openai_ok)
 }
 
-# Create a simple test LLM function
-create_test_llm <- function() {
-  if (has_llm_credentials()) {
-    # Use Azure OpenAI if available
-    if (!is.na(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = NA)) &&
-      nzchar(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = ""))) {
-      return(ellmer::chat_azure_openai(model = "gpt-4o-mini"))
-    } else {
-      # Fall back to OpenAI
-      return(ellmer::chat_openai(model = "gpt-4o-mini"))
-    }
-  } else {
-    skip("No LLM credentials available for testing")
+# Create a no-call Chat for deterministic tests or a real provider for live tests.
+create_test_llm <- function(live = FALSE) {
+  if (!live) {
+    return(structure(list(), class = "Chat"))
   }
+
+  testthat::skip_if_not_installed("ellmer")
+
+  if (!has_llm_credentials()) {
+    testthat::skip("LLM credentials not available")
+  }
+  if (!is.na(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = NA)) &&
+    nzchar(Sys.getenv("AZURE_OPENAI_ENDPOINT", unset = ""))) {
+    ellmer::chat_azure_openai(model = "gpt-4o-mini")
+  } else {
+    ellmer::chat_openai(model = "gpt-4o-mini")
+  }
+}
+
+skip_live_agent_test <- function() {
+  testthat::skip_if_not(has_llm_credentials(), "LLM credentials not available")
 }
 
 # * Test data setup ----
@@ -109,8 +115,6 @@ test_that("set_project_info rejects 'Date' as target variable", {
 # * Test set_agent_info ----
 
 test_that("set_agent_info creates valid agent info object", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
-
   project <- set_project_info(
     project_name = "agent_test_info",
     path = tempdir(),
@@ -145,8 +149,6 @@ test_that("set_agent_info creates valid agent info object", {
 })
 
 test_that("set_agent_info validates inputs correctly", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
-
   project <- set_project_info(
     project_name = "agent_validation",
     path = tempdir(),
@@ -193,8 +195,6 @@ test_that("set_agent_info validates inputs correctly", {
 })
 
 test_that("set_agent_info handles hierarchical forecast detection", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
-
   project <- set_project_info(
     project_name = "agent_hierarchy",
     path = tempdir(),
@@ -356,8 +356,6 @@ test_that("set_project_info warns instead of errors on path change", {
 })
 
 test_that("set_agent_info error lists changed inputs", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
-
   project <- set_project_info(
     project_name = "agent_change_test",
     path = tempdir(),
@@ -491,7 +489,7 @@ test_that("set_agent_info error lists changed inputs", {
 # * Test iterate_forecast workflow ----
 
 test_that("iterate_forecast completes with all getter functions and ask_agent", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+  skip_live_agent_test()
 
   project <- set_project_info(
     project_name = "agent_iterate_complete",
@@ -502,7 +500,7 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
     fiscal_year_start = 1
   )
 
-  llm <- create_test_llm()
+  llm <- create_test_llm(live = TRUE)
 
   agent_info <- set_agent_info(
     project_info = project,
@@ -578,8 +576,6 @@ test_that("iterate_forecast completes with all getter functions and ask_agent", 
 })
 
 test_that("iterate_forecast validates parameters", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
-
   project <- set_project_info(
     project_name = "agent_iterate_validate",
     path = tempdir(),
@@ -620,7 +616,7 @@ test_that("iterate_forecast validates parameters", {
 # * Test update_forecast new combo and failure recovery handling ----
 
 test_that("update_forecast recovers failed series and forecasts new series", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+  skip_live_agent_test()
 
   project <- set_project_info(
     project_name = "agent_resolve_hash_test",
@@ -631,7 +627,7 @@ test_that("update_forecast recovers failed series and forecasts new series", {
     overwrite = TRUE
   )
 
-  llm <- create_test_llm()
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with single time series (M750)
   initial_data <- test_data_single %>%
@@ -709,7 +705,7 @@ test_that("update_forecast recovers failed series and forecasts new series", {
 # * Test update_forecast forecast approach mismatch ----
 
 test_that("update_forecast errors when forecast approach changes between runs", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+  skip_live_agent_test()
 
   project <- set_project_info(
     project_name = "agent_approach_mismatch_test",
@@ -720,7 +716,7 @@ test_that("update_forecast errors when forecast approach changes between runs", 
     overwrite = TRUE
   )
 
-  llm <- create_test_llm()
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with bottoms_up approach
   initial_data <- test_data_single %>%
@@ -1032,7 +1028,7 @@ test_that("validate_run_outputs works for global models (combo = NULL)", {
 })
 
 test_that("update_forecast completes with getter functions and ask_agent", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+  skip_live_agent_test()
 
   project <- set_project_info(
     project_name = "agent_update_complete",
@@ -1042,7 +1038,7 @@ test_that("update_forecast completes with getter functions and ask_agent", {
     date_type = "month"
   )
 
-  llm <- create_test_llm()
+  llm <- create_test_llm(live = TRUE)
 
   # Initial run with data through 2014-10-01
   initial_data <- test_data_single %>%
@@ -1154,7 +1150,7 @@ test_that("null_converter does not error for non-character scalars", {
 # * Integration test ----
 
 test_that("full agent workflow with multiple time series completes successfully", {
-  skip_if_not(has_llm_credentials(), "LLM credentials not available")
+  skip_live_agent_test()
 
   # Comprehensive integration test with 2 time series
   project <- set_project_info(
@@ -1166,7 +1162,7 @@ test_that("full agent workflow with multiple time series completes successfully"
     fiscal_year_start = 1
   )
 
-  llm <- create_test_llm()
+  llm <- create_test_llm(live = TRUE)
 
   # Step 1: Set up agent
   agent_info <- set_agent_info(

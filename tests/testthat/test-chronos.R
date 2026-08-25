@@ -744,6 +744,7 @@ test_that("chronos2_permutation_importance returns NULL when too few rows per co
 })
 
 test_that("chronos2_permutation_importance computes importance with API", {
+  skip_if_not_installed("vip", minimum_version = "0.5.0")
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 
   set.seed(42)
@@ -774,6 +775,7 @@ test_that("chronos2_permutation_importance computes importance with API", {
 })
 
 test_that("chronos2_permutation_importance works with multiple regressors", {
+  skip_if_not_installed("vip", minimum_version = "0.5.0")
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 
   set.seed(42)
@@ -811,6 +813,7 @@ test_that("chronos2_permutation_importance works with multiple regressors", {
 })
 
 test_that("chronos2_permutation_importance works with multiple combos", {
+  skip_if_not_installed("vip", minimum_version = "0.5.0")
   skip_if_not(has_chronos_credentials(), "Chronos credentials not set")
 
   set.seed(42)
