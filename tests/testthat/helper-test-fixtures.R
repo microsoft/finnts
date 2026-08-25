@@ -44,6 +44,21 @@ validate_summary_output <- function(summary_tbl, model_name) {
   testthat::expect_true("outcome" %in% summary_tbl$section, info = model_name)
 }
 
+expect_importance_output <- function(summary_tbl, model_name) {
+  testthat::skip_if_not_installed("vip", minimum_version = "0.5.0")
+
+  importance <- summary_tbl %>%
+    dplyr::filter(section == "importance")
+  importance_values <- suppressWarnings(as.numeric(importance$value))
+
+  testthat::expect_true(nrow(importance) > 0, info = model_name)
+  testthat::expect_true(all(nzchar(importance$name)), info = model_name)
+  testthat::expect_true(
+    length(importance_values) > 0 && all(is.finite(importance_values)),
+    info = model_name
+  )
+}
+
 get_model_workflow <- function(trained_tbl, model_name) {
   row <- trained_tbl %>%
     dplyr::filter(Model_Name == model_name) %>%

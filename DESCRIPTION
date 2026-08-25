@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.6.0.9054
+Version: 0.6.0.9055
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -27,6 +27,8 @@ Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.3
 Remotes:
     Nixtla/nixtlar
+Additional_repositories:
+    https://bgreenwell.r-universe.dev
 Imports: 
     callr,
     cli,
@@ -72,7 +74,7 @@ Imports:
 Suggests: 
     arrow (>= 8.0.0),
     AzureStor,
-    Boruta,
+    Boruta (>= 8.0.0),
     caret,
     corrr,
     ellmer, 
@@ -81,6 +83,7 @@ Suggests:
     Microsoft365R,
     notebookutils, 
     qs2,
+    ranger,
     reactable,
     rmarkdown,
     sparklyr,
@@ -88,7 +91,7 @@ Suggests:
     tseries,
     withr, 
     xgboost,
-    vip
+    vip (>= 0.5.0)
 Config/testthat/edition: 3
 Depends: 
     R (>= 4.0), 

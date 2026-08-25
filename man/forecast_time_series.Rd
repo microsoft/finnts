@@ -146,7 +146,10 @@ date types.}
 \item{max_model_average}{Max number of models to average together. Will create model averages for 2 models up until input value
 or max number of models ran.}
 
-\item{feature_selection}{Implement feature selection before model training}
+\item{feature_selection}{Implement feature selection before model training.
+This requires the optional \code{Boruta}, \code{corrr}, \code{ranger}, and \code{vip} packages.
+\code{vip} is available from \url{https://bgreenwell.r-universe.dev} and requires R
+4.1 or newer.}
 
 \item{weekly_to_daily}{If TRUE, convert a week forecast down to day by evenly splitting across each day of week. Helps when aggregating
 up to higher temporal levels like month or quarter.}

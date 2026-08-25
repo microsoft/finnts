@@ -31,7 +31,10 @@ local models.}
 
 \item{global_model_recipes}{Recipes to use in global models.}
 
-\item{feature_selection}{Implement feature selection before model training}
+\item{feature_selection}{Implement feature selection before model training.
+This requires the optional \code{Boruta}, \code{corrr}, \code{ranger}, and \code{vip} packages.
+\code{vip} is available from \url{https://bgreenwell.r-universe.dev} and requires R
+4.1 or newer.}
 
 \item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 

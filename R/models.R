@@ -800,6 +800,19 @@ glmnet <- function(train_data,
   return(wflw_spec_glmnet)
 }
 
+#' Automatic MARS pruning methods
+#'
+#' Cross-validation pruning requires engine-level fold configuration and is
+#' intentionally reserved for explicit model specifications.
+#'
+#' @return A qualitative parameter containing supported automatic methods.
+#' @noRd
+mars_automatic_prune_method <- function() {
+  dials::prune_method(
+    values = c("backward", "none", "exhaustive", "forward", "seqrep")
+  )
+}
+
 #' MARS Model Spec
 #'
 #' @param train_data input data

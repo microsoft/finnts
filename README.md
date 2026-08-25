@@ -34,6 +34,22 @@ To get a bug fix or to use a feature from the development version, you can insta
 devtools::install_github("microsoft/finnts")
 ```
 
+### Optional variable importance support
+
+Feature selection uses the optional `Boruta`, `corrr`, `ranger`, and `vip` packages. Model-summary variable importance uses `vip` 0.5.0 or newer. Because `vip` is distributed from its maintainer's r-universe repository, install the optional stack separately when you need those capabilities:
+
+``` r
+install.packages(
+  c("Boruta", "corrr", "ranger", "vip"),
+  repos = c(
+    "https://bgreenwell.r-universe.dev",
+    "https://cloud.r-project.org"
+  )
+)
+```
+
+`vip` 0.5.0 requires R 4.1 or newer. FinnTS still installs and runs its default forecasting workflows without these optional packages: requesting feature selection reports which dependency to install, while model summaries omit only variable-importance rows when `vip` is unavailable.
+
 ## Usage
 
 ``` r

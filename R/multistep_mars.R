@@ -325,13 +325,26 @@ mars_multistep_fit_impl <- function(x, y,
   models <- list()
   model_predictions <- list()
 
-  mars_reg_spec <- parsnip::mars(
-    mode = "regression",
-    num_terms = nprune,
-    prod_degree = degree,
-    prune_method = pmethod
-  ) %>%
-    parsnip::set_engine("earth")
+  uses_cross_validation <- identical(as.character(pmethod), "cv")
+
+  if (uses_cross_validation) {
+    nfold <- min(5L, nrow(xreg_tbl))
+    if (nfold < 2L) {
+      stop(
+        "MARS cross-validation pruning requires at least two training rows.",
+        call. = FALSE
+      )
+    }
+  } else {
+    mars_reg_spec <- parsnip::mars(
+      mode = "regression",
+      num_terms = nprune,
+      prod_degree = degree,
+      prune_method = pmethod
+    )
+    mars_reg_spec <- mars_reg_spec %>%
+      parsnip::set_engine("earth")
+  }
 
   for (lag in get_multi_lags(lag_periods, forecast_horizon)) {
     # get final features based on lag
@@ -358,15 +371,28 @@ mars_multistep_fit_impl <- function(x, y,
         )
     }
 
-    combined_df <- xreg_tbl_final %>%
-      dplyr::mutate(Target = outcome)
-
     # fit model
-    fit_mars <- mars_reg_spec %>%
-      generics::fit(Target ~ ., data = combined_df)
+    if (uses_cross_validation) {
+      earth_args <- list(
+        x = as.matrix(xreg_tbl_final),
+        y = outcome,
+        degree = degree,
+        pmethod = pmethod,
+        nfold = nfold
+      )
+      if (!is.null(nprune)) {
+        earth_args$nprune <- nprune
+      }
+      fit_mars <- do.call(earth::earth, earth_args)
+    } else {
+      combined_df <- xreg_tbl_final %>%
+        dplyr::mutate(Target = outcome)
+      fit_mars <- mars_reg_spec %>%
+        generics::fit(Target ~ ., data = combined_df)
+    }
 
     # create prediction
-    mars_fitted <- predict(fit_mars, combined_df)
+    mars_fitted <- predict(fit_mars, xreg_tbl_final)
 
     # append outputs
     element_name <- paste0("model_lag_", lag)
