@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
       </span>
     </div>
 
@@ -111,7 +111,7 @@ It checks for existing runs and allows for overwriting if specified.</p>
     <div id="ref-usage">
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">set_agent_info</span><span class="op">(</span></span>
 <span>  <span class="va">project_info</span>,</span>
-<span>  <span class="va">driver_llm</span>,</span>
+<span>  <span class="va">llm</span>,</span>
 <span>  <span class="va">input_data</span>,</span>
 <span>  <span class="va">forecast_horizon</span>,</span>
 <span>  external_regressors <span class="op">=</span> <span class="cn">NULL</span>,</span>
@@ -124,7 +124,6 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <span>  negative_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  run_global_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  reason_llm <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  overwrite <span class="op">=</span> <span class="cn">FALSE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
@@ -137,8 +136,8 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <dd><p>A Finn project from <code><a href="set_project_info.html">set_project_info()</a></code></p></dd>
 
 
-<dt id="arg-driver-llm">driver_llm<a class="anchor" aria-label="anchor" href="#arg-driver-llm"></a></dt>
-<dd><p>A Chat LLM object</p></dd>
+<dt id="arg-llm">llm<a class="anchor" aria-label="anchor" href="#arg-llm"></a></dt>
+<dd><p>A Chat LLM object used as the template for isolated agent sessions</p></dd>
 
 
 <dt id="arg-input-data">input_data<a class="anchor" aria-label="anchor" href="#arg-input-data"></a></dt>
@@ -192,10 +191,6 @@ except week and day.</p></dd>
 local models. Default is TRUE.</p></dd>
 
 
-<dt id="arg-reason-llm">reason_llm<a class="anchor" aria-label="anchor" href="#arg-reason-llm"></a></dt>
-<dd><p>Optional Chat LLM object for reasoning tasks</p></dd>
-
-
 <dt id="arg-overwrite">overwrite<a class="anchor" aria-label="anchor" href="#arg-overwrite"></a></dt>
 <dd><p>Logical indicating whether to overwrite existing agent run info</p></dd>
 
@@ -223,12 +218,12 @@ local models. Default is TRUE.</p></dd>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># set up LLM</span></span></span>
-<span class="r-in"><span><span class="va">driver_llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></span>
+<span class="r-in"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="co"># set up agent info</span></span></span>
 <span class="r-in"><span><span class="va">agent_info</span> <span class="op">&lt;-</span> <span class="fu">set_agent_info</span><span class="op">(</span></span></span>
 <span class="r-in"><span>  project_info <span class="op">=</span> <span class="va">project</span>,</span></span>
-<span class="r-in"><span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span></span>
+<span class="r-in"><span>  llm <span class="op">=</span> <span class="va">llm</span>,</span></span>
 <span class="r-in"><span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span></span>
 <span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>

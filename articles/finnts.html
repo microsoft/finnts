@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
       </span>
     </div>
 
@@ -221,7 +221,7 @@ the <a href="https://ellmer.tidyverse.org/index.html" class="external-link">ellm
 package.</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># connect to LLM via Azure AI</span></span>
-<span><span class="va">driver_llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
 <p>Now we can use that LLM inside of our agent when setting it up.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># set up new forecast project and agent run</span></span>
@@ -234,7 +234,7 @@ package.</p>
 <span></span>
 <span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
-<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
 <span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">12</span>,</span>
 <span>  hist_end_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2014-12-01"</span><span class="op">)</span></span>
@@ -319,7 +319,7 @@ failed series), the run will error and direct you to use
 <span><span class="co"># overwrite creates a new version of the agent, which is required when running update_forecast()</span></span>
 <span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
-<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
 <span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span>,</span>
 <span>  hist_end_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2015-06-01"</span><span class="op">)</span>,</span>

@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
       </span>
     </div>
 
@@ -138,6 +138,12 @@
 </li>
 </ul></div>
 <div class="section level3">
+<h3 id="parallel-test-caveat">Parallel test caveat<a class="anchor" aria-label="anchor" href="#parallel-test-caveat"></a></h3>
+<ul><li>
+<code>devtools::test()</code> runs against <code>pkgload::load_all()</code>, which does not always expose non-exported package helpers to PSOCK <code>foreach</code> workers like an installed package namespace does.</li>
+<li>A test-only <code>.export</code> may therefore be needed even when production code does not need one. Before adding <code>.export</code> to production for a missing-helper error, install the current source into a temporary library and reproduce the same <code>foreach</code> call from the installed namespace.</li>
+</ul></div>
+<div class="section level3">
 <h3 id="test-profiles-and-runtime">Test profiles and runtime<a class="anchor" aria-label="anchor" href="#test-profiles-and-runtime"></a></h3>
 <ul><li>The CRAN profile is deterministic and must never call live LLM or foundation-model endpoints, even when credentials are present.</li>
 <li>Simulate CRAN skips with <code>R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'</code>.</li>
@@ -192,6 +198,7 @@
 <h2 id="coding-conventions">Coding conventions<a class="anchor" aria-label="anchor" href="#coding-conventions"></a></h2>
 <ul><li>Prefer small, composable functions.</li>
 <li>Keep exported functions stable; introduce breaking changes only as a last resort, <strong>ask before adding</strong>, with an explicit note in NEWS.</li>
+<li>Agent workflows accept one <code>llm</code> Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&amp;A. Never mutate the template. For parallel forecasts, let <code>foreach</code> serialize the template and use the public <code>Chat$clone(deep = TRUE)</code> method inside each series workflow after it reaches the worker. A series session may persist across its own iterations but must never be shared across series. Parallel workflows require ellmer 0.4.0 or later in the main process and every worker; do not call internal ellmer constructors or mutate provider credential fields.</li>
 <li>Prefer base R and packages already declared in <code>Depends</code>, <code>Imports</code>, or <code>Suggests</code> before adding a dependency.</li>
 <li>A new package dependency is allowed only for a concrete new feature when existing dependencies and a small, maintainable custom implementation are inadequate, unsafe, or would recreate substantial mature functionality.</li>
 <li>Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers. Do not vendor third-party source code.</li>

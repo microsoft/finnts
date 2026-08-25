@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
       </span>
     </div>
 
@@ -297,19 +297,16 @@ them used in forecasting).</li>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/mutate.html" class="external-link">mutate</a></span><span class="op">(</span>id <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/character.html" class="external-link">as.character</a></span><span class="op">(</span><span class="va">id</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
-<h3 id="define-the-llms">3) Define the LLMs<a class="anchor" aria-label="anchor" href="#define-the-llms"></a>
+<h3 id="define-the-llm">3) Define the LLM<a class="anchor" aria-label="anchor" href="#define-the-llm"></a>
 </h3>
-<ul>
-<li>
-<code>driver_llm</code>: executes the workflow via tool
-calling.</li>
-<li>
-<code>reason_llm</code> (optional): does the chain-of-thought style
-reasoning / EDA digestion to choose Finn run inputs step-by-step.</li>
-</ul>
+<p><code>llm</code> is an ellmer Chat that Finn uses as a configuration
+template. Finn never mutates this template. It creates an isolated,
+empty-history session for each forecast series and each
+<code><a href="../reference/ask_agent.html">ask_agent()</a></code> request, so one modern model can perform both
+forecast input selection and results analysis without conversation
+history leaking between workflows.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">driver_llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span>
-<span><span class="va">reason_llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"o4-mini"</span><span class="op">)</span> <span class="co"># can be the same or a more advanced reasoning model</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level3">
 <h3 id="create-the-agent-run">4) Create the agent run<a class="anchor" aria-label="anchor" href="#create-the-agent-run"></a>
@@ -317,8 +314,7 @@ reasoning / EDA digestion to choose Finn run inputs step-by-step.</li>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
-<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
-<span>  reason_llm <span class="op">=</span> <span class="va">reason_llm</span>, <span class="co"># optional but recommended</span></span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
 <span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span>, <span class="co"># number of future periods</span></span>
 <span>  external_regressors <span class="op">=</span> <span class="cn">NULL</span>, <span class="co"># e.g., c("Price","Promo")</span></span>
@@ -486,8 +482,7 @@ and create a <strong>new agent run</strong> with updated
 <span></span>
 <span><span class="va">agent2</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
-<span>  driver_llm <span class="op">=</span> <span class="va">driver_llm</span>,</span>
-<span>  reason_llm <span class="op">=</span> <span class="va">reason_llm</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
 <span>  input_data <span class="op">=</span> <span class="va">hist_data2</span>,</span>
 <span>  forecast_horizon <span class="op">=</span> <span class="fl">6</span>,</span>
 <span>  overwrite <span class="op">=</span> <span class="cn">TRUE</span> <span class="co"># required to create a new agent version when running update_forecast()</span></span>
@@ -593,6 +588,12 @@ Processing”</strong> vignette).<br>
 <code>num_cores = NULL</code> defaults to <em>all cores minus
 one</em>.</li>
 </ul>
+<p>Every time-series combo receives independent driver and reasoning
+Chat objects with empty conversation history, whether execution is
+sequential or parallel. Parallel runs require ellmer 0.4.0 or later on
+the driver and every worker; Finn serializes the configured Chats
+through <code>foreach</code> before creating the per-combo deep
+clones.</p>
 <hr>
 </div>
 <div class="section level2">

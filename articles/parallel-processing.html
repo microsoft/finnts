@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9055</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
       </span>
     </div>
 
@@ -149,6 +149,29 @@ sequentially but the hyperparameter tuning, model refitting, and model
 averaging is ran in parallel. This works great for data that has a
 limited number of time series where you want to run a lot of back
 testing and build dozens of models within Finn.</p>
+</div>
+<div class="section level2">
+<h2 id="parallel-ai-agent-workflows">Parallel AI Agent Workflows<a class="anchor" aria-label="anchor" href="#parallel-ai-agent-workflows"></a>
+</h2>
+<p><code><a href="../reference/set_agent_info.html">set_agent_info()</a></code> accepts one <code>llm</code> Chat as an
+immutable configuration template. Every <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>
+time-series combo receives an independent, empty-history session cloned
+from that template, whether combos run sequentially or in parallel. For
+parallel execution, Finn sends the template through the standard
+<code>foreach</code> serialization path and creates each deep clone
+inside the series workflow after it reaches the worker. A session
+persists across iterations for its own series but is never shared with
+another series.</p>
+<p>Parallel runs require ellmer 0.4.0 or later in the main process and
+every worker R library. The public <code>Chat$clone(deep = TRUE)</code>
+method preserves the provider, model, parameters, tools, and credentials
+without rebuilding Chat objects through internal ellmer APIs. With Azure
+OpenAI API-key authentication, the default ellmer 0.4 credential
+callback is serialized with the template, so worker task payloads must
+be treated as sensitive. A custom <code>credentials</code> callback that
+reads an environment variable or obtains a token at request time
+requires that credential source to be available from every worker
+process.</p>
 </div>
 <div class="section level2">
 <h2 id="within-azure-using-spark">Within Azure using Spark<a class="anchor" aria-label="anchor" href="#within-azure-using-spark"></a>
