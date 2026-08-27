@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
       </span>
     </div>
 
@@ -115,6 +115,7 @@
 <div class="section level2">
 <h2 id="notes">Notes<a class="anchor" aria-label="anchor" href="#notes"></a></h2>
 <ul><li>Agent code must treat <code>agent_info$llm</code> as an immutable Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&amp;A. Parallel code must clone inside the series workflow after <code>foreach</code> dispatch, preserve the ellmer 0.4+ serialization path, and avoid internal ellmer APIs or provider credential mutation.</li>
+<li>Keep <code>nixtlar</code> optional in <code>Suggests</code>: TimeGPT requires R 4.1 or newer, while core FinnTS workflows must remain installable and loadable on R 4.0 without it.</li>
 <li>PSOCK tests under <code>devtools::test()</code> may need a test-only <code>.export</code> for internal helpers because <code>pkgload::load_all()</code> differs from an installed namespace. Verify the installed package in a temporary library before adding <code>.export</code> to production code.</li>
 <li>If this repo grows, move large topic rules into <code>.claude/rules/*.md</code> (testing, style, release).</li>
 </ul></div>

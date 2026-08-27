@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.6.0.9056" id="finnts-0609056-development-version">finnts 0.6.0.9056 (development version)<a class="anchor" aria-label="anchor" href="#finnts-0609056-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0" id="finnts-070">finnts 0.7.0<small>2026-08-27</small><a class="anchor" aria-label="anchor" href="#finnts-070"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-6-0-9056">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-6-0-9056"></a></h3>
+<h3 id="improvements-0-7-0">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0"></a></h3>
 <ul><li>
 <p>New AI Agent Capabilities</p>
 <ul><li>
@@ -147,6 +147,7 @@
 <li>Enabled TimeGPT as a global model</li>
 <li>Added support for padding time series that don’t meet minimum data requirements</li>
 <li>Integrated TimeGPT into the finn agent workflow</li>
+<li>Declared <code>nixtlar</code> as an optional dependency. TimeGPT requires R 4.1 or newer, while core FinnTS workflows remain available on R 4.0.</li>
 </ul></li>
 <li>
 <p>Updated Train Model function</p>
@@ -166,7 +167,7 @@
 <li><p>Updated optional variable-importance support for <code>vip</code> 0.5.0. <code>vip</code> remains in <code>Suggests</code> and is resolved from its maintainer’s r-universe repository. <code>ranger</code> is now declared directly in <code>Suggests</code>, and Boruta feature selection uses Boruta’s ranger adapter to preserve behavior after Boruta 10.0 changed its default importance provider. FinnTS continues to install and run without these optional packages: feature selection now fails early with installation guidance, while model summaries retain all sections except variable importance.</p></li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-6-0-9056">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-6-0-9056"></a></h3>
+<h3 id="bug-fixes-0-7-0">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0"></a></h3>
 <ul><li>Prevented random MARS tuning failures when <code>prune_method = "cv"</code> was selected without the required folds. Automatic grids now use the five non-CV pruning methods, while explicit multistep CV pruning supplies a bounded fold count.</li>
 <li>Fixed <code>subscript out of bounds</code> failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. <code>read.csv</code> vs <code>vroom</code>), so input data, EDA, and forecast outputs resolve to the same file.</li>
 <li>Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.</li>
@@ -190,7 +191,7 @@
 <li>Custom multistep <code>lag_periods</code> now propagate consistently through feature engineering, feature selection, model training, and forecast updates. Lag lists that do not cover the forecast horizon automatically include the horizon as a final boundary.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="breaking-changes-0-6-0-9056">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-6-0-9056"></a></h3>
+<h3 id="breaking-changes-0-7-0">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-7-0"></a></h3>
 <ul><li>
 <code>experiment_name</code> within <code><a href="../reference/set_run_info.html">set_run_info()</a></code> has been changed to <code>project_name</code> to comply with new AI agent capabilities.</li>
 <li>Migrated from the <code>qs</code> package to <a href="https://CRAN.R-project.org/package=qs2" class="external-link"><code>qs2</code></a> for fast object serialization. The <code>qs2</code> package is actively maintained and CRAN-ready with improved compression. Files previously saved with <code>qs</code> format cannot be read by <code>qs2</code>; any cached <code>.qs</code> files from prior runs will need to be regenerated.</li>

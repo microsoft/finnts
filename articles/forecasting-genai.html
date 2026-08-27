@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
       </span>
     </div>
 
@@ -533,9 +533,9 @@ API</a></li>
 <h4 id="option-b-using-nixtlar-helper">Option B: Using nixtlar helper<a class="anchor" aria-label="anchor" href="#option-b-using-nixtlar-helper"></a>
 </h4>
 <div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
+<code class="sourceCode R"><span><span class="co"># install.packages("nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://nixtla.github.io/nixtlar/reference/nixtla_client_setup.html" class="external-link">nixtla_client_setup</a></span><span class="op">(</span></span>
+<span><span class="fu">nixtla_client_setup</span><span class="op">(</span></span>
 <span>  base_url <span class="op">=</span> <span class="st">"Base URL here"</span>,</span>
 <span>  api_key <span class="op">=</span> <span class="st">"API key here"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -555,9 +555,9 @@ API</a></li>
 <h4 id="option-b-using-nixtlar-helper-1">Option B: Using nixtlar helper<a class="anchor" aria-label="anchor" href="#option-b-using-nixtlar-helper-1"></a>
 </h4>
 <div class="sourceCode" id="cb13"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
+<code class="sourceCode R"><span><span class="co"># install.packages("nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://nixtla.github.io/nixtlar/reference/nixtla_set_api_key.html" class="external-link">nixtla_set_api_key</a></span><span class="op">(</span>api_key <span class="op">=</span> <span class="st">"Your API key here"</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">nixtla_set_api_key</span><span class="op">(</span>api_key <span class="op">=</span> <span class="st">"Your API key here"</span><span class="op">)</span></span></code></pre></div>
 </div>
 </div>
 </div>
@@ -565,13 +565,13 @@ API</a></li>
 <h2 id="quick-start-with-nixtlar-standalone">Quick start with nixtlar (standalone)<a class="anchor" aria-label="anchor" href="#quick-start-with-nixtlar-standalone"></a>
 </h2>
 <div class="sourceCode" id="cb14"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="co"># devtools::install_github("Nixtla/nixtlar")</span></span>
+<code class="sourceCode R"><span><span class="co"># install.packages("nixtlar")</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://nixtla.github.io/nixtlar/" class="external-link">nixtlar</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu">nixtlar</span><span class="fu">::</span><span class="va"><a href="https://nixtla.github.io/nixtlar/reference/electricity.html" class="external-link">electricity</a></span></span>
+<span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu">nixtlar</span><span class="fu">::</span><span class="va">electricity</span></span>
 <span></span>
 <span><span class="co"># Forecast next 8 steps</span></span>
-<span><span class="va">fcst</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://nixtla.github.io/nixtlar/reference/nixtla_client_forecast.html" class="external-link">nixtla_client_forecast</a></span><span class="op">(</span></span>
+<span><span class="va">fcst</span> <span class="op">&lt;-</span> <span class="fu">nixtla_client_forecast</span><span class="op">(</span></span>
 <span>  <span class="va">df</span>,</span>
 <span>  h <span class="op">=</span> <span class="fl">8</span>,</span>
 <span>  level <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">80</span>, <span class="fl">95</span><span class="op">)</span>,</span>

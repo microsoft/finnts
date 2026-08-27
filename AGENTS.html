@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.6.0.9056</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
       </span>
     </div>
 
@@ -127,6 +127,13 @@
 <li>Feature selection may require <code>vip</code> and must fail early with actionable installation guidance when it is unavailable.</li>
 <li>Model summaries must retain non-importance sections without <code>vip</code>; only variable-importance output may be omitted.</li>
 <li>Keep both maintained-<code>vip</code> compatibility coverage and the explicit CI check without any feature-selection packages.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="optional-timegpt-dependency">Optional TimeGPT dependency<a class="anchor" aria-label="anchor" href="#optional-timegpt-dependency"></a></h3>
+<ul><li>
+<code>nixtlar</code> is a suggested package from CRAN and requires R 4.1 or newer.</li>
+<li>Keep <code>nixtlar</code> in <code>Suggests</code> so FinnTS core workflows continue to install and run on R 4.0 without TimeGPT.</li>
+<li>FinnTS must install, load, and pass its CRAN-style check without <code>nixtlar</code>; selecting TimeGPT must report the missing engine dependency while other models remain available.</li>
 </ul></div>
 <div class="section level3">
 <h3 id="dev-loop">Dev loop<a class="anchor" aria-label="anchor" href="#dev-loop"></a></h3>
