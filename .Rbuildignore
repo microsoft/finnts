@@ -13,3 +13,6 @@ cran-comments.md
 ^CRAN-SUBMISSION$
 ^\.positai$
 ^\.claude$
+^\.codex$
+^AGENTS\.md$
+^CLAUDE\.md$

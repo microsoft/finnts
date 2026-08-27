@@ -354,7 +354,7 @@ Sys.setenv(NIXTLA_API_KEY = "your_api_key_here")
 
 #### Option B: Using nixtlar helper
 ```{r eval=FALSE}
-# devtools::install_github("Nixtla/nixtlar")
+# install.packages("nixtlar")
 library(nixtlar)
 nixtla_client_setup(
   base_url = "Base URL here",
@@ -373,7 +373,7 @@ Sys.setenv(NIXTLA_API_KEY = "your_api_key_here")
 
 #### Option B: Using nixtlar helper
 ```{r eval=FALSE}
-# devtools::install_github("Nixtla/nixtlar")
+# install.packages("nixtlar")
 library(nixtlar)
 nixtla_set_api_key(api_key = "Your API key here")
 ```
@@ -383,7 +383,7 @@ nixtla_set_api_key(api_key = "Your API key here")
 ## Quick start with nixtlar (standalone)
 
 ```{r eval=FALSE}
-# devtools::install_github("Nixtla/nixtlar")
+# install.packages("nixtlar")
 library(nixtlar)
 
 df <- nixtlar::electricity
