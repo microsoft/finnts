@@ -1,9 +1,19 @@
 ## R CMD check results
-There were no ERRORs or WARNINGs. 
+There were no ERRORs or WARNINGs.
 
-There was 1 NOTE:
+There were 3 NOTEs:
 
-* checking dependencies in R code ... NOTE
+* checking CRAN incoming feasibility ... NOTE
+  Suggests or Enhances not in mainstream repositories:
+    vip
+  Availability using Additional_repositories specification:
+    vip   yes   https://bgreenwell.r-universe.dev
+
+  `vip` is an optional feature-selection dependency available from the
+  maintainer's CRAN-like r-universe repository declared in DESCRIPTION. Its
+  optional use and the checks performed without it are described below.
+
+* checking package dependencies ... NOTE
   Imports includes 39 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
@@ -11,7 +21,13 @@ There was 1 NOTE:
 
   This package does leverage many outside packages. The main feature of this package is 
   that it consolidates a lot of different models into one package to run them automatically. 
-  So having many required packages is important to the package. 
+  So having many required packages is important to the package.
+
+* checking for future file timestamps ... NOTE
+  unable to verify current time
+
+  The check host was unable to verify its current time. No future-dated
+  package files were reported.
 
 ## Optional suggested package
 

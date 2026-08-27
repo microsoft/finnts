@@ -28,6 +28,11 @@ Prefer the repo's existing dependency workflow:
 - Model summaries must retain non-importance sections without `vip`; only variable-importance output may be omitted.
 - Keep both maintained-`vip` compatibility coverage and the explicit CI check without any feature-selection packages.
 
+### Optional TimeGPT dependency
+- `nixtlar` is a suggested package from CRAN and requires R 4.1 or newer.
+- Keep `nixtlar` in `Suggests` so FinnTS core workflows continue to install and run on R 4.0 without TimeGPT.
+- FinnTS must install, load, and pass its CRAN-style check without `nixtlar`; selecting TimeGPT must report the missing engine dependency while other models remain available.
+
 ### Dev loop
 - Document (roxygen): `R -q -e 'devtools::document()'`
 - Run tests: `R -q -e 'devtools::test()'`

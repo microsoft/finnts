@@ -1,4 +1,4 @@
-# finnts 0.6.0.9056 (development version)
+# finnts 0.7.0
 
 ## Improvements
 
@@ -37,6 +37,7 @@
   - Enabled TimeGPT as a global model
   - Added support for padding time series that don't meet minimum data requirements
   - Integrated TimeGPT into the finn agent workflow
+  - Declared `nixtlar` as an optional dependency. TimeGPT requires R 4.1 or newer, while core FinnTS workflows remain available on R 4.0.
 
 - Updated Train Model function
   - Added debug arg to trace error while training over various models

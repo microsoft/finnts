@@ -173,7 +173,7 @@ timesfm_model_fit_impl <- function(
 timesfm_model_predict_impl <- function(object, new_data, ...) {
   full_train_df <- object$train_data
   test_start <- min(new_data$Date, na.rm = TRUE)
-  train_df <- full_train_df |> dplyr::filter(Date < test_start)
+  train_df <- dplyr::filter(full_train_df, Date < test_start)
 
   num_combos_in_new <- length(unique(new_data$Combo))
 
