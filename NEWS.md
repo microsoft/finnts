@@ -1,3 +1,9 @@
+# finnts 0.7.0.9000
+
+## Bug Fixes
+
+-   Fixed agent duplicate-run detection so `NULL` defaults and equivalent explicit values compare as the same settings. Order-insensitive multipart settings such as `3---6---9` and `9---6---3` are also treated as equivalent, preventing redundant forecast iterations.
+
 # finnts 0.7.0
 
 ## Improvements
