@@ -463,6 +463,88 @@ eda_agent_workflow <- function(agent_info,
   run_graph(workflow_llm, workflow)
 }
 
+#' Summarize outlier scan results
+#'
+#' @param outlier_scan per-combo outlier scan results
+#'
+#' @return one-row outlier summary
+#' @noRd
+summarize_outlier_scan <- function(outlier_scan) {
+  outlier_scan %>%
+    dplyr::summarise(
+      total_rows = sum(total_rows, na.rm = TRUE),
+      outlier_count = sum(outlier_count, na.rm = TRUE),
+      first_outlier_dt = {
+        dates <- sort(unique(as.character(first_outlier_dt[!is.na(first_outlier_dt)])))
+        if (length(dates) == 0) NA_character_ else dates[[1]]
+      },
+      last_outlier_dt = {
+        dates <- sort(unique(as.character(last_outlier_dt[!is.na(last_outlier_dt)])))
+        if (length(dates) == 0) NA_character_ else dates[[length(dates)]]
+      },
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      outlier_pct = ifelse(total_rows == 0, NA_real_, outlier_count / total_rows * 100),
+      .after = outlier_count
+    )
+}
+
+#' Return a finite numeric EDA summary
+#'
+#' @param x numeric values
+#' @param summary_fn summary function
+#'
+#' @return rounded summary or `NA_real_` when no finite values exist
+#' @noRd
+safe_eda_numeric_summary <- function(x,
+                                     summary_fn) {
+  values <- as.numeric(x)
+  values <- values[is.finite(values)]
+
+  if (length(values) == 0) {
+    return(NA_real_)
+  }
+
+  round(summary_fn(values), 2)
+}
+
+#' Summarize external regressor scan results
+#'
+#' @param xreg_scan per-combo distance-correlation results
+#'
+#' @return summary containing only regressor-lag groups with finite results
+#' @noRd
+summarize_xreg_scan <- function(xreg_scan) {
+  xreg_scan %>%
+    dplyr::group_by(Regressor, Lag) %>%
+    dplyr::summarise(
+      Avg_dCor = safe_eda_numeric_summary(dCor, mean),
+      Median_dCor = safe_eda_numeric_summary(dCor, stats::median),
+      Max_dCor = safe_eda_numeric_summary(dCor, max),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(!is.na(.data$Max_dCor)) %>%
+    dplyr::arrange(dplyr::desc(.data$Avg_dCor))
+}
+
+#' Format a scalar EDA result
+#'
+#' @param x scalar result
+#' @param missing_text text to use for a missing or non-finite result
+#'
+#' @return formatted character value
+#' @noRd
+format_eda_result <- function(x,
+                              missing_text) {
+  if (length(x) == 0 || is.na(x[[1]]) ||
+    (is.numeric(x[[1]]) && !is.finite(x[[1]]))) {
+    return(missing_text)
+  }
+
+  as.character(x[[1]])
+}
+
 #' Load EDA results for a specific agent run for iterate forecast reasoning
 #'
 #' @param agent_info agent information list
@@ -664,28 +746,23 @@ load_eda_results <- function(agent_info,
     return_type = "df"
   )
 
-  if (is.null(combo)) {
-    outlier_scan <- outlier_scan %>%
-      dplyr::group_by() %>%
-      dplyr::summarise(
-        total_rows = sum(total_rows, na.rm = TRUE),
-        outlier_count = sum(outlier_count, na.rm = TRUE),
-        outlier_pct = outlier_count / total_rows * 100, ,
-        first_outlier_dt = min(first_outlier_dt, na.rm = TRUE),
-        last_outlier_dt = max(last_outlier_dt, na.rm = TRUE),
-        .groups = "drop"
-      )
-  } else {
-    outlier_scan <- outlier_scan %>%
-      dplyr::select(-Combo)
-  }
+  outlier_scan <- summarize_outlier_scan(outlier_scan)
+
+  first_outlier_dt <- format_eda_result(
+    outlier_scan$first_outlier_dt,
+    "None observed"
+  )
+  last_outlier_dt <- format_eda_result(
+    outlier_scan$last_outlier_dt,
+    "None observed"
+  )
 
   outlier_scan_prompt <-
     glue::glue("Outlier Scan Results:
                 - Outlier Count: {outlier_scan$outlier_count}
                 - Outlier Percent: {round(outlier_scan$outlier_pct)}%
-                - First Outlier Date: {outlier_scan$first_outlier_dt}
-                - Last Outlier Date: {outlier_scan$last_outlier_dt}
+                - First Outlier Date: {first_outlier_dt}
+                - Last Outlier Date: {last_outlier_dt}
                 ")
 
   # seasonality scan
@@ -762,24 +839,21 @@ load_eda_results <- function(agent_info,
     )
 
     if (is.null(combo)) {
-      xreg_scan <- xreg_scan %>%
-        dplyr::group_by(Regressor, Lag) %>%
-        dplyr::summarise(
-          Avg_dCor = round(mean(dCor, na.rm = TRUE), 2),
-          Median_dCor = round(median(dCor, na.rm = TRUE), 2),
-          Max_dCor = round(max(dCor, na.rm = TRUE), 2),
-          .groups = "drop"
-        ) %>%
-        dplyr::arrange(dplyr::desc(Avg_dCor))
+      xreg_scan <- summarize_xreg_scan(xreg_scan)
     } else {
       xreg_scan <- xreg_scan %>%
-        dplyr::select(-Combo)
+        dplyr::select(-Combo) %>%
+        dplyr::filter(is.finite(.data$dCor))
     }
 
-    xreg_scan_prompt <-
-      glue::glue("External Regressor Scan Results:
-                  {make_pipe_table(xreg_scan)}
-                  ")
+    if (nrow(xreg_scan) == 0) {
+      xreg_scan_prompt <- "External Regressor Scan Results:\nNo finite distance correlations were available."
+    } else {
+      xreg_scan_prompt <-
+        glue::glue("External Regressor Scan Results:
+                    {make_pipe_table(xreg_scan)}
+                    ")
+    }
   }
 
   # combine all prompts into one overall prompt using glue

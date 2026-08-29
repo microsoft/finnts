@@ -34,7 +34,9 @@ prep_data(
 \item{run_info}{Run info using \code{\link[=set_run_info]{set_run_info()}}}
 
 \item{input_data}{A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
-Can also include external regressors for both historical and future data.}
+Can also include external regressors for both historical and future data.
+Leading and trailing whitespace in character combo-variable values is
+removed before Finn creates internal series identifiers.}
 
 \item{combo_variables}{List of column headers within input data to be used to separate individual time series.}
 

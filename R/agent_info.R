@@ -6,7 +6,9 @@
 #'
 #' @param project_info A Finn project from `set_project_info()`
 #' @param llm A Chat LLM object used as the template for isolated agent sessions
-#' @param input_data A data frame or tibble containing the input data
+#' @param input_data A data frame or tibble containing the input data. Leading
+#'   and trailing whitespace in character combo-variable values is removed
+#'   before Finn creates internal series identifiers and writes input artifacts.
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
 #' @param hist_end_date Optional Date object indicating the end of the historical data
@@ -89,6 +91,11 @@ set_agent_info <- function(project_info,
   check_input_type("run_global_models", run_global_models, c("NULL", "logical"))
   check_input_type("run_local_models", run_local_models, "logical")
   check_input_type("overwrite", overwrite, "logical")
+
+  input_data <- normalize_combo_values(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
 
   check_input_data(
     input_data,

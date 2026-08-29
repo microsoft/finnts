@@ -261,7 +261,8 @@ get_prepped_data <- function(run_info,
     tidyr::separate(
       col = Combo,
       into = combo_variables,
-      remove = FALSE
+      remove = FALSE,
+      sep = "--"
     ) %>%
     base::suppressWarnings()
 
@@ -602,6 +603,8 @@ download_file <- function(storage_object,
 #' @param file_list files
 #' @param return_type type of data output read
 #' @param schema column schema for arrow::open_dataset()
+#' @param allow_missing whether a missing optional artifact returns an empty
+#'   result instead of an error
 #'
 #' @return file read into memory
 #' @noRd
@@ -609,7 +612,8 @@ read_file <- function(run_info,
                       path = NULL,
                       file_list = NULL,
                       return_type = "df",
-                      schema = NULL) {
+                      schema = NULL,
+                      allow_missing = FALSE) {
   storage_object <- run_info$storage_object
 
   if (!is.null(path)) {
@@ -629,6 +633,28 @@ read_file <- function(run_info,
     files <- list_files(storage_object, fs::path(final_path, file))
   } else {
     files <- list_files(storage_object, fs::path(initial_path, path))
+  }
+
+  files <- as.character(files)
+  files <- files[!is.na(files) & nzchar(files)]
+
+  if (length(files) == 0) {
+    if (allow_missing) {
+      if (return_type == "df") {
+        return(tibble::tibble())
+      }
+
+      return(NULL)
+    }
+
+    stop(
+      paste0(
+        "No files matched the requested Finn artifact. ",
+        "The artifact may be missing, incomplete, or stored under an inconsistent cached identifier. ",
+        "Start a new run or regenerate the missing workflow step before retrying."
+      ),
+      call. = FALSE
+    )
   }
 
   if (!is.null(file_list)) {
