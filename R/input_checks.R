@@ -12,6 +12,81 @@ normalize_log_df <- function(df) {
   data.frame(df, stringsAsFactors = FALSE)
 }
 
+#' Find character-like combo variables
+#'
+#' @param input_data input data
+#' @param combo_variables combo variable names
+#'
+#' @return character vector of character-like combo variable names
+#' @noRd
+character_combo_variables <- function(input_data,
+                                      combo_variables) {
+  existing_variables <- intersect(combo_variables, colnames(input_data))
+
+  if (length(existing_variables) == 0) {
+    return(character(0))
+  }
+
+  if (inherits(input_data, "tbl_spark")) {
+    schema <- sparklyr::sdf_schema(input_data)
+    is_character <- vapply(
+      schema,
+      function(field) {
+        field_name <- as.character(field[["name"]])
+        field_type <- as.character(field[["type"]])
+        field_name %in% existing_variables &&
+          grepl("^(StringType|CharType|VarcharType)", field_type)
+      },
+      logical(1)
+    )
+
+    return(vapply(
+      schema[is_character],
+      function(field) as.character(field[["name"]]),
+      character(1)
+    ))
+  }
+
+  existing_variables[vapply(
+    existing_variables,
+    function(variable) {
+      is.character(input_data[[variable]]) || is.factor(input_data[[variable]])
+    },
+    logical(1)
+  )]
+}
+
+#' Normalize combo variable values
+#'
+#' Removes leading and trailing whitespace from character-like combo values so
+#' every workflow stage constructs the same internal combo identifier. Numeric
+#' combo variables and missing values are unchanged.
+#'
+#' @param input_data input data
+#' @param combo_variables combo variable names
+#'
+#' @return input data with normalized character-like combo values
+#' @noRd
+normalize_combo_values <- function(input_data,
+                                   combo_variables) {
+  variables_to_normalize <- character_combo_variables(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
+  if (length(variables_to_normalize) == 0) {
+    return(input_data)
+  }
+
+  input_data %>%
+    dplyr::mutate(
+      dplyr::across(
+        tidyselect::all_of(variables_to_normalize),
+        ~ stringr::str_trim(as.character(.x))
+      )
+    )
+}
+
 #' Format differences between two single-row log data frames
 #'
 #' @param prev_log_df previous log data frame (1 row)
@@ -147,6 +222,11 @@ check_input_data <- function(input_data,
     )
   }
 
+  input_data <- normalize_combo_values(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
   # 'Date' column is reserved for the time stamp
   if ("Date" %in% combo_variables) {
     stop("'Date' column cannot be used as a combo variable. It is reserved for the time stamp.",
@@ -199,6 +279,39 @@ check_input_data <- function(input_data,
     stop("date column in input data needs to be formatted as a date value")
   }
 
+  character_variables <- character_combo_variables(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
+  if (length(character_variables) > 0) {
+    blank_combo_tbl <- input_data %>%
+      dplyr::filter(
+        dplyr::if_any(
+          tidyselect::all_of(character_variables),
+          ~ !is.na(.x) & .x == ""
+        )
+      ) %>%
+      dplyr::select(Date, tidyselect::all_of(character_variables)) %>%
+      utils::head(5) %>%
+      dplyr::collect()
+
+    if (nrow(blank_combo_tbl) > 0) {
+      affected_variables <- character_variables[vapply(
+        character_variables,
+        function(variable) any(blank_combo_tbl[[variable]] == "", na.rm = TRUE),
+        logical(1)
+      )]
+
+      stop(
+        "combo variable values cannot be blank after trimming leading and trailing whitespace. ",
+        "Affected columns: ", paste(affected_variables, collapse = ", "), ". ",
+        "Sample dates: ", paste(unique(blank_combo_tbl$Date), collapse = ", "), ".",
+        call. = FALSE
+      )
+    }
+  }
+
   # ensure month, quarter, year data repeats on the same day of each period
   if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
     unique_days <- unique(format(input_data$Date, format = "%d"))
@@ -230,8 +343,6 @@ check_input_data <- function(input_data,
   }
 
   # duplicate rows
-  dup_col_check <- c(combo_variables, "Date")
-
   duplicate_tbl <- input_data %>%
     tidyr::unite("Combo",
       tidyselect::all_of(combo_variables),
@@ -244,12 +355,13 @@ check_input_data <- function(input_data,
     dplyr::select(Date) %>%
     dplyr::collect()
 
-  if (nrow(duplicate_tbl) > 1) {
+  if (nrow(duplicate_tbl) > 0) {
     dup_count <- nrow(duplicate_tbl)
     dup_sample <- utils::head(duplicate_tbl, 5)
     stop(
       "duplicate rows have been detected in the input data. ",
       "Found ", dup_count, " duplicate rows based on combo variables and Date. ",
+      "Leading and trailing whitespace in character combo values is ignored, so values that differ only by surrounding whitespace identify the same series. ",
       "Sample duplicate dates: ",
       paste(unique(dup_sample$Date), collapse = ", "), ". ",
       "Remove duplicate rows so each combo-date combination is unique.",

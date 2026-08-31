@@ -44,7 +44,9 @@ across all date types.}
 \item{num_hyperparameters}{Number of hyperparameter combinations to test
 out on validation data for model tuning.}
 
-\item{seasonal_period}{List of numbers to be used for seasonal periods in specific univariate models like tbats.}
+\item{seasonal_period}{One to three unique, finite numeric seasonal periods
+greater than 1. Custom values are used by \code{stlm-arima}, \code{stlm-ets}, and
+\code{tbats}. A value of NULL uses the defaults for \code{date_type}.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
 }

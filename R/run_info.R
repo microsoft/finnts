@@ -334,7 +334,8 @@ get_run_info <- function(project_name = NULL,
 
     run_tbl <- read_file(info_list,
       path = file_path,
-      return_type = "df"
+      return_type = "df",
+      allow_missing = is.null(run_name)
     )
   }
 

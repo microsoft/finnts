@@ -21,7 +21,9 @@
 #'   across all date types.
 #' @param num_hyperparameters Number of hyperparameter combinations to test
 #'   out on validation data for model tuning.
-#' @param seasonal_period List of numbers to be used for seasonal periods in specific univariate models like tbats.
+#' @param seasonal_period One to three unique, finite numeric seasonal periods
+#'   greater than 1. Custom values are used by `stlm-arima`, `stlm-ets`, and
+#'   `tbats`. A value of NULL uses the defaults for `date_type`.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Writes outputs related to model prep to disk.
@@ -69,7 +71,7 @@ prep_models <- function(run_info,
   check_input_type("models_not_to_run", models_not_to_run, c("NULL", "list", "character"))
   check_input_type("pca", pca, c("NULL", "logical"))
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
-  check_input_type("seasonal_period", seasonal_period, c("NULL", "list", "numeric"))
+  seasonal_period <- validate_seasonal_period(seasonal_period)
   check_input_type("seed", seed, "numeric")
 
   # create model workflows
@@ -96,6 +98,70 @@ prep_models <- function(run_info,
     back_test_spacing,
     run_ensemble_models
   )
+}
+
+#' Validate seasonal periods
+#'
+#' @param seasonal_period Seasonal periods supplied to [prep_models()].
+#'
+#' @return A numeric vector of seasonal periods, or NULL.
+#' @noRd
+validate_seasonal_period <- function(seasonal_period) {
+  if (is.null(seasonal_period)) {
+    return(NULL)
+  }
+
+  if (is.list(seasonal_period)) {
+    numeric_scalars <- vapply(
+      seasonal_period,
+      function(value) is.numeric(value) && length(value) == 1,
+      logical(1)
+    )
+
+    if (length(seasonal_period) == 0 || !all(numeric_scalars)) {
+      stop(
+        "'seasonal_period' must be a numeric vector or a list of ",
+        "individual numeric values.",
+        call. = FALSE
+      )
+    }
+
+    seasonal_period <- unlist(seasonal_period, use.names = FALSE)
+  }
+
+  if (!is.numeric(seasonal_period)) {
+    stop(
+      "'seasonal_period' must be a numeric vector or a list of ",
+      "individual numeric values.",
+      call. = FALSE
+    )
+  }
+
+  if (length(seasonal_period) < 1 || length(seasonal_period) > 3) {
+    stop(
+      "'seasonal_period' must contain between 1 and 3 values.",
+      call. = FALSE
+    )
+  }
+
+  seasonal_period <- as.numeric(seasonal_period)
+
+  if (any(!is.finite(seasonal_period))) {
+    stop(
+      "'seasonal_period' values must be finite and cannot be missing.",
+      call. = FALSE
+    )
+  }
+
+  if (any(seasonal_period <= 1)) {
+    stop("'seasonal_period' values must be greater than 1.", call. = FALSE)
+  }
+
+  if (anyDuplicated(seasonal_period)) {
+    stop("'seasonal_period' values must be unique.", call. = FALSE)
+  }
+
+  seasonal_period
 }
 
 #' Gets the back testing spacing
@@ -497,6 +563,12 @@ model_workflows <- function(run_info,
     # do nothing
   }
 
+  model_seasonal_period <- if (is.null(seasonal_period)) {
+    get_seasonal_periods(date_type)
+  } else {
+    seasonal_period
+  }
+
   # check if input values have changed
   if (sum(colnames(log_df) %in% c("models_to_run", "models_not_to_run", "pca")) == 3) {
     current_log_df <- tibble::tibble(
@@ -664,7 +736,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = get_seasonal_periods(date_type),
+        "seasonal_period" = model_seasonal_period,
         "model_type" = "single",
         "pca" = pca,
         "multistep" = multistep_horizon,
@@ -676,7 +748,7 @@ model_workflows <- function(run_info,
         "train_data" = recipe_tbl,
         "frequency" = get_frequency_number(date_type),
         "horizon" = forecast_horizon,
-        "seasonal_period" = get_seasonal_periods(date_type),
+        "seasonal_period" = model_seasonal_period,
         "model_type" = "single",
         "pca" = pca,
         "multistep" = FALSE,

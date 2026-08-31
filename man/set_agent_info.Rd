@@ -27,7 +27,9 @@ set_agent_info(
 
 \item{llm}{A Chat LLM object used as the template for isolated agent sessions}
 
-\item{input_data}{A data frame or tibble containing the input data}
+\item{input_data}{A data frame or tibble containing the input data. Leading
+and trailing whitespace in character combo-variable values is removed
+before Finn creates internal series identifiers and writes input artifacts.}
 
 \item{forecast_horizon}{The number of periods to forecast}
 

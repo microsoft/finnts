@@ -5,6 +5,8 @@
 #' @param run_info Run info using [set_run_info()]
 #' @param input_data A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
 #'   Can also include external regressors for both historical and future data.
+#'   Leading and trailing whitespace in character combo-variable values is
+#'   removed before Finn creates internal series identifiers.
 #' @param combo_variables List of column headers within input data to be used to separate individual time series.
 #' @param target_variable The column header formatted as a character value within input data you want to forecast.
 #' @param date_type The date granularity of the input data. Finn accepts the following as a character string:
@@ -130,6 +132,12 @@ prep_data <- function(run_info,
   check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
   check_input_type("recipes_to_run", recipes_to_run, c("list", "character", "NULL"), c("R1", "R2"))
   check_input_type("multistep_horizon", multistep_horizon, "logical")
+
+  input_data <- normalize_combo_values(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
   check_input_data(
     input_data,
     combo_variables,

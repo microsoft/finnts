@@ -1269,7 +1269,21 @@ reason_inputs <- function(agent_info,
         )
       )
 
-    if (does_param_set_exist(check_inputs, previous_runs_tbl)) {
+    default_recipes <- if (is.null(combo)) "R1" else NULL
+    normalized_check_inputs <- normalize_agent_run_inputs(
+      check_inputs,
+      date_type = agent_info$project_info$date_type,
+      forecast_horizon = agent_info$forecast_horizon,
+      default_recipes = default_recipes
+    )
+    normalized_previous_runs <- normalize_agent_run_inputs(
+      previous_runs_tbl,
+      date_type = agent_info$project_info$date_type,
+      forecast_horizon = agent_info$forecast_horizon,
+      default_recipes = default_recipes
+    )
+
+    if (does_param_set_exist(normalized_check_inputs, normalized_previous_runs)) {
       cli::cli_alert_info("The proposed input parameters have already been used in a previous run.")
 
       stop(
@@ -2344,6 +2358,217 @@ collapse_or_na <- function(x) {
   } else {
     paste(x, collapse = "---")
   }
+}
+
+#' Normalize agent inputs for semantic duplicate checks
+#'
+#' Resolves default-backed settings and sorts order-insensitive multipart
+#' values without changing the raw values saved in run logs.
+#'
+#' @param inputs One proposed input row or a data frame of prior runs.
+#' @param date_type Date granularity used to resolve defaults.
+#' @param forecast_horizon Forecast horizon used to resolve lag defaults.
+#' @param default_recipes Optional recipe default for contexts that do not
+#'   retain `recipes_to_run`, such as global agent runs.
+#'
+#' @return A data frame with canonical values for duplicate comparison.
+#' @noRd
+normalize_agent_run_inputs <- function(inputs,
+                                       date_type,
+                                       forecast_horizon,
+                                       default_recipes = NULL) {
+  normalized <- as.data.frame(inputs, stringsAsFactors = FALSE)
+
+  if (nrow(normalized) == 0) {
+    return(normalized)
+  }
+
+  split_values <- function(value) {
+    value <- as.character(value)
+
+    if (length(value) == 0) {
+      return(character())
+    }
+
+    value <- trimws(value[[1]])
+    if (is.na(value) || !nzchar(value) || toupper(value) == "NULL") {
+      return(character())
+    }
+
+    values <- unlist(
+      strsplit(value, "---", fixed = TRUE),
+      use.names = FALSE
+    )
+    values <- trimws(values)
+    values[nzchar(values)]
+  }
+
+  collapse_values <- function(values, numeric_values = FALSE) {
+    if (length(values) == 0) {
+      return("NULL")
+    }
+
+    if (numeric_values) {
+      values <- suppressWarnings(as.numeric(values))
+      if (any(!is.finite(values))) {
+        stop(
+          "Agent numeric multipart settings must contain finite values.",
+          call. = FALSE
+        )
+      }
+      values <- sort(unique(signif(values, digits = 12)))
+      values <- vapply(
+        values,
+        format,
+        character(1),
+        scientific = FALSE,
+        trim = TRUE,
+        digits = 12
+      )
+    } else {
+      values <- sort(unique(as.character(values)))
+    }
+
+    paste(values, collapse = "---")
+  }
+
+  resolve_recipes <- function(value) {
+    recipes <- split_values(value)
+
+    if (length(recipes) == 0) {
+      recipes <- if (is.null(default_recipes)) {
+        get_recipes_to_run(NULL, date_type)
+      } else {
+        default_recipes
+      }
+    }
+
+    if ("all" %in% tolower(recipes)) {
+      recipes <- c("R1", "R2")
+    }
+
+    sort(unique(recipes))
+  }
+
+  row_recipes <- lapply(seq_len(nrow(normalized)), function(index) {
+    value <- if ("recipes_to_run" %in% names(normalized)) {
+      normalized$recipes_to_run[[index]]
+    } else {
+      NA_character_
+    }
+    resolve_recipes(value)
+  })
+
+  normalize_column <- function(column, default, numeric_values = FALSE) {
+    if (!column %in% names(normalized)) {
+      return(invisible(NULL))
+    }
+
+    normalized[[column]] <<- vapply(
+      seq_len(nrow(normalized)),
+      function(index) {
+        values <- split_values(normalized[[column]][[index]])
+        if (length(values) == 0) {
+          values <- default
+        }
+        collapse_values(values, numeric_values)
+      },
+      character(1)
+    )
+
+    invisible(NULL)
+  }
+
+  normalize_column("models_to_run", list_models())
+  normalize_column("external_regressors", character())
+  normalize_column(
+    "rolling_window_periods",
+    get_rolling_window_periods(NULL, date_type),
+    numeric_values = TRUE
+  )
+  normalize_column(
+    "seasonal_period",
+    get_seasonal_periods(date_type),
+    numeric_values = TRUE
+  )
+
+  if ("recipes_to_run" %in% names(normalized)) {
+    normalized$recipes_to_run <- vapply(
+      row_recipes,
+      collapse_values,
+      character(1)
+    )
+  }
+
+  if ("lag_periods" %in% names(normalized)) {
+    normalized$lag_periods <- vapply(
+      seq_len(nrow(normalized)),
+      function(index) {
+        raw_lags <- split_values(normalized$lag_periods[[index]])
+        if (length(raw_lags) == 0) {
+          raw_lags <- NULL
+        } else {
+          raw_lags <- suppressWarnings(as.numeric(raw_lags))
+          if (any(!is.finite(raw_lags))) {
+            stop("Agent lag periods must contain finite values.", call. = FALSE)
+          }
+        }
+
+        multistep <- FALSE
+        if ("multistep_horizon" %in% names(normalized)) {
+          multistep_value <- normalized$multistep_horizon[[index]]
+          if (!is.na(multistep_value)) {
+            multistep <- isTRUE(as.logical(multistep_value))
+          }
+        }
+
+        recipe_lags <- vapply(
+          row_recipes[[index]],
+          function(recipe) {
+            feature_lags <- if (recipe == "R1") {
+              get_lag_periods(
+                raw_lags,
+                date_type,
+                forecast_horizon,
+                multistep,
+                TRUE
+              )
+            } else {
+              get_lag_periods(raw_lags, date_type, forecast_horizon)
+            }
+
+            signature <- paste0(
+              recipe,
+              ":feature=",
+              collapse_values(feature_lags, numeric_values = TRUE)
+            )
+
+            if (recipe == "R1" && multistep) {
+              model_lags <- get_lag_periods(
+                raw_lags,
+                date_type,
+                forecast_horizon,
+                TRUE
+              )
+              signature <- paste0(
+                signature,
+                ";model=",
+                collapse_values(model_lags, numeric_values = TRUE)
+              )
+            }
+
+            signature
+          },
+          character(1)
+        )
+
+        paste(recipe_lags, collapse = "|")
+      },
+      character(1)
+    )
+  }
+
+  normalized
 }
 
 #' Apply column types from a template dataframe to a target dataframe
