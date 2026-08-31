@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9001</span>
       </span>
     </div>
 
@@ -115,6 +115,10 @@
 <div class="section level2">
 <h2 id="notes">Notes<a class="anchor" aria-label="anchor" href="#notes"></a></h2>
 <ul><li>Agent code must treat <code>agent_info$llm</code> as an immutable Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&amp;A. Parallel code must clone inside the series workflow after <code>foreach</code> dispatch, preserve the ellmer 0.4+ serialization path, and avoid internal ellmer APIs or provider credential mutation.</li>
+<li>Agent duplicate-run checks normalize effective <code>NULL</code> defaults and sort order-insensitive multipart settings before comparison while preserving raw run-log values.</li>
+<li>Keep custom <code>seasonal_period</code> handling in <code><a href="reference/prep_models.html">prep_models()</a></code>: validate one to three unique finite values above 1, forward them to the STLM/TBATS workflows, and leave default <code>NULL</code> values as <code>NA</code> in raw run logs.</li>
+<li>Keep combo identity canonicalization shared between <code><a href="reference/set_agent_info.html">set_agent_info()</a></code> and <code><a href="reference/prep_data.html">prep_data()</a></code>: trim only the boundaries of character combo values before validation and artifact naming, preserve internal spaces/NA/numeric values, reject blank or colliding normalized combo/date values, and never implement this by trimming generic <code>hash_data()</code> inputs.</li>
+<li>Keep agent EDA prompts finite and explicit: all-missing outlier dates render as absent, and all-missing/non-finite distance-correlation groups do not enter regressor rankings.</li>
 <li>Keep <code>nixtlar</code> optional in <code>Suggests</code>: TimeGPT requires R 4.1 or newer, while core FinnTS workflows must remain installable and loadable on R 4.0 without it.</li>
 <li>PSOCK tests under <code>devtools::test()</code> may need a test-only <code>.export</code> for internal helpers because <code>pkgload::load_all()</code> differs from an installed namespace. Verify the installed package in a temporary library before adding <code>.export</code> to production code.</li>
 <li>If this repo grows, move large topic rules into <code>.claude/rules/*.md</code> (testing, style, release).</li>

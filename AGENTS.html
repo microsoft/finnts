@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9001</span>
       </span>
     </div>
 
@@ -206,6 +206,10 @@
 <ul><li>Prefer small, composable functions.</li>
 <li>Keep exported functions stable; introduce breaking changes only as a last resort, <strong>ask before adding</strong>, with an explicit note in NEWS.</li>
 <li>Agent workflows accept one <code>llm</code> Chat template and create a fresh, empty-history session for every graph that can access the LLM, including EDA, forecast update, each time-series combo, and Q&amp;A. Never mutate the template. For parallel forecasts, let <code>foreach</code> serialize the template and use the public <code>Chat$clone(deep = TRUE)</code> method inside each series workflow after it reaches the worker. A series session may persist across its own iterations but must never be shared across series. Parallel workflows require ellmer 0.4.0 or later in the main process and every worker; do not call internal ellmer constructors or mutate provider credential fields.</li>
+<li>Agent duplicate-run checks compare effective settings rather than raw text. Resolve <code>NULL</code> defaults and canonicalize order-insensitive multipart models, regressors, recipes, lags, rolling windows, and seasonal periods before comparison; keep raw values unchanged in run logs.</li>
+<li>Custom <code>seasonal_period</code> values are supplied through <code><a href="reference/prep_models.html">prep_models()</a></code> only. Validate one to three unique, finite numeric values greater than 1, pass them to <code>stlm-arima</code>, <code>stlm-ets</code>, and <code>tbats</code>, and continue logging a default <code>NULL</code> as <code>NA</code> rather than its resolved periods.</li>
+<li>Character combo-variable values use one canonical identity across agentic and standard workflows. Call the shared <code>normalize_combo_values()</code> path before validation, <code>Combo</code> construction, hierarchy processing, or artifact writes in both <code><a href="reference/set_agent_info.html">set_agent_info()</a></code> and <code><a href="reference/prep_data.html">prep_data()</a></code>. Trim leading/trailing whitespace only, preserve internal spaces and missing values, leave numeric identifiers unchanged, and fail before writing when normalization creates a blank value or duplicate combo/date. Do not move this behavior into generic <code>hash_data()</code> because that would alter unrelated cached artifact names.</li>
+<li>EDA summaries must never send <code>Inf</code>, <code>-Inf</code>, or <code>NaN</code> to an LLM when an outlier date or distance-correlation group has no observations. Represent absent outlier dates explicitly and omit unavailable regressor-lag rankings while preserving raw EDA artifacts.</li>
 <li>Prefer base R and packages already declared in <code>Depends</code>, <code>Imports</code>, or <code>Suggests</code> before adding a dependency.</li>
 <li>A new package dependency is allowed only for a concrete new feature when existing dependencies and a small, maintainable custom implementation are inadequate, unsafe, or would recreate substantial mature functionality.</li>
 <li>Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers. Do not vendor third-party source code.</li>

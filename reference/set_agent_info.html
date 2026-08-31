@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9001</span>
       </span>
     </div>
 
@@ -141,7 +141,9 @@ It checks for existing runs and allows for overwriting if specified.</p>
 
 
 <dt id="arg-input-data">input_data<a class="anchor" aria-label="anchor" href="#arg-input-data"></a></dt>
-<dd><p>A data frame or tibble containing the input data</p></dd>
+<dd><p>A data frame or tibble containing the input data. Leading
+and trailing whitespace in character combo-variable values is removed
+before Finn creates internal series identifiers and writes input artifacts.</p></dd>
 
 
 <dt id="arg-forecast-horizon">forecast_horizon<a class="anchor" aria-label="anchor" href="#arg-forecast-horizon"></a></dt>

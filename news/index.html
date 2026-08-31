@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9001</span>
       </span>
     </div>
 
@@ -99,6 +99,17 @@
       <small>Source: <a href="https://github.com/microsoft/finnts/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="page-header" data-toc-text="0.7.0.9001" id="finnts-0709001-development-version">finnts 0.7.0.9001 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709001-development-version"></a></h2>
+<div class="section level3">
+<h3 id="bug-fixes-0-7-0-9001">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9001"></a></h3>
+<ul><li>Fixed agent duplicate-run detection so <code>NULL</code> defaults and equivalent explicit values compare as the same settings. Order-insensitive multipart settings such as <code>3---6---9</code> and <code>9---6---3</code> are also treated as equivalent, preventing redundant forecast iterations.</li>
+<li>Character combo-variable values now have leading and trailing whitespace removed before validation and internal <code>Combo</code> identifiers are created. This keeps input, EDA, global-model, and local-model artifact hashes aligned in both agentic and standard forecasts; normalization collisions and whitespace-only identifiers fail early with actionable errors.</li>
+<li>Agent EDA summaries now represent missing outlier dates as <code>None observed</code> and omit regressor-lag groups without finite distance correlations instead of emitting <code>Inf</code>, <code>-Inf</code>, or <code>NaN</code> warnings into LLM context.</li>
+<li>When an expected intermediate forecast file cannot be found, Finn now explains that the saved run may be incomplete or inconsistent and recommends starting a new run or regenerating the missing workflow step, instead of returning <code>subscript out of bounds</code>.</li>
+<li>Custom <code>seasonal_period</code> values supplied to <code><a href="../reference/prep_models.html">prep_models()</a></code> now flow into <code>stlm-arima</code>, <code>stlm-ets</code>, and <code>tbats</code> after early validation. Default <code>NULL</code> values continue to be stored as <code>NA</code> in run logs.</li>
+</ul></div>
+</div>
     <div class="section level2">
 <h2 class="page-header" data-toc-text="0.7.0" id="finnts-070">finnts 0.7.0<small>2026-08-27</small><a class="anchor" aria-label="anchor" href="#finnts-070"></a></h2>
 <div class="section level3">
