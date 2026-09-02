@@ -124,7 +124,49 @@ test_that("invalid custom seasonal periods fail before model training", {
   expect_error(validate_seasonal_period(c(12, 6, 4, 2)), "between 1 and 3")
   expect_error(validate_seasonal_period(c(4, NA_real_)), "finite")
   expect_error(validate_seasonal_period(c(4, Inf)), "finite")
-  expect_error(validate_seasonal_period(c(1, 4)), "greater than 1")
+  for (seasonal_period in list(1, c(1, 12), c(12, 1), c(12, 3, 1))) {
+    expect_error(
+      validate_seasonal_period(seasonal_period),
+      "greater than 1",
+      info = paste(seasonal_period, collapse = "---")
+    )
+  }
   expect_error(validate_seasonal_period(c(4, 4)), "unique")
   expect_error(validate_seasonal_period(list(c(4, 2))), "numeric vector")
+})
+
+test_that("default seasonal periods are valid at every cadence", {
+  for (date_type in c("year", "quarter", "month", "week", "day")) {
+    seasonal_periods <- get_seasonal_periods(date_type)
+
+    expect_true(all(seasonal_periods > 1), info = date_type)
+    expect_identical(
+      validate_seasonal_period(seasonal_periods),
+      as.numeric(seasonal_periods),
+      info = date_type
+    )
+  }
+})
+
+test_that("yearly defaults fit supported seasonal workflows", {
+  periods <- seq_len(24)
+  train_data <- tibble::tibble(
+    Date = seq.Date(
+      as.Date("2000-01-01"),
+      by = "year",
+      length.out = length(periods)
+    ),
+    Combo = "A",
+    Target = 100 + periods + 5 * sin(2 * pi * periods / 2)
+  )
+  seasonal_periods <- get_seasonal_periods("year")
+  workflows <- list(
+    `stlm-arima` = finnts:::stlm_arima(train_data, seasonal_periods),
+    `stlm-ets` = finnts:::stlm_ets(train_data, seasonal_periods),
+    tbats = finnts:::tbats(train_data, seasonal_periods)
+  )
+
+  for (model_name in names(workflows)) {
+    expect_no_error(generics::fit(workflows[[model_name]], train_data))
+  }
 })

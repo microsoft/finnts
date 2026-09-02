@@ -999,6 +999,47 @@ fcst_agent_workflow <- function(agent_info,
   run_graph(agent_info$llm, workflow, init_ctx)
 }
 
+#' Parse an agent-proposed seasonal period
+#'
+#' @param value A serialized seasonal-period proposal from the reasoning LLM.
+#'
+#' @return The string `"NULL"` or a validated numeric vector.
+#' @noRd
+parse_agent_seasonal_period <- function(value) {
+  if (identical(value, "NULL")) {
+    return("NULL")
+  }
+
+  if (is.null(value) || length(value) == 0) {
+    stop(
+      "Invalid proposed seasonal_period: use 'NULL' or propose one to three ",
+      "unique, finite numeric values greater than 1.",
+      call. = FALSE
+    )
+  }
+
+  proposed_periods <- if (is.character(value)) {
+    if (length(value) != 1) {
+      value
+    } else {
+      suppressWarnings(as.numeric(strsplit(value, "---", fixed = TRUE)[[1]]))
+    }
+  } else {
+    value
+  }
+
+  tryCatch(
+    validate_seasonal_period(proposed_periods),
+    error = function(error) {
+      stop(
+        "Invalid proposed seasonal_period: ", conditionMessage(error),
+        " Use 'NULL' or propose one to three unique, finite numeric values greater than 1.",
+        call. = FALSE
+      )
+    }
+  )
+}
+
 #' Generate Finn run inputs for the reasoning LLM
 #'
 #' @param agent_info A list containing agent information including LLMs, project info, and other parameters.
@@ -1182,11 +1223,7 @@ reason_inputs <- function(agent_info,
   input_list$stationary <- as.logical(input_list$stationary)
   input_list$feature_selection <- as.logical(input_list$feature_selection)
   input_list$multistep_horizon <- as.logical(input_list$multistep_horizon)
-  input_list$seasonal_period <- if (input_list$seasonal_period == "NULL") {
-    "NULL"
-  } else {
-    as.numeric(strsplit(input_list$seasonal_period, "---")[[1]])
-  }
+  input_list$seasonal_period <- parse_agent_seasonal_period(input_list$seasonal_period)
   input_list$recipes_to_run <- if (input_list$recipes_to_run == "NULL") {
     "NULL"
   } else {
@@ -2944,6 +2981,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           8-D.  A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
           8-E.  There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
           8-F.  Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
+          8-G.  Every seasonal period MUST be a unique, finite numeric value greater than 1. You MUST NOT use 1 in any position.
       9.  FULL MODEL SWEEP RULES
           9-A.  IF run_count == 0 -> models_to_run = "<<models_rule_10a>>"
           9-B.  IF run_count > 0 AND *Step D is complete* -> models_to_run = "<<models_rule_10b>>"
@@ -3016,7 +3054,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "seasonal_period"       : "NULL|1---2---3",
+        "seasonal_period"       : "NULL|2---6---12",
         "models_to_run"         : "arima---ets---tbats---snaive---stlm-arima---xgboost",
         "stationary"            : "TRUE|FALSE",
         "feature_selection"     : "TRUE|FALSE",

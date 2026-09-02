@@ -174,6 +174,7 @@ execute_node <- function(node, ctx, chat) {
       if (identical(tool_name, "reason_inputs") &&
         (grepl("unique lag period changes", ctx$last_error, fixed = TRUE) ||
           grepl("unique rolling window period changes", ctx$last_error, fixed = TRUE) ||
+          grepl("Invalid proposed seasonal_period", ctx$last_error, fixed = TRUE) ||
           grepl("Duplicate parameter set detected", ctx$last_error, fixed = TRUE))) {
         abort_reason <- paste0(
           ctx$last_error,

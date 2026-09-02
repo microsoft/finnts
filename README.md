@@ -77,6 +77,13 @@ model_answer <- ask_agent(agent_info = agent,
                           question = "Explain why the best model was selected. How does that model work?")
 ```
 
+### Seasonal periods
+
+Custom `seasonal_period` values supplied through `prep_models()` must contain
+one to three unique, finite numeric values greater than 1. Agent workflows
+apply the same validation before submitting a run and use cadence defaults when
+no custom seasonal periods are requested.
+
 ## Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us the rights to use your contribution. For details, visit <https://cla.opensource.microsoft.com>.
