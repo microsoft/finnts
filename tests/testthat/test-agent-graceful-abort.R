@@ -412,24 +412,21 @@ test_that("reason prompt canonicalizes lag and rolling change budgets", {
   expect_match(chat$prompts[[1]], "rolling_changes_allowed : TRUE", fixed = TRUE)
 })
 
-test_that("reason inputs enforces the current-version external regressor budget", {
-  history <- dplyr::bind_rows(
+test_that("reason inputs do not cap external regressor configurations", {
+  drivers <- paste0("Driver_", LETTERS[1:10])
+  history <- dplyr::bind_rows(lapply(seq_along(drivers), function(index) {
     minimal_reason_history(
-      run_number = 1,
-      external_regressors = "Driver_A"
-    ),
-    minimal_reason_history(
-      run_number = 2,
-      external_regressors = "Driver_B"
+      run_number = index,
+      external_regressors = drivers[[index]]
     )
-  )
+  }))
   chat <- make_queued_fake_chat(make_agent_response(
     models_to_run = "glmnet",
     external_regressors = "Driver_A---Driver_B",
     feature_selection = "TRUE"
   ))
   agent_info <- make_graceful_abort_agent_info()
-  agent_info$external_regressors <- c("Driver_A", "Driver_B")
+  agent_info$external_regressors <- drivers
   agent_info$llm <- chat
 
   testthat::local_mocked_bindings(
@@ -437,25 +434,18 @@ test_that("reason inputs enforces the current-version external regressor budget"
     .package = "finnts"
   )
 
-  error <- tryCatch(
+  expect_no_error(
     reason_inputs(
       agent_info = agent_info,
       combo = "combo-hash",
       weighted_mape_goal = 0.05,
       previous_run_results = history,
       previous_version_results = "No Previous Runs",
-      total_runs = 2L
-    ),
-    error = identity
+      total_runs = 10L
+    )
   )
 
-  expect_s3_class(error, "finnts_reason_search_exhausted")
-  expect_identical(error$field, "external_regressors")
-  expect_match(
-    chat$prompts[[1]],
-    "external_regressor_changes_allowed : FALSE",
-    fixed = TRUE
-  )
+  expect_false(grepl("external_regressor_changes_allowed", chat$prompts[[1]], fixed = TRUE))
 })
 
 test_that("local system prompt describes seasonal budget semantics", {
@@ -485,7 +475,7 @@ test_that("local system prompt describes seasonal budget semantics", {
   )
 })
 
-test_that("system prompts scope duplicate and regressor budgets to the current version", {
+test_that("system prompts do not cap external regressor configurations", {
   agent_info <- make_graceful_abort_agent_info()
 
   testthat::local_mocked_bindings(
@@ -508,10 +498,11 @@ test_that("system prompts scope duplicate and regressor budgets to the current v
     )
     expect_match(
       prompt,
-      "external_regressors parameter a total of",
+      "add ONLY ONE new external regressor variable per run",
       fixed = TRUE
     )
-    expect_match(prompt, "within the current agent version", fixed = TRUE)
+    expect_false(grepl("external_regressors parameter a total of", prompt, fixed = TRUE))
+    expect_false(grepl("external_regressor_changes_allowed", prompt, fixed = TRUE))
     expect_false(grepl("lag_chages_allowed", prompt, fixed = TRUE))
   }
 })

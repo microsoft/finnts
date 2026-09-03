@@ -1340,71 +1340,6 @@ count_agent_setting_changes <- function(previous_values, default_value, field) {
   length(setdiff(previous_canonical, default_canonical))
 }
 
-#' Canonicalize an agent character setting
-#'
-#' @param value Serialized setting value.
-#'
-#' @return A canonical setting signature or `"NULL"`.
-#' @noRd
-canonicalize_agent_character_setting <- function(value) {
-  value <- as.character(value)
-  if (length(value) == 0 || is.na(value[[1]]) || !nzchar(value[[1]]) || value[[1]] == "NULL") {
-    return("NULL")
-  }
-  values <- trimws(strsplit(value[[1]], "---", fixed = TRUE)[[1]])
-  paste(sort(unique(values)), collapse = "---")
-}
-
-#' Count canonical non-default character setting changes
-#'
-#' @param previous_values Serialized prior setting values.
-#'
-#' @return The number of distinct non-default settings.
-#' @noRd
-count_agent_character_setting_changes <- function(previous_values) {
-  previous_canonical <- unique(vapply(
-    previous_values,
-    canonicalize_agent_character_setting,
-    character(1)
-  ))
-  length(setdiff(previous_canonical, "NULL"))
-}
-
-#' Validate a canonical character setting change budget
-#'
-#' @param previous_values Serialized prior setting values.
-#' @param proposed_value Proposed setting value.
-#' @param field Setting name used in errors.
-#' @param max_changes Maximum distinct non-default settings.
-#'
-#' @return NULL invisibly.
-#' @noRd
-validate_agent_character_setting_change_budget <- function(previous_values,
-                                                           proposed_value,
-                                                           field,
-                                                           max_changes) {
-  previous_canonical <- unique(vapply(
-    previous_values,
-    canonicalize_agent_character_setting,
-    character(1)
-  ))
-  proposed_canonical <- canonicalize_agent_character_setting(proposed_value)
-  if (proposed_canonical %in% previous_canonical || proposed_canonical == "NULL") {
-    return(invisible(NULL))
-  }
-
-  if (count_agent_character_setting_changes(previous_values) >= max_changes) {
-    abort_exhausted_agent_search(
-      field,
-      paste0(
-        "Cannot propose more than ", max_changes, " unique ", field,
-        " changes within the current agent version."
-      )
-    )
-  }
-  invisible(NULL)
-}
-
 #' Validate a canonical agent setting change budget
 #'
 #' @param previous_values Serialized prior setting values.
@@ -1614,10 +1549,6 @@ reason_inputs <- function(agent_info,
       "rolling_window_periods"
     ) < 3
 
-    external_regressor_changes_allowed <- count_agent_character_setting_changes(
-      previous_run_results$external_regressors
-    ) < length(agent_info$external_regressors)
-
     seasonal_changes_allowed <- if (!is.null(combo) &&
       "seasonal_period" %in% names(previous_run_results)) {
       count_agent_setting_changes(
@@ -1634,7 +1565,6 @@ reason_inputs <- function(agent_info,
     lag_changes_allowed <- TRUE
     rolling_changes_allowed <- TRUE
     seasonal_changes_allowed <- TRUE
-    external_regressor_changes_allowed <- length(agent_info$external_regressors) > 0
   }
 
   # create final prompt
@@ -1647,7 +1577,6 @@ reason_inputs <- function(agent_info,
       - run count : <<run_count>>
       - best weighted MAPE from current-version runs : <<best_mape>>
       - best run number from current-version runs : <<best_run>>
-      - external_regressor_changes_allowed : <<external_regressor_changes>>
       - lag_changes_allowed : <<lag_changes>>
       - rolling_changes_allowed : <<rolling_changes>>
       - seasonal_changes_allowed : <<seasonal_changes>>
@@ -1676,7 +1605,6 @@ reason_inputs <- function(agent_info,
     run_count = total_runs,
     best_mape = best_mape,
     best_run = best_run,
-    external_regressor_changes = external_regressor_changes_allowed,
     lag_changes = lag_changes_allowed,
     rolling_changes = rolling_changes_allowed,
     seasonal_changes = seasonal_changes_allowed,
@@ -1846,13 +1774,6 @@ reason_inputs <- function(agent_info,
         )
       )
     }
-
-    validate_agent_character_setting_change_budget(
-      previous_runs_tbl$external_regressors,
-      check_inputs$external_regressors,
-      "external_regressors",
-      length(agent_info$external_regressors)
-    )
 
     validate_agent_setting_change_budget(
       previous_runs_tbl$lag_periods,
@@ -3276,8 +3197,6 @@ iterate_forecast_system_prompt <- function(agent_info,
   project_info <- agent_info$project_info
   combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
-  xregs_length <- length(agent_info$external_regressors)
-
   # get NULL defaults
   lag_default <- get_lag_periods(
     lag_periods = NULL,
@@ -3369,9 +3288,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           9-F.  ALWAYS set feature_selection="TRUE" if any external regressors are used.
           9-G.  IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           9-H.  ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          9-I.  You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times within the current agent version.
-          9-J.  IF external_regressor_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
-          9-K.  IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+          9-I.  IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       10. FEATURE LAG RULES
           10-A. IF run_count == 0 then set lag_periods = "NULL"
           10-B. IF run_count > 0 AND *Step E is complete* -> use ACF and PCF results from EDA to select lag_periods.
@@ -3513,9 +3430,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
           10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times within the current agent version.
-          10-J. IF external_regressor_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
-          10-K. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+          10-I. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       11. FEATURE LAG RULES
           11-A. IF run_count == 0 -> lag_periods = "NULL"
           11-B. IF run_count > 0 AND *Step F is complete* -> use ACF and PCF results from EDA to select lag_periods.
@@ -3601,7 +3516,6 @@ iterate_forecast_system_prompt <- function(agent_info,
       xregs = xregs_str,
       eda = eda_results,
       weighted_mape_goal = weighted_mape_goal,
-      xregs_length = xregs_length,
       lag_default = lag_default,
       rolling_default = rolling_default,
       recipe_default = recipe_default,
