@@ -388,6 +388,83 @@ build_previous_agent_info <- function(agent_info, agent_run_tbl) {
   )
 }
 
+load_completed_agent_run_outputs <- function(agent_info) {
+  required_suffixes <- c("run_metadata", "forecast", "model_summary", "eda")
+  if (agent_info$forecast_approach != "bottoms_up") {
+    required_suffixes <- c(required_suffixes, "hierarchy_summary")
+  }
+
+  outputs <- purrr::map(
+    required_suffixes,
+    function(suffix) {
+      load_final_agent_artifact(
+        agent_info = agent_info,
+        suffix = suffix,
+        allow_missing = TRUE
+      )
+    }
+  )
+  names(outputs) <- required_suffixes
+
+  if (any(vapply(outputs, nrow, integer(1)) == 0)) {
+    return(NULL)
+  }
+
+  metadata <- outputs$run_metadata
+  forecast <- outputs$forecast
+  model_summary <- outputs$model_summary
+  required_columns <- list(
+    run_metadata = "combo",
+    forecast = c("Combo", "Model_ID", "Best_Model"),
+    model_summary = c("Combo", "Model_ID", "Best_Model"),
+    eda = c("Combo", "Analysis_Type", "Metric", "Value")
+  )
+  if (agent_info$forecast_approach != "bottoms_up") {
+    required_columns$hierarchy_summary <- c(
+      "Hierarchy_Combo", "Hierarchy_Level_Type", "Bottom_Combo", "Is_Bottom"
+    )
+  }
+
+  has_required_columns <- vapply(
+    names(required_columns),
+    function(output_name) {
+      all(required_columns[[output_name]] %in% names(outputs[[output_name]]))
+    },
+    logical(1)
+  )
+  if (!all(has_required_columns)) {
+    return(NULL)
+  }
+
+  expected_combos <- get_total_combos(agent_info = agent_info)
+  metadata_combos <- metadata %>%
+    dplyr::pull(combo) %>%
+    purrr::map_chr(hash_data) %>%
+    unique()
+  if (!setequal(metadata_combos, expected_combos)) {
+    return(NULL)
+  }
+
+  forecast_best <- forecast %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    dplyr::distinct(Combo, Model_ID)
+  if (!all(unique(metadata$combo) %in% forecast_best$Combo)) {
+    return(NULL)
+  }
+
+  summary_best <- model_summary %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    dplyr::distinct(Combo, Model_ID)
+  missing_summary_pairs <- forecast_best %>%
+    dplyr::filter(Combo %in% unique(metadata$combo)) %>%
+    dplyr::anti_join(summary_best, by = c("Combo", "Model_ID"))
+  if (nrow(missing_summary_pairs) > 0) {
+    return(NULL)
+  }
+
+  outputs
+}
+
 find_completed_previous_agent_runs <- function(agent_info,
                                                previous_agent_runs,
                                                max_runs = 1L) {
@@ -401,28 +478,17 @@ find_completed_previous_agent_runs <- function(agent_info,
       agent_info = agent_info,
       agent_run_tbl = version_run_tbl
     )
-    final_run_tbl <- load_final_agent_run_metadata(
-      agent_info = previous_agent_info,
-      allow_missing = TRUE
+    final_outputs <- load_completed_agent_run_outputs(
+      agent_info = previous_agent_info
     )
 
-    if (nrow(final_run_tbl) == 0) {
-      next
-    }
-
-    expected_combos <- get_total_combos(agent_info = previous_agent_info)
-    completed_combos <- final_run_tbl %>%
-      dplyr::pull(combo) %>%
-      purrr::map_chr(hash_data) %>%
-      unique()
-
-    if (!setequal(completed_combos, expected_combos)) {
+    if (is.null(final_outputs)) {
       next
     }
 
     completed_runs[[length(completed_runs) + 1L]] <- list(
       agent_info = previous_agent_info,
-      best_runs_tbl = final_run_tbl
+      best_runs_tbl = final_outputs$run_metadata
     )
 
     if (length(completed_runs) >= max_runs) {
