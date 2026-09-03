@@ -38,6 +38,7 @@ make_update_run_metadata <- function(run_id,
                                      combos = c("combo-a", "combo-b"),
                                      weighted_mape = 0.1) {
   data.frame(
+    agent_run_id = run_id,
     combo = combos,
     model_type = "local",
     best_run_name = paste0("agent_", run_id, "_", combos),
@@ -137,6 +138,7 @@ run_initial_checks_case <- function(final_outputs,
 
   testthat::local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
+    final_agent_artifact_exists = function(...) TRUE,
     hash_data = function(x) x,
     list_files = function(...) run_files,
     read_file = function(run_info,
@@ -220,7 +222,7 @@ test_that("initial_checks selects a finalized immediate predecessor", {
   expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
-test_that("initial_checks skips incomplete final metadata", {
+test_that("initial_checks accepts nonempty metadata without matching input combos", {
   run4_outputs <- make_complete_final_outputs("run-4")
   run4_outputs$run_metadata <- make_update_run_metadata(
     "run-4",
@@ -231,7 +233,7 @@ test_that("initial_checks skips incomplete final metadata", {
     "run-3" = make_complete_final_outputs("run-3")
   ))
 
-  expect_true(all(grepl("run-3", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+  expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
 test_that("initial_checks reports when no finalized predecessor exists", {
@@ -301,18 +303,16 @@ test_that("initial_checks skips missing or empty required final outputs", {
   }
 })
 
-test_that("initial_checks validates final forecast best-model coverage", {
+test_that("initial_checks does not compare forecast contents with metadata", {
   run4_outputs <- make_complete_final_outputs("run-4")
-  run4_outputs$forecast <- make_update_forecast(
-    best_model = c("Yes", "No")
-  )
+  run4_outputs$forecast <- data.frame(output = "available")
 
   result <- run_initial_checks_case(list(
     "run-4" = run4_outputs,
     "run-3" = make_complete_final_outputs("run-3")
   ))
 
-  expect_true(all(grepl("run-3", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+  expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
 test_that("initial_checks accepts artifact-local best model IDs", {
@@ -332,19 +332,16 @@ test_that("initial_checks accepts artifact-local best model IDs", {
   expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
-test_that("initial_checks requires best model-summary coverage by combo", {
+test_that("initial_checks does not compare model-summary contents with metadata", {
   run4_outputs <- make_complete_final_outputs("run-4")
-  run4_outputs$model_summary <- make_update_model_summary(
-    combos = "combo-a",
-    model_ids = "model-combo-a"
-  )
+  run4_outputs$model_summary <- data.frame(output = "available")
 
   result <- run_initial_checks_case(list(
     "run-4" = run4_outputs,
     "run-3" = make_complete_final_outputs("run-3")
   ))
 
-  expect_true(all(grepl("run-3", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+  expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
 test_that("initial_checks conditionally requires hierarchy output", {
@@ -378,6 +375,189 @@ test_that("initial_checks conditionally requires hierarchy output", {
     bottom_up_result$prev_best_runs_tbl$best_run_name,
     fixed = TRUE
   )))
+})
+
+test_that("initial_checks accepts producer-shaped hierarchical final outputs", {
+  for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
+    run4_outputs <- make_complete_final_outputs(
+      "run-4",
+      forecast_approach = forecast_approach
+    )
+    run4_outputs$run_metadata <- make_update_run_metadata(
+      "run-4",
+      combos = c("Total", "combo-a", "combo-b")
+    )
+    run4_outputs$forecast <- make_update_forecast(
+      combos = c("combo-a", "combo-b")
+    )
+    run4_outputs$model_summary <- data.frame(output = "available")
+    run4_outputs$eda <- data.frame(output = "available")
+    run4_outputs$hierarchy_summary <- data.frame(output = "available")
+
+    result <- run_initial_checks_case(
+      final_outputs = list(
+        "run-4" = run4_outputs,
+        "run-3" = make_complete_final_outputs(
+          "run-3",
+          forecast_approach = forecast_approach
+        )
+      ),
+      forecast_approach = forecast_approach
+    )
+
+    expect_true(
+      all(grepl(
+        "run-4",
+        result$prev_best_runs_tbl$best_run_name,
+        fixed = TRUE
+      )),
+      info = forecast_approach
+    )
+  }
+})
+
+test_that("initial_checks requires reusable final run metadata", {
+  invalid_metadata <- list(
+    missing_combo = within(make_update_run_metadata("run-4"), rm(combo)),
+    missing_agent_run_id = within(make_update_run_metadata("run-4"), rm(agent_run_id)),
+    missing_best_run_name = within(make_update_run_metadata("run-4"), rm(best_run_name)),
+    missing_model_type = within(make_update_run_metadata("run-4"), rm(model_type)),
+    missing_weighted_mape = within(make_update_run_metadata("run-4"), rm(weighted_mape)),
+    blank_combo = transform(make_update_run_metadata("run-4"), combo = c("", "combo-b")),
+    blank_agent_run_id = transform(make_update_run_metadata("run-4"), agent_run_id = ""),
+    wrong_agent_run_id = transform(make_update_run_metadata("run-4"), agent_run_id = "run-other"),
+    blank_best_run_name = transform(make_update_run_metadata("run-4"), best_run_name = ""),
+    invalid_model_type = transform(make_update_run_metadata("run-4"), model_type = "other"),
+    missing_weighted_mape_value = transform(make_update_run_metadata("run-4"), weighted_mape = NA_real_),
+    infinite_weighted_mape = transform(make_update_run_metadata("run-4"), weighted_mape = Inf),
+    negative_weighted_mape = transform(make_update_run_metadata("run-4"), weighted_mape = -0.1),
+    duplicate_combo = transform(make_update_run_metadata("run-4"), combo = "combo-a")
+  )
+
+  for (case_name in names(invalid_metadata)) {
+    run4_outputs <- make_complete_final_outputs("run-4")
+    run4_outputs$run_metadata <- invalid_metadata[[case_name]]
+
+    result <- tryCatch(
+      run_initial_checks_case(list(
+        "run-4" = run4_outputs,
+        "run-3" = make_complete_final_outputs("run-3")
+      )),
+      error = identity
+    )
+
+    expect_false(inherits(result, "error"), info = case_name)
+    if (!inherits(result, "error")) {
+      expect_true(
+        all(grepl(
+          "run-3",
+          result$prev_best_runs_tbl$best_run_name,
+          fixed = TRUE
+        )),
+        info = case_name
+      )
+    }
+  }
+})
+
+test_that("optional remote final artifacts distinguish missing from provider failures", {
+  make_remote_agent_info <- function(storage_class) {
+    agent_info <- make_update_agent_info()
+    agent_info$project_info$storage_object <- structure(list(), class = storage_class)
+    agent_info
+  }
+
+  load_missing_artifact <- function(storage_class) {
+    testthat::local_mocked_bindings(
+      list_files = function(...) character(),
+      read_file = function(...) stop("missing artifact was read", call. = FALSE),
+      .package = "finnts"
+    )
+
+    load_final_agent_artifact(
+      agent_info = make_remote_agent_info(storage_class),
+      suffix = "forecast",
+      allow_missing = TRUE
+    )
+  }
+
+  load_with_provider_failure <- function(storage_class) {
+    testthat::local_mocked_bindings(
+      list_files = function(...) stop("storage provider unavailable", call. = FALSE),
+      read_file = function(...) data.frame(output = "available"),
+      .package = "finnts"
+    )
+
+    load_final_agent_artifact(
+      agent_info = make_remote_agent_info(storage_class),
+      suffix = "forecast",
+      allow_missing = TRUE
+    )
+  }
+
+  for (storage_class in c("blob_container", "ms_drive")) {
+    result <- load_missing_artifact(storage_class)
+    expect_s3_class(result, "data.frame")
+    expect_equal(nrow(result), 0, info = storage_class)
+    expect_error(
+      load_with_provider_failure(storage_class),
+      "storage provider unavailable",
+      fixed = TRUE,
+      info = storage_class
+    )
+  }
+})
+
+test_that("optional local final artifacts are checked before reading", {
+  agent_info <- make_update_agent_info()
+  agent_info$project_info$path <- withr::local_tempdir()
+
+  testthat::local_mocked_bindings(
+    read_file = function(...) stop("missing artifact was read", call. = FALSE),
+    .package = "finnts"
+  )
+
+  result <- load_final_agent_artifact(
+    agent_info = agent_info,
+    suffix = "forecast",
+    allow_missing = TRUE
+  )
+
+  expect_s3_class(result, "data.frame")
+  expect_equal(nrow(result), 0)
+})
+
+test_that("unreadable final artifacts remain hard errors", {
+  agent_info <- make_update_agent_info()
+  agent_info$project_info$path <- withr::local_tempdir()
+  artifact_path <- fs::path(
+    agent_info$project_info$path,
+    "final_output",
+    paste0(
+      hash_data(agent_info$project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-forecast.csv"
+    )
+  )
+  fs::dir_create(fs::path_dir(artifact_path))
+  file.create(artifact_path)
+
+  testthat::local_mocked_bindings(
+    read_file = function(...) {
+      warning(paste0("Skipping empty or unreadable file: ", artifact_path))
+      tibble::tibble()
+    },
+    .package = "finnts"
+  )
+
+  expect_error(
+    load_final_agent_artifact(
+      agent_info = agent_info,
+      suffix = "forecast",
+      allow_missing = TRUE
+    ),
+    "Skipping empty or unreadable file",
+    fixed = TRUE
+  )
 })
 
 test_that("initial_checks propagates required final-output read failures", {
@@ -431,6 +611,7 @@ test_that("analyze_results uses finalized previous versions", {
 
   testthat::local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
+    final_agent_artifact_exists = function(...) TRUE,
     hash_data = function(x) x,
     list_files = function(...) run_files,
     read_file = function(run_info,

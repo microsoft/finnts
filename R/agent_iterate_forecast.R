@@ -507,20 +507,57 @@ load_final_agent_run_metadata <- function(agent_info,
   )
 }
 
+final_agent_artifact_exists <- function(project_info, artifact_path) {
+  if (inherits(project_info$storage_object, c("blob_container", "ms_drive"))) {
+    artifact_files <- list_files(
+      storage_object = project_info$storage_object,
+      path = fs::path(project_info$path, artifact_path),
+      fail_on_error = TRUE
+    )
+
+    return(length(artifact_files) > 0)
+  }
+
+  artifact_file <- if (is.null(project_info$path)) {
+    fs::path(tempdir(), artifact_path)
+  } else {
+    fs::path(project_info$path, artifact_path)
+  }
+
+  fs::file_exists(artifact_file)
+}
+
 load_final_agent_artifact <- function(agent_info,
                                       suffix,
                                       allow_missing = FALSE) {
   # metadata
   project_info <- agent_info$project_info
+  artifact_path <- paste0(
+    "/final_output/", hash_data(project_info$project_name), "-",
+    hash_data(agent_info$run_id), "-", suffix, ".", project_info$data_output
+  )
 
-  read_file(
-    run_info = project_info,
-    path = paste0(
-      "/final_output/", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-", suffix, ".", project_info$data_output
+  if (allow_missing &&
+    !final_agent_artifact_exists(project_info, artifact_path)) {
+    return(tibble::tibble())
+  }
+
+  withCallingHandlers(
+    read_file(
+      run_info = project_info,
+      path = artifact_path,
+      return_type = "df",
+      allow_missing = allow_missing
     ),
-    return_type = "df",
-    allow_missing = allow_missing
+    warning = function(condition) {
+      if (grepl(
+        "Skipping empty or unreadable file:",
+        conditionMessage(condition),
+        fixed = TRUE
+      )) {
+        stop(conditionMessage(condition), call. = FALSE)
+      }
+    }
   )
 }
 
