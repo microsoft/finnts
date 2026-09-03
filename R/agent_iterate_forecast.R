@@ -189,7 +189,9 @@ iterate_forecast <- function(agent_info,
         inner_parallel = inner_parallel,
         num_cores = num_cores,
         max_iter = max_iter_adj,
-        seed = seed
+        seed = seed,
+        previous_run_results = previous_runs,
+        fallback_available = run_local_models
       )
     } else {
       cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
@@ -288,7 +290,6 @@ iterate_forecast <- function(agent_info,
           load_eda_results <- load_eda_results
           make_pipe_table <- make_pipe_table
           load_run_results <- load_run_results
-          get_total_run_count <- get_total_run_count
           agent_info <- agent_info
           safe_dir_ls <- safe_dir_ls
           list_files <- list_files
@@ -324,7 +325,9 @@ iterate_forecast <- function(agent_info,
             inner_parallel = inner_parallel,
             num_cores = num_cores,
             max_iter = max_iter_adj,
-            seed = seed
+            seed = seed,
+            previous_run_results = previous_runs,
+            fallback_available = FALSE
           )
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
@@ -754,7 +757,8 @@ load_best_agent_run <- function(agent_info) {
     paste0(
       project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
       hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
-    )
+    ),
+    fail_on_error = TRUE
   )
 
   if (length(combo_best_run_list) == 0) {
@@ -841,6 +845,10 @@ save_best_agent_run <- function(agent_info) {
 #' @param num_cores Number of cores to use for parallel processing. If NULL, defaults to the number of available cores.
 #' @param max_iter Maximum number of iterations for the workflow. Default is 3.
 #' @param seed Random seed for reproducibility. Default is 123.
+#' @param previous_run_results Existing completed run history loaded by the
+#'   outer global or local workflow.
+#' @param fallback_available Whether an exhausted global workflow may continue
+#'   to enabled local models when no global best run exists.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -851,7 +859,9 @@ fcst_agent_workflow <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 max_iter = 3,
-                                seed = 123) {
+                                seed = 123,
+                                previous_run_results = NULL,
+                                fallback_available = FALSE) {
   # create one fresh session for this series and all of its iterations
   agent_info$llm <- new_llm_session(agent_info$llm)
 
@@ -865,6 +875,12 @@ fcst_agent_workflow <- function(agent_info,
   # create a timestamp for the run
   timestamp <- format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC")
 
+  reason_history <- if (is.null(previous_run_results)) {
+    load_reason_history(agent_info = agent_info, combo = combo)
+  } else {
+    new_reason_history(previous_run_results, agent_info$agent_version)
+  }
+
   # construct the workflow
   workflow <- list(
     start = list(
@@ -876,7 +892,10 @@ fcst_agent_workflow <- function(agent_info,
         agent_info = agent_info,
         combo = combo,
         weighted_mape_goal = weighted_mape_goal,
-        last_error = NULL
+        last_error = NULL,
+        previous_run_results = "{ctx$reason_history$previous_run_results}",
+        previous_version_results = "{ctx$reason_history$previous_version_results}",
+        total_runs = "{ctx$reason_history$total_runs}"
       ),
       branch = function(ctx) {
         # extract the results from the current node
@@ -884,6 +903,8 @@ fcst_agent_workflow <- function(agent_info,
 
         # check if the LLM aborted the run
         if ("abort" %in% names(results$reason_inputs) && results$reason_inputs$abort == "TRUE") {
+          ctx$completion_reason <- "reasoning_exhausted"
+          ctx$abort_reason <- results$reason_inputs$reasoning %||% "Reasoning aborted."
           # always finalize to update max_iterations and run_complete in best_run file
           return(list(ctx = ctx, `next` = "finalize_run"))
         } else {
@@ -968,10 +989,24 @@ fcst_agent_workflow <- function(agent_info,
         if (wmape_goal_reached || max_runs_reached) {
           next_node <- "finalize_run"
         } else {
-          next_node <- "start"
+          next_node <- "refresh_reason_history"
         }
 
         return(list(ctx = ctx, `next` = next_node))
+      }
+    ),
+    refresh_reason_history = list(
+      fn = "load_reason_history",
+      `next` = NULL,
+      retry_mode = "plain",
+      max_retry = 3,
+      args = list(
+        agent_info = agent_info,
+        combo = combo
+      ),
+      branch = function(ctx) {
+        ctx$reason_history <- ctx$results$load_reason_history
+        return(list(ctx = ctx, `next` = "start"))
       }
     ),
     finalize_run = list(
@@ -981,7 +1016,10 @@ fcst_agent_workflow <- function(agent_info,
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        combo = combo
+        combo = combo,
+        completion_reason = "{ctx$completion_reason}",
+        abort_reason = "{ctx$abort_reason}",
+        fallback_available = "{ctx$fallback_available}"
       )
     ),
     stop = list(fn = NULL)
@@ -992,11 +1030,536 @@ fcst_agent_workflow <- function(agent_info,
     iter      = 0, # iteration counter
     max_iter  = max_iter, # loop limit
     results   = list(), # where each tool's output will be stored
-    attempts  = list() # retry bookkeeping for execute_node()
+    attempts  = list(), # retry bookkeeping for execute_node()
+    reason_history = reason_history,
+    completion_reason = "completed",
+    abort_reason = NULL,
+    fallback_available = fallback_available
   )
 
   # run the graph
   run_graph(agent_info$llm, workflow, init_ctx)
+}
+
+#' Abort an invalid agent input proposal
+#'
+#' @param field Name of the invalid setting.
+#' @param value Proposed value.
+#' @param reason Explanation of the validation failure.
+#'
+#' @return This function does not return.
+#' @noRd
+abort_invalid_agent_proposal <- function(field, value, reason) {
+  proposed_value <- paste(value, collapse = "---")
+  rlang::abort(
+    paste0(
+      "Invalid proposed ", field, ": ", reason,
+      " Please propose a valid value or ABORT."
+    ),
+    class = "finnts_reason_proposal_invalid",
+    field = field,
+    proposed_value = proposed_value,
+    action = "correct_or_abort"
+  )
+}
+
+#' Abort an exhausted agent setting search
+#'
+#' @param field Name of the exhausted setting.
+#' @param reason Explanation of the exhausted search space.
+#'
+#' @return This function does not return.
+#' @noRd
+abort_exhausted_agent_search <- function(field, reason) {
+  rlang::abort(
+    paste0(reason, " Stop modifying ", field, " or ABORT."),
+    class = "finnts_reason_search_exhausted",
+    field = field,
+    action = "abort_optimization"
+  )
+}
+
+#' Parse a serialized agent setting
+#'
+#' @param value Proposed value.
+#' @param field Setting name used in errors.
+#' @param allow_null Whether the string `"NULL"` is allowed.
+#'
+#' @return A character vector or the string `"NULL"`.
+#' @noRd
+parse_agent_values <- function(value, field, allow_null = TRUE) {
+  if (!is.character(value) || length(value) != 1 || is.na(value) || !nzchar(trimws(value))) {
+    abort_invalid_agent_proposal(
+      field,
+      value,
+      "use one non-empty '---'-separated character value."
+    )
+  }
+
+  value <- trimws(value)
+  if (identical(value, "NULL")) {
+    if (allow_null) {
+      return("NULL")
+    }
+    abort_invalid_agent_proposal(field, value, "'NULL' is not allowed for this setting.")
+  }
+
+  values <- trimws(strsplit(value, "---", fixed = TRUE)[[1]])
+  if (length(values) == 0 || any(!nzchar(values))) {
+    abort_invalid_agent_proposal(field, value, "values cannot be empty.")
+  }
+  values
+}
+
+#' Parse a logical agent setting
+#'
+#' @param value Proposed value.
+#' @param field Setting name used in errors.
+#'
+#' @return A logical scalar.
+#' @noRd
+parse_agent_logical <- function(value, field) {
+  if (is.logical(value) && length(value) == 1 && !is.na(value)) {
+    return(value)
+  }
+  if (is.character(value) && length(value) == 1 && !is.na(value)) {
+    normalized <- toupper(trimws(value))
+    if (normalized %in% c("TRUE", "FALSE")) {
+      return(normalized == "TRUE")
+    }
+  }
+  abort_invalid_agent_proposal(field, value, "use exactly TRUE or FALSE.")
+}
+
+#' Parse a positive whole-number agent setting
+#'
+#' @param value Proposed value.
+#' @param field Setting name used in errors.
+#'
+#' @return A numeric vector or the string `"NULL"`.
+#' @noRd
+parse_agent_periods <- function(value, field) {
+  values <- parse_agent_values(value, field, allow_null = TRUE)
+  if (identical(values, "NULL")) {
+    return("NULL")
+  }
+
+  periods <- suppressWarnings(as.numeric(values))
+  if (any(!is.finite(periods)) || any(periods <= 0) || any(periods != floor(periods))) {
+    abort_invalid_agent_proposal(
+      field,
+      value,
+      "use 'NULL' or positive finite whole-number periods."
+    )
+  }
+  periods
+}
+
+#' Get models available to an agent proposal
+#'
+#' @param combo A combo hash for local models, or NULL for global models.
+#' @param foundation_suffix Serialized available foundation-model suffix.
+#'
+#' @return A character vector of model names.
+#' @noRd
+get_available_agent_models <- function(combo, foundation_suffix) {
+  foundation_models <- sub("^---", "", foundation_suffix)
+  foundation_models <- if (nzchar(foundation_models)) {
+    strsplit(foundation_models, "---", fixed = TRUE)[[1]]
+  } else {
+    character(0)
+  }
+  available <- unique(c(
+    setdiff(list_models(), list_foundation_models()),
+    foundation_models
+  ))
+  if (is.null(combo)) {
+    available <- intersect(available, list_global_models())
+  }
+  available
+}
+
+#' Validate and format an agent proposal
+#'
+#' @param input_list Parsed LLM response.
+#' @param agent_info Agent metadata.
+#' @param combo A combo hash for local models, or NULL for global models.
+#' @param available_models Models currently available to this workflow.
+#'
+#' @return A validated, formatted input list.
+#' @noRd
+validate_agent_proposal <- function(input_list,
+                                    agent_info,
+                                    combo,
+                                    available_models) {
+  models <- parse_agent_values(input_list$models_to_run, "models_to_run", allow_null = FALSE)
+  unknown_models <- setdiff(models, available_models)
+  if (length(unknown_models) > 0) {
+    abort_invalid_agent_proposal(
+      "models_to_run",
+      unknown_models,
+      paste0("models are unavailable. Choose from: ", paste(available_models, collapse = "---"), ".")
+    )
+  }
+
+  external_regressors <- parse_agent_values(
+    input_list$external_regressors,
+    "external_regressors",
+    allow_null = TRUE
+  )
+  if (!identical(external_regressors, "NULL")) {
+    unknown_regressors <- setdiff(external_regressors, agent_info$external_regressors)
+    if (length(unknown_regressors) > 0) {
+      abort_invalid_agent_proposal(
+        "external_regressors",
+        unknown_regressors,
+        "regressors are not available in the project metadata."
+      )
+    }
+  }
+
+  forecast_approach <- parse_agent_values(
+    input_list$forecast_approach,
+    "forecast_approach",
+    allow_null = FALSE
+  )
+  allowed_approaches <- if (is.null(combo)) {
+    unique(c("bottoms_up", agent_info$forecast_approach))
+  } else {
+    "bottoms_up"
+  }
+  if (length(forecast_approach) != 1 || !forecast_approach %in% allowed_approaches) {
+    abort_invalid_agent_proposal(
+      "forecast_approach",
+      forecast_approach,
+      paste0("choose from: ", paste(allowed_approaches, collapse = "---"), ".")
+    )
+  }
+
+  recipes <- parse_agent_values(input_list$recipes_to_run, "recipes_to_run", allow_null = TRUE)
+  if (!identical(recipes, "NULL") && any(!recipes %in% c("R1", "R2", "all"))) {
+    abort_invalid_agent_proposal(
+      "recipes_to_run",
+      recipes,
+      "use 'NULL', R1, R2, all, or a supported combination."
+    )
+  }
+  if (is.null(combo) &&
+    !identical(recipes, "NULL") &&
+    !any(recipes %in% c("R1", "all"))) {
+    abort_invalid_agent_proposal(
+      "recipes_to_run",
+      recipes,
+      "global model proposals must prepare R1."
+    )
+  }
+
+  seasonal_period <- parse_agent_seasonal_period(input_list$seasonal_period)
+  lag_periods <- parse_agent_periods(input_list$lag_periods, "lag_periods")
+  rolling_periods <- parse_agent_periods(
+    input_list$rolling_window_periods,
+    "rolling_window_periods"
+  )
+  if (!identical(seasonal_period, "NULL") &&
+    !any(models %in% c("stlm-arima", "stlm-ets", "tbats"))) {
+    abort_invalid_agent_proposal(
+      "seasonal_period",
+      seasonal_period,
+      "custom periods require stlm-arima, stlm-ets, or tbats in models_to_run."
+    )
+  }
+
+  reasoning <- input_list$reasoning
+  if (!is.character(reasoning) || length(reasoning) != 1 || is.na(reasoning) || !nzchar(trimws(reasoning))) {
+    abort_invalid_agent_proposal("reasoning", reasoning, "provide one non-empty explanation.")
+  }
+
+  input_list$models_to_run <- models
+  input_list$external_regressors <- external_regressors
+  input_list$clean_missing_values <- parse_agent_logical(
+    input_list$clean_missing_values,
+    "clean_missing_values"
+  )
+  input_list$clean_outliers <- parse_agent_logical(input_list$clean_outliers, "clean_outliers")
+  input_list$forecast_approach <- forecast_approach
+  input_list$stationary <- parse_agent_logical(input_list$stationary, "stationary")
+  input_list$feature_selection <- parse_agent_logical(
+    input_list$feature_selection,
+    "feature_selection"
+  )
+  input_list$multistep_horizon <- parse_agent_logical(
+    input_list$multistep_horizon,
+    "multistep_horizon"
+  )
+  input_list$seasonal_period <- seasonal_period
+  input_list$recipes_to_run <- recipes
+  input_list$lag_periods <- lag_periods
+  input_list$rolling_window_periods <- rolling_periods
+  input_list$reasoning <- trimws(reasoning)
+  input_list
+}
+
+#' Validate a canonical agent setting change budget
+#'
+#' @param value Serialized setting value.
+#' @param default_value Resolved default setting value.
+#' @param field Setting name used in errors.
+#'
+#' @return A canonical setting signature.
+#' @noRd
+canonicalize_agent_period_setting <- function(value, default_value, field) {
+  value <- as.character(value)
+  if (length(value) == 0 || is.na(value[[1]]) || !nzchar(value[[1]]) || value[[1]] == "NULL") {
+    values <- default_value
+  } else {
+    values <- suppressWarnings(as.numeric(strsplit(value[[1]], "---", fixed = TRUE)[[1]]))
+  }
+  if (any(!is.finite(values))) {
+    abort_invalid_agent_proposal(field, value, "periods must be finite numeric values.")
+  }
+  paste(sort(unique(signif(values, digits = 12))), collapse = "---")
+}
+
+#' Count canonical non-default agent setting changes
+#'
+#' @param previous_values Serialized prior setting values.
+#' @param default_value Resolved default setting value.
+#' @param field Setting name used in errors.
+#'
+#' @return The number of distinct non-default settings.
+#' @noRd
+count_agent_setting_changes <- function(previous_values, default_value, field) {
+  default_canonical <- canonicalize_agent_period_setting("NULL", default_value, field)
+  previous_canonical <- unique(vapply(
+    previous_values,
+    canonicalize_agent_period_setting,
+    character(1),
+    default_value = default_value,
+    field = field
+  ))
+  length(setdiff(previous_canonical, default_canonical))
+}
+
+#' Validate a canonical agent setting change budget
+#'
+#' @param previous_values Serialized prior setting values.
+#' @param proposed_value Proposed setting value.
+#' @param default_value Resolved default setting value.
+#' @param field Setting name used in errors.
+#' @param max_changes Maximum distinct non-default settings.
+#'
+#' @return NULL invisibly.
+#' @noRd
+validate_agent_setting_change_budget <- function(previous_values,
+                                                 proposed_value,
+                                                 default_value,
+                                                 field,
+                                                 max_changes = 3L) {
+  default_canonical <- canonicalize_agent_period_setting("NULL", default_value, field)
+  previous_canonical <- unique(vapply(
+    previous_values,
+    canonicalize_agent_period_setting,
+    character(1),
+    default_value = default_value,
+    field = field
+  ))
+  proposed_canonical <- canonicalize_agent_period_setting(
+    proposed_value,
+    default_value,
+    field
+  )
+  if (proposed_canonical %in% previous_canonical) {
+    return(invisible(NULL))
+  }
+
+  prior_change_count <- count_agent_setting_changes(
+    previous_values,
+    default_value,
+    field
+  )
+  if (prior_change_count >= max_changes && proposed_canonical != default_canonical) {
+    abort_exhausted_agent_search(
+      field,
+      paste0(
+        "Cannot propose more than ", max_changes, " unique ", field,
+        " changes within the current agent version."
+      )
+    )
+  }
+  invisible(NULL)
+}
+
+#' Normalize previous-version inputs for LLM replay
+#'
+#' @param previous_version_results Earlier-version run history.
+#' @param warn_invalid Whether to warn about invalid legacy seasonal periods.
+#'
+#' @return A replay-safe copy of the earlier-version run history.
+#' @noRd
+normalize_previous_version_replay_inputs <- function(previous_version_results,
+                                                     warn_invalid = TRUE) {
+  if (!is.data.frame(previous_version_results) || nrow(previous_version_results) == 0) {
+    return(previous_version_results)
+  }
+
+  replay_results <- previous_version_results
+  nullable_fields <- intersect(
+    c(
+      "external_regressors",
+      "recipes_to_run",
+      "lag_periods",
+      "rolling_window_periods",
+      "seasonal_period"
+    ),
+    names(replay_results)
+  )
+
+  for (field in nullable_fields) {
+    field_values <- as.character(replay_results[[field]])
+    field_values[is.na(field_values)] <- "NULL"
+    replay_results[[field]] <- field_values
+  }
+
+  if (!"seasonal_period" %in% names(replay_results)) {
+    return(replay_results)
+  }
+
+  seasonal_values <- replay_results$seasonal_period
+  invalid_values <- character(0)
+
+  for (index in seq_along(seasonal_values)) {
+    value <- seasonal_values[[index]]
+    if (identical(toupper(trimws(value)), "NULL")) {
+      seasonal_values[[index]] <- "NULL"
+      next
+    }
+
+    parsed_values <- suppressWarnings(
+      as.numeric(strsplit(value, "---", fixed = TRUE)[[1]])
+    )
+    is_valid <- tryCatch(
+      {
+        validate_seasonal_period(parsed_values)
+        TRUE
+      },
+      error = function(error) FALSE
+    )
+
+    if (!is_valid) {
+      invalid_values <- c(invalid_values, value)
+      seasonal_values[[index]] <- "NULL"
+    }
+  }
+
+  replay_results$seasonal_period <- seasonal_values
+
+  if (warn_invalid && length(invalid_values) > 0) {
+    warning(
+      "Previous agent version results contain invalid seasonal_period values: ",
+      paste0("'", unique(invalid_values), "'", collapse = ", "),
+      ". Using 'NULL' so cadence defaults are replayed.",
+      call. = FALSE
+    )
+  }
+
+  replay_results
+}
+
+#' Create an in-memory reasoning history snapshot
+#'
+#' @param previous_run_results Formatted previous run results.
+#' @param agent_version Current agent version.
+#'
+#' @return A list containing current-version results, earlier-version replay
+#'   context, and the current-version completed run count.
+#' @noRd
+new_reason_history <- function(previous_run_results, agent_version = NULL) {
+  current_run_results <- previous_run_results
+  previous_version_results <- if (is.data.frame(previous_run_results)) {
+    previous_run_results[0, , drop = FALSE]
+  } else {
+    "No Previous Runs"
+  }
+
+  if (is.data.frame(previous_run_results) &&
+      !is.null(agent_version) &&
+      "agent_version" %in% names(previous_run_results)) {
+    current_agent_version <- agent_version
+    current_run_results <- previous_run_results %>%
+      dplyr::filter(.data$agent_version == current_agent_version)
+    previous_version_results <- previous_run_results %>%
+      dplyr::filter(.data$agent_version < current_agent_version)
+  }
+
+  previous_version_results <- normalize_previous_version_replay_inputs(
+    previous_version_results,
+    warn_invalid = is.data.frame(current_run_results) && nrow(current_run_results) == 0
+  )
+
+  list(
+    previous_run_results = current_run_results,
+    current_run_results = current_run_results,
+    previous_version_results = previous_version_results,
+    total_runs = if (is.data.frame(current_run_results)) nrow(current_run_results) else 0L
+  )
+}
+
+#' Load one reasoning history snapshot
+#'
+#' @param agent_info Agent metadata.
+#' @param combo A combo hash for local models, or NULL for global models.
+#'
+#' @return An in-memory reasoning history snapshot.
+#' @noRd
+load_reason_history <- function(agent_info, combo = NULL) {
+  new_reason_history(
+    load_run_results(agent_info = agent_info, combo = combo),
+    agent_info$agent_version
+  )
+}
+
+#' Parse an agent-proposed seasonal period
+#'
+#' @param value A serialized seasonal-period proposal from the reasoning LLM.
+#'
+#' @return The string `"NULL"` or a validated numeric vector.
+#' @noRd
+parse_agent_seasonal_period <- function(value) {
+  if (identical(value, "NULL")) {
+    return("NULL")
+  }
+
+  if (is.null(value) || length(value) == 0) {
+    abort_invalid_agent_proposal(
+      "seasonal_period",
+      value,
+      "use 'NULL' or propose one to three unique, finite numeric values greater than 1."
+    )
+  }
+
+  proposed_periods <- if (is.character(value)) {
+    if (length(value) != 1) {
+      value
+    } else {
+      suppressWarnings(as.numeric(strsplit(value, "---", fixed = TRUE)[[1]]))
+    }
+  } else {
+    value
+  }
+
+  tryCatch(
+    validate_seasonal_period(proposed_periods),
+    error = function(error) {
+      abort_invalid_agent_proposal(
+        "seasonal_period",
+        value,
+        paste0(
+          conditionMessage(error),
+          " Use 'NULL' or propose one to three unique, finite numeric values greater than 1."
+        )
+      )
+    }
+  )
 }
 
 #' Generate Finn run inputs for the reasoning LLM
@@ -1011,17 +1574,35 @@ fcst_agent_workflow <- function(agent_info,
 reason_inputs <- function(agent_info,
                           combo = NULL,
                           weighted_mape_goal,
-                          last_error = NULL) {
+                          last_error = NULL,
+                          previous_run_results = NULL,
+                          previous_version_results = NULL,
+                          total_runs = NULL) {
   # get metadata
   llm <- agent_info$llm
 
   project_info <- agent_info$project_info
 
-  # load previous run results
-  previous_run_results <- load_run_results(agent_info = agent_info, combo = combo)
-  total_runs <- get_total_run_count(agent_info, combo = combo)
+  # load one snapshot when the caller did not supply one
+  if (is.null(previous_run_results) ||
+      is.null(previous_version_results) ||
+      is.null(total_runs)) {
+    all_run_results <- if (is.null(previous_run_results)) {
+      load_run_results(agent_info = agent_info, combo = combo)
+    } else {
+      previous_run_results
+    }
+    reason_history <- new_reason_history(all_run_results, agent_info$agent_version)
+    previous_run_results <- reason_history$previous_run_results
+    if (is.null(previous_version_results)) {
+      previous_version_results <- reason_history$previous_version_results
+    }
+    if (is.null(total_runs)) {
+      total_runs <- reason_history$total_runs
+    }
+  }
 
-  if (is.data.frame(previous_run_results)) {
+  if (is.data.frame(previous_run_results) && nrow(previous_run_results) > 0) {
     best_mape <- previous_run_results %>%
       dplyr::filter(best_run == "yes") %>%
       dplyr::pull(weighted_mape) %>%
@@ -1031,31 +1612,40 @@ reason_inputs <- function(agent_info,
       dplyr::filter(best_run == "yes") %>%
       dplyr::pull(run_number)
 
-    current_version_results <- previous_run_results %>%
-      dplyr::filter(agent_version == agent_info$agent_version)
+    lag_changes_allowed <- count_agent_setting_changes(
+      previous_run_results$lag_periods,
+      get_lag_periods(
+        NULL,
+        agent_info$project_info$date_type,
+        agent_info$forecast_horizon,
+        TRUE,
+        TRUE
+      ),
+      "lag_periods"
+    ) < 3
 
-    lag_period_changes <- current_version_results %>%
-      dplyr::select(lag_periods) %>%
-      tidyr::drop_na(lag_periods) %>%
-      dplyr::distinct() %>%
-      dplyr::pull() %>%
-      length()
+    rolling_changes_allowed <- count_agent_setting_changes(
+      previous_run_results$rolling_window_periods,
+      get_rolling_window_periods(NULL, agent_info$project_info$date_type),
+      "rolling_window_periods"
+    ) < 3
 
-    lag_changes_allowed <- lag_period_changes < 3
-
-    rolling_window_changes <- current_version_results %>%
-      dplyr::select(rolling_window_periods) %>%
-      tidyr::drop_na(rolling_window_periods) %>%
-      dplyr::distinct() %>%
-      dplyr::pull() %>%
-      length()
-
-    rolling_changes_allowed <- rolling_window_changes < 3
+    seasonal_changes_allowed <- if (!is.null(combo) &&
+      "seasonal_period" %in% names(previous_run_results)) {
+      count_agent_setting_changes(
+        previous_run_results$seasonal_period,
+        get_seasonal_periods(agent_info$project_info$date_type),
+        "seasonal_period"
+      ) < 3
+    } else {
+      TRUE
+    }
   } else {
     best_mape <- "NA"
     best_run <- "NA"
     lag_changes_allowed <- TRUE
     rolling_changes_allowed <- TRUE
+    seasonal_changes_allowed <- TRUE
   }
 
   # create final prompt
@@ -1066,25 +1656,39 @@ reason_inputs <- function(agent_info,
 
       -----LATEST METADATA-----
       - run count : <<run_count>>
-      - best weighted MAPE from previous runs : <<best_mape>>
-      - best run number from previous runs : <<best_run>>
-      - lag_changes_allowed: <<lag_changes>>
-      - rolling_changes_allowed changes: <<rolling_changes>>
+      - best weighted MAPE from current-version runs : <<best_mape>>
+      - best run number from current-version runs : <<best_run>>
+      - lag_changes_allowed : <<lag_changes>>
+      - rolling_changes_allowed : <<rolling_changes>>
+      - seasonal_changes_allowed : <<seasonal_changes>>
 
-      -----PREVIOUS RUN RESULTS-----
-      <<run_results>>
+      -----CURRENT AGENT VERSION RUN RESULTS-----
+      <<current_run_results>>
+
+      -----PREVIOUS AGENT VERSION RESULTS-----
+      <<previous_version_run_results>>
 
       -----LAST ERROR-----
       <<last_error>>
 
       -----END OUTPUT-----",
     .open = "<<", .close = ">>",
-    run_results = make_pipe_table(previous_run_results),
+    current_run_results = if (is.data.frame(previous_run_results) && nrow(previous_run_results) == 0) {
+      "No Previous Runs"
+    } else {
+      make_pipe_table(previous_run_results)
+    },
+    previous_version_run_results = if (is.data.frame(previous_version_results) && nrow(previous_version_results) == 0) {
+      "No Previous Runs"
+    } else {
+      make_pipe_table(previous_version_results)
+    },
     run_count = total_runs,
     best_mape = best_mape,
     best_run = best_run,
     lag_changes = lag_changes_allowed,
     rolling_changes = rolling_changes_allowed,
+    seasonal_changes = seasonal_changes_allowed,
     last_error = ifelse(is.null(last_error), "No errors in previous input recommendation.", last_error),
     agent_version = agent_info$agent_version
   )
@@ -1093,7 +1697,16 @@ reason_inputs <- function(agent_info,
   response <- llm$chat(final_prompt, echo = FALSE)
 
   # extract out json from response and convert to list
-  input_list <- extract_json_object(response)
+  input_list <- tryCatch(
+    extract_json_object(response),
+    error = function(error) {
+      abort_invalid_agent_proposal(
+        "response",
+        "<invalid response>",
+        paste0("return one valid JSON object. ", conditionMessage(error))
+      )
+    }
+  )
 
   # check if the response is an abort schema
   if ("abort" %in% names(input_list) && input_list$abort == "TRUE") {
@@ -1169,39 +1782,12 @@ reason_inputs <- function(agent_info,
     }
   }
 
-  # format the list to ensure correct types
-  input_list$models_to_run <- strsplit(input_list$models_to_run, "---")[[1]]
-  input_list$external_regressors <- if (input_list$external_regressors == "NULL") {
-    "NULL"
-  } else {
-    strsplit(input_list$external_regressors, "---")[[1]]
-  }
-  input_list$clean_missing_values <- as.logical(input_list$clean_missing_values)
-  input_list$clean_outliers <- as.logical(input_list$clean_outliers)
-  input_list$forecast_approach <- as.character(input_list$forecast_approach)
-  input_list$stationary <- as.logical(input_list$stationary)
-  input_list$feature_selection <- as.logical(input_list$feature_selection)
-  input_list$multistep_horizon <- as.logical(input_list$multistep_horizon)
-  input_list$seasonal_period <- if (input_list$seasonal_period == "NULL") {
-    "NULL"
-  } else {
-    as.numeric(strsplit(input_list$seasonal_period, "---")[[1]])
-  }
-  input_list$recipes_to_run <- if (input_list$recipes_to_run == "NULL") {
-    "NULL"
-  } else {
-    strsplit(input_list$recipes_to_run, "---")[[1]]
-  }
-  input_list$lag_periods <- if (input_list$lag_periods == "NULL") {
-    "NULL"
-  } else {
-    as.numeric(strsplit(input_list$lag_periods, "---")[[1]])
-  }
-  input_list$rolling_window_periods <- if (input_list$rolling_window_periods == "NULL") {
-    "NULL"
-  } else {
-    as.numeric(strsplit(input_list$rolling_window_periods, "---")[[1]])
-  }
+  input_list <- validate_agent_proposal(
+    input_list = input_list,
+    agent_info = agent_info,
+    combo = combo,
+    available_models = get_available_agent_models(combo, fm_suffix)
+  )
 
   # inject negative_forecast from agent_info (user-controlled, not LLM-decided)
   input_list$negative_forecast <- if (!is.null(agent_info$negative_forecast)) {
@@ -1210,33 +1796,8 @@ reason_inputs <- function(agent_info,
     FALSE
   }
 
-  # make sure xregs look correct
-  if (length(input_list$external_regressors) > 1) {
-    # check to see if there are any regressors that are not in the project info
-    if (any(!input_list$external_regressors %in% agent_info$external_regressors)) {
-      stop(
-        sprintf(
-          "External regressors %s are not in the agent info.",
-          paste(setdiff(input_list$external_regressors, agent_info$external_regressors), collapse = ", ")
-        ),
-        call. = FALSE
-      )
-    }
-  } else if (input_list$external_regressors != "NULL") {
-    # if there is only one regressor, check if it is NULL or in the project info
-    if (!(input_list$external_regressors %in% c("NULL", agent_info$external_regressors))) {
-      stop(
-        sprintf(
-          "External regressor %s is not in the agent info.",
-          input_list$external_regressors
-        ),
-        call. = FALSE
-      )
-    }
-  }
-
   # check if these inputs were used before in previous runs
-  previous_runs_tbl <- load_run_results(agent_info = agent_info, combo = combo)
+  previous_runs_tbl <- previous_run_results
 
   if (is.data.frame(previous_runs_tbl)) {
     previous_runs_tbl <- previous_runs_tbl %>%
@@ -1286,36 +1847,39 @@ reason_inputs <- function(agent_info,
     if (does_param_set_exist(normalized_check_inputs, normalized_previous_runs)) {
       cli::cli_alert_info("The proposed input parameters have already been used in a previous run.")
 
-      stop(
+      abort_exhausted_agent_search(
+        "parameter set",
         sprintf(
-          "Duplicate parameter set detected. Please modify the inputs or ABORT. Inputs proposed:\n%s",
+          "Duplicate parameter set detected. Inputs proposed:\n%s",
           jsonlite::toJSON(check_inputs, auto_unbox = TRUE)
-        ),
-        call. = FALSE
+        )
       )
     }
 
-    # check if the proposed inputs violate the lag and rolling window change rules
-    # only block proposals that introduce a genuinely new unique value beyond the limit
-    existing_lag_values <- unique(previous_runs_tbl$lag_periods)
-    proposed_lag <- check_inputs$lag_periods
-    if (!is.na(proposed_lag) &&
-      !isTRUE(proposed_lag %in% existing_lag_values) &&
-      length(unique(c(existing_lag_values, proposed_lag))) > 4) {
-      cli::cli_alert_info("Cannot propose more than 3 unique lag period changes across all runs.")
-      stop("Cannot propose more than 3 unique lag period changes across all runs. Stop modifying lag_periods or ABORT.",
-        call. = FALSE
-      )
-    }
-
-    existing_rolling_values <- unique(previous_runs_tbl$rolling_window_periods)
-    proposed_rolling <- check_inputs$rolling_window_periods
-    if (!is.na(proposed_rolling) &&
-      !isTRUE(proposed_rolling %in% existing_rolling_values) &&
-      length(unique(c(existing_rolling_values, proposed_rolling))) > 4) {
-      cli::cli_alert_info("Cannot propose more than 3 unique rolling window period changes across all runs.")
-      stop("Cannot propose more than 3 unique rolling window period changes across all runs. Stop modifying rolling_window_periods or ABORT.",
-        call. = FALSE
+    validate_agent_setting_change_budget(
+      previous_runs_tbl$lag_periods,
+      check_inputs$lag_periods,
+      get_lag_periods(
+        NULL,
+        agent_info$project_info$date_type,
+        agent_info$forecast_horizon,
+        input_list$multistep_horizon,
+        TRUE
+      ),
+      "lag_periods"
+    )
+    validate_agent_setting_change_budget(
+      previous_runs_tbl$rolling_window_periods,
+      check_inputs$rolling_window_periods,
+      get_rolling_window_periods(NULL, agent_info$project_info$date_type),
+      "rolling_window_periods"
+    )
+    if (!is.null(combo)) {
+      validate_agent_setting_change_budget(
+        previous_runs_tbl$seasonal_period,
+        check_inputs$seasonal_period,
+        get_seasonal_periods(agent_info$project_info$date_type),
+        "seasonal_period"
       )
     }
   }
@@ -1885,7 +2449,8 @@ log_best_run <- function(agent_info,
         paste0(
           project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
           hash_data(agent_info$run_id), "*-agent_best_run.csv"
-        )
+        ),
+        fail_on_error = TRUE
       )
       existing_count <- length(existing_best_run_files)
     } else {
@@ -1937,11 +2502,17 @@ log_best_run <- function(agent_info,
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param combo A character string representing the hashed combo. If NULL or "all", updates all combos for global models.
+#' @param completion_reason Why the workflow reached finalization.
+#' @param abort_reason The exhausted reasoning message, when applicable.
+#' @param fallback_available Whether a global workflow may continue to local models.
 #'
 #' @return Character string indicating success
 #' @noRd
 finalize_run <- function(agent_info,
-                         combo = NULL) {
+                         combo = NULL,
+                         completion_reason = "completed",
+                         abort_reason = NULL,
+                         fallback_available = FALSE) {
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
@@ -1963,10 +2534,14 @@ finalize_run <- function(agent_info,
     )
 
     if (nrow(best_run_tbl) == 0) {
-      stop(
-        paste0("Error in finalize_run(). No best run file found for combo hash: ", combo),
-        call. = FALSE
+      missing_message <- paste0(
+        "Error in finalize_run(). No best run file found for combo hash: ",
+        combo
       )
+      if (identical(completion_reason, "reasoning_exhausted")) {
+        stop(abort_reason, " ", missing_message, call. = FALSE)
+      }
+      stop(missing_message, call. = FALSE)
     }
 
     write_data(
@@ -1985,6 +2560,16 @@ finalize_run <- function(agent_info,
   best_run_tbl_all <- load_best_agent_run(agent_info = agent_info)
 
   if (nrow(best_run_tbl_all) == 0) {
+    if (identical(completion_reason, "reasoning_exhausted") && isTRUE(fallback_available)) {
+      return(list(
+        status = "skipped",
+        reason = abort_reason,
+        continue_to_local = TRUE
+      ))
+    }
+    if (identical(completion_reason, "reasoning_exhausted")) {
+      stop(abort_reason, " Error in finalize_run(). No best run files found.", call. = FALSE)
+    }
     stop("Error in finalize_run(). No best run files found.", call. = FALSE)
   }
 
@@ -1994,6 +2579,16 @@ finalize_run <- function(agent_info,
     unique()
 
   if (length(combo_list) == 0) { # when global models have been run but local models are always better
+    if (identical(completion_reason, "reasoning_exhausted") && isTRUE(fallback_available)) {
+      return(list(
+        status = "skipped",
+        reason = abort_reason,
+        continue_to_local = TRUE
+      ))
+    }
+    if (identical(completion_reason, "reasoning_exhausted")) {
+      stop(abort_reason, " Error in finalize_run(). No global best run files found.", call. = FALSE)
+    }
     return("Run finalized successfully.")
   }
 
@@ -2204,49 +2799,6 @@ load_run_results <- function(agent_info,
   }
 
   return(run_output)
-}
-
-#' Get the total run count for the agent
-#'
-#' @param agent_info A list containing agent information including project info and run ID.
-#' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
-#'
-#' @return A numeric value representing the total run count for the agent.
-#' @noRd
-get_total_run_count <- function(agent_info,
-                                combo = NULL) {
-  # determine the combo value
-  if (is.null(combo)) {
-    combo_value <- hash_data("all")
-  } else {
-    combo_value <- combo
-  }
-
-  # get total runs
-  project_name <- paste0(
-    agent_info$project_info$project_name,
-    "_",
-    ifelse(is.null(combo), hash_data("all"), combo_value)
-  )
-
-  total_runs <- get_run_info(
-    project_name = project_name,
-    run_name = NULL,
-    storage_object = agent_info$project_info$storage_object,
-    path = agent_info$project_info$path
-  )
-
-  # filter total runs based on the combo value
-  if ("run_name" %in% names(total_runs) & "weighted_mape" %in% names(total_runs) & "agent_version" %in% names(total_runs)) {
-    total_runs <- total_runs %>%
-      dplyr::filter(stringr::str_starts(run_name, paste0("agent_", agent_info$run_id, "_", combo_value))) %>%
-      dplyr::filter(!is.na(weighted_mape)) %>%
-      dplyr::filter(!is.na(agent_version))
-  } else {
-    total_runs <- tibble::tibble()
-  }
-
-  return(nrow(total_runs))
 }
 
 #' Foundation model availability registry
@@ -2726,8 +3278,6 @@ iterate_forecast_system_prompt <- function(agent_info,
   project_info <- agent_info$project_info
   combo_str <- paste(project_info$combo_variables, collapse = "---")
   xregs_str <- paste(agent_info$external_regressors, collapse = "---")
-  xregs_length <- length(agent_info$external_regressors)
-
   # get NULL defaults
   lag_default <- get_lag_periods(
     lag_periods = NULL,
@@ -2792,7 +3342,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
           3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
-          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
+          3-D.  You MUST NOT recommend the same set of parameters as a run in the current agent version. If you do you MUST ABORT.
       4.  IF data is not stationary then set stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
       6.  HIERARCHICAL RULES
@@ -2819,22 +3369,23 @@ iterate_forecast_system_prompt <- function(agent_info,
           9-F.  ALWAYS set feature_selection="TRUE" if any external regressors are used.
           9-G.  IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           9-H.  ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          9-I.  You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
-          9-J.  IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+          9-I.  IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       10. FEATURE LAG RULES
           10-A. IF run_count == 0 then set lag_periods = "NULL"
           10-B. IF run_count > 0 AND *Step E is complete* -> use ACF and PCF results from EDA to select lag_periods.
           10-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           10-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-          10-E. IF lag_chages_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          10-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
-          10-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+          10-E. You may try at most 3 distinct non-default lag_periods configurations within the current agent version.
+          10-F. IF lag_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
+          10-G. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
+          10-H. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       11. ROLLING WINDOW LAGS
           11-A. IF run_count == 0 then set rolling_window_periods = "NULL"
           11-B. IF run_count > 0 AND *Step F is complete* then set rolling_window_periods = "NULL" or a list of periods separated by "---".
-          11-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          11-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
-          11-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+          11-C. You may try at most 3 distinct non-default rolling_window_periods configurations within the current agent version.
+          11-D. IF rolling_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
+          11-E. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
+          11-F. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. PREVIOUS VERSION REPLAY RULES
           12-A. IF run_count == 0 AND one or more *earlier agent versions* exist before current agent version of <<agent_version>>,
           YOU MUST first try the **full input set** from the best run of the most-recent previous agent version.
@@ -2927,7 +3478,7 @@ iterate_forecast_system_prompt <- function(agent_info,
           3-A.  IF changes made in the previous run reduced the weighted mape compared to the best run, keep them, otherwise revert back to previous best run.
           3-B.  AFTER the first run (run_count > 0), YOU MUST change at most ONE parameter per new run.
           3-C.  Reverting back to a previous best run AND changing ONE parameter from that best run counts as ONE parameter change.
-          3-D.  You MUST NOT recommend the same set of parameters as a previous run. If you do you MUST ABORT.
+          3-D.  You MUST NOT recommend the same set of parameters as a run in the current agent version. If you do you MUST ABORT.
       4.  IF data is not stationary -> stationary="TRUE".
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 -> multistep_horizon="TRUE".
       6.  MISSING VALUES RULES
@@ -2940,10 +3491,13 @@ iterate_forecast_system_prompt <- function(agent_info,
       8.  SEASONAL PERIOD RULES
           8-A.  IF run_count == 0 -> seasonal_period = "NULL"
           8-B.  IF run_count > 0 AND *Step C is complete* -> seasonal_period = "NULL" or a list of periods separated by "---". Use EDA results to select seasonal periods.
-          8-C.  You MUST NOT change the seasonal_period parameter more than *3 times* across all runs. IF you do you MUST ABORT.
-          8-D.  A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
-          8-E.  There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
-          8-F.  Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
+          8-C.  You may try at most 3 distinct non-default seasonal_period configurations within the current agent version.
+          8-D.  Reusing a previously tested configuration or selecting "NULL" does not consume another change.
+          8-E.  IF seasonal_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
+          8-F.  A value of "NULL" means that seasonal periods are defaulted to <<seasonal_period_default>>.
+          8-G.  There can only be at most 3 seasonal periods, separated by "---". If you select more than 3, you MUST ABORT.
+          8-H.  Seasonal period inputs ONLY apply to these models: "stlm-arima", "stlm-ets", "tbats". IF you are not using these models, you MUST NOT select any seasonal periods.
+          8-I.  Every seasonal period MUST be a unique, finite numeric value greater than 1. You MUST NOT use 1 in any position.
       9.  FULL MODEL SWEEP RULES
           9-A.  IF run_count == 0 -> models_to_run = "<<models_rule_10a>>"
           9-B.  IF run_count > 0 AND *Step D is complete* -> models_to_run = "<<models_rule_10b>>"
@@ -2957,22 +3511,23 @@ iterate_forecast_system_prompt <- function(agent_info,
           10-F. ALWAYS set feature_selection="TRUE" if any external regressors are used. Changing feature_selection AND external_regressors counts as ONE parameter change.
           10-G. IF an external regressors is a previous run helped reduce forecast error, then keep it. Then try adding one new external regressor in addition to the previous external regressor.
           10-H. ALWAYS try all promising external regressors (either individually or combination of multiple external regressors) highlighted from EDA before moving along in decision tree.
-          10-I. You are ONLY ALLOWED to change the external_regressors parameter a total of <<xregs_length>> times across all runs.
-          10-J. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
+          10-I. IF using multiple external_regressors, you MUST NOT change the ordering of them compared to previous runs.
       11. FEATURE LAG RULES
           11-A. IF run_count == 0 -> lag_periods = "NULL"
           11-B. IF run_count > 0 AND *Step F is complete* -> use ACF and PCF results from EDA to select lag_periods.
           11-C. IF selecting lag periods to use, ALWAYS combine them using "---" separator.
           11-D. IF selecting lag periods less than the forecast horizon, ALWAYS set multistep_horizon="TRUE".
-          11-E. IF lag_changes_allowed == FALSE, you MUST NOT make any new lag_periods changes.
-          11-F. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
-          11-G. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
+          11-E. You may try at most 3 distinct non-default lag_periods configurations within the current agent version.
+          11-F. IF lag_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
+          11-G. A value of "NULL" means that lags are defaulted to <<lag_default>>. Note that these default lags assume multistep_horizon="TRUE". If not the lags will be greater than or equal to forecast horizon.
+          11-H. If using multiple lag_periods, you MUST NOT change the ordering of them compared to previous runs.
       12. ROLLING WINDOW LAGS
           12-A. IF run_count == 0 -> rolling_window_periods = "NULL"
           12-B. IF run_count > 0 AND *Step G is complete* -> rolling_window_periods = "NULL" or a list of periods separated by "---".
-          12-C. IF rolling_changes_allowed == FALSE, you MUST NOT make any new rolling_window_periods changes.
-          12-D. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
-          12-E. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
+          12-C. You may try at most 3 distinct non-default rolling_window_periods configurations within the current agent version.
+          12-D. IF rolling_changes_allowed == FALSE, you MUST reuse a previously tested configuration, select "NULL", or ABORT.
+          12-E. A value of "NULL" means that rolling window lags are defaulted to <<rolling_default>>.
+          12-F. If using multiple rolling_window_periods, you MUST NOT change the ordering of them compared to previous runs.
       13. RECIPE RULES
           13-A. IF run_count == 0 -> recipes_to_run = "R1"
           13-B. IF run_count > 0 AND *Step H is complete* -> recipes_to_run = "NULL" or "R1"
@@ -3016,7 +3571,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "seasonal_period"       : "NULL|1---2---3",
+        "seasonal_period"       : "NULL|2---6---12",
         "models_to_run"         : "arima---ets---tbats---snaive---stlm-arima---xgboost",
         "stationary"            : "TRUE|FALSE",
         "feature_selection"     : "TRUE|FALSE",
@@ -3042,7 +3597,6 @@ iterate_forecast_system_prompt <- function(agent_info,
       xregs = xregs_str,
       eda = eda_results,
       weighted_mape_goal = weighted_mape_goal,
-      xregs_length = xregs_length,
       lag_default = lag_default,
       rolling_default = rolling_default,
       recipe_default = recipe_default,

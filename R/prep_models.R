@@ -1094,7 +1094,7 @@ get_date_type <- function(frequency) {
 #' @noRd
 get_seasonal_periods <- function(date_type) {
   seasonal_periods <- switch(date_type,
-    "year" = c(1, 2, 3),
+    "year" = c(2, 3),
     "quarter" = c(4, 2, 8),
     "month" = c(12, 6, 3),
     "week" = c(365.25 / 7, (365.25 / 7) / 4, (365.25 / 7) / 12),

@@ -480,11 +480,14 @@ write_data_folder <- function(x,
 #'
 #' @param storage_object storage object used to write to azure
 #' @param path file destination
+#' @param fail_on_error Whether storage-provider listing errors should be
+#'   propagated instead of treated as an empty listing.
 #'
 #' @return List of file names with path
 #' @noRd
 list_files <- function(storage_object,
-                       path) {
+                       path,
+                       fail_on_error = FALSE) {
   if (fs::path_dir(path) %in% c("/prep_data", "/prep_models", "/models", "/logs", "/forecasts")) {
     fs::dir_create(tempdir(), fs::path_dir(path))
     dir <- fs::path_dir(paste0(tempdir(), path))
@@ -504,6 +507,9 @@ list_files <- function(storage_object,
     blob_container = tryCatch(
       AzureStor::list_storage_files(storage_object, dir) %>% dplyr::filter(grepl(utils::glob2rx(path), name)) %>% dplyr::pull(name),
       error = function(e) {
+        if (isTRUE(fail_on_error)) {
+          stop(conditionMessage(e), call. = FALSE)
+        }
         NULL
       }
     )

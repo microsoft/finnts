@@ -43,8 +43,9 @@ inst/doc
 
 # Copilot / Superpowers local config
 docs
-.github/copilot-instructions.md
 .github/prompts/
 .superpowers/
 .positai
 .codex
+CLAUDE.local.md
+.claude/settings.local.json

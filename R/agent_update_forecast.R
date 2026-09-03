@@ -1588,7 +1588,10 @@ update_forecast_combo <- function(agent_info,
     run_ensemble_models = FALSE,
     pca = prev_run_log_tbl$pca,
     num_hyperparameters = as.numeric(prev_run_log_tbl$num_hyperparameters),
-    seasonal_period = adjust_inputs(prev_run_log_tbl$seasonal_period, convert_numeric = TRUE),
+    seasonal_period = resolve_previous_seasonal_period(
+      prev_run_log_tbl$seasonal_period,
+      project_info$date_type
+    ),
     seed = seed
   )
 
@@ -2611,6 +2614,47 @@ validate_prev_run_log <- function(prev_run_log_tbl) {
   }
 
   return(prev_run_log_tbl)
+}
+
+#' Resolve a seasonal period from a previous run
+#'
+#' Historical agent runs could record seasonal periods that current seasonal
+#' engines cannot use. Preserve valid values and use cadence defaults when an
+#' invalid historical value is replayed during a forecast update.
+#'
+#' @param value A serialized seasonal period from a previous run log.
+#' @param date_type The project's date cadence.
+#'
+#' @return A validated numeric vector, or NULL to use cadence defaults.
+#' @noRd
+resolve_previous_seasonal_period <- function(value, date_type) {
+  seasonal_period <- suppressWarnings(adjust_inputs(value, convert_numeric = TRUE))
+
+  if (is.null(seasonal_period)) {
+    return(NULL)
+  }
+
+  tryCatch(
+    validate_seasonal_period(seasonal_period),
+    error = function(error) {
+      cadence <- switch(date_type,
+        year = "yearly",
+        quarter = "quarterly",
+        month = "monthly",
+        week = "weekly",
+        day = "daily",
+        paste0(date_type, " cadence")
+      )
+      warning(
+        "The previous run used an invalid seasonal_period ('",
+        paste(value, collapse = "---"), "'): ",
+        conditionMessage(error), " Using ", cadence,
+        " defaults for this update.",
+        call. = FALSE
+      )
+      NULL
+    }
+  )
 }
 
 #' Adjust inputs for model fitting
