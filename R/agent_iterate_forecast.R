@@ -1389,6 +1389,82 @@ validate_agent_setting_change_budget <- function(previous_values,
   invisible(NULL)
 }
 
+#' Normalize previous-version inputs for LLM replay
+#'
+#' @param previous_version_results Earlier-version run history.
+#' @param warn_invalid Whether to warn about invalid legacy seasonal periods.
+#'
+#' @return A replay-safe copy of the earlier-version run history.
+#' @noRd
+normalize_previous_version_replay_inputs <- function(previous_version_results,
+                                                     warn_invalid = TRUE) {
+  if (!is.data.frame(previous_version_results) || nrow(previous_version_results) == 0) {
+    return(previous_version_results)
+  }
+
+  replay_results <- previous_version_results
+  nullable_fields <- intersect(
+    c(
+      "external_regressors",
+      "recipes_to_run",
+      "lag_periods",
+      "rolling_window_periods",
+      "seasonal_period"
+    ),
+    names(replay_results)
+  )
+
+  for (field in nullable_fields) {
+    field_values <- as.character(replay_results[[field]])
+    field_values[is.na(field_values)] <- "NULL"
+    replay_results[[field]] <- field_values
+  }
+
+  if (!"seasonal_period" %in% names(replay_results)) {
+    return(replay_results)
+  }
+
+  seasonal_values <- replay_results$seasonal_period
+  invalid_values <- character(0)
+
+  for (index in seq_along(seasonal_values)) {
+    value <- seasonal_values[[index]]
+    if (identical(toupper(trimws(value)), "NULL")) {
+      seasonal_values[[index]] <- "NULL"
+      next
+    }
+
+    parsed_values <- suppressWarnings(
+      as.numeric(strsplit(value, "---", fixed = TRUE)[[1]])
+    )
+    is_valid <- tryCatch(
+      {
+        validate_seasonal_period(parsed_values)
+        TRUE
+      },
+      error = function(error) FALSE
+    )
+
+    if (!is_valid) {
+      invalid_values <- c(invalid_values, value)
+      seasonal_values[[index]] <- "NULL"
+    }
+  }
+
+  replay_results$seasonal_period <- seasonal_values
+
+  if (warn_invalid && length(invalid_values) > 0) {
+    warning(
+      "Previous agent version results contain invalid seasonal_period values: ",
+      paste0("'", unique(invalid_values), "'", collapse = ", "),
+      ". Using 'NULL' so cadence defaults are replayed.",
+      call. = FALSE
+    )
+  }
+
+  replay_results
+}
+
 #' Create an in-memory reasoning history snapshot
 #'
 #' @param previous_run_results Formatted previous run results.
@@ -1414,6 +1490,11 @@ new_reason_history <- function(previous_run_results, agent_version = NULL) {
     previous_version_results <- previous_run_results %>%
       dplyr::filter(.data$agent_version < current_agent_version)
   }
+
+  previous_version_results <- normalize_previous_version_replay_inputs(
+    previous_version_results,
+    warn_invalid = is.data.frame(current_run_results) && nrow(current_run_results) == 0
+  )
 
   list(
     previous_run_results = current_run_results,

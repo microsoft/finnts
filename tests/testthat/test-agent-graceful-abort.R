@@ -125,6 +125,237 @@ test_that("reason history separates current runs from previous-version replay co
   expect_equal(snapshot$previous_run_results, snapshot$current_run_results)
 })
 
+test_that("previous-version replay renders only nullable defaults as NULL", {
+  history <- dplyr::bind_rows(
+    minimal_reason_history(
+      agent_version = 1,
+      run_number = 1,
+      model_std_wmape = NA_real_,
+      recipes_to_run = NA_character_
+    ),
+    minimal_reason_history(
+      agent_version = 2,
+      run_number = 2,
+      recipes_to_run = NA_character_
+    )
+  )
+  history$pca <- NA
+  original_history <- history
+  nullable_fields <- c(
+    "external_regressors",
+    "recipes_to_run",
+    "lag_periods",
+    "rolling_window_periods",
+    "seasonal_period"
+  )
+
+  expect_no_warning(
+    snapshot <- new_reason_history(history, agent_version = 2)
+  )
+
+  expect_identical(
+    unname(unlist(
+      snapshot$previous_version_results[1, nullable_fields],
+      use.names = FALSE
+    )),
+    rep("NULL", length(nullable_fields))
+  )
+  expect_true(is.na(snapshot$previous_version_results$model_std_wmape[[1]]))
+  expect_true(is.na(snapshot$previous_version_results$pca[[1]]))
+  expect_true(all(vapply(
+    snapshot$current_run_results[nullable_fields],
+    function(value) is.na(value[[1]]),
+    logical(1)
+  )))
+  expect_identical(history, original_history)
+})
+
+test_that("previous-version replay sanitizes seasonal periods containing one", {
+  invalid_values <- c(
+    "1",
+    "1---12",
+    "12---1",
+    "1---3---12",
+    "3---1---12",
+    "3---12---1"
+  )
+  invalid_history <- dplyr::bind_rows(lapply(
+    seq_along(invalid_values),
+    function(index) {
+      minimal_reason_history(
+        agent_version = 1,
+        run_number = index,
+        models_to_run = "stlm-arima",
+        seasonal_period = invalid_values[[index]]
+      )
+    }
+  ))
+  original_history <- invalid_history
+  warnings <- character(0)
+
+  snapshot <- withCallingHandlers(
+    new_reason_history(invalid_history, agent_version = 2),
+    warning = function(warning) {
+      warnings <<- c(warnings, conditionMessage(warning))
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_length(warnings, 1L)
+  if (length(warnings) > 0) {
+    expect_match(warnings[[1]], "invalid seasonal_period", fixed = TRUE)
+    expect_match(warnings[[1]], "Using 'NULL'", fixed = TRUE)
+    expect_match(warnings[[1]], "1---3---12", fixed = TRUE)
+  }
+  expect_identical(
+    snapshot$previous_version_results$seasonal_period,
+    rep("NULL", length(invalid_values))
+  )
+  expect_identical(invalid_history, original_history)
+
+  valid_values <- c("2", "2---12", "2---6---12")
+  valid_history <- dplyr::bind_rows(lapply(
+    seq_along(valid_values),
+    function(index) {
+      minimal_reason_history(
+        agent_version = 1,
+        run_number = index,
+        models_to_run = "stlm-arima",
+        seasonal_period = valid_values[[index]]
+      )
+    }
+  ))
+
+  expect_no_warning(
+    valid_snapshot <- new_reason_history(valid_history, agent_version = 2)
+  )
+  expect_identical(
+    valid_snapshot$previous_version_results$seasonal_period,
+    valid_values
+  )
+})
+
+test_that("first new-version run replays legacy seasonal defaults safely", {
+  invalid_values <- c(
+    "1",
+    "1---12",
+    "12---1",
+    "1---3---12",
+    "3---1---12",
+    "3---12---1"
+  )
+  case_state <- new.env(parent = emptyenv())
+
+  testthat::local_mocked_bindings(
+    new_llm_session = function(llm) llm,
+    iterate_forecast_system_prompt = function(...) "system prompt",
+    make_pipe_table = function(data) {
+      paste0("SEASONAL_PERIOD=", data$seasonal_period[[1]])
+    },
+    get_foundation_model_suffix = function() "",
+    wait_before_retry = function(...) invisible(NULL),
+    submit_fcst_run = function(...) {
+      arguments <- list(...)
+      case_state$submit_count <- case_state$submit_count + 1L
+      case_state$inputs <- arguments$inputs
+      list(run = case_state$submit_count)
+    },
+    get_fcst_output = function(...) data.frame(),
+    calculate_fcst_metrics = function(...) 0.01,
+    log_best_run = function(...) "logged",
+    finalize_run = function(completion_reason = "completed", ...) {
+      case_state$completion_reason <- completion_reason
+      if (identical(completion_reason, "reasoning_exhausted")) {
+        stop("Error in finalize_run(). No best run file found for fresh agent version.")
+      }
+      "finalized"
+    },
+    .package = "finnts"
+  )
+
+  for (seasonal_period in invalid_values) {
+    case_state$submit_count <- 0L
+    case_state$completion_reason <- NULL
+    case_state$inputs <- NULL
+    chat <- make_queued_fake_chat("")
+    chat_state <- chat
+    chat$chat <- local({
+      invalid_value <- seasonal_period
+      state <- chat_state
+      function(prompt, ...) {
+        state$call_count <- state$call_count + 1L
+        state$prompts <- c(state$prompts, as.character(prompt))
+        replay_value <- if (grepl(
+          paste0("SEASONAL_PERIOD=", invalid_value),
+          prompt,
+          fixed = TRUE
+        )) {
+          invalid_value
+        } else {
+          "NULL"
+        }
+        make_agent_response(
+          models_to_run = "stlm-arima",
+          seasonal_period = replay_value
+        )
+      }
+    })
+    agent_info <- make_graceful_abort_agent_info()
+    agent_info$llm <- chat
+    history <- minimal_reason_history(
+      agent_version = 1,
+      models_to_run = "stlm-arima",
+      seasonal_period = seasonal_period
+    )
+    warnings <- character(0)
+
+    outcome <- tryCatch(
+      withCallingHandlers(
+        fcst_agent_workflow(
+          agent_info = agent_info,
+          combo = "combo-hash",
+          weighted_mape_goal = 0.05,
+          parallel_processing = NULL,
+          inner_parallel = FALSE,
+          num_cores = 1,
+          max_iter = 1,
+          seed = 123,
+          previous_run_results = history,
+          fallback_available = FALSE
+        ),
+        warning = function(warning) {
+          warnings <<- c(warnings, conditionMessage(warning))
+          invokeRestart("muffleWarning")
+        }
+      ),
+      error = identity
+    )
+
+    expect_false(inherits(outcome, "error"), info = seasonal_period)
+    if (inherits(outcome, "error")) {
+      next
+    }
+    expect_equal(length(warnings), 1L, info = seasonal_period)
+    expect_identical(chat$call_count, 1L, info = seasonal_period)
+    expect_identical(case_state$submit_count, 1L, info = seasonal_period)
+    expect_identical(
+      case_state$inputs$seasonal_period,
+      "NULL",
+      info = seasonal_period
+    )
+    expect_null(
+      null_converter(case_state$inputs$seasonal_period),
+      info = seasonal_period
+    )
+    expect_identical(
+      case_state$completion_reason,
+      "completed",
+      info = seasonal_period
+    )
+    expect_identical(outcome$node, "stop", info = seasonal_period)
+  }
+})
+
 test_that("reason prompt keeps prior versions for replay but counts current version only", {
   history <- dplyr::bind_rows(
     minimal_reason_history(
