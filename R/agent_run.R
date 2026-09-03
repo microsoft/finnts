@@ -122,6 +122,30 @@ run_graph <- function(chat,
   return(ctx)
 }
 
+#' Wait before retrying a failed workflow node
+#'
+#' @param seconds Number of seconds to wait.
+#'
+#' @return NULL invisibly.
+#' @noRd
+wait_before_retry <- function(seconds = 5) {
+  Sys.sleep(seconds)
+  invisible(NULL)
+}
+
+#' Check whether a reasoning failure can use graceful exhaustion handling
+#'
+#' @param error An error condition raised by `reason_inputs()`.
+#'
+#' @return A logical scalar.
+#' @noRd
+is_graceful_reason_failure <- function(error) {
+  inherits(error, c(
+    "finnts_reason_proposal_invalid",
+    "finnts_reason_search_exhausted"
+  ))
+}
+
 #' Execute a node in the workflow
 #'
 #' @param node The node to execute.
@@ -161,8 +185,8 @@ execute_node <- function(node, ctx, chat) {
       return(list(ctx = ctx, ok = TRUE))
     }
 
-    # pause for 5 seconds
-    Sys.sleep(5)
+    # pause before retrying
+    wait_before_retry()
 
     # failure bookkeeping
     attempt <- attempt + 1L
@@ -170,12 +194,8 @@ execute_node <- function(node, ctx, chat) {
     ctx$last_error <- as.character(err)
 
     if (attempt > max_try) {
-      # graceful abort for reason_inputs when the LLM cannot propose valid params
-      if (identical(tool_name, "reason_inputs") &&
-        (grepl("unique lag period changes", ctx$last_error, fixed = TRUE) ||
-          grepl("unique rolling window period changes", ctx$last_error, fixed = TRUE) ||
-          grepl("Invalid proposed seasonal_period", ctx$last_error, fixed = TRUE) ||
-          grepl("Duplicate parameter set detected", ctx$last_error, fixed = TRUE))) {
+      # graceful abort for exhausted, correctable reasoning failures
+      if (identical(tool_name, "reason_inputs") && is_graceful_reason_failure(err)) {
         abort_reason <- paste0(
           ctx$last_error,
           " Aborting optimization."
@@ -183,7 +203,12 @@ execute_node <- function(node, ctx, chat) {
         cli::cli_alert_info(
           "Agent cannot propose new valid inputs after {attempt} attempt(s). Aborting gracefully: {abort_reason}"
         )
-        ctx$results[[tool_name]] <- list(abort = "TRUE", reasoning = abort_reason)
+        ctx$results[[tool_name]] <- list(
+          abort = "TRUE",
+          reasoning = abort_reason,
+          failure_class = class(err)[[1]],
+          field = err$field %||% NA_character_
+        )
         return(list(ctx = ctx, ok = TRUE))
       }
 

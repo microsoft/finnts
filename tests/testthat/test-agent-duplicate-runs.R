@@ -232,7 +232,7 @@ test_that("reason_inputs rejects reordered multipart duplicate settings", {
   llm <- new.env(parent = emptyenv())
   llm$chat <- function(...) {
     paste0(
-      '{"models_to_run":"glmnet---arima",',
+      '{"models_to_run":"glmnet---stlm-arima---arima",',
       '"external_regressors":"Driver_B---Driver_A",',
       '"clean_missing_values":"FALSE",',
       '"clean_outliers":"FALSE",',
@@ -269,7 +269,7 @@ test_that("reason_inputs rejects reordered multipart duplicate settings", {
     model_avg_wmape = 0.3,
     model_median_wmape = 0.25,
     model_std_wmape = 0.1,
-    models_to_run = "arima---glmnet",
+    models_to_run = "arima---glmnet---stlm-arima",
     external_regressors = "Driver_A---Driver_B",
     clean_missing_values = FALSE,
     clean_outliers = FALSE,
@@ -286,7 +286,6 @@ test_that("reason_inputs rejects reordered multipart duplicate settings", {
 
   testthat::local_mocked_bindings(
     load_run_results = function(...) previous_runs,
-    get_total_run_count = function(...) 1,
     load_eda_results = function(...) "No EDA needed for this test.",
     get_foundation_model_suffix = function() "",
     .package = "finnts"
@@ -336,7 +335,6 @@ test_that("reason_inputs rejects one in any proposed seasonal period position", 
 
   testthat::local_mocked_bindings(
     load_run_results = function(...) NULL,
-    get_total_run_count = function(...) 0,
     get_foundation_model_suffix = function() "",
     .package = "finnts"
   )
@@ -435,7 +433,6 @@ test_that("reason_inputs retry corrects a proposed seasonal period of one", {
 
   testthat::local_mocked_bindings(
     load_run_results = function(...) NULL,
-    get_total_run_count = function(...) 0,
     get_foundation_model_suffix = function() "",
     .package = "finnts"
   )
@@ -502,7 +499,6 @@ test_that("exhausted invalid seasonal periods abort optimization gracefully", {
 
   testthat::local_mocked_bindings(
     load_run_results = function(...) NULL,
-    get_total_run_count = function(...) 1,
     get_foundation_model_suffix = function() "",
     .package = "finnts"
   )
