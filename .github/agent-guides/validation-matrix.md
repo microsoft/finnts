@@ -8,7 +8,7 @@ When a file matches multiple scoped rules, follow all matching rules. No rule ta
 | --- | --- | --- |
 | Combo identity or input validation | `R -q -e 'devtools::test(filter = "combo-normalization|prep_data")'` | Full tests when artifact naming or hierarchy behavior changes |
 | Agent sessions or parallel serialization | `R -q -e 'devtools::test(filter = "agent-chat-serialization")'` | Agent-focused tests, then full tests |
-| Agent reasoning, duplicate runs, retries, or finalization | `R -q -e 'devtools::test(filter = "agent-duplicate-runs|agent-graceful-abort|finalize_run")'` | CRAN profile, then full tests |
+| Agent reasoning, duplicate runs, retries, or finalization | `R -q -e 'devtools::test(filter = "agent-duplicate-runs|agent-global-resume|agent-graceful-abort|finalize_run")'` | CRAN profile, then full tests |
 | Agent EDA prompt summaries | `R -q -e 'devtools::test(filter = "agent-eda-summaries")'` | Agent-focused tests |
 | Seasonal-period behavior | `R -q -e 'devtools::test(filter = "prep_models|agent-duplicate-runs|agent-graceful-abort")'` | Multistep tests if model construction changes, then full tests |
 | Multistep fitting, prediction, lags, or feature selection | `R -q -e 'devtools::test(filter = "multistep")'` | Full tests; retain the daily matrix and all date frequencies |

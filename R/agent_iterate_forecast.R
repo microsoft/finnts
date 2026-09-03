@@ -25,6 +25,23 @@ new_llm_session <- function(llm) {
   session
 }
 
+has_completed_iteration_target <- function(best_run_tbl, max_iter) {
+  required_columns <- c("run_complete", "max_iterations")
+  if (!is.data.frame(best_run_tbl) ||
+    !all(required_columns %in% colnames(best_run_tbl))) {
+    return(FALSE)
+  }
+
+  run_complete <- suppressWarnings(as.logical(as.character(best_run_tbl$run_complete)))
+  max_iterations <- suppressWarnings(as.numeric(as.character(best_run_tbl$max_iterations)))
+
+  any(
+    run_complete %in% TRUE &
+      is.finite(max_iterations) &
+      max_iterations >= max_iter
+  )
+}
+
 #' Run the Finn Agent Forecast Iteration Process
 #'
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
@@ -155,46 +172,54 @@ iterate_forecast <- function(agent_info,
     dplyr::pull(Combo) %>%
     unique()
 
+  best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  global_models_ran <- FALSE
+
   # optimize global models
   if (length(combo_list) > 1 & run_global_models) {
-    message("[agent] Starting Global Model Iteration Workflow")
-
-    # adjust max iterations based on previous runs
-    previous_runs <- load_run_results(
-      agent_info = agent_info,
-      combo = NULL
-    )
-
-    if (!tibble::is_tibble(previous_runs)) {
-      max_iter_adj <- max_iter
+    if (has_completed_iteration_target(best_run_tbl, max_iter)) {
+      cli::cli_alert_info("Global model iteration already finished. Skipping global model optimization.")
     } else {
-      prev_run_count <- previous_runs %>%
-        dplyr::filter(agent_version == agent_info$agent_version) %>%
-        nrow()
+      message("[agent] Starting Global Model Iteration Workflow")
 
-      max_iter_adj <- max_iter - prev_run_count
-    }
+      # adjust max iterations based on previous runs
+      previous_runs <- load_run_results(
+        agent_info = agent_info,
+        combo = NULL
+      )
 
-    if (max_iter_adj > 0) {
-      if (max_iter_adj < max_iter) {
-        cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+      if (!tibble::is_tibble(previous_runs)) {
+        max_iter_adj <- max_iter
+      } else {
+        prev_run_count <- previous_runs %>%
+          dplyr::filter(agent_version == agent_info$agent_version) %>%
+          nrow()
+
+        max_iter_adj <- max_iter - prev_run_count
       }
 
-      # run the global model optimization
-      fcst_results <- fcst_agent_workflow(
-        agent_info = agent_info,
-        combo = NULL, # NULL = global models
-        weighted_mape_goal = weighted_mape_goal,
-        parallel_processing = parallel_processing,
-        inner_parallel = inner_parallel,
-        num_cores = num_cores,
-        max_iter = max_iter_adj,
-        seed = seed,
-        previous_run_results = previous_runs,
-        fallback_available = run_local_models
-      )
-    } else {
-      cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
+      if (max_iter_adj > 0) {
+        if (max_iter_adj < max_iter) {
+          cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+        }
+
+        # run the global model optimization
+        fcst_results <- fcst_agent_workflow(
+          agent_info = agent_info,
+          combo = NULL, # NULL = global models
+          weighted_mape_goal = weighted_mape_goal,
+          parallel_processing = parallel_processing,
+          inner_parallel = inner_parallel,
+          num_cores = num_cores,
+          max_iter = max_iter_adj,
+          seed = seed,
+          previous_run_results = previous_runs,
+          fallback_available = run_local_models
+        )
+        global_models_ran <- TRUE
+      } else {
+        cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
+      }
     }
   } else if (length(combo_list) > 1 & !run_global_models) {
     message("[agent] Global models disabled. Skipping global model optimization.")
@@ -203,7 +228,9 @@ iterate_forecast <- function(agent_info,
   }
 
   # get local combo list
-  best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  if (global_models_ran) {
+    best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  }
 
   if (nrow(best_run_tbl) > 0) {
     # check if max_iter OR run_complete columns exist (for backward compatibility)
