@@ -315,10 +315,28 @@ test_that("initial_checks validates final forecast best-model coverage", {
   expect_true(all(grepl("run-3", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
 })
 
-test_that("initial_checks validates forecast and model-summary pairs", {
+test_that("initial_checks accepts artifact-local best model IDs", {
+  run4_outputs <- make_complete_final_outputs("run-4")
+  run4_outputs$forecast <- make_update_forecast(
+    model_ids = c("Best-Model", "model-combo-b")
+  )
+  run4_outputs$model_summary <- make_update_model_summary(
+    model_ids = c("underlying-model-a", "model-combo-b")
+  )
+
+  result <- run_initial_checks_case(list(
+    "run-4" = run4_outputs,
+    "run-3" = make_complete_final_outputs("run-3")
+  ))
+
+  expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+})
+
+test_that("initial_checks requires best model-summary coverage by combo", {
   run4_outputs <- make_complete_final_outputs("run-4")
   run4_outputs$model_summary <- make_update_model_summary(
-    model_ids = c("model-combo-a", "different-model")
+    combos = "combo-a",
+    model_ids = "model-combo-a"
   )
 
   result <- run_initial_checks_case(list(

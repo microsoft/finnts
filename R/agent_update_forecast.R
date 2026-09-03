@@ -448,17 +448,16 @@ load_completed_agent_run_outputs <- function(agent_info) {
   forecast_best <- forecast %>%
     dplyr::filter(Best_Model == "Yes") %>%
     dplyr::distinct(Combo, Model_ID)
-  if (!all(unique(metadata$combo) %in% forecast_best$Combo)) {
+  metadata_names <- unique(metadata$combo)
+  if (!all(metadata_names %in% forecast_best$Combo)) {
     return(NULL)
   }
 
-  summary_best <- model_summary %>%
+  summary_best_combos <- model_summary %>%
     dplyr::filter(Best_Model == "Yes") %>%
-    dplyr::distinct(Combo, Model_ID)
-  missing_summary_pairs <- forecast_best %>%
-    dplyr::filter(Combo %in% unique(metadata$combo)) %>%
-    dplyr::anti_join(summary_best, by = c("Combo", "Model_ID"))
-  if (nrow(missing_summary_pairs) > 0) {
+    dplyr::pull(Combo) %>%
+    unique()
+  if (!all(metadata_names %in% summary_best_combos)) {
     return(NULL)
   }
 
