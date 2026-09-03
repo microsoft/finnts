@@ -1,7 +1,8 @@
-# finnts 0.7.0.9002 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9004 (DEVELOPMENT VERSION)
 
 ## Bug Fixes
 
+-   Forecast updates now use consolidated final run metadata to identify completed predecessor versions. Canceled or incomplete runs are skipped in favor of the newest finalized run, and performance comparisons likewise use only finalized versions while preserving storage failures as hard errors.
 -   Fixed agent duplicate-run detection so `NULL` defaults and equivalent explicit values compare as the same settings. Order-insensitive multipart settings such as `3---6---9` and `9---6---3` are also treated as equivalent, preventing redundant forecast iterations.
 -   Character combo-variable values now have leading and trailing whitespace removed before validation and internal `Combo` identifiers are created. This keeps input, EDA, global-model, and local-model artifact hashes aligned in both agentic and standard forecasts; normalization collisions and whitespace-only identifiers fail early with actionable errors.
 -   Agent EDA summaries now represent missing outlier dates as `None observed` and omit regressor-lag groups without finite distance correlations instead of emitting `Inf`, `-Inf`, or `NaN` warnings into LLM context.

@@ -493,6 +493,13 @@ get_best_agent_run <- function(agent_info) {
   # check inputs
   check_agent_info(agent_info = agent_info)
 
+  final_run_tbl <- load_final_agent_run_metadata(agent_info = agent_info)
+
+  return(final_run_tbl)
+}
+
+load_final_agent_run_metadata <- function(agent_info,
+                                          allow_missing = FALSE) {
   # metadata
   project_info <- agent_info$project_info
 
@@ -503,7 +510,8 @@ get_best_agent_run <- function(agent_info) {
       "/final_output/", hash_data(project_info$project_name), "-",
       hash_data(agent_info$run_id), "-run_metadata.", project_info$data_output
     ),
-    return_type = "df"
+    return_type = "df",
+    allow_missing = allow_missing
   )
 
   return(final_run_tbl)
