@@ -2628,7 +2628,7 @@ validate_prev_run_log <- function(prev_run_log_tbl) {
 #' @return A validated numeric vector, or NULL to use cadence defaults.
 #' @noRd
 resolve_previous_seasonal_period <- function(value, date_type) {
-  seasonal_period <- adjust_inputs(value, convert_numeric = TRUE)
+  seasonal_period <- suppressWarnings(adjust_inputs(value, convert_numeric = TRUE))
 
   if (is.null(seasonal_period)) {
     return(NULL)
@@ -2647,7 +2647,7 @@ resolve_previous_seasonal_period <- function(value, date_type) {
       )
       warning(
         "The previous run used an invalid seasonal_period ('",
-        paste(seasonal_period, collapse = "---"), "'): ",
+        paste(value, collapse = "---"), "'): ",
         conditionMessage(error), " Using ", cadence,
         " defaults for this update.",
         call. = FALSE

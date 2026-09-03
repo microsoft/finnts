@@ -562,6 +562,20 @@ test_that("legacy invalid seasonal periods use cadence defaults during updates",
     expect_null(result, info = seasonal_period)
   }
 
+  warnings <- character(0)
+  malformed_result <- withCallingHandlers(
+    resolve_previous_seasonal_period("abc", "month"),
+    warning = function(warning) {
+      warnings <<- c(warnings, conditionMessage(warning))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_null(malformed_result)
+  expect_length(warnings, 1L)
+  expect_match(warnings[[1]], "invalid seasonal_period ('abc')", fixed = TRUE)
+  expect_match(warnings[[1]], "Using monthly defaults", fixed = TRUE)
+  expect_false(grepl("NAs introduced by coercion", warnings[[1]], fixed = TRUE))
+
   expect_null(resolve_previous_seasonal_period(NA_character_, "month"))
   expect_equal(resolve_previous_seasonal_period("12---6---3", "month"), c(12, 6, 3))
 })
