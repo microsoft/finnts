@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9003</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9004</span>
       </span>
     </div>
 
@@ -175,7 +175,12 @@ before Finn creates internal series identifiers and writes input artifacts.</p><
 
 
 <dt id="arg-allow-hierarchical-forecast">allow_hierarchical_forecast<a class="anchor" aria-label="anchor" href="#arg-allow-hierarchical-forecast"></a></dt>
-<dd><p>Logical indicating whether to allow hierarchical forecasting</p></dd>
+<dd><p>Logical controlling the Agent optimization
+scope. <code>TRUE</code> expands input data to all detected hierarchy levels before
+optimization, runs inner iterations with <code>forecast_approach = "bottoms_up"</code>,
+and reconciles the final forecast. <code>FALSE</code> keeps the original bottom-level
+series; global iterations may still compare the exact hierarchy detected by
+EDA after reconciling that candidate back to the bottom level.</p></dd>
 
 
 <dt id="arg-negative-forecast">negative_forecast<a class="anchor" aria-label="anchor" href="#arg-negative-forecast"></a></dt>

@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9003</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9004</span>
       </span>
     </div>
 
@@ -532,20 +532,27 @@ WMAPE, and <code>allow_iterate_forecast = TRUE</code>, it will
 <div class="section level2">
 <h2 id="hierarchies-optional">Hierarchies (optional)<a class="anchor" aria-label="anchor" href="#hierarchies-optional"></a>
 </h2>
-<p>Set <code>allow_hierarchical_forecast = TRUE</code> in
-<code><a href="../reference/set_agent_info.html">set_agent_info()</a></code> to let the agent detect:</p>
+<p><code>allow_hierarchical_forecast</code> controls which series enter
+Agent optimization:</p>
 <ul>
 <li>
-<em>none</em> → use <code>bottoms_up</code> (default),</li>
+<code>FALSE</code> keeps the original bottom-level series. Global
+iterations can still test the exact <em>standard</em> or
+<em>grouped</em> hierarchy detected by EDA; Finn reconciles that
+candidate to the bottom level before comparing WMAPE. Local iterations
+remain <code>bottoms_up</code>.</li>
 <li>
-<em>standard hierarchy</em> (e.g., Region → Country → SKU),</li>
-<li>
-<em>grouped hierarchy</em> (crossed dimensions).</li>
+<code>TRUE</code> detects the hierarchy and expands the input to all
+hierarchy levels before optimization. Those prepared levels use a single
+<code>ID</code> combo column, so all global and local iterations use
+<code>bottoms_up</code>; Finn then performs one final reconciliation
+using the detected hierarchy.</li>
 </ul>
-<p>When the agent selects a hierarchy, it will: - train at the selected
-aggregate(s), - <strong>reconcile</strong> down to the bottom level, -
-produce a <strong>reconciled</strong> <code><a href="../reference/get_agent_forecast.html">get_agent_forecast()</a></code>
-output.</p>
+<p>The detected structure can be <em>none</em>, <em>standard</em> (for
+example, Region → Country → SKU), or <em>grouped</em> (crossed
+dimensions). In either mode, hierarchical candidates are compared at the
+bottom level and the final <code><a href="../reference/get_agent_forecast.html">get_agent_forecast()</a></code> output
+contains bottom-level forecasts.</p>
 <p>For background and manual control, see the <strong>“Hierarchical
 Forecasting”</strong> vignette.</p>
 <hr>
