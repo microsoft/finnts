@@ -299,16 +299,21 @@ What `update_forecast()` does:
 
 ## Hierarchies (optional)
 
-Set `allow_hierarchical_forecast = TRUE` in `set_agent_info()` to let the agent detect:
+`allow_hierarchical_forecast` controls which series enter Agent optimization:
 
-- *none* → use `bottoms_up` (default),
-- *standard hierarchy* (e.g., Region → Country → SKU),
-- *grouped hierarchy* (crossed dimensions).
+- `FALSE` keeps the original bottom-level series. Global iterations can still
+  test the exact *standard* or *grouped* hierarchy detected by EDA; Finn
+  reconciles that candidate to the bottom level before comparing WMAPE. Local
+  iterations remain `bottoms_up`.
+- `TRUE` detects the hierarchy and expands the input to all hierarchy levels
+  before optimization. Those prepared levels use a single `ID` combo column,
+  so all global and local iterations use `bottoms_up`; Finn then performs one
+  final reconciliation using the detected hierarchy.
 
-When the agent selects a hierarchy, it will:
-- train at the selected aggregate(s),
-- **reconcile** down to the bottom level,
-- produce a **reconciled** `get_agent_forecast()` output.
+The detected structure can be *none*, *standard* (for example, Region → Country
+→ SKU), or *grouped* (crossed dimensions). In either mode, hierarchical
+candidates are compared at the bottom level and the final
+`get_agent_forecast()` output contains bottom-level forecasts.
 
 For background and manual control, see the **"Hierarchical Forecasting"** vignette.
 

@@ -1,7 +1,11 @@
-# finnts 0.7.0.9002 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9004 (DEVELOPMENT VERSION)
 
 ## Bug Fixes
 
+-   `update_forecast()` now excludes predecessor time series that are absent from the current input before global or local update routing. Removed series no longer produce empty-schema or missing-artifact fallback errors, while current-only series continue to receive default local forecasts.
+-   Global Agent iterations now use hierarchy choices that match the outer optimization scope. Bottom-level runs may compare `bottoms_up` with the exact standard or grouped hierarchy detected by EDA after reconciliation to bottom-level series. Runs whose input was already expanded to hierarchy-level `ID` series use `bottoms_up` for every inner global and local iteration before one final outer reconciliation.
+-   `iterate_forecast()` now skips repeated global optimization when any current-run best result was already finalized at the requested iteration target, then resumes only unfinished local series. Incomplete metadata and higher iteration targets retain the existing global retry behavior.
+-   Forecast updates now require nonempty final run metadata, forecast, model summary, and EDA files before selecting a predecessor version, plus a nonempty hierarchy summary for hierarchical forecasts. Run metadata is checked only for the fields needed to reuse the predecessor; other final outputs are not compared by schema, combo, or model identifier. Missing or empty files cause canceled or incomplete versions to be skipped in favor of the newest complete run, while storage and read failures remain hard errors.
 -   Fixed agent duplicate-run detection so `NULL` defaults and equivalent explicit values compare as the same settings. Order-insensitive multipart settings such as `3---6---9` and `9---6---3` are also treated as equivalent, preventing redundant forecast iterations.
 -   Character combo-variable values now have leading and trailing whitespace removed before validation and internal `Combo` identifiers are created. This keeps input, EDA, global-model, and local-model artifact hashes aligned in both agentic and standard forecasts; normalization collisions and whitespace-only identifiers fail early with actionable errors.
 -   Agent EDA summaries now represent missing outlier dates as `None observed` and omit regressor-lag groups without finite distance correlations instead of emitting `Inf`, `-Inf`, or `NaN` warnings into LLM context.

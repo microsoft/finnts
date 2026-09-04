@@ -16,7 +16,12 @@
 #' @param back_test_scenarios Optional character vector of back test scenarios
 #' @param back_test_spacing Optional numeric value for back test spacing
 #' @param combo_cleanup_date Optional Date object for combo cleanup
-#' @param allow_hierarchical_forecast Logical indicating whether to allow hierarchical forecasting
+#' @param allow_hierarchical_forecast Logical controlling the Agent optimization
+#'   scope. `TRUE` expands input data to all detected hierarchy levels before
+#'   optimization, runs inner iterations with `forecast_approach = "bottoms_up"`,
+#'   and reconciles the final forecast. `FALSE` keeps the original bottom-level
+#'   series; global iterations may still compare the exact hierarchy detected by
+#'   EDA after reconciling that candidate back to the bottom level.
 #' @param run_global_models If TRUE, run multivariate models on the entire data
 #'   set (across all time series) as a global model. Default of NULL runs global models for all date types
 #'   except week and day.

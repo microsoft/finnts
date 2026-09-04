@@ -220,6 +220,7 @@ update_fcst_agent_workflow <- function(agent_info,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
+        current_run_combos = "{results$initial_checks$current_run_combos}",
         global_failed_combos = "{results$update_global_models$failed_combos}",
         local_failed_combos = "{results$update_local_models$failed_combos}"
       )
@@ -365,13 +366,145 @@ update_fcst_agent_workflow <- function(agent_info,
   run_graph(workflow_llm, workflow, init_ctx)
 }
 
+build_previous_agent_info <- function(agent_info, agent_run_tbl) {
+  project_info <- agent_info$project_info
+
+  list(
+    agent_version = agent_run_tbl$agent_version[1],
+    project_info = project_info,
+    run_id = agent_run_tbl$run_id[1],
+    storage_object = project_info$storage_object,
+    path = project_info$path,
+    forecast_approach = agent_run_tbl$forecast_approach[1],
+    llm = agent_info$llm,
+    forecast_horizon = agent_run_tbl$forecast_horizon[1],
+    external_regressors = agent_run_tbl$external_regressors[1],
+    hist_end_date = agent_run_tbl$hist_end_date[1],
+    back_test_scenarios = agent_run_tbl$back_test_scenarios[1],
+    back_test_spacing = agent_run_tbl$back_test_spacing[1],
+    combo_cleanup_date = agent_run_tbl$combo_cleanup_date[1],
+    run_global_models = agent_run_tbl$run_global_models[1],
+    run_local_models = agent_run_tbl$run_local_models[1],
+    overwrite = agent_info$overwrite
+  )
+}
+
+validate_completed_run_metadata <- function(metadata, run_id) {
+  required_columns <- c(
+    "combo", "agent_run_id", "best_run_name", "model_type", "weighted_mape"
+  )
+  if (!all(required_columns %in% names(metadata))) {
+    return(FALSE)
+  }
+
+  identifier_columns <- c("combo", "agent_run_id", "best_run_name")
+  invalid_identifiers <- vapply(
+    identifier_columns,
+    function(column) {
+      values <- as.character(metadata[[column]])
+      any(is.na(values) | !nzchar(trimws(values)))
+    },
+    logical(1)
+  )
+  if (any(invalid_identifiers)) {
+    return(FALSE)
+  }
+
+  if (any(as.character(metadata$agent_run_id) != run_id)) {
+    return(FALSE)
+  }
+
+  if (any(!as.character(metadata$model_type) %in% c("local", "global"))) {
+    return(FALSE)
+  }
+
+  if (!is.numeric(metadata$weighted_mape) ||
+    any(!is.finite(metadata$weighted_mape) | metadata$weighted_mape < 0)) {
+    return(FALSE)
+  }
+
+  if (anyDuplicated(as.character(metadata$combo)) > 0) {
+    return(FALSE)
+  }
+
+  TRUE
+}
+
+load_completed_agent_run_outputs <- function(agent_info) {
+  required_suffixes <- c("run_metadata", "forecast", "model_summary", "eda")
+  if (agent_info$forecast_approach != "bottoms_up") {
+    required_suffixes <- c(required_suffixes, "hierarchy_summary")
+  }
+
+  outputs <- purrr::map(
+    required_suffixes,
+    function(suffix) {
+      load_final_agent_artifact(
+        agent_info = agent_info,
+        suffix = suffix,
+        allow_missing = TRUE
+      )
+    }
+  )
+  names(outputs) <- required_suffixes
+
+  if (any(vapply(outputs, nrow, integer(1)) == 0)) {
+    return(NULL)
+  }
+
+  if (!validate_completed_run_metadata(
+    metadata = outputs$run_metadata,
+    run_id = agent_info$run_id
+  )) {
+    return(NULL)
+  }
+
+  outputs
+}
+
+find_completed_previous_agent_runs <- function(agent_info,
+                                               previous_agent_runs,
+                                               max_runs = 1L) {
+  completed_runs <- list()
+  versions <- unique(previous_agent_runs$agent_version)
+
+  for (version in versions) {
+    version_run_tbl <- previous_agent_runs %>%
+      dplyr::filter(agent_version == version)
+    previous_agent_info <- build_previous_agent_info(
+      agent_info = agent_info,
+      agent_run_tbl = version_run_tbl
+    )
+    final_outputs <- load_completed_agent_run_outputs(
+      agent_info = previous_agent_info
+    )
+
+    if (is.null(final_outputs)) {
+      next
+    }
+
+    completed_runs[[length(completed_runs) + 1L]] <- list(
+      agent_info = previous_agent_info,
+      best_runs_tbl = final_outputs$run_metadata,
+      hierarchy_summary_tbl = final_outputs$hierarchy_summary
+    )
+
+    if (length(completed_runs) >= max_runs) {
+      break
+    }
+  }
+
+  return(completed_runs)
+}
+
 #' Initial Checks for Update Forecast
 #'
 #' This function performs initial checks on the agent information and prepares the necessary data for the update process.
 #'
 #' @param agent_info A list containing the agent information.
 #'
-#' @return A list with `prev_best_runs_tbl` (data frame of previous best runs) and
+#' @return A list with `prev_best_runs_tbl` (data frame of previous best runs),
+#'   `current_run_combos` (character vector of current combo hashes), and
 #'   `new_combos` (character vector of new combo hashes), or "no updates required".
 #' @noRd
 initial_checks <- function(agent_info) {
@@ -433,59 +566,24 @@ initial_checks <- function(agent_info) {
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)
 
-  # initialize to NULL; will be set inside the loop if a completed run is found
-  prev_agent_info <- NULL
-
-  # loop through each agent version, until finding the last completed run with real results
-  for (version in prev_agent_run_tbl$agent_version) {
-    # create version specific agent info
-    temp_agent_tbl <- prev_agent_run_tbl %>%
-      dplyr::filter(agent_version == version)
-
-    temp_agent_info <- list(
-      agent_version = temp_agent_tbl$agent_version,
-      project_info = agent_info$project_info,
-      run_id = temp_agent_tbl$run_id[1],
-      storage_object = project_info$storage_object,
-      path = project_info$path,
-      forecast_approach = temp_agent_tbl$forecast_approach,
-      llm = agent_info$llm,
-      forecast_horizon = temp_agent_tbl$forecast_horizon,
-      external_regressors = temp_agent_tbl$external_regressors,
-      hist_end_date = temp_agent_tbl$hist_end_date,
-      back_test_scenarios = temp_agent_tbl$back_test_scenarios,
-      back_test_spacing = temp_agent_tbl$back_test_spacing,
-      combo_cleanup_date = temp_agent_tbl$combo_cleanup_date,
-      run_global_models = temp_agent_tbl$run_global_models,
-      run_local_models = temp_agent_tbl$run_local_models,
-      overwrite = agent_info$overwrite
-    )
-
-    # get best run results for version
-    temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
-
-    # get number of time series from previous agent run
-    temp_combo_list <- get_total_combos(agent_info = temp_agent_info)
-
-    if (nrow(temp_run_results) > 0) {
-      if (length(unique(temp_run_results$combo)) == length(temp_combo_list)) {
-        prev_agent_info <- temp_agent_info
-        prev_best_run_results <- temp_run_results
-        break # exit loop if found a previous agent run with real results
-      } else {
-        next # continue to next version
-      }
-    }
-  }
+  completed_runs <- find_completed_previous_agent_runs(
+    agent_info = agent_info,
+    previous_agent_runs = prev_agent_run_tbl,
+    max_runs = 1L
+  )
 
   # ensure a completed previous run was found
-  if (is.null(prev_agent_info)) {
+  if (length(completed_runs) == 0) {
     stop("Error in update_forecast(). No completed previous agent run found. ",
       "Please ensure at least one prior agent version finished successfully ",
       "before calling update_forecast().",
       call. = FALSE
     )
   }
+
+  prev_agent_info <- completed_runs[[1]]$agent_info
+  prev_best_runs_tbl <- completed_runs[[1]]$best_runs_tbl
+  prev_hierarchy_summary_tbl <- completed_runs[[1]]$hierarchy_summary_tbl
 
   # check if forecast approach has changed
   prev_approach <- unique(prev_agent_info$forecast_approach)
@@ -540,9 +638,43 @@ initial_checks <- function(agent_info) {
     }
   }
 
-  # get best runs from previous agent run and filter on combos that haven't been updated for this version
-  prev_best_runs_tbl <- get_best_agent_run(agent_info = prev_agent_info)
+  # keep only rows that can be updated from the current input data
+  preserve_global_combos <- agent_info$forecast_approach != "bottoms_up"
+  hierarchy_aggregate_combos <- character(0)
+  hierarchy_columns <- c("Hierarchy_Combo", "Bottom_Combo", "Is_Bottom")
+  if (preserve_global_combos &&
+    is.data.frame(prev_hierarchy_summary_tbl) &&
+    all(hierarchy_columns %in% names(prev_hierarchy_summary_tbl))) {
+    is_bottom <- suppressWarnings(
+      as.logical(as.character(prev_hierarchy_summary_tbl$Is_Bottom))
+    )
+    bottom_hashes <- vapply(
+      as.character(prev_hierarchy_summary_tbl$Bottom_Combo),
+      hash_data,
+      character(1),
+      USE.NAMES = FALSE
+    )
+    reusable_aggregate_rows <- !is.na(is_bottom) &
+      !is_bottom &
+      bottom_hashes %in% current_run_combos
+    hierarchy_aggregate_combos <- unique(as.character(
+      prev_hierarchy_summary_tbl$Hierarchy_Combo[reusable_aggregate_rows]
+    ))
+  }
 
+  prev_best_runs_tbl <- prev_best_runs_tbl %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(combo_hash = hash_data(combo)) %>%
+    dplyr::filter(
+      combo_hash %in% current_run_combos |
+        (preserve_global_combos &
+          model_type == "global" &
+          combo %in% hierarchy_aggregate_combos)
+    ) %>%
+    dplyr::select(-combo_hash) %>%
+    dplyr::ungroup()
+
+  # filter previous best runs on combos that haven't been updated for this version
   if (!is.null(unfinished_combos)) {
     prev_best_runs_tbl <- prev_best_runs_tbl %>%
       dplyr::rowwise() %>%
@@ -577,22 +709,10 @@ initial_checks <- function(agent_info) {
     }
   }
 
-  # for hierarchical forecasting, filter out combos from the previous best
-  # runs that no longer exist in the current run's input data (hierarchy
-  # structure changes when bottom-level combos are added or removed, making
-  # old aggregation combos invalid)
-  if (agent_info$forecast_approach != "bottoms_up") {
-    prev_best_runs_tbl <- prev_best_runs_tbl %>%
-      dplyr::rowwise() %>%
-      dplyr::mutate(combo_hash = hash_data(combo)) %>%
-      dplyr::filter(model_type == "global" | combo_hash %in% current_run_combos) %>%
-      dplyr::select(-combo_hash) %>%
-      dplyr::ungroup()
-  }
-
   # return unfinished previous best runs and any new combos
   return(list(
     prev_best_runs_tbl = prev_best_runs_tbl,
+    current_run_combos = current_run_combos,
     new_combos = new_combos
   ))
 }
@@ -881,6 +1001,8 @@ update_local_models <- function(agent_info,
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame of the previous best run results.
+#' @param current_run_combos Character vector of combo hashes backed by current
+#'   input artifacts.
 #' @param global_failed_combos Character vector of combo hashes that failed
 #'   during global model update.
 #' @param local_failed_combos Character vector of combo hashes that failed
@@ -891,9 +1013,13 @@ update_local_models <- function(agent_info,
 #' @noRd
 check_update_failures <- function(agent_info,
                                   previous_best_run_tbl,
+                                  current_run_combos,
                                   global_failed_combos,
                                   local_failed_combos) {
-  failed_combos <- unique(c(global_failed_combos, local_failed_combos))
+  failed_combos <- intersect(
+    unique(c(global_failed_combos, local_failed_combos)),
+    current_run_combos
+  )
 
   if (length(failed_combos) == 0) {
     return(character(0))
@@ -963,47 +1089,23 @@ analyze_results <- function(agent_info) {
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)
 
-  # get previous 3 completed agent runs
-  counter <- 0
-  previous_best_run_tbl <- tibble::tibble()
-  for (version in prev_agent_run_tbl$agent_version) {
-    if (counter >= 3) {
-      break
-    }
-    # create version specific agent info
-    temp_agent_tbl <- prev_agent_run_tbl %>%
-      dplyr::filter(agent_version == version)
-
-    temp_agent_info <- list(
-      project_info = agent_info$project_info,
-      run_id = temp_agent_tbl$run_id[1],
-      storage_object = project_info$storage_object,
-      path = project_info$path
-    )
-
-    # get best run results for version
-    temp_run_results <- load_best_agent_run(agent_info = temp_agent_info)
-
-    # get number of time series from this previous agent run
-    temp_combo_list <- get_total_combos(agent_info = temp_agent_info)
-
-    if (nrow(temp_run_results) > 0) {
-      if (length(unique(temp_run_results$combo)) == length(temp_combo_list)) { # ensure version finished successfully
-        previous_best_run_tbl <- dplyr::bind_rows(
-          previous_best_run_tbl,
-          temp_run_results %>% dplyr::select(combo, weighted_mape)
-        )
-        counter <- counter + 1
-      }
-    }
-  }
+  completed_runs <- find_completed_previous_agent_runs(
+    agent_info = agent_info,
+    previous_agent_runs = prev_agent_run_tbl,
+    max_runs = 3L
+  )
 
   # ensure at least one completed previous run was found
-  if (nrow(previous_best_run_tbl) == 0) {
+  if (length(completed_runs) == 0) {
     stop("Error in analyze_results(). No completed previous agent runs found to compare against.",
       call. = FALSE
     )
   }
+
+  previous_best_run_tbl <- completed_runs %>%
+    purrr::map("best_runs_tbl") %>%
+    purrr::map(dplyr::select, combo, weighted_mape) %>%
+    dplyr::bind_rows()
 
   # calc average weighted mape of previous best runs
   previous_best_run_tbl <- previous_best_run_tbl %>%

@@ -25,6 +25,80 @@ new_llm_session <- function(llm) {
   session
 }
 
+has_completed_iteration_target <- function(best_run_tbl, max_iter) {
+  required_columns <- c(
+    "combo", "model_type", "weighted_mape", "run_complete", "max_iterations"
+  )
+  if (!is.data.frame(best_run_tbl) ||
+    !all(required_columns %in% colnames(best_run_tbl))) {
+    return(FALSE)
+  }
+
+  combo <- trimws(as.character(best_run_tbl$combo))
+  model_type <- as.character(best_run_tbl$model_type)
+  weighted_mape <- suppressWarnings(as.numeric(as.character(best_run_tbl$weighted_mape)))
+  run_complete <- suppressWarnings(as.logical(as.character(best_run_tbl$run_complete)))
+  max_iterations <- suppressWarnings(as.numeric(as.character(best_run_tbl$max_iterations)))
+
+  if (any(is.na(combo) | !nzchar(combo)) ||
+    any(is.na(model_type) | !model_type %in% c("global", "local")) ||
+    any(!is.finite(weighted_mape) | weighted_mape < 0)) {
+    return(FALSE)
+  }
+
+  any(
+    run_complete %in% TRUE &
+      is.finite(max_iterations) &
+      max_iterations >= max_iter
+  )
+}
+
+resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
+  required_columns <- c("Analysis_Type", "Metric", "Value")
+  if (!is.data.frame(eda_results) ||
+    !all(required_columns %in% names(eda_results))) {
+    stop(
+      "Error in iterate_forecast(). Expected exactly one hierarchy result in consolidated EDA data.",
+      call. = FALSE
+    )
+  }
+
+  hierarchy_results <- eda_results %>%
+    dplyr::filter(
+      .data$Analysis_Type == "Hierarchy",
+      .data$Metric == "hierarchy_type"
+    )
+
+  if (nrow(hierarchy_results) != 1) {
+    stop(
+      "Error in iterate_forecast(). Expected exactly one hierarchy result in consolidated EDA data.",
+      call. = FALSE
+    )
+  }
+
+  hierarchy_type <- as.character(hierarchy_results$Value[[1]])
+  if (is.na(hierarchy_type) ||
+    !hierarchy_type %in% c("none", "standard", "grouped")) {
+    stop(
+      "Error in iterate_forecast(). Found unsupported hierarchy type in consolidated EDA data: ",
+      hierarchy_type,
+      ". Expected one of: none, standard, grouped.",
+      call. = FALSE
+    )
+  }
+
+  if (!identical(agent_info$forecast_approach, "bottoms_up")) {
+    return("bottoms_up")
+  }
+
+  hierarchy_approach <- switch(hierarchy_type,
+    none = NULL,
+    standard = "standard_hierarchy",
+    grouped = "grouped_hierarchy"
+  )
+  c("bottoms_up", hierarchy_approach)
+}
+
 #' Run the Finn Agent Forecast Iteration Process
 #'
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
@@ -120,24 +194,25 @@ iterate_forecast <- function(agent_info,
 
   # run exploratory data analysis
   # check if eda data already exists
-  eda_exists <- tryCatch(
+  eda_results <- tryCatch(
     {
-      eda_check <- get_eda_data(agent_info = agent_info)
-      !is.null(eda_check) && nrow(eda_check) > 0
+      get_eda_data(agent_info = agent_info)
     },
     error = function(e) {
-      FALSE
+      tibble::tibble()
     }
   )
+  eda_exists <- is.data.frame(eda_results) && nrow(eda_results) > 0
 
   if (eda_exists) {
     message("[agent] EDA already ran. Skipping EDA process.")
   } else {
-    eda_results <- eda_agent_workflow(
+    eda_agent_workflow(
       agent_info = agent_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores
     )
+    eda_results <- get_eda_data(agent_info = agent_info)
   }
 
   # get total number of time series
@@ -155,46 +230,55 @@ iterate_forecast <- function(agent_info,
     dplyr::pull(Combo) %>%
     unique()
 
+  best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  global_models_ran <- FALSE
+
   # optimize global models
   if (length(combo_list) > 1 & run_global_models) {
-    message("[agent] Starting Global Model Iteration Workflow")
-
-    # adjust max iterations based on previous runs
-    previous_runs <- load_run_results(
-      agent_info = agent_info,
-      combo = NULL
-    )
-
-    if (!tibble::is_tibble(previous_runs)) {
-      max_iter_adj <- max_iter
+    if (has_completed_iteration_target(best_run_tbl, max_iter)) {
+      cli::cli_alert_info("Global model iteration already finished. Skipping global model optimization.")
     } else {
-      prev_run_count <- previous_runs %>%
-        dplyr::filter(agent_version == agent_info$agent_version) %>%
-        nrow()
+      message("[agent] Starting Global Model Iteration Workflow")
 
-      max_iter_adj <- max_iter - prev_run_count
-    }
+      # adjust max iterations based on previous runs
+      previous_runs <- load_run_results(
+        agent_info = agent_info,
+        combo = NULL
+      )
 
-    if (max_iter_adj > 0) {
-      if (max_iter_adj < max_iter) {
-        cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+      if (!tibble::is_tibble(previous_runs)) {
+        max_iter_adj <- max_iter
+      } else {
+        prev_run_count <- previous_runs %>%
+          dplyr::filter(agent_version == agent_info$agent_version) %>%
+          nrow()
+
+        max_iter_adj <- max_iter - prev_run_count
       }
 
-      # run the global model optimization
-      fcst_results <- fcst_agent_workflow(
-        agent_info = agent_info,
-        combo = NULL, # NULL = global models
-        weighted_mape_goal = weighted_mape_goal,
-        parallel_processing = parallel_processing,
-        inner_parallel = inner_parallel,
-        num_cores = num_cores,
-        max_iter = max_iter_adj,
-        seed = seed,
-        previous_run_results = previous_runs,
-        fallback_available = run_local_models
-      )
-    } else {
-      cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
+      if (max_iter_adj > 0) {
+        if (max_iter_adj < max_iter) {
+          cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+        }
+
+        # run the global model optimization
+        fcst_results <- fcst_agent_workflow(
+          agent_info = agent_info,
+          combo = NULL, # NULL = global models
+          weighted_mape_goal = weighted_mape_goal,
+          parallel_processing = parallel_processing,
+          inner_parallel = inner_parallel,
+          num_cores = num_cores,
+          max_iter = max_iter_adj,
+          seed = seed,
+          previous_run_results = previous_runs,
+          fallback_available = run_local_models,
+          eda_results = eda_results
+        )
+        global_models_ran <- TRUE
+      } else {
+        cli::cli_alert_info("Max iterations already met. Skipping global model optimization.")
+      }
     }
   } else if (length(combo_list) > 1 & !run_global_models) {
     message("[agent] Global models disabled. Skipping global model optimization.")
@@ -203,7 +287,9 @@ iterate_forecast <- function(agent_info,
   }
 
   # get local combo list
-  best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  if (global_models_ran) {
+    best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  }
 
   if (nrow(best_run_tbl) > 0) {
     # check if max_iter OR run_complete columns exist (for backward compatibility)
@@ -493,20 +579,72 @@ get_best_agent_run <- function(agent_info) {
   # check inputs
   check_agent_info(agent_info = agent_info)
 
-  # metadata
-  project_info <- agent_info$project_info
-
-  # get the best run for the agent
-  final_run_tbl <- read_file(
-    run_info = project_info,
-    path = paste0(
-      "/final_output/", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-run_metadata.", project_info$data_output
-    ),
-    return_type = "df"
-  )
+  final_run_tbl <- load_final_agent_run_metadata(agent_info = agent_info)
 
   return(final_run_tbl)
+}
+
+load_final_agent_run_metadata <- function(agent_info,
+                                          allow_missing = FALSE) {
+  load_final_agent_artifact(
+    agent_info = agent_info,
+    suffix = "run_metadata",
+    allow_missing = allow_missing
+  )
+}
+
+final_agent_artifact_exists <- function(project_info, artifact_path) {
+  if (inherits(project_info$storage_object, c("blob_container", "ms_drive"))) {
+    artifact_files <- list_files(
+      storage_object = project_info$storage_object,
+      path = fs::path(project_info$path, artifact_path),
+      fail_on_error = TRUE
+    )
+
+    return(length(artifact_files) > 0)
+  }
+
+  artifact_file <- if (is.null(project_info$path)) {
+    fs::path(tempdir(), artifact_path)
+  } else {
+    fs::path(project_info$path, artifact_path)
+  }
+
+  fs::file_exists(artifact_file)
+}
+
+load_final_agent_artifact <- function(agent_info,
+                                      suffix,
+                                      allow_missing = FALSE) {
+  # metadata
+  project_info <- agent_info$project_info
+  artifact_path <- paste0(
+    "/final_output/", hash_data(project_info$project_name), "-",
+    hash_data(agent_info$run_id), "-", suffix, ".", project_info$data_output
+  )
+
+  if (allow_missing &&
+    !final_agent_artifact_exists(project_info, artifact_path)) {
+    return(tibble::tibble())
+  }
+
+  withCallingHandlers(
+    read_file(
+      run_info = project_info,
+      path = artifact_path,
+      return_type = "df",
+      allow_missing = allow_missing
+    ),
+    warning = function(condition) {
+      if (grepl(
+        "Skipping empty or unreadable file:",
+        conditionMessage(condition),
+        fixed = TRUE
+      )) {
+        stop(conditionMessage(condition), call. = FALSE)
+      }
+    }
+  )
 }
 
 #' load the best forecast for an agent before saving to disk
@@ -849,6 +987,8 @@ save_best_agent_run <- function(agent_info) {
 #'   outer global or local workflow.
 #' @param fallback_available Whether an exhausted global workflow may continue
 #'   to enabled local models when no global best run exists.
+#' @param eda_results Consolidated EDA results used to resolve the legal global
+#'   forecast approaches before reasoning. Not used by local workflows.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -861,7 +1001,14 @@ fcst_agent_workflow <- function(agent_info,
                                 max_iter = 3,
                                 seed = 123,
                                 previous_run_results = NULL,
-                                fallback_available = FALSE) {
+                                fallback_available = FALSE,
+                                eda_results = NULL) {
+  agent_info$global_forecast_approaches <- if (is.null(combo)) {
+    resolve_agent_global_forecast_approaches(agent_info, eda_results)
+  } else {
+    "bottoms_up"
+  }
+
   # create one fresh session for this series and all of its iterations
   agent_info$llm <- new_llm_session(agent_info$llm)
 
@@ -1224,7 +1371,7 @@ validate_agent_proposal <- function(input_list,
     allow_null = FALSE
   )
   allowed_approaches <- if (is.null(combo)) {
-    unique(c("bottoms_up", agent_info$forecast_approach))
+    agent_info$global_forecast_approaches %||% "bottoms_up"
   } else {
     "bottoms_up"
   }
@@ -3303,6 +3450,11 @@ iterate_forecast_system_prompt <- function(agent_info,
   seasonal_period_default <- get_seasonal_periods(date_type = project_info$date_type) %>%
     paste(collapse = "---")
 
+  global_forecast_approaches <-
+    agent_info$global_forecast_approaches %||% "bottoms_up"
+  global_forecast_approaches_str <-
+    paste(global_forecast_approaches, collapse = "|")
+
   # load EDA results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
 
@@ -3331,6 +3483,7 @@ iterate_forecast_system_prompt <- function(agent_info,
       - forecast horizon : <<horizon>>
       - potential external regressors : <<xregs>>
       - weighted MAPE goal : <<weighted_mape_goal>>
+      - Allowed forecast_approach values: <<global_forecast_approaches>>
 
       -----Exploratory Data Analysis-----
       <<eda>>
@@ -3347,11 +3500,10 @@ iterate_forecast_system_prompt <- function(agent_info,
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
       6.  HIERARCHICAL RULES
           6-A.  IF run_count == 0 then set forecast_approach="bottoms_up"
-          6-B.  IF run_count > 0 AND hierarchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-          6-C.  IF hierarchy type == "none" then set forecast_approach="bottoms_up".
-          6-D.  You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
-          6-E.  You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
-          6-F.  You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
+          6-B.  IF run_count > 0 AND *Step A is complete*, choose only from: <<global_forecast_approaches>>.
+          6-C.  IF only "bottoms_up" is allowed, the input already contains prepared hierarchy levels or no hierarchy exists. ALWAYS set forecast_approach="bottoms_up".
+          6-D.  IF an exact hierarchical value is allowed, you may test it after bottoms_up. Finn reconciles that candidate to bottom-level series before weighted MAPE comparison.
+          6-E.  You MUST NOT propose a forecast_approach that is not listed in the allowed values.
       7.  MISSING VALUES RULES
           7-A.  IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
           7-B.  IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
@@ -3423,7 +3575,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy",
+        "forecast_approach"     : "<<global_forecast_approaches>>",
         "stationary"            : "TRUE|FALSE",
         "feature_selection"     : "TRUE|FALSE",
         "multistep_horizon"     : "TRUE|FALSE",
@@ -3447,6 +3599,7 @@ iterate_forecast_system_prompt <- function(agent_info,
       xregs = xregs_str,
       eda = eda_results,
       weighted_mape_goal = weighted_mape_goal,
+      global_forecast_approaches = global_forecast_approaches_str,
       lag_default = lag_default,
       rolling_default = rolling_default,
       agent_version = agent_info$agent_version
