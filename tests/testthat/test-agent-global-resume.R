@@ -113,12 +113,16 @@ test_that("restart skips global after one local combo completed", {
 
 test_that("completed global or local rows meet the iteration target", {
   completed_global <- data.frame(
+    combo = "A",
     model_type = "global",
+    weighted_mape = 0.2,
     run_complete = TRUE,
     max_iterations = 3
   )
   one_completed_local <- data.frame(
+    combo = c("A", "B", "C"),
     model_type = c("global", "local", "local"),
+    weighted_mape = c(0.2, 0.1, 0.3),
     run_complete = c(FALSE, TRUE, FALSE),
     max_iterations = c(0, 3, 0)
   )
@@ -127,15 +131,33 @@ test_that("completed global or local rows meet the iteration target", {
   expect_true(has_completed_iteration_target(one_completed_local, max_iter = 3))
   expect_true(has_completed_iteration_target(completed_global, max_iter = 2))
   expect_true(has_completed_iteration_target(
-    data.frame(run_complete = "TRUE", max_iterations = "3"),
+    data.frame(
+      combo = "A",
+      model_type = "global",
+      weighted_mape = "0.2",
+      run_complete = "TRUE",
+      max_iterations = "3"
+    ),
     max_iter = 3
   ))
 })
 
 test_that("incomplete or unusable metadata does not meet the iteration target", {
+  complete_metadata <- data.frame(
+    combo = "A",
+    model_type = "global",
+    weighted_mape = 0.2,
+    run_complete = TRUE,
+    max_iterations = 3
+  )
+
   cases <- list(
     data.frame(),
     data.frame(model_type = "local"),
+    data.frame(run_complete = TRUE, max_iterations = 3),
+    transform(complete_metadata, combo = ""),
+    transform(complete_metadata, model_type = "other"),
+    transform(complete_metadata, weighted_mape = NA_real_),
     data.frame(run_complete = NA, max_iterations = 3),
     data.frame(run_complete = FALSE, max_iterations = 3),
     data.frame(run_complete = TRUE, max_iterations = 2),

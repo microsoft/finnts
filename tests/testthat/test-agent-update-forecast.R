@@ -254,7 +254,7 @@ test_that("initial_checks excludes removed bottom-up combos from update routing"
   expect_identical(result$new_combos, "combo-new")
 })
 
-test_that("initial_checks preserves hierarchical global rows only", {
+test_that("initial_checks preserves hierarchy aggregates but drops removed bottoms", {
   run_ids <- paste0("run-", 5:1)
   combos_by_run <- stats::setNames(
     lapply(run_ids, function(...) c("combo-a", "combo-b")),
@@ -267,7 +267,15 @@ test_that("initial_checks preserves hierarchical global rows only", {
     combos = c("Total", "combo-a", "combo-removed"),
     forecast_approach = "standard_hierarchy"
   )
-  run4_outputs$run_metadata$model_type <- c("global", "local", "local")
+  run4_outputs$run_metadata$model_type <- c("global", "local", "global")
+  run4_outputs$hierarchy_summary <- data.frame(
+    Hierarchy_Combo = c("Total", "Total", "combo-a", "combo-removed"),
+    Hierarchy_Level_Type = c("Total", "Total", "Bottom", "Bottom"),
+    Bottom_Combo = c("combo-a", "combo-removed", "combo-a", "combo-removed"),
+    Is_Bottom = c(FALSE, FALSE, TRUE, TRUE),
+    Parent_Level = c(NA, NA, "Total", "Total"),
+    stringsAsFactors = FALSE
+  )
 
   result <- run_initial_checks_case(
     final_outputs = list("run-4" = run4_outputs),
@@ -277,6 +285,27 @@ test_that("initial_checks preserves hierarchical global rows only", {
 
   expect_setequal(result$prev_best_runs_tbl$combo, c("Total", "combo-a"))
   expect_identical(result$new_combos, "combo-b")
+})
+
+test_that("update failure fallback keeps only current input combos", {
+  agent_info <- make_update_agent_info("standard_hierarchy")
+
+  testthat::local_mocked_bindings(
+    resolve_combo_hashes = function(agent_info, combo_hashes) combo_hashes,
+    .package = "finnts"
+  )
+
+  result <- check_update_failures(
+    agent_info = agent_info,
+    previous_best_run_tbl = data.frame(
+      combo = c("Total", "combo-a", "combo-removed")
+    ),
+    current_run_combos = c("combo-a", "combo-b"),
+    global_failed_combos = c("Total", "combo-a", "combo-removed"),
+    local_failed_combos = character(0)
+  )
+
+  expect_identical(result, "combo-a")
 })
 
 test_that("initial_checks retry stops after all current combos finish", {

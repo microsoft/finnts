@@ -220,6 +220,7 @@ update_fcst_agent_workflow <- function(agent_info,
       args = list(
         agent_info = agent_info,
         previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
+        current_run_combos = "{results$initial_checks$current_run_combos}",
         global_failed_combos = "{results$update_global_models$failed_combos}",
         local_failed_combos = "{results$update_local_models$failed_combos}"
       )
@@ -484,7 +485,8 @@ find_completed_previous_agent_runs <- function(agent_info,
 
     completed_runs[[length(completed_runs) + 1L]] <- list(
       agent_info = previous_agent_info,
-      best_runs_tbl = final_outputs$run_metadata
+      best_runs_tbl = final_outputs$run_metadata,
+      hierarchy_summary_tbl = final_outputs$hierarchy_summary
     )
 
     if (length(completed_runs) >= max_runs) {
@@ -501,7 +503,8 @@ find_completed_previous_agent_runs <- function(agent_info,
 #'
 #' @param agent_info A list containing the agent information.
 #'
-#' @return A list with `prev_best_runs_tbl` (data frame of previous best runs) and
+#' @return A list with `prev_best_runs_tbl` (data frame of previous best runs),
+#'   `current_run_combos` (character vector of current combo hashes), and
 #'   `new_combos` (character vector of new combo hashes), or "no updates required".
 #' @noRd
 initial_checks <- function(agent_info) {
@@ -580,6 +583,7 @@ initial_checks <- function(agent_info) {
 
   prev_agent_info <- completed_runs[[1]]$agent_info
   prev_best_runs_tbl <- completed_runs[[1]]$best_runs_tbl
+  prev_hierarchy_summary_tbl <- completed_runs[[1]]$hierarchy_summary_tbl
 
   # check if forecast approach has changed
   prev_approach <- unique(prev_agent_info$forecast_approach)
@@ -636,12 +640,36 @@ initial_checks <- function(agent_info) {
 
   # keep only rows that can be updated from the current input data
   preserve_global_combos <- agent_info$forecast_approach != "bottoms_up"
+  hierarchy_aggregate_combos <- character(0)
+  hierarchy_columns <- c("Hierarchy_Combo", "Bottom_Combo", "Is_Bottom")
+  if (preserve_global_combos &&
+    is.data.frame(prev_hierarchy_summary_tbl) &&
+    all(hierarchy_columns %in% names(prev_hierarchy_summary_tbl))) {
+    is_bottom <- suppressWarnings(
+      as.logical(as.character(prev_hierarchy_summary_tbl$Is_Bottom))
+    )
+    bottom_hashes <- vapply(
+      as.character(prev_hierarchy_summary_tbl$Bottom_Combo),
+      hash_data,
+      character(1),
+      USE.NAMES = FALSE
+    )
+    reusable_aggregate_rows <- !is.na(is_bottom) &
+      !is_bottom &
+      bottom_hashes %in% current_run_combos
+    hierarchy_aggregate_combos <- unique(as.character(
+      prev_hierarchy_summary_tbl$Hierarchy_Combo[reusable_aggregate_rows]
+    ))
+  }
+
   prev_best_runs_tbl <- prev_best_runs_tbl %>%
     dplyr::rowwise() %>%
     dplyr::mutate(combo_hash = hash_data(combo)) %>%
     dplyr::filter(
       combo_hash %in% current_run_combos |
-        (preserve_global_combos & model_type == "global")
+        (preserve_global_combos &
+          model_type == "global" &
+          combo %in% hierarchy_aggregate_combos)
     ) %>%
     dplyr::select(-combo_hash) %>%
     dplyr::ungroup()
@@ -684,6 +712,7 @@ initial_checks <- function(agent_info) {
   # return unfinished previous best runs and any new combos
   return(list(
     prev_best_runs_tbl = prev_best_runs_tbl,
+    current_run_combos = current_run_combos,
     new_combos = new_combos
   ))
 }
@@ -972,6 +1001,8 @@ update_local_models <- function(agent_info,
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame of the previous best run results.
+#' @param current_run_combos Character vector of combo hashes backed by current
+#'   input artifacts.
 #' @param global_failed_combos Character vector of combo hashes that failed
 #'   during global model update.
 #' @param local_failed_combos Character vector of combo hashes that failed
@@ -982,9 +1013,13 @@ update_local_models <- function(agent_info,
 #' @noRd
 check_update_failures <- function(agent_info,
                                   previous_best_run_tbl,
+                                  current_run_combos,
                                   global_failed_combos,
                                   local_failed_combos) {
-  failed_combos <- unique(c(global_failed_combos, local_failed_combos))
+  failed_combos <- intersect(
+    unique(c(global_failed_combos, local_failed_combos)),
+    current_run_combos
+  )
 
   if (length(failed_combos) == 0) {
     return(character(0))

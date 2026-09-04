@@ -26,14 +26,25 @@ new_llm_session <- function(llm) {
 }
 
 has_completed_iteration_target <- function(best_run_tbl, max_iter) {
-  required_columns <- c("run_complete", "max_iterations")
+  required_columns <- c(
+    "combo", "model_type", "weighted_mape", "run_complete", "max_iterations"
+  )
   if (!is.data.frame(best_run_tbl) ||
     !all(required_columns %in% colnames(best_run_tbl))) {
     return(FALSE)
   }
 
+  combo <- trimws(as.character(best_run_tbl$combo))
+  model_type <- as.character(best_run_tbl$model_type)
+  weighted_mape <- suppressWarnings(as.numeric(as.character(best_run_tbl$weighted_mape)))
   run_complete <- suppressWarnings(as.logical(as.character(best_run_tbl$run_complete)))
   max_iterations <- suppressWarnings(as.numeric(as.character(best_run_tbl$max_iterations)))
+
+  if (any(is.na(combo) | !nzchar(combo)) ||
+    any(is.na(model_type) | !model_type %in% c("global", "local")) ||
+    any(!is.finite(weighted_mape) | weighted_mape < 0)) {
+    return(FALSE)
+  }
 
   any(
     run_complete %in% TRUE &
