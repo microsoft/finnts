@@ -42,6 +42,52 @@ has_completed_iteration_target <- function(best_run_tbl, max_iter) {
   )
 }
 
+resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
+  required_columns <- c("Analysis_Type", "Metric", "Value")
+  if (!is.data.frame(eda_results) ||
+    !all(required_columns %in% names(eda_results))) {
+    stop(
+      "Error in iterate_forecast(). Expected exactly one hierarchy result in consolidated EDA data.",
+      call. = FALSE
+    )
+  }
+
+  hierarchy_results <- eda_results %>%
+    dplyr::filter(
+      .data$Analysis_Type == "Hierarchy",
+      .data$Metric == "hierarchy_type"
+    )
+
+  if (nrow(hierarchy_results) != 1) {
+    stop(
+      "Error in iterate_forecast(). Expected exactly one hierarchy result in consolidated EDA data.",
+      call. = FALSE
+    )
+  }
+
+  hierarchy_type <- as.character(hierarchy_results$Value[[1]])
+  if (is.na(hierarchy_type) ||
+    !hierarchy_type %in% c("none", "standard", "grouped")) {
+    stop(
+      "Error in iterate_forecast(). Found unsupported hierarchy type in consolidated EDA data: ",
+      hierarchy_type,
+      ". Expected one of: none, standard, grouped.",
+      call. = FALSE
+    )
+  }
+
+  if (!identical(agent_info$forecast_approach, "bottoms_up")) {
+    return("bottoms_up")
+  }
+
+  hierarchy_approach <- switch(hierarchy_type,
+    none = NULL,
+    standard = "standard_hierarchy",
+    grouped = "grouped_hierarchy"
+  )
+  c("bottoms_up", hierarchy_approach)
+}
+
 #' Run the Finn Agent Forecast Iteration Process
 #'
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
@@ -137,24 +183,25 @@ iterate_forecast <- function(agent_info,
 
   # run exploratory data analysis
   # check if eda data already exists
-  eda_exists <- tryCatch(
+  eda_results <- tryCatch(
     {
-      eda_check <- get_eda_data(agent_info = agent_info)
-      !is.null(eda_check) && nrow(eda_check) > 0
+      get_eda_data(agent_info = agent_info)
     },
     error = function(e) {
-      FALSE
+      tibble::tibble()
     }
   )
+  eda_exists <- is.data.frame(eda_results) && nrow(eda_results) > 0
 
   if (eda_exists) {
     message("[agent] EDA already ran. Skipping EDA process.")
   } else {
-    eda_results <- eda_agent_workflow(
+    eda_agent_workflow(
       agent_info = agent_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores
     )
+    eda_results <- get_eda_data(agent_info = agent_info)
   }
 
   # get total number of time series
@@ -214,7 +261,8 @@ iterate_forecast <- function(agent_info,
           max_iter = max_iter_adj,
           seed = seed,
           previous_run_results = previous_runs,
-          fallback_available = run_local_models
+          fallback_available = run_local_models,
+          eda_results = eda_results
         )
         global_models_ran <- TRUE
       } else {
@@ -928,6 +976,8 @@ save_best_agent_run <- function(agent_info) {
 #'   outer global or local workflow.
 #' @param fallback_available Whether an exhausted global workflow may continue
 #'   to enabled local models when no global best run exists.
+#' @param eda_results Consolidated EDA results used to resolve the legal global
+#'   forecast approaches before reasoning. Not used by local workflows.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -940,7 +990,14 @@ fcst_agent_workflow <- function(agent_info,
                                 max_iter = 3,
                                 seed = 123,
                                 previous_run_results = NULL,
-                                fallback_available = FALSE) {
+                                fallback_available = FALSE,
+                                eda_results = NULL) {
+  agent_info$global_forecast_approaches <- if (is.null(combo)) {
+    resolve_agent_global_forecast_approaches(agent_info, eda_results)
+  } else {
+    "bottoms_up"
+  }
+
   # create one fresh session for this series and all of its iterations
   agent_info$llm <- new_llm_session(agent_info$llm)
 
@@ -1303,7 +1360,7 @@ validate_agent_proposal <- function(input_list,
     allow_null = FALSE
   )
   allowed_approaches <- if (is.null(combo)) {
-    unique(c("bottoms_up", agent_info$forecast_approach))
+    agent_info$global_forecast_approaches %||% "bottoms_up"
   } else {
     "bottoms_up"
   }
@@ -3382,6 +3439,11 @@ iterate_forecast_system_prompt <- function(agent_info,
   seasonal_period_default <- get_seasonal_periods(date_type = project_info$date_type) %>%
     paste(collapse = "---")
 
+  global_forecast_approaches <-
+    agent_info$global_forecast_approaches %||% "bottoms_up"
+  global_forecast_approaches_str <-
+    paste(global_forecast_approaches, collapse = "|")
+
   # load EDA results
   eda_results <- load_eda_results(agent_info = agent_info, combo = combo)
 
@@ -3410,6 +3472,7 @@ iterate_forecast_system_prompt <- function(agent_info,
       - forecast horizon : <<horizon>>
       - potential external regressors : <<xregs>>
       - weighted MAPE goal : <<weighted_mape_goal>>
+      - Allowed forecast_approach values: <<global_forecast_approaches>>
 
       -----Exploratory Data Analysis-----
       <<eda>>
@@ -3426,11 +3489,10 @@ iterate_forecast_system_prompt <- function(agent_info,
       5.  IF EDA shows strong autocorrelation on periods less than the forecast horizon AND forecast horizon > 1 then set multistep_horizon="TRUE".
       6.  HIERARCHICAL RULES
           6-A.  IF run_count == 0 then set forecast_approach="bottoms_up"
-          6-B.  IF run_count > 0 AND hierarchy type != "none" AND *Step A is complete* then set forecast_approach="standard_hierarchy" or "grouped_hierarchy" depending on EDA results.
-          6-C.  IF hierarchy type == "none" then set forecast_approach="bottoms_up".
-          6-D.  You MUST NOT use "standard_hierarchy" or "grouped_hierarchy" if the hierarchy type is "none".
-          6-E.  You MUST NOT use "standard_hierarchy" if the hierarchy type is grouped.
-          6-F.  You MUST NOT use "grouped_hierarchy" if the hierarchy type is standard.
+          6-B.  IF run_count > 0 AND *Step A is complete*, choose only from: <<global_forecast_approaches>>.
+          6-C.  IF only "bottoms_up" is allowed, the input already contains prepared hierarchy levels or no hierarchy exists. ALWAYS set forecast_approach="bottoms_up".
+          6-D.  IF an exact hierarchical value is allowed, you may test it after bottoms_up. Finn reconciles that candidate to bottom-level series before weighted MAPE comparison.
+          6-E.  You MUST NOT propose a forecast_approach that is not listed in the allowed values.
       7.  MISSING VALUES RULES
           7-A.  IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
           7-B.  IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
@@ -3502,7 +3564,7 @@ iterate_forecast_system_prompt <- function(agent_info,
         "external_regressors"   : "NULL|var1---var2",
         "clean_missing_values"  : "TRUE|FALSE",
         "clean_outliers"        : "TRUE|FALSE",
-        "forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy",
+        "forecast_approach"     : "<<global_forecast_approaches>>",
         "stationary"            : "TRUE|FALSE",
         "feature_selection"     : "TRUE|FALSE",
         "multistep_horizon"     : "TRUE|FALSE",
@@ -3526,6 +3588,7 @@ iterate_forecast_system_prompt <- function(agent_info,
       xregs = xregs_str,
       eda = eda_results,
       weighted_mape_goal = weighted_mape_goal,
+      global_forecast_approaches = global_forecast_approaches_str,
       lag_default = lag_default,
       rolling_default = rolling_default,
       agent_version = agent_info$agent_version

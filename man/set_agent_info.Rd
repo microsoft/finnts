@@ -45,7 +45,12 @@ before Finn creates internal series identifiers and writes input artifacts.}
 
 \item{combo_cleanup_date}{Optional Date object for combo cleanup}
 
-\item{allow_hierarchical_forecast}{Logical indicating whether to allow hierarchical forecasting}
+\item{allow_hierarchical_forecast}{Logical controlling the Agent optimization
+scope. \code{TRUE} expands input data to all detected hierarchy levels before
+optimization, runs inner iterations with \code{forecast_approach = "bottoms_up"},
+and reconciles the final forecast. \code{FALSE} keeps the original bottom-level
+series; global iterations may still compare the exact hierarchy detected by
+EDA after reconciling that candidate back to the bottom level.}
 
 \item{negative_forecast}{If TRUE, allow forecasts to dip below zero.}
 

@@ -17,9 +17,19 @@ make_graceful_abort_agent_info <- function(run_global_models = TRUE,
     hist_end_date = as.Date("2026-06-01"),
     external_regressors = "Driver_A",
     forecast_approach = "bottoms_up",
+    global_forecast_approaches = "bottoms_up",
     negative_forecast = FALSE,
     run_global_models = run_global_models,
     run_local_models = run_local_models
+  )
+}
+
+make_hierarchy_eda <- function(hierarchy_type) {
+  tibble::tibble(
+    Combo = "All",
+    Analysis_Type = "Hierarchy",
+    Metric = "hierarchy_type",
+    Value = hierarchy_type
   )
 }
 
@@ -491,6 +501,106 @@ test_that("all LLM-controlled fields are validated before submission", {
   expect_match(conditionMessage(global_recipe_error), "must prepare R1", fixed = TRUE)
 })
 
+test_that("global forecast approaches follow outer optimization scope", {
+  agent_info <- make_graceful_abort_agent_info()
+
+  expect_identical(
+    resolve_agent_global_forecast_approaches(
+      agent_info,
+      make_hierarchy_eda("standard")
+    ),
+    c("bottoms_up", "standard_hierarchy")
+  )
+  expect_identical(
+    resolve_agent_global_forecast_approaches(
+      agent_info,
+      make_hierarchy_eda("grouped")
+    ),
+    c("bottoms_up", "grouped_hierarchy")
+  )
+  expect_identical(
+    resolve_agent_global_forecast_approaches(
+      agent_info,
+      make_hierarchy_eda("none")
+    ),
+    "bottoms_up"
+  )
+
+  for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
+    agent_info$forecast_approach <- forecast_approach
+    agent_info$project_info$combo_variables <- "ID"
+    expect_identical(
+      resolve_agent_global_forecast_approaches(
+        agent_info,
+        make_hierarchy_eda("none")
+      ),
+      "bottoms_up",
+      info = forecast_approach
+    )
+  }
+})
+
+test_that("global forecast approach resolution rejects invalid EDA metadata", {
+  agent_info <- make_graceful_abort_agent_info()
+
+  expect_error(
+    resolve_agent_global_forecast_approaches(agent_info, tibble::tibble()),
+    "exactly one hierarchy result"
+  )
+  expect_error(
+    resolve_agent_global_forecast_approaches(
+      agent_info,
+      dplyr::bind_rows(make_hierarchy_eda("standard"), make_hierarchy_eda("grouped"))
+    ),
+    "exactly one hierarchy result"
+  )
+  expect_error(
+    resolve_agent_global_forecast_approaches(
+      agent_info,
+      make_hierarchy_eda("unsupported")
+    ),
+    "unsupported hierarchy type"
+  )
+})
+
+test_that("global proposal validation uses resolved forecast approaches", {
+  agent_info <- make_graceful_abort_agent_info()
+  agent_info$global_forecast_approaches <- c("bottoms_up", "grouped_hierarchy")
+  grouped_proposal <- jsonlite::fromJSON(make_agent_response(
+    models_to_run = "xgboost",
+    forecast_approach = "grouped_hierarchy"
+  ))
+
+  expect_no_error(validate_agent_proposal(
+    grouped_proposal,
+    agent_info = agent_info,
+    combo = NULL,
+    available_models = "xgboost"
+  ))
+  expect_error(
+    validate_agent_proposal(
+      utils::modifyList(grouped_proposal, list(forecast_approach = "standard_hierarchy")),
+      agent_info = agent_info,
+      combo = NULL,
+      available_models = "xgboost"
+    ),
+    class = "finnts_reason_proposal_invalid"
+  )
+
+  agent_info$forecast_approach <- "grouped_hierarchy"
+  agent_info$project_info$combo_variables <- "ID"
+  agent_info$global_forecast_approaches <- "bottoms_up"
+  expect_error(
+    validate_agent_proposal(
+      grouped_proposal,
+      agent_info = agent_info,
+      combo = NULL,
+      available_models = "xgboost"
+    ),
+    class = "finnts_reason_proposal_invalid"
+  )
+})
+
 test_that("canonical change budgets allow three new settings and reject a fourth", {
   defaults <- c(12, 6, 3)
   prior <- c(NA, "2---6---12", "4---6---12", "6---8---12")
@@ -704,6 +814,84 @@ test_that("local system prompt describes seasonal budget semantics", {
     "Reusing a previously tested configuration or selecting \"NULL\" does not consume another change",
     fixed = TRUE
   )
+})
+
+test_that("global system prompt advertises only resolved forecast approaches", {
+  agent_info <- make_graceful_abort_agent_info()
+  agent_info$global_forecast_approaches <- c("bottoms_up", "grouped_hierarchy")
+
+  testthat::local_mocked_bindings(
+    load_eda_results = function(...) "Hierarchy Type: grouped",
+    get_foundation_model_suffix = function() "",
+    .package = "finnts"
+  )
+
+  prompt <- iterate_forecast_system_prompt(
+    agent_info = agent_info,
+    combo = NULL,
+    weighted_mape_goal = 0.05
+  )
+
+  expect_match(
+    prompt,
+    "Allowed forecast_approach values: bottoms_up|grouped_hierarchy",
+    fixed = TRUE
+  )
+  expect_match(
+    prompt,
+    '"forecast_approach"     : "bottoms_up|grouped_hierarchy"',
+    fixed = TRUE
+  )
+  expect_false(grepl(
+    '"forecast_approach"     : "bottoms_up|standard_hierarchy|grouped_hierarchy"',
+    prompt,
+    fixed = TRUE
+  ))
+
+  agent_info$forecast_approach <- "grouped_hierarchy"
+  agent_info$project_info$combo_variables <- "ID"
+  agent_info$global_forecast_approaches <- "bottoms_up"
+  expanded_prompt <- iterate_forecast_system_prompt(
+    agent_info = agent_info,
+    combo = NULL,
+    weighted_mape_goal = 0.05
+  )
+
+  expect_match(
+    expanded_prompt,
+    "Allowed forecast_approach values: bottoms_up",
+    fixed = TRUE
+  )
+  expect_match(
+    expanded_prompt,
+    '"forecast_approach"     : "bottoms_up"',
+    fixed = TRUE
+  )
+})
+
+test_that("local reasoning always uses bottoms up", {
+  agent_info <- make_graceful_abort_agent_info()
+  agent_info$forecast_approach <- "grouped_hierarchy"
+  agent_info$project_info$combo_variables <- "ID"
+  agent_info$llm <- make_queued_fake_chat(make_agent_response(
+    forecast_approach = "grouped_hierarchy"
+  ))
+
+  testthat::local_mocked_bindings(
+    get_foundation_model_suffix = function() "",
+    .package = "finnts"
+  )
+
+  result <- reason_inputs(
+    agent_info = agent_info,
+    combo = "combo-hash",
+    weighted_mape_goal = 0.05,
+    previous_run_results = "No Previous Runs",
+    previous_version_results = "No Previous Runs",
+    total_runs = 0L
+  )
+
+  expect_identical(result$forecast_approach, "bottoms_up")
 })
 
 test_that("system prompts do not cap external regressor configurations", {
@@ -993,8 +1181,18 @@ test_that("history refreshes once after completion and never between corrections
 
 test_that("global and local graphs route exhausted fake responses to finalization", {
   cases <- list(
-    global = list(combo = NULL, fallback = TRUE),
-    local = list(combo = "combo-hash", fallback = FALSE)
+    global = list(
+      combo = NULL,
+      fallback = TRUE,
+      eda_results = make_hierarchy_eda("grouped"),
+      expected_approaches = c("bottoms_up", "grouped_hierarchy")
+    ),
+    local = list(
+      combo = "combo-hash",
+      fallback = FALSE,
+      eda_results = NULL,
+      expected_approaches = "bottoms_up"
+    )
   )
 
   for (case_name in names(cases)) {
@@ -1008,10 +1206,14 @@ test_that("global and local graphs route exhausted fake responses to finalizatio
     calls <- new.env(parent = emptyenv())
     calls$submit <- 0L
     calls$finalize <- list()
+    calls$prompt_approaches <- NULL
 
     testthat::local_mocked_bindings(
       new_llm_session = function(llm) llm,
-      iterate_forecast_system_prompt = function(...) "system prompt",
+      iterate_forecast_system_prompt = function(agent_info, ...) {
+        calls$prompt_approaches <- agent_info$global_forecast_approaches
+        "system prompt"
+      },
       get_foundation_model_suffix = function() "",
       wait_before_retry = function(...) invisible(NULL),
       submit_fcst_run = function(...) {
@@ -1035,7 +1237,8 @@ test_that("global and local graphs route exhausted fake responses to finalizatio
       max_iter = 2,
       seed = 123,
       previous_run_results = minimal_reason_history(),
-      fallback_available = case$fallback
+      fallback_available = case$fallback,
+      eda_results = case$eda_results
     )
 
     expect_identical(result$node, "stop")
@@ -1043,24 +1246,35 @@ test_that("global and local graphs route exhausted fake responses to finalizatio
     expect_identical(calls$submit, 0L)
     expect_identical(calls$finalize$completion_reason, "reasoning_exhausted")
     expect_identical(calls$finalize$fallback_available, case$fallback)
+    expect_identical(calls$prompt_approaches, case$expected_approaches)
   }
 })
 
 run_mocked_iterate_mode <- function(run_global_models,
                                     run_local_models,
-                                    best_run_tbl) {
+                                    best_run_tbl,
+                                    forecast_approach = "bottoms_up",
+                                    hierarchy_type = "none") {
   calls <- new.env(parent = emptyenv())
   calls$scopes <- character(0)
   calls$list_count <- 0L
+  calls$eda_count <- 0L
+  calls$global_forecast_approaches <- list()
+  calls$combo_variables <- list()
+  calls$reconcile_count <- 0L
   agent_info <- make_graceful_abort_agent_info(
     run_global_models = run_global_models,
     run_local_models = run_local_models
   )
+  agent_info$forecast_approach <- forecast_approach
   agent_info$llm <- structure(list(), class = "Chat")
 
   testthat::local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
-    get_eda_data = function(...) data.frame(done = TRUE),
+    get_eda_data = function(...) {
+      calls$eda_count <- calls$eda_count + 1L
+      make_hierarchy_eda(hierarchy_type)
+    },
     list_files = function(...) {
       calls$list_count <- calls$list_count + 1L
       "input.csv"
@@ -1075,9 +1289,23 @@ run_mocked_iterate_mode <- function(run_global_models,
     ),
     par_end = function(...) invisible(NULL),
     fcst_agent_workflow = function(agent_info, combo, ...) {
+      workflow_args <- list(...)
       calls$scopes <- c(calls$scopes, if (is.null(combo)) "global" else paste0("local:", combo))
+      calls$global_forecast_approaches[[length(calls$global_forecast_approaches) + 1L]] <-
+        if (is.null(combo)) {
+          resolve_agent_global_forecast_approaches(agent_info, workflow_args$eda_results)
+        } else {
+          "bottoms_up"
+        }
+      calls$combo_variables[[length(calls$combo_variables) + 1L]] <-
+        agent_info$project_info$combo_variables
       list(status = "completed")
     },
+    reconcile_agent_forecast = function(...) {
+      calls$reconcile_count <- calls$reconcile_count + 1L
+      invisible(NULL)
+    },
+    summarize_hierarchy = function(...) invisible(NULL),
     save_best_agent_run = function(...) invisible(NULL),
     save_agent_forecast = function(...) invisible(NULL),
     summarize_models = function(...) invisible(NULL),
@@ -1137,6 +1365,43 @@ test_that("iterate routing covers global-only local-only and combined modes", {
   )
 })
 
+test_that("iterate resolves global forecast approaches once after EDA", {
+  best_run_tbl <- data.frame(
+    combo = c("A", "B"),
+    model_type = "global",
+    weighted_mape = c(0.1, 0.1),
+    run_complete = FALSE,
+    max_iterations = 0
+  )
+
+  bottom_level <- run_mocked_iterate_mode(
+    TRUE,
+    FALSE,
+    best_run_tbl,
+    forecast_approach = "bottoms_up",
+    hierarchy_type = "grouped"
+  )
+  expect_identical(bottom_level$eda_count, 1L)
+  expect_identical(
+    bottom_level$global_forecast_approaches[[1]],
+    c("bottoms_up", "grouped_hierarchy")
+  )
+  expect_identical(bottom_level$combo_variables[[1]], "id")
+  expect_identical(bottom_level$reconcile_count, 0L)
+
+  all_levels <- run_mocked_iterate_mode(
+    TRUE,
+    FALSE,
+    best_run_tbl,
+    forecast_approach = "grouped_hierarchy",
+    hierarchy_type = "none"
+  )
+  expect_identical(all_levels$eda_count, 1L)
+  expect_identical(all_levels$global_forecast_approaches[[1]], "bottoms_up")
+  expect_identical(all_levels$combo_variables[[1]], "ID")
+  expect_identical(all_levels$reconcile_count, 1L)
+})
+
 test_that("combined mode exhausts the global graph before real local graph fallback", {
   agent_info <- make_graceful_abort_agent_info(
     run_global_models = TRUE,
@@ -1150,7 +1415,7 @@ test_that("combined mode exhausts the global graph before real local graph fallb
 
   testthat::local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
-    get_eda_data = function(...) data.frame(done = TRUE),
+    get_eda_data = function(...) make_hierarchy_eda("none"),
     list_files = function(...) "input.csv",
     read_file = function(...) data.frame(Combo = c("A", "B")),
     load_run_results = function(...) "No Previous Runs",
