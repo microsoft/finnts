@@ -634,6 +634,18 @@ initial_checks <- function(agent_info) {
     }
   }
 
+  # keep only rows that can be updated from the current input data
+  preserve_global_combos <- agent_info$forecast_approach != "bottoms_up"
+  prev_best_runs_tbl <- prev_best_runs_tbl %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(combo_hash = hash_data(combo)) %>%
+    dplyr::filter(
+      combo_hash %in% current_run_combos |
+        (preserve_global_combos & model_type == "global")
+    ) %>%
+    dplyr::select(-combo_hash) %>%
+    dplyr::ungroup()
+
   # filter previous best runs on combos that haven't been updated for this version
   if (!is.null(unfinished_combos)) {
     prev_best_runs_tbl <- prev_best_runs_tbl %>%
@@ -667,19 +679,6 @@ initial_checks <- function(agent_info) {
         call. = FALSE
       )
     }
-  }
-
-  # for hierarchical forecasting, filter out combos from the previous best
-  # runs that no longer exist in the current run's input data (hierarchy
-  # structure changes when bottom-level combos are added or removed, making
-  # old aggregation combos invalid)
-  if (agent_info$forecast_approach != "bottoms_up") {
-    prev_best_runs_tbl <- prev_best_runs_tbl %>%
-      dplyr::rowwise() %>%
-      dplyr::mutate(combo_hash = hash_data(combo)) %>%
-      dplyr::filter(model_type == "global" | combo_hash %in% current_run_combos) %>%
-      dplyr::select(-combo_hash) %>%
-      dplyr::ungroup()
   }
 
   # return unfinished previous best runs and any new combos

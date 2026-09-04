@@ -118,15 +118,19 @@ run_initial_checks_case <- function(final_outputs,
                                     intermediate_tables = NULL,
                                     read_error = NULL,
                                     read_counts = NULL,
-                                    forecast_approach = "bottoms_up") {
+                                    forecast_approach = "bottoms_up",
+                                    combos_by_run = NULL) {
   agent_info <- make_update_agent_info(forecast_approach)
   agent_runs <- make_update_agent_run_table(forecast_approach)
   run_ids <- agent_runs$run_id
   run_files <- paste0(run_ids, "-agent_run.csv")
-  combos_by_run <- stats::setNames(
-    lapply(run_ids, function(...) c("combo-a", "combo-b")),
-    run_ids
-  )
+
+  if (is.null(combos_by_run)) {
+    combos_by_run <- stats::setNames(
+      lapply(run_ids, function(...) c("combo-a", "combo-b")),
+      run_ids
+    )
+  }
 
   if (is.null(intermediate_tables)) {
     intermediate_tables <- stats::setNames(
@@ -220,6 +224,70 @@ test_that("initial_checks selects a finalized immediate predecessor", {
   ))
 
   expect_true(all(grepl("run-4", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+})
+
+test_that("initial_checks excludes removed bottom-up combos from update routing", {
+  run_ids <- paste0("run-", 5:1)
+  combos_by_run <- stats::setNames(
+    lapply(run_ids, function(...) c("combo-a", "combo-b")),
+    run_ids
+  )
+  combos_by_run[["run-5"]] <- c("combo-a", "combo-b", "combo-new")
+  combos_by_run[["run-4"]] <- c(
+    "combo-a", "combo-b", "combo-removed-local", "combo-removed-global"
+  )
+
+  run4_outputs <- make_complete_final_outputs(
+    "run-4",
+    combos = combos_by_run[["run-4"]]
+  )
+  run4_outputs$run_metadata$model_type <- c(
+    "local", "global", "local", "global"
+  )
+
+  result <- run_initial_checks_case(
+    final_outputs = list("run-4" = run4_outputs),
+    combos_by_run = combos_by_run
+  )
+
+  expect_setequal(result$prev_best_runs_tbl$combo, c("combo-a", "combo-b"))
+  expect_identical(result$new_combos, "combo-new")
+})
+
+test_that("initial_checks preserves hierarchical global rows only", {
+  run_ids <- paste0("run-", 5:1)
+  combos_by_run <- stats::setNames(
+    lapply(run_ids, function(...) c("combo-a", "combo-b")),
+    run_ids
+  )
+  combos_by_run[["run-4"]] <- c("combo-a", "combo-removed")
+
+  run4_outputs <- make_complete_final_outputs(
+    "run-4",
+    combos = c("Total", "combo-a", "combo-removed"),
+    forecast_approach = "standard_hierarchy"
+  )
+  run4_outputs$run_metadata$model_type <- c("global", "local", "local")
+
+  result <- run_initial_checks_case(
+    final_outputs = list("run-4" = run4_outputs),
+    forecast_approach = "standard_hierarchy",
+    combos_by_run = combos_by_run
+  )
+
+  expect_setequal(result$prev_best_runs_tbl$combo, c("Total", "combo-a"))
+  expect_identical(result$new_combos, "combo-b")
+})
+
+test_that("initial_checks retry stops after all current combos finish", {
+  result <- run_initial_checks_case(
+    final_outputs = list(),
+    intermediate_tables = list(
+      "run-5" = make_update_run_metadata("run-5")
+    )
+  )
+
+  expect_identical(result, "no updates required")
 })
 
 test_that("initial_checks accepts nonempty metadata without matching input combos", {
