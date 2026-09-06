@@ -1,6 +1,19 @@
-# finnts 0.7.0.9004 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9005 (DEVELOPMENT VERSION)
+
+## Improvements
+
+- Model selection now combines backtest weighted MAPE with deterministic future-forecast checks. It rejects incomplete, non-finite, and catastrophic forecasts, then prefers lower-risk candidates within a bounded accuracy allowance. Risk-and-concern ties use a history-adaptive seasonal-amplitude preference when all tied candidates have sufficient evidence; supported short horizons can also detect reversed seasonal timing. Individual models and combinations use the same per-series policy, with prepared original actuals read from exact R1/R2 paths and no new diagnostic files.
+- Future quality selects the winner within each Agent iteration; completed iteration winners, normal accuracy-goal stopping, and local optimization routing use WMAPE only. Equal accuracy retains the earlier winner. Recorded run and best-run metrics avoid repeating past future-quality checks. Hard-invalid or incomplete results still cannot win. Rejected newly generated update forecasts receive one default reforecast before reconciliation, while ordinary execution-failure limits remain unchanged.
+- Nonwinning simple averages are saved using the same accuracy and future-quality ranking as overall model selection. Hierarchical runs reconcile the selected mixture directly, without post-reconciliation future scoring, whole-hierarchy replacement models, or late quality-triggered refitting. Reported hierarchical accuracy uses reconciled backtests; later comparisons and reconciliation do not require retained source-quality rankings.
 
 ## Bug Fixes
+
+- Ensemble screening now excludes hard-rejected candidates before checking shared prediction dates, so an extra date on an invalid candidate cannot remove otherwise valid ensemble inputs.
+- `final_models()` retries validate the actual saved winner across individual and average outputs instead of trusting a `Best_Model` column, average filename, or completion log alone. Incomplete selections rebuild averages and flags from existing predictions without retraining; complete winners are reused and completed series remain in multi-series results. Missing saved-average components and prediction-read failures remain actionable errors.
+- Global forecast updates now refit the components of each series' saved winning model or average, rather than averaging every model originally requested. Different series and hierarchy source nodes retain their selected subsets through refit and retune; unselected predictions cannot invalidate a healthy series.
+- Non-finite predictions are no longer converted to zero and cannot disappear when daily-expanded forecasts are restored to weekly cadence; finite negative forecasts still respect `negative_forecast`.
+- Model selection now reports clear errors for an empty candidate pool or a recent reference window with no finite actuals. Partly missing windows with usable actuals, including zero values, retain their existing behavior.
+- Original targets now retain their own inverse-differencing starting values in the existing transformation metadata. This prevents cleaned early observations from introducing level or trend errors into reconstructed actuals. Legacy second-order original-target artifacts without those values require regeneration from original input.
 
 -   `update_forecast()` now excludes predecessor time series that are absent from the current input before global or local update routing. Removed series no longer produce empty-schema or missing-artifact fallback errors, while current-only series continue to receive default local forecasts.
 -   Global Agent iterations now use hierarchy choices that match the outer optimization scope. Bottom-level runs may compare `bottoms_up` with the exact standard or grouped hierarchy detected by EDA after reconciliation to bottom-level series. Runs whose input was already expanded to hierarchy-level `ID` series use `bottoms_up` for every inner global and local iteration before one final outer reconciliation.

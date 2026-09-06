@@ -211,6 +211,17 @@ ensemble_models <- function(run_info,
       initial_results_final_tbl <- single_model_tbl %>%
         rbind(global_model_tbl)
 
+      series_data <- read_series_history(
+        run_info, unique(initial_results_final_tbl$Combo), run_log = log_df
+      )
+      initial_results_final_tbl <- screen_ensemble_inputs(
+        initial_results_final_tbl, series_data, model_train_test_tbl
+      )
+      if (nrow(initial_results_final_tbl) == 0) {
+        cli::cli_alert_warning("No eligible model predictions remain for ensemble training.")
+        return(data.frame(Combo = combo))
+      }
+
       # create training data for ensemble
       # consolidate Target per (Combo, Date, Train_Test_ID) to avoid duplicate rows
       # from models with slightly different floating-point Target values

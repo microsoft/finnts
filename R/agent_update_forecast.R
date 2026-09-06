@@ -14,6 +14,30 @@
 #' directing the user to use `iterate_forecast()` instead.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
+#' @details Reused forecasts are checked against original-scale prepared actuals
+#'   after refitting and retuning. Quality-rejected series receive one default
+#'   reforecast through the same path as new series, without LLM quality judgments.
+#'   Quality-only rejections do not count toward the ordinary execution-failure
+#'   limit; existing data/provider failures retain that limit. Replacement models
+#'   are evaluated using [final_models()] and cannot trigger an unbounded retry.
+#'   Reused fits do not call `final_models()`; their components must pass hard
+#'   eligibility and their selected combination must pass applicable quality checks
+#'   before any reconciliation, including after retuning. Global updates recover
+#'   each series' saved winning single model or average from existing source
+#'   forecasts, refit the union of required components, and preserve each selected
+#'   subset. Requested but unselected models are not added back to the average.
+#'   Missing or ambiguous saved winners or selected fits require restoring the
+#'   original artifacts; the requested model list is not used as a fallback.
+#'   These are checks on newly generated predictions, not repeated assessments of
+#'   past iteration winners. A reused hierarchy that
+#'   is incomplete or contains a rejected node is not reconciled; its covered
+#'   current series follow the existing default-local forecast path. Existing
+#'   run logs record default acceptance or rejection for restart safety. The
+#'   selected mixture is then reconciled without post-reconciliation future
+#'   evaluation, whole-set replacement, or late quality-triggered refitting.
+#'   Legacy second-order differenced original targets without their own starting
+#'   values require regeneration of prepared data from the original input.
+#'
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
 #' @param allow_iterate_forecast Logical indicating if the forecast iteration
 #'   should be allowed if poor performance is detected, meaning >40% of
@@ -222,7 +246,9 @@ update_fcst_agent_workflow <- function(agent_info,
         previous_best_run_tbl = "{results$initial_checks$prev_best_runs_tbl}",
         current_run_combos = "{results$initial_checks$current_run_combos}",
         global_failed_combos = "{results$update_global_models$failed_combos}",
-        local_failed_combos = "{results$update_local_models$failed_combos}"
+        local_failed_combos = "{results$update_local_models$failed_combos}",
+        global_quality_rejected = "{results$update_global_models$quality_rejected_combos}",
+        local_quality_rejected = "{results$update_local_models$quality_rejected_combos}"
       )
     ),
     forecast_new_combos = list(
@@ -746,13 +772,22 @@ update_global_models <- function(agent_info,
 
   if (nrow(previous_best_run_global_tbl) == 0) {
     cli::cli_alert_info("No global models to update, skipping...")
-    return(list(status = "No global models to update, skipping...", failed_combos = character(0)))
+    return(list(status = "No global models to update, skipping...", failed_combos = character(0), quality_rejected_combos = character(0)))
+  }
+
+  if (length(unique(previous_best_run_global_tbl$best_run_name)) > 1) {
+    results <- lapply(split(previous_best_run_global_tbl, previous_best_run_global_tbl$best_run_name), function(previous) {
+      update_global_models(agent_info, previous, parallel_processing, inner_parallel, num_cores, seed)
+    })
+    return(list(status = "Finished Global Model Updates",
+      failed_combos = unique(unlist(lapply(results, `[[`, "failed_combos"))),
+      quality_rejected_combos = unique(unlist(lapply(results, `[[`, "quality_rejected_combos")))))
   }
 
   # start forecast update process
   global_error <- tryCatch(
     {
-      if (identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
+      update_result <- if (identical(parallel_processing, "spark") & identical(inner_parallel, TRUE)) {
         callr::r(
           function(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, libs) {
             .libPaths(libs)
@@ -791,7 +826,7 @@ update_global_models <- function(agent_info,
           seed = seed
         )
       }
-      NULL # no error
+      update_result
     },
     error = function(e) {
       e
@@ -802,7 +837,7 @@ update_global_models <- function(agent_info,
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   try(foreach::registerDoSEQ(), silent = TRUE)
 
-  if (!is.null(global_error)) {
+  if (inherits(global_error, "condition")) {
     # extract individual combos that were covered by the global model
     failed_global_combos <- unique(previous_best_run_global_tbl$combo)
     failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
@@ -810,10 +845,14 @@ update_global_models <- function(agent_info,
       "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {conditionMessage(global_error)}"
     )
     cli::cli_alert_info("Failed combos will be re-forecast using default local model inputs.")
-    return(list(status = "Global model update failed", failed_combos = failed_hashes))
+    if (inherits(global_error, "finnts_forecast_selection_rejected")) {
+      return(list(status = "Global forecast quality rejected", failed_combos = character(), quality_rejected_combos = failed_hashes))
+    }
+    return(list(status = "Global model update failed", failed_combos = failed_hashes, quality_rejected_combos = character()))
   }
 
-  return(list(status = "Finished Global Model Update", failed_combos = character(0)))
+  return(list(status = "Finished Global Model Update", failed_combos = character(0),
+    quality_rejected_combos = if (is.list(global_error)) global_error$quality_rejected_combos %||% character() else character()))
 }
 
 #' Update Local Models
@@ -845,7 +884,7 @@ update_local_models <- function(agent_info,
 
   if (nrow(previous_best_run_local_tbl) == 0) {
     cli::cli_alert_info("No local models to update, skipping...")
-    return(list(status = "No local models to update, skipping...", failed_combos = character(0)))
+    return(list(status = "No local models to update, skipping...", failed_combos = character(0), quality_rejected_combos = character()))
   }
 
   prev_run_id <- unique(previous_best_run_local_tbl$agent_run_id)[[1]]
@@ -868,7 +907,7 @@ update_local_models <- function(agent_info,
 
     if (nrow(previous_best_run_local_tbl) == 0) {
       # stop if no updates required
-      return(list(status = "no updates required", failed_combos = character(0)))
+      return(list(status = "no updates required", failed_combos = character(0), quality_rejected_combos = character()))
     }
   } else {
     # do nothing
@@ -946,7 +985,7 @@ update_local_models <- function(agent_info,
           )
 
           # run update forecast for combo
-          update_forecast_combo(
+          update_result <- update_forecast_combo(
             agent_info = agent_info_lean,
             prev_best_run_tbl = prev_run,
             parallel_processing = NULL,
@@ -955,6 +994,7 @@ update_local_models <- function(agent_info,
             seed = seed
           )
 
+          if (is.list(update_result) && length(update_result$quality_rejected_combos)) return(update_result)
           return(data.frame(Combo = hash_data(combo)))
         } %>%
         base::suppressPackageStartupMessages()
@@ -970,8 +1010,17 @@ update_local_models <- function(agent_info,
 
   # separate successes from failures
   failed_combos <- character(0)
+  quality_rejected_combos <- character()
   for (i in seq_along(combo_results)) {
     result <- combo_results[[i]]
+    if (inherits(result, "finnts_forecast_selection_rejected")) {
+      quality_rejected_combos <- c(quality_rejected_combos, hash_data(local_combo_list[[i]]))
+      next
+    }
+    if (is.list(result) && !inherits(result, "condition") && length(result$quality_rejected_combos)) {
+      quality_rejected_combos <- c(quality_rejected_combos, result$quality_rejected_combos)
+      next
+    }
     if (inherits(result, "error") || inherits(result, "simpleError") || inherits(result, "condition")) {
       failed_combo <- local_combo_list[[i]]
       failed_hash <- hash_data(failed_combo)
@@ -989,7 +1038,8 @@ update_local_models <- function(agent_info,
     )
   }
 
-  return(list(status = "Finished Local Model Update", failed_combos = failed_combos))
+  return(list(status = "Finished Local Model Update", failed_combos = failed_combos,
+    quality_rejected_combos = unique(quality_rejected_combos)))
 }
 
 #' Check Update Failures
@@ -1015,13 +1065,16 @@ check_update_failures <- function(agent_info,
                                   previous_best_run_tbl,
                                   current_run_combos,
                                   global_failed_combos,
-                                  local_failed_combos) {
+                                  local_failed_combos,
+                                  global_quality_rejected = character(),
+                                  local_quality_rejected = character()) {
   failed_combos <- intersect(
     unique(c(global_failed_combos, local_failed_combos)),
     current_run_combos
   )
 
-  if (length(failed_combos) == 0) {
+  quality_rejected <- intersect(unique(c(global_quality_rejected, local_quality_rejected)), current_run_combos)
+  if (length(failed_combos) == 0 && length(quality_rejected) == 0) {
     return(character(0))
   }
 
@@ -1045,6 +1098,7 @@ check_update_failures <- function(agent_info,
     )
   }
 
+  failed_combos <- unique(c(failed_combos, quality_rejected))
   resolved_names <- resolve_combo_hashes(agent_info, failed_combos)
   cli::cli_alert_info(
     "{length(failed_combos)} time series failed to update and will be re-forecast using default local model inputs: {paste(resolved_names, collapse = ', ')}"
@@ -1221,18 +1275,18 @@ reconcile_agent_forecast <- function(agent_info,
     agent_info = agent_info
   )
 
-  hts_fcst_tbl <- hts_fcst_tbl %>%
-    dplyr::filter(Best_Model == "Yes")
-
   # reconcile the forecast
   project_info$run_name <- agent_info$run_id
 
-  final_fcst_tbl <- reconcile(
-    initial_fcst = hts_fcst_tbl,
-    run_info = project_info,
-    forecast_approach = agent_info$forecast_approach,
-    negative_forecast = negative_forecast
-  ) %>%
+  final_fcst_tbl <- hts_fcst_tbl %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    native_forecast_rows(project_info$date_type) %>%
+    reconcile(
+      run_info = project_info,
+      forecast_approach = agent_info$forecast_approach,
+      negative_forecast = negative_forecast
+    ) %>%
+    dplyr::select(-tidyselect::any_of("Run_Type")) %>%
     create_prediction_intervals(model_train_test_tbl) %>%
     convert_weekly_to_daily(project_info$date_type, project_info$weekly_to_daily) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
@@ -1339,6 +1393,7 @@ forecast_new_combos <- function(agent_info,
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_info
   agent_info_lean$llm <- NULL
+  agent_info_lean$default_reforecast <- TRUE
 
   # parallel setup
   par_info <- par_start(
@@ -1354,7 +1409,7 @@ forecast_new_combos <- function(agent_info,
 
   on.exit(par_end(cl), add = TRUE)
 
-  timestamp <- format(Sys.time(), "%Y%m%d%H%M%S")
+  timestamp <- "default"
 
   combo_tbl <- tryCatch(
     {
@@ -1367,29 +1422,29 @@ forecast_new_combos <- function(agent_info,
       ) %op%
         {
           # check if combo already ran (in case of restart)
-          agent_best_run_tbl <- tryCatch(
-            {
-              read_file(agent_info_lean$project_info,
-                file_list = paste0(
-                  agent_info_lean$project_info$path, "/logs/",
-                  hash_data(agent_info_lean$project_info$project_name), "-",
-                  hash_data(agent_info_lean$run_id), "-",
-                  combo_hash, "-agent_best_run.csv"
-                ) %>%
-                  fs::path_tidy()
-              )
-            },
-            error = function(e) {
-              tibble::tibble()
-            }
+          agent_best_run_tbl <- read_file(agent_info_lean$project_info,
+            file_list = paste0(
+              agent_info_lean$project_info$path, "/logs/",
+              hash_data(agent_info_lean$project_info$project_name), "-",
+              hash_data(agent_info_lean$run_id), "-",
+              combo_hash, "-agent_best_run.csv"
+            ) %>% fs::path_tidy()
           )
 
-          if (nrow(agent_best_run_tbl) > 0) {
+          if (nrow(agent_best_run_tbl) > 0 && !combo_hash %in% agent_info_lean$quality_rejected_combos) {
             return(data.frame(Combo = combo_hash))
+          }
+          if (nrow(agent_best_run_tbl) > 0 &&
+              identical(as.character(agent_best_run_tbl$default_reforecast_status), "accepted")) {
+            return(list(quality_error = rlang::error_cnd(
+              "finnts_forecast_selection_rejected",
+              message = "The default replacement was already attempted and cannot be fitted again.",
+              combo = agent_best_run_tbl$combo
+            )))
           }
 
           # run forecast with default inputs
-          run_info <- submit_fcst_run(
+          run_info <- tryCatch(submit_fcst_run(
             agent_info = agent_info_lean,
             inputs = default_inputs,
             combo = combo_hash,
@@ -1398,11 +1453,19 @@ forecast_new_combos <- function(agent_info,
             inner_parallel = inner_parallel,
             num_cores = num_cores,
             seed = seed
-          )
+          ), finnts_forecast_selection_rejected = function(error) error)
+          if (inherits(run_info, "finnts_forecast_selection_rejected")) return(list(quality_error = run_info))
 
           # get forecast output and calculate metrics
           fcst_tbl <- get_fcst_output(run_info)
           weighted_mape <- calculate_fcst_metrics(run_info, fcst_tbl)
+          if (!isTRUE(agent_selection_summary(run_info$forecast_selection, check_quality = TRUE)$acceptable)) {
+            return(list(quality_error = rlang::error_cnd(
+              "finnts_forecast_selection_rejected",
+              message = "The default replacement forecast failed the applicable quality checks.",
+              combo = names(run_info$forecast_selection$selections)
+            )))
+          }
 
           # log the best run
           log_best_run(
@@ -1424,6 +1487,9 @@ forecast_new_combos <- function(agent_info,
     }
   )
 
+  quality_failures <- Filter(function(result) is.list(result) &&
+    inherits(result$quality_error, "finnts_forecast_selection_rejected"), combo_tbl)
+  if (length(quality_failures)) stop(quality_failures[[1]]$quality_error)
   return("Finished Forecasting New Time Series")
 }
 
@@ -1440,6 +1506,36 @@ forecast_new_combos <- function(agent_info,
 #'
 #' @return A data frame containing the updated forecast results.
 #' @noRd
+read_global_update_selection <- function(run_info, run_log, combos) {
+  source_combos <- if (identical(run_log$forecast_approach, "bottoms_up")) {
+    combos
+  } else read_selection_hierarchy(run_info)$hts_combos
+  forecasts <- read_candidate_forecasts(run_info, source_combos, run_log, reconciled = FALSE)
+  selected_ids <- stats::setNames(vapply(source_combos, function(combo) {
+    rows <- forecasts[forecasts$Combo == combo, , drop = FALSE]
+    winner <- if ("Best_Model" %in% names(rows)) {
+      unique(as.character(rows$Model_ID[!is.na(rows$Best_Model) & rows$Best_Model == "Yes"]))
+    } else character()
+    if (length(winner) != 1 || anyNA(winner) || !nzchar(winner)) {
+      stop("Saved global winner is missing or ambiguous for series: ", combo,
+        ". Restore the selected source forecasts before updating.", call. = FALSE)
+    }
+    winner
+  }, character(1)), source_combos)
+  components <- lapply(selected_ids, function(model_id) {
+    model_ids <- strsplit(model_id, "_", fixed = TRUE)[[1]]
+    parts <- strsplit(model_ids, "--", fixed = TRUE)
+    valid <- vapply(parts, function(part) {
+      length(part) == 3 && all(nzchar(part)) && part[2] == "global"
+    }, logical(1))
+    if (!all(valid) || anyDuplicated(model_ids)) {
+      stop("Saved global winner has invalid component identities: ", model_id, call. = FALSE)
+    }
+    model_ids
+  })
+  list(selected_ids = selected_ids, components = components)
+}
+
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
                                   parallel_processing,
@@ -1490,11 +1586,10 @@ update_forecast_combo <- function(agent_info,
   prev_run_log_tbl <- validate_prev_run_log(prev_run_log_tbl)
 
   # get best model list from previous run
+  selected_models <- NULL
   if (unique(prev_best_run_tbl$model_type) == "global") {
-    # derive global model IDs from the previous best run's models_to_run
-    prev_models <- adjust_inputs(prev_run_log_tbl$models_to_run)
-    global_models <- intersect(prev_models, list_global_models())
-    model_id_list <- paste0(global_models, "--global--R1")
+    selected_models <- read_global_update_selection(prev_run_info, prev_run_log_tbl, combo_list)
+    model_id_list <- unique(unlist(selected_models$components, use.names = FALSE))
   } else {
     # get previous forecast for local model
     prev_fcst_tbl <- load_combo_forecast(
@@ -1553,6 +1648,14 @@ update_forecast_combo <- function(agent_info,
     stop("Error in update_forecast(). No trained models matching the model IDs found in previous run.",
       call. = FALSE
     )
+  }
+  if (!is.null(selected_models)) {
+    missing_models <- setdiff(model_id_list, trained_models_tbl$Model_ID)
+    if (length(missing_models) || anyDuplicated(trained_models_tbl$Model_ID)) {
+      stop("Saved selected model fits are missing or ambiguous: ",
+        paste(missing_models, collapse = ", "), ". Restore the original selected fits before updating.",
+        call. = FALSE)
+    }
   }
 
   # get external regressor info from previous run
@@ -1616,7 +1719,8 @@ update_forecast_combo <- function(agent_info,
   run_name <- paste0(
     "agent_",
     agent_info$run_id, "_",
-    ifelse(combo == "All-Data", hash_data("all"), combo_value)
+    ifelse(combo == "All-Data", hash_data("all"), combo_value),
+    if (combo == "All-Data") paste0("_", hash_data(prev_best_run_tbl$best_run_name[1])) else ""
   )
 
   # create new run
@@ -1734,8 +1838,21 @@ update_forecast_combo <- function(agent_info,
     adjust_forecast(
       run_info = new_run_info,
       forecast_approach = prev_run_log_tbl$forecast_approach,
-      negative_forecast = prev_run_log_tbl$negative_forecast
+      negative_forecast = prev_run_log_tbl$negative_forecast,
+      selected_models = selected_models
     )
+
+  selection_log <- read_selection_file(new_run_info, "logs")
+  selection_log$negative_forecast <- prev_run_log_tbl$negative_forecast
+  selection_cache <- new.env(parent = emptyenv())
+  assessment <- assess_update_forecasts(
+    final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
+    expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
+    cache = selection_cache, combos = combo_list
+  )
+  quality_rejected <- assessment$quality_rejected_combos
+  final_fcst_tbl <- assessment$forecasts
+  if (nrow(final_fcst_tbl) == 0) return(list(quality_rejected_combos = quality_rejected))
 
   final_wmape <- final_fcst_tbl %>%
     dplyr::filter(Combo %in% combo_list) %>%
@@ -1768,8 +1885,20 @@ update_forecast_combo <- function(agent_info,
       adjust_forecast(
         run_info = new_run_info,
         forecast_approach = prev_run_log_tbl$forecast_approach,
-        negative_forecast = prev_run_log_tbl$negative_forecast
+        negative_forecast = prev_run_log_tbl$negative_forecast,
+        selected_models = selected_models
       )
+
+    assessment <- assess_update_forecasts(
+      final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
+      expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
+      cache = selection_cache, combos = combo_list
+    )
+    quality_rejected <- unique(c(quality_rejected, assessment$quality_rejected_combos))
+    final_fcst_tbl <- assessment$forecasts
+    keep_hashes <- vapply(as.character(final_fcst_tbl$Combo), hash_data, character(1), USE.NAMES = FALSE)
+    final_fcst_tbl <- final_fcst_tbl[!keep_hashes %in% quality_rejected, , drop = FALSE]
+    if (nrow(final_fcst_tbl) == 0) return(list(quality_rejected_combos = quality_rejected))
 
     final_wmape <- final_fcst_tbl %>%
       dplyr::filter(Combo %in% combo_list) %>%
@@ -1807,7 +1936,17 @@ update_forecast_combo <- function(agent_info,
   }
 
   if (combo == "All-Data" & prev_run_log_tbl$forecast_approach != "bottoms_up") {
-    # hierarchical: reconciliation in adjust_forecast() already replaced the data
+    for (source_combo in unique(assessment$source_forecasts$Combo)) {
+      source_rows <- assessment$source_forecasts[assessment$source_forecasts$Combo == source_combo, , drop = FALSE] %>%
+        create_prediction_intervals(model_train_test_tbl) %>%
+        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
+      write_data(source_rows[source_rows$Recipe_ID != "simple_average", ], combo = source_combo,
+        run_info = new_run_info, output_type = "data", folder = "forecasts", suffix = "-global_models")
+      if ("simple_average" %in% source_rows$Recipe_ID) {
+        write_data(source_rows[source_rows$Recipe_ID == "simple_average", ], combo = source_combo,
+          run_info = new_run_info, output_type = "data", folder = "forecasts", suffix = "-average_models")
+      }
+    }
     write_data(
       x = write_fcst_tbl %>%
         convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
@@ -1908,6 +2047,10 @@ update_forecast_combo <- function(agent_info,
   )
 
   # validate that all outputs can be loaded before logging best run
+  accepted_selections <- assessment$selections[unique(final_fcst_tbl$Combo)]
+  new_run_info$forecast_selection <- list(selections = accepted_selections,
+    source_selections = assessment$source_selections, rejected_combos = character())
+  new_run_info$selection_combos <- names(accepted_selections)
   validate_run_outputs(
     run_info = new_run_info,
     combo = if (combo == "All-Data") NULL else hash_data(combo)
@@ -1927,7 +2070,7 @@ update_forecast_combo <- function(agent_info,
 
   cli::cli_progress_done("Update Forecast Complete for {combo}")
 
-  return("done")
+  return(list(status = "done", quality_rejected_combos = quality_rejected))
 }
 
 #' Fit models based on previous run information and hyperparameters
@@ -2411,7 +2554,7 @@ fit_models <- function(run_info,
 
 #' Adjust Forecast After Model Fitting
 #'
-#' This function adjusts the forecast table after model fitting, averaging forecasts if multiple models are present, and reconciling the forecast if hierarchical time series methods are used.
+#' This function assembles fitted component and average forecasts before quality assessment and any hierarchical reconciliation.
 #'
 #' @param model_tbl A tibble containing the model fitting results.
 #' @param run_info A list containing run information such as project name, run name, etc.
@@ -2423,7 +2566,8 @@ fit_models <- function(run_info,
 adjust_forecast <- function(model_tbl,
                             run_info,
                             forecast_approach,
-                            negative_forecast) {
+                            negative_forecast,
+                            selected_models = NULL) {
   # check if forecasts should be averaged
   if (nrow(model_tbl) > 1) {
     simple_average <- TRUE
@@ -2441,12 +2585,32 @@ adjust_forecast <- function(model_tbl,
     dplyr::mutate(Horizon = dplyr::row_number()) %>%
     dplyr::ungroup()
 
+  if (!is.null(selected_models)) {
+    return(dplyr::bind_rows(lapply(names(selected_models$selected_ids), function(combo) {
+      components <- selected_models$components[[combo]]
+      rows <- forecast_tbl[forecast_tbl$Combo == combo & forecast_tbl$Model_ID %in% components, , drop = FALSE]
+      if (!nrow(rows)) return(rows)
+      rows$Best_Model <- if (length(components) == 1) "Yes" else "No"
+      if (length(components) == 1) return(rows)
+      average <- rows %>%
+        dplyr::group_by(Combo_ID, Combo, Run_Type, Train_Test_ID, Date) %>%
+        dplyr::summarise(Forecast = mean(Forecast), Target = mean(Target, na.rm = TRUE), .groups = "drop") %>%
+        dplyr::group_by(Combo, Train_Test_ID) %>%
+        dplyr::arrange(Date, .by_group = TRUE) %>%
+        dplyr::mutate(Horizon = dplyr::row_number()) %>%
+        dplyr::ungroup() %>%
+        dplyr::mutate(Model_ID = selected_models$selected_ids[[combo]], Model_Name = NA_character_,
+          Model_Type = "local", Recipe_ID = "simple_average", Hyperparameter_ID = NA_real_, Best_Model = "Yes")
+      dplyr::bind_rows(rows, average)
+    })))
+  }
+
   if (simple_average) {
     # average the forecasts
     avg_forecast_tbl <- forecast_tbl %>%
       dplyr::group_by(Combo_ID, Combo, Run_Type, Train_Test_ID, Date, Horizon) %>%
       dplyr::summarise(
-        Forecast = mean(Forecast, na.rm = TRUE),
+        Forecast = mean(Forecast),
         Target = mean(Target, na.rm = TRUE),
         .groups = "drop"
       ) %>%
@@ -2467,16 +2631,6 @@ adjust_forecast <- function(model_tbl,
       dplyr::mutate(Best_Model = "Yes")
   }
 
-  # reconcile forecast if hts
-  if (unique(final_fcst_tbl$Combo_ID) == "All-Data" & forecast_approach != "bottoms_up") {
-    final_fcst_tbl <- final_fcst_tbl %>%
-      reconcile(
-        run_info = run_info,
-        forecast_approach = forecast_approach,
-        negative_forecast = negative_forecast
-      )
-  }
-
   return(final_fcst_tbl)
 }
 
@@ -2495,6 +2649,7 @@ reconcile <- function(initial_fcst,
                       run_info,
                       forecast_approach,
                       negative_forecast) {
+  validate_reconciliation_predictions(initial_fcst)
   if (is.na(negative_forecast)) {
     warning("'negative_forecast' is NA in reconcile(), defaulting to FALSE")
     negative_forecast <- FALSE

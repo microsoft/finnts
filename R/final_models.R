@@ -2,9 +2,37 @@
 #'
 #' Select Best Models and Prep Final Outputs
 #'
+#' @details Candidates are screened for complete, finite predictions and extreme
+#'   future magnitudes using original-scale prepared actuals. Among eligible
+#'   candidates within 0.5 percentage points or 5 percent relative weighted MAPE
+#'   of the best eligible accuracy, whichever allowance is larger, selection
+#'   prefers lower risk and fewer future level, trend, and seasonal concerns.
+#'   Tied candidates with assessed seasonal evidence then prefer smaller amplitude
+#'   distortion beyond historical cycle variation, before weighted MAPE and model
+#'   identifier. This preference alone does not reject a forecast. Repeated strong
+#'   historical seasonality can also support phase checks over at least three
+#'   informative future periods, even when the horizon is shorter than a cycle.
+#'   Short histories remain usable; unsupported seasonal checks are not assessed.
+#'   If all candidates fail the required checks, selection raises an error.
+#'   Evaluation is deterministic for fixed inputs and creates no diagnostic files.
+#'   If an individual model wins, the best eligible simple average is still saved
+#'   with `Best_Model = "No"`, using the same quality-aware ranking among averages.
+#'   If an average wins overall, that exact average is saved as the best model.
+#'   No average artifact is required when no eligible average can be formed.
+#'   Quality selection happens before hierarchical reconciliation, at each prepared
+#'   hierarchy node. The selected mixture is reconciled without a second future
+#'   plausibility evaluation or a whole-hierarchy replacement model. Reconciled
+#'   backtests still supply reported accuracy; reconciliation does not require
+#'   retained quality rankings. On retry, saved individual and average outputs
+#'   must identify one complete winner per series. A `Best_Model` column or an
+#'   average filename alone is not proof of completion. Incomplete selections
+#'   rebuild averages and winner flags from existing predictions without fitting
+#'   models again. Complete saved winners are reused without future-quality
+#'   reassessment, and every series remains in the returned result.
+#'
 #' @param run_info run info using the [set_run_info()] function.
 #' @param average_models If TRUE, create simple averages of individual models
-#'  and save the most accurate one.
+#'  and save the eligible average selected by accuracy and future-quality checks.
 #' @param max_model_average Max number of models to average together. Will
 #'   create model averages for 2 models up until input value or max number of
 #'   models ran.
@@ -99,6 +127,9 @@ final_models <- function(run_info,
   run_global_models <- prev_log_df$run_global_models
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
+  selection_results <- list()
+  rejected_combos <- character()
+  all_reused <- FALSE
 
   if (forecast_approach != "bottoms_up" & date_type == "week") {
     # turn off daily conversion before hts recon
@@ -108,15 +139,15 @@ final_models <- function(run_info,
   }
 
   # define columns to check for input changes
-  cols_check_list <- c("average_models", "max_model_average", 
-                       "weekly_to_daily", "weighted_mape")
+  cols_check_list <- c("average_models", "max_model_average", "weekly_to_daily")
 
   # check if input values have changed from previous run
   if (all(cols_check_list %in% colnames(prev_log_df))) {
     # create current log
     current_log_df <- tibble::tibble(
       average_models = average_models,
-      max_model_average = max_model_average
+      max_model_average = max_model_average,
+      weekly_to_daily = weekly_to_daily
     ) %>%
       data.frame()
 
@@ -135,9 +166,6 @@ final_models <- function(run_info,
         "new run with 'set_run_info'.",
         call. = FALSE
       )
-    } else {
-      cli::cli_alert_info("Best Models Already Selected")
-      return(cli::cli_progress_done())
     }
   }
 
@@ -145,7 +173,6 @@ final_models <- function(run_info,
   if ("combo" %in% names(run_info)) {
     # Single combo mode - no need to check previously completed combos
     combo_list <- run_info$combo
-    prev_combo_list <- NULL
     combo_diff <- combo_list
   } else {
     # Multi combo mode - get all combos and check which are complete
@@ -165,22 +192,7 @@ final_models <- function(run_info,
       dplyr::pull(Combo) %>%
       unique()
 
-    prev_combo_list <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*average_models.", run_info$data_output
-      )
-    ) %>%
-      tibble::tibble(
-        Path = .,
-        File = fs::path_file(.)
-      ) %>%
-      tidyr::separate(File, into = c("Project", "Run", "Combo", "Run_Type"), sep = "-", remove = TRUE) %>%
-      dplyr::pull(Combo) %>%
-      unique()
-
-    combo_diff <- setdiff(combo_list, prev_combo_list)
+    combo_diff <- combo_list
   }
 
   # check if previous run is complete
@@ -197,10 +209,7 @@ final_models <- function(run_info,
     recon_complete <- length(recon_files) > 0
   }
 
-  if (length(combo_diff) == 0 & length(prev_combo_list) > 0 & recon_complete) {
-    cli::cli_alert_info("Best Models Already Selected")
-    return(cli::cli_progress_done())
-  }
+  if (!length(combo_diff)) stop("No forecast data found for this run.", call. = FALSE)
 
   if (length(combo_diff) > 0) {
     # filter to only combos that need to be processed
@@ -242,83 +251,24 @@ final_models <- function(run_info,
 
         single_model_tbl <- NULL
         if (run_local_models) {
-          single_model_tbl <- tryCatch(
-            {
-              tbl <- read_file(run_info,
-                path = paste0(
-                  "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-                  "-", combo, "-single_models.", run_info$data_output
-                ),
-                return_type = "df"
-              )
-              if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
-            },
-            warning = function(w) {
-              # do nothing
-            },
-            error = function(e) {
-              NULL
-            }
-          )
+          single_model_tbl <- read_final_predictions(run_info, combo, "-single_models")
         }
 
         ensemble_model_tbl <- NULL
         if (run_ensemble_models) {
-          ensemble_model_tbl <- tryCatch(
-            {
-              tbl <- read_file(run_info,
-                path = paste0(
-                  "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-                  "-", combo, "-ensemble_models.", run_info$data_output
-                ),
-                return_type = "df"
-              )
-              if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
-            },
-            warning = function(w) {
-              # do nothing
-            },
-            error = function(e) {
-              NULL
-            }
-          )
+          ensemble_model_tbl <- read_final_predictions(run_info, combo, "-ensemble_models")
         }
 
         global_model_tbl <- NULL
         if (run_global_models) {
-          global_model_tbl <- tryCatch(
-            {
-              tbl <- read_file(run_info,
-                path = paste0(
-                  "/forecasts/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-                  "-", combo, "-global_models.", run_info$data_output
-                ),
-                return_type = "df"
-              )
-              if (is.null(tbl) || nrow(tbl) == 0) NULL else tbl
-            },
-            warning = function(w) {
-              # do nothing
-            },
-            error = function(e) {
-              NULL
-            }
-          )
+          global_model_tbl <- read_final_predictions(run_info, combo, "-global_models")
         }
 
-        local_model_tbl <- single_model_tbl %>%
-          rbind(ensemble_model_tbl)
-
-        all_model_tbl <- local_model_tbl %>% rbind(global_model_tbl)
+        all_model_tbl <- dplyr::bind_rows(single_model_tbl, ensemble_model_tbl, global_model_tbl)
 
         # error if no forecast data was found
         if (is.null(all_model_tbl) || nrow(all_model_tbl) == 0) {
           stop(paste0("No forecast data found for combo '", combo, "'."), call. = FALSE)
-        }
-
-        # check if model averaging already happened
-        if ("Best_Model" %in% colnames(all_model_tbl)) {
-          return(data.frame(Combo_Hash = combo))
         }
 
         # validate required columns before proceeding
@@ -330,6 +280,33 @@ final_models <- function(run_info,
             paste(missing_cols, collapse = ", ")
           ), call. = FALSE)
         }
+
+        combo_name <- unique(all_model_tbl$Combo)
+        if (isTRUE(run_info$allow_quality_rejection) && length(combo_name) == 1 &&
+          identical(as.character(prev_log_df[["selection_status"]]), "rejected")) {
+          rejected <- rejected_agent_selection(combo_name, "rejected_evaluation")
+          return(selection_worker_result(combo_name, rejected$selections[[1]], reused = TRUE))
+        }
+        series_data <- read_series_history(run_info, combo_name, run_log = prev_log_df)
+        saved_average <- read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
+        saved_rows <- dplyr::bind_rows(native_forecast_rows(all_model_tbl, date_type),
+          if (average_models) native_forecast_rows(saved_average, date_type))
+        existing_selection <- completed_forecast_selection(saved_rows, series_data, model_train_test_tbl)
+        if (!is.null(existing_selection)) {
+          return(selection_worker_result(combo_name, existing_selection, reused = TRUE))
+        }
+        if (nrow(saved_average)) {
+          saved_average$Best_Model <- "No"
+          write_data(saved_average, combo = combo_name, run_info = run_info,
+            output_type = "data", folder = "forecasts", suffix = "-average_models")
+        }
+        single_model_tbl <- unfinalized_forecast_rows(single_model_tbl, date_type)
+        ensemble_model_tbl <- unfinalized_forecast_rows(ensemble_model_tbl, date_type)
+        global_model_tbl <- unfinalized_forecast_rows(global_model_tbl, date_type)
+        local_model_tbl <- if (is.null(single_model_tbl) && is.null(ensemble_model_tbl)) {
+          NULL
+        } else dplyr::bind_rows(single_model_tbl, ensemble_model_tbl)
+        all_model_tbl <- dplyr::bind_rows(local_model_tbl, global_model_tbl)
 
         # combine all forecasts
         predictions_tbl <- all_model_tbl %>%
@@ -430,11 +407,20 @@ final_models <- function(run_info,
 
         final_model_list <- c(local_model_list, global_model_list)
 
+        individual_selection <- select_series_forecasts(
+          predictions_tbl, series_data, model_train_test_tbl,
+          unique(predictions_tbl$Model_ID)
+        )
+        final_model_list <- individual_selection$rankings$Model_ID[
+          individual_selection$rankings$Eligible
+        ]
         if (length(final_model_list) == 0) {
-          stop(paste0(
-            "Combo '", combo, "': no models produced complete back test coverage (",
-            expected_back_test_fold_count, " folds expected). Cannot select Best_Model."
-          ), call. = FALSE)
+          write_rejected_forecasts(
+            list("-single_models" = single_model_tbl, "-ensemble_models" = ensemble_model_tbl,
+              "-global_models" = global_model_tbl),
+            run_info, unique(predictions_tbl$Combo), model_train_test_tbl, date_type, initial_weekly_to_daily
+          )
+          return(selection_worker_result(unique(predictions_tbl$Combo), individual_selection))
         }
 
         # simple model averaging
@@ -491,7 +477,7 @@ final_models <- function(run_info,
                 dplyr::group_by(Combo, Train_Test_ID, Date) %>%
                 dplyr::summarise(
                   Target = mean(Target, na.rm = TRUE),
-                  Forecast = mean(Forecast, na.rm = TRUE)
+                  Forecast = mean(Forecast)
                 ) %>%
                 dplyr::mutate(Model_ID = x) %>%
                 dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Target, Forecast) %>%
@@ -504,33 +490,6 @@ final_models <- function(run_info,
           par_end(inner_cl)
         } else {
           averages_tbl <- NULL
-        }
-
-        # choose best average model
-        if (!is.null(averages_tbl)) {
-          avg_back_test_mape <- averages_tbl %>%
-            dplyr::mutate(
-              Train_Test_ID = as.numeric(Train_Test_ID),
-              Target = ifelse(Target == 0, 0.1, Target)
-            ) %>%
-            dplyr::filter(Train_Test_ID != 1) %>%
-            dplyr::mutate(MAPE = round(abs((Forecast - Target) / Target), digits = 4))
-
-          avg_best_model_mape <- avg_back_test_mape %>%
-            dplyr::group_by(Model_ID, Combo) %>%
-            dplyr::mutate(
-              Combo_Total = sum(abs(Target), na.rm = TRUE),
-              weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
-            ) %>%
-            dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
-            dplyr::arrange(Rolling_MAPE) %>%
-            dplyr::ungroup() %>%
-            dplyr::group_by(Combo) %>%
-            dplyr::slice(1) %>%
-            dplyr::ungroup()
-
-          avg_best_model_tbl <- avg_best_model_mape %>%
-            dplyr::select(Combo, Model_ID)
         }
 
         # choose best overall model
@@ -554,19 +513,29 @@ final_models <- function(run_info,
           if (!is.null(averages_tbl)) unique(averages_tbl$Model_ID) else character(0)
         ))
 
-        best_model_mape <- back_test_mape %>%
-          dplyr::filter(Model_ID %in% eligible_model_ids) %>%
-          dplyr::group_by(Model_ID, Combo) %>%
-          dplyr::mutate(
-            Combo_Total = sum(abs(Target), na.rm = TRUE),
-            weighted_MAPE = (abs(Target) / Combo_Total) * MAPE
-          ) %>%
-          dplyr::summarise(Rolling_MAPE = sum(weighted_MAPE, na.rm = TRUE)) %>%
-          dplyr::arrange(Rolling_MAPE) %>%
-          dplyr::ungroup() %>%
-          dplyr::group_by(Combo) %>%
-          dplyr::slice(1) %>%
-          dplyr::ungroup()
+        selection <- select_series_forecasts(
+          final_predictions_tbl, series_data, model_train_test_tbl, eligible_model_ids
+        )
+        if (is.na(selection$selected_id)) {
+          abort_forecast_selection(unique(predictions_tbl$Combo), selection)
+        }
+        if (!is.null(averages_tbl)) {
+          average_selection <- rank_forecast_candidates(selection$rankings[
+            selection$rankings$Model_ID %in% averages_tbl$Model_ID, , drop = FALSE
+          ])
+          avg_best_model_tbl <- tibble::tibble(
+            Combo = unique(predictions_tbl$Combo), Model_ID = average_selection$selected_id
+          ) %>% dplyr::filter(!is.na(Model_ID))
+        }
+        selected_checks <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, ]
+        if (selected_checks$Violations > 0) {
+          cli::cli_alert_warning("Selected forecast has plausibility concerns: {paste(selected_checks$Reasons[[1]], collapse = ', ')}")
+        }
+        best_model_mape <- selection$rankings %>%
+          dplyr::filter(Model_ID == selection$selected_id) %>%
+          dplyr::transmute(
+            Combo = unique(predictions_tbl$Combo), Model_ID, Rolling_MAPE = .data$WMAPE
+          )
 
         best_model_tbl <- best_model_mape %>%
           dplyr::mutate(Best_Model = "Yes") %>%
@@ -709,7 +678,7 @@ final_models <- function(run_info,
             ) %>%
             dplyr::mutate(Best_Model = ifelse(!is.na(Best_Model), "Yes", "No"))
 
-          if (!is.null(averages_tbl)) {
+          if (!is.null(averages_tbl) && nrow(avg_best_model_tbl) > 0) {
             avg_model_final_tbl <- averages_tbl %>%
               dplyr::right_join(avg_best_model_tbl,
                 by = c("Combo", "Model_ID")
@@ -800,15 +769,20 @@ final_models <- function(run_info,
           }
         }
 
-        return(data.frame(Combo_Hash = combo))
+        return(selection_worker_result(unique(predictions_tbl$Combo), selection))
       } %>%
       base::suppressPackageStartupMessages()
 
     # clean up any parallel run process
     par_end(cl)
+    selection_results <- stats::setNames(best_model_tbl$Selection, best_model_tbl$Combo)
+    all_reused <- all(best_model_tbl$Reused)
+    rejected_combos <- names(selection_results)[vapply(selection_results, function(result) {
+      !is.null(result) && is.na(result$selected_id)
+    }, logical(1))]
 
     # condense outputs into less files for larger runs
-    if (length(combo_list) > 3000) {
+    if (length(combo_list) > 3000 && length(rejected_combos) == 0 && !all_reused) {
       cli::cli_progress_step("Condensing Forecasts")
 
       condense_data(
@@ -819,8 +793,28 @@ final_models <- function(run_info,
     }
   } # end combo processing
 
+  if (length(rejected_combos)) {
+    if (forecast_approach != "bottoms_up") {
+      abort_forecast_selection(rejected_combos, selection_results[[rejected_combos[1]]])
+    }
+    if (!isTRUE(run_info$allow_quality_rejection)) {
+      rejection <- selection_results[[rejected_combos[1]]]
+      if (all(vapply(rejection$rankings$Reasons, function(reasons) "incomplete_backtests" %in% reasons, logical(1)))) {
+        rejection$rankings$Reasons[[1]] <- c(rejection$rankings$Reasons[[1]], "no models produced complete back test coverage")
+      }
+      abort_forecast_selection(rejected_combos, rejection)
+    }
+    partial_log <- read_selection_file(run_info, "logs")
+    partial_log$average_models <- average_models
+    partial_log$max_model_average <- max_model_average
+    partial_log$weekly_to_daily <- weekly_to_daily
+    partial_log$weighted_mape <- NA_real_
+    write_data(partial_log, combo = NULL, run_info = run_info, output_type = "log", folder = "logs", suffix = NULL)
+    return(invisible(list(selections = selection_results, rejected_combos = rejected_combos)))
+  }
+
   # reconcile hierarchical forecasts
-  if (forecast_approach != "bottoms_up") {
+  if (forecast_approach != "bottoms_up" && (!all_reused || !recon_complete)) {
     cli::cli_progress_step("Reconciling Hierarchical Forecasts")
 
     reconcile_hierarchical_data(
@@ -856,10 +850,7 @@ final_models <- function(run_info,
     round(digits = 4)
 
   # update logging file
-  log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-    return_type = "df"
-  ) %>%
+  log_df <- prev_log_df %>%
     dplyr::mutate(
       average_models = average_models,
       max_model_average = max_model_average,
@@ -867,14 +858,23 @@ final_models <- function(run_info,
       weighted_mape = round(weighted_mape, digits = 4)
     )
 
-  write_data(
-    x = log_df,
-    combo = NULL,
-    run_info = run_info,
-    output_type = "log",
-    folder = "logs",
-    suffix = NULL
-  )
+  if (!all_reused || !recon_complete || !isTRUE(as.numeric(prev_log_df[["weighted_mape"]]) == weighted_mape)) {
+    write_data(
+      x = log_df,
+      combo = NULL,
+      run_info = run_info,
+      output_type = "log",
+      folder = "logs",
+      suffix = NULL
+    )
+  }
+  if (all_reused) cli::cli_alert_info("Best Models Already Selected")
+  result <- list(selections = selection_results, rejected_combos = rejected_combos)
+  if (forecast_approach != "bottoms_up") {
+    result <- hierarchical_selection_result(run_info, prev_log_df, selection_results,
+      fcst_data, model_train_test_tbl)
+  }
+  invisible(result)
 }
 
 #' Create prediction intervals

@@ -1219,6 +1219,10 @@ make_stationary <- function(df) {
     Diff_Value1 = NA,
     Diff_Value2 = NA
   )
+  if ("Target_Original" %in% names(df)) {
+    diff_info$Target_Original_Diff_Value1 <- NA_real_
+    diff_info$Target_Original_Diff_Value2 <- NA_real_
+  }
 
   # store the number of differences used for Target so we can reuse for Target_Original
   target_ndiffs <- NA
@@ -1253,6 +1257,12 @@ make_stationary <- function(df) {
       # If Target_Original exists, force it to use target_ndiffs
       if (column_name == "Target_Original" && !is.na(target_ndiffs)) {
         ndiffs <- target_ndiffs
+        if (ndiffs > 0) {
+          diff_info$Target_Original_Diff_Value1 <- temp_tbl$Column[1]
+          if (ndiffs > 1) {
+            diff_info$Target_Original_Diff_Value2 <- temp_tbl$Column[2]
+          }
+        }
       }
 
       if (ndiffs > 0) {

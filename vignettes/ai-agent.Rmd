@@ -161,7 +161,10 @@ What happens under the hood:
 - Chooses **seasonal period**, **missing/outlier** handling, **box-cox/differencing** strategy.
 - Sweeps **models** (local &/or global), backtests, **recipes** (lags/rolling/Fourier/date feats).
 - Optionally enables **external regressors** if they improve WMAPE.
-- Stops early if MWAPE goal met; otherwise iterates (up to `max_iter`).
+- Evaluates future quality when `final_models()` selects the winner within each iteration, then compares completed iteration winners using WMAPE only. Equal accuracy retains the earlier winner, and recorded metrics avoid repeating past future-quality checks.
+- Stops early when a complete eligible winner meets the WMAPE goal; otherwise iterates up to `max_iter`. A soft warning does not impose another stopping veto, while hard-invalid or incomplete results cannot count as success.
+
+Reconciliation uses the selected forecasts and backtest residuals, not retained quality rankings. Incomplete selection retries rebuild averages and winner flags from existing predictions without retraining. Global updates preserve each series' saved winning subset and check the newly produced forecasts before acceptance; they do not reintroduce every model from the original request.
 
 ### 6) Retrieve results
 
@@ -292,8 +295,17 @@ What `update_forecast()` does:
 - **Rebuilds global** models first (if used), then updates local series that need it.
 - **Handles new time series**: If new series appear in the data (up to 20% of existing series, floor of 10), simple forecasts are created automatically using default local model inputs—no LLM involvement needed.
 - **Handles failed time series**: If individual time series fail during the global or local model update (e.g., due to data issues or model errors), they are automatically re-forecast using the same default local model inputs as new series. If more than 20% of existing series (floor of 10) fail to update, the run errors out and directs you to use `iterate_forecast()` to retrain from scratch.
+- **Checks reused forecasts before reconciliation**: The reuse path does not call `final_models()`. It invokes the shared evaluator after refitting and after any retuning, before a hierarchy is reconciled. Required components must pass hard eligibility and their selected combination must have no applicable future-quality concerns. An incomplete or rejected reused hierarchy is not solved; its covered current series follow the default-local path. Quality-rejected current series receive one default reforecast independently of the ordinary execution-failure limit. The default run uses `final_models()` and must pass both hard eligibility and applicable soft checks before success. Reforecasting many rejected series can increase runtime and provider cost.
 - Compares WMAPE to a trailing baseline of previous runs. If >40% of series are **>20% worse** than the previous run WMAPE, and `allow_iterate_forecast = TRUE`, it will **invoke the iterate loop** (bounded by `max_iter`) to recover accuracy.
-- Re-runs reconciliation if hierarchy is in play.
+- **Reconciles the selected mixture**: The existing `hts` solver produces bottom-level forecasts from the accepted selected source rows. Finn does not evaluate reconciled future outputs to replace the hierarchy with a uniform model family or trigger a late default-refitting loop. Solver and artifact errors remain errors; passing source quality checks is not a guarantee of future accuracy.
+
+Within each Agent iteration, `final_models()` selects candidates using accuracy and future-quality checks. Completed iteration winners are compared by WMAPE only, retaining the earlier winner on equal accuracy. Normal accuracy-goal stopping requires a complete eligible result and finite WMAPE, without a second soft-quality veto. Hierarchical comparisons use reconciled backtests, and recorded run metrics avoid reassessing past future paths. Rejected evaluations still consume iteration budget. Newly generated update forecasts and default replacements retain the stricter acceptance checks described above.
+
+Within an iteration's accuracy allowance, candidates tied on risk and concern count can prefer smaller seasonal-amplitude distortion beyond historical cycle variation. That preference applies only when every tied candidate has an assessed score; missing evidence falls back to WMAPE. For hierarchical candidates, this preference applies at each source node before reconciliation; it does not rank completed Agent runs. Fidelity alone is not a quality rejection, a reason to keep iterating past the accuracy goal, or a trigger for default refitting. Repeated strong historical seasonality can support phase checks for informative horizons of at least three points even when they are shorter than a cycle. Unsupported seasonal checks remain unassessed.
+
+Selection uses original actuals from exact prepared-data reads and keeps detailed rankings in memory. Native weekly and daily-expanded saved source forecasts reconstruct the same selection evidence; invalid values on later expanded days cannot disappear during weekly restoration. Only existing run bookkeeping records selected runs, evaluated/rejected status, and default-recovery acceptance for restart safety. No new quality-log files or serialized evaluation functions are created.
+
+See [Best Model Selection](best-model-selection.html) for the exact accuracy allowance, hard and soft checks, saved-average behavior, and the separate standard, iterative, and update workflows. Ordinary and iterative best-available soft-concern behavior is not the stricter acceptance rule used for update reuse and default replacements.
 
 ---
 
@@ -308,7 +320,7 @@ What `update_forecast()` does:
 - `TRUE` detects the hierarchy and expands the input to all hierarchy levels
   before optimization. Those prepared levels use a single `ID` combo column,
   so all global and local iterations use `bottoms_up`; Finn then performs one
-  final reconciliation using the detected hierarchy.
+  final reconciliation using the detected hierarchy and publishes the bottom-level result without post-reconciliation quality selection.
 
 The detected structure can be *none*, *standard* (for example, Region → Country
 → SKU), or *grouped* (crossed dimensions). In either mode, hierarchical

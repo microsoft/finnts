@@ -226,6 +226,31 @@ if (length(present_forbidden_ignores) > 0) {
   )
 }
 
+build_ignore_patterns <- read_lines(".Rbuildignore")
+build_ignore_patterns <- build_ignore_patterns[nzchar(build_ignore_patterns)]
+excluded_from_build <- function(path) {
+  any(vapply(build_ignore_patterns, function(pattern) {
+    grepl(pattern, path, ignore.case = TRUE, perl = TRUE)
+  }, logical(1)))
+}
+
+package_paths <- c(
+  "DESCRIPTION", "NAMESPACE", "R", "man", "tests", "tests/testthat",
+  workspace_files[grepl("^(R|man|tests)/", workspace_files)]
+)
+excluded_package_paths <- package_paths[vapply(package_paths, excluded_from_build, logical(1))]
+if (length(excluded_package_paths) > 0) {
+  fail(".Rbuildignore excludes required package content: ", paste(excluded_package_paths, collapse = ", "))
+}
+
+development_directories <- c(".github", ".claude", ".agents", ".cursor")
+included_directories <- development_directories[
+  !vapply(development_directories, excluded_from_build, logical(1))
+]
+if (length(included_directories) > 0) {
+  fail(".Rbuildignore must exclude development directories: ", paste(included_directories, collapse = ", "))
+}
+
 adapter_environment <- new.env(parent = baseenv())
 sys.source("tools/generate-agent-adapters.R", envir = adapter_environment)
 adapter_environment$check_agent_adapters()

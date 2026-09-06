@@ -42,6 +42,22 @@ greater than number of cores on machine minus 1.}
 \description{
 This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
 }
+\details{
+Future quality is evaluated when \code{\link[=final_models]{final_models()}} selects the winner
+within each iteration. Completed iteration winners are compared by weighted
+MAPE only, retaining the earlier winner on equal accuracy. Normal accuracy-goal
+stopping requires a complete eligible result and finite WMAPE, not another
+soft-quality check. A winner with soft concerns may therefore beat an earlier
+winner on accuracy. Recorded run and best-run metrics are reused without
+re-evaluating past future paths. Rejected evaluations still consume iteration
+budget without repeating the same fit as an infrastructure retry. If no
+eligible result exists, the workflow fails or an enabled local phase handles
+unresolved global series. Rankings are kept in memory, not new files.
+Hierarchical accuracy uses reconciled backtests; later comparisons and
+reconciliation do not require retained source-node quality rankings. Final
+reconciliation publishes the selected mixture without future-quality scoring,
+whole-set fallback, or extra refitting.
+}
 \examples{
 \dontrun{
 # load example data

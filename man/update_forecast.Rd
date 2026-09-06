@@ -61,6 +61,30 @@ process, they are automatically re-forecast using default local model
 inputs (the same treatment as new time series). If more than 20\\% of
 existing series (with a floor of 10) fail to update, an error is raised
 directing the user to use \code{iterate_forecast()} instead.
+
+Reused forecasts are checked against original-scale prepared actuals
+after refitting and retuning. Quality-rejected series receive one default
+reforecast through the same path as new series, without LLM quality judgments.
+Quality-only rejections do not count toward the ordinary execution-failure
+limit; existing data/provider failures retain that limit. Replacement models
+are evaluated using \code{\link[=final_models]{final_models()}} and cannot trigger an unbounded retry.
+Reused fits do not call \code{final_models()}; their components must pass hard
+eligibility and their selected combination must pass applicable quality checks
+before any reconciliation, including after retuning. Global updates recover
+each series' saved winning single model or average from existing source
+forecasts, refit the union of required components, and preserve each selected
+subset. Requested but unselected models are not added back to the average.
+Missing or ambiguous saved winners or selected fits require restoring the
+original artifacts; the requested model list is not used as a fallback.
+These are checks on newly generated predictions, not repeated assessments of
+past iteration winners. A reused hierarchy that
+is incomplete or contains a rejected node is not reconciled; its covered
+current series follow the existing default-local forecast path. Existing
+run logs record default acceptance or rejection for restart safety. The
+selected mixture is then reconciled without post-reconciliation future
+evaluation, whole-set replacement, or late quality-triggered refitting.
+Legacy second-order differenced original targets without their own starting
+values require regeneration of prepared data from the original input.
 }
 \examples{
 \dontrun{

@@ -18,7 +18,7 @@ final_models(
 \item{run_info}{run info using the \code{\link[=set_run_info]{set_run_info()}} function.}
 
 \item{average_models}{If TRUE, create simple averages of individual models
-and save the most accurate one.}
+and save the eligible average selected by accuracy and future-quality checks.}
 
 \item{max_model_average}{Max number of models to average together. Will
 create model averages for 2 models up until input value or max number of
@@ -48,6 +48,35 @@ Final model outputs are written to disk.
 }
 \description{
 Select Best Models and Prep Final Outputs
+}
+\details{
+Candidates are screened for complete, finite predictions and extreme
+future magnitudes using original-scale prepared actuals. Among eligible
+candidates within 0.5 percentage points or 5 percent relative weighted MAPE
+of the best eligible accuracy, whichever allowance is larger, selection
+prefers lower risk and fewer future level, trend, and seasonal concerns.
+Tied candidates with assessed seasonal evidence then prefer smaller amplitude
+distortion beyond historical cycle variation, before weighted MAPE and model
+identifier. This preference alone does not reject a forecast. Repeated strong
+historical seasonality can also support phase checks over at least three
+informative future periods, even when the horizon is shorter than a cycle.
+Short histories remain usable; unsupported seasonal checks are not assessed.
+If all candidates fail the required checks, selection raises an error.
+Evaluation is deterministic for fixed inputs and creates no diagnostic files.
+If an individual model wins, the best eligible simple average is still saved
+with \code{Best_Model = "No"}, using the same quality-aware ranking among averages.
+If an average wins overall, that exact average is saved as the best model.
+No average artifact is required when no eligible average can be formed.
+Quality selection happens before hierarchical reconciliation, at each prepared
+hierarchy node. The selected mixture is reconciled without a second future
+plausibility evaluation or a whole-hierarchy replacement model. Reconciled
+backtests still supply reported accuracy; reconciliation does not require
+retained quality rankings. On retry, saved individual and average outputs
+must identify one complete winner per series. A \code{Best_Model} column or an
+average filename alone is not proof of completion. Incomplete selections
+rebuild averages and winner flags from existing predictions without fitting
+models again. Complete saved winners are reused without future-quality
+reassessment, and every series remains in the returned result.
 }
 \examples{
 \donttest{

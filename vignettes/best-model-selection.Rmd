@@ -14,9 +14,114 @@ knitr::opts_chunk$set(
 )
 ```
 
-The "Best-Model" you see in both the back testing and future forecast outputs are chosen based on what had the best accuracy over the back testing process. After all individual, ensemble, and average model forecast are created for both back testing and the future forecast, a weighted MAPE calculation is applied to each unique data combo and model combination.
+The `Best_Model` flag identifies the selected forecast for each series. Finn first checks candidate validity, then balances backtest weighted MAPE with future-forecast plausibility. Individual models, learned ensembles, and simple averages are evaluated on the same series and expected backtest dates.
 
-A standard MAPE calculation is produced first, then instead of a simple average to get the final MAPE a weighted MAPE is taken based on the size of the target variable value. Please see below for an example of the process.
+## Future-forecast checks
+
+These checks apply to candidate base forecasts before reconciliation, including averages. Candidates with incomplete or non-finite predictions are ineligible. Any backtest or future prediction exceeding 100 times a positive robust historical scale is also rejected; the scale uses the 95th percentile of absolute levels and robust level/change variation, not just the last observation. Existing finite-negative handling still follows `negative_forecast`, but missing or infinite predictions are no longer replaced with zero.
+
+Level and trend deviations beyond six robust reference scales create soft concerns. The reference uses the latest available `max(12, 3 * seasonal_period, 2 * forecast_horizon)` observations. Its path is seasonal naive when a complete seasonal cycle is available, otherwise a recent median level. The robust scale is the largest of the 95th percentile of absolute levels, level MAD, and one-step-change MAD. Level-reference width is the larger of the relevant change MAD and 5% of that scale, multiplied by `6 * sqrt(horizon_step)` for the comparison. Trend checks compare median changes over matched historical and forecast spans, with a robust scale floor.
+
+With at least two complete finite historical cycles, a detrended seasonal profile can support additional checks. Seasonal strength must be at least 0.6 and the period at least three. For forecasts covering at least one cycle, negative profile correlation or amplitude outside one-third to three times historical amplitude creates a concern. Unsupported checks remain unassessed. These are guardrails, not calibrated prediction intervals or guarantees of future accuracy.
+
+For a shorter horizon with at least three future points, Finn compares only the upcoming phases. Their historical range must exceed both three times the historical phase-residual MAD and 5% of the full historical seasonal amplitude. Finn removes the robust historical deseasonalized trend from the future path, rather than fitting a free trend through those few points. Negative correlation creates a phase concern only when future variation also exceeds that noise threshold. Full-cycle amplitude concern bounds are not applied to a partial cycle.
+
+One or two seasonal cycles remain usable. One cycle supplies a cautious reference, while repeated cycles support stronger comparisons. Weak seasonality, fewer than three future points, low-variation partial phases, and unavailable checks remain unassessed instead of making the series fail. Flat forecasts are not rejected simply because observations are noisy.
+
+| Check | Trigger | Effect | When Unassessed |
+| --- | --- | --- | --- |
+| Coverage | Missing, duplicate, or unexpected expected scenario/date keys in backtests or future predictions | Hard rejection | Never for a candidate being selected |
+| Finite predictions | Any required `NA`, `NaN`, `Inf`, or `-Inf` prediction | Hard rejection | Never |
+| Catastrophic magnitude | Absolute backtest or future prediction exceeds `100 * robust_scale` | Hard rejection | When historical scale is zero |
+| Accuracy availability | No finite weighted MAPE from usable actuals | Hard rejection | Never |
+| Level | Forecast departs from the seasonal-naive/recent-median reference beyond the horizon-adjusted width | Soft concern | Skipped after a hard failure |
+| Zero-history level | A nonzero future forecast when the reference history is entirely zero | Soft `unsupported_level` concern | Zero forecasts pass; this is not a ratio-based hard rejection |
+| Trend | Median forecast change differs from historical matched-span changes beyond six robust slope scales | Soft concern | Fewer than four matched periods, non-finite reference values, or a hard failure |
+| Seasonal amplitude | Future detrended amplitude is below one-third or above three times the historical profile | Soft concern | Insufficient cycles, strength below 0.6, period below three, short forecast, or zero historical profile amplitude |
+| Seasonal phase | Future and historical profiles have negative correlation after the appropriate trend adjustment | Soft concern | Insufficient historical cycles or strength, period below three, undefined correlation, or insufficient points or signal for a partial horizon |
+| Seasonal amplitude preference | Amplitude difference exceeds the tolerance learned from historical cycle variation | Tie-break only; no additional concern or rejection | Insufficient historical evidence, zero reference amplitude, or insufficient partial-horizon phase signal |
+
+For these checks the default seasonal period is daily `7`, weekly `52`, monthly `12`, quarterly `4`, and yearly `1`. If multiple seasonal periods are configured, the smallest valid integer greater than one is used. The checks do not independently validate every seasonal pattern a model can learn. The trend scale is the larger of historical slope MAD and `0.05 * robust_scale / matched_span`.
+
+Each assessed soft check has a normalized excess score. Candidate risk is the maximum of the level, trend, and seasonality scores, not their average. The concern count counts the triggered reasons; seasonal phase and amplitude can contribute two reasons. Unassessed checks do not count as concerns.
+
+The separate in-memory `Seasonal_Fidelity` score measures amplitude distortion beyond historical variation. For the phases being assessed, let `reference_amplitude` be the reference profile range, `future_amplitude` the comparable future range, and `cycle_amplitudes` the ranges of centered historical cycle profiles. The tolerance is `max(3 * MAD(cycle_amplitudes), 0.05 * reference_amplitude)`. Fidelity is the finite nonnegative score `max(0, (abs(future_amplitude - reference_amplitude) - tolerance) / reference_amplitude)`. Insufficient evidence gives `NA`, not an artificial zero. A partial-horizon flat average can have an assessed amplitude preference even when its phase correlation is undefined. This score does not change risk or the concern count, and by itself cannot reject reuse, prevent accuracy-goal stopping, or trigger another fit.
+
+## Accuracy allowance
+
+After hard failures are excluded, let `best_wmape` be the smallest eligible weighted MAPE as a fraction. Candidates within `best_wmape + max(0.005, 0.05 * best_wmape)` form the shortlist. Selection prefers lower forecast risk, then fewer concerns. Within each risk-and-concern tie, smaller seasonal amplitude distortion precedes WMAPE only when every tied candidate has a finite assessed fidelity score. Otherwise that tie retains the existing WMAPE ordering. A stable candidate identifier breaks the final tie. Missing seasonal evidence is not rewarded as zero distortion.
+
+For example, with a best eligible WMAPE of 8.0%, the ceiling is 8.5%. A safer 8.3% candidate can beat a questionable 8.0% candidate, but an 8.8% candidate is outside the allowance. At 20% the ceiling is 21%; at 2% it is 2.5%. The absolute allowance is relatively generous for very accurate series and is an initial engineering default, not a calibrated statistical bound.
+
+For ordinary and iterative forecasts, when every shortlisted eligible candidate has soft concerns, Finn selects the best available one and reports them. When all candidates hard-fail, Finn raises an error. Update reuse and default replacements have a stricter acceptance boundary, described below. No policy can guarantee that a good forecast exists for every input.
+
+## Standard forecasts and saved averages
+
+`forecast_time_series()` finishes through `final_models()`. A manual standard workflow uses the same process when `final_models()` is called:
+
+1. Load prepared original-scale actuals and expected backtest/future dates. Future target values never become historical evidence.
+2. Exclude candidates with missing or duplicate required keys, non-finite predictions, catastrophic magnitude, or unavailable finite WMAPE. A model with incomplete backtest coverage cannot win or enter a simple average. Learned-ensemble inputs are screened before fitting their existing ensemble specifications.
+3. Form the requested simple averages from eligible existing predictions, up to `max_model_average`. A non-finite component is not concealed by averaging with `na.rm = TRUE`.
+4. Evaluate the individual, learned-ensemble, and simple-average candidates on the same dates and actuals. Apply the accuracy allowance, then rank by risk, number of concerns, the supported seasonal-amplitude preference within ties, WMAPE, and stable model identifier.
+5. Mark the delivered winner `Best_Model = "Yes"`. If it is an average, save that exact combination in the existing average-model artifact. Otherwise rank just the eligible averages by the same policy and save the winner of that subset with `Best_Model = "No"`. This is not necessarily the lowest-WMAPE average. If no eligible average can be formed, there is no required average artifact.
+6. For hierarchical forecasts, pass the selected models at every prepared hierarchy node to the existing `hts` solver and publish its bottom-level result. Do not run another future-quality selection after reconciliation. Format intervals and any weekly-to-daily allocation using the existing output workflow.
+
+Individual outputs remain available with their best-model flags, but only the selected simple average is retained, not every computed combination. Standard forecasting selects among models already run; a quality failure does not fit an additional model automatically.
+
+On retry, Finn validates the combined saved outputs before reusing a winner. A `Best_Model` column, an average filename, or a finite completion log alone is insufficient. All individual models marked `"No"` can be correct when a complete saved average is marked `"Yes"`. Missing, incomplete, or ambiguous selection flags cause averages and selection to be rebuilt from existing predictions, without training again. Saved weekly outputs are restored to native cadence before recomputation. Complete winners are not re-evaluated for future quality, and a multi-series retry retains both previously completed and newly finalized results. A saved average whose original component outputs are unavailable requires restoration of those artifacts; it is not silently reconstructed from a different subset.
+
+## Reconciliation
+
+Quality-aware selection happens before reconciliation. Different hierarchy nodes can choose different models or averages. Finn reconciles that selected mixture with the existing `hts::combinef()` nodes/groups, residual weights, and nonnegative settings, then publishes the resulting bottom-level forecasts.
+
+There is no runtime plausibility scoring of reconciled future paths, no switch of the whole output to a uniform reconciled model family, and no replacement of individual bottom rows after the solve. Standard runs may still save per-model reconciled outputs for inspection, but those outputs are not automatically promoted by a post-reconciliation quality ranker. An outer Agent reconciliation solves its selected mixture directly.
+
+Reconciled backtests provide normal bottom-level WMAPE reporting and run comparison. The solver consumes selected forecast values, hierarchy structure, and residual-based weights, not quality rankings. A resumed run does not require every source node's prior ranking or repeat its future-quality assessment. Actual complete selected source forecasts are still required when a solve must run. Weekly source forecasts are evaluated at weekly cadence during selection, and a non-finite value on any daily-expanded forecast row remains non-finite when its weekly key is restored.
+
+Reconciliation can dampen, spread, or amplify a problem. Better base forecasts can improve bottom-level output, but passing the source checks is not a guarantee that every reconciled path is plausible. Solver and ordinary artifact errors remain errors. Test-only audits can measure the resulting forecasts without changing production selection.
+
+## Iterative Agent forecasts
+
+`iterate_forecast()` runs `final_models()` within each submitted forecast run. Once a winner has been selected, comparisons with other completed iterations use WMAPE only. The lowest finite error wins, and exact ties retain the earlier winner. The within-iteration accuracy allowance, risk, concern count, and seasonal fidelity do not become cross-iteration tie-breakers. Current-version run logs and per-series best-run metrics are reused without reloading old forecasts to assess future quality. An eligible earlier result can remain selected instead of the latest run. A global run cannot improve its aggregate score by omitting a difficult series.
+
+Normal accuracy-goal stopping and local optimization routing use completeness and WMAPE, without another soft-quality veto. Consequently, an iteration winner with soft concerns can beat an earlier winner or meet the accuracy goal; hard-invalid and incomplete results still cannot claim successful completion. Rejected runs consume iteration budget. At the limit, an eligible best-available result may be retained with concerns; if none exists, Finn fails or uses an already enabled local phase for unresolved global series. Final outer reconciliation does not initiate another quality-selection or refitting loop. Avoided evaluator calls and artifact reads are covered by tests; no fixed runtime reduction is promised.
+
+## Updated Agent forecasts
+
+`update_forecast()` follows a different fitting path but uses the same evaluator:
+
+1. Recover the previously selected single model or average for each series from its saved source forecasts. For global models, refit only the union of those required components with their saved settings; do not average all models listed in the earlier request. Different series or hierarchy source nodes can retain different subsets. Missing or ambiguous selected identities or saved fits require restoring the original artifacts. Reused fits do not call `final_models()` to search over a new candidate pool.
+2. Assemble component and reused-average forecasts without reconciling them. Check every required component for hard eligibility and the selected reused combination for applicable soft concerns. Repeat before reconciliation after any existing WMAPE-triggered retuning. Passing reuse keeps that original chosen combination; it does not silently swap to another component.
+3. Deduplicate quality-rejected current series into the existing new-series/default-local forecast path. Healthy siblings are retained and removed series are excluded. Quality-only rejections do not consume the ordinary execution-failure cap of `max(10, ceiling(0.20 * existing_series))`.
+4. Run `final_models()` for each default replacement, then require the replacement to pass all applicable quality checks. Short-history checks that cannot be assessed do not count as failures. Good backtest accuracy alone cannot publish a still-questionable replacement.
+5. An inner reused hierarchical candidate needs its complete source-node forecast set. If a node is rejected or the hierarchy is incomplete, do not solve a partial hierarchy; send the candidate's covered current series through the existing default-local path. Accepted hierarchies reconcile only the selected rows, not both components and their average together. Existing-format source forecast files retain selected component identities for subsequent updates, not a required diagnostic ranking snapshot.
+6. If outer reconciliation is required, reconcile the selected forecasts once and publish its result without a post-quality switch or late default reforecast. A default replacement rejected before reconciliation raises an explicit quality error and cannot trigger repeated fitting. Stable default run identities and an acceptance/rejection field in existing run logs preserve that boundary across restarts.
+
+The optional accuracy-degradation `allow_iterate_forecast` workflow remains separate. Checks after refit or retune assess newly generated predictions, not old iteration winners. A default's saved acceptance or rejection prevents repeating that acceptance decision after it has completed; an interrupted acceptance step can still assess the new output once. Quality recovery itself does not ask the LLM to waive a check. Default refitting can increase compute or configured-provider cost, and it is a bounded recovery attempt rather than a promise of a satisfactory forecast.
+
+## Evidence and limitations
+
+Developer tests compare two paths on the same fake candidate outputs: accuracy-only selection followed by real `hts`, and quality-aware selection/averaging followed by real `hts`. Held-out future truth is used only by the tests, never supplied to the selector. They measure bottom-level error and shape, including effects on uninjected siblings. Small regressions run with package tests; broader stress and full-catalogue averaging timings are separate developer experiments.
+
+A separate bounded, in-memory corner-test matrix checks exact prediction keys, signed/zero/missing-actual accuracy, threshold boundaries, seasonal alignment, optional-score ties, weekly group isolation, and replacement-selector contracts. Fixed-seed cases also check independent accuracy and ranking expectations, row-order invariance, and the inability of a hard-invalid candidate to displace a valid winner. These tests do not fit forecast models or run additional reconciliation, and passing them is not proof that every possible input or future regime change is handled correctly.
+
+Earlier experiments exposed half-amplitude averages and short-horizon phase reversals that the original concern checks did not distinguish. Focused regressions now prefer an intact available seasonal candidate within the accuracy allowance and assess informative partial horizons using repeated historical evidence. Controls retain naturally varying seasonal amplitudes within the history-adaptive tolerance. These results do not calibrate a guarantee: one-cycle histories, fewer than three future points, or low-signal partial phases can still retain reversed timing because assessment is unsupported. A plausible alternative outside the WMAPE allowance cannot win a soft-risk or fidelity comparison. Unexpected regime changes are not known in advance, and the existing nonnegative solver floor can produce small positive values for all-zero histories. None of these limits invokes a post-reconciliation replacement model.
+
+The number of simple averages grows as `choose(N, 2) + choose(N, 3)` when `max_model_average = 3`. The normal smoke test uses four mixed model/recipe candidates and independently checks all ten pair/triple averages. The separate developer timing workload uses every supported model/recipe output and reports averaging and evaluation separately, with fresh artifacts for every trial. Earlier timing and broad stress measurements predate the refined seasonal ranking; they are not new measurements of this revision. No new elapsed-time assertion or production timeout is added. Runtime depends on candidate count, horizon, backtests, storage, and the machine; measurements should precede any future regression limit.
+
+## Historical actuals
+
+Checks use the existing prepared data for each series, preferring R1 when prepared and otherwise normalizing R2's `Horizon == 1` rows. Differencing and Box-Cox are reversed using existing metadata. `Target_Original` is used when available so outlier cleaning does not change the actuals used for evaluation; otherwise `Target` is used. Prior missing-value imputation is retained. Recipe and metadata files are read by exact path, without directory listing, and history is reused in memory across candidates.
+
+Selection requires at least one candidate and at least one finite actual inside the recent reference window. An empty candidate pool or a reference window containing only missing/non-finite actuals raises a clear input error. Finite observations farther back, or future target values, cannot silently supply that window's evidence. Partly missing windows remain usable when a finite value, including zero, is present; unavailable seasonal checks remain unassessed, and missing backtest actuals continue to receive no accuracy weight.
+
+Original and cleaned targets have separate inverse-differencing starting values. Older second-order original-target artifacts missing those values must be regenerated from original input; already saved forecast outputs remain readable.
+
+Rankings and explanations are held in memory. No additional diagnostic or reference files are written. The selector has an internal replaceable function contract; a public per-run custom-evaluator API is not included in this release.
+
+## Backtest weighted MAPE
+
+A pointwise absolute percentage error is produced first, rounded to four decimal places, then weighted by the absolute actual value across expected backtest rows. The existing convention replaces zero actuals with `0.1` for this calculation. Original actuals are matched by date; missing/non-finite actuals do not contribute weight, and a candidate without a finite accuracy score is ineligible. Overlapping backtests keep their separate scenario/horizon observations. The positive-target example below illustrates the weighting.
 
 ```{r, echo = FALSE, message = TRUE}
 suppressMessages(library(dplyr))
@@ -30,13 +135,13 @@ back_test_tbl <- tibble(
   Target = c(10, 20, 30, 40, 50, 10, 20, 30, 40, 50)
 ) %>%
   dplyr::mutate(
-    MAPE = abs(Target - FCST) / Target,
+    MAPE = round(abs(Target - FCST) / abs(Target), 4),
     Date = as.Date(Date)
   ) %>%
   dplyr::group_by(Combo, Model) %>%
   dplyr::mutate(
-    Target_Total = sum(Target),
-    Percent_Total = Target / Target_Total
+    Target_Total = sum(abs(Target)),
+    Percent_Total = abs(Target) / Target_Total
   ) %>%
   dplyr::ungroup()
 
@@ -59,4 +164,4 @@ print(best_model)
 
 During the simple back test process above, arima seems to be the better model from a pure MAPE perspective, but ETS ends up being the winner when using weighted MAPE. The benefits of weighted MAPE allow finnts to find the optimal model that performs the best on the biggest components of a forecast, which comes with the added benefit of putting more weight on more recent observations since those are more likely to have larger target values then ones further into the past. Another way of putting more weight on more recent observations is how Finn overlaps its back testing scenarios. This means the most recent observations are tested for accuracy in different forecast horizons (H=1, H=2, etc). More info on this in the back testing vignette.
 
-User of Finn can also take the Finn outputs, create their own accuracy metrics, and choose their own best models since all model results are written to disk.
+Users can evaluate the retained model outputs with their own metrics and choose another model. The internal selector is replaceable, but this release does not expose a public per-run evaluator or persist custom selection functions.

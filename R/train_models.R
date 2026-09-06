@@ -930,10 +930,7 @@ clamp_negative_target <- function(data, model) {
 #' @noRd
 negative_fcst_adj <- function(data,
                               negative_forecast) {
-  fcst_final <- data %>%
-    dplyr::mutate(Forecast = ifelse(is.finite(Forecast), Forecast, NA)) %>% # replace infinite values
-    dplyr::mutate(Forecast = ifelse(is.nan(Forecast), NA, Forecast)) %>% # replace NaN values
-    dplyr::mutate(Forecast = ifelse(is.na(Forecast), 0, Forecast)) # replace NA values
+  fcst_final <- data
 
   # convert negative forecasts to zero
   if (is.na(negative_forecast)) {
@@ -943,7 +940,7 @@ negative_fcst_adj <- function(data,
   if (negative_forecast == FALSE) {
     fcst_final$Forecast <- replace(
       fcst_final$Forecast,
-      which(fcst_final$Forecast < 0),
+      which(is.finite(fcst_final$Forecast) & fcst_final$Forecast < 0),
       0
     )
   }
@@ -1049,6 +1046,25 @@ safe_diff_inv_vec <- function(x, num_diffs, initial_value) {
 #'
 #' @return tbl with undifferenced forecast
 #' @noRd
+get_original_diff_initial_values <- function(diff_tbl, initial_value) {
+  columns <- c("Target_Original_Diff_Value1", "Target_Original_Diff_Value2")
+  if (all(columns %in% names(diff_tbl))) {
+    values <- as.numeric(unlist(diff_tbl[1, columns], use.names = FALSE))
+    if (all(is.na(values))) return(numeric())
+    values <- values[seq_along(initial_value)]
+    if (any(!is.finite(values))) {
+      stop("Original-target starting values are incomplete. Regenerate prepared data from the original input.", call. = FALSE)
+    }
+    return(values)
+  }
+  if (length(initial_value) == 1) return(initial_value)
+  stop(
+    "Original-target starting values are missing for second-order differencing. ",
+    "Regenerate prepared data from the original input before reconstructing actuals.",
+    call. = FALSE
+  )
+}
+
 undifference_forecast <- function(forecast_data,
                                   recipe_data,
                                   diff_tbl) {
@@ -1103,13 +1119,17 @@ undifference_forecast <- function(forecast_data,
         num_diffs <- 1
         initial_value <- diff1
       }
+      target_initial_value <- initial_value
+      if ("Target_Original" %in% names(filtered_recipe_data)) {
+        target_initial_value <- get_original_diff_initial_values(diff_tbl, initial_value)
+      }
 
       # combine historical data with forecast (adjust Target_Originals when needed)
       # then undifference and return forecast
       if ("Target_Original" %in% colnames(filtered_recipe_data)) {
-        filtered_recipe_data$Target_Original[1] <- NA
+        if (length(target_initial_value) > 0) filtered_recipe_data$Target_Original[1] <- NA
 
-        if (!is.na(diff2)) {
+        if (length(target_initial_value) > 1) {
           filtered_recipe_data$Target_Original[2] <- NA
         }
         combined_data <- filtered_recipe_data %>%
@@ -1136,11 +1156,11 @@ undifference_forecast <- function(forecast_data,
         target_tbl <- combined_data %>%
           dplyr::select(-Forecast) %>%
           dplyr::filter(Date < fcst_start_date) %>%
-          dplyr::mutate(Target = safe_diff_inv_vec(Target, num_diffs, initial_value))
+          dplyr::mutate(Target = if (length(target_initial_value)) safe_diff_inv_vec(Target, num_diffs, target_initial_value) else Target)
       } else {
         target_tbl <- combined_data %>%
           dplyr::select(-Forecast) %>%
-          dplyr::mutate(Target = safe_diff_inv_vec(Target, num_diffs, initial_value))
+          dplyr::mutate(Target = if (length(target_initial_value)) safe_diff_inv_vec(Target, num_diffs, target_initial_value) else Target)
       }
 
       forecast_tbl <- combined_data %>%
@@ -1202,14 +1222,13 @@ undifference_recipe <- function(recipe_data,
 
   # undifference Target_Original col if it exists
   if ("Target_Original" %in% colnames(undiff_recipe_data)) {
-    undiff_recipe_data$Target_Original[1] <- NA
-
-    if (!is.na(diff2)) {
-      undiff_recipe_data$Target_Original[2] <- NA
+    original_initial_value <- get_original_diff_initial_values(diff_tbl, initial_value)
+    if (length(original_initial_value) > 0) {
+      undiff_recipe_data$Target_Original[seq_along(original_initial_value)] <- NA_real_
+      undiff_recipe_data$Target_Original <- safe_diff_inv_vec(
+        undiff_recipe_data$Target_Original, num_diffs, original_initial_value
+      )
     }
-
-    undiff_recipe_data <- undiff_recipe_data %>%
-      dplyr::mutate(Target_Original = safe_diff_inv_vec(Target_Original, num_diffs, initial_value))
   }
 
   # combine with future data and return
