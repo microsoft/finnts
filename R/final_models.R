@@ -13,6 +13,17 @@
 #'   historical seasonality can also support phase checks over at least three
 #'   informative future periods, even when the horizon is shorter than a cycle.
 #'   Short histories remain usable; unsupported seasonal checks are not assessed.
+#'   Sufficient regular prepared history can support an additive or proportional
+#'   trend reference when it improves both chronological historical validation
+#'   blocks. Level checks then follow the projected trend and seasonal offsets,
+#'   with uncertainty from historical residuals and drift variation. Proportional
+#'   references use log-scale changes and seasonal comparisons only for suitable
+#'   positive history. Unsupported or unstable trends retain the existing
+#'   seasonal-naive or recent-median reference. Backtests retain the historical
+#'   magnitude bound; supported future paths use 100 times the larger of the
+#'   historical robust scale and the absolute projected reference at each step.
+#'   Prepared-history imputation remains part of the evidence. These checks are
+#'   engineering guardrails, not calibrated intervals or accuracy guarantees.
 #'   If all candidates fail the required checks, selection raises an error.
 #'   Evaluation is deterministic for fixed inputs and creates no diagnostic files.
 #'   If an individual model wins, the best eligible simple average is still saved

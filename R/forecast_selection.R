@@ -158,10 +158,105 @@ finite_mad <- function(values) {
   if (length(values)) stats::mad(values) else 0
 }
 
+forecast_trend_fit <- function(values, period, horizon) {
+  if (length(values) < max(8, 2 * period) || any(!is.finite(values))) return(NULL)
+  slopes <- (values[-seq_len(period)] - utils::head(values, -period)) / period
+  drift <- stats::median(slopes)
+  slope_mad <- finite_mad(slopes)
+  precision <- 64 * .Machine$double.eps * max(1, abs(values))
+  if (!is.finite(drift) || abs(drift) <= max(2 * slope_mad, precision)) return(NULL)
+  time <- seq_along(values) - length(values)
+  phases <- ((time - 1) %% period) + 1
+  intercepts <- vapply(seq_len(period), function(phase) {
+    stats::median((values - drift * time)[phases == phase])
+  }, numeric(1))
+  projection <- drift * seq_len(horizon) + rep(intercepts, length.out = horizon)
+  if (any(!is.finite(projection))) return(NULL)
+  list(drift = drift, slope_mad = slope_mad,
+    residual_mad = finite_mad(values - drift * time - intercepts[phases]),
+    projection = projection, values = values)
+}
+
+forecast_trend_reference <- function(history, horizon, context, normalization, scale) {
+  period <- forecast_seasonal_period(context)
+  history_size <- nrow(history)
+  if (history_size < max(12, 3 * period) || horizon < 1 ||
+      normalization <= 0 || scale <= 0 || any(!is.finite(history$Target)) ||
+      !"Date" %in% names(history)) return(NULL)
+  if ("Observed" %in% names(history) &&
+      any(is.na(history$Observed) | !history$Observed)) return(NULL)
+  cadence <- switch(context[["date_type"]] %||% "year",
+    day = "day", week = "week", month = "month", quarter = "3 months", year = "year")
+  dates <- as.Date(history$Date)
+  if (is.null(cadence) || anyNA(dates) ||
+      !identical(dates, seq(dates[1], by = cadence, length.out = history_size))) return(NULL)
+  block_size <- max(1L, floor(period / 2))
+  origins <- history_size - c(2, 1) * block_size
+  if (min(origins) < max(8, 2 * period)) return(NULL)
+  values <- history$Target / normalization
+  precision <- 64 * .Machine$double.eps
+  baseline_errors <- vapply(origins, function(origin) {
+    training <- values[seq_len(origin)]
+    prediction <- if (period > 1) {
+      rep(utils::tail(training, period), length.out = block_size)
+    } else rep(stats::median(utils::tail(training, 4)), block_size)
+    mean(abs(prediction - values[origin + seq_len(block_size)]))
+  }, numeric(1))
+  if (any(!is.finite(baseline_errors) | baseline_errors <= precision)) return(NULL)
+  modes <- c("additive", if (all(values > sqrt(.Machine$double.eps) * scale)) "log")
+  candidates <- lapply(modes, function(mode) {
+    working <- if (mode == "log") log(history$Target) - log(normalization) else values
+    fitted <- forecast_trend_fit(working, period, horizon)
+    if (is.null(fitted)) return(NULL)
+    errors <- vapply(origins, function(origin) {
+      prefix <- forecast_trend_fit(working[seq_len(origin)], period, block_size)
+      if (is.null(prefix) || sign(prefix$drift) != sign(fitted$drift)) return(Inf)
+      prediction <- if (mode == "log") exp(prefix$projection) else prefix$projection
+      if (any(!is.finite(prediction))) return(Inf)
+      mean(abs(prediction - values[origin + seq_len(block_size)]))
+    }, numeric(1))
+    if (any(!is.finite(errors) | errors > 0.8 * baseline_errors)) return(NULL)
+    fitted$mode <- mode
+    fitted$validation_errors <- errors
+    fitted
+  })
+  names(candidates) <- modes
+  selected <- candidates[["additive"]]
+  logarithmic <- candidates[["log"]]
+  if (!is.null(logarithmic) && (is.null(selected) ||
+      all(selected$validation_errors > precision &
+        logarithmic$validation_errors <= 0.8 * selected$validation_errors))) {
+    selected <- logarithmic
+  }
+  if (is.null(selected)) return(NULL)
+  log_projection <- if (selected$mode == "log") {
+    log(normalization) + selected$projection
+  } else log(normalization) + log(abs(selected$projection))
+  nonzero <- if (selected$mode == "log") rep(TRUE, horizon) else selected$projection != 0
+  if (any(!is.finite(log_projection[nonzero])) ||
+      any(log_projection[nonzero] > log(.Machine$double.xmax)) ||
+      any(log_projection[nonzero] < log(.Machine$double.xmin) + log(.Machine$double.eps))) return(NULL)
+  selected$log_magnitude_scale <- pmax(log(normalization) + log(scale), log_projection)
+  noise_floor <- if (selected$mode == "log") log1p(0.05) else 0.05 * scale
+  steps <- seq_len(horizon)
+  selected$widths <- 6 * sqrt(steps * max(selected$residual_mad, noise_floor)^2 +
+    (steps * selected$slope_mad)^2)
+  selected$scale <- if (selected$mode == "log") {
+    max(as.numeric(stats::quantile(abs(selected$values), 0.95)),
+      finite_mad(selected$values), finite_mad(diff(selected$values)))
+  } else scale
+  selected
+}
+
 forecast_reference <- function(history, horizon, context) {
   period <- forecast_seasonal_period(context)
   window_size <- max(12, 3 * period, 2 * horizon)
-  actuals <- utils::tail(history$Target, window_size)
+  if (!is.null(context[["hist_end_date"]])) {
+    history <- history[as.Date(history$Date) <= as.Date(context$hist_end_date), , drop = FALSE]
+  }
+  history <- history[order(history$Date), , drop = FALSE]
+  window_history <- utils::tail(history, window_size)
+  actuals <- window_history$Target
   if (!any(is.finite(actuals))) {
     stop("Forecast selection requires usable historical actuals in its reference window.", call. = FALSE)
   }
@@ -176,6 +271,8 @@ forecast_reference <- function(history, horizon, context) {
     reference <- rep(utils::tail(values, period), length.out = horizon)
     if (length(values) > period) differences <- values[-seq_len(period)] - utils::head(values, -period)
   }
+  trend <- forecast_trend_reference(window_history, horizon, context, normalization, scale)
+  profile_values <- if (!is.null(trend) && trend$mode == "log") trend$values else values
   profile <- rep(0, period)
   strength <- NA_real_
   cycle_profiles <- NULL
@@ -183,7 +280,7 @@ forecast_reference <- function(history, horizon, context) {
   short_seasonality <- NULL
   cycles <- floor(length(values) / period)
   if (seasonal_available && cycles >= 2) {
-    complete <- utils::tail(values, cycles * period)
+    complete <- utils::tail(profile_values, cycles * period)
     if (all(is.finite(complete))) {
       time <- seq_along(complete)
       detrended <- stats::lm.fit(cbind(1, time), complete)$residuals
@@ -222,7 +319,8 @@ forecast_reference <- function(history, horizon, context) {
     reference = reference, width = max(finite_mad(differences), 0.05 * scale),
     period = period, profile = profile, seasonal_strength = strength,
     seasonal_available = seasonal_available, cycle_profiles = cycle_profiles,
-    amplitude_tolerance = amplitude_tolerance, short_seasonality = short_seasonality
+    amplitude_tolerance = amplitude_tolerance, short_seasonality = short_seasonality,
+    trend = trend
   )
 }
 
@@ -241,11 +339,20 @@ forecast_path_risk <- function(forecasts, reference) {
       components["level"] <- 0
     }
   } else {
-    path <- forecasts / reference$normalization
-    widths <- 6 * reference$width * sqrt(seq_along(path))
-    components["level"] <- max(0, max(abs(path - reference$reference) / widths) - 1)
+    trend <- reference$trend
+    logarithmic <- !is.null(trend) && identical(trend$mode, "log")
+    if (logarithmic && any(forecasts <= 0)) {
+      components["level"] <- 1
+      return(list(risk = 1, reasons = "level_deviation", components = components,
+        seasonal_fidelity = seasonal_fidelity))
+    }
+    path <- if (logarithmic) log(forecasts) - log(reference$normalization) else forecasts / reference$normalization
+    widths <- if (is.null(trend)) 6 * reference$width * sqrt(seq_along(path)) else trend$widths
+    expected <- if (is.null(trend)) reference$reference else trend$projection
+    components["level"] <- max(0, max(abs(path - expected) / widths) - 1)
     if (components["level"] > 0) reasons <- c(reasons, "level_deviation")
-    values <- reference$values
+    values <- if (logarithmic) trend$values else reference$values
+    working_scale <- if (logarithmic) trend$scale else reference$scale
     period <- reference$period
     strong_seasonality <- is.finite(reference$seasonal_strength) && reference$seasonal_strength >= 0.6
     if (strong_seasonality) {
@@ -267,7 +374,7 @@ forecast_path_risk <- function(forecasts, reference) {
           stats::median(changes[seq.int(start, length.out = span - 1)])
         }, numeric(1))
       }
-      slope_scale <- max(finite_mad(slopes), 0.05 * reference$scale / span)
+      slope_scale <- max(finite_mad(slopes), 0.05 * working_scale / span)
       components["trend"] <- max(0, abs(stats::median(diff(adjusted)) - stats::median(slopes)) / (6 * slope_scale) - 1)
       if (components["trend"] > 0) reasons <- c(reasons, "trend_deviation")
     }
@@ -373,9 +480,17 @@ evaluate_forecast_candidates <- function(history, backtests, forecasts, context)
     if (!forecast_keys_complete(future, expected_forecasts)) reasons <- c(reasons, "incomplete_forecast")
     predictions <- c(backtest$Forecast, future$Forecast)
     if (any(!is.finite(predictions))) reasons <- c(reasons, "nonfinite_forecast")
-    if (reference$normalization > 0 && reference$scale > 0 &&
-        any(abs(predictions / reference$normalization) / reference$scale > 100, na.rm = TRUE)) {
-      reasons <- c(reasons, "catastrophic_magnitude")
+    if (reference$normalization > 0 && reference$scale > 0) {
+      extreme_backtest <- any(abs(backtest$Forecast / reference$normalization) / reference$scale > 100, na.rm = TRUE)
+      trend <- reference$trend
+      if (is.null(trend) || length(future$Forecast) != length(trend$log_magnitude_scale)) {
+        extreme_future <- any(abs(future$Forecast / reference$normalization) / reference$scale > 100, na.rm = TRUE)
+      } else {
+        log_forecast <- log(abs(future$Forecast))
+        precision <- 8 * .Machine$double.eps * pmax(1, abs(log_forecast), abs(trend$log_magnitude_scale))
+        extreme_future <- any(log_forecast - trend$log_magnitude_scale > log(100) + precision, na.rm = TRUE)
+      }
+      if (extreme_backtest || extreme_future) reasons <- c(reasons, "catastrophic_magnitude")
     }
     accuracy <- forecast_backtest_accuracy(history, backtest)
     if (!is.finite(accuracy$WMAPE)) reasons <- c(reasons, "unavailable_accuracy")

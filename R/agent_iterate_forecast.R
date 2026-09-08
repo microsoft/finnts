@@ -2752,14 +2752,8 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
       folder = "logs", suffix = "-agent_best_run")
     written <- c(written, series)
   }
-  if (length(written)) {
-    if (is.null(combo)) {
-      existing <- list_files(project_info$storage_object, paste0(project_info$path, "/logs/*",
-        hash_data(project_info$project_name), "-", hash_data(agent_info$run_id), "*-agent_best_run.csv"), fail_on_error = TRUE)
-      if (length(existing) < length(written)) stop("Best-run verification is missing selected series.", call. = FALSE)
-    } else {
-      read_selection_file(project_info, "logs", "-agent_best_run", written[1])
-    }
+  for (series in written) {
+    read_selection_file(project_info, "logs", "-agent_best_run", series)
   }
   write_data(current_log, combo = NULL, run_info = run_info, output_type = "log", folder = "logs", suffix = NULL)
   list(status = summary$status, selected_combos = c(retained, written))
