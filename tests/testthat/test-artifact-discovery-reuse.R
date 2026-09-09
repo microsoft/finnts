@@ -50,6 +50,48 @@ test_that("EDA consolidation reuses one discovery for every analysis type", {
   expect_equal(tracker$directory_listings, 1L)
 })
 
+for (storage_class in c("blob_container", "ms_drive")) {
+  test_that(paste("provider EDA consolidation avoids input discovery for", storage_class), {
+    agent_info <- artifact_test_agent(withr::local_tempdir())
+    agent_info$external_regressors <- "price"
+    artifact_test_eda(agent_info)
+    agent_info$project_info$storage_object <- structure(list(), class = storage_class)
+    original_list <- list_files
+    original_read <- read_file
+    original_write <- write_data
+    provider_listings <- character()
+    testthat::local_mocked_bindings(
+      check_agent_info = function(...) invisible(NULL),
+      list_files = function(storage_object, path, ...) {
+        if (!is.null(storage_object)) provider_listings <<- c(provider_listings, path)
+        if (grepl("/input_data/", path, fixed = TRUE)) {
+          stop("Unexpected input-data listing during EDA consolidation", call. = FALSE)
+        }
+        original_list(NULL, path, ...)
+      },
+      read_file = function(run_info, ...) {
+        run_info$storage_object <- NULL
+        original_read(run_info, ...)
+      },
+      write_data = function(x, combo, run_info, ...) {
+        run_info$storage_object <- NULL
+        original_write(x, combo, run_info, ...)
+      },
+      download_file = function(...) stop("Unexpected provider download", call. = FALSE),
+      .package = "finnts"
+    )
+
+    save_eda_data(agent_info)
+    result <- get_eda_data(agent_info) %>% dplyr::arrange(Combo, Analysis_Type, Metric)
+
+    expect_equal(result, artifact_expected_eda())
+    expect_equal(nrow(result), 38L)
+    expect_equal(anyDuplicated(result[c("Combo", "Analysis_Type", "Metric")]), 0L)
+    expect_length(provider_listings, 7L)
+    expect_false(any(grepl("/input_data/", provider_listings, fixed = TRUE)))
+  })
+}
+
 test_that("independent EDA expectations reject a dropped-series mutation", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   agent_info$external_regressors <- "price"

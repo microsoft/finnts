@@ -69,7 +69,6 @@ save_eda_data <- function(agent_info) {
   local_eda <- is.null(project_info$storage_object) &&
     project_info$data_output %in% c("csv", "parquet", "rds")
   eda_inventory <- if (local_eda) local_artifact_inventory(project_info, "eda") else NULL
-  if (!local_eda) get_total_combos(agent_info)
 
   # 1. Data Profile
   tryCatch(
