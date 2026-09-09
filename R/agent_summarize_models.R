@@ -424,7 +424,13 @@ summarize_models <- function(agent_info,
     hash_data(project_info$run_name), "*-model_summary.", project_info$data_output
   )
 
-  summary_results <- read_file(
+  summary_results <- if (is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")) {
+    read_local_artifacts(project_info, local_artifact_path(
+      project_info, "models", "-model_summary",
+      combo = purrr::map_chr(best_run_tbl$combo, hash_data)
+    ))
+  } else read_file(
     run_info = project_info,
     path = model_summary_path,
     return_type = "df"

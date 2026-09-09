@@ -2099,7 +2099,14 @@ submit_fcst_run <- function(agent_info,
   }
 
   # get input data
-  input_data <- read_file(
+  input_data <- if (!is.null(combo) && is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")) {
+    input_info <- project_info
+    input_info$run_name <- agent_info$run_id
+    read_local_artifacts(input_info,
+      local_artifact_path(input_info, "input_data", combo = combo)
+    )
+  } else read_file(
     run_info = project_info,
     file_list = list_files(
       project_info$storage_object,
@@ -2589,7 +2596,15 @@ log_best_run <- function(agent_info,
     }
 
     # verify that all expected agent_best_run files exist
-    if (combo == "all") {
+    if (combo == "all" && is.null(project_info$storage_object)) {
+      expected_files <- local_artifact_files(local_artifact_path(
+        project_info, "logs", "-agent_best_run",
+        combo = purrr::map_chr(combo_list, hash_data), extension = "csv"
+      ), allow_missing = TRUE)
+      existing_count <- sum(vapply(expected_files, function(path) {
+        as.integer(nrow(read_file(project_info, file_list = path, strict = TRUE)) > 0L)
+      }, integer(1)))
+    } else if (combo == "all") {
       # global model: use list_files since multiple combos are involved
       existing_best_run_files <- list_files(
         project_info$storage_object,

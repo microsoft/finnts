@@ -1,7 +1,8 @@
-# finnts 0.7.0.9004 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9005 (DEVELOPMENT VERSION)
 
 ## Bug Fixes
 
+-   Local and ADLS-mounted workflows now read known series inputs, recipes, EDA results, model outputs, and completion artifacts by exact path. Necessary directory listings are reused during model preparation, EDA aggregation, and condensed forecast reads. Standalone forecast getters discover unknown condensed batches once and preserve their precedence even when the first batch is absent. Exact-file validation is not repeated before reading, and local CSV read-time metadata and I/O failures propagate instead of becoming empty or partial results. Valid empty CSV files and optional missing artifacts retain their supported behavior. Default legacy reads, remote-provider downloads, and Spark data-frame routing are unchanged.
 -   `update_forecast()` now excludes predecessor time series that are absent from the current input before global or local update routing. Removed series no longer produce empty-schema or missing-artifact fallback errors, while current-only series continue to receive default local forecasts.
 -   Global Agent iterations now use hierarchy choices that match the outer optimization scope. Bottom-level runs may compare `bottoms_up` with the exact standard or grouped hierarchy detected by EDA after reconciliation to bottom-level series. Runs whose input was already expanded to hierarchy-level `ID` series use `bottoms_up` for every inner global and local iteration before one final outer reconciliation.
 -   `iterate_forecast()` now skips repeated global optimization when any current-run best result was already finalized at the requested iteration target, then resumes only unfinished local series. Incomplete metadata and higher iteration targets retain the existing global retry behavior.

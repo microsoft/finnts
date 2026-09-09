@@ -290,8 +290,9 @@ test_that("strict blob listing propagates storage provider failures", {
   expect_null(list_files(blob, "/logs/*.csv"))
 })
 
-test_that("global best-run write verification uses strict listing", {
+test_that("global provider best-run write verification uses strict listing", {
   agent_info <- make_finalize_agent_info(project_name = "strict_best_run_write")
+  agent_info$project_info$storage_object <- structure(list(), class = "blob_container")
   agent_info$agent_version <- 2
   agent_info$forecast_approach <- "bottoms_up"
   run_info <- agent_info$project_info

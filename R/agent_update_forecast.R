@@ -1196,7 +1196,16 @@ reconcile_agent_forecast <- function(agent_info,
 
   run_name <- single_run$best_run_name
 
-  train_test_file <- list_files(
+  train_test_file <- if (is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")) {
+    selected_run_info <- project_info
+    selected_run_info$project_name <- project_name
+    selected_run_info$run_name <- run_name
+    local_artifact_files(
+      local_artifact_path(selected_run_info, "prep_models", "-train_test_split"),
+      allow_missing = TRUE
+    )
+  } else list_files(
     project_info$storage_object,
     paste0(
       project_info$path, "/prep_models/*", hash_data(project_name), "-",
@@ -1213,7 +1222,8 @@ reconcile_agent_forecast <- function(agent_info,
   model_train_test_tbl <- read_file(
     run_info = project_info,
     file_list = train_test_file[1],
-    return_type = "df"
+    return_type = "df",
+    strict = is.null(project_info$storage_object)
   )
 
   # load hierarchical forecast

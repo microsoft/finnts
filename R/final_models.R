@@ -99,6 +99,8 @@ final_models <- function(run_info,
   run_global_models <- prev_log_df$run_global_models
   run_local_models <- prev_log_df$run_local_models
   run_ensemble_models <- prev_log_df$run_ensemble_models
+  local_reads <- is.null(run_info$storage_object) &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
 
   if (forecast_approach != "bottoms_up" & date_type == "week") {
     # turn off daily conversion before hts recon
@@ -149,13 +151,14 @@ final_models <- function(run_info,
     combo_diff <- combo_list
   } else {
     # Multi combo mode - get all combos and check which are complete
-    combo_list <- list_files(
+    forecast_files <- list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*_models.", run_info$data_output
       )
-    ) %>%
+    )
+    combo_list <- forecast_files %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)
@@ -165,13 +168,16 @@ final_models <- function(run_info,
       dplyr::pull(Combo) %>%
       unique()
 
-    prev_combo_list <- list_files(
+    previous_files <- if (local_reads) {
+      forecast_files[endsWith(forecast_files, paste0("-average_models.", run_info$data_output))]
+    } else list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*average_models.", run_info$data_output
       )
-    ) %>%
+    )
+    prev_combo_list <- previous_files %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)
@@ -186,7 +192,12 @@ final_models <- function(run_info,
   # check if previous run is complete
   recon_complete <- TRUE
   if (forecast_approach != "bottoms_up") {
-    recon_files <- list_files(
+    recon_files <- if (local_reads) {
+      local_artifact_files(
+        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+        allow_missing = TRUE
+      )
+    } else list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
