@@ -81,13 +81,17 @@ ensemble_models <- function(run_info,
   run_local_models <- log_df$run_local_models
   models_to_run <- log_df$models_to_run
   models_not_to_run <- log_df$models_not_to_run
+  local_combo <- is.null(run_info$storage_object) && length(run_info$combo) == 1L &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
 
   if (log_df$run_ensemble_models == FALSE) {
     cli::cli_alert_info("Ensemble models have been turned off.")
     return(cli::cli_progress_done())
   }
 
-  combo_list <- list_files(
+  combo_list <- if (local_combo) {
+    run_info$combo
+  } else list_files(
     run_info$storage_object,
     paste0(
       run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
@@ -112,7 +116,13 @@ ensemble_models <- function(run_info,
   )
 
   # check if a previous run already has necessary outputs
-  prev_combo_list <- list_files(
+  prev_combo_list <- if (local_combo) {
+    existing <- local_artifact_files(
+      local_artifact_path(run_info, "forecasts", "-ensemble_models", run_info$combo),
+      allow_missing = TRUE
+    )
+    if (length(existing) > 0L) run_info$combo else character()
+  } else list_files(
     run_info$storage_object,
     paste0(
       run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
@@ -489,7 +499,12 @@ ensemble_models <- function(run_info,
   par_end(cl)
 
   # check if all time series combos ran correctly
-  successful_combos <- list_files(
+  successful_combos <- if (local_combo) {
+    length(local_artifact_files(
+      local_artifact_path(run_info, "forecasts", "-ensemble_models", run_info$combo),
+      allow_missing = TRUE
+    ))
+  } else list_files(
     run_info$storage_object,
     paste0(
       run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",

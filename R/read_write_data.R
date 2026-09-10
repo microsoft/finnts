@@ -48,9 +48,13 @@ get_forecast_data <- function(run_info,
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
+  local_reads <- is.null(run_info$storage_object) && identical(return_type, "df") &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
 
   # get input values
-  log_df <- read_file(run_info,
+  log_df <- if (local_reads) {
+    read_local_artifacts(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
+  } else read_file(run_info,
     file_list = paste0(
       run_info$path, "/logs/",
       hash_data(run_info$project_name), "-",
@@ -61,6 +65,8 @@ get_forecast_data <- function(run_info,
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   forecast_approach <- log_df$forecast_approach
+  single_combo <- local_reads && length(run_info$combo) == 1L &&
+    identical(forecast_approach, "bottoms_up")
 
   # get train test split data
   model_train_test_tbl <- read_file(run_info,
@@ -79,7 +85,9 @@ get_forecast_data <- function(run_info,
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
 
-  condensed_files <- list_files(run_info$storage_object, fs::path(cond_path))
+  condensed_files <- if (local_reads) {
+    local_artifact_inventory(run_info, "forecasts", "*condensed")
+  } else list_files(run_info$storage_object, fs::path(cond_path))
 
   if (length(condensed_files) > 0) {
     condensed <- TRUE
@@ -105,10 +113,17 @@ get_forecast_data <- function(run_info,
     )
   }
 
-  forecast_tbl <- read_file(run_info,
+  forecast_tbl <- if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
+    read_local_artifacts(run_info, condensed_files)
+  } else if (single_combo) {
+    read_file(run_info,
+      file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
+    )
+  } else read_file(run_info,
     path = fcst_path,
     return_type = return_type
-  ) %>%
+  )
+  forecast_tbl <- forecast_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
       by = "Train_Test_ID"
@@ -179,6 +194,14 @@ get_trained_models <- function(run_info) {
   # check input values
   check_input_type("run_info", run_info, "list")
 
+  if (is.null(run_info$storage_object) && length(run_info$combo) == 1L &&
+    identical(run_info$object_output, "rds")) {
+    return(read_file(run_info,
+      file_list = local_model_artifact_files(run_info, "models", extension = run_info$object_output),
+      strict = TRUE
+    ))
+  }
+
   # get trained files
   model_path <- paste0(
     "/models/*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
@@ -235,9 +258,13 @@ get_prepped_data <- function(run_info,
   check_input_type("run_info", run_info, "list")
   check_input_type("recipe", recipe, "character", c("R1", "R2"))
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
+  local_reads <- is.null(run_info$storage_object) && identical(return_type, "df") &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
 
   # get input values
-  log_df <- read_file(run_info,
+  log_df <- if (local_reads) {
+    read_local_artifacts(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
+  } else read_file(run_info,
     file_list = paste0(
       run_info$path, "/logs/",
       hash_data(run_info$project_name), "-",
@@ -254,10 +281,15 @@ get_prepped_data <- function(run_info,
     hash_data(run_info$run_name), "*", recipe, ".", run_info$data_output
   )
 
-  prep_data_tbl <- read_file(run_info,
+  prep_data_tbl <- if (local_reads && length(run_info$combo) == 1L) {
+    read_local_artifacts(run_info,
+      local_artifact_path(run_info, "prep_data", paste0("-", recipe), run_info$combo)
+    )
+  } else read_file(run_info,
     path = data_path,
     return_type = return_type
-  ) %>%
+  )
+  prep_data_tbl <- prep_data_tbl %>%
     tidyr::separate(
       col = Combo,
       into = combo_variables,
@@ -311,7 +343,7 @@ get_prepped_models <- function(run_info) {
 
   # get prepped model info
   data_path <- paste0(
-    run_info$path,
+    if (is.null(run_info$storage_object) && is.null(run_info$path)) tempdir() else run_info$path,
     "/prep_models/", hash_data(run_info$project_name), "-",
     hash_data(run_info$run_name)
   )
@@ -611,6 +643,7 @@ download_file <- function(storage_object,
 #' @param schema column schema for arrow::open_dataset()
 #' @param allow_missing whether a missing optional artifact returns an empty
 #'   result instead of an error
+#' @param strict whether CSV fallback metadata and read failures are errors
 #'
 #' @return file read into memory
 #' @noRd
@@ -619,7 +652,8 @@ read_file <- function(run_info,
                       file_list = NULL,
                       return_type = "df",
                       schema = NULL,
-                      allow_missing = FALSE) {
+                      allow_missing = FALSE,
+                      strict = FALSE) {
   storage_object <- run_info$storage_object
 
   if (!is.null(path)) {
@@ -688,6 +722,11 @@ read_file <- function(run_info,
                 {
                   # Check if file is empty or has no data rows
                   file_info <- file.info(path)
+                  if (isTRUE(strict) && is.na(file_info$size)) {
+                    stop("Cannot read Finn CSV artifact: ", path, ". ", conditionMessage(e),
+                      call. = FALSE
+                    )
+                  }
                   if (is.na(file_info$size) || file_info$size == 0) {
                     return(tibble::tibble())
                   }
@@ -699,6 +738,7 @@ read_file <- function(run_info,
                   df
                 },
                 error = function(inner_e) {
+                  if (isTRUE(strict)) stop(inner_e)
                   warning(paste0("Skipping empty or unreadable file: ", path))
                   return(tibble::tibble())
                 }
@@ -746,15 +786,93 @@ read_file <- function(run_info,
   }
 }
 
+local_artifact_inventory <- function(run_info, folder, suffix = "*",
+                                      extension = run_info$data_output) {
+  pattern <- local_artifact_path(run_info, folder, suffix, extension = extension)
+  list_files(NULL, fs::path(fs::path_dir(pattern), paste0("*", fs::path_file(pattern))))
+}
+
+preparation_recipe_files <- function(run_info) {
+  inventory <- run_info$recipe_inventory
+  if (!is.null(inventory) && exists("files", envir = inventory, inherits = FALSE)) {
+    return(inventory$files)
+  }
+  files <- local_artifact_inventory(run_info, "prep_data", "-*R*")
+  if (!is.null(inventory)) inventory$files <- files
+  files
+}
+
+local_model_artifact_files <- function(run_info, folder,
+                                        extension = run_info$data_output) {
+  local_artifact_files(local_artifact_path(run_info, folder,
+    suffix = paste0("-", c("average_models", "ensemble_models", "global_models", "single_models")),
+    combo = run_info$combo, extension = extension
+  ), allow_missing = TRUE)
+}
+
+local_artifact_path <- function(run_info, folder, suffix = "", combo = NULL,
+                                 extension = run_info$data_output) {
+  if (!is.null(combo) && length(combo) == 0L) return(character())
+  root <- if (is.null(run_info$path)) tempdir() else run_info$path
+  combo_suffix <- if (is.null(combo)) "" else paste0("-", combo)
+  fs::path(root, folder, paste0(
+    hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+    combo_suffix, suffix, ".", extension
+  ))
+}
+
+local_artifact_files <- function(files, allow_missing = FALSE) {
+  files <- as.character(files)
+  info <- fs::file_info(files, fail = TRUE, follow = TRUE)
+  present <- !is.na(info$type)
+  invalid <- present & info$type != "file"
+  if (any(invalid)) {
+    stop("Finn artifact is not a regular file: ", paste(files[invalid], collapse = ", "),
+      call. = FALSE
+    )
+  }
+  if (!allow_missing && any(!present)) {
+    stop("Missing required Finn artifact: ", paste(files[!present], collapse = ", "),
+      call. = FALSE
+    )
+  }
+  files <- files[present]
+  unreadable <- file.access(files, mode = 4) != 0
+  if (any(unreadable)) {
+    stop("Cannot read Finn artifact: ", paste(files[unreadable], collapse = ", "),
+      call. = FALSE
+    )
+  }
+  files
+}
+
+read_local_artifacts <- function(run_info, file_list, return_type = "df",
+                                  allow_missing = FALSE) {
+  files <- local_artifact_files(file_list, allow_missing = allow_missing)
+  read_file(run_info, file_list = files, return_type = return_type,
+    allow_missing = allow_missing, strict = TRUE
+  )
+}
+
 #' Load recipe data into memory
 #'
 #' @param run_info run info using the [set_run_info()] function
 #' @param combo how much recipe data to ready into memory
+#' @param recipes resolved recipes when already available to the caller
+#' @param file_list previously discovered recipe paths
 #'
 #' @return recipe data as data frame
 #' @noRd
 get_recipe_data <- function(run_info,
-                            combo = "single") {
+                            combo = "single",
+                            recipes = NULL,
+                            file_list = NULL) {
+  local_reads <- is.null(run_info$storage_object) &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
+  if (local_reads && identical(combo, "single") && length(run_info$combo) == 1L) {
+    combo <- run_info$combo
+  }
+
   get_combo <- function(df,
                         combo) {
     if (combo == "single") {
@@ -770,24 +888,65 @@ get_recipe_data <- function(run_info,
 
   recipe_tbl <- tibble::tibble()
 
-  file_name_tbl <- list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*R*.", run_info$data_output
+  if (local_reads && !combo %in% c("single", "All-Data")) {
+    if (is.null(recipes)) {
+      log_df <- read_local_artifacts(run_info,
+        local_artifact_path(run_info, "logs", extension = "csv")
+      )
+      configured <- log_df$recipes_to_run
+      configured <- if (length(configured) == 0L || is.na(configured[[1]])) {
+        NULL
+      } else {
+        strsplit(configured[[1]], "---", fixed = TRUE)[[1]]
+      }
+      recipes <- get_recipes_to_run(configured, log_df$date_type)
+    }
+    recipes <- sort(unique(recipes))
+    file_name_tbl <- tibble::tibble(
+      Path = local_artifact_path(run_info, "prep_data", paste0("-", recipes), combo),
+      Recipe = recipes
     )
-  ) %>%
-    tibble::tibble(
-      Path = .,
-      File = fs::path_file(.)
-    ) %>%
-    tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-    get_combo(combo) %>%
-    dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+  } else {
+    if (is.null(file_list) || !local_reads) {
+      file_list <- list_files(
+        run_info$storage_object,
+        if (local_reads) {
+          fs::path(
+            if (is.null(run_info$path)) tempdir() else run_info$path,
+            "prep_data", paste0(
+              "*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+              "-*R*.", run_info$data_output
+            )
+          )
+        } else {
+          paste0(
+            run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+            hash_data(run_info$run_name), "*R*.", run_info$data_output
+          )
+        }
+      )
+    }
+    file_name_tbl <- tibble::tibble(Path = file_list, File = fs::path_file(file_list)) %>%
+      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
+      get_combo(combo) %>%
+      dplyr::mutate(Recipe = substr(Recipe, 1, 2))
+  }
+
+  if (local_reads && !is.null(recipes)) {
+    file_name_tbl <- dplyr::filter(file_name_tbl, Recipe %in% recipes)
+  }
 
   for (recipe in unique(file_name_tbl$Recipe)) {
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe)
+
+    if (local_reads) {
+      temp_file_tbl <- read_local_artifacts(run_info, temp_path$Path)
+      recipe_tbl <- dplyr::bind_rows(recipe_tbl,
+        tibble::tibble(Recipe = recipe, Data = list(temp_file_tbl))
+      )
+      next
+    }
 
     if (nrow(temp_path) > 1) {
       temp_path <- paste0(
