@@ -349,7 +349,10 @@ forecast_path_risk <- function(forecasts, reference) {
     path <- if (logarithmic) log(forecasts) - log(reference$normalization) else forecasts / reference$normalization
     widths <- if (is.null(trend)) 6 * reference$width * sqrt(seq_along(path)) else trend$widths
     expected <- if (is.null(trend)) reference$reference else trend$projection
-    components["level"] <- max(0, max(abs(path - expected) / widths) - 1)
+    level_deviation <- abs(path - expected)
+    level_ratios <- level_deviation / widths
+    level_ratios[widths == 0 & level_deviation == 0] <- 0
+    components["level"] <- max(0, max(level_ratios) - 1)
     if (components["level"] > 0) reasons <- c(reasons, "level_deviation")
     values <- if (logarithmic) trend$values else reference$values
     working_scale <- if (logarithmic) trend$scale else reference$scale
@@ -375,7 +378,9 @@ forecast_path_risk <- function(forecasts, reference) {
         }, numeric(1))
       }
       slope_scale <- max(finite_mad(slopes), 0.05 * working_scale / span)
-      components["trend"] <- max(0, abs(stats::median(diff(adjusted)) - stats::median(slopes)) / (6 * slope_scale) - 1)
+      trend_deviation <- abs(stats::median(diff(adjusted)) - stats::median(slopes))
+      trend_ratio <- if (slope_scale == 0 && trend_deviation == 0) 0 else trend_deviation / (6 * slope_scale)
+      components["trend"] <- max(0, trend_ratio - 1)
       if (components["trend"] > 0) reasons <- c(reasons, "trend_deviation")
     }
     if (strong_seasonality && length(path) >= period && period >= 3) {

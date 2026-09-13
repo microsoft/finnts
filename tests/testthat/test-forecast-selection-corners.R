@@ -229,6 +229,73 @@ test_that("zero-history forecasts use soft level checks instead of magnitude rat
   expect_equal(nonzero$WMAPE, 1)
 })
 
+test_that("zero-width level matches do not erase nonzero deviations", {
+  local_corner_test_safety()
+  for (unit_scale in c(1e-80, 1, 1e80)) {
+    for (direction in c(-1, 1)) {
+      history <- data.frame(Date = seq(as.Date("2000-01-01"), by = "week", length.out = 260),
+        Target = direction * unit_scale * c(rep(0, 257), 500, 100, 100))
+      context <- list(date_type = "week", hist_end_date = max(history$Date))
+      reference <- forecast_reference(history, 3, context)
+      expect_identical(reference$scale, 0)
+      expect_identical(reference$width, 0)
+      expect_gt(reference$normalization, 0)
+      expect_silent(matched <- forecast_path_risk(rep(0, 3), reference))
+      expect_identical(matched$components[["level"]], 0)
+      expect_identical(matched$risk, 0)
+
+      reference$reference <- direction * c(0, 0.2, 1)
+      forecast <- direction * unit_scale * c(0, 105, 500)
+      expect_silent(deviating <- forecast_path_risk(forecast, reference))
+      expect_identical(deviating$components[["level"]], .Machine$double.xmax)
+      expect_identical(deviating$risk, .Machine$double.xmax)
+      expect_identical(deviating$reasons, "level_deviation")
+    }
+  }
+})
+
+test_that("zero-scale trend comparisons have explicit matching and deviating results", {
+  local_corner_test_safety()
+  history <- data.frame(Date = seq(as.Date("2000-01-01"), by = "week", length.out = 260),
+    Target = c(rep(0, 257), 500, 100, 100))
+  reference <- forecast_reference(history, 52, list(date_type = "week", hist_end_date = max(history$Date)))
+  for (level in c(105, 100)) {
+    expect_silent(result <- forecast_path_risk(rep(level, 52), reference))
+    expect_identical(result$components[["level"]], .Machine$double.xmax)
+    expect_identical(result$components[["trend"]], 0)
+    expect_identical(result$reasons, "level_deviation")
+    expect_true(is.finite(result$risk))
+  }
+  expect_silent(sloped <- forecast_path_risk(105 + seq_len(52), reference))
+  expect_identical(sloped$components[["trend"]], .Machine$double.xmax)
+  expect_true(all(c("level_deviation", "trend_deviation") %in% sloped$reasons))
+  expect_true(all(is.finite(sloped$components[!is.na(sloped$components)])))
+})
+
+test_that("mixed forecast widths preserve exact matches and ordinary ratios", {
+  local_corner_test_safety()
+  fixture <- make_selection_case(actuals = rep(100, 36), futures = list(only = rep(100, 3)),
+    errors = c(only = 0.03))
+  reference <- forecast_reference(fixture$history, 3, fixture$context)
+  reference$trend <- list(mode = "additive", projection = rep(1, 3), widths = c(0, 0.1, 0))
+  expect_silent(result <- forecast_path_risk(c(100, 120, 100), reference))
+  expect_equal(result$components[["level"]], 1, tolerance = 1e-12)
+  expect_identical(result$reasons, "level_deviation")
+  expect_silent(deviating <- forecast_path_risk(c(100, 120, 105), reference))
+  expect_identical(deviating$components[["level"]], .Machine$double.xmax)
+
+  reference$trend <- NULL
+  for (width in c(0.05, 1e-100, .Machine$double.xmin)) {
+    reference$width <- width
+    forecast <- c(100, 105, 95)
+    expected <- min(.Machine$double.xmax,
+      max(0, max(abs(forecast / reference$normalization - reference$reference) /
+        (6 * width * sqrt(seq_along(forecast)))) - 1))
+    expect_silent(result <- forecast_path_risk(forecast, reference))
+    expect_equal(result$components[["level"]], expected, tolerance = 1e-12)
+  }
+})
+
 test_that("accuracy ceilings retain their numerical tolerance", {
   local_corner_test_safety()
   for (best in c(0, 0.08, 0.2)) {
