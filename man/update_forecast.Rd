@@ -74,6 +74,10 @@ before any reconciliation, including after retuning. Global updates recover
 each series' saved winning single model or average from existing source
 forecasts, refit the union of required components, and preserve each selected
 subset. Requested but unselected models are not added back to the average.
+All globally selected series must reference one winning global iteration.
+Mixed global iteration metadata is rejected before refitting rather than
+split into multiple global updates. Different model subsets within that
+single iteration and separately selected local winners remain supported.
 Missing or ambiguous saved winners or selected fits require restoring the
 original artifacts; the requested model list is not used as a fallback.
 These are checks on newly generated predictions, not repeated assessments of

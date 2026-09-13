@@ -26,6 +26,10 @@
 #'   each series' saved winning single model or average from existing source
 #'   forecasts, refit the union of required components, and preserve each selected
 #'   subset. Requested but unselected models are not added back to the average.
+#'   All globally selected series must reference one winning global iteration.
+#'   Mixed global iteration metadata is rejected before refitting rather than
+#'   split into multiple global updates. Different model subsets within that
+#'   single iteration and separately selected local winners remain supported.
 #'   Missing or ambiguous saved winners or selected fits require restoring the
 #'   original artifacts; the requested model list is not used as a fallback.
 #'   These are checks on newly generated predictions, not repeated assessments of
@@ -775,14 +779,7 @@ update_global_models <- function(agent_info,
     return(list(status = "No global models to update, skipping...", failed_combos = character(0), quality_rejected_combos = character(0)))
   }
 
-  if (length(unique(previous_best_run_global_tbl$best_run_name)) > 1) {
-    results <- lapply(split(previous_best_run_global_tbl, previous_best_run_global_tbl$best_run_name), function(previous) {
-      update_global_models(agent_info, previous, parallel_processing, inner_parallel, num_cores, seed)
-    })
-    return(list(status = "Finished Global Model Updates",
-      failed_combos = unique(unlist(lapply(results, `[[`, "failed_combos"))),
-      quality_rejected_combos = unique(unlist(lapply(results, `[[`, "quality_rejected_combos")))))
-  }
+  validate_global_iteration(previous_best_run_global_tbl)
 
   # start forecast update process
   global_error <- tryCatch(
@@ -2069,7 +2066,7 @@ update_forecast_combo <- function(agent_info,
   final_log_results <- log_best_run(
     agent_info = agent_info,
     run_info = new_run_info,
-    weighted_mape = log_wmape,
+    weighted_mape = calculate_fcst_metrics(new_run_info, final_fcst_tbl),
     check_best_run = FALSE,
     combo = if (combo == "All-Data") {
       NULL

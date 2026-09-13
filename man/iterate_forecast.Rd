@@ -44,11 +44,22 @@ This function orchestrates the forecast iteration process for a Finn agent, incl
 }
 \details{
 Future quality is evaluated when \code{\link[=final_models]{final_models()}} selects the winner
-within each iteration. Completed iteration winners are compared by weighted
-MAPE only, retaining the earlier winner on equal accuracy. Normal accuracy-goal
-stopping requires a complete eligible result and finite WMAPE, not another
+within each iteration. Iteration ranking starts from the earliest minimum
+WMAPE and may prefer a later eligible iteration within 10 percent relative
+WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
+standard deviation summarize individual-model backtests, excluding simple
+averages. This retains evidence that a setting improves other models even if
+the current best model does not improve. Global summary fields retain their
+original meaning: run WMAPE for mean and median, and zero standard deviation.
+Agent comparisons and stopping use WMAPE rounded to four decimal places.
+Search-context selection does not overwrite a better saved local forecast.
+Global promotion applies to one complete iteration, and all saved global
+winners must reference that same iteration. Individual models and averages
+may differ within it. Mixed global iteration metadata is rejected before
+publication or update; interrupted writes are not treated as successful.
+Normal accuracy-goal stopping requires a complete eligible result and finite WMAPE, not another
 soft-quality check. A winner with soft concerns may therefore beat an earlier
-winner on accuracy. Recorded run and best-run metrics are reused without
+winner on accuracy. Loaded backtests, run history, and best-run metrics are reused without
 re-evaluating past future paths. Rejected evaluations still consume iteration
 budget without repeating the same fit as an infrastructure retry. If no
 eligible result exists, the workflow fails or an enabled local phase handles

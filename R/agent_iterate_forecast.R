@@ -104,11 +104,22 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
 #'
 #' @details Future quality is evaluated when [final_models()] selects the winner
-#'   within each iteration. Completed iteration winners are compared by weighted
-#'   MAPE only, retaining the earlier winner on equal accuracy. Normal accuracy-goal
-#'   stopping requires a complete eligible result and finite WMAPE, not another
+#'   within each iteration. Iteration ranking starts from the earliest minimum
+#'   WMAPE and may prefer a later eligible iteration within 10 percent relative
+#'   WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
+#'   standard deviation summarize individual-model backtests, excluding simple
+#'   averages. This retains evidence that a setting improves other models even if
+#'   the current best model does not improve. Global summary fields retain their
+#'   original meaning: run WMAPE for mean and median, and zero standard deviation.
+#'   Agent comparisons and stopping use WMAPE rounded to four decimal places.
+#'   Search-context selection does not overwrite a better saved local forecast.
+#'   Global promotion applies to one complete iteration, and all saved global
+#'   winners must reference that same iteration. Individual models and averages
+#'   may differ within it. Mixed global iteration metadata is rejected before
+#'   publication or update; interrupted writes are not treated as successful.
+#'   Normal accuracy-goal stopping requires a complete eligible result and finite WMAPE, not another
 #'   soft-quality check. A winner with soft concerns may therefore beat an earlier
-#'   winner on accuracy. Recorded run and best-run metrics are reused without
+#'   winner on accuracy. Loaded backtests, run history, and best-run metrics are reused without
 #'   re-evaluating past future paths. Rejected evaluations still consume iteration
 #'   budget without repeating the same fit as an infrastructure retry. If no
 #'   eligible result exists, the workflow fails or an enabled local phase handles
@@ -898,6 +909,7 @@ load_best_agent_run <- function(agent_info) {
     )
   }
 
+  validate_global_iteration(best_run_tbl)
   return(best_run_tbl)
 }
 
@@ -1092,7 +1104,8 @@ fcst_agent_workflow <- function(agent_info,
         agent_info = agent_info,
         run_info = "{results$submit_fcst_run}",
         weighted_mape = "{results$calculate_fcst_metrics}",
-        combo = combo
+        combo = combo,
+        run_history = "{ctx$reason_history$previous_run_results}"
       ),
       branch = function(ctx) {
         # test if max run iterations have been reached
@@ -1108,6 +1121,10 @@ fcst_agent_workflow <- function(agent_info,
 
         selection_ok <- attr(weighted_mape, "selection_ok")
         if (is.null(selection_ok)) selection_ok <- TRUE
+        logged <- ctx$results$log_best_run
+        if (is.list(logged) && isTRUE(logged$status %in% c("partial", "rejected"))) {
+          selection_ok <- FALSE
+        }
         if (is.finite(weighted_mape) && weighted_mape < weighted_mape_goal && isTRUE(selection_ok)) {
           cli::cli_alert_success(
             "Weighted MAPE goal of {round(weighted_mape_goal * 100, 2)}% achieved! Latest weighted MAPE is {round(weighted_mape * 100, 2)}%. Stopping iterations."
@@ -2432,8 +2449,9 @@ calculate_fcst_metrics <- function(run_info,
                                    fcst_tbl) {
   if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$selections)) {
     summary <- agent_selection_summary(run_info$forecast_selection)
-    value <- summary$weighted_mape
+    value <- round(summary$weighted_mape, 4)
     attr(value, "selection_ok") <- summary$acceptable
+    attr(value, "model_accuracy") <- agent_model_accuracy(fcst_tbl)
     return(value)
   }
   # get weighted mape from run logging
@@ -2458,6 +2476,7 @@ calculate_fcst_metrics <- function(run_info,
 #' @param weighted_mape A numeric value representing the weighted MAPE of the forecast.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
 #' @param check_best_run Logical indicating if the best run check should be performed. Default is TRUE
+#' @param run_history Existing in-memory iteration history, when available.
 #'
 #' @return NULL
 #' @noRd
@@ -2465,9 +2484,10 @@ log_best_run <- function(agent_info,
                          run_info,
                          weighted_mape,
                          combo = NULL,
-                         check_best_run = TRUE) {
+                         check_best_run = TRUE,
+                         run_history = NULL) {
   if (!is.null(run_info$forecast_selection)) {
-    return(log_selected_agent_run(agent_info, run_info, combo, check_best_run))
+    return(log_selected_agent_run(agent_info, run_info, combo, check_best_run, weighted_mape, run_history))
   }
   # metadata
   project_info <- agent_info$project_info
@@ -2727,14 +2747,68 @@ log_best_run <- function(agent_info,
   return("Run logged successfully.")
 }
 
-log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_best_run = TRUE) {
+log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_best_run = TRUE,
+                                   weighted_mape = NULL, run_history = NULL) {
   current_log <- read_selection_file(run_info, "logs")
   current_result <- list(selections = run_info$forecast_selection$selections,
     run_info = run_info, run_log = current_log)
+  global <- isTRUE(as.logical(current_log$run_global_models))
+  if (global) {
+    expected <- if (check_best_run) {
+      agent_info$selection_combos %||% run_info$selection_combos
+    } else run_info$selection_combos
+    missing <- setdiff(expected, names(current_result$selections))
+    current_result$selections[missing] <- rep(list(NULL), length(missing))
+  }
   summary <- agent_selection_summary(current_result)
-  current_log <- record_agent_selection_attempt(current_log, current_result, agent_info)
+  current_log <- record_agent_selection_attempt(current_log, current_result, agent_info,
+    attr(weighted_mape, "model_accuracy", exact = TRUE))
+  promote_run <- TRUE
+  if (check_best_run && is.data.frame(run_history)) {
+    history <- attr(run_history, "run_logs", exact = TRUE) %||% run_history
+    if ("run_name" %in% names(history)) {
+      history <- history[is.na(history$run_name) | history$run_name != run_info$run_name, , drop = FALSE]
+    }
+    comparison <- dplyr::bind_rows(lapply(list(history, current_log), function(log) {
+      columns <- intersect(c("weighted_mape", "model_avg_wmape", "agent_version", "selection_status"), names(log))
+      rows <- log[, columns, drop = FALSE]
+      for (column in intersect(c("weighted_mape", "model_avg_wmape", "agent_version"), columns)) {
+        rows[[column]] <- as.numeric(rows[[column]])
+      }
+      if ("selection_status" %in% columns) rows$selection_status <- as.character(rows$selection_status)
+      rows
+    }))
+    promote_run <- identical(best_agent_iteration(comparison, agent_info$agent_version), as.integer(nrow(comparison)))
+  }
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
+  previous_by_series <- NULL
+  promote_global <- isTRUE(summary$acceptable) && promote_run
+  if (global && check_best_run) {
+    previous_by_series <- stats::setNames(lapply(names(current_result$selections), function(series) {
+      read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
+    }), names(current_result$selections))
+    previous_global <- dplyr::bind_rows(previous_by_series)
+    if (nrow(previous_global)) {
+      previous_global <- previous_global[
+        !is.na(previous_global$model_type) & previous_global$model_type == "global" &
+          !is.na(previous_global$agent_version) &
+          as.numeric(previous_global$agent_version) == as.numeric(agent_info$agent_version), , drop = FALSE]
+    }
+    if (nrow(previous_global)) {
+      validate_global_iteration(previous_global)
+      previous_accuracy <- unique(as.numeric(previous_global$model_avg_wmape))
+      if (length(previous_accuracy) != 1L || !is.finite(previous_accuracy)) {
+        stop("Saved global iteration metadata is inconsistent. Restore one complete global best run before continuing.",
+          call. = FALSE)
+      }
+      if (!is.data.frame(run_history)) {
+        comparison <- data.frame(weighted_mape = c(previous_accuracy, current_log$weighted_mape),
+          model_avg_wmape = c(previous_accuracy, current_log$weighted_mape))
+        promote_global <- promote_global && identical(best_agent_iteration(comparison), 2L)
+      }
+    }
+  }
   written <- character()
   retained <- character()
   for (series in names(current_result$selections)) {
@@ -2742,12 +2816,23 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     if (is.null(selected) || is.na(selected$selected_id)) next
     score <- selected$rankings[selected$rankings$Model_ID == selected$selected_id, , drop = FALSE]
     if (nrow(score) != 1 || !isTRUE(score$Eligible) || !is.finite(score$WMAPE)) next
+    score$WMAPE <- round(score$WMAPE, 4)
+    if (global && !promote_global) {
+      if (!is.null(previous_by_series) && nrow(previous_by_series[[series]]) > 0L) retained <- c(retained, series)
+      next
+    }
     if (check_best_run) {
-      previous <- read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
+      previous <- if (global) previous_by_series[[series]] else
+        read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
       if (nrow(previous) > 1) stop("The saved best-run record is ambiguous for series: ", series, call. = FALSE)
+      if (!promote_run) {
+        if (nrow(previous)) retained <- c(retained, series)
+        next
+      }
       same_version <- nrow(previous) == 1 &&
         isTRUE(as.numeric(previous$agent_version) == as.numeric(agent_info$agent_version))
-      if (same_version && isTRUE(is.finite(as.numeric(previous$weighted_mape))) &&
+      protect_individual <- !global || !identical(as.character(previous$model_type), "global")
+      if (same_version && protect_individual && isTRUE(is.finite(as.numeric(previous$weighted_mape))) &&
           isTRUE(as.numeric(previous$weighted_mape) <= score$WMAPE)) {
         retained <- c(retained, series)
         next
@@ -2768,7 +2853,12 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     written <- c(written, series)
   }
   for (series in written) {
-    read_selection_file(project_info, "logs", "-agent_best_run", series)
+    saved <- read_selection_file(project_info, "logs", "-agent_best_run", series)
+    if (nrow(saved) != 1L || !identical(as.character(saved$best_run_name), run_info$run_name) ||
+        !identical(as.character(saved$combo), series) ||
+        !isTRUE(as.numeric(saved$agent_version) == as.numeric(agent_info$agent_version))) {
+      stop("Saved best-run record does not match the selected iteration for series: ", series, call. = FALSE)
+    }
   }
   write_data(current_log, combo = NULL, run_info = run_info, output_type = "log", folder = "logs", suffix = NULL)
   list(status = summary$status, selected_combos = c(retained, written))
@@ -3028,14 +3118,9 @@ load_run_results <- function(agent_info,
 
     if (nrow(previous_runs_formatted) == 0) return("No Previous Runs")
     current_version <- agent_info$agent_version %||% max(previous_runs_formatted$agent_version)
-    eligible <- which(previous_runs_formatted$agent_version == current_version &
-      is.finite(previous_runs_formatted$weighted_mape) &
-      !previous_runs_formatted$selection_status %in% c("partial", "rejected"))
     previous_runs_formatted$best_run <- "no"
-    if (length(eligible)) {
-      winner <- eligible[which.min(previous_runs_formatted$weighted_mape[eligible])]
-      previous_runs_formatted$best_run[winner] <- "yes"
-    }
+    winner <- best_agent_iteration(previous_runs_formatted, current_version)
+    if (!is.na(winner)) previous_runs_formatted$best_run[winner] <- "yes"
     run_output <- previous_runs_formatted %>%
       dplyr::select(tidyselect::any_of(c(column_list, "selection_status", "model_avg_wmape", "model_median_wmape", "model_std_wmape"))) %>%
       dplyr::relocate(agent_version, run_number, best_run, weighted_mape)

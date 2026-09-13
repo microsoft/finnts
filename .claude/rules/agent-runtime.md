@@ -1,12 +1,18 @@
 ---
 paths:
   - "R/agent_*.R"
+  - "R/final_models.R"
+  - "R/forecast_selection.R"
   - "R/run_info.R"
   - "R/input_checks.R"
   - "R/prep_data.R"
   - "R/prep_models.R"
   - "R/read_write_data.R"
+  - "tests/testthat/helper-forecast-selection.R"
   - "tests/testthat/test-agent*.R"
+  - "tests/testthat/test-final-models-restart.R"
+  - "tests/testthat/test-forecast-selection*.R"
+  - "tests/testthat/test-reconciled-forecast-selection.R"
   - "tests/testthat/test-finalize_run.R"
   - "tests/testthat/test-combo-normalization.R"
   - "tests/testthat/test-prep_models.R"
@@ -27,3 +33,13 @@ paths:
 - Propagate every best-run blob-listing provider error, including post-write verification errors. Never reinterpret listing failures as no files, and do not add per-retry or per-worker wildcard listings to large ADLS folders.
 - Use `normalize_combo_values()` before validation, `Combo` construction, hierarchy processing, or artifact writes in both `set_agent_info()` and `prep_data()`. Trim character boundaries only; preserve internal spaces, missing values, and numeric identifiers. Fail before writing when normalization creates a blank value or duplicate combo/date. Do not trim generic `hash_data()` inputs.
 - Never send `Inf`, `-Inf`, or `NaN` in EDA summaries to an LLM. Represent absent outlier dates explicitly and omit unavailable regressor-lag rankings while preserving raw EDA artifacts.
+
+## Iteration Selection Policy
+
+- Average model accuracy is a critical search-direction signal, not redundant logging. The best individual model can stay unchanged while an input or setting change improves other models that may become the winners after further iterations.
+- For example, ARIMA may remain the most accurate model after adding an external regressor (`xreg`), while the regressor improves MAPE across the multivariate models. Preserve that evidence when choosing the iteration context for continued optimization; do not discard the change solely because ARIMA did not improve. This is a useful signal, not a guarantee of future accuracy.
+- Preserve the original near-best iteration-ranking rule: start from the earliest minimum-WMAPE iteration, then consider later eligible iterations within 10% relative of that WMAPE and prefer a strictly lower `model_avg_wmape`. Do not replace this with strict minimum-WMAPE-only ranking. Keep the existing current-version eligibility and distinct best-forecast persistence safeguards.
+- `model_avg_wmape` is the mean of the individual model candidates' WMAPEs, not the WMAPE of an averaged forecast. Preserve the existing local/global meanings of `model_avg_wmape`, `model_median_wmape`, and `model_std_wmape`. Do not replace genuine model-pool statistics with copies of the winning model's WMAPE or a fabricated zero spread.
+- Future-plausibility checks select models within each iteration. Avoiding repeated future-quality assessments across iterations must not remove these existing backtest-accuracy signals. Reuse available predictions and recorded metrics without introducing repeated artifact discovery or rereading past forecasts.
+- All globally selected series must reference one winning global iteration so forecast updates reuse one global run. Promote global winners as one run-level decision, not per-series improvements across iterations. Preserve superior local winners and allow different model IDs or component subsets within that one global iteration. Reject mixed saved global iteration metadata before publication or update, including after interrupted writes; never silently split it into several global updates.
+- Changes to this heuristic, its tolerance, metric meanings, rounding, or run-level versus per-series publishing rules require separate explicit user approval. Tests and documentation must protect the intended policy, not silently redefine it to match a refactor.

@@ -1000,13 +1000,84 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
   result
 }
 
-record_agent_selection_attempt <- function(run_log, result, agent_info) {
+best_agent_iteration <- function(run_logs, agent_version = NULL) {
+  if (!is.data.frame(run_logs) || !nrow(run_logs) || !"weighted_mape" %in% names(run_logs)) {
+    return(NA_integer_)
+  }
+  accuracy <- as.numeric(run_logs$weighted_mape)
+  eligible <- is.finite(accuracy)
+  if (!is.null(agent_version)) {
+    eligible <- eligible & !is.na(run_logs$agent_version) &
+      as.numeric(run_logs$agent_version) == as.numeric(agent_version)
+  }
+  if ("selection_status" %in% names(run_logs)) {
+    eligible <- eligible & !run_logs$selection_status %in% c("partial", "rejected")
+  }
+  eligible <- which(eligible)
+  if (!length(eligible)) return(NA_integer_)
+  winner <- eligible[which.min(accuracy[eligible])]
+  average <- as.numeric(run_logs[["model_avg_wmape"]])
+  if (length(average) == nrow(run_logs) && is.finite(average[winner])) {
+    later <- eligible[eligible > winner &
+      abs(accuracy[eligible] - accuracy[winner]) <= accuracy[winner] * 0.10 &
+      is.finite(average[eligible]) & average[eligible] < average[winner]]
+    if (length(later)) winner <- later[which.min(average[later])]
+  }
+  as.integer(winner)
+}
+
+validate_global_iteration <- function(best_runs) {
+  if (!is.data.frame(best_runs) || !nrow(best_runs) || !"model_type" %in% names(best_runs)) {
+    return(invisible(best_runs))
+  }
+  global <- best_runs[!is.na(best_runs$model_type) & best_runs$model_type == "global", , drop = FALSE]
+  if (!nrow(global)) return(invisible(best_runs))
+  runs <- unique(as.character(global[["best_run_name"]]))
+  if (length(runs) != 1L || anyNA(runs) || !nzchar(runs)) {
+    stop("All global winners must reference a single global iteration. Restore one complete global best run before continuing.",
+      call. = FALSE)
+  }
+  invisible(best_runs)
+}
+
+agent_model_accuracy <- function(forecasts) {
+  unavailable <- list(model_avg_wmape = NA_real_, model_median_wmape = NA_real_,
+    model_std_wmape = NA_real_)
+  required <- c("Model_ID", "Recipe_ID", "Run_Type", "Target", "Forecast")
+  if (!is.data.frame(forecasts) || !all(required %in% names(forecasts))) return(unavailable)
+  rows <- forecasts[!is.na(forecasts$Run_Type) & forecasts$Run_Type == "Back_Test" &
+    !is.na(forecasts$Recipe_ID) & forecasts$Recipe_ID != "simple_average", , drop = FALSE]
+  if (!nrow(rows) || anyNA(rows$Model_ID) || any(!nzchar(as.character(rows$Model_ID)))) return(unavailable)
+  if ("Model_Type" %in% names(rows) && all(!is.na(rows$Model_Type) & rows$Model_Type == "global")) {
+    return(unavailable)
+  }
+  accuracy <- vapply(split(seq_len(nrow(rows)), as.character(rows$Model_ID)), function(indices) {
+    target <- ifelse(rows$Target[indices] == 0, 0.1, rows$Target[indices])
+    observed <- is.finite(target)
+    if (!any(observed) || any(!is.finite(rows$Forecast[indices]))) return(NA_real_)
+    target <- target[observed]
+    errors <- round(abs((rows$Forecast[indices][observed] - target) / abs(target)), 4)
+    weights <- abs(target) / max(abs(target))
+    sum(errors * (weights / sum(weights)))
+  }, numeric(1))
+  if (any(!is.finite(accuracy))) return(unavailable)
+  list(model_avg_wmape = mean(accuracy), model_median_wmape = stats::median(accuracy),
+    model_std_wmape = stats::sd(accuracy))
+}
+
+record_agent_selection_attempt <- function(run_log, result, agent_info, model_accuracy = NULL) {
   summary <- agent_selection_summary(result)
-  run_log$weighted_mape <- if (is.finite(summary$weighted_mape)) summary$weighted_mape else NA_real_
+  run_log$weighted_mape <- if (is.finite(summary$weighted_mape)) round(summary$weighted_mape, 4) else NA_real_
   run_log$selection_status <- summary$status
-  run_log$model_avg_wmape <- run_log$weighted_mape
-  run_log$model_median_wmape <- run_log$weighted_mape
-  run_log$model_std_wmape <- 0
+  if (isTRUE(as.logical(run_log[["run_global_models"]]))) {
+    run_log$model_avg_wmape <- run_log$weighted_mape
+    run_log$model_median_wmape <- run_log$weighted_mape
+    run_log$model_std_wmape <- 0
+  } else {
+    run_log$model_avg_wmape <- model_accuracy$model_avg_wmape %||% NA_real_
+    run_log$model_median_wmape <- model_accuracy$model_median_wmape %||% NA_real_
+    run_log$model_std_wmape <- model_accuracy$model_std_wmape %||% NA_real_
+  }
   run_log$agent_version <- as.numeric(agent_info$agent_version)
   run_log$agent_forecast_approach <- agent_info$forecast_approach
   run_log

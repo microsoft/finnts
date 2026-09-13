@@ -81,6 +81,7 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
   state <- new.env(parent = emptyenv())
   state$fits <- list()
   state$logged <- NULL
+  state$metric <- NULL
   state$transform <- function(fitted, retune) fitted
   original_reader <- read_file
   testthat::local_mocked_bindings(
@@ -111,7 +112,11 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
     },
     read_series_history = function(...) fixture$series,
     validate_run_outputs = function(...) TRUE,
-    log_best_run = function(run_info, ...) { state$logged <- run_info$forecast_selection; "logged" },
+    log_best_run = function(run_info, weighted_mape, ...) {
+      state$logged <- run_info$forecast_selection
+      state$metric <- weighted_mape
+      "logged"
+    },
     .package = "finnts", .env = .env
   )
   state
@@ -126,6 +131,9 @@ test_that("global updates refit selected components and retain each saved winner
   expect_setequal(state$fits[[1]], fixture$model_ids[1:2])
   expect_identical(state$logged$selections$first$selected_id, fixture$winners[["first"]])
   expect_identical(state$logged$selections$second$selected_id, fixture$winners[["second"]])
+  expect_true(attr(state$metric, "selection_ok"))
+  expect_named(attr(state$metric, "model_accuracy"),
+    c("model_avg_wmape", "model_median_wmape", "model_std_wmape"))
   rows <- read_candidate_forecasts(fixture$updated, c("first", "second"), fixture$log)
   chosen <- rows[rows$Best_Model == "Yes", ]
   expect_equal(chosen$Forecast, rep(100, nrow(chosen)))
