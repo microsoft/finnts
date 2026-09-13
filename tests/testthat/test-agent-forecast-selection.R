@@ -84,8 +84,9 @@ test_that("hierarchical update quality is checked before a single selected-only 
   expect_equal(sum(events == "reconcile"), 1)
 })
 
-test_that("hierarchical refit and retune preserve solver settings before final logging", {
-  fixture <- make_reconciled_selection_fixture()
+for (date_type in c("month", "week")) test_that(
+  paste("hierarchical refit and retune preserve solver settings before final logging", date_type), {
+  fixture <- make_reconciled_selection_fixture(date_type = date_type)
   base <- fixture$forecasts[fixture$forecasts$Model_ID == "safe", ]
   fitted <- make_fitted_selection_models(base)
   contexts <- stats::setNames(lapply(fixture$metadata$hts_combos, function(combo) {
@@ -95,13 +96,14 @@ test_that("hierarchical refit and retune preserve solver settings before final l
   }), fixture$metadata$hts_combos)
   previous <- data.frame(models_to_run = "xgboost---chronos2", external_regressors = NA_character_,
     lag_periods = NA_character_, rolling_window_periods = NA_character_, seasonal_period = 12,
-    forecast_approach = "standard_hierarchy", date_type = "month", negative_forecast = FALSE,
+    forecast_approach = "standard_hierarchy", date_type = date_type, negative_forecast = FALSE,
     box_cox = FALSE, stationary = FALSE, feature_selection = FALSE, global_model_recipes = "R1",
-    average_models = TRUE, max_model_average = 3L, weekly_to_daily = FALSE)
+    average_models = TRUE, max_model_average = 3L, weekly_to_daily = date_type == "week")
   events <- character()
   settings <- list()
   writes <- list()
   logged <- NULL
+  logged_metric <- NULL
   invalid_retune <- FALSE
   original_selector <- select_series_forecasts
   original_reconcile <- reconcile
@@ -148,7 +150,10 @@ test_that("hierarchical refit and retune preserve solver settings before final l
     },
     write_data = function(x, combo, suffix, ...) { writes[[length(writes) + 1L]] <<- list(data = x, combo = combo, suffix = suffix) },
     validate_run_outputs = function(...) TRUE,
-    log_best_run = function(run_info, ...) { logged <<- run_info$forecast_selection }
+    log_best_run = function(run_info, weighted_mape, ...) {
+      logged <<- run_info$forecast_selection
+      logged_metric <<- weighted_mape
+    }
   )
   agent <- list(project_info = fixture$project_info, run_id = "updated", forecast_horizon = 6)
   selected <- data.frame(combo = fixture$metadata$original_combos, model_type = "global",
@@ -161,6 +166,16 @@ test_that("hierarchical refit and retune preserve solver settings before final l
   expect_setequal(names(logged$selections), fixture$metadata$original_combos)
   expect_equal(sum(vapply(writes, function(write) identical(write$suffix, "-reconciled"), logical(1))), 1L)
   expect_equal(sum(vapply(writes, function(write) identical(write$suffix, "-global_models"), logical(1))), length(contexts))
+  completed <- writes[[which(vapply(writes, function(write) identical(write$suffix, "-reconciled"), logical(1)))]]$data
+  expect_identical("Date_Day" %in% names(completed), date_type == "week")
+  expect_false("Run_Type" %in% names(completed))
+  keys <- c("Combo", "Train_Test_ID", "Date", "Model_ID")
+  expect_equal(nrow(completed), nrow(unique(completed[, keys])) * if (date_type == "week") 7L else 1L)
+  completed$Run_Type <- fixture$splits$Run_Type[match(completed$Train_Test_ID, fixture$splits$Train_Test_ID)]
+  expected <- vapply(split(completed, completed$Combo), function(rows) round(calc_wmape(rows), 4), numeric(1))
+  expect_equal(attr(logged_metric, "forecast_accuracy")$by_series[names(expected)], expected)
+  native_log <- writes[[which(vapply(writes, function(write) is.null(write$suffix), logical(1)))]]$data
+  expect_equal(as.numeric(logged_metric), round(native_log$weighted_mape, 4))
 
   events <- character()
   settings <- list()

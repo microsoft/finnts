@@ -1941,6 +1941,8 @@ update_forecast_combo <- function(agent_info,
   } else {
     write_fcst_tbl <- final_fcst_tbl
   }
+  completed_fcst_tbl <- write_fcst_tbl %>%
+    convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
 
   if (combo == "All-Data" & prev_run_log_tbl$forecast_approach != "bottoms_up") {
     for (source_combo in unique(assessment$source_forecasts$Combo)) {
@@ -1955,8 +1957,7 @@ update_forecast_combo <- function(agent_info,
       }
     }
     write_data(
-      x = write_fcst_tbl %>%
-        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
+      x = completed_fcst_tbl,
       combo = "Best-Model",
       run_info = new_run_info,
       output_type = "data",
@@ -1965,10 +1966,9 @@ update_forecast_combo <- function(agent_info,
     )
   } else if (combo == "All-Data") {
     # bottoms_up global: write per-combo forecast files
-    for (combo_name in unique(write_fcst_tbl$Combo)) {
-      combo_fcst <- write_fcst_tbl %>%
-        dplyr::filter(Combo == combo_name) %>%
-        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
+    for (combo_name in unique(completed_fcst_tbl$Combo)) {
+      combo_fcst <- completed_fcst_tbl %>%
+        dplyr::filter(Combo == combo_name)
 
       write_data(
         x = combo_fcst %>%
@@ -1995,9 +1995,8 @@ update_forecast_combo <- function(agent_info,
   } else {
     # local models: write single models per combo
     write_data(
-      x = write_fcst_tbl %>%
-        dplyr::filter(Recipe_ID != "simple_average") %>%
-        convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
+      x = completed_fcst_tbl %>%
+        dplyr::filter(Recipe_ID != "simple_average"),
       combo = combo_id,
       run_info = new_run_info,
       output_type = "data",
@@ -2007,9 +2006,8 @@ update_forecast_combo <- function(agent_info,
 
     if ("simple_average" %in% unique(write_fcst_tbl$Recipe_ID)) {
       write_data(
-        x = write_fcst_tbl %>%
-          dplyr::filter(Recipe_ID == "simple_average") %>%
-          convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily),
+        x = completed_fcst_tbl %>%
+          dplyr::filter(Recipe_ID == "simple_average"),
         combo = combo_id,
         run_info = new_run_info,
         output_type = "data",
@@ -2063,10 +2061,12 @@ update_forecast_combo <- function(agent_info,
     combo = if (combo == "All-Data") NULL else hash_data(combo)
   )
 
+  metric_fcst_tbl <- completed_fcst_tbl %>%
+    dplyr::left_join(model_train_test_tbl[, c("Train_Test_ID", "Run_Type")], by = "Train_Test_ID")
   final_log_results <- log_best_run(
     agent_info = agent_info,
     run_info = new_run_info,
-    weighted_mape = calculate_fcst_metrics(new_run_info, final_fcst_tbl),
+    weighted_mape = calculate_fcst_metrics(new_run_info, metric_fcst_tbl, aggregate_wmape = log_wmape),
     check_best_run = FALSE,
     combo = if (combo == "All-Data") {
       NULL

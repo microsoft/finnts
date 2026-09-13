@@ -1,29 +1,44 @@
-make_global_update_selection_fixture <- function() {
+make_global_update_selection_fixture <- function(date_type = "month", weekly_to_daily = FALSE,
+                                                 zero_targets = FALSE, global = TRUE,
+                                                 signed_targets = FALSE) {
   path <- withr::local_tempdir(pattern = "finnts-global-selection-", .local_envir = parent.frame())
-  previous <- set_run_info(project_name = paste0("global-selection_", hash_data("all")),
+  combos <- if (global) c("first", "second") else "first"
+  combo_id <- if (global) "All-Data" else "first"
+  model_type <- if (global) "global" else "local"
+  previous <- set_run_info(project_name = paste0("global-selection_", hash_data(if (global) "all" else "first")),
     run_name = "previous", path = path, data_output = "csv", add_unique_id = FALSE)
   updated <- previous
   updated$run_name <- "updated"
-  fixture <- make_selection_case(actuals = rep(100, 36),
-    futures = list(template = rep(100, 6)), errors = c(template = 0))
+  actuals <- rep(100, 36)
+  if (zero_targets) actuals[c(33, 35)] <- 0
+  if (signed_targets) actuals[32] <- -100
+  fixture <- make_selection_case(actuals = actuals,
+    futures = list(template = rep(100, 6)), errors = c(template = 0), date_type = date_type)
   series <- fixture$context
   series$history <- fixture$history
   splits <- series$train_test_split
+  write_data(splits, combo = NULL, run_info = previous, output_type = "data",
+    folder = "prep_models", suffix = "-train_test_split")
   models <- c("xgboost", "chronos2", "timegpt")
-  model_ids <- paste(models, "global", "R1", sep = "--")
-  template <- dplyr::bind_rows(fixture$backtests, fixture$forecasts)
+  model_ids <- paste(models, model_type, "R1", sep = "--")
+  template <- dplyr::bind_rows(fixture$backtests, fixture$forecasts) %>%
+    dplyr::group_by(Train_Test_ID) %>%
+    dplyr::mutate(Horizon = dplyr::row_number()) %>%
+    dplyr::ungroup()
   source <- dplyr::bind_rows(lapply(seq_along(models), function(model_index) {
-    dplyr::bind_rows(lapply(c("first", "second"), function(combo) {
+    dplyr::bind_rows(lapply(combos, function(combo) {
       rows <- template
       rows$Combo <- combo
-      rows$Combo_ID <- "All-Data"
+      rows$Combo_ID <- combo_id
       rows$Model_Name <- models[model_index]
-      rows$Model_Type <- "global"
+      rows$Model_Type <- model_type
       rows$Recipe_ID <- "R1"
       rows$Model_ID <- model_ids[model_index]
       rows$Hyperparameter_ID <- 1L
       rows$Run_Type <- splits$Run_Type[match(rows$Train_Test_ID, splits$Train_Test_ID)]
-      rows$Forecast <- c(98, if (combo == "first") 102 else 100, 103)[model_index]
+      rows$Forecast <- c(98, if (combo == "first") if (global) 102 else 104 else 100, 103)[model_index]
+      observed <- !is.na(rows$Target)
+      rows$Forecast[observed] <- rows$Forecast[observed] * rows$Target[observed] / 100
       rows$Best_Model <- if (combo == "second" && model_index == 2L) "Yes" else "No"
       rows
     }))
@@ -35,30 +50,34 @@ make_global_update_selection_fixture <- function() {
   average$Model_Name <- NA_character_
   average$Model_Type <- "local"
   average$Recipe_ID <- "simple_average"
-  average$Forecast <- 100
+  average$Forecast <- (average$Forecast +
+    source$Forecast[source$Combo == "first" & source$Model_ID == model_ids[2]]) / 2
   average$Best_Model <- "Yes"
   average <- create_prediction_intervals(average, splits)
-  for (combo in c("first", "second")) {
-    write_data(source[source$Combo == combo, ], combo = combo, run_info = previous,
-      output_type = "data", folder = "forecasts", suffix = "-global_models")
+  for (combo in combos) {
+    saved_source <- convert_weekly_to_daily(source[source$Combo == combo, ], date_type, weekly_to_daily)
+    write_data(saved_source, combo = combo, run_info = previous,
+      output_type = "data", folder = "forecasts", suffix = if (global) "-global_models" else "-single_models")
   }
-  write_data(average, combo = "first", run_info = previous,
+  write_data(convert_weekly_to_daily(average, date_type, weekly_to_daily), combo = "first", run_info = previous,
     output_type = "data", folder = "forecasts", suffix = "-average_models")
   fitted <- dplyr::bind_rows(lapply(seq_along(models), function(model_index) {
     make_fitted_selection_models(source[source$Model_ID == model_ids[model_index], ], models[model_index])
   }))
+  fitted$Combo_ID <- combo_id
+  fitted$Model_Type <- model_type
   trained <- fitted[, c("Combo_ID", "Model_Name", "Model_Type", "Recipe_ID", "Model_Fit")]
   trained$Model_ID <- model_ids
-  write_data(trained, combo = "All-Data", run_info = previous,
+  write_data(trained, combo = combo_id, run_info = previous,
     output_type = "object", folder = "models", suffix = "-single_models")
   log <- read_selection_file(previous, "logs")
   settings <- list(models_to_run = paste(models, collapse = "---"), recipes_to_run = "R1",
     external_regressors = NA_character_, lag_periods = NA_character_, rolling_window_periods = NA_character_,
-    seasonal_period = 12, forecast_approach = "bottoms_up", date_type = "month", negative_forecast = FALSE,
+    seasonal_period = 12, forecast_approach = "bottoms_up", date_type = date_type, negative_forecast = signed_targets,
     box_cox = FALSE, stationary = FALSE, feature_selection = FALSE, global_model_recipes = "R1",
-    average_models = TRUE, max_model_average = 3, weekly_to_daily = FALSE, pca = FALSE,
+    average_models = TRUE, max_model_average = 3, weekly_to_daily = weekly_to_daily, pca = FALSE,
     num_hyperparameters = 1, forecast_horizon = 6, multistep_horizon = FALSE,
-    run_global_models = TRUE, run_local_models = FALSE, run_ensemble_models = FALSE,
+    run_global_models = global, run_local_models = !global, run_ensemble_models = FALSE,
     clean_missing_values = TRUE, clean_outliers = FALSE, hist_end_date = max(fixture$history$Date))
   for (setting in names(settings)) log[[setting]] <- settings[[setting]]
   write_data(log, combo = NULL, run_info = previous, output_type = "log", folder = "logs", suffix = NULL)
@@ -66,14 +85,14 @@ make_global_update_selection_fixture <- function() {
   write_data(log, combo = NULL, run_info = updated, output_type = "log", folder = "logs", suffix = NULL)
   list(previous = previous, updated = updated, log = log, source = source, fitted = fitted,
     model_ids = model_ids, series = series, splits = splits,
-    winners = c(first = average_id, second = model_ids[2]),
-    input = dplyr::bind_rows(lapply(c("first", "second"), function(combo) {
+    winners = c(first = average_id, second = model_ids[2])[combos],
+    input = dplyr::bind_rows(lapply(combos, function(combo) {
       dplyr::mutate(fixture$history, Combo = combo)
     })),
     agent = list(run_id = "updated", agent_version = 2, forecast_horizon = 6,
       project_info = list(project_name = "global-selection", path = path, data_output = "csv",
-        object_output = "rds", combo_variables = "Series", date_type = "month", weekly_to_daily = FALSE)),
-    best = data.frame(combo = c("first", "second"), model_type = "global",
+        object_output = "rds", combo_variables = "Series", date_type = date_type, weekly_to_daily = weekly_to_daily)),
+    best = data.frame(combo = combos, model_type = model_type,
       best_run_name = previous$run_name, weighted_mape = 0.2))
 }
 
@@ -82,6 +101,8 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
   state$fits <- list()
   state$logged <- NULL
   state$metric <- NULL
+  state$retunes <- logical()
+  state$reads <- character()
   state$transform <- function(fitted, retune) fitted
   original_reader <- read_file
   testthat::local_mocked_bindings(
@@ -97,7 +118,10 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
       "input.csv"
     },
     read_file = function(run_info, path = NULL, file_list = NULL, ...) {
-      if (identical(file_list, "input.csv")) return(fixture$input)
+      state$reads <- c(state$reads, path, file_list)
+      if (identical(file_list, "input.csv") || any(grepl("/input_data/", file_list, fixed = TRUE))) {
+        return(fixture$input)
+      }
       original_reader(run_info, path = path, file_list = file_list, ...)
     },
     set_run_info = function(...) fixture$updated,
@@ -107,6 +131,7 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
       Data = list(fixture$splits, data.frame(Hyperparameter_ID = 1L))),
     fit_models = function(trained_models_tbl, retune_hyperparameters, ...) {
       state$fits[[length(state$fits) + 1L]] <- trained_models_tbl$Model_ID
+      state$retunes <- c(state$retunes, retune_hyperparameters)
       fitted <- fixture$fitted[match(trained_models_tbl$Model_ID, fixture$model_ids), ]
       state$transform(fitted, retune_hyperparameters)
     },
@@ -141,6 +166,88 @@ test_that("global updates refit selected components and retain each saved winner
   chosen <- rows[rows$Best_Model == "Yes", ]
   expect_equal(chosen$Forecast, rep(100, nrow(chosen)))
   expect_false(any(rows$Model_ID == fixture$model_ids[3]))
+})
+
+test_that("weekly updates retain native aggregate and completed per-series accuracy", {
+  original_logger <- log_best_run
+  original_converter <- convert_weekly_to_daily
+  cases <- list(
+    list(global = TRUE, daily = TRUE, signed = FALSE, retune = FALSE),
+    list(global = FALSE, daily = TRUE, signed = TRUE, retune = FALSE),
+    list(global = FALSE, daily = FALSE, signed = FALSE, retune = TRUE),
+    list(global = TRUE, daily = TRUE, signed = TRUE, retune = TRUE)
+  )
+  for (case in cases) local({
+    fixture <- make_global_update_selection_fixture("week", case$daily, zero_targets = TRUE,
+      global = case$global, signed_targets = case$signed)
+    fixture$best$weighted_mape <- if (case$retune) 0 else if (case$global) 0.001 else 0.011
+    state <- local_global_update_selection_mocks(fixture)
+    state$conversions <- 0L
+    local_mocked_bindings(
+      log_best_run = function(agent_info, run_info, weighted_mape, ...) {
+        state$metric <- weighted_mape
+        original_logger(agent_info, run_info, weighted_mape, ...)
+      },
+      convert_weekly_to_daily = function(...) {
+        state$conversions <- state$conversions + 1L
+        original_converter(...)
+      }
+    )
+
+    result <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+
+    expect_identical(result$status, "done")
+    expect_identical(state$retunes, if (case$retune) c(FALSE, TRUE) else FALSE)
+    expect_identical(state$conversions, 1L)
+    expect_false(any(grepl("/forecasts/", state$reads, fixed = TRUE) &
+      grepl(hash_data(fixture$updated$run_name), state$reads, fixed = TRUE)))
+    native <- if (case$global) 0.0005 else 0.0105
+    expect_equal(as.numeric(state$metric), native)
+    expect_equal(read_selection_file(fixture$updated, "logs")$weighted_mape, native)
+    parent <- fixture$agent$project_info
+    parent$run_name <- fixture$agent$run_id
+    saved_before <- list()
+    rows_before <- list()
+    for (combo in fixture$best$combo) {
+      rows <- read_selection_file(fixture$updated, "forecasts",
+        if (combo == "first") "-average_models" else "-global_models", combo)
+      rows_before[[combo]] <- rows
+      expect_identical("Date_Day" %in% names(rows), case$daily)
+      expect_false("Run_Type" %in% names(rows))
+      expect_equal(nrow(rows), 12L * if (case$daily) 7L else 1L)
+      rows$Run_Type <- fixture$splits$Run_Type[match(rows$Train_Test_ID, fixture$splits$Train_Test_ID)]
+      expected <- round(calc_wmape(rows), 4)
+      expect_equal(expected, if (!case$daily) native else if (case$global) 0.0035 else 0.0135)
+      saved <- read_selection_file(parent, "logs", "-agent_best_run", combo)
+      saved_before[[combo]] <- saved
+      expect_equal(saved$weighted_mape, expected)
+      if (case$global) {
+        expect_equal(saved$model_avg_wmape, native)
+        expect_equal(saved$model_median_wmape, native)
+        expect_equal(saved$model_std_wmape, 0)
+      } else {
+        models <- read_selection_file(fixture$updated, "forecasts", "-single_models", combo)
+        models$Run_Type <- fixture$splits$Run_Type[match(models$Train_Test_ID, fixture$splits$Train_Test_ID)]
+        models$Best_Model <- "Yes"
+        accuracy <- vapply(split(models, models$Model_ID), calc_wmape, numeric(1))
+        expect_equal(saved$model_avg_wmape, mean(accuracy))
+        expect_equal(saved$model_median_wmape, stats::median(accuracy))
+        expect_equal(saved$model_std_wmape, stats::sd(accuracy))
+        expect_gt(saved$model_std_wmape, 0)
+      }
+    }
+
+    repeated <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+
+    expect_identical(repeated$status, "done")
+    expect_identical(state$retunes, rep(if (case$retune) c(FALSE, TRUE) else FALSE, 2))
+    expect_identical(state$conversions, 2L)
+    for (combo in fixture$best$combo) {
+      expect_equal(read_selection_file(parent, "logs", "-agent_best_run", combo), saved_before[[combo]])
+      expect_equal(read_selection_file(fixture$updated, "forecasts",
+        if (combo == "first") "-average_models" else "-global_models", combo), rows_before[[combo]])
+    }
+  })
 })
 
 test_that("an unselected series prediction cannot invalidate another global winner", {

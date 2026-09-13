@@ -2442,14 +2442,23 @@ get_fcst_output <- function(run_info) {
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param fcst_tbl A tibble containing the forecast output.
+#' @param aggregate_wmape Optional native aggregate for update logging; per-series and model-pool metrics still use the forecast output.
 #'
 #' @return A numeric value representing the weighted MAPE of the forecast.
 #' @noRd
 calculate_fcst_metrics <- function(run_info,
-                                   fcst_tbl) {
+                                   fcst_tbl,
+                                   aggregate_wmape = NULL) {
   if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$selections)) {
     summary <- agent_selection_summary(run_info$forecast_selection)
     accuracy <- agent_forecast_accuracy(fcst_tbl, names(run_info$forecast_selection$selections))
+    if (!is.null(aggregate_wmape)) {
+      if (!is.numeric(aggregate_wmape) || length(aggregate_wmape) != 1L ||
+          !is.finite(aggregate_wmape) || aggregate_wmape < 0) {
+        stop("The update aggregate WMAPE must be a single finite non-negative number.", call. = FALSE)
+      }
+      if (is.finite(accuracy$weighted_mape)) accuracy$weighted_mape <- round(aggregate_wmape, 4)
+    }
     value <- if (isTRUE(summary$acceptable)) accuracy$weighted_mape else Inf
     attr(value, "selection_ok") <- isTRUE(summary$acceptable) && is.finite(value)
     attr(value, "forecast_accuracy") <- accuracy

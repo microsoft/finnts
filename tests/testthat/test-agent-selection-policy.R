@@ -39,6 +39,34 @@ test_that("Agent metrics require completeness but not a second soft-quality pass
   expect_false(attr(metric, "selection_ok"))
 })
 
+test_that("an update aggregate preserves completed metrics and cannot bypass validity", {
+  info <- list(forecast_selection = make_agent_policy_result(0.1))
+  rows <- make_agent_metric_forecasts(info$forecast_selection)
+  original <- calculate_fcst_metrics(info, rows)
+  updated <- calculate_fcst_metrics(info, rows, aggregate_wmape = 0.025049)
+  expect_equal(as.numeric(updated), 0.025)
+  expect_true(attr(updated, "selection_ok"))
+  expect_equal(attr(updated, "forecast_accuracy")$weighted_mape, 0.025)
+  expect_equal(attr(updated, "forecast_accuracy")$by_series,
+    attr(original, "forecast_accuracy")$by_series)
+  expect_equal(attr(updated, "model_accuracy"), attr(original, "model_accuracy"))
+  nonfinite <- rows
+  nonfinite$Forecast[1] <- Inf
+  for (unavailable in list(data.frame(), nonfinite)) {
+    metric <- calculate_fcst_metrics(info, unavailable, aggregate_wmape = 0)
+    expect_identical(as.numeric(metric), Inf)
+    expect_false(attr(metric, "selection_ok"))
+  }
+  info$forecast_selection$selections["missing"] <- list(NULL)
+  partial <- calculate_fcst_metrics(info, rows, aggregate_wmape = 0)
+  expect_identical(as.numeric(partial), Inf)
+  expect_false(attr(partial, "selection_ok"))
+  for (invalid in list(NA_real_, Inf, -1, numeric(), c(0, 0.1), "0.1")) {
+    expect_error(calculate_fcst_metrics(info, rows, aggregate_wmape = invalid),
+      "single finite non-negative number", fixed = TRUE)
+  }
+})
+
 test_that("completed forecast restoration never evaluates future quality", {
   local_mocked_bindings(par_start = function(...) {
     list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
