@@ -74,6 +74,10 @@ prep_models <- function(run_info,
   seasonal_period <- validate_seasonal_period(seasonal_period)
   check_input_type("seed", seed, "numeric")
 
+  if (is.null(run_info$storage_object) && run_info$data_output %in% c("csv", "parquet", "rds")) {
+    run_info$recipe_inventory <- new.env(parent = emptyenv())
+  }
+
   # create model workflows
   model_workflows(
     run_info,
@@ -359,7 +363,10 @@ train_test_split <- function(run_info,
       run_info$data_output
     ) %>% fs::path_tidy()
   } else {
-    file_name <- list_files(
+    file_name <- if (is.null(run_info$storage_object) &&
+      run_info$data_output %in% c("csv", "parquet", "rds")) {
+      preparation_recipe_files(run_info)[1]
+    } else list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
@@ -634,13 +641,17 @@ model_workflows <- function(run_info,
       file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
     }
   } else {
-    file_name_tbl <- list_files(
+    recipe_files <- if (is.null(run_info$storage_object) &&
+      run_info$data_output %in% c("csv", "parquet", "rds")) {
+      preparation_recipe_files(run_info)
+    } else list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*R*.", run_info$data_output
       )
-    ) %>%
+    )
+    file_name_tbl <- recipe_files %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)
@@ -896,13 +907,17 @@ model_hyperparameters <- function(run_info,
       file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
     }
   } else {
-    file_name_tbl <- list_files(
+    recipe_files <- if (is.null(run_info$storage_object) &&
+      run_info$data_output %in% c("csv", "parquet", "rds")) {
+      preparation_recipe_files(run_info)
+    } else list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*R*.", run_info$data_output
       )
-    ) %>%
+    )
+    file_name_tbl <- recipe_files %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)

@@ -189,6 +189,7 @@ train_models <- function(run_info,
 
   # get list of tasks to run
   current_combo_list <- c()
+  recipe_file_list <- NULL
 
   if ("combo" %in% names(run_info)) {
     # Single combo mode - determine which combo to run
@@ -205,13 +206,14 @@ train_models <- function(run_info,
     }
   } else {
     # Multi combo mode - get all combos from prep_data
-    all_combo_list <- list_files(
+    recipe_file_list <- list_files(
       run_info$storage_object,
       paste0(
         run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
         hash_data(run_info$run_name), "*R*.", run_info$data_output
       )
-    ) %>%
+    )
+    all_combo_list <- recipe_file_list %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)
@@ -350,7 +352,13 @@ train_models <- function(run_info,
       combo_hash <- x
 
       model_recipe_tbl <- get_recipe_data(run_info,
-        combo = x
+        combo = x,
+        recipes = if (identical(x, "All-Data")) {
+          intersect(model_workflow_tbl$Model_Recipe, global_model_recipes)
+        } else {
+          unique(model_workflow_tbl$Model_Recipe)
+        },
+        file_list = recipe_file_list
       )
 
       if (combo_hash == "All-Data") {

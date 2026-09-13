@@ -59,6 +59,13 @@ On Windows, when `R` or `Rscript` is not on `PATH`, use `./tools/run-r.ps1 -Expr
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
 
+## Artifact I/O
+
+- Prefer direct reads of deterministic artifact paths over `list_files()` or wildcard directory enumeration whenever the project, run, combo, recipe, and artifact suffix are already known. This is especially important during per-series iteration and training against large ADLS-backed logging and artifact folders.
+- Do not list a directory merely to locate or check the existence of a known file. Reuse the storage abstraction's exact-path read/download support; distinguish a genuinely missing optional artifact from authentication, storage, and deserialization failures.
+- Keep listings for genuine discovery of unknown artifact names. When discovery is necessary, perform it once in the coordinating workflow and reuse the resulting paths or metadata across loops and workers where safe. Avoid repeated per-series, per-model, or per-retry listings and stale cross-run caches.
+- Preserve supported storage backends, output formats, restart behavior, and required-artifact errors. Add focused tests that reject unexpected directory enumeration on known-path workflows and verify unchanged results; do not trade fewer listings for redundant downloads or reads.
+
 ## Documentation Boundaries
 
 - Keep `AGENTS.md`, `CLAUDE.md`, and applicable scoped rules synchronized when engineering practices change, without repeating the same detailed rule in multiple files.

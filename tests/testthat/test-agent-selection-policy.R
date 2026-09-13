@@ -157,7 +157,12 @@ test_that("only unfinished default acceptance restores one-time quality evidence
   restored$selections$series$rankings$Violations <- NA_integer_
   info <- list(project_name = "project", run_name = "default", path = tempdir(), data_output = "csv")
   local_mocked_bindings(
-    list_files = function(...) "input.csv",
+    list_files = function(...) stop("known input must not require directory discovery"),
+    read_local_artifacts = function(run_info, file_list, ...) {
+      expect_length(file_list, 1L)
+      expect_false(grepl("*", file_list, fixed = TRUE))
+      data.frame(Combo = "series", Date = as.Date("2024-01-01") + 0:5, Target = 100)
+    },
     read_file = function(...) data.frame(Combo = "series", Date = as.Date("2024-01-01") + 0:5, Target = 100),
     set_run_info = function(...) info,
     read_selection_file = function(...) data.frame(forecast_approach = "bottoms_up", date_type = "month"),

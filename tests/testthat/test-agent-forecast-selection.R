@@ -606,7 +606,12 @@ test_that("a rejected default run cannot be fitted again on restart", {
   selection <- do.call(select_forecast_candidate, fixture)
   prepared <- 0L
   local_mocked_bindings(
-    list_files = function(...) "input.csv",
+    list_files = function(...) stop("known input must not require directory discovery"),
+    read_local_artifacts = function(run_info, file_list, ...) {
+      expect_length(file_list, 1L)
+      expect_false(grepl("*", file_list, fixed = TRUE))
+      data.frame(Combo = "series", Date = fixture$history$Date, Target = 100)
+    },
     read_file = function(...) data.frame(Combo = "series", Date = fixture$history$Date, Target = 100),
     set_run_info = function(...) list(project_name = "project", run_name = "default", path = tempdir()),
     read_selection_file = function(...) data.frame(default_reforecast_status = "rejected"),

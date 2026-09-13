@@ -16,7 +16,13 @@ test_that("outer reconciliation publishes the selected mixture without post-qual
     check_agent_info = function(...) NULL,
     get_best_agent_run = function(...) fixture$run_inputs,
     load_agent_forecast = function(...) fixture$forecasts,
-    list_files = function(...) "split.csv",
+    list_files = function(...) stop("known split must not require directory discovery"),
+    local_artifact_files = function(file_list, ...) {
+      expect_length(file_list, 1L)
+      expect_match(file_list, "-train_test_split[.]csv$")
+      expect_false(grepl("*", file_list, fixed = TRUE))
+      file_list
+    },
     read_file = function(...) fixture$splits,
     read_selection_hierarchy = function(...) fixture$metadata,
     read_selection_file = function(...) data.frame(forecast_approach = "bottoms_up"),

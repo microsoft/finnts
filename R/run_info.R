@@ -311,6 +311,14 @@ get_run_info <- function(project_name = NULL,
     path = path
   )
 
+  if (is.null(storage_object) && !is.null(project_name) && !is.null(run_name)) {
+    info_list$project_name <- project_name
+    info_list$run_name <- run_name
+    return(read_local_artifacts(info_list,
+      local_artifact_path(info_list, "logs", extension = "csv")
+    ))
+  }
+
   # read run metadata
   if (!is.null(project_name) & !is.null(run_name) & !is.null(path)) {
     # read specific file path

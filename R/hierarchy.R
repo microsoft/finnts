@@ -547,10 +547,14 @@ reconcile_hierarchical_data <- function(run_info,
     )
   }
 
-  unreconciled_tbl <- read_file(run_info,
+  unreconciled_tbl <- if (condensed && is.null(run_info$storage_object) &&
+    identical(return_type, "df") && run_info$data_output %in% c("csv", "parquet", "rds")) {
+    read_local_artifacts(run_info, condensed_files)
+  } else read_file(run_info,
     path = fcst_path,
     return_type = return_type
-  ) %>%
+  )
+  unreconciled_tbl <- unreconciled_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
   # get models to reconcile down to lowest level

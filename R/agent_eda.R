@@ -66,7 +66,9 @@ save_eda_data <- function(agent_info) {
 
   # Always get all combos
   combo_value <- "*"
-  combo_list <- get_total_combos(agent_info)
+  local_eda <- is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")
+  eda_inventory <- if (local_eda) local_artifact_inventory(project_info, "eda") else NULL
 
   # 1. Data Profile
   tryCatch(
@@ -104,7 +106,9 @@ save_eda_data <- function(agent_info) {
   # 2. ACF Results
   tryCatch(
     {
-      acf_files <- list_files(
+      acf_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-acf.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -138,7 +142,9 @@ save_eda_data <- function(agent_info) {
   # 3. PACF Results
   tryCatch(
     {
-      pacf_files <- list_files(
+      pacf_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-pacf.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -172,7 +178,9 @@ save_eda_data <- function(agent_info) {
   # 4. Stationarity Results
   tryCatch(
     {
-      stat_files <- list_files(
+      stat_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-stationarity.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -208,7 +216,9 @@ save_eda_data <- function(agent_info) {
   # 5. Missing Data Results
   tryCatch(
     {
-      miss_files <- list_files(
+      miss_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-missing.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -246,7 +256,9 @@ save_eda_data <- function(agent_info) {
   # 6. Outlier Results
   tryCatch(
     {
-      outlier_files <- list_files(
+      outlier_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-outliers.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -292,7 +304,9 @@ save_eda_data <- function(agent_info) {
   # 7. Additional Seasonality Results
   tryCatch(
     {
-      season_files <- list_files(
+      season_files <- if (local_eda) {
+        eda_inventory[endsWith(eda_inventory, paste0("-add_season.", project_info$data_output))]
+      } else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -353,7 +367,9 @@ save_eda_data <- function(agent_info) {
   if (!is.null(agent_info$external_regressors)) {
     tryCatch(
       {
-        xreg_files <- list_files(
+        xreg_files <- if (local_eda) {
+          eda_inventory[endsWith(eda_inventory, paste0("-xreg_scan.", project_info$data_output))]
+        } else list_files(
           project_info$storage_object,
           paste0(
             project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
@@ -557,6 +573,18 @@ load_eda_results <- function(agent_info,
   # get project info
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
+  local_reads <- is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")
+  eda_inventory <- if (local_reads && is.null(combo)) {
+    local_artifact_inventory(project_info, "eda")
+  } else NULL
+  scan_paths <- function(suffix) {
+    if (is.null(combo)) {
+      eda_inventory[endsWith(eda_inventory, paste0(suffix, ".", project_info$data_output))]
+    } else {
+      local_artifact_path(project_info, "eda", suffix, combo)
+    }
+  }
 
   # read all combos or just one
   if (is.null(combo)) {
@@ -601,14 +629,17 @@ load_eda_results <- function(agent_info,
   # acf scan
   acf_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-acf")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-acf.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   ) %>%
     dplyr::mutate(Value = as.numeric(Value))
 
@@ -637,14 +668,17 @@ load_eda_results <- function(agent_info,
   # pacf scan
   pacf_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-pacf")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-pacf.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   ) %>%
     dplyr::mutate(Value = as.numeric(Value))
 
@@ -673,14 +707,17 @@ load_eda_results <- function(agent_info,
   # stationarity scan
   stationarity_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-stationarity")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-stationarity.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   )
 
   if (is.null(combo)) {
@@ -705,14 +742,17 @@ load_eda_results <- function(agent_info,
   # missing data scan
   missing_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-missing")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-missing.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   )
 
   if (is.null(combo)) {
@@ -736,14 +776,17 @@ load_eda_results <- function(agent_info,
   # outlier scan
   outlier_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-outliers")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-outliers.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   )
 
   outlier_scan <- summarize_outlier_scan(outlier_scan)
@@ -768,14 +811,17 @@ load_eda_results <- function(agent_info,
   # seasonality scan
   seasonality_scan <- read_file(
     run_info = project_info,
-    file_list = list_files(
+    file_list = if (local_reads) local_artifact_files(
+      scan_paths("-add_season")
+    ) else list_files(
       project_info$storage_object,
       paste0(
         project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
         hash_data(agent_info$run_id), "-", combo_value, "-add_season.", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df",
+    strict = local_reads
   ) %>%
     dplyr::mutate(Value = as.numeric(Value))
 
@@ -828,14 +874,17 @@ load_eda_results <- function(agent_info,
   } else {
     xreg_scan <- read_file(
       run_info = project_info,
-      file_list = list_files(
+      file_list = if (local_reads) local_artifact_files(
+        scan_paths("-xreg_scan")
+      ) else list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/eda/*", hash_data(project_info$project_name), "-",
           hash_data(agent_info$run_id), "-", combo_value, "-xreg_scan.", project_info$data_output
         )
       ),
-      return_type = "df"
+      return_type = "df",
+      strict = local_reads
     )
 
     if (is.null(combo)) {
@@ -895,7 +944,13 @@ data_profile <- function(agent_info) {
   hist_end_date <- agent_info$hist_end_date
 
   # check if profiling has already been done
-  profile_list <- tryCatch(
+  profile_list <- if (is.null(project_info$storage_object) &&
+    identical(project_info$object_output, "rds")) {
+    read_local_artifacts(project_info,
+      local_artifact_path(project_info, "eda", "-data_profile", extension = "rds"),
+      return_type = "object", allow_missing = TRUE
+    )
+  } else tryCatch(
     read_file(project_info,
       path = paste0(
         "eda/*", hash_data(project_info$project_name), "-",
@@ -1710,7 +1765,13 @@ hierarchy_detect <- function(agent_info,
 
   if (is.null(input_data)) {
     # check if hierarchy detection has already been done
-    hier_list <- tryCatch(
+    hier_list <- if (is.null(project_info$storage_object) &&
+      identical(project_info$object_output, "rds")) {
+      read_local_artifacts(project_info,
+        local_artifact_path(project_info, "eda", "-hierarchy", extension = "rds"),
+        return_type = "object", allow_missing = TRUE
+      )
+    } else tryCatch(
       read_file(project_info,
         path = paste0(
           "eda/*", hash_data(project_info$project_name), "-",
@@ -2029,13 +2090,20 @@ resolve_combo_hashes <- function(agent_info, combo_hashes) {
   project_info$run_name <- agent_info$run_id
 
   # list input data files for this agent run
-  input_files <- list_files(
+  input_file_list <- if (is.null(project_info$storage_object) &&
+    project_info$data_output %in% c("csv", "parquet", "rds")) {
+    local_artifact_files(
+      local_artifact_path(project_info, "input_data", combo = sort(unique(combo_hashes))),
+      allow_missing = TRUE
+    )
+  } else list_files(
     project_info$storage_object,
     paste0(
       project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
       hash_data(agent_info$run_id), "*.", project_info$data_output
     )
-  ) %>%
+  )
+  input_files <- input_file_list %>%
     tibble::tibble(
       Path = .
     ) %>%
