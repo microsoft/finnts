@@ -207,6 +207,43 @@ test_that("partial weekly hierarchy retries repair one source without changing d
   expect_equal(agent_selection_summary(resumed), agent_selection_summary(repaired), tolerance = 1e-7)
 })
 
+test_that("grouped hierarchy retries rebuild damaged reconciled output from complete sources", {
+  for (date_type in c("month", "week")) local({
+    local_mocked_bindings(par_start = function(...) {
+      list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+    })
+    fixture <- make_hierarchical_selection_artifacts(approach = "grouped_hierarchy",
+      date_type = date_type, horizon = 2L, backtest_scenarios = 1L)
+    info <- fixture$run_info
+    initial <- final_models(info, average_models = FALSE, weekly_to_daily = TRUE)
+    expected <- get_forecast_data(info)
+    damaged <- read_selection_file(info, "forecasts", "-reconciled", "Best-Model")
+    if (date_type == "month") {
+      damaged <- damaged[damaged$Combo != fixture$metadata$original_combos[1], ]
+    } else damaged <- damaged[-2, ]
+    write_data(damaged, "Best-Model", info, "data", "forecasts", "-reconciled")
+    reconciliations <- 0L
+    original_reconcile <- reconcile_hierarchical_data
+    local_mocked_bindings(
+      train_models = function(...) stop("restart must not train models"),
+      select_series_forecasts = function(...) stop("complete hierarchy sources must not be reselected"),
+      reconcile_hierarchical_data = function(...) {
+        reconciliations <<- reconciliations + 1L
+        original_reconcile(...)
+      }
+    )
+
+    repaired <- final_models(info, average_models = FALSE, weekly_to_daily = TRUE)
+
+    expect_equal(reconciliations, 1L)
+    expect_length(repaired$rejected_combos, 0L)
+    expect_equal(get_forecast_data(info), expected, tolerance = 1e-7)
+    expect_equal(agent_selection_summary(repaired), agent_selection_summary(initial), tolerance = 1e-7)
+    local_mocked_bindings(reconcile_hierarchical_data = function(...) stop("repaired output must be reused"))
+    expect_no_error(final_models(info, average_models = FALSE, weekly_to_daily = TRUE))
+  })
+})
+
 test_that("explicitly completed rejections are not evaluated again on retry", {
   local_mocked_bindings(par_start = function(...) {
     list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)

@@ -39,7 +39,11 @@
 #'   average filename alone is not proof of completion. Incomplete selections
 #'   rebuild averages and winner flags from existing predictions without fitting
 #'   models again. Complete saved winners are reused without future-quality
-#'   reassessment, and every series remains in the returned result.
+#'   reassessment, and every series remains in the returned result. Reconciled
+#'   output is reused only when all original series have complete, unique backtest
+#'   and future keys with finite forecasts, including every day of a daily-expanded
+#'   week. Incomplete reconciled output is rebuilt from selected source forecasts
+#'   and checked before completion is logged; storage and read errors propagate.
 #'
 #' @param run_info run info using the [set_run_info()] function.
 #' @param average_models If TRUE, create simple averages of individual models
@@ -832,6 +836,27 @@ final_models <- function(run_info,
     return(invisible(list(selections = selection_results, rejected_combos = rejected_combos)))
   }
 
+  fcst_data <- NULL
+  selection_cache <- new.env(parent = emptyenv())
+  if (forecast_approach != "bottoms_up") {
+    recon_path <- local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model"))
+    read_reconciliation <- function(files = NULL) {
+      if (local_reads) {
+        if (is.null(files)) files <- local_artifact_files(recon_path)
+        if (identical(run_info$data_output, "parquet")) {
+          arrow::read_parquet(files[[1]], mmap = FALSE)
+        } else read_file(run_info, file_list = files, strict = TRUE)
+      } else {
+        read_file(run_info, path = fs::path("forecasts", fs::path_file(recon_path)), strict = TRUE)
+      }
+    }
+    if (all_reused && recon_complete) {
+      fcst_data <- read_reconciliation(recon_files)
+      recon_complete <- complete_reconciled_forecast(fcst_data, run_info, prev_log_df,
+        model_train_test_tbl, weekly_to_daily, selection_cache)
+    }
+  }
+
   # reconcile hierarchical forecasts
   if (forecast_approach != "bottoms_up" && (!all_reused || !recon_complete)) {
     cli::cli_progress_step("Reconciling Hierarchical Forecasts")
@@ -845,10 +870,24 @@ final_models <- function(run_info,
       date_type,
       num_cores
     )
+    fcst_data <- read_reconciliation()
+    if (!complete_reconciled_forecast(fcst_data, run_info, prev_log_df,
+      model_train_test_tbl, weekly_to_daily, selection_cache)) {
+      stop("Reconciled forecasts are incomplete or invalid. Restore the selected source forecasts and retry final_models().",
+        call. = FALSE)
+    }
   }
 
   # validate that every combo has a best model
-  fcst_data <- get_forecast_data(run_info = run_info)
+  if (forecast_approach == "bottoms_up") {
+    fcst_data <- get_forecast_data(run_info = run_info)
+  } else {
+    fcst_data <- fcst_data %>%
+      dplyr::select(-tidyselect::any_of("Run_Type")) %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
+      dplyr::left_join(dplyr::select(model_train_test_tbl, Run_Type, Train_Test_ID), by = "Train_Test_ID") %>%
+      dplyr::arrange(Combo, dplyr::desc(Best_Model), Model_ID, Train_Test_ID, Date)
+  }
 
   # calculate weighted mape
   weighted_mape <- fcst_data %>%
@@ -891,9 +930,52 @@ final_models <- function(run_info,
   result <- list(selections = selection_results, rejected_combos = rejected_combos)
   if (forecast_approach != "bottoms_up") {
     result <- hierarchical_selection_result(run_info, prev_log_df, selection_results,
-      fcst_data, model_train_test_tbl)
+      fcst_data, model_train_test_tbl, cache = selection_cache)
   }
   invisible(result)
+}
+
+complete_reconciled_forecast <- function(forecasts, run_info, run_log, splits,
+                                         weekly_to_daily, cache) {
+  required <- c("Combo", "Model_ID", "Best_Model", "Train_Test_ID", "Date", "Target", "Forecast")
+  if (!is.data.frame(forecasts) || !nrow(forecasts) || !all(required %in% names(forecasts)) ||
+      !is.numeric(forecasts$Forecast) || !is.numeric(forecasts$Target) ||
+      any(!is.finite(forecasts$Forecast)) || anyNA(forecasts$Combo) ||
+      anyNA(forecasts$Model_ID) || any(!nzchar(as.character(forecasts$Model_ID))) ||
+      anyNA(forecasts$Best_Model) || any(forecasts$Best_Model != "Yes")) return(FALSE)
+  forecast_dates <- tryCatch(as.Date(forecasts$Date), error = function(error) NULL)
+  if (is.null(forecast_dates) || anyNA(forecast_dates)) return(FALSE)
+  forecasts$Date <- forecast_dates
+  daily <- identical(run_log$date_type, "week") && weekly_to_daily
+  if (daily != ("Date_Day" %in% names(forecasts))) return(FALSE)
+  if (daily) {
+    daily_dates <- tryCatch(as.Date(forecasts$Date_Day), error = function(error) NULL)
+    if (is.null(daily_dates) || anyNA(daily_dates)) return(FALSE)
+    forecasts$Date_Day <- daily_dates
+  }
+  hierarchy <- read_selection_hierarchy(run_info, cache)
+  combos <- hierarchy$original_combos
+  if (!setequal(as.character(forecasts$Combo), combos)) return(FALSE)
+  stored_combos <- utils::tail(hierarchy$hts_combos, length(combos))
+  for (combo_index in seq_along(combos)) {
+    rows <- forecasts[forecasts$Combo == combos[combo_index], , drop = FALSE]
+    if (length(unique(rows$Model_ID)) != 1L) return(FALSE)
+    series <- read_series_history(run_info, stored_combos[combo_index], run_log, cache)
+    series$train_test_split <- splits
+    expected <- dplyr::bind_rows(forecast_selection_keys(series, "Back_Test"),
+      forecast_selection_keys(series, "Future_Forecast"))
+    if (daily) {
+      expected <- expected[rep(seq_len(nrow(expected)), each = 7L), , drop = FALSE]
+      native_dates <- expected$Date
+      expected$Date <- expected$Date + rep(0:6, length.out = nrow(expected))
+      daily_rows <- data.frame(Train_Test_ID = rows$Train_Test_ID, Date = rows$Date_Day)
+      if (!forecast_keys_complete(daily_rows, expected)) return(FALSE)
+      row_order <- order(as.character(rows$Train_Test_ID), rows$Date_Day, method = "radix")
+      expected_order <- order(as.character(expected$Train_Test_ID), expected$Date, method = "radix")
+      if (!identical(as.numeric(rows$Date[row_order]), as.numeric(native_dates[expected_order]))) return(FALSE)
+    } else if (!forecast_keys_complete(rows, expected)) return(FALSE)
+  }
+  TRUE
 }
 
 #' Create prediction intervals

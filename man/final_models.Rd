@@ -87,7 +87,11 @@ must identify one complete winner per series. A \code{Best_Model} column or an
 average filename alone is not proof of completion. Incomplete selections
 rebuild averages and winner flags from existing predictions without fitting
 models again. Complete saved winners are reused without future-quality
-reassessment, and every series remains in the returned result.
+reassessment, and every series remains in the returned result. Reconciled
+output is reused only when all original series have complete, unique backtest
+and future keys with finite forecasts, including every day of a daily-expanded
+week. Incomplete reconciled output is rebuilt from selected source forecasts
+and checked before completion is logged; storage and read errors propagate.
 }
 \examples{
 \donttest{
