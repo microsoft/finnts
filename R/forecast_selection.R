@@ -1040,6 +1040,31 @@ validate_global_iteration <- function(best_runs) {
   invisible(best_runs)
 }
 
+agent_forecast_accuracy <- function(forecasts, combos) {
+  accuracy <- list(weighted_mape = Inf,
+    by_series = stats::setNames(rep(Inf, length(combos)), combos))
+  required <- c("Combo", "Run_Type", "Best_Model", "Target", "Forecast")
+  if (!length(combos) || !is.data.frame(forecasts) || !all(required %in% names(forecasts)) ||
+      !is.numeric(forecasts$Target) || !is.numeric(forecasts$Forecast)) return(accuracy)
+  rows <- forecasts[!is.na(forecasts$Run_Type) & forecasts$Run_Type == "Back_Test" &
+    !is.na(forecasts$Best_Model) & forecasts$Best_Model == "Yes" &
+    forecasts$Combo %in% combos, , drop = FALSE]
+  if (!nrow(rows)) return(accuracy)
+  target <- ifelse(rows$Target == 0, 0.1, rows$Target)
+  errors <- round(abs((rows$Forecast - target) / abs(target)), 4)
+  score <- function(indices) {
+    if (any(!is.finite(rows$Forecast[indices]))) return(Inf)
+    indices <- indices[is.finite(target[indices])]
+    if (!length(indices)) return(Inf)
+    value <- round(sum(errors[indices] * abs(target[indices]) / sum(abs(target[indices]))), 4)
+    if (is.finite(value)) value else Inf
+  }
+  by_series <- vapply(split(seq_len(nrow(rows)), as.character(rows$Combo)), score, numeric(1))
+  accuracy$by_series[names(by_series)] <- by_series
+  if (all(is.finite(accuracy$by_series))) accuracy$weighted_mape <- score(seq_len(nrow(rows)))
+  accuracy
+}
+
 agent_model_accuracy <- function(forecasts) {
   unavailable <- list(model_avg_wmape = NA_real_, model_median_wmape = NA_real_,
     model_std_wmape = NA_real_)
@@ -1065,10 +1090,16 @@ agent_model_accuracy <- function(forecasts) {
     model_std_wmape = stats::sd(accuracy))
 }
 
-record_agent_selection_attempt <- function(run_log, result, agent_info, model_accuracy = NULL) {
+record_agent_selection_attempt <- function(run_log, result, agent_info, model_accuracy = NULL,
+                                            forecast_accuracy = NULL) {
   summary <- agent_selection_summary(result)
-  run_log$weighted_mape <- if (is.finite(summary$weighted_mape)) round(summary$weighted_mape, 4) else NA_real_
-  run_log$selection_status <- summary$status
+  accuracy <- if (is.null(forecast_accuracy)) summary$weighted_mape else forecast_accuracy$weighted_mape
+  run_log$weighted_mape <- if (isTRUE(summary$acceptable) && length(accuracy) == 1L && is.finite(accuracy)) {
+    round(accuracy, 4)
+  } else NA_real_
+  run_log$selection_status <- if (isTRUE(summary$acceptable) && !is.finite(run_log$weighted_mape)) {
+    "rejected"
+  } else summary$status
   if (isTRUE(as.logical(run_log[["run_global_models"]]))) {
     run_log$model_avg_wmape <- run_log$weighted_mape
     run_log$model_median_wmape <- run_log$weighted_mape

@@ -2449,8 +2449,10 @@ calculate_fcst_metrics <- function(run_info,
                                    fcst_tbl) {
   if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$selections)) {
     summary <- agent_selection_summary(run_info$forecast_selection)
-    value <- round(summary$weighted_mape, 4)
-    attr(value, "selection_ok") <- summary$acceptable
+    accuracy <- agent_forecast_accuracy(fcst_tbl, names(run_info$forecast_selection$selections))
+    value <- if (isTRUE(summary$acceptable)) accuracy$weighted_mape else Inf
+    attr(value, "selection_ok") <- isTRUE(summary$acceptable) && is.finite(value)
+    attr(value, "forecast_accuracy") <- accuracy
     attr(value, "model_accuracy") <- agent_model_accuracy(fcst_tbl)
     return(value)
   }
@@ -2761,8 +2763,9 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     current_result$selections[missing] <- rep(list(NULL), length(missing))
   }
   summary <- agent_selection_summary(current_result)
+  forecast_accuracy <- attr(weighted_mape, "forecast_accuracy", exact = TRUE)
   current_log <- record_agent_selection_attempt(current_log, current_result, agent_info,
-    attr(weighted_mape, "model_accuracy", exact = TRUE))
+    attr(weighted_mape, "model_accuracy", exact = TRUE), forecast_accuracy)
   promote_run <- TRUE
   if (check_best_run && is.data.frame(run_history)) {
     history <- attr(run_history, "run_logs", exact = TRUE) %||% run_history
@@ -2783,7 +2786,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
   previous_by_series <- NULL
-  promote_global <- isTRUE(summary$acceptable) && promote_run
+  promote_global <- isTRUE(summary$acceptable) && is.finite(current_log$weighted_mape) && promote_run
   if (global && check_best_run) {
     previous_by_series <- stats::setNames(lapply(names(current_result$selections), function(series) {
       read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
@@ -2816,6 +2819,11 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     if (is.null(selected) || is.na(selected$selected_id)) next
     score <- selected$rankings[selected$rankings$Model_ID == selected$selected_id, , drop = FALSE]
     if (nrow(score) != 1 || !isTRUE(score$Eligible) || !is.finite(score$WMAPE)) next
+    if (!is.null(forecast_accuracy)) {
+      completed_wmape <- unname(forecast_accuracy$by_series[series])
+      if (length(completed_wmape) != 1L || !is.finite(completed_wmape)) next
+      score$WMAPE <- completed_wmape
+    }
     score$WMAPE <- round(score$WMAPE, 4)
     if (global && !promote_global) {
       if (!is.null(previous_by_series) && nrow(previous_by_series[[series]]) > 0L) retained <- c(retained, series)
@@ -2861,7 +2869,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     }
   }
   write_data(current_log, combo = NULL, run_info = run_info, output_type = "log", folder = "logs", suffix = NULL)
-  list(status = summary$status, selected_combos = c(retained, written))
+  list(status = current_log$selection_status, selected_combos = c(retained, written))
 }
 
 #' Finalize Agent Run Metadata

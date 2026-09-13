@@ -34,7 +34,7 @@ write_fcst_file <- function(data, path) {
   }
 }
 
-make_best_models_fixture <- function() {
+make_best_models_fixture <- function(date_type = "month") {
   run_path <- withr::local_tempdir(
     pattern = "finnts-best-models-",
     .local_envir = parent.frame()
@@ -46,7 +46,7 @@ make_best_models_fixture <- function() {
     data_output = "csv",
     add_unique_id = FALSE
   )
-  dates <- seq(as.Date("2021-01-01"), by = "month", length.out = 39)
+  dates <- seq(as.Date("2021-01-01"), by = date_type, length.out = 39)
   hist_end_date <- dates[36]
   log_path <- paste0(
     "logs/", hash_data(run_info$project_name), "-",
@@ -54,7 +54,7 @@ make_best_models_fixture <- function() {
   )
   log_data <- finnts:::read_file(run_info, path = log_path, return_type = "df") %>%
     dplyr::mutate(
-      date_type = "month",
+      date_type = !!date_type,
       combo_variables = "Series",
       forecast_approach = "bottoms_up",
       forecast_horizon = 3,
@@ -141,6 +141,16 @@ make_best_models_fixture <- function() {
     suffix = "-single_models"
   )
   run_info
+}
+
+make_agent_metric_forecasts <- function(result) {
+  dplyr::bind_rows(lapply(names(result$selections), function(series) {
+    selected <- result$selections[[series]]
+    if (is.null(selected) || is.na(selected$selected_id)) return(NULL)
+    score <- selected$rankings[selected$rankings$Model_ID == selected$selected_id, , drop = FALSE]
+    data.frame(Combo = series, Model_ID = selected$selected_id, Recipe_ID = "R1",
+      Run_Type = "Back_Test", Best_Model = "Yes", Target = 100, Forecast = 100 * (1 + score$WMAPE))
+  }))
 }
 
 selection_benchmark_catalogue <- function() {

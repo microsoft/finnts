@@ -452,6 +452,54 @@ test_that("weekly hierarchy resume retains accuracy and native outputs after dai
   expect_equal(agent_selection_summary(altered_future), agent_selection_summary(expanded_resumed))
 })
 
+test_that("weekly Agent metrics and logs retain the completed-output zero-target WMAPE", {
+  local_mocked_bindings(par_start = function(...) {
+    list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+  })
+  info <- make_best_models_fixture(date_type = "week")
+  history <- read_selection_file(info, "prep_data", "-R1", "Synthetic")
+  forecasts <- read_selection_file(info, "forecasts", "-single_models", "Synthetic")
+  zero_dates <- unique(forecasts$Date[forecasts$Train_Test_ID > 1 & forecasts$Horizon == 1])
+  history$Target[history$Date %in% zero_dates] <- 0
+  forecasts$Target[forecasts$Date %in% zero_dates] <- 0
+  forecasts$Forecast[forecasts$Date %in% zero_dates] <- 0
+  write_data(history, combo = "Synthetic", run_info = info, output_type = "data",
+    folder = "prep_data", suffix = "-R1")
+  write_data(forecasts, combo = "Synthetic", run_info = info, output_type = "data",
+    folder = "forecasts", suffix = "-single_models")
+
+  info$forecast_selection <- final_models(info, average_models = FALSE, weekly_to_daily = TRUE)
+  completed <- get_fcst_output(info)
+  original_wmape <- read_selection_file(info, "logs")$weighted_mape
+  native_wmape <- round(agent_selection_summary(info$forecast_selection)$weighted_mape, 4)
+  expect_true("Date_Day" %in% names(completed))
+  expect_false(isTRUE(all.equal(original_wmape, native_wmape)))
+  restored <- info
+  restored$forecast_selection <- assess_agent_run(info, read_selection_file(info, "logs"), "Synthetic")
+  selections <- info$forecast_selection$selections
+  local_mocked_bindings(
+    list_files = function(...) stop("completed metrics must not enumerate artifacts"),
+    read_series_history = function(...) stop("completed metrics must use loaded backtests"),
+    forecast_path_risk = function(...) stop("completed metrics must not reassess future paths")
+  )
+  metric <- calculate_fcst_metrics(info, completed)
+  expect_equal(as.numeric(metric), original_wmape)
+  expect_true(attr(metric, "selection_ok"))
+  expect_equal(as.numeric(calculate_fcst_metrics(restored, completed)), original_wmape)
+  expect_equal(agent_selection_summary(restored$forecast_selection)$weighted_mape,
+    agent_selection_summary(info$forecast_selection)$weighted_mape)
+  agent <- list(project_info = info, run_id = "metric-parent", agent_version = 1,
+    forecast_approach = "bottoms_up")
+  log_best_run(agent, info, metric, combo = hash_data("Synthetic"), check_best_run = FALSE)
+  parent <- info
+  parent$run_name <- agent$run_id
+  current <- read_selection_file(info, "logs")
+  saved <- read_selection_file(parent, "logs", "-agent_best_run", "Synthetic")
+  expect_equal(current$weighted_mape, original_wmape)
+  expect_equal(saved$weighted_mape, original_wmape)
+  expect_identical(info$forecast_selection$selections, selections)
+})
+
 test_that("default reforecast quality failure is attempted once through the graph", {
   calls <- 0L
   local_mocked_bindings(
@@ -514,7 +562,7 @@ test_that("a default replacement cannot publish success with soft quality concer
       submitted <<- submitted + 1L
       list(forecast_selection = list(selections = list(series = selection)))
     },
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     log_best_run = function(...) { logged <<- logged + 1L },
     cancel_parallel = function(...) NULL
   )
@@ -540,7 +588,7 @@ test_that("an explicitly rejected best-run record does not skip default recovery
       submitted <<- submitted + 1L
       list(forecast_selection = list(selections = list(series = selection)))
     },
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     log_best_run = function(...) { logged <<- logged + 1L }
   )
   agent <- list(run_id = "run", quality_rejected_combos = hash_data("series"),

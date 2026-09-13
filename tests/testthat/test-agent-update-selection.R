@@ -134,6 +134,9 @@ test_that("global updates refit selected components and retain each saved winner
   expect_true(attr(state$metric, "selection_ok"))
   expect_named(attr(state$metric, "model_accuracy"),
     c("model_avg_wmape", "model_median_wmape", "model_std_wmape"))
+  expect_equal(as.numeric(state$metric), 0)
+  expect_equal(attr(state$metric, "forecast_accuracy"),
+    list(weighted_mape = 0, by_series = c(first = 0, second = 0)))
   rows <- read_candidate_forecasts(fixture$updated, c("first", "second"), fixture$log)
   chosen <- rows[rows$Best_Model == "Yes", ]
   expect_equal(chosen$Forecast, rep(100, nrow(chosen)))

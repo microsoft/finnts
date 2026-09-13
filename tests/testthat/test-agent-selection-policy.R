@@ -30,11 +30,11 @@ test_that("equal iteration accuracy retains the earlier selected winner", {
 
 test_that("Agent metrics require completeness but not a second soft-quality pass", {
   result <- make_agent_policy_result(0.01, 2, 0.5)
-  metric <- calculate_fcst_metrics(list(forecast_selection = result), data.frame())
+  metric <- calculate_fcst_metrics(list(forecast_selection = result), make_agent_metric_forecasts(result))
   expect_equal(as.numeric(metric), 0.01)
   expect_true(attr(metric, "selection_ok"))
   result$selections["missing"] <- list(NULL)
-  metric <- calculate_fcst_metrics(list(forecast_selection = result), data.frame())
+  metric <- calculate_fcst_metrics(list(forecast_selection = result), make_agent_metric_forecasts(result))
   expect_identical(as.numeric(metric), Inf)
   expect_false(attr(metric, "selection_ok"))
 })
@@ -70,7 +70,7 @@ test_that("normal iteration stops on a complete accurate winner with soft concer
       state$submissions <- state$submissions + 1L
       list(forecast_selection = make_agent_policy_result(0.01, 2, 0.5))
     },
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     log_best_run = function(...) "logged",
     load_reason_history = function(...) {
       state$refreshes <- state$refreshes + 1L
@@ -386,6 +386,7 @@ test_that("selection-backed logging preserves genuine local model-pool statistic
       Run_Type = "Back_Test", Target = rep(c(100, 300), 4)
     )
     forecasts$Forecast <- forecasts$Target * (1 + rep(c(0.1, 0.2, 0.3, 0.001), each = 2))
+    forecasts$Best_Model <- ifelse(forecasts$Model_ID == "arima", "Yes", "No")
     future <- forecasts
     future$Run_Type <- "Future_Forecast"
     future$Forecast <- 1000000
@@ -433,7 +434,7 @@ test_that("model-pool statistics preserve signed targets and unavailable values"
 test_that("Agent decisions and saved winners retain original rounded precision", {
   fixture <- make_selected_agent_log_fixture(withr::local_tempdir(), "series", global = FALSE)
   fixture$info$forecast_selection$selections$series$rankings$WMAPE <- 0.100049
-  metric <- calculate_fcst_metrics(fixture$info, data.frame())
+  metric <- calculate_fcst_metrics(fixture$info, make_agent_metric_forecasts(fixture$info$forecast_selection))
   expect_identical(as.numeric(metric), 0.1)
   log_best_run(fixture$agent, fixture$info, metric, check_best_run = FALSE)
   current <- read_selection_file(fixture$info, "logs")
@@ -447,10 +448,137 @@ test_that("Agent decisions and saved winners retain original rounded precision",
   later_log$run_name <- later$run_name
   write_data(later_log, combo = NULL, run_info = later, output_type = "log", folder = "logs")
 
-  log_best_run(fixture$agent, later, calculate_fcst_metrics(later, data.frame()))
+  log_best_run(fixture$agent, later,
+    calculate_fcst_metrics(later, make_agent_metric_forecasts(later$forecast_selection)))
 
   saved <- read_selection_file(fixture$parent, "logs", "-agent_best_run", "series")
   expect_identical(saved$best_run_name, fixture$info$run_name)
+})
+
+test_that("completed metrics weight signed selected backtests and govern global promotion", {
+  fixture <- make_selected_agent_log_fixture(withr::local_tempdir())
+  series <- fixture$info$selection_combos
+  rows <- data.frame(Combo = rep(series, each = 3), Model_ID = "chosen", Recipe_ID = "R1",
+    Run_Type = "Back_Test", Best_Model = "Yes", Target = c(0, -100, 300, 0, -200, 600))
+  adjusted <- ifelse(rows$Target == 0, 0.1, rows$Target)
+  rows$Forecast <- adjusted * (1 + rep(c(0.1, 0.2), each = 3))
+  unselected <- rows
+  unselected$Best_Model <- "No"
+  unselected$Model_ID <- "discarded"
+  unselected$Forecast <- Inf
+  future <- rows
+  future$Run_Type <- "Future_Forecast"
+  future$Forecast <- Inf
+  local_mocked_bindings(
+    list_files = function(...) stop("completed accuracy must not enumerate artifacts"),
+    read_series_history = function(...) stop("completed accuracy must use loaded rows"),
+    forecast_path_risk = function(...) stop("completed accuracy must not rescore future paths")
+  )
+  selections <- fixture$info$forecast_selection$selections
+  metric <- calculate_fcst_metrics(fixture$info, dplyr::bind_rows(rows, unselected, future))
+  expect_equal(as.numeric(metric), round((0.1 * 400.1 + 0.2 * 800.1) / 1200.2, 4))
+  expect_equal(attr(metric, "forecast_accuracy")$by_series, stats::setNames(c(0.1, 0.2), series))
+  log_best_run(fixture$agent, fixture$info, metric, check_best_run = FALSE)
+  current <- read_selection_file(fixture$info, "logs")
+  expect_equal(current$weighted_mape, 0.1667)
+  expect_equal(current$model_avg_wmape, 0.1667)
+  expect_equal(current$model_median_wmape, 0.1667)
+  expect_equal(current$model_std_wmape, 0)
+  for (index in seq_along(series)) {
+    saved <- read_selection_file(fixture$parent, "logs", "-agent_best_run", series[index])
+    expect_equal(saved$weighted_mape, c(0.1, 0.2)[index])
+    expect_equal(saved$model_avg_wmape, 0.1667)
+  }
+  expect_identical(fixture$info$forecast_selection$selections, selections)
+
+  later <- fixture$info
+  later$run_name <- "better-native-worse-completed"
+  later$forecast_selection$selections <- lapply(selections, function(selected) {
+    selected$rankings$WMAPE <- 0.001
+    selected
+  })
+  later_log <- fixture$log
+  later_log$run_name <- later$run_name
+  write_data(later_log, combo = NULL, run_info = later, output_type = "log", folder = "logs")
+  rows$Forecast <- adjusted * (1 + rep(c(0.3, 0.4), each = 3))
+  log_best_run(fixture$agent, later, calculate_fcst_metrics(later, rows))
+  for (combo in series) {
+    saved <- read_selection_file(fixture$parent, "logs", "-agent_best_run", combo)
+    expect_identical(saved$best_run_name, fixture$info$run_name)
+  }
+  expect_equal(read_selection_file(later, "logs")$weighted_mape, 0.3667)
+})
+
+test_that("unavailable completed metrics cannot promote a global iteration", {
+  fixture <- make_selected_agent_log_fixture(withr::local_tempdir())
+  complete <- make_agent_metric_forecasts(fixture$info$forecast_selection)
+  log_best_run(fixture$agent, fixture$info, calculate_fcst_metrics(fixture$info, complete),
+    check_best_run = FALSE)
+  missing <- complete[1, ]
+  nonfinite <- complete
+  nonfinite$Forecast[1] <- Inf
+  unknown <- complete
+  unknown$Target[] <- NA_real_
+  unselected <- complete
+  unselected$Best_Model <- "No"
+  for (rows in list(data.frame(), missing, nonfinite, unknown, unselected)) {
+    later <- fixture$info
+    later$run_name <- "unusable-completed-output"
+    later_log <- fixture$log
+    later_log$run_name <- later$run_name
+    write_data(later_log, combo = NULL, run_info = later, output_type = "log", folder = "logs")
+    metric <- calculate_fcst_metrics(later, rows)
+    expect_identical(as.numeric(metric), Inf)
+    expect_false(attr(metric, "selection_ok"))
+    expect_identical(log_best_run(fixture$agent, later, metric)$status, "rejected")
+    expect_true(is.na(read_selection_file(later, "logs")$weighted_mape))
+    for (combo in fixture$info$selection_combos) {
+      saved <- read_selection_file(fixture$parent, "logs", "-agent_best_run", combo)
+      expect_identical(saved$best_run_name, fixture$info$run_name)
+    }
+  }
+})
+
+test_that("weekly zero-target completed accuracy controls the workflow goal", {
+  native <- data.frame(Combo = "series", Combo_ID = "series", Model_ID = "chosen",
+    Model_Name = "meanf", Model_Type = "local", Recipe_ID = "R1", Train_Test_ID = 2L,
+    Hyperparameter_ID = 1L, Best_Model = "Yes", Horizon = 1:2,
+    Date = as.Date("2024-01-01") + c(0, 7), Target = c(0, 70), Forecast = c(0, 70),
+    lo_95 = c(0, 70), lo_80 = c(0, 70), hi_80 = c(0, 70), hi_95 = c(0, 70))
+  daily <- convert_weekly_to_daily(native, "week", TRUE)
+  native$Run_Type <- daily$Run_Type <- "Back_Test"
+  info <- list(forecast_selection = make_agent_policy_result(0.0014))
+  expect_equal(as.numeric(calculate_fcst_metrics(info, native)), 0.0014)
+  expect_equal(as.numeric(calculate_fcst_metrics(info, daily)), 0.0099)
+  state <- new.env(parent = emptyenv())
+  state$submissions <- 0L
+  state$refreshes <- 0L
+  state$metrics <- numeric()
+  chat <- new.env(parent = emptyenv())
+  chat$set_system_prompt <- function(...) chat
+  local_mocked_bindings(
+    new_llm_session = function(llm) llm,
+    iterate_forecast_system_prompt = function(...) "prompt",
+    reason_inputs = function(...) list(models_to_run = "meanf"),
+    submit_fcst_run = function(...) { state$submissions <- state$submissions + 1L; info },
+    get_fcst_output = function(...) daily,
+    log_best_run = function(weighted_mape, ...) {
+      state$metrics <- c(state$metrics, as.numeric(weighted_mape))
+      "logged"
+    },
+    load_reason_history = function(...) {
+      state$refreshes <- state$refreshes + 1L
+      list(total_runs = state$submissions)
+    },
+    finalize_run = function(...) "finalized"
+  )
+  result <- fcst_agent_workflow(list(llm = chat, agent_version = 1), combo = "series",
+    weighted_mape_goal = 0.005, parallel_processing = NULL, inner_parallel = FALSE,
+    num_cores = 1, max_iter = 2, previous_run_results = "No Previous Runs")
+  expect_identical(state$submissions, 2L)
+  expect_identical(state$refreshes, 1L)
+  expect_equal(state$metrics, rep(0.0099, 2))
+  expect_identical(result$node, "stop")
 })
 
 test_that("the workflow does not stop below a goal only because of unrounded digits", {
@@ -467,7 +595,7 @@ test_that("the workflow does not stop below a goal only because of unrounded dig
       state$submissions <- state$submissions + 1L
       list(forecast_selection = make_agent_policy_result(if (state$submissions == 1L) 0.09996 else 0.08))
     },
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     log_best_run = function(...) "logged",
     load_reason_history = function(...) {
       state$refreshes <- state$refreshes + 1L
@@ -515,7 +643,7 @@ test_that("global promotion uses the workflow's existing iteration history", {
     iterate_forecast_system_prompt = function(...) "prompt",
     reason_inputs = function(...) list(models_to_run = "meanf"),
     submit_fcst_run = function(...) later,
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     get_run_info = function(...) stop("promotion must reuse the loaded iteration history"),
     list_files = function(...) stop("promotion must not enumerate artifacts"),
     finalize_run = function(...) "finalized"
@@ -557,7 +685,7 @@ test_that("an incomplete global result cannot satisfy the workflow accuracy goal
       submissions <<- submissions + 1L
       partial
     },
-    get_fcst_output = function(...) data.frame(),
+    get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     load_reason_history = function(...) {
       refreshes <<- refreshes + 1L
       new_reason_history("No Previous Runs", fixture$agent$agent_version)
