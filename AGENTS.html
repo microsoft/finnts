@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9006</span>
       </span>
     </div>
 
@@ -118,7 +118,7 @@
 <li>
 <code>.claude/rules/testing.md</code> for tests, CRAN profiles, credentials, runtime budgets, and PSOCK behavior.</li>
 <li>
-<code>.claude/rules/agent-runtime.md</code> for Agent graphs, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.</li>
+<code>.claude/rules/agent-runtime.md</code> for Agent graphs, iteration selection and its accuracy signals, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.</li>
 <li>
 <code>.claude/rules/multistep.md</code> for multistep adapters, lag generation, routing, and prediction.</li>
 <li>
@@ -188,6 +188,7 @@
 <div class="section level2">
 <h2 id="safety-and-quality">Safety And Quality<a class="anchor" aria-label="anchor" href="#safety-and-quality"></a></h2>
 <ul><li>Never commit secrets, tokens, local paths, or machine-specific configuration.</li>
+<li>Preserve established forecasting decision policies unless the user explicitly approves changing them. In particular, protect the Agent’s average-model accuracy signal for iteration selection; its rationale and rules are in <a href=".claude/rules/agent-runtime.html#iteration-selection-policy">.claude/rules/agent-runtime.md</a>. Logging or performance work is not permission to simplify those decisions.</li>
 <li>Prefer existing dependencies and established package patterns. New dependencies require a concrete feature need and explicit justification.</li>
 <li>Do not weaken or delete tests to hide a failure; fix the underlying behavior.</li>
 <li>Do not create code or functions that delete files.</li>

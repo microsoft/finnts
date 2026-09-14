@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9006</span>
       </span>
     </div>
 
@@ -119,6 +119,18 @@
     <div id="value">
     <h2>Value</h2>
     <p>A tibble containing the final forecast for the agent.</p>
+    </div>
+    <div id="details">
+    <h2>Details</h2>
+    <p>For hierarchical Agent runs, returns only the final reconciled
+<code>Best-Model</code> forecast. Each series can run and select different models,
+recipes, or averages during <code><a href="iterate_forecast.html">iterate_forecast()</a></code>, so the selected forecasts
+are reconciled together rather than producing a comparison hierarchy for
+every model. <code>Best-Model</code> does not mean the same model family won for every
+series. This best-only reconciled output contract also applies after
+<code><a href="update_forecast.html">update_forecast()</a></code>. It does not change non-hierarchical candidate output.</p>
+<p>For non-agentic hierarchical runs, <code><a href="get_forecast_data.html">get_forecast_data()</a></code> returns all
+successfully saved per-model reconciled forecasts plus <code>Best-Model</code>.</p>
     </div>
 
     <div id="ref-examples">

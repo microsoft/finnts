@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9006</span>
       </span>
     </div>
 
@@ -158,6 +158,34 @@ greater than number of cores on machine minus 1.</p></dd>
 <dd><p>Set seed for random number generator. Numeric value.</p></dd>
 
 </dl></div>
+    <div id="details">
+    <h2>Details</h2>
+    <p>Future quality is evaluated when <code><a href="final_models.html">final_models()</a></code> selects the winner
+within each iteration. Iteration ranking starts from the earliest minimum
+WMAPE and may prefer a later eligible iteration within 10 percent relative
+WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
+standard deviation summarize individual-model backtests, excluding simple
+averages. This retains evidence that a setting improves other models even if
+the current best model does not improve. Global summary fields retain their
+original meaning: run WMAPE for mean and median, and zero standard deviation.
+Agent comparisons and stopping use WMAPE rounded to four decimal places.
+Search-context selection does not overwrite a better saved local forecast.
+Global promotion applies to one complete iteration, and all saved global
+winners must reference that same iteration. Individual models and averages
+may differ within it. Mixed global iteration metadata is rejected before
+publication or update; interrupted writes are not treated as successful.
+Normal accuracy-goal stopping requires a complete eligible result and finite WMAPE, not another
+soft-quality check. A winner with soft concerns may therefore beat an earlier
+winner on accuracy. Loaded backtests, run history, and best-run metrics are reused without
+re-evaluating past future paths. Rejected evaluations still consume iteration
+budget without repeating the same fit as an infrastructure retry. If no
+eligible result exists, the workflow fails or an enabled local phase handles
+unresolved global series. Rankings are kept in memory, not new files.
+Hierarchical accuracy uses reconciled backtests; later comparisons and
+reconciliation do not require retained source-node quality rankings. Final
+reconciliation publishes the selected mixture without future-quality scoring,
+whole-set fallback, or extra refitting.</p>
+    </div>
 
     <div id="ref-examples">
     <h2>Examples</h2>

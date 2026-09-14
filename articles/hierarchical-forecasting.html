@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9005</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9006</span>
       </span>
     </div>
 
@@ -158,11 +158,26 @@ forecast.</p>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">8</span> North America Mexico        Mexico City 2020-02-01     80</span></span>
 <span><span class="co">#&gt; <span style="color: #BCBCBC;">9</span> North America Mexico        Mexico City 2020-03-01    120</span></span></code></pre>
 <p>In the above example, “City” was the lowest level of the hierarchy,
-which feeds into “Country”, which then feeds into “Continent”. Finn will
-take this data and will forecast by City, total Country, and total
-Continent. After each model is ran for every level in the hierarchy, the
-best model is chosen at each level, then the “Best Model” and every
-other model is reconciled back down to the lowest level.</p>
+which feeds into “Country”, which then feeds into “Continent”. For a
+non-agentic run, Finn forecasts each model at the prepared hierarchy
+levels, selects the best forecast at each level, and reconciles both the
+selected combination and the individual models back down to the lowest
+level. <code>get_forecast_data(run_info)</code> returns every
+successfully saved per-model reconciled forecast plus
+<code>Best-Model</code>. Models that fail to produce a reconciled
+artifact are not fabricated in the result. Filter
+<code>Best_Model == "Yes"</code> to retain only the reconciled selected
+forecast.</p>
+<p>Agentic runs use a different output contract. During
+<code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>, different series can run and select
+different model sets, recipes, or averages. Finn therefore reconciles
+the selected forecasts together, and
+<code>get_agent_forecast(agent_info)</code> returns only that final
+reconciled <code>Best-Model</code> forecast, not a reconciled comparison
+table for every model. <code>Best-Model</code> can combine different
+winners across series; it does not mean that the same model family won
+everywhere. This distinction applies to both standard and grouped
+hierarchies and to Agent forecast updates.</p>
 </div>
 <div class="section level3">
 <h3 id="grouped-hierarchy">Grouped Hierarchy<a class="anchor" aria-label="anchor" href="#grouped-hierarchy"></a>
