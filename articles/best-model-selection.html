@@ -135,6 +135,75 @@ backtest weighted MAPE with future-forecast plausibility. Individual
 models, learned ensembles, and simple averages are evaluated on the same
 series and expected backtest dates.</p>
 <div class="section level2">
+<h2 id="process-at-a-glance">Process at a glance<a class="anchor" aria-label="anchor" href="#process-at-a-glance"></a>
+</h2>
+<p>Model selection is several connected decisions, not one minimum-error
+calculation:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Stage</th>
+<th>Question answered</th>
+<th>Result</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Candidate validity</td>
+<td>Does each model have complete, finite predictions and usable
+backtest accuracy?</td>
+<td>Hard-invalid candidates cannot win or contribute to a simple
+average.</td>
+</tr>
+<tr class="even">
+<td>Within-run selection</td>
+<td>Among sufficiently accurate candidates, which future path ranks best
+by risk, concern count, supported seasonal fidelity, WMAPE, and stable
+ID?</td>
+<td>One selected model or exact average for each series. Soft concerns
+can remain when no better eligible alternative exists.</td>
+</tr>
+<tr class="odd">
+<td>Agent iteration context</td>
+<td>Which completed iteration’s settings should guide further
+optimization?</td>
+<td>A near-best iteration can be preferred when its individual
+model-pool accuracy improves. This does not automatically replace a
+better saved local forecast.</td>
+</tr>
+<tr class="even">
+<td>Saved forecast promotion</td>
+<td>Should the current iteration replace the saved result?</td>
+<td>Local winners stay protected; globally selected series reference one
+winning global iteration.</td>
+</tr>
+<tr class="odd">
+<td>Update acceptance</td>
+<td>Is the newly refitted version of the saved choice still
+acceptable?</td>
+<td>Keep that choice or attempt the existing default-local replacement
+workflow before reconciliation.</td>
+</tr>
+</tbody>
+</table>
+<p>Seasonal fidelity breaks a risk-and-concern tie only when every
+candidate in that tied group has a finite assessed score; otherwise
+WMAPE and stable ID decide the tie.</p>
+<p>For a standard run, follow <a href="#future-forecast-checks">candidate checks</a>, the <a href="#accuracy-allowance">accuracy allowance</a>, and <a href="#standard-forecasts-and-saved-averages">selection and saved
+averages</a>. The <a href="#iterative-agent-forecasts">Agent</a> and <a href="#updated-agent-forecasts">update</a> sections describe the
+additional decisions. <a href="#reconciliation">Reconciliation</a> makes
+the selected hierarchy coherent; it does not select the models
+again.</p>
+<p>Two uses of “average” are important: a <strong>simple-average
+forecast</strong> combines predictions from selected components, while
+<strong>average model accuracy</strong> summarizes individual model
+WMAPEs to guide Agent search. Improving the latter can be useful even
+when the winning model has not changed.</p>
+</div>
+<div class="section level2">
 <h2 id="future-forecast-checks">Future-forecast checks<a class="anchor" aria-label="anchor" href="#future-forecast-checks"></a>
 </h2>
 <p>These checks apply to candidate base forecasts before reconciliation,
@@ -546,6 +615,13 @@ phase for unresolved global series. Final outer reconciliation does not
 initiate another quality-selection or refitting loop. Avoided evaluator
 calls and artifact reads are covered by tests; no fixed runtime
 reduction is promised.</p>
+<p>For ordinary Agent iterations, the goal and saved-forecast
+comparisons use selected completed-output backtests, including
+daily-expanded rows when weekly forecasts are delivered daily.
+Within-run candidate selection stays at native cadence. Those scores are
+not interchangeable: the zero-actual convention and rounding can produce
+different WMAPEs after daily allocation. Future target placeholders
+never contribute to either accuracy calculation.</p>
 </div>
 <div class="section level2">
 <h2 id="updated-agent-forecasts">Updated Agent forecasts<a class="anchor" aria-label="anchor" href="#updated-agent-forecasts"></a>
@@ -604,6 +680,11 @@ the new output once. Quality recovery itself does not ask the LLM to
 waive a check. Default refitting can increase compute or
 configured-provider cost, and it is a bounded recovery attempt rather
 than a promise of a satisfactory forecast.</p>
+<p>Update accuracy keeps the existing native-cadence aggregate used for
+refit/retune and aggregate logging. Completed-output backtests supply
+per-series saved-winner accuracy and local model-pool statistics. This
+distinction preserves the update workflow’s metric meanings when weekly
+output is expanded to daily rows.</p>
 </div>
 <div class="section level2">
 <h2 id="evidence-and-limitations">Evidence and limitations<a class="anchor" aria-label="anchor" href="#evidence-and-limitations"></a>

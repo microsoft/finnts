@@ -114,7 +114,7 @@
 <h2 id="instruction-map">Instruction Map<a class="anchor" aria-label="anchor" href="#instruction-map"></a></h2>
 <p>Detailed rules load conditionally from <code>.claude/rules/</code>, a format shared by Claude Code and VS Code. Agents that do not load that directory automatically must read the matching rule before editing:</p>
 <ul><li>
-<code>.claude/rules/r-package.md</code> for R source, package metadata, roxygen, vignettes, and release notes, including the single-development-version policy.</li>
+<code>.claude/rules/r-package.md</code> for R source, documentation of every function (including internal helpers), package metadata, roxygen, vignettes, and release notes, including the single-development-version policy.</li>
 <li>
 <code>.claude/rules/testing.md</code> for tests, CRAN profiles, credentials, runtime budgets, and PSOCK behavior.</li>
 <li>
@@ -161,14 +161,15 @@
 <code>NEWS.md</code>: user-visible changes and releases.</li>
 <li>
 <code>docs/</code>: generated pkgdown site; do not use it for internal agent guidance.</li>
-</ul></div>
+</ul><p>For model selection, start with the <a href="agent-guides/architecture-map.html#model-selection">architecture map</a>, then the <a href="vignettes/best-model-selection.Rmd">selection walkthrough</a>. The map distinguishes within-run model choice, Agent search context, saved-winner promotion, update acceptance, and reconciliation, with source and test pointers.</p>
+</div>
 <div class="section level2">
 <h2 id="working-method">Working Method<a class="anchor" aria-label="anchor" href="#working-method"></a></h2>
 <ol style="list-style-type: decimal"><li>Start from the named file, symbol, failure, or closest owning implementation.</li>
 <li>State one local hypothesis and the cheapest check that could disprove it.</li>
 <li>Make the smallest grounded change and run a focused executable check immediately.</li>
 <li>Add or update tests for the happy path, relevant edge cases, and the regression being fixed.</li>
-<li>Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.</li>
+<li>Document every new or modified function, including internal helpers, following the <a href=".claude/rules/r-package.html#function-documentation">function documentation contract</a>. Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.</li>
 <li>Run the broadest practical validation before finishing and report anything not run.</li>
 </ol><p>Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.</p>
 </div>
@@ -201,6 +202,7 @@
 <div class="section level2">
 <h2 id="code-review-rules">Code Review Rules<a class="anchor" aria-label="anchor" href="#code-review-rules"></a></h2>
 <ul><li>Prioritize behavioral regressions, unsafe error handling, compatibility breaks, optional-dependency violations, non-deterministic CRAN behavior, and missing focused tests.</li>
+<li>Check that new and modified functions have accurate documentation, including internal helpers; follow the function documentation contract above.</li>
 <li>Report findings with file references and a safe correction path. Leave formatting and generated-file checks to automated validation unless they reveal a behavioral risk.</li>
 </ul></div>
 </div>
