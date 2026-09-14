@@ -747,6 +747,44 @@ test_that("Agent forecast loading does not require an ineligible average artifac
   expect_true(all(result$Best_Model == "Yes"))
 })
 
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("Agent loading reads required splits and missing optional averages on", provider), {
+    fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
+    rows <- dplyr::bind_rows(fixture$backtests, fixture$forecasts) %>%
+      dplyr::mutate(Combo = "series", Combo_ID = Combo, Hyperparameter_ID = 1,
+        Best_Model = "Yes", Model_Name = "meanf", Model_Type = "local", Recipe_ID = "R1")
+    source <- artifact_test_run(withr::local_tempdir(), "rds")
+    write_data(rows, "series", source, "data", "forecasts", "-single_models")
+    write_data(fixture$context$train_test_split, NULL, source, "data", "prep_models", "-train_test_split")
+    transport <- local_artifact_provider(provider)
+    project <- artifact_test_run("provider-artifacts", "rds")
+    project$storage_object <- transport$storage_object
+    project$combo_variables <- "Series"
+    selected <- project
+    selected$project_name <- paste0(project$project_name, "_", hash_data("series"))
+    selected$run_name <- "selected"
+    transport$files[[as.character(artifact_test_path(selected, "forecasts", "series", "-single_models"))]] <-
+      artifact_test_path(source, "forecasts", "series", "-single_models")
+    transport$files[[as.character(artifact_test_path(selected, "prep_models", suffix = "-train_test_split"))]] <-
+      artifact_test_path(source, "prep_models", suffix = "-train_test_split")
+    local_mocked_bindings(
+      check_agent_info = function(...) NULL,
+      load_best_agent_run = function(...) data.frame(combo = "series", model_type = "local",
+        best_run_name = "selected", recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = TRUE)
+    )
+    agent <- list(run_id = "run", forecast_approach = "bottoms_up", project_info = project)
+
+    result <- load_agent_forecast(agent)
+
+    expect_identical(unique(result$Model_ID), "only")
+    expect_true(all(result$Best_Model == "Yes"))
+    expect_length(transport$downloads, 2L)
+    rows$Best_Model <- "No"
+    write_data(rows, "series", source, "data", "forecasts", "-single_models")
+    expect_error(load_agent_forecast(agent), "missing a best model", fixed = TRUE)
+  })
+}
+
 test_that("an unpublished quality rejection is not treated as a completed forecast", {
   result <- rejected_agent_selection(c("first", "second"), "incomplete hierarchy")
   expect_identical(agent_selection_summary(result)$status, "rejected")

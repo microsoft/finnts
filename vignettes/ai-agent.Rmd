@@ -177,7 +177,9 @@ head(fcst)
 ```
 
 - `best_runs` summarizes, for each time series combo, the best run inputs when calling the Finn forecast process.
-- `fcst` returns the consolidated forecast table (if hierarchical reconciliation was used, this is the reconciled output).
+- `fcst` returns the consolidated forecast table. For hierarchical Agent runs, it contains only the final reconciled `Best-Model` forecast. Series can run and select different models, recipes, or averages during `iterate_forecast()`, so there is no complete per-model comparison hierarchy to publish. The best forecast is the reconciled combination of selected series forecasts, not necessarily one identical model family for every series. This best-only reconciled output also applies after `update_forecast()`; non-hierarchical candidate output is unchanged.
+
+For non-agentic hierarchical runs, use `get_forecast_data(run_info)` to retrieve every successfully saved per-model reconciled forecast plus `Best-Model`. Filter `Best_Model == "Yes"` when only the selected forecast is needed.
 
 ---
 

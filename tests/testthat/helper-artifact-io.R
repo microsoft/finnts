@@ -1,3 +1,64 @@
+artifact_http_error <- function(status = 404L, message = "requested artifact is missing") {
+  response <- structure(list(status_code = status, url = "https://example.invalid/artifact"),
+    class = "response")
+  tryCatch(httr::stop_for_status(response, message), error = identity)
+}
+
+local_artifact_provider <- function(provider, .env = parent.frame()) {
+  state <- new.env(parent = emptyenv())
+  state$files <- list()
+  state$lookups <- character()
+  state$downloads <- character()
+  state$destinations <- character()
+  state$root_checks <- 0L
+  state$root_error <- NULL
+  state$lookup_error <- NULL
+  state$download_error <- NULL
+  state$folder <- FALSE
+  root <- function() {
+    state$root_checks <- state$root_checks + 1L
+    if (!is.null(state$root_error)) stop(state$root_error)
+    list()
+  }
+  lookup <- function(path) {
+    state$lookups <- c(state$lookups, as.character(path))
+    if (!is.null(state$lookup_error)) stop(state$lookup_error)
+    if (is.null(state$files[[as.character(path)]])) stop(artifact_http_error())
+    state$files[[as.character(path)]]
+  }
+  download <- function(src, dest) {
+    state$downloads <- c(state$downloads, as.character(src))
+    state$destinations <- c(state$destinations, as.character(dest))
+    if (!is.null(state$download_error)) stop(state$download_error)
+    fs::file_copy(state$files[[as.character(src)]], dest, overwrite = TRUE)
+    invisible(NULL)
+  }
+  if (provider == "blob_container") {
+    testthat::skip_if_not_installed("AzureStor")
+    state$storage_object <- structure(list(), class = "blob_container")
+    testthat::local_mocked_bindings(
+      storage_download = function(container, src, dest, overwrite = FALSE, ...) {
+        lookup(src)
+        download(src, dest)
+      },
+      get_storage_properties = function(object, ...) root(),
+      .package = "AzureStor", .env = .env
+    )
+  } else {
+    state$storage_object <- structure(list(get_item = function(path = NULL, itemid = NULL) {
+      if (identical(path, "/")) return(root())
+      lookup(path)
+      list(is_folder = function() state$folder,
+        download = function(dest, overwrite = FALSE) download(path, dest))
+    }), class = "ms_drive")
+  }
+  testthat::local_mocked_bindings(
+    list_files = function(...) stop("exact provider reads must not enumerate directories"),
+    .package = "finnts", .env = .env
+  )
+  state
+}
+
 artifact_test_run <- function(path, data_output = "csv", object_output = "rds") {
   list(
     project_name = paste0("artifact_io_", basename(tempfile())),

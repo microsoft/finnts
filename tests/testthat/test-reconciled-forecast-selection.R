@@ -55,6 +55,18 @@ test_that("outer reconciliation publishes the selected mixture without post-qual
   future <- published[published$Train_Test_ID == 1, ]
   expect_equal(future$Forecast, 3 * unname(fixture$values[future$Combo]))
   expect_true(all(published$Best_Model == "Yes"))
+  expect_identical(unique(published$Model_ID), "Best-Model")
+
+  average_id <- "arima--local--R1_glmnet--local--R2"
+  averaged <- fixture$forecasts$Model_ID == "arima--local--R1"
+  fixture$forecasts$Model_ID[averaged] <- average_id
+  fixture$forecasts$Recipe_ID[averaged] <- "simple_average"
+  reconcile_agent_forecast(fixture$agent_info, fixture$project_info)
+  expect_length(reconciliations, 2L)
+  expect_setequal(unique(reconciliations[[2]]$Model_ID), c(average_id, "ets--local--R1"))
+  expect_true(all(reconciliations[[2]]$Best_Model == "Yes"))
+  expect_identical(unique(published$Model_ID), "Best-Model")
+  expect_identical(evaluations, 0L)
 })
 
 test_that("standard reconciliation never promotes a uniform alternative after selection", {

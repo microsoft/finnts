@@ -499,6 +499,17 @@ iterate_forecast <- function(agent_info,
 #'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete.
 #'
+#' @details For hierarchical Agent runs, returns only the final reconciled
+#'   `Best-Model` forecast. Each series can run and select different models,
+#'   recipes, or averages during [iterate_forecast()], so the selected forecasts
+#'   are reconciled together rather than producing a comparison hierarchy for
+#'   every model. `Best-Model` does not mean the same model family won for every
+#'   series. This best-only reconciled output contract also applies after
+#'   [update_forecast()]. It does not change non-hierarchical candidate output.
+#'
+#'   For non-agentic hierarchical runs, [get_forecast_data()] returns all
+#'   successfully saved per-model reconciled forecasts plus `Best-Model`.
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
 #' @return A tibble containing the final forecast for the agent.
@@ -695,7 +706,10 @@ load_agent_forecast <- function(agent_info,
     project_info <- agent_info$project_info
     project_info$run_name <- agent_info$run_id
 
-    fcst_tbl <- read_file(
+    fcst_tbl <- if (inherits(project_info$storage_object, c("blob_container", "ms_drive"))) {
+      read_exact_artifact(project_info,
+        local_artifact_path(project_info, "forecasts", "-reconciled", hash_data("Best-Model")))
+    } else read_file(
       run_info = project_info,
       path = paste0(
         "/forecasts/", hash_data(project_info$project_name), "-", hash_data(project_info$run_name),
@@ -787,7 +801,7 @@ load_agent_forecast <- function(agent_info,
       hash_data(local_run_example$combo)
     )
 
-    model_train_test_tbl <- read_file(agent_info$project_info,
+    model_train_test_tbl <- read_exact_artifact(agent_info$project_info,
       file_list = paste0(
         agent_info$project_info$path, "/prep_models/", hash_data(local_project_name), "-", hash_data(local_run_example$best_run_name),
         "-train_test_split.", agent_info$project_info$data_output
@@ -894,7 +908,7 @@ load_best_agent_run <- function(agent_info) {
     project_info$storage_object,
     paste0(
       project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "*-agent_best_run.", project_info$data_output
+      hash_data(agent_info$run_id), "*-agent_best_run.csv"
     ),
     fail_on_error = TRUE
   )
@@ -902,7 +916,10 @@ load_best_agent_run <- function(agent_info) {
   if (length(combo_best_run_list) == 0) {
     best_run_tbl <- tibble::tibble()
   } else {
-    best_run_tbl <- read_file(
+    if (inherits(project_info$storage_object, "ms_drive")) {
+      combo_best_run_list <- fs::path(project_info$path, "logs", fs::path_file(combo_best_run_list))
+    }
+    best_run_tbl <- read_exact_artifact(
       run_info = project_info,
       file_list = combo_best_run_list,
       return_type = "df"

@@ -64,7 +64,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
     return(get(cache_key, envir = cache, inherits = FALSE))
   }
   if (is.null(run_log)) {
-    run_log <- read_file(run_info, file_list = fs::path(
+    run_log <- read_exact_artifact(run_info, file_list = fs::path(
       run_info$path, "logs", paste0(prefix, ".csv")
     ), return_type = "df")
   }
@@ -78,7 +78,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
     recipe_list <- strsplit(recipes, "---", fixed = TRUE)[[1]]
     recipe <- if ("R1" %in% recipe_list) "R1" else "R2"
   }
-  prepared <- read_file(run_info, file_list = fs::path(
+  prepared <- read_exact_artifact(run_info, file_list = fs::path(
     run_info$path, "prep_data", paste0(prefix, "-", hash_data(combo), "-", recipe, ".", run_info$data_output)
   ), return_type = "df")
   prepared <- adjust_combo_column(prepared)
@@ -93,7 +93,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
     if (!is.null(cache) && exists(metadata_key, envir = cache, inherits = FALSE)) {
       combo_info <- get(metadata_key, envir = cache, inherits = FALSE)
     } else {
-      combo_info <- read_file(run_info, file_list = fs::path(
+      combo_info <- read_exact_artifact(run_info, file_list = fs::path(
         run_info$path, "prep_data", paste0(metadata_key, ".", run_info$data_output)
       ), return_type = "df")
       if (!is.null(cache)) assign(metadata_key, combo_info, envir = cache)
@@ -683,7 +683,7 @@ read_final_predictions <- function(run_info, combo_hash, suffix) {
     "-", combo_hash, suffix, ".", run_info$data_output)
   path <- fs::path(run_info$path, "forecasts", filename)
   if (is.null(run_info$storage_object) && !file.exists(path)) return(NULL)
-  rows <- read_file(run_info, file_list = path, return_type = "df")
+  rows <- read_exact_artifact(run_info, file_list = path, return_type = "df")
   if (!is.data.frame(rows) || !nrow(rows)) {
     stop("The model prediction artifact is empty or unreadable: ", filename, call. = FALSE)
   }
@@ -910,7 +910,7 @@ agent_selection_combos <- function(agent_info, combo = NULL) {
   if (is.null(combo)) stop("Global selection requires the known series list.", call. = FALSE)
   info <- agent_info$project_info
   filename <- paste0(hash_data(info$project_name), "-", hash_data(agent_info$run_id), "-", combo, ".", info$data_output)
-  input <- read_file(info, file_list = fs::path(info$path, "input_data", filename), return_type = "df")
+  input <- read_exact_artifact(info, file_list = fs::path(info$path, "input_data", filename), return_type = "df")
   combos <- unique(as.character(input$Combo))
   if (length(combos) != 1 || is.na(combos)) stop("Unable to identify the exact series for selection.", call. = FALSE)
   combos
@@ -923,8 +923,8 @@ read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
   filename <- paste0(prefix, if (!is.null(combo)) paste0("-", hash_data(combo)), suffix, ".", extension)
   path <- fs::path(run_info$path, folder, filename)
   if (!is.null(cache) && exists(path, cache, inherits = FALSE)) return(get(path, cache, inherits = FALSE))
-  if (optional && is.null(run_info$storage_object) && !file.exists(path)) return(tibble::tibble())
-  result <- read_file(run_info, file_list = path, return_type = "df")
+  result <- read_exact_artifact(run_info, file_list = path, allow_missing = optional)
+  if (optional && is.null(result)) return(tibble::tibble())
   if (!is.data.frame(result) || nrow(result) == 0) {
     stop("The exact forecast artifact is empty or unreadable: ", filename, call. = FALSE)
   }
@@ -937,7 +937,7 @@ read_selection_hierarchy <- function(run_info, cache = NULL) {
     "-hts_info.", run_info$object_output)
   path <- fs::path(run_info$path, "prep_data", filename)
   if (!is.null(cache) && exists(path, cache, inherits = FALSE)) return(get(path, cache, inherits = FALSE))
-  hierarchy <- read_file(run_info, file_list = path, return_type = "object")
+  hierarchy <- read_exact_artifact(run_info, file_list = path, return_type = "object")
   if (!is.list(hierarchy) || !all(c("original_combos", "hts_combos") %in% names(hierarchy))) {
     stop("Hierarchy metadata is missing the original series mapping.", call. = FALSE)
   }

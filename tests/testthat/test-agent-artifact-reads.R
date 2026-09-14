@@ -129,6 +129,91 @@ test_that("local submission reads its exact input before starting modeling", {
   )
 })
 
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("best-run retrieval downloads CSV metadata independently of data format on", provider), {
+    source <- artifact_test_agent(withr::local_tempdir(), "rds")
+    expected <- tibble::tibble(combo = "A", model_type = "local", best_run_name = "selected", weighted_mape = 0.1)
+    write_data(expected, "A", source$project_info, "log", "logs", "-agent_best_run")
+    agent <- source
+    agent$project_info$path <- "provider-artifacts"
+    transport <- local_artifact_provider(provider)
+    agent$project_info$storage_object <- transport$storage_object
+    path <- artifact_test_path(agent$project_info, "logs", "A", "-agent_best_run", "csv")
+    transport$files[[as.character(path)]] <- artifact_test_path(source$project_info, "logs", "A", "-agent_best_run", "csv")
+    listings <- 0L
+    local_mocked_bindings(list_files = function(storage_object, path, fail_on_error = FALSE) {
+      listings <<- listings + 1L
+      expect_true(fail_on_error)
+      expect_match(path, "-agent_best_run[.]csv$")
+      files <- names(transport$files)
+      if (provider == "ms_drive") fs::path_file(files) else files
+    })
+
+    result <- load_best_agent_run(agent)
+
+    expect_equal(result, expected)
+    expect_equal(listings, 1L)
+    expect_identical(transport$downloads, as.character(path))
+  })
+}
+
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("hierarchical Agent publication downloads only its exact best artifact on", provider), {
+    source <- artifact_test_run(withr::local_tempdir(), "rds")
+    best <- artifact_test_forecast(source, write_output = FALSE)
+    best$Model_ID <- "Best-Model"
+    write_data(best, "Best-Model", source, "data", "forecasts", "-reconciled")
+    transport <- local_artifact_provider(provider)
+    project <- source
+    project$path <- "provider-artifacts"
+    project$storage_object <- transport$storage_object
+    agent <- list(run_id = source$run_name, project_info = project, forecast_approach = "standard_hierarchy")
+    best_path <- artifact_test_path(project, "forecasts", "Best-Model", "-reconciled")
+    alternative_path <- artifact_test_path(project, "forecasts", "meanf--local--R1", "-reconciled")
+    transport$files[[as.character(best_path)]] <- artifact_test_path(source, "forecasts", "Best-Model", "-reconciled")
+    transport$files[[as.character(alternative_path)]] <- transport$files[[as.character(best_path)]]
+    local_mocked_bindings(check_agent_info = function(...) NULL)
+
+    result <- load_agent_forecast(agent, final_output = TRUE)
+
+    expect_equal(result, best)
+    expect_identical(transport$downloads, as.character(best_path))
+    transport$files[[as.character(best_path)]] <- NULL
+    expect_error(load_agent_forecast(agent, final_output = TRUE), class = "http_404")
+  })
+}
+
+test_that("hierarchical Agent publication and getter ignore per-model reconciled alternatives", {
+  agent <- artifact_test_agent(withr::local_tempdir())
+  agent$forecast_approach <- "grouped_hierarchy"
+  info <- agent$project_info
+  info$run_name <- agent$run_id
+  best <- artifact_test_forecast(info, write_output = FALSE)
+  best$Model_ID <- "Best-Model"
+  historical <- best
+  historical$Train_Test_ID <- 2
+  historical$Date <- as.Date("2024-01-01")
+  historical$Target <- 100
+  best <- dplyr::bind_rows(best, historical)
+  write_data(best, "Best-Model", info, "data", "forecasts", "-reconciled")
+  alternative <- best
+  alternative$Model_ID <- "arima--local--R1"
+  alternative$Best_Model <- "No"
+  alternative$Forecast <- 1e6
+  write_data(alternative, alternative$Model_ID, info, "data", "forecasts", "-reconciled")
+  tracker <- local_artifact_spies()
+  local_mocked_bindings(check_agent_info = function(...) NULL)
+
+  save_agent_forecast(agent)
+  result <- get_agent_forecast(agent)
+
+  expect_equal(result, best)
+  expect_identical(unique(result$Model_ID), "Best-Model")
+  expect_true(all(result$Best_Model == "Yes"))
+  expect_equal(tracker$listings, 0L)
+  expect_false(any(grepl(hash_data(alternative$Model_ID), tracker$payload_paths, fixed = TRUE)))
+})
+
 test_that("reconciliation reads the selected run split by exact path", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   project_info <- agent_info$project_info
@@ -156,6 +241,33 @@ test_that("reconciliation reads the selected run split by exact path", {
     as.character(artifact_test_path(selected, "prep_models", suffix = "-train_test_split"))
   )
 })
+
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("outer Agent reconciliation transfers the required exact split on", provider), {
+    agent <- artifact_test_agent(withr::local_tempdir(), "rds")
+    selected <- agent$project_info
+    selected$project_name <- paste0(selected$project_name, "_", hash_data("A"))
+    selected$run_name <- "selected"
+    artifact_test_splits(selected)
+    source_path <- artifact_test_path(selected, "prep_models", suffix = "-train_test_split")
+    agent$project_info$path <- "provider-artifacts"
+    transport <- local_artifact_provider(provider)
+    agent$project_info$storage_object <- transport$storage_object
+    selected$path <- agent$project_info$path
+    path <- artifact_test_path(selected, "prep_models", suffix = "-train_test_split")
+    transport$files[[as.character(path)]] <- source_path
+    local_mocked_bindings(
+      check_agent_info = function(...) NULL,
+      get_best_agent_run = function(...) tibble::tibble(negative_forecast = FALSE,
+        model_type = "local", combo = "A", best_run_name = "selected"),
+      load_agent_forecast = function(...) stop("exact split successfully loaded", call. = FALSE)
+    )
+
+    expect_error(reconcile_agent_forecast(agent, agent$project_info),
+      "exact split successfully loaded", fixed = TRUE)
+    expect_identical(transport$downloads, as.character(path))
+  })
+}
 
 test_that("model summaries consolidate only expected combo artifacts", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
