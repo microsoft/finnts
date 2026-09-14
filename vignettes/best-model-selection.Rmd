@@ -16,6 +16,33 @@ knitr::opts_chunk$set(
 
 The `Best_Model` flag identifies the selected forecast for each series. Finn first checks candidate validity, then balances backtest weighted MAPE with future-forecast plausibility. Individual models, learned ensembles, and simple averages are evaluated on the same series and expected backtest dates.
 
+## Process at a glance
+
+Model selection is several connected decisions, not one minimum-error calculation:
+
+| Stage | Question answered | Result |
+| --- | --- | --- |
+| Candidate validity | Does each model have complete, finite predictions and usable backtest accuracy? | Hard-invalid candidates cannot win or contribute to a simple average. |
+| Within-run selection | Among sufficiently accurate candidates, which future path ranks best by risk, concern count, supported seasonal fidelity, WMAPE, and stable ID? | One selected model or exact average for each series. Soft concerns can remain when no better eligible alternative exists. |
+| Agent iteration context | Which completed iteration's settings should guide further optimization? | A near-best iteration can be preferred when its individual model-pool accuracy improves. This does not automatically replace a better saved local forecast. |
+| Saved forecast promotion | Should the current iteration replace the saved result? | Local winners stay protected; globally selected series reference one winning global iteration. |
+| Update acceptance | Is the newly refitted version of the saved choice still acceptable? | Keep that choice or attempt the existing default-local replacement workflow before reconciliation. |
+
+Seasonal fidelity breaks a risk-and-concern tie only when every candidate in that
+tied group has a finite assessed score; otherwise WMAPE and stable ID decide the tie.
+
+For a standard run, follow [candidate checks](#future-forecast-checks), the
+[accuracy allowance](#accuracy-allowance), and
+[selection and saved averages](#standard-forecasts-and-saved-averages).
+The [Agent](#iterative-agent-forecasts) and [update](#updated-agent-forecasts)
+sections describe the additional decisions. [Reconciliation](#reconciliation)
+makes the selected hierarchy coherent; it does not select the models again.
+
+Two uses of "average" are important: a **simple-average forecast** combines
+predictions from selected components, while **average model accuracy** summarizes
+individual model WMAPEs to guide Agent search. Improving the latter can be useful
+even when the winning model has not changed.
+
 ## Future-forecast checks
 
 These checks apply to candidate base forecasts before reconciliation, including averages. Candidates with incomplete or non-finite predictions are ineligible. Backtests and future predictions without a supported trend are rejected when their absolute magnitude exceeds 100 times a positive robust historical scale. That scale uses the 95th percentile of absolute levels and robust level/change variation, not just the last observation. A supported trend supplies a pointwise future bound of `100 * max(robust_scale, abs(projected_reference))`, so sustained growth is not rejected merely for accumulating over a long horizon. The projection comes only from history, never from the candidate being screened. Existing finite-negative handling still follows `negative_forecast`, but missing or infinite predictions are no longer replaced with zero.
@@ -113,6 +140,13 @@ Choosing an iteration's settings for further optimization is distinct from repla
 
 Normal accuracy-goal stopping and local optimization routing use completeness and WMAPE, without another soft-quality veto. Consequently, an iteration winner with soft concerns can beat an earlier winner or meet the accuracy goal; hard-invalid and incomplete results still cannot claim successful completion. Rejected runs consume iteration budget. At the limit, an eligible best-available result may be retained with concerns; if none exists, Finn fails or uses an already enabled local phase for unresolved global series. Final outer reconciliation does not initiate another quality-selection or refitting loop. Avoided evaluator calls and artifact reads are covered by tests; no fixed runtime reduction is promised.
 
+For ordinary Agent iterations, the goal and saved-forecast comparisons use selected
+completed-output backtests, including daily-expanded rows when weekly forecasts
+are delivered daily. Within-run candidate selection stays at native cadence.
+Those scores are not interchangeable: the zero-actual convention and rounding can
+produce different WMAPEs after daily allocation. Future target placeholders never
+contribute to either accuracy calculation.
+
 ## Updated Agent forecasts
 
 `update_forecast()` follows a different fitting path but uses the same evaluator:
@@ -125,6 +159,11 @@ Normal accuracy-goal stopping and local optimization routing use completeness an
 6. If outer reconciliation is required, reconcile the selected forecasts once and publish its result without a post-quality switch or late default reforecast. A default replacement rejected before reconciliation raises an explicit quality error and cannot trigger repeated fitting. Stable default run identities and an acceptance/rejection field in existing run logs preserve that boundary across restarts.
 
 The optional accuracy-degradation `allow_iterate_forecast` workflow remains separate. Checks after refit or retune assess newly generated predictions, not old iteration winners. A default's saved acceptance or rejection prevents repeating that acceptance decision after it has completed; an interrupted acceptance step can still assess the new output once. Quality recovery itself does not ask the LLM to waive a check. Default refitting can increase compute or configured-provider cost, and it is a bounded recovery attempt rather than a promise of a satisfactory forecast.
+
+Update accuracy keeps the existing native-cadence aggregate used for refit/retune
+and aggregate logging. Completed-output backtests supply per-series saved-winner
+accuracy and local model-pool statistics. This distinction preserves the update
+workflow's metric meanings when weekly output is expanded to daily rows.
 
 ## Evidence and limitations
 

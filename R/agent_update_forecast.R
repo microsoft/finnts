@@ -1856,6 +1856,9 @@ update_forecast_combo <- function(agent_info,
   selection_log <- read_selection_file(new_run_info, "logs")
   selection_log$negative_forecast <- prev_run_log_tbl$negative_forecast
   selection_cache <- new.env(parent = emptyenv())
+  # This is acceptance of new predictions for the saved choice, not a fresh
+  # candidate search. Assess source components before any hierarchy solve;
+  # return quality rejections to the existing default-local recovery workflow.
   assessment <- assess_update_forecasts(
     final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
     expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
@@ -1900,6 +1903,7 @@ update_forecast_combo <- function(agent_info,
         selected_models = selected_models
       )
 
+    # Retuning created a new path, so the first acceptance result cannot be reused.
     assessment <- assess_update_forecasts(
       final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
       expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,

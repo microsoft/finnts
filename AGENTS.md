@@ -14,7 +14,7 @@ Make changes that are testable, documented, backward-compatible where practical,
 
 Detailed rules load conditionally from `.claude/rules/`, a format shared by Claude Code and VS Code. Agents that do not load that directory automatically must read the matching rule before editing:
 
-- `.claude/rules/r-package.md` for R source, package metadata, roxygen, vignettes, and release notes, including the single-development-version policy.
+- `.claude/rules/r-package.md` for R source, documentation of every function (including internal helpers), package metadata, roxygen, vignettes, and release notes, including the single-development-version policy.
 - `.claude/rules/testing.md` for tests, CRAN profiles, credentials, runtime budgets, and PSOCK behavior.
 - `.claude/rules/agent-runtime.md` for Agent graphs, iteration selection and its accuracy signals, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.
 - `.claude/rules/multistep.md` for multistep adapters, lag generation, routing, and prediction.
@@ -48,13 +48,15 @@ On Windows, when `R` or `Rscript` is not on `PATH`, use `./tools/run-r.ps1 -Expr
 - `NEWS.md`: user-visible changes and releases.
 - `docs/`: generated pkgdown site; do not use it for internal agent guidance.
 
+For model selection, start with the [architecture map](.github/agent-guides/architecture-map.md#model-selection), then the [selection walkthrough](vignettes/best-model-selection.Rmd). The map distinguishes within-run model choice, Agent search context, saved-winner promotion, update acceptance, and reconciliation, with source and test pointers.
+
 ## Working Method
 
 1. Start from the named file, symbol, failure, or closest owning implementation.
 2. State one local hypothesis and the cheapest check that could disprove it.
 3. Make the smallest grounded change and run a focused executable check immediately.
 4. Add or update tests for the happy path, relevant edge cases, and the regression being fixed.
-5. Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.
+5. Document every new or modified function, including internal helpers, following the [function documentation contract](.claude/rules/r-package.md#function-documentation). Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.
 6. Run the broadest practical validation before finishing and report anything not run.
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
@@ -88,4 +90,5 @@ State one or two plausible interpretations, their tradeoffs, and the likely file
 ## Code Review Rules
 
 - Prioritize behavioral regressions, unsafe error handling, compatibility breaks, optional-dependency violations, non-deterministic CRAN behavior, and missing focused tests.
+- Check that new and modified functions have accurate documentation, including internal helpers; follow the function documentation contract above.
 - Report findings with file references and a safe correction path. Leave formatting and generated-file checks to automated validation unless they reveal a behavioral risk.

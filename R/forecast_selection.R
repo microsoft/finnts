@@ -1,3 +1,10 @@
+# Shared selection policy: score existing predictions, then choose one candidate
+# per series. Callers own fitting, averaging, artifact writes, and reconciliation.
+# Read vignettes/best-model-selection.Rmd for the rules and examples, and
+# .github/agent-guides/architecture-map.md for workflow owners and regression tests.
+
+# Build original-scale evidence at the historical cutoff. R2 repeats each origin
+# across horizons, so only Horizon 1 contributes a unique historical observation.
 normalize_series_history <- function(data, hist_end_date, recipe = "R1",
                                      combo_info = NULL, stationary = FALSE,
                                      box_cox = FALSE) {
@@ -54,6 +61,8 @@ normalize_series_history <- function(data, hist_end_date, recipe = "R1",
   list(history = history, calendar = calendar, hist_end_date = as.Date(hist_end_date))
 }
 
+# One run/series cache entry serves every candidate; known artifact names are
+# read directly, not discovered again inside the candidate loop.
 read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
   if (length(combo) != 1 || is.na(combo)) {
     stop("Read prepared history for exactly one series at a time.", call. = FALSE)
@@ -158,6 +167,8 @@ finite_mad <- function(values) {
   if (length(values)) stats::mad(values) else 0
 }
 
+# Estimate a robust same-phase drift and seasonal intercepts, not another model
+# candidate. NULL means the history does not support a stable nonzero drift.
 forecast_trend_fit <- function(values, period, horizon) {
   if (length(values) < max(8, 2 * period) || any(!is.finite(values))) return(NULL)
   slopes <- (values[-seq_len(period)] - utils::head(values, -period)) / period
@@ -177,6 +188,9 @@ forecast_trend_fit <- function(values, period, horizon) {
     projection = projection, values = values)
 }
 
+# Admit a history-only additive/log reference only after two prefix holdouts
+# beat the no-drift baseline. Unsupported or unrepresentable growth returns NULL
+# so forecast_reference() retains its seasonal-naive/recent-median fallback.
 forecast_trend_reference <- function(history, horizon, context, normalization, scale) {
   period <- forecast_seasonal_period(context)
   history_size <- nrow(history)
@@ -428,6 +442,8 @@ forecast_path_risk <- function(forecasts, reference) {
     seasonal_fidelity = seasonal_fidelity)
 }
 
+# All candidates share the same expected split/date keys and history-only
+# reference. Future Target placeholders must never become evaluation evidence.
 prepare_forecast_evaluation <- function(history, context) {
   history$Date <- as.Date(history$Date)
   cutoff <- as.Date(context$hist_end_date)
@@ -443,6 +459,8 @@ prepare_forecast_evaluation <- function(history, context) {
     reference = forecast_reference(history, nrow(expected_forecasts), context))
 }
 
+# Match original actuals by date without collapsing overlapping backtest splits.
+# Preserve the zero-to-0.1 and pointwise four-decimal conventions used by Finn.
 forecast_backtest_accuracy <- function(history, backtest) {
   actuals <- history$Target[match(as.Date(backtest$Date), as.Date(history$Date))]
   target <- ifelse(actuals == 0, 0.1, actuals)
@@ -459,6 +477,8 @@ forecast_backtest_accuracy <- function(history, backtest) {
   list(WMAPE = weighted_mape, Log_Weight = log_weight)
 }
 
+# Hard failures control Eligible; soft path concerns only affect ranking.
+# Log_Weight carries backtest target mass for stable aggregation across series.
 evaluate_forecast_candidates <- function(history, backtests, forecasts, context) {
   evaluation <- context$forecast_evaluation %||% prepare_forecast_evaluation(history, context)
   history <- evaluation$history
@@ -499,6 +519,7 @@ evaluate_forecast_candidates <- function(history, backtests, forecasts, context)
     }
     accuracy <- forecast_backtest_accuracy(history, backtest)
     if (!is.finite(accuracy$WMAPE)) reasons <- c(reasons, "unavailable_accuracy")
+    # A hard-invalid path is not soft-scored. Zero risk here is not eligibility.
     risk <- forecast_path_risk(if (length(reasons) == 0) future$Forecast else numeric(), reference)
     tibble::new_tibble(list(
       Model_ID = candidate_id, Eligible = length(reasons) == 0,
@@ -522,6 +543,8 @@ order_forecast_candidates <- function(rankings) {
   groups <- split(seq_along(indices), cumsum(c(TRUE, !same_tier)))
   for (positions in groups) {
     fidelity <- ordered$Seasonal_Fidelity[positions]
+    # Compare fidelity only with equal evidence in the whole risk/concern tier.
+    # An unassessed seasonal check is NA, not a perfect zero-distortion score.
     if (all(is.finite(fidelity) & fidelity >= 0)) {
       indices[positions] <- indices[positions][order(fidelity, ordered$WMAPE[positions],
         ordered$Model_ID[positions], method = "radix", na.last = TRUE)]
@@ -541,12 +564,16 @@ rank_forecast_candidates <- function(rankings) {
   selected_id <- NA_character_
   if (nrow(eligible) > 0) {
     best_accuracy <- min(eligible$WMAPE)
+    # WMAPE is a fraction: allow 0.5 percentage points or 5% relative, whichever
+    # is larger. This is not the Agent's separate 10% iteration-context rule.
     ceiling <- best_accuracy + max(0.005, 0.05 * best_accuracy)
     tolerance <- 8 * .Machine$double.eps * max(1, abs(ceiling))
     shortlist <- eligible[eligible$WMAPE <= ceiling + tolerance, , drop = FALSE]
     shortlist <- shortlist[order_forecast_candidates(shortlist), , drop = FALSE]
     selected_id <- shortlist$Model_ID[1]
   }
+  # Keep all candidates for diagnostics. Consumers must use selected_id, not
+  # rankings[1, ], because this full ordering is not restricted to the shortlist.
   rankings <- rankings[order_forecast_candidates(rankings), , drop = FALSE]
   list(selected_id = selected_id, rankings = rankings)
 }
@@ -555,6 +582,8 @@ select_forecast_candidate <- function(history, backtests, forecasts, context) {
   rank_forecast_candidates(evaluate_forecast_candidates(history, backtests, forecasts, context))
 }
 
+# Storage-free adapter: split one series' existing predictions by run type and
+# require exactly one ranking row per requested ID from the internal selector.
 select_series_forecasts <- function(predictions, series_data, splits,
                                     candidate_ids = unique(predictions$Model_ID),
                                     selector = select_forecast_candidate) {
@@ -690,6 +719,10 @@ read_final_predictions <- function(run_info, combo_hash, suffix) {
   rows
 }
 
+# Restart contract: reuse one complete saved winner, including the exact mean
+# of its original components when it is an average. NULL requests reconstruction
+# from existing predictions; missing average components require artifact repair.
+# This validates content and accuracy, not a fresh future-plausibility decision.
 completed_forecast_selection <- function(predictions, series, splits) {
   required <- c("Best_Model", "Model_ID", "Train_Test_ID", "Date", "Forecast",
     "lo_80", "lo_95", "hi_80", "hi_95")
@@ -729,6 +762,9 @@ unfinalized_forecast_rows <- function(rows, date_type) {
   rows[, setdiff(names(rows), c("Best_Model", "lo_80", "lo_95", "hi_80", "hi_95", "Run_Type")), drop = FALSE]
 }
 
+# Bookkeeping for an already selected path: validate identity/coverage/finite
+# values and compute backtest accuracy. Quality fields stay NA because they were
+# not reassessed; reconciled backtest reporting may omit the future-key check.
 selected_forecast_accuracy <- function(predictions, series, splits, require_forecast = TRUE) {
   series$train_test_split <- splits
   selected <- if ("Best_Model" %in% names(predictions)) {
@@ -796,6 +832,8 @@ assess_agent_run <- function(run_info, run_log, combos, cache = new.env(parent =
   result
 }
 
+# Keep pre-reconciliation source quality separate from delivered bottom-level
+# backtest accuracy. Never score reconciled future shapes or choose new models.
 hierarchical_selection_result <- function(run_info, run_log, source_selections, forecasts, splits,
                                           combos = NULL, cache = new.env(parent = emptyenv())) {
   hierarchy <- read_selection_hierarchy(run_info, cache)
@@ -813,6 +851,10 @@ hierarchical_selection_result <- function(run_info, run_log, source_selections, 
     rejected_combos = names(selections)[vapply(selections, function(selection) is.na(selection$selected_id), logical(1))])
 }
 
+# Missing entries in the supplied selection set make it partial/rejected.
+# Callers must include the full expected series set, including missing selections.
+# Ordinary iteration decisions require completeness and finite accuracy only;
+# update/default acceptance explicitly opts into the stricter quality boundary.
 agent_selection_summary <- function(result, check_quality = FALSE) {
   chosen <- lapply(result$selections, function(selection) {
     if (is.null(selection) || is.na(selection$selected_id)) return(NULL)
@@ -945,6 +987,10 @@ read_selection_hierarchy <- function(run_info, cache = NULL) {
   hierarchy
 }
 
+# Assess newly refitted predictions while preserving the saved model identity.
+# Every required component must be hard-eligible and the delivered choice must
+# have no soft concerns. Return rejected combo hashes for default recovery;
+# a hierarchy is reconciled only after all its source nodes pass.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
                                     combos = NULL) {
@@ -973,6 +1019,7 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
     delivered <- selection$rankings[selection$rankings$Model_ID %in% selected_ids, , drop = FALSE]
     if (hard_pass && nrow(delivered) == 1 && delivered$Violations == 0) {
       accepted <- c(accepted, combo)
+      # Assessment must not replace the saved combination with today's runner-up.
       selection$selected_id <- selected_ids
     } else {
       rejected <- c(rejected, combo)
@@ -1000,6 +1047,11 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
   result
 }
 
+# Rank iteration context from recorded metrics. Callers also use this ranking to
+# gate promotion, with separate protection for saved local winners.
+# Callers supply chronological rows: earliest minimum WMAPE is the anchor;
+# a later near-best result can advance search when its model-pool mean improves.
+# Return the original row index, or NA when no eligible iteration exists.
 best_agent_iteration <- function(run_logs, agent_version = NULL) {
   if (!is.data.frame(run_logs) || !nrow(run_logs) || !"weighted_mape" %in% names(run_logs)) {
     return(NA_integer_)
@@ -1018,6 +1070,7 @@ best_agent_iteration <- function(run_logs, agent_version = NULL) {
   winner <- eligible[which.min(accuracy[eligible])]
   average <- as.numeric(run_logs[["model_avg_wmape"]])
   if (length(average) == nrow(run_logs) && is.finite(average[winner])) {
+    # Keep the window anchored to the minimum, not a chain of 10% relaxations.
     later <- eligible[eligible > winner &
       abs(accuracy[eligible] - accuracy[winner]) <= accuracy[winner] * 0.10 &
       is.finite(average[eligible]) & average[eligible] < average[winner]]
@@ -1026,6 +1079,8 @@ best_agent_iteration <- function(run_logs, agent_version = NULL) {
   as.integer(winner)
 }
 
+# Global updates replay one run's settings. Different models within that run
+# and separate local winners are valid; mixed global run identities are not.
 validate_global_iteration <- function(best_runs) {
   if (!is.data.frame(best_runs) || !nrow(best_runs) || !"model_type" %in% names(best_runs)) {
     return(invisible(best_runs))
@@ -1040,6 +1095,10 @@ validate_global_iteration <- function(best_runs) {
   invisible(best_runs)
 }
 
+# Score selected completed-output backtests at their delivered cadence, including
+# daily-expanded weekly output. Do not substitute native selector WMAPE: the
+# zero-actual convention and rounding can change goal and promotion decisions.
+# Missing/unusable series retain Inf and prevent an aggregate success.
 agent_forecast_accuracy <- function(forecasts, combos) {
   accuracy <- list(weighted_mape = Inf,
     by_series = stats::setNames(rep(Inf, length(combos)), combos))
@@ -1065,6 +1124,9 @@ agent_forecast_accuracy <- function(forecasts, combos) {
   accuracy
 }
 
+# Local search-direction statistics summarize individual candidate WMAPEs, not
+# the WMAPE of a simple-average forecast. Keep unavailable evidence as NA;
+# record_agent_selection_attempt() handles the distinct global summary meaning.
 agent_model_accuracy <- function(forecasts) {
   unavailable <- list(model_avg_wmape = NA_real_, model_median_wmape = NA_real_,
     model_std_wmape = NA_real_)
