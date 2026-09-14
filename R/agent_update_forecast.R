@@ -2571,15 +2571,17 @@ reconcile <- function(initial_fcst,
         dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
         as.matrix()
 
+      weights <- reconciliation_weights(residuals_tbl, negative_forecast)
+
       if (forecast_approach == "standard_hierarchy") {
         ts_combined <- data.frame(hts::combinef(ts,
-          nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+          nodes = hts_nodes, weights = weights,
           keep = "bottom", nonnegative = !negative_forecast
         ))
         colnames(ts_combined) <- original_combo_list
       } else if (forecast_approach == "grouped_hierarchy") {
         ts_combined <- data.frame(hts::combinef(ts,
-          groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+          groups = hts_nodes, weights = weights,
           keep = "bottom", nonnegative = !negative_forecast
         ))
         colnames(ts_combined) <- original_combo_list

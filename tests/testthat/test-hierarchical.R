@@ -1997,3 +1997,366 @@ test_that("reconciliation pivot_wider produces numeric columns when model has du
   # should have exactly 2 rows (one per date)
   expect_equal(nrow(forecast_tbl), 2)
 })
+
+test_that("reconciliation weights cap extreme inverse-MSE confidence without changing inputs", {
+  residuals <- cbind(tiny = c(1e-8, -1e-8), medium = c(1, -1), large = c(1e4, -1e4))
+  original <- residuals
+  mse <- colMeans(residuals^2, na.rm = TRUE)
+
+  weights <- reconciliation_weights(residuals, negative_forecast = FALSE)
+
+  expect_identical(weights, 1 / pmax(mse, max(mse) / 1e15))
+  expect_identical(names(weights), colnames(residuals))
+  expect_lte(max(weights) / min(weights), 1e15)
+  expect_identical(weights[c("medium", "large")], (1 / mse)[c("medium", "large")])
+  expect_identical(residuals, original)
+})
+
+test_that("ordinary and signed reconciliation weights retain the legacy calculation", {
+  ordinary <- cbind(first = c(1, 2, 3), second = c(3, 4, 5))
+  boundary <- cbind(first = rep(1, 2), second = rep(sqrt(1e15), 2))
+  extreme <- cbind(first = rep(1e-8, 2), second = rep(1e4, 2))
+
+  for (residuals in list(ordinary, boundary, matrix(2, nrow = 2), matrix(c(2, -2), nrow = 1))) {
+    expect_identical(reconciliation_weights(residuals, FALSE), 1 / colMeans(residuals^2))
+  }
+  expect_identical(reconciliation_weights(extreme, TRUE), 1 / colMeans(extreme^2))
+})
+
+test_that("reconciliation weights preserve unit-scaling and column-order relationships", {
+  residuals <- cbind(tiny = c(1e-8, 2e-8), medium = c(1, 2), large = c(1e4, 2e4))
+  weights <- reconciliation_weights(residuals, FALSE)
+  permutation <- c(3, 1, 2)
+
+  expect_identical(reconciliation_weights(residuals[, permutation], FALSE), weights[permutation])
+  for (unit_scale in c(1e-3, 1e3)) {
+    expect_equal(reconciliation_weights(residuals * unit_scale, FALSE) * unit_scale^2,
+      weights, tolerance = 1e-12)
+  }
+})
+
+test_that("reconciliation weights retain partial-missing residual semantics", {
+  residuals <- cbind(first = c(NA_real_, 2), second = c(4, NA_real_))
+
+  expect_identical(reconciliation_weights(residuals, FALSE), 1 / colMeans(residuals^2, na.rm = TRUE))
+})
+
+test_that("reconciliation weights reject unusable matrices and identify invalid nodes", {
+  for (residuals in list(numeric(), c(1, 2), data.frame(first = 1),
+    matrix(character(), nrow = 0), matrix("invalid", nrow = 1),
+    matrix(numeric(), nrow = 0, ncol = 2), matrix(numeric(), nrow = 2, ncol = 0))) {
+    expect_error(reconciliation_weights(residuals, FALSE), "nonempty numeric residual matrix")
+  }
+
+  for (invalid in list(c(0, 0), c(NA_real_, NA_real_), c(NaN, NaN),
+    c(Inf, 1), c(1e200, 1e200), c(1e-200, 1e-200))) {
+    residuals <- cbind(valid_node = c(1, 2), invalid_node = invalid)
+    expect_error(reconciliation_weights(residuals, FALSE), "finite positive residual MSE.*invalid_node")
+  }
+  expect_error(reconciliation_weights(matrix(0, nrow = 2), FALSE), "finite positive residual MSE.*1")
+  expect_error(reconciliation_weights(matrix(1e-160, nrow = 2), FALSE), "finite positive weights")
+  expect_error(reconciliation_weights(matrix(1e-160, nrow = 2), TRUE), "finite positive weights")
+})
+
+reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE) {
+  run_info <- artifact_test_run(path)
+  dates <- as.Date(c("2024-01-01", "2024-02-01", "2024-03-01"))
+  bottom <- matrix(c(10, 20, 30, 40, 12, 22, 32, 42, 14, 24, 34, 44), nrow = 3, byrow = TRUE)
+  colnames(bottom) <- c("A", "B", "C", "D")
+  if (forecast_approach == "standard_hierarchy") {
+    structure <- hts::hts(stats::ts(bottom), nodes = list(2, c(2, 2)))
+    nodes <- hts::get_nodes(structure)
+  } else {
+    structure <- hts::gts(stats::ts(bottom), groups = rbind(c(1, 1, 2, 2), c(1, 2, 1, 2)))
+    nodes <- hts::get_groups(structure)
+  }
+  targets <- as.matrix(hts::aggts(structure))
+  combos <- c(paste0("aggregate_", seq_len(ncol(targets) - ncol(bottom))), colnames(bottom))
+  colnames(targets) <- combos
+  offsets <- if (extreme) c(1e-8, rep(1, ncol(targets) - 2), 100) else seq_len(ncol(targets)) / 10
+  predictions <- sweep(targets, 2, offsets, "+")
+  splits <- tibble::tibble(Train_Test_ID = c(2, 3, 1), Run_Type = c("Back_Test", "Back_Test", "Future_Forecast"))
+  forecast <- tibble::tibble(
+    Combo = rep(combos, each = 3), Date = rep(dates, length(combos)),
+    Train_Test_ID = rep(splits$Train_Test_ID, length(combos)),
+    Forecast = as.numeric(predictions), Target = as.numeric(targets),
+    Model_ID = "snaive--local--R1", Model_Name = "snaive", Model_Type = "local",
+    Recipe_ID = "R1", Hyperparameter_ID = NA_real_, Best_Model = "Yes", Horizon = 1
+  ) %>% dplyr::mutate(Combo_ID = Combo, Target = ifelse(Train_Test_ID == 1, NA_real_, Target))
+  history <- tibble::tibble(Combo = rep(colnames(bottom), each = 3),
+    Date = rep(dates, ncol(bottom)), Target = as.numeric(bottom))
+  write_data(forecast, "batch", run_info, "data", "forecasts", "-condensed")
+  write_data(splits, NULL, run_info, "data", "prep_models", "-train_test_split")
+  write_data(history, NULL, run_info, "data", "prep_data", "-hts_data")
+  write_data(list(nodes = nodes, original_combos = colnames(bottom), hts_combos = combos),
+    NULL, run_info, "object", "prep_data", "-hts_info")
+  list(run_info = run_info, forecast = forecast, splits = splits, nodes = nodes,
+    combos = combos, bottom_combos = colnames(bottom), predictions = predictions)
+}
+
+test_that("all hierarchy routes use shared weights and preserve reconciled artifacts", {
+  original_weights <- reconciliation_weights
+  original_read <- read_file
+  original_list <- list_files
+  for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
+    for (route in c("local", "remote")) {
+      fixture <- reconciliation_test_case(withr::local_tempdir(), forecast_approach, extreme = TRUE)
+      calls <- list()
+      listings <- 0L
+      remote_reads <- character()
+      testthat::local_mocked_bindings(
+        reconciliation_weights = function(residuals, negative_forecast) {
+          result <- original_weights(residuals, negative_forecast)
+          calls[[length(calls) + 1L]] <<- list(residuals = residuals, negative_forecast = negative_forecast, weights = result)
+          result
+        },
+        par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+        read_file = function(run_info, path = NULL, return_type = "df", ...) {
+          if (return_type %in% c("sdf", "arrow")) {
+            remote_reads <<- c(remote_reads, return_type)
+            return(fixture$forecast)
+          }
+          original_read(run_info, path = path, return_type = return_type, ...)
+        },
+        list_files = function(storage_object, path, ...) {
+          if (grepl("*", path, fixed = TRUE)) listings <<- listings + 1L
+          original_list(storage_object, path, ...)
+        },
+        .package = "finnts"
+      )
+      reconcile_hierarchical_data(fixture$run_info, if (route == "local") NULL else "spark",
+        forecast_approach, negative_forecast = FALSE, date_type = "month", num_cores = 1)
+      expect_length(calls, 2)
+      expect_equal(listings, 1)
+      expect_identical(names(calls[[1]]$weights), fixture$combos)
+      expect_equal(calls[[1]]$weights, original_weights(calls[[1]]$residuals, FALSE))
+      expect_lte(max(calls[[1]]$weights) / min(calls[[1]]$weights), 1e15 * (1 + 1e-12))
+      expect_identical(calls[[1]]$weights, calls[[2]]$weights)
+      expect_identical(remote_reads, if (route == "local") character() else c("sdf", "arrow", "arrow"))
+      expected <- if (forecast_approach == "standard_hierarchy") {
+        hts::combinef(fixture$predictions, nodes = fixture$nodes, weights = calls[[1]]$weights,
+          keep = "bottom", nonnegative = TRUE)
+      } else {
+        hts::combinef(fixture$predictions, groups = fixture$nodes, weights = calls[[1]]$weights,
+          keep = "bottom", nonnegative = TRUE)
+      }
+      best <- original_read(fixture$run_info,
+        path = paste0("/forecasts/", basename(artifact_test_path(fixture$run_info, "forecasts", "Best-Model", "-reconciled"))))
+      expect_equal(nrow(best), 12)
+      expect_true(all(is.finite(best$Forecast)))
+      expect_true(all(best$Forecast >= -sqrt(.Machine$double.eps)))
+      expect_true(all(c("lo_80", "hi_80", "lo_95", "hi_95", "Horizon", "Best_Model") %in% names(best)))
+      observed <- best %>% dplyr::select(Date, Combo, Forecast) %>%
+        tidyr::pivot_wider(names_from = Combo, values_from = Forecast) %>% dplyr::arrange(Date)
+      expect_equal(unname(as.matrix(observed[, fixture$bottom_combos])),
+        unname(as.matrix(data.frame(expected))), tolerance = 1e-8)
+      agent <- reconcile(dplyr::left_join(fixture$forecast, fixture$splits, by = "Train_Test_ID"),
+        fixture$run_info, forecast_approach, FALSE)
+      expect_length(calls, 3)
+      expect_equal(agent$Forecast, best$Forecast, tolerance = 1e-8)
+      expect_setequal(agent$Run_Type, c("Back_Test", "Future_Forecast"))
+    }
+  }
+})
+
+test_that("Agent reconciliation preserves signed weights and the NA default", {
+  fixture <- reconciliation_test_case(withr::local_tempdir(), "standard_hierarchy")
+  input <- dplyr::left_join(fixture$forecast, fixture$splits, by = "Train_Test_ID")
+  original_weights <- reconciliation_weights
+  modes <- logical()
+  testthat::local_mocked_bindings(
+    reconciliation_weights = function(residuals, negative_forecast) {
+      modes <<- c(modes, negative_forecast)
+      weights <- original_weights(residuals, negative_forecast)
+      expect_identical(weights, 1 / colMeans(residuals^2, na.rm = TRUE))
+      weights
+    }, .package = "finnts"
+  )
+  signed <- reconcile(input, fixture$run_info, "standard_hierarchy", TRUE)
+  expect_warning(defaulted <- reconcile(input, fixture$run_info, "standard_hierarchy", NA), "defaulting to FALSE")
+  expect_identical(modes, c(TRUE, FALSE))
+  expect_equal(signed$Forecast, defaulted$Forecast, tolerance = 1e-8)
+})
+
+test_that("reconciliation weight failures retain optional and required model handling", {
+  fixture <- reconciliation_test_case(withr::local_tempdir(), "standard_hierarchy")
+  original_weights <- reconciliation_weights
+  calls <- 0L
+  testthat::local_mocked_bindings(
+    reconciliation_weights = function(residuals, negative_forecast) {
+      calls <<- calls + 1L
+      if (calls == 1L) stop("invalid residual node", call. = FALSE)
+      original_weights(residuals, negative_forecast)
+    },
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    .package = "finnts"
+  )
+  expect_warning(reconcile_hierarchical_data(fixture$run_info, NULL, "standard_hierarchy",
+    date_type = "month", num_cores = 1), "snaive.*invalid residual node")
+  expect_equal(calls, 2)
+  expect_true(file.exists(artifact_test_path(fixture$run_info, "forecasts", "Best-Model", "-reconciled")))
+  expect_false(file.exists(artifact_test_path(fixture$run_info, "forecasts", "snaive--local--R1", "-reconciled")))
+
+  testthat::local_mocked_bindings(
+    reconciliation_weights = function(...) stop("invalid residual node", call. = FALSE),
+    .package = "finnts"
+  )
+  expect_error(expect_warning(reconcile_hierarchical_data(fixture$run_info, NULL, "standard_hierarchy",
+    date_type = "month", num_cores = 1), "snaive.*invalid residual node"), "Best-Model.*invalid residual node")
+  expect_error(reconcile(dplyr::left_join(fixture$forecast, fixture$splits, by = "Train_Test_ID"),
+    fixture$run_info, "standard_hierarchy", FALSE), "Best-Model.*invalid residual node")
+})
+
+reconciliation_test_solve <- function(forecasts, residuals, nodes = NULL, groups = NULL,
+                                      negative_forecast = FALSE) {
+  weights <- reconciliation_weights(residuals, negative_forecast)
+  console <- capture.output(
+    testthat::expect_warning(result <- hts::combinef(forecasts, nodes = nodes, groups = groups,
+      weights = weights, keep = "bottom", nonnegative = !negative_forecast), NA)
+  )
+  testthat::expect_false(any(grepl("slow zone", console, ignore.case = TRUE)))
+  testthat::expect_true(all(is.finite(result)))
+  if (!negative_forecast) testthat::expect_gte(min(result), -sqrt(.Machine$double.eps))
+  as.matrix(data.frame(result))
+}
+
+test_that("reconciliation agrees with an analytic constrained and signed solution", {
+  forecasts <- rbind(c(0, 0, 0, 2, 8, 2, 8), c(20, 10, 10, 2, 8, 2, 8))
+  residuals <- matrix(1, nrow = 3, ncol = 7)
+  constrained <- reconciliation_test_solve(forecasts, residuals, nodes = list(2, c(2, 2)))
+  signed <- reconciliation_test_solve(forecasts, residuals, nodes = list(2, c(2, 2)), negative_forecast = TRUE)
+
+  expect_equal(unname(constrained), rbind(c(0, 2, 0, 2), c(2, 8, 2, 8)), tolerance = 1e-8)
+  expect_equal(unname(signed), rbind(c(-16 / 7, 26 / 7, -16 / 7, 26 / 7), c(2, 8, 2, 8)), tolerance = 1e-8)
+  expect_lt(signed[1, 1], 0)
+})
+
+reconciliation_test_topologies <- function() {
+  specifications <- list(
+    balanced = list(count = 4L, nodes = list(2, c(2, 2))),
+    deep = list(count = 8L, nodes = list(2, c(2, 2), c(2, 2, 2, 2))),
+    unbalanced = list(count = 6L, nodes = list(3, c(1, 2, 3))),
+    crossed = list(count = 6L, groups = rbind(c(1, 1, 1, 2, 2, 2), c(1, 2, 3, 1, 2, 3))),
+    sparse = list(count = 5L, groups = rbind(c(1, 1, 1, 2, 2), c(1, 2, 3, 1, 3))),
+    constant = list(count = 4L, groups = rbind(rep(1, 4), c(1, 1, 2, 2), rep(1, 4), c(1, 2, 1, 2)))
+  )
+  lapply(specifications, function(specification) {
+    basis <- stats::ts(diag(specification$count))
+    structure <- suppressMessages(if (is.null(specification$groups)) {
+      hts::hts(basis, nodes = specification$nodes)
+    } else {
+      hts::gts(basis, groups = specification$groups)
+    })
+    summing <- t(as.matrix(hts::aggts(structure)))
+    list(count = specification$count, nodes = if (is.null(specification$groups)) hts::get_nodes(structure) else NULL,
+      groups = if (!is.null(specification$groups)) hts::get_groups(structure) else NULL,
+      summing = summing)
+  })
+}
+
+test_that("weight-capped reconciliation covers diverse hierarchy and residual profiles", {
+  topologies <- reconciliation_test_topologies()
+  profiles <- c("ordinary", "intermittent", "near_perfect", "dominant_aggregate")
+  cases <- 0L
+  for (topology_name in names(topologies)) {
+    topology <- topologies[[topology_name]]
+    summing <- topology$summing
+    expect_equal(unname(tail(summing, topology$count)), diag(topology$count))
+    for (profile in profiles) {
+      label <- paste(topology_name, profile)
+      bottom <- outer(seq_len(5), seq_len(topology$count), function(period, series) 10 + period * series)
+      if (profile == "intermittent") {
+        bottom[(row(bottom) + col(bottom)) %% 3 == 0] <- 0
+        bottom[1, ] <- 0
+      }
+      forecasts <- bottom %*% t(summing)
+      residual_scale <- seq_len(nrow(summing)) / nrow(summing) + 1
+      if (profile == "near_perfect") residual_scale <- c(1, rep(1e-10, nrow(summing) - 1L))
+      if (profile == "dominant_aggregate") residual_scale <- c(1e4, rep(1e-8, nrow(summing) - 1L))
+      if (profile == "ordinary") forecasts[, 1] <- forecasts[, 1] + c(1, 3, 2, 4, 1)
+      residuals <- outer(c(1, -1, 2, -2), residual_scale)
+      input <- forecasts
+      weights <- reconciliation_weights(residuals, FALSE)
+      result <- reconciliation_test_solve(forecasts, residuals, topology$nodes, topology$groups)
+      expect_identical(dim(result), dim(bottom), info = label)
+      expect_identical(forecasts, input)
+      expect_lte(max(weights) / min(weights), 1e15 * (1 + 1e-12))
+      if (profile != "ordinary") {
+        expect_equal(unname(result), bottom, tolerance = 1e-8, info = label)
+      } else {
+        weighted_summing <- sweep(summing, 1, sqrt(weights), "*")
+        expected <- t(vapply(seq_len(nrow(forecasts)), function(period) {
+          qr.solve(weighted_summing, forecasts[period, ] * sqrt(weights))
+        }, numeric(topology$count)))
+        expect_true(all(expected > 0), info = label)
+        expect_equal(unname(result), unname(expected), tolerance = 1e-8, info = label)
+      }
+      aggregated <- result %*% t(summing)
+      expect_equal(unname(aggregated[, 1]), rowSums(result), tolerance = 1e-8, info = label)
+      cases <- cases + 1L
+    }
+  }
+  expect_equal(cases, 24L)
+})
+
+test_that("full reconciliation preserves unit scaling and cap-boundary behaviour", {
+  topology <- reconciliation_test_topologies()$balanced
+  forecasts <- rbind(c(0, 0, 0, 2, 8, 2, 8), c(20, 10, 10, 2, 8, 2, 8))
+  residuals <- matrix(1, nrow = 3, ncol = ncol(forecasts))
+  original <- reconciliation_test_solve(forecasts, residuals, topology$nodes)
+  for (unit_scale in c(1e-3, 1e3)) {
+    scaled <- reconciliation_test_solve(forecasts * unit_scale, residuals * unit_scale, topology$nodes)
+    expect_equal(scaled / unit_scale, original, tolerance = 1e-7)
+  }
+
+  bottom <- rbind(c(1e-3, 1, 1e3, 1e6), c(2e-3, 2, 2e3, 2e6))
+  coherent <- bottom %*% t(topology$summing)
+  for (spread in c(0.5e15, 1e15, 2e15, 1e24)) {
+    residuals <- matrix(rep(c(1, rep(1 / sqrt(spread), ncol(coherent) - 1L)), each = 3), nrow = 3)
+    weights <- reconciliation_weights(residuals, FALSE)
+    result <- reconciliation_test_solve(coherent, residuals, topology$nodes)
+    expect_equal(unname(result), bottom, tolerance = 1e-8)
+    if (spread <= 1e15) {
+      expect_equal(weights, 1 / colMeans(residuals^2), tolerance = 1e-12)
+    } else {
+      expect_lt(max(weights), max(1 / colMeans(residuals^2)))
+    }
+  }
+})
+
+test_that("incident-style conflicting forecasts reconcile with capped near-perfect-fit weights", {
+  topology <- reconciliation_test_topologies()$crossed
+  summing <- topology$summing
+  bottom <- rbind(c(0.1, 2, 30, 400, 5000, 60000), c(0.2, 3, 40, 500, 6000, 70000),
+    c(0.3, 4, 50, 600, 7000, 80000))
+  forecasts <- bottom %*% t(summing)
+  forecasts[, 1] <- forecasts[, 1] * 0.8
+  forecasts[, 2] <- forecasts[, 2] * 1.5
+  residual_scale <- rep(10, nrow(summing))
+  residual_scale[1] <- 1e4
+  residual_scale[nrow(summing) - 2L] <- 1e-10
+  residual_scale[nrow(summing) - 1L] <- 1e-8
+  residuals <- outer(c(-1, 1, -2, 2, -3, 3), residual_scale)
+  original_weights <- 1 / colMeans(residuals^2)
+  weights <- reconciliation_weights(residuals, FALSE)
+  expect_gt(max(original_weights) / min(original_weights), 1e24)
+  expect_lt(max(weights), max(original_weights))
+  expect_lte(max(weights) / min(weights), 1e15 * (1 + 1e-12))
+
+  batch <- reconciliation_test_solve(forecasts, residuals, groups = topology$groups)
+  individual <- do.call(rbind, lapply(seq_len(nrow(forecasts)), function(period) {
+    reconciliation_test_solve(forecasts[period, , drop = FALSE], residuals, groups = topology$groups)
+  }))
+  expect_equal(batch, individual, tolerance = 1e-8)
+  for (unit_scale in c(1e-3, 1e3)) {
+    scaled <- reconciliation_test_solve(forecasts * unit_scale, residuals * unit_scale, groups = topology$groups)
+    expect_equal(scaled / unit_scale, batch, tolerance = 1e-7)
+  }
+  expect_false(isTRUE(all.equal(unname(batch), bottom)))
+  reconciled_error <- batch %*% t(summing) - forecasts
+  feasible_error <- bottom %*% t(summing) - forecasts
+  objective <- rowSums(sweep(reconciled_error^2, 2, weights, "*"))
+  feasible_objective <- rowSums(sweep(feasible_error^2, 2, weights, "*"))
+  expect_true(all(objective <= feasible_objective * (1 + 1e-8)))
+  expect_identical(reconciliation_weights(residuals, TRUE), original_weights)
+})

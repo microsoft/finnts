@@ -473,6 +473,41 @@ get_hts_nodes <- function(hts_object,
   }
 }
 
+#' Calculate finite reconciliation weights with bounded nonnegative confidence
+#'
+#' @param residuals Numeric matrix with one column per hierarchy node.
+#' @param negative_forecast Whether negative forecasts are allowed.
+#' @return Named inverse-MSE weights in the original column order.
+#' @noRd
+reconciliation_weights <- function(residuals, negative_forecast) {
+  if (!is.matrix(residuals) || !is.numeric(residuals) || any(dim(residuals) == 0L)) {
+    stop("Reconciliation requires a nonempty numeric residual matrix.", call. = FALSE)
+  }
+
+  mse <- colMeans(residuals^2, na.rm = TRUE)
+  invalid <- which(!is.finite(mse) | mse <= 0)
+  if (length(invalid) > 0L) {
+    nodes <- if (is.null(names(mse))) invalid else names(mse)[invalid]
+    stop(paste0(
+      "Reconciliation requires finite positive residual MSE for every node. Check back-test residuals for: ",
+      paste(nodes, collapse = ", "), "."
+    ), call. = FALSE)
+  }
+
+  if (!negative_forecast) {
+    max_weight_ratio <- 1e15
+    mse <- pmax(mse, max(mse) / max_weight_ratio)
+  }
+  weights <- 1 / mse
+  if (any(!is.finite(weights) | weights <= 0)) {
+    stop("Reconciliation requires finite positive weights. Check the scale of the back-test residuals.",
+      call. = FALSE
+    )
+  }
+
+  weights
+}
+
 #' Reconcile hierarchical forecasts down to lowest bottoms up level
 #'
 #' @param run_info run info
@@ -682,15 +717,17 @@ reconcile_hierarchical_data <- function(run_info,
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
               as.matrix()
 
+            weights <- reconciliation_weights(residuals_tbl, negative_forecast)
+
             if (forecast_approach == "standard_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
-                nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                nodes = hts_nodes, weights = weights,
                 keep = "bottom", nonnegative = !negative_forecast
               ))
               colnames(ts_combined) <- original_combo_list
             } else if (forecast_approach == "grouped_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
-                groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                groups = hts_nodes, weights = weights,
                 keep = "bottom", nonnegative = !negative_forecast
               ))
               colnames(ts_combined) <- original_combo_list
@@ -908,15 +945,17 @@ reconcile_hierarchical_data <- function(run_info,
               dplyr::select(tidyselect::all_of(hts_combo_list)) %>%
               as.matrix()
 
+            weights <- reconciliation_weights(residuals_tbl, negative_forecast)
+
             if (forecast_approach == "standard_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
-                nodes = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                nodes = hts_nodes, weights = weights,
                 keep = "bottom", nonnegative = !negative_forecast
               ))
               colnames(ts_combined) <- original_combo_list
             } else if (forecast_approach == "grouped_hierarchy") {
               ts_combined <- data.frame(hts::combinef(ts,
-                groups = hts_nodes, weights = (1 / colMeans(residuals_tbl^2, na.rm = TRUE)),
+                groups = hts_nodes, weights = weights,
                 keep = "bottom", nonnegative = !negative_forecast
               ))
               colnames(ts_combined) <- original_combo_list

@@ -14,7 +14,7 @@ Make changes that are testable, documented, backward-compatible where practical,
 
 Detailed rules load conditionally from `.claude/rules/`, a format shared by Claude Code and VS Code. Agents that do not load that directory automatically must read the matching rule before editing:
 
-- `.claude/rules/r-package.md` for R source, package metadata, roxygen, vignettes, and release notes.
+- `.claude/rules/r-package.md` for R source, package metadata, roxygen, vignettes, and release notes, including the single-development-version policy.
 - `.claude/rules/testing.md` for tests, CRAN profiles, credentials, runtime budgets, and PSOCK behavior.
 - `.claude/rules/agent-runtime.md` for Agent graphs, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.
 - `.claude/rules/multistep.md` for multistep adapters, lag generation, routing, and prediction.
