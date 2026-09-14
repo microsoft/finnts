@@ -2467,6 +2467,8 @@ calculate_fcst_metrics <- function(run_info,
                                    fcst_tbl,
                                    aggregate_wmape = NULL) {
   if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$selections)) {
+    # Reuse selection completeness, but score the delivered backtests. Native
+    # weekly selection WMAPE can differ after daily allocation and rounding.
     summary <- agent_selection_summary(run_info$forecast_selection)
     accuracy <- agent_forecast_accuracy(fcst_tbl, names(run_info$forecast_selection$selections))
     if (!is.null(aggregate_wmape)) {
@@ -2477,6 +2479,8 @@ calculate_fcst_metrics <- function(run_info,
       if (is.finite(accuracy$weighted_mape)) accuracy$weighted_mape <- round(aggregate_wmape, 4)
     }
     value <- if (isTRUE(summary$acceptable)) accuracy$weighted_mape else Inf
+    # These attributes carry already-computed evidence to the logger; the scalar
+    # remains compatible with callers that compare it to the accuracy goal.
     attr(value, "selection_ok") <- isTRUE(summary$acceptable) && is.finite(value)
     attr(value, "forecast_accuracy") <- accuracy
     attr(value, "model_accuracy") <- agent_model_accuracy(fcst_tbl)
@@ -2775,6 +2779,13 @@ log_best_run <- function(agent_info,
   return("Run logged successfully.")
 }
 
+# Persist a completed iteration using its in-memory selections and metric
+# attributes; run_history supplies recorded search-context evidence, not forecasts.
+# Global promotion is one run-level decision; per-series guards protect local
+# winners. check_best_run = FALSE supports writing an update's accepted subset.
+# Writes existing run/best-run logs and returns status plus retained/written combos.
+# Exact post-write reads verify identity; storage errors propagate. These writes
+# are not a transaction, so reload/update must also reject mixed global metadata.
 log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_best_run = TRUE,
                                    weighted_mape = NULL, run_history = NULL) {
   current_log <- read_selection_file(run_info, "logs")
@@ -2840,6 +2851,8 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
   }
   written <- character()
   retained <- character()
+  # Apply the global gate uniformly. A single global run may improve the overall
+  # result while worsening one series; never mix its global rows with an old run.
   for (series in names(current_result$selections)) {
     selected <- current_result$selections[[series]]
     if (is.null(selected) || is.na(selected$selected_id)) next
@@ -2865,6 +2878,8 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
       }
       same_version <- nrow(previous) == 1 &&
         isTRUE(as.numeric(previous$agent_version) == as.numeric(agent_info$agent_version))
+      # Advancing search settings is not permission to overwrite a superior local
+      # forecast. Existing global rows instead follow the shared promotion gate.
       protect_individual <- !global || !identical(as.character(previous$model_type), "global")
       if (same_version && protect_individual && isTRUE(is.finite(as.numeric(previous$weighted_mape))) &&
           isTRUE(as.numeric(previous$weighted_mape) <= score$WMAPE)) {

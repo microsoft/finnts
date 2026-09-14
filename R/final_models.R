@@ -314,6 +314,9 @@ final_models <- function(run_info,
         saved_average <- read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
         saved_rows <- dplyr::bind_rows(native_forecast_rows(all_model_tbl, date_type),
           if (average_models) native_forecast_rows(saved_average, date_type))
+        # Completion belongs to the combined artifacts: all individual flags can
+        # be No when an average is the winner. Reuse only validated content;
+        # otherwise rebuild selection below from saved predictions, without fits.
         existing_selection <- completed_forecast_selection(saved_rows, series_data, model_train_test_tbl)
         if (!is.null(existing_selection)) {
           return(selection_worker_result(combo_name, existing_selection, reused = TRUE))
@@ -430,6 +433,8 @@ final_models <- function(run_info,
 
         final_model_list <- c(local_model_list, global_model_list)
 
+        # Screen components before forming averages. Soft concerns do not remove
+        # a component here, but averaging must never conceal a hard-invalid path.
         individual_selection <- select_series_forecasts(
           predictions_tbl, series_data, model_train_test_tbl,
           unique(predictions_tbl$Model_ID)
@@ -536,6 +541,8 @@ final_models <- function(run_info,
           if (!is.null(averages_tbl)) unique(averages_tbl$Model_ID) else character(0)
         ))
 
+        # Rank the delivered candidate pool once it includes requested averages.
+        # A standard run may keep the best available candidate with soft concerns.
         selection <- select_series_forecasts(
           final_predictions_tbl, series_data, model_train_test_tbl, eligible_model_ids
         )
@@ -543,6 +550,8 @@ final_models <- function(run_info,
           abort_forecast_selection(unique(predictions_tbl$Combo), selection)
         }
         if (!is.null(averages_tbl)) {
+          # Retain one average artifact even when an individual wins. Rank this
+          # subset with its own accuracy allowance, not by minimum WMAPE alone.
           average_selection <- rank_forecast_candidates(selection$rankings[
             selection$rankings$Model_ID %in% averages_tbl$Model_ID, , drop = FALSE
           ])

@@ -21,3 +21,12 @@ paths:
 - Keep errors actionable and consistent. Use `stop()` for user-facing errors, `warning()` for recoverable conditions, and `message()` for informational output.
 - Avoid unnecessary copies in tight loops; vectorize when it improves clarity or performance.
 - Never add code that deletes files.
+
+## Function Documentation
+
+- Document every function, including internal package functions, nested helpers, and test helpers. Internal visibility is not a reason to omit documentation. Add missing documentation when creating or modifying a function; keep unrelated repository-wide backfills as separately scoped work.
+- Exported functions need roxygen documentation covering purpose, parameters, return value, relevant errors and side effects, and examples when useful. Regenerate the public help with `devtools::document()` when roxygen changes.
+- Internal functions need a concise contract immediately above the definition, using ordinary `#` comments or existing internal roxygen with `@noRd`. Explain why the helper exists, its inputs and returned value, and any non-obvious shape, units, missing-value, ordering, or identity assumptions. Describe storage writes, cache mutation, errors, and other side effects when applicable. Do not export a helper merely to document it.
+- Keep the amount of documentation proportional to complexity. A simple helper can use a short purpose/input/output block; a policy or orchestration function needs its decision boundary, invariants, and failure behavior. Document anonymous callbacks in the enclosing contract or immediately before the callback so their role and assumptions are clear.
+- Explain the rationale before non-obvious algorithm or policy blocks, especially thresholds, metric units, tie-breaking, transformation order, restart reuse, and artifact ownership. Do not narrate obvious assignments or add decorative separators.
+- Update the function contract and affected workflow documentation in the same change as behavior. Link to the owning guide and focused tests for complex shared policies instead of copying a long algorithm description into every caller. During review, check that the documentation matches the implementation, not just that a comment exists.

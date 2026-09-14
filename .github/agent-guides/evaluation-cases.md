@@ -5,6 +5,7 @@ Use these cases after changing agent instructions, rules, skills, or discovery s
 | Representative request | Expected scoped context | Expected response behavior |
 | --- | --- | --- |
 | Add a documented argument to an exported function in `R/` | `r-package.md` | Preserve compatibility, update roxygen, run a focused test, regenerate documentation, and inspect generated files |
+| Add or modify an internal function in `R/forecast_selection.R` | `r-package.md` and `agent-runtime.md` | Document purpose, inputs, output, invariants, and relevant errors/side effects before the definition; explain non-obvious policy blocks; do not export it merely for documentation; preserve the selection policies and update affected workflow guidance |
 | Change `reason_inputs()` or `finalize_run()` | `agent-runtime.md` and `r-package.md`; `testing.md` when tests are edited | Preserve typed graceful failures, hard operational errors, history separation, and bounded storage access; run Agent-focused tests |
 | Change a fit or predict method in `R/multistep_*.R` | `multistep.md` and `r-package.md` | Check routing, training rows, lag eligibility, forecast identity, all date frequencies, and the daily matrix |
 | Change `vip`, Boruta, ranger, or `nixtlar` handling | `optional-dependencies.md` and `r-package.md`; `testing.md` for CI/tests | Preserve `Suggests`, actionable missing-package behavior, core installation without the package, and CI isolation coverage |
