@@ -1,4 +1,8 @@
-# finnts 0.7.0.9005 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9006 (DEVELOPMENT VERSION)
+
+## Improvements
+
+- Improved model selection to balance backtest accuracy with forecast plausibility, preserve supported growth and seasonal patterns, and reject invalid predictions, with more reliable averaging, forecast updates, and run recovery.
 
 ## Bug Fixes
 

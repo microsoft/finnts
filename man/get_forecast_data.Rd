@@ -17,6 +17,19 @@ table of final forecast results
 \description{
 Get Final Forecast Data
 }
+\details{
+For non-agentic standard or grouped hierarchical runs, returns every
+successfully saved per-model reconciled forecast together with \code{Best-Model}.
+Filter \code{Best_Model == "Yes"} to retain only the reconciled selected forecast.
+\code{Best-Model} can combine different winning models or averages across series;
+it does not require one model family to win everywhere. Models that did not
+successfully produce a reconciled artifact are not added to the output.
+
+Use \code{\link[=get_agent_forecast]{get_agent_forecast()}} for final Agent results. Hierarchical Agent output
+contains only the reconciled selected forecast, because \code{\link[=iterate_forecast]{iterate_forecast()}}
+can run different model and recipe sets for different series. It is not an
+all-model reconciled comparison table.
+}
 \examples{
 \donttest{
 data_tbl <- timetk::m4_monthly \%>\%

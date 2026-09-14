@@ -184,6 +184,9 @@ execute_node <- function(node, ctx, chat) {
       ctx$attempts[[tool_name]] <- 0L
       return(list(ctx = ctx, ok = TRUE))
     }
+    if (inherits(err, "finnts_forecast_selection_rejected")) {
+      stop(err)
+    }
 
     # pause before retrying
     wait_before_retry()

@@ -1,6 +1,6 @@
 ---
 description: "Use when working on FinnTS agent runtime rules."
-globs: "R/agent_*.R,R/run_info.R,R/input_checks.R,R/prep_data.R,R/prep_models.R,R/read_write_data.R,tests/testthat/test-agent*.R,tests/testthat/test-finalize_run.R,tests/testthat/test-combo-normalization.R,tests/testthat/test-prep_models.R"
+globs: "R/agent_*.R,R/final_models.R,R/forecast_selection.R,R/run_info.R,R/input_checks.R,R/prep_data.R,R/prep_models.R,R/read_write_data.R,tests/testthat/helper-forecast-selection.R,tests/testthat/test-agent*.R,tests/testthat/test-final-models-restart.R,tests/testthat/test-forecast-selection*.R,tests/testthat/test-reconciled-forecast-selection.R,tests/testthat/test-finalize_run.R,tests/testthat/test-combo-normalization.R,tests/testthat/test-prep_models.R"
 alwaysApply: false
 ---
 

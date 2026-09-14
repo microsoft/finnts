@@ -172,6 +172,16 @@ A list of three separate data sets: the future forecast, the back test results, 
 \description{
 Calls the Finn forecast framework to automatically forecast any historical time series.
 }
+\details{
+Final selection uses the deterministic accuracy and future-plausibility
+checks documented in \code{\link[=final_models]{final_models()}}. It selects from the models already
+produced; an invalid forecast is not repaired into a zero forecast or replaced
+by an additional model fit. No acceptable candidate results in an error.
+The saved nonwinning average uses the same ranking among eligible averages.
+Hierarchical forecasts use the selected base forecasts as input to the existing
+reconciliation solver. Reconciled future outputs are not evaluated to choose
+a replacement set or trigger additional model fitting.
+}
 \examples{
 \donttest{
 

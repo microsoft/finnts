@@ -1,5 +1,17 @@
 #' Get Final Forecast Data
 #'
+#' @details For non-agentic standard or grouped hierarchical runs, returns every
+#'   successfully saved per-model reconciled forecast together with `Best-Model`.
+#'   Filter `Best_Model == "Yes"` to retain only the reconciled selected forecast.
+#'   `Best-Model` can combine different winning models or averages across series;
+#'   it does not require one model family to win everywhere. Models that did not
+#'   successfully produce a reconciled artifact are not added to the output.
+#'
+#'   Use [get_agent_forecast()] for final Agent results. Hierarchical Agent output
+#'   contains only the reconciled selected forecast, because [iterate_forecast()]
+#'   can run different model and recipe sets for different series. It is not an
+#'   all-model reconciled comparison table.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #' @param return_type return type
 #'
@@ -50,10 +62,14 @@ get_forecast_data <- function(run_info,
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
   local_reads <- is.null(run_info$storage_object) && identical(return_type, "df") &&
     run_info$data_output %in% c("csv", "parquet", "rds")
+  provider_reads <- inherits(run_info$storage_object, c("blob_container", "ms_drive")) &&
+    identical(return_type, "df") && run_info$data_output %in% c("csv", "parquet", "rds")
 
   # get input values
   log_df <- if (local_reads) {
     read_local_artifacts(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
+  } else if (provider_reads) {
+    read_exact_artifact(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
   } else read_file(run_info,
     file_list = paste0(
       run_info$path, "/logs/",
@@ -65,17 +81,22 @@ get_forecast_data <- function(run_info,
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   forecast_approach <- log_df$forecast_approach
+  local_hierarchy <- local_reads && !identical(forecast_approach, "bottoms_up")
+  provider_hierarchy <- provider_reads && !identical(forecast_approach, "bottoms_up")
   single_combo <- local_reads && length(run_info$combo) == 1L &&
     identical(forecast_approach, "bottoms_up")
 
   # get train test split data
-  model_train_test_tbl <- read_file(run_info,
+  model_train_test_tbl <- if (provider_reads) {
+    read_exact_artifact(run_info, local_artifact_path(run_info, "prep_models", "-train_test_split"))
+  } else read_file(run_info,
     path = paste0(
       "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
       "-train_test_split.", run_info$data_output
     ),
     return_type = return_type
-  ) %>%
+  )
+  model_train_test_tbl <- model_train_test_tbl %>%
     dplyr::select(Run_Type, Train_Test_ID) %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
@@ -85,7 +106,9 @@ get_forecast_data <- function(run_info,
     hash_data(run_info$run_name), "*condensed", ".", run_info$data_output
   )
 
-  condensed_files <- if (local_reads) {
+  condensed_files <- if (local_hierarchy || provider_hierarchy) {
+    character()
+  } else if (local_reads) {
     local_artifact_inventory(run_info, "forecasts", "*condensed")
   } else list_files(run_info$storage_object, fs::path(cond_path))
 
@@ -113,7 +136,23 @@ get_forecast_data <- function(run_info,
     )
   }
 
-  forecast_tbl <- if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
+  forecast_tbl <- if (local_hierarchy) {
+    reconciled_files <- local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
+    read_local_artifacts(run_info, unique(c(
+      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+      reconciled_files
+    )))
+  } else if (provider_hierarchy) {
+    reconciled_files <- list_files(run_info$storage_object,
+      local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
+    if (inherits(run_info$storage_object, "ms_drive")) {
+      reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
+    }
+    read_exact_artifact(run_info, unique(c(
+      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+      reconciled_files
+    )))
+  } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
     read_local_artifacts(run_info, condensed_files)
   } else if (single_combo) {
     read_file(run_info,
@@ -784,6 +823,54 @@ read_file <- function(run_info,
   } else if (return_type == "object") {
     readRDS(files)
   }
+}
+
+download_exact_artifact <- function(storage_object, path, destination, allow_missing) {
+  if (inherits(storage_object, "blob_container")) {
+    return(tryCatch({
+      AzureStor::storage_download(storage_object, src = path, dest = destination, overwrite = TRUE)
+      TRUE
+    }, http_404 = function(condition) {
+      if (!allow_missing) stop(condition)
+      AzureStor::get_storage_properties(storage_object)
+      FALSE
+    }))
+  }
+  if (inherits(storage_object, "ms_drive")) {
+    item <- tryCatch(storage_object$get_item(path = path), http_404 = function(condition) {
+      if (!allow_missing) stop(condition)
+      storage_object$get_item(path = "/")
+      NULL
+    })
+    if (is.null(item)) return(FALSE)
+    if (item$is_folder()) stop("Finn artifact is not a regular file: ", path, call. = FALSE)
+    item$download(dest = destination, overwrite = TRUE)
+    return(TRUE)
+  }
+  stop("Unsupported storage object for an exact Finn artifact read.", call. = FALSE)
+}
+
+read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_missing = FALSE) {
+  if (is.null(run_info$storage_object)) {
+    if (allow_missing) {
+      file_list <- local_artifact_files(file_list, allow_missing = TRUE)
+      if (!length(file_list)) return(NULL)
+    }
+    return(read_file(run_info, file_list = file_list, return_type = return_type, strict = TRUE))
+  }
+  staged <- character()
+  for (path in unique(as.character(file_list))) {
+    directory <- tempfile("finnts-artifact-")
+    fs::dir_create(directory)
+    destination <- fs::path(directory, fs::path_file(path))
+    if (download_exact_artifact(run_info$storage_object, path, destination, allow_missing)) {
+      staged <- c(staged, destination)
+    }
+  }
+  if (!length(staged) && allow_missing) return(NULL)
+  local_info <- run_info
+  local_info$storage_object <- NULL
+  read_local_artifacts(local_info, staged, return_type = return_type)
 }
 
 local_artifact_inventory <- function(run_info, folder, suffix = "*",

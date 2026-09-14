@@ -16,7 +16,7 @@ Detailed rules load conditionally from `.claude/rules/`, a format shared by Clau
 
 - `.claude/rules/r-package.md` for R source, package metadata, roxygen, vignettes, and release notes.
 - `.claude/rules/testing.md` for tests, CRAN profiles, credentials, runtime budgets, and PSOCK behavior.
-- `.claude/rules/agent-runtime.md` for Agent graphs, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.
+- `.claude/rules/agent-runtime.md` for Agent graphs, iteration selection and its accuracy signals, LLM sessions, reasoning retries, history, artifacts, combo identity, and EDA prompts.
 - `.claude/rules/multistep.md` for multistep adapters, lag generation, routing, and prediction.
 - `.claude/rules/optional-dependencies.md` for feature selection, TimeGPT, and optional package boundaries.
 
@@ -75,6 +75,7 @@ Keep edits focused. Do not refactor unrelated code, change public APIs without a
 ## Safety And Quality
 
 - Never commit secrets, tokens, local paths, or machine-specific configuration.
+- Preserve established forecasting decision policies unless the user explicitly approves changing them. In particular, protect the Agent's average-model accuracy signal for iteration selection; its rationale and rules are in [.claude/rules/agent-runtime.md](.claude/rules/agent-runtime.md#iteration-selection-policy). Logging or performance work is not permission to simplify those decisions.
 - Prefer existing dependencies and established package patterns. New dependencies require a concrete feature need and explicit justification.
 - Do not weaken or delete tests to hide a failure; fix the underlying behavior.
 - Do not create code or functions that delete files.

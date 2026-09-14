@@ -640,6 +640,7 @@ reconcile_hierarchical_data <- function(run_info,
                 rbind(snaive_tbl)
             }
 
+            validate_reconciliation_predictions(model_tbl)
             # floor near-zero forecasts to prevent slow nonnegative reconciliation
             if (!negative_forecast) {
               model_tbl <- model_tbl %>%
@@ -697,6 +698,10 @@ reconcile_hierarchical_data <- function(run_info,
             }
           },
           error = function(e) {
+            if (inherits(e, "finnts_forecast_selection_rejected")) {
+              if (model == "Best-Model") stop(e)
+              return(NULL)
+            }
             if (model != "Best-Model") {
               warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
@@ -750,16 +755,10 @@ reconcile_hierarchical_data <- function(run_info,
           convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
 
-        # write outputs to disk
         write_data(
-          x = reconciled_tbl,
-          combo = model,
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-reconciled"
+          x = reconciled_tbl, combo = model, run_info = run_info,
+          output_type = "data", folder = "forecasts", suffix = "-reconciled"
         )
-
         return(tibble::tibble())
       } %>%
       base::suppressPackageStartupMessages()
@@ -867,6 +866,7 @@ reconcile_hierarchical_data <- function(run_info,
                 rbind(snaive_tbl)
             }
 
+            validate_reconciliation_predictions(model_tbl)
             # floor near-zero forecasts to prevent slow nonnegative reconciliation
             if (!negative_forecast) {
               model_tbl <- model_tbl %>%
@@ -923,6 +923,10 @@ reconcile_hierarchical_data <- function(run_info,
             }
           },
           error = function(e) {
+            if (inherits(e, "finnts_forecast_selection_rejected")) {
+              if (model == "Best-Model") stop(e)
+              return(NULL)
+            }
             if (model != "Best-Model") {
               warning(paste0("The model '", model, "' was not able to be reconciled, skipping: ", conditionMessage(e)),
                 call. = FALSE
@@ -976,16 +980,10 @@ reconcile_hierarchical_data <- function(run_info,
           convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
 
-        # write outputs to disk
         write_data(
-          x = reconciled_tbl,
-          combo = model,
-          run_info = run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-reconciled"
+          x = reconciled_tbl, combo = model, run_info = run_info,
+          output_type = "data", folder = "forecasts", suffix = "-reconciled"
         )
-
         return(tibble::tibble())
       } %>%
       base::suppressPackageStartupMessages()
@@ -993,6 +991,7 @@ reconcile_hierarchical_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   }
+  invisible(NULL)
 }
 
 #' Determine how external regressors should be aggregated

@@ -187,3 +187,64 @@ test_that("undifference_recipe handles double differencing with mid-vector NAs",
 
   expect_equal(nrow(result), 6)
 })
+
+test_that("original actuals and cleaned forecasts use different starting values", {
+  for (difference_order in 1:2) {
+    for (recipe in c("R1", "R2")) {
+      actuals <- as.numeric(101:136)
+      actuals[2] <- 300
+      cleaned <- as.numeric(101:136)
+      fixture <- make_selection_history_recipe(actuals, cleaned, difference_order, recipe = recipe)
+      expect_equal(fixture$combo_info$Target_Original_Diff_Value1, 101)
+      if (difference_order == 2) {
+        expect_equal(fixture$combo_info$Target_Original_Diff_Value2, 300)
+        expect_equal(fixture$combo_info$Diff_Value2, 102)
+      }
+      one_horizon <- if (recipe == "R2") fixture$data[fixture$data$Horizon == 1, ] else fixture$data
+      forecasts <- one_horizon[34:36, ] %>%
+        dplyr::transmute(Combo, Date, Train_Test_ID = 2, Forecast = Target, Target = Target_Original)
+      restored <- undifference_forecast(forecasts, fixture$data, fixture$combo_info)
+      expect_equal(restored$Target, actuals[34:36])
+      expect_equal(restored$Forecast, cleaned[34:36])
+    }
+  }
+})
+
+test_that("legacy second-order original data requires regeneration", {
+  fixture <- make_selection_history_recipe(as.numeric(101:136), difference_order = 2)
+  legacy <- fixture$combo_info[, c("Combo", "Diff_Value1", "Diff_Value2")]
+  expect_error(
+    undifference_recipe(fixture$data, legacy, fixture$hist_end_date),
+    "Regenerate prepared data from the original input"
+  )
+  forecasts <- fixture$data[34:36, ] %>%
+    dplyr::transmute(Combo, Date, Train_Test_ID = 2, Forecast = Target, Target = Target_Original)
+  expect_error(undifference_forecast(forecasts, fixture$data, legacy), "Regenerate prepared data")
+  fixture$data$Target_Original <- NULL
+  expect_equal(
+    undifference_recipe(fixture$data, legacy, fixture$hist_end_date)$Target[1:36],
+    as.numeric(101:136)
+  )
+})
+
+test_that("legacy first-order original data retains its common initial value", {
+  fixture <- make_selection_history_recipe(as.numeric(101:136), difference_order = 1)
+  legacy <- fixture$combo_info[, c("Combo", "Diff_Value1", "Diff_Value2")]
+  expect_equal(
+    undifference_recipe(fixture$data, legacy, fixture$hist_end_date)$Target_Original[1:36],
+    as.numeric(101:136)
+  )
+})
+
+test_that("Box-Cox reconstruction preserves distinct original starting values", {
+  for (recipe in c("R1", "R2")) {
+    actuals <- as.numeric(101:136)
+    actuals[2] <- 300
+    fixture <- make_selection_history_recipe(actuals, as.numeric(101:136), 2, TRUE, recipe)
+    result <- normalize_series_history(
+      fixture$data, fixture$hist_end_date, recipe, fixture$combo_info,
+      stationary = TRUE, box_cox = TRUE
+    )
+    expect_equal(result$history, fixture$expected, tolerance = 1e-7)
+  }
+})
