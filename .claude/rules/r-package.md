@@ -15,7 +15,8 @@ paths:
 - Add a package dependency only for a concrete feature when existing dependencies and a small maintainable implementation are inadequate, unsafe, or would recreate substantial mature functionality. Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers, and do not vendor third-party source.
 - A dependency-changing pull request must explain alternatives, necessity, maintenance/security/license implications, placement in `Imports` or `Suggests`, and version constraints. Validate it with a clean-library installation and `devtools::check()`.
 - Update roxygen comments for public API changes, then run `R -q -e 'devtools::document()'`. Never hand-edit `NAMESPACE` or `man/*.Rd`.
-- Add a `NEWS.md` entry and bump `DESCRIPTION` only for a release or user-visible behavior change. Internal agent-guidance maintenance alone does not require either change.
+- Add a `NEWS.md` entry for user-visible behavior changes; the `DESCRIPTION` version may advance for a release or user-visible change. Internal agent-guidance maintenance alone requires neither a NEWS entry nor a version change.
+- Keep exactly one 9000-series development-version section in `NEWS.md`, aligned with `DESCRIPTION`. When advancing the development version (for example, `.9005` to `.9006`), rename the existing development heading and merge new notes into it; never retain separate sections for successive unreleased development versions. Preserve all accumulated unreleased notes and released-version history.
 - Use short `# description` comments only where the code is not self-explanatory. Do not add decorative comment separators.
 - Keep errors actionable and consistent. Use `stop()` for user-facing errors, `warning()` for recoverable conditions, and `message()` for informational output.
 - Avoid unnecessary copies in tight loops; vectorize when it improves clarity or performance.
