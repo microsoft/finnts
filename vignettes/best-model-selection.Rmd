@@ -23,10 +23,13 @@ Model selection is several connected decisions, not one minimum-error calculatio
 | Stage | Question answered | Result |
 | --- | --- | --- |
 | Candidate validity | Does each model have complete, finite predictions and usable backtest accuracy? | Hard-invalid candidates cannot win or contribute to a simple average. |
-| Within-run selection | Among sufficiently accurate candidates, which future path has the fewest supported concerns? | One selected model or exact average for each series. Soft concerns can remain when no better eligible alternative exists. |
+| Within-run selection | Among sufficiently accurate candidates, which future path ranks best by risk, concern count, supported seasonal fidelity, WMAPE, and stable ID? | One selected model or exact average for each series. Soft concerns can remain when no better eligible alternative exists. |
 | Agent iteration context | Which completed iteration's settings should guide further optimization? | A near-best iteration can be preferred when its individual model-pool accuracy improves. This does not automatically replace a better saved local forecast. |
 | Saved forecast promotion | Should the current iteration replace the saved result? | Local winners stay protected; globally selected series reference one winning global iteration. |
 | Update acceptance | Is the newly refitted version of the saved choice still acceptable? | Keep that choice or attempt the existing default-local replacement workflow before reconciliation. |
+
+Seasonal fidelity breaks a risk-and-concern tie only when every candidate in that
+tied group has a finite assessed score; otherwise WMAPE and stable ID decide the tie.
 
 For a standard run, follow [candidate checks](#future-forecast-checks), the
 [accuracy allowance](#accuracy-allowance), and

@@ -1,6 +1,6 @@
 ---
 description: "Use when working on FinnTS r package rules."
-globs: "R/**/*.R,DESCRIPTION,NAMESPACE,man/**/*.Rd,vignettes/**/*.{Rmd,qmd},NEWS.md"
+globs: "R/**/*.R,tests/**/*.R,DESCRIPTION,NAMESPACE,man/**/*.Rd,vignettes/**/*.{Rmd,qmd},NEWS.md"
 alwaysApply: false
 ---
 

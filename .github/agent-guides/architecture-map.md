@@ -27,7 +27,7 @@ High-value tests are `test-agent-chat-serialization.R`, `test-agent-duplicate-ru
 
 ## Model Selection
 
-Start with the [Best Model Selection vignette](../../vignettes/best-model-selection.Rmd) for thresholds, formulas, examples, and limitations. This section maps those rules to their owners. The [Agent iteration policy](../../.claude/rules/agent-runtime.md#iteration-selection-policy) is the maintenance contract; a documentation or performance change must not redefine it.
+Use this map first to locate the owning workflow, then consult the [Best Model Selection vignette](../../vignettes/best-model-selection.Rmd) for thresholds, formulas, examples, and limitations. The [Agent iteration policy](../../.claude/rules/agent-runtime.md#iteration-selection-policy) is the maintenance contract; a documentation or performance change must not redefine it.
 
 ### Five Different Decisions
 

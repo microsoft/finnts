@@ -1,6 +1,7 @@
 ---
 paths:
   - "R/**/*.R"
+  - "tests/**/*.R"
   - "DESCRIPTION"
   - "NAMESPACE"
   - "man/**/*.Rd"

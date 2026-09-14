@@ -1,5 +1,5 @@
 ---
-applyTo: "R/**/*.R,DESCRIPTION,NAMESPACE,man/**/*.Rd,vignettes/**/*.{Rmd,qmd},NEWS.md"
+applyTo: "R/**/*.R,tests/**/*.R,DESCRIPTION,NAMESPACE,man/**/*.Rd,vignettes/**/*.{Rmd,qmd},NEWS.md"
 ---
 
 # R Package Rules
