@@ -32,6 +32,81 @@ test_that("single-combo forecast getter retains every existing model output", {
   expect_equal(tracker$listings, 1L)
 })
 
+for (format in c("csv", "rds", "parquet")) {
+  test_that(paste("standard hierarchical getter retains all reconciled models for", format), {
+    if (format == "parquet") skip_if_not_installed("arrow")
+    run_info <- artifact_test_run(withr::local_tempdir(), format)
+    artifact_test_log(run_info, combo_variables = "ID", forecast_approach = "standard_hierarchy")
+    artifact_test_splits(run_info)
+    models <- c("meanf--local--R1", "snaive--local--R1", "Best-Model")
+    for (model in models) {
+      rows <- artifact_test_forecast(run_info, write_output = FALSE)
+      rows$Model_ID <- model
+      rows$Forecast <- match(model, models) * 100
+      rows$Best_Model <- if (model == "Best-Model") "Yes" else "No"
+      write_data(rows, model, run_info, "data", "forecasts", "-reconciled")
+    }
+    tracker <- local_artifact_spies(max_listings = 1L)
+
+    result <- get_forecast_data(run_info)
+
+    expect_setequal(result$Model_ID, models)
+    expect_equal(nrow(result), 3L)
+    expect_equal(result$Forecast, match(result$Model_ID, models) * 100)
+    expect_identical(result$Model_ID[result$Best_Model == "Yes"], "Best-Model")
+    expect_equal(tracker$listings, 1L)
+  })
+}
+
+test_that("hierarchical getters retain models and weekly rows without unrelated artifacts", {
+  for (approach in c("standard_hierarchy", "grouped_hierarchy")) {
+    for (daily in c(FALSE, TRUE)) local({
+      run_info <- artifact_test_run(withr::local_tempdir())
+      artifact_test_log(run_info, date_type = "week", combo_variables = "ID", forecast_approach = approach)
+      artifact_test_splits(run_info)
+      models <- c("meanf--local--R1", "snaive--local--R1", "Best-Model")
+      expected <- dplyr::bind_rows(lapply(models, function(model) {
+        rows <- artifact_test_forecast(run_info, write_output = FALSE)
+        rows$Model_ID <- model
+        rows$Forecast <- match(model, models) * 700
+        rows$Best_Model <- if (model == "Best-Model") "Yes" else "No"
+        if (daily) {
+          rows <- rows[rep(1L, 7), ]
+          rows$Date_Day <- rows$Date + 0:6
+          rows$Forecast <- rows$Forecast / 7
+        }
+        write_data(rows, model, run_info, "data", "forecasts", "-reconciled")
+        rows
+      }))
+      unrelated <- run_info
+      unrelated$run_name <- "unrelated-run"
+      write_data(expected, "Best-Model", unrelated, "data", "forecasts", "-reconciled")
+      write_data(expected, "batch", run_info, "data", "forecasts", "-condensed")
+      artifact_test_forecast(run_info)
+      tracker <- local_artifact_spies(max_listings = 1L)
+
+      result <- get_forecast_data(run_info)
+
+      expect_setequal(result$Model_ID, models)
+      columns <- c("Combo", "Model_ID", "Date", if (daily) "Date_Day", "Forecast", "Best_Model")
+      expect_equal(dplyr::arrange(result[, columns], Model_ID, Date),
+        dplyr::arrange(expected[, columns], Model_ID, Date))
+      expect_equal(tracker$listings, 1L)
+      paths <- vapply(models, function(model) as.character(artifact_test_path(run_info, "forecasts", model, "-reconciled")), character(1))
+      expect_true(all(vapply(paths, function(path) sum(tracker$payload_paths == path) == 1L, logical(1))))
+    })
+  }
+})
+
+test_that("per-model reconciled output cannot replace a missing required best artifact", {
+  run_info <- artifact_test_run(withr::local_tempdir())
+  artifact_test_log(run_info, combo_variables = "ID", forecast_approach = "standard_hierarchy")
+  artifact_test_splits(run_info)
+  rows <- artifact_test_forecast(run_info, write_output = FALSE)
+  write_data(rows, "meanf--local--R1", run_info, "data", "forecasts", "-reconciled")
+  expect_error(get_forecast_data(run_info), "Missing required Finn artifact.*reconciled")
+})
+
 test_that("trained model getter reads exactly the known combo model files", {
   run_info <- artifact_test_run(withr::local_tempdir())
   run_info$combo <- hash_data("A")

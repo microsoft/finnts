@@ -15,6 +15,18 @@ A tibble containing the final forecast for the agent.
 \description{
 This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete.
 }
+\details{
+For hierarchical Agent runs, returns only the final reconciled
+\code{Best-Model} forecast. Each series can run and select different models,
+recipes, or averages during \code{\link[=iterate_forecast]{iterate_forecast()}}, so the selected forecasts
+are reconciled together rather than producing a comparison hierarchy for
+every model. \code{Best-Model} does not mean the same model family won for every
+series. This best-only reconciled output contract also applies after
+\code{\link[=update_forecast]{update_forecast()}}. It does not change non-hierarchical candidate output.
+
+For non-agentic hierarchical runs, \code{\link[=get_forecast_data]{get_forecast_data()}} returns all
+successfully saved per-model reconciled forecasts plus \code{Best-Model}.
+}
 \examples{
 \dontrun{
 # load example data

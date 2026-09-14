@@ -2,6 +2,15 @@
 #'
 #' Calls the Finn forecast framework to automatically forecast any historical time series.
 #'
+#' @details Final selection uses the deterministic accuracy and future-plausibility
+#'   checks documented in [final_models()]. It selects from the models already
+#'   produced; an invalid forecast is not repaired into a zero forecast or replaced
+#'   by an additional model fit. No acceptable candidate results in an error.
+#'   The saved nonwinning average uses the same ranking among eligible averages.
+#'   Hierarchical forecasts use the selected base forecasts as input to the existing
+#'   reconciliation solver. Reconciled future outputs are not evaluated to choose
+#'   a replacement set or trigger additional model fitting.
+#'
 #' @param run_info Run info using [set_run_info()]
 #' @param input_data A data frame or tibble of historical time series data. Can also include external regressors for both
 #'   historical and future data.

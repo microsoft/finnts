@@ -63,6 +63,32 @@ run_daily_multistep_case <- function(clean_outliers,
     seed = 123
   )
 
+  hyperparameter_path <- paste0(
+    "/prep_models/", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name), "-model_hyperparameters.", run_info$object_output
+  )
+  hyperparameters <- finnts:::read_file(run_info, path = hyperparameter_path, return_type = "df")
+  original_hyperparameters <- hyperparameters
+  for (model_index in seq_len(nrow(hyperparameters))) {
+    if (hyperparameters$Model[[model_index]] == "xgboost") {
+      hyperparameters$Hyperparameters[[model_index]]$trees <- 20L
+      hyperparameters$Hyperparameters[[model_index]]$tree_depth <- 2L
+    } else if (hyperparameters$Model[[model_index]] == "cubist") {
+      hyperparameters$Hyperparameters[[model_index]]$committees <- 1L
+      hyperparameters$Hyperparameters[[model_index]]$max_rules <- 10L
+    }
+  }
+  if (any(hyperparameters$Model %in% c("xgboost", "cubist"))) {
+    finnts:::write_data(
+      x = hyperparameters,
+      combo = NULL,
+      run_info = run_info,
+      output_type = "object",
+      folder = "prep_models",
+      suffix = "-model_hyperparameters"
+    )
+  }
+
   train_models(
     run_info = run_info,
     run_global_models = FALSE,
@@ -78,13 +104,36 @@ run_daily_multistep_case <- function(clean_outliers,
     forecast = output$forecast,
     trained = get_trained_models(run_info),
     prepared = get_prepped_data(run_info, recipe = "R1"),
-    splits = output$splits
+    splits = output$splits,
+    original_hyperparameters = original_hyperparameters,
+    hyperparameters = hyperparameters
   )
 }
 
 expect_complete_multistep_output <- function(result, expected_models) {
   forecast <- result$forecast %>%
     dplyr::filter(Model_Name %in% expected_models)
+
+  grid <- result$hyperparameters
+  original_grid <- result$original_hyperparameters
+  metadata_columns <- setdiff(names(original_grid), "Hyperparameters")
+  expect_identical(names(grid), names(original_grid))
+  expect_identical(grid[, metadata_columns, drop = FALSE],
+    original_grid[, metadata_columns, drop = FALSE])
+  for (grid_index in seq_len(nrow(grid))) {
+    parameters <- grid$Hyperparameters[[grid_index]]
+    original_parameters <- original_grid$Hyperparameters[[grid_index]]
+    bounded_parameters <- switch(grid$Model[[grid_index]],
+      xgboost = c("trees", "tree_depth"),
+      cubist = c("committees", "max_rules"),
+      character()
+    )
+    unchanged_parameters <- setdiff(names(original_parameters), bounded_parameters)
+    expect_identical(names(parameters), names(original_parameters))
+    expect_identical(nrow(parameters), nrow(original_parameters))
+    expect_identical(parameters[, unchanged_parameters, drop = FALSE],
+      original_parameters[, unchanged_parameters, drop = FALSE], info = grid$Model[[grid_index]])
+  }
 
   expect_setequal(unique(result$trained$Model_Name), expected_models)
   expect_setequal(unique(forecast$Model_Name), expected_models)
@@ -98,6 +147,15 @@ expect_complete_multistep_output <- function(result, expected_models) {
     lag_periods <- rlang::eval_tidy(spec$args$lag_periods)
     expected_lags <- finnts:::get_multi_lags(lag_periods, forecast_horizon = 92)
     fitted_model <- workflow$fit$fit$fit
+
+    model_name <- result$trained$Model_Name[[model_index]]
+    if (model_name == "xgboost") {
+      expect_equal(rlang::eval_tidy(spec$args$trees), 20)
+      expect_equal(rlang::eval_tidy(spec$args$tree_depth), 2)
+    } else if (model_name == "cubist") {
+      expect_equal(rlang::eval_tidy(spec$args$committees), 1)
+      expect_equal(rlang::eval_tidy(spec$args$max_rules), 10)
+    }
 
     expect_equal(
       names(fitted_model$models),
