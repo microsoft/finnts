@@ -127,7 +127,8 @@ test_that("clean_outliers keeps future Target_Original NA so future Target is no
   # Regression: the recipe's blanket NA->0 fill previously reset future
   # Target_Original to 0. create_splits() then copied that into the future
   # assessment Target, producing future Target = 0 for every model whenever
-  # clean_outliers = TRUE, even for series with no historical zeros.
+  # clean_outliers = TRUE, even for series with no historical zeros. The fix
+  # applies to both the R1 and R2 feature-engineering recipes.
   hist_dates <- seq.Date(as.Date("2023-07-01"), as.Date("2026-06-01"), by = "month")
   set.seed(7)
   data_tbl <- tibble::tibble(
@@ -147,25 +148,29 @@ test_that("clean_outliers keeps future Target_Original NA so future Target is no
     forecast_horizon = 6,
     hist_end_date = as.Date("2026-06-01"),
     clean_outliers = TRUE,
-    recipes_to_run = "R1"
+    recipes_to_run = c("R1", "R2")
   )
 
-  prepped <- get_prepped_data(run_info, recipe = "R1")
-  future_rows <- prepped %>%
-    dplyr::filter(Date > as.Date("2026-06-01"))
+  # both recipes must keep future Target and Target_Original as NA
+  for (recipe in c("R1", "R2")) {
+    prepped <- get_prepped_data(run_info, recipe = recipe)
+    future_rows <- prepped %>%
+      dplyr::filter(Date > as.Date("2026-06-01"))
 
-  expect_gt(nrow(future_rows), 0)
-  expect_true("Target_Original" %in% colnames(future_rows))
-  expect_true(all(is.na(future_rows$Target)))
-  expect_true(all(is.na(future_rows$Target_Original)))
+    expect_gt(nrow(future_rows), 0)
+    expect_true("Target_Original" %in% colnames(future_rows), info = recipe)
+    expect_true(all(is.na(future_rows$Target)), info = recipe)
+    expect_true(all(is.na(future_rows$Target_Original)), info = recipe)
+  }
 
   # create_splits must not copy zeros into the future assessment Target
+  prepped_r1 <- get_prepped_data(run_info, recipe = "R1")
   splits <- tibble::tibble(
     Train_Test_ID = 1,
     Train_End = as.Date("2026-06-01"),
-    Test_End = max(prepped$Date)
+    Test_End = max(prepped_r1$Date)
   )
-  resamples <- create_splits(prepped, splits)
+  resamples <- create_splits(prepped_r1, splits)
   future_assessment <- rsample::assessment(resamples$splits[[1]])
   expect_true(all(is.na(future_assessment$Target)))
 })
