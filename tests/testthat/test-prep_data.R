@@ -122,3 +122,50 @@ test_that("prep_data grouped_hierarchy with mixed xreg future coverage has no NA
     )
   }
 })
+
+test_that("clean_outliers keeps future Target_Original NA so future Target is not zero", {
+  # Regression: the recipe's blanket NA->0 fill previously reset future
+  # Target_Original to 0. create_splits() then copied that into the future
+  # assessment Target, producing future Target = 0 for every model whenever
+  # clean_outliers = TRUE, even for series with no historical zeros.
+  hist_dates <- seq.Date(as.Date("2023-07-01"), as.Date("2026-06-01"), by = "month")
+  set.seed(7)
+  data_tbl <- tibble::tibble(
+    id = "A",
+    Date = hist_dates,
+    value = runif(length(hist_dates), 3e5, 2e6)
+  )
+
+  run_info <- set_run_info()
+
+  prep_data(
+    run_info = run_info,
+    input_data = data_tbl,
+    combo_variables = "id",
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 6,
+    hist_end_date = as.Date("2026-06-01"),
+    clean_outliers = TRUE,
+    recipes_to_run = "R1"
+  )
+
+  prepped <- get_prepped_data(run_info, recipe = "R1")
+  future_rows <- prepped %>%
+    dplyr::filter(Date > as.Date("2026-06-01"))
+
+  expect_gt(nrow(future_rows), 0)
+  expect_true("Target_Original" %in% colnames(future_rows))
+  expect_true(all(is.na(future_rows$Target)))
+  expect_true(all(is.na(future_rows$Target_Original)))
+
+  # create_splits must not copy zeros into the future assessment Target
+  splits <- tibble::tibble(
+    Train_Test_ID = 1,
+    Train_End = as.Date("2026-06-01"),
+    Test_End = max(prepped$Date)
+  )
+  resamples <- create_splits(prepped, splits)
+  future_assessment <- rsample::assessment(resamples$splits[[1]])
+  expect_true(all(is.na(future_assessment$Target)))
+})

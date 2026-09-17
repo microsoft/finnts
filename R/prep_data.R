@@ -494,7 +494,10 @@ prep_data <- function(run_info,
               date_type,
               xreg_raw_df = xreg_raw_df
             ) %>%
-            dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
+            dplyr::mutate(dplyr::across(
+              tidyselect::any_of(c("Target", "Target_Original")),
+              ~ base::ifelse(Date > hist_end_date, NA, .x)
+            ))
 
           write_data(
             x = R1,
@@ -517,7 +520,10 @@ prep_data <- function(run_info,
               forecast_horizon,
               hist_end_date
             ) %>%
-            dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
+            dplyr::mutate(dplyr::across(
+              tidyselect::any_of(c("Target", "Target_Original")),
+              ~ base::ifelse(Date > hist_end_date, NA, .x)
+            ))
 
           write_data(
             x = R2,
@@ -670,7 +676,10 @@ prep_data <- function(run_info,
                 date_type,
                 xreg_raw_df = xreg_raw_df
               ) %>%
-              dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
+              dplyr::mutate(dplyr::across(
+                tidyselect::any_of(c("Target", "Target_Original")),
+                ~ base::ifelse(Date > hist_end_date, NA, .x)
+              ))
 
             write_data(
               x = R1,
@@ -692,7 +701,10 @@ prep_data <- function(run_info,
                 date_type,
                 forecast_horizon
               ) %>%
-              dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
+              dplyr::mutate(dplyr::across(
+                tidyselect::any_of(c("Target", "Target_Original")),
+                ~ base::ifelse(Date > hist_end_date, NA, .x)
+              ))
 
             write_data(
               x = R2,
