@@ -1,4 +1,4 @@
-# finnts 0.7.0.9007 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9008 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -6,6 +6,7 @@
 
 ## Bug Fixes
 
+-   Fixed future actuals being written as `0` instead of `NA` when `clean_outliers = TRUE`. The R1 and R2 feature-engineering recipes replace remaining missing values with zero, which previously reset the future `Target_Original` values to `0`; those zeros were then copied into the future assessment `Target` during resampling. Future `Target_Original` is now reset to `NA` after each recipe, so future actuals stay `NA` while backtest folds continue to use the original uncleaned values.
 -   Nonnegative hierarchical reconciliation now limits the ratio between the largest and smallest inverse-error weights to `1e15`, reducing numerical slow-zone failures caused by near-perfect back-test fits. The same rule applies to standard, grouped, and Agent reconciliation without changing the HTS dependency or adding runtime timeouts. Extreme-weight cases may produce different forecasts, particularly for small series; valid weights within the limit and reconciliation that allows negative forecasts retain their previous calculation. Invalid residual variances now produce an actionable reconciliation error.
 -   Local and ADLS-mounted workflows now read known series inputs, recipes, EDA results, model outputs, and completion artifacts by exact path. Necessary directory listings are reused during model preparation, EDA aggregation, and condensed forecast reads. Standalone forecast getters discover unknown condensed batches once and preserve their precedence even when the first batch is absent. Exact-file validation is not repeated before reading, and local CSV read-time metadata and I/O failures propagate instead of becoming empty or partial results. Valid empty CSV files and optional missing artifacts retain their supported behavior. Default legacy reads, remote-provider downloads, and Spark data-frame routing are unchanged.
 -   `update_forecast()` now excludes predecessor time series that are absent from the current input before global or local update routing. Removed series no longer produce empty-schema or missing-artifact fallback errors, while current-only series continue to receive default local forecasts.
