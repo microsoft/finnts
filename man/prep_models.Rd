@@ -56,6 +56,9 @@ Writes outputs related to model prep to disk.
 \description{
 Preps various aspects of run before training models. Things like train/test
 splits, creating hyperparameters, etc.
+The opt-in acr-scott-custom model must be explicitly selected after
+\code{\link[=prep_data]{prep_data()}} has preserved its configured structural metadata in R1.
+Its fixed rule configuration does not create a tuning parameter grid.
 }
 \examples{
 \donttest{

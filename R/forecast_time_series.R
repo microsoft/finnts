@@ -91,6 +91,12 @@
 #' @param return_data If TRUE, return the forecast results. Used to be backwards compatible
 #'   with previous finnts versions. Recommended to use a value of FALSE and leverage
 #'   [get_forecast_data()] for new features.
+#' @param stationary Apply differencing during preparation; default TRUE retains
+#'   the existing behavior. Set FALSE for acr-scott-custom.
+#' @param box_cox Apply Box-Cox transformation during preparation; default FALSE.
+#' @param acr_scott_custom_options Optional configuration passed to [prep_data()]
+#'   for the explicitly selected acr-scott-custom model. Requires untransformed,
+#'   uncleaned monthly bottoms_up data and global R1 execution.
 #'
 #' @return A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
 #'
@@ -155,7 +161,10 @@ forecast_time_series <- function(run_info = NULL,
                                  seed = 123,
                                  run_model_parallel = FALSE,
                                  return_data = TRUE,
-                                 run_name = "finnts_forecast") {
+                                 run_name = "finnts_forecast",
+                                 stationary = TRUE,
+                                 box_cox = FALSE,
+                                 acr_scott_custom_options = NULL) {
   if (is.null(run_info)) {
     run_info <- set_run_info()
   }
@@ -185,7 +194,10 @@ forecast_time_series <- function(run_info = NULL,
     fourier_periods = fourier_periods,
     lag_periods = lag_periods,
     rolling_window_periods = rolling_window_periods,
-    recipes_to_run = recipes_to_run
+    recipes_to_run = recipes_to_run,
+    stationary = stationary,
+    box_cox = box_cox,
+    acr_scott_custom_options = acr_scott_custom_options
   )
 
   prep_models(

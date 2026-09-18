@@ -117,6 +117,7 @@ summarize_models <- function(agent_info,
 
   # Map model names to summarize functions
   model_summarize_map <- list(
+    "acr-scott-custom" = summarize_model_acr_scott_custom,
     "arima" = summarize_model_arima,
     "arimax" = summarize_model_arimax,
     "arima-boost" = summarize_model_arima_boost,

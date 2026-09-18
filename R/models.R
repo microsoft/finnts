@@ -1,14 +1,17 @@
 #' List all available models
 #'
+#' @param include_opt_in Include models requiring explicit configuration. The
+#'   default preserves the ordinary model inventory and automatic selections.
 #' @return list of models
 #' @export
-list_models <- function() {
+list_models <- function(include_opt_in = FALSE) {
   list <- c(
     "arima", "arima-boost", "arimax", "chronos-bolt-base", "chronos-bolt-tiny", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
     "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timesfm", "timegpt", "xgboost"
   )
 
+  if (isTRUE(include_opt_in)) list <- c(list, "acr-scott-custom")
   return(list)
 }
 
@@ -57,7 +60,7 @@ list_r2_models <- function() {
 #' @return list of models
 #' @noRd
 list_global_models <- function() {
-  list <- c("xgboost", "chronos2", "timegpt")
+  list <- c("xgboost", "chronos2", "timegpt", "acr-scott-custom")
 
   return(list)
 }

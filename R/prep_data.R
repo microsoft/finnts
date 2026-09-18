@@ -70,6 +70,10 @@
 #'   recipes_to_run = "R1"
 #' )
 #' }
+#' @param acr_scott_custom_options Optional configuration for the opt-in
+#'   acr-scott-custom model. Requires original-scale monthly bottoms_up inputs
+#'   with cleaning and transformations disabled. Preserves target-free peer and
+#'   exposure metadata in R1; changed effective settings require a new run.
 #' @export
 prep_data <- function(run_info,
                       input_data,
@@ -93,7 +97,8 @@ prep_data <- function(run_info,
                       lag_periods = NULL,
                       rolling_window_periods = NULL,
                       recipes_to_run = NULL,
-                      multistep_horizon = FALSE) {
+                      multistep_horizon = FALSE,
+                      acr_scott_custom_options = NULL) {
   cli::cli_progress_step("Prepping Data")
 
   # Check if external regressors contain "original" in their names
@@ -175,6 +180,16 @@ prep_data <- function(run_info,
       suppressWarnings()
   }
 
+  acr_scott_metadata <- NULL
+  if (!is.null(acr_scott_custom_options)) {
+    custom <- acr_scott_prepare(input_data, combo_variables, target_variable,
+      acr_scott_custom_options, hist_start_date, hist_end_date, forecast_horizon,
+      date_type, stationary, box_cox, clean_outliers, clean_missing_values,
+      forecast_approach, parallel_processing, recipes_to_run)
+    acr_scott_custom_options <- custom$options
+    acr_scott_metadata <- custom$metadata
+  }
+
   # prep initial data before feature engineering
   initial_prep_tbl <- input_data %>%
     tidyr::unite("Combo",
@@ -214,8 +229,17 @@ prep_data <- function(run_info,
   prev_log_df <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
-  ) %>%
-    dplyr::select(tidyselect::any_of(cols_check_list))
+  )
+  if (!is.null(acr_scott_custom_options) || "acr_scott_custom_options" %in% names(prev_log_df)) {
+    cols_check_list <- c(cols_check_list, "acr_scott_custom_options")
+    previous_options <- acr_scott_log_options(prev_log_df)
+    if ("acr_scott_custom_options" %in% names(prev_log_df) || "hist_end_date" %in% names(prev_log_df)) {
+      if (!identical(previous_options, acr_scott_custom_options)) {
+        stop("acr-scott-custom settings changed; start a new run.", call. = FALSE)
+      }
+    }
+  }
+  prev_log_df <- prev_log_df %>% dplyr::select(tidyselect::any_of(cols_check_list))
 
   # create current log
   current_log_df <- tibble::tibble(
@@ -237,6 +261,11 @@ prep_data <- function(run_info,
     recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---"))
   ) %>%
     data.frame()
+
+  if (!is.null(acr_scott_custom_options)) {
+    current_log_df$acr_scott_custom_options <- as.character(jsonlite::toJSON(
+      acr_scott_custom_options, auto_unbox = TRUE, null = "null"))
+  }
 
   # check if run has already been completed
   if (length(cols_check_list) == length(colnames(prev_log_df))) {
@@ -495,6 +524,11 @@ prep_data <- function(run_info,
               xreg_raw_df = xreg_raw_df
             ) %>%
             dplyr::mutate(Target = base::ifelse(Date > hist_end_date, NA, Target))
+
+          if (!is.null(acr_scott_custom_options)) {
+            R1 <- acr_scott_attach_metadata(R1, acr_scott_metadata, combo,
+                                            combo_variables, acr_scott_custom_options)
+          }
 
           write_data(
             x = R1,
@@ -809,6 +843,11 @@ prep_data <- function(run_info,
       recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")),
       multistep_horizon = multistep_horizon
     )
+
+  if (!is.null(acr_scott_custom_options)) {
+    log_df$acr_scott_custom_options <- as.character(jsonlite::toJSON(
+      acr_scott_custom_options, auto_unbox = TRUE, null = "null"))
+  }
 
   write_data(
     x = log_df,

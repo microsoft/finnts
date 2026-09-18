@@ -1,0 +1,226 @@
+---
+title: "The ACR Scott Custom Model"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{The ACR Scott Custom Model}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+## Purpose and boundary
+
+`acr-scott-custom` is an explicitly selected global model, not a new default
+forecasting policy. It estimates peer-group references and produces a separate
+recursive forecast for every series. It does not tie results to EG targets,
+enforce segment growth ordering, redistribute pricing mix, or use an LLM.
+
+The engine combines same-month historical growth with recent and peer growth,
+damps historical growth relative to the current revenue base, and applies the
+selected source-derived caps and calendar overrides. Supporting `lm()` fits
+forecast reference growth and dispersion, not individual-series revenue.
+Forecast accuracy must be assessed with held-out actuals; a rule-based forecast
+is not guaranteed to outperform ARIMA, ETS or seasonal naive.
+
+## Required data
+
+- Monthly dates in a `Date` column, with a consistent monthly convention.
+- Explicit `combo_variables` defining unique bottom-level series.
+- Nonnegative, finite targets: monthly revenue totals or average daily rates.
+- At least two series, each with seven consecutive observed months through the
+  training cutoff. Three seasonal analogues need substantially longer history.
+- `pool_by`: a nonempty subset of the combo variables. Product, geography and
+  segment names are not hard-coded.
+- Monthly totals use calendar days unless `exposure` names a strictly positive
+  adjusted-days column with historical and future values. Daily-rate targets
+  use exposure one and return daily-rate forecasts.
+
+Missing historical targets and internal gaps are errors. Leading unavailable
+months introduced by FinnTS padding are explicitly excluded from the model.
+An actual zero remains an observation; a zero final revenue rate cannot recover
+under this multiplicative model without a separately approved policy.
+
+The first version requires `stationary = FALSE`, `box_cox = FALSE`,
+`clean_outliers = FALSE`, `clean_missing_values = FALSE`, `forecast_approach =
+"bottoms_up"`, and R1. Incompatible settings are rejected, not silently changed.
+Do not mix parent totals and their component series in the peer population.
+Spark certification and automatic Agent discovery/configuration are out of scope.
+
+## Dynamic pooling
+
+`pool_by = c("Product", "Segment")` shares references across all other dimensions.
+Adding `Region` or `PricingLevel` to `combo_variables` creates finer series without
+changing that pooling definition. A different run can instead use
+`pool_by = c("Service", "CustomerTier")`.
+
+`pool_fallbacks` is an ordered list of nonempty, strictly coarser subsets. The
+first level with `min_pool_series` usable distinct series is used; the default
+minimum is three. For example, `list(c("Product", "Segment"), "Product")` can
+follow `pool_by = c("Product", "Segment", "CustomerType")`. No other dimensions
+are dropped automatically. With no adequate pool, `insufficient_pool = "error"`
+is the default. Explicit `"series"` fallback uses within-series references and
+is recorded as different from peer pooling.
+
+Statistics use equally weighted finite growth observations within the most
+recent three years, excluding growth outside the source's open (-3, 3) interval.
+Adding detail can therefore change the observation mix. Overall references group
+by peer identity; monthly references also group by actual calendar month/year.
+They are not revenue-weighted and do not pool all Julys into one monthly point.
+
+## Configuration and example
+
+The following is a template, not an executed example. `input` is the user's
+monthly data frame and includes future adjusted days if that option is selected.
+Options are specified once in preparation and persisted canonically in the run
+log. Changed effective settings require a new run.
+
+```{r workflow, eval=FALSE}
+library(finnts)
+
+options <- list(
+  pool_by = c("Product", "Segment"),
+  pool_fallbacks = list(),
+  min_pool_series = 3L,
+  insufficient_pool = "error",
+  target_mode = "monthly_total",
+  exposure = "AdjustedDays",
+  profile = "standard",
+  calendar_policy = "scott_main"
+)
+
+run <- set_run_info(path = output_directory)
+forecast_time_series(
+  run_info = run, input_data = input,
+  combo_variables = c("Product", "Segment", "Region"),
+  target_variable = "Revenue", date_type = "month", forecast_horizon = 12,
+  hist_end_date = cutoff,
+  models_to_run = c("acr-scott-custom", "arima", "ets", "snaive"),
+  recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE,
+  clean_missing_values = FALSE, clean_outliers = FALSE,
+  acr_scott_custom_options = options, run_global_models = TRUE,
+  run_local_models = TRUE, run_ensemble_models = FALSE,
+  average_models = FALSE, return_data = FALSE
+)
+```
+
+`profile` is `standard` or `high_growth`. Alternatively, `profile_column` names
+a column containing those values, constant within each series. No profile is
+inferred from product names. `calendar_policy` explicitly selects `scott_main`,
+`scott_pricing`, or `none`. Both Scott presets amplify negative July growth by
+dividing by 0.85. In December, `scott_main` multiplies positive growth by 0.85,
+whereas `scott_pricing` divides negative growth by 0.85. Overrides follow caps.
+
+`list_models()` retains the default inventory. Use
+`list_models(include_opt_in = TRUE)` to see the new selectable name. Other models
+can train locally in the same run. Custom-only selections do not launch empty
+local jobs. A run that disables global training or contains only one series
+cannot use this model.
+
+When launching from RStudio with `callr::rscript()`, include the library
+containing the custom FinnTS build in `libpath` before the child starts.
+Changing only `.libPaths()` or `R_LIBS` inside the child is insufficient for
+this launcher: its generated startup configuration can make PSOCK workers load
+a different FinnTS installation. Do not detach/reload competing FinnTS versions
+in an existing session. The coordinator and all workers must load the same
+installed build; installed parallel-preparation regression coverage checks this.
+
+## Active rule contract
+
+Let `oldest`, `middle`, and `latest` denote the same calendar month three, two,
+and one years ago. Quality is absolute distance from the peer median divided by
+peer standard deviation. Signed scores remain available for the branches that
+explicitly require positive deviations. Equal-quality ties choose the oldest
+available year. Missing years are not zero-valued candidates.
+
+Every growth result is converted recursively to the next daily rate and then,
+for monthly totals, multiplied by exposure. Negative resulting rates are floored
+to zero; diagnostics retain both proposed and effective growth.
+
+Standard branches, in order:
+
+| Rule | Condition and formula before its source cap |
+|---|---|
+| 1 | Latest quality > 2 and best quality > 2: damped reference median; when latest growth is negative, blend 65% damped median and 35% median plus one monthly dispersion. |
+| 2 | Latest quality > 2 but a better year exists: 60% best analogue + 40% reference, damped using the latest historical base. |
+| 3 | Best quality > 1.5: the same 60/40 blend. |
+| 4 | Best quality > 1: 70% best analogue + 30% reference. |
+| 5_1 | Older qualities < 2, latest growth negative and both older years positive: 20% oldest + 45% middle + 25% latest + 10% reference, with per-year damping. |
+| 5_4 | All three qualities < 0.8: 15% oldest + 30% middle + 55% latest, with per-year damping. |
+| 5_5 | Latest/oldest qualities < 1.5, latest positive and oldest negative: 25% oldest + 70% latest + 5% reference. |
+| 5_year | Best analogue is an older year: 95% analogue + 5% reference, damped using that year's base. |
+| 10 | Available latest-year growth times latest-base damping. |
+| 11 | Historical peer median when no usable seasonal formula remains. |
+
+Standard damping is `clip(1.06 * historical_base / previous_rate, 0.1, 0.9)`;
+the oldest term of rules 5_1/5_4 retains factor 0.96. Rules 1-4 and 5_year use
+monthly dispersion caps. Rules 5_1/5_4/5_5/10 use overall dispersion; rule 11
+retains its uncapped source fallback. Caps are reference median +/- two dispersions.
+
+High-growth branches, in order:
+
+| Rule | Condition and formula |
+|---|---|
+| 1 | No latest growth: (60% recent + 40% reference) * 0.78. |
+| 2/3 | Only latest available and quality > 3 / > 2: damp 60% recent + 40% reference, or 40% recent + 20% latest + 40% reference. |
+| 4-6 / 9-11 | Latest sign opposes both older years: depending on older qualities, use oldest/middle/latest weights 30/55/15, middle/latest 80/20, or latest/reference 30/70, with per-year damping. |
+| 7_1/7_2/8 | Latest negative, middle positive: use middle/reference 80/20, latest/middle/reference 10/80/10, or latest/reference 15/85 according to quality. |
+| 12/13 | Latest positive, middle negative, oldest absent: latest/middle/reference 10/80/10 if middle quality < 1.5; otherwise latest/reference 15/85. |
+| 14 | Only two years, both signed scores > 3: damp 60% recent + 40% reference. |
+| 15 | Only two years, both signed scores > 1.5: damp 65% recent + 45.5% reference + 10% latest + 5% middle. Weights intentionally are not normalized. |
+| 15_1/15_2 | Middle quality > 2 and latest quality < 1 / < 2: 90/10 or 75/25 damped latest / previous-month reference. |
+| 16 | Remaining two-year cases: per-year damped latest/middle 70/30. |
+| 17 | Latest quality < 1: 10% recent + damped (85% latest + 5% reference). |
+| 18/19 | Latest plus middle/oldest quality < 1.5: 10% recent + damped (50% latest + 30% middle + 5% reference), or (60% latest + 20% oldest + 5% reference). |
+| 20/21 | Middle/oldest quality < 2: 20% recent + damped (65% middle + 15% reference), or 25% recent + damped (55% oldest + 20% reference). |
+| 22 | 50% recent + 50% damped reference. |
+
+High-growth damping uses factor 0.98. Rules 4-13, 15_1, 15_2 and 16 use the
+source overall-dispersion cap; the other high-growth branches are not universally
+capped. Source product-name exclusions are not inferred for generalized inputs;
+profile selection is explicit and needs confirmation during sample review.
+
+The implementation intentionally corrects missing-as-zero analogue selection,
+ambiguous selected-year identity, the skipped recent month, and reference trend
+index/predictor/dispersion errors. The latest complete 12-month reference window
+predicts positions 13 onward. Missing/nonfinite trends and negative dispersion
+predictions fall back to valid training references. Dead negative-quality and
+shadowed branches are not silently activated. These changes are not claimed to
+be bit-identical to the original application.
+
+## Artifacts and explanations
+
+The fitted global workflow is stored normally with model ID
+`acr-scott-custom--global--R1` and `Combo_ID = "All-Data"`. Per-series global
+forecast files retain normal FinnTS naming. No model code reads Scott's script,
+opens spreadsheets, writes debug files, launches clusters or mutates fitted state.
+
+`explain_acr_scott_custom(fitted_workflow, future_predictors)` returns forecasts,
+rules, peer/fallback identity, available analogue values, quality, weights,
+damping, reference levels, caps and calendar effects. Original-unit forecasts
+are not statistical confidence bounds. Existing FinnTS interval/selection policy
+is unchanged. Required typed dimension metadata is preserved in R1 and removed
+before other models or feature selection see it.
+
+## Manual historical-data checkpoint
+
+After synthetic integration succeeds, provide a local CSV or RDS and the column
+mappings above, preferably two groups with three series each and 61-73 months.
+Confirm adjusted-day availability at historical origins, profile/calendar policy,
+and an output directory outside the repository. Historical gaps, duplicates,
+negative values, ambiguous units or aggregate/child mixtures require correction
+or a revised model policy before evaluation.
+
+The repository script `tools/validate-acr-scott-custom.R` accepts a local RDS
+configuration with `input_path`, `output_dir`, `date_column`, `target_variable`,
+`combo_variables`, `options`, and optional `holdout`/`horizon` (default 12).
+It excludes the final holdout from fitting, runs the custom model alongside
+ARIMA/ETS/seasonal naive through FinnTS, and saves per-series/peer metrics,
+separately labeled portfolio-total metrics, plots, forecasts, rule explanations,
+and saved workflows. WMAPE is NA when the actual denominator is zero. It refuses
+nonempty output directories and does not change the input file.
+
+Review a standard and a high-growth/edge series before sign-off. A worse result
+than a baseline is evidence, not a reason to force this model to win. Broader
+policies, new cadences, transformation support or different branch weights need
+separate approval. The full deterministic package suite and correctly configured
+R CMD check follow any sample-driven approved repairs; a synthetic-only run is
+not a claim that real business forecasts have been validated.

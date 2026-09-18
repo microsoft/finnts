@@ -82,6 +82,8 @@ xgb_get_feature_names <- function(model) {
 # environment inside of parsnip so they have to be executed once parsnip has
 # been loaded.
 
+# Register FinnTS model engines when the namespace loads and limit OpenMP
+# threads for CRAN. libname/pkgname are loader inputs; returns no user data.
 .onLoad <- function(libname, pkgname) {
   # CRAN OMP THREAD LIMIT
   Sys.setenv("OMP_THREAD_LIMIT" = 1)
@@ -99,4 +101,5 @@ xgb_get_feature_names <- function(model) {
   make_chronos_bolt_tiny_model()
   make_timesfm_model()
   make_arima_fast_model()
+  make_acr_scott_custom_model()
 }

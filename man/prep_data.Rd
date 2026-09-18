@@ -27,7 +27,8 @@ prep_data(
   lag_periods = NULL,
   rolling_window_periods = NULL,
   recipes_to_run = NULL,
-  multistep_horizon = FALSE
+  multistep_horizon = FALSE,
+  acr_scott_custom_options = NULL
 )
 }
 \arguments{
@@ -97,6 +98,11 @@ all recipes, but only runs the R1 recipe for weekly and daily date types. A valu
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
 
 \item{multistep_horizon}{Use a multistep horizon approach when training multivariate models with R1 recipe.}
+
+\item{acr_scott_custom_options}{Optional configuration for the opt-in
+acr-scott-custom model. Requires original-scale monthly bottoms_up inputs
+with cleaning and transformations disabled. Preserves target-free peer and
+exposure metadata in R1; changed effective settings require a new run.}
 }
 \value{
 No return object. Feature engineered data is written to disk based on the output locations provided in

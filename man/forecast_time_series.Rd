@@ -43,7 +43,10 @@ forecast_time_series(
   seed = 123,
   run_model_parallel = FALSE,
   return_data = TRUE,
-  run_name = "finnts_forecast"
+  run_name = "finnts_forecast",
+  stationary = TRUE,
+  box_cox = FALSE,
+  acr_scott_custom_options = NULL
 )
 }
 \arguments{
@@ -165,6 +168,15 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 \code{\link[=get_forecast_data]{get_forecast_data()}} for new features.}
 
 \item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
+
+\item{stationary}{Apply differencing during preparation; default TRUE retains
+the existing behavior. Set FALSE for acr-scott-custom.}
+
+\item{box_cox}{Apply Box-Cox transformation during preparation; default FALSE.}
+
+\item{acr_scott_custom_options}{Optional configuration passed to \code{\link[=prep_data]{prep_data()}}
+for the explicitly selected acr-scott-custom model. Requires untransformed,
+uncleaned monthly bottoms_up data and global R1 execution.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.

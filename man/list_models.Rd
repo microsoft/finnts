@@ -4,7 +4,11 @@
 \alias{list_models}
 \title{List all available models}
 \usage{
-list_models()
+list_models(include_opt_in = FALSE)
+}
+\arguments{
+\item{include_opt_in}{Include models requiring explicit configuration. The
+default preserves the ordinary model inventory and automatic selections.}
 }
 \value{
 list of models

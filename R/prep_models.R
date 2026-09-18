@@ -2,6 +2,9 @@
 #'
 #' Preps various aspects of run before training models. Things like train/test
 #'   splits, creating hyperparameters, etc.
+#'   The opt-in acr-scott-custom model must be explicitly selected after
+#'   [prep_data()] has preserved its configured structural metadata in R1.
+#'   Its fixed rule configuration does not create a tuning parameter grid.
 #'
 #' @param run_info Run info using the [set_run_info()] function.
 #' @param back_test_scenarios Number of specific back test folds to run when
@@ -530,6 +533,10 @@ train_test_split <- function(run_info,
 #'
 #' @return Returns table of model workflows
 #' @noRd
+# Custom R1 workflows restore typed structural metadata from opted-in preparation;
+# all other builders receive ordinary R1 columns only. Representative data defines
+# the recipe schema, never peer statistics. Workflow artifacts and input-change
+# checks retain the existing run ownership and exact-path storage conventions.
 model_workflows <- function(run_info,
                             models_to_run = NULL,
                             models_not_to_run = NULL,
@@ -549,6 +556,7 @@ model_workflows <- function(run_info,
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
   forecast_horizon <- log_df$forecast_horizon
+  custom_options <- acr_scott_log_options(log_df)
   multistep_horizon <- log_df$multistep_horizon
   external_regressors <- if (is.na(log_df$external_regressors)) {
     NULL
@@ -735,6 +743,15 @@ model_workflows <- function(run_info,
       dplyr::select(Data) %>%
       tidyr::unnest(Data)
 
+    if (model == "acr-scott-custom") {
+      if (is.null(custom_options)) {
+        stop("acr-scott-custom requires acr_scott_custom_options in prep_data; start a configured new run.", call. = FALSE)
+      }
+      recipe_tbl <- acr_scott_restore_metadata(recipe_tbl, custom_options)
+    } else {
+      recipe_tbl <- acr_scott_strip_metadata(recipe_tbl)
+    }
+
     # adjust data if outliers have been cleaned
     if ("Target_Original" %in% colnames(recipe_tbl)) {
       recipe_tbl <- recipe_tbl %>%
@@ -766,6 +783,8 @@ model_workflows <- function(run_info,
         "external_regressors" = external_regressors
       )
     }
+
+    if (model == "acr-scott-custom") avail_arg_list$options <- custom_options
 
     # don't create workflows for models that only use R1 recipe
     if (recipe == "R2" & !(model %in% r2_models)) {
@@ -987,7 +1006,8 @@ model_hyperparameters <- function(run_info,
     recipe_features <- input_tbl %>%
       dplyr::filter(Recipe == recipe) %>%
       dplyr::select(Data) %>%
-      tidyr::unnest(Data)
+      tidyr::unnest(Data) %>%
+      acr_scott_strip_metadata()
 
     # adjust data if outliers have been cleaned
     if ("Target_Original" %in% names(recipe_features)) {

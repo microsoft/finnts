@@ -1,3 +1,23 @@
+# Build a deterministic six-series monthly panel with two peer groups and
+# distinct seasonal growth. Returns daily-rate targets without random state.
+acr_scott_fixture <- function(months = 60L) {
+  dates <- seq.Date(as.Date("2019-01-01"), by = "month", length.out = months)
+  do.call(rbind, lapply(seq_len(6), function(series) {
+    growth <- 0.015 + 0.012 * sin(2 * pi * seq_len(months) / 12) + series / 10000
+    data.frame(Date = dates, Combo = paste0("series-", series),
+               Product = if (series <= 3) "A" else "B", Market = paste0("M", series),
+               Target = (100 + series) * cumprod(1 + growth))
+  }))
+}
+
+# Future rows retain explicit series metadata and follow the fixture cutoff.
+# Returns structural predictors only, never assessment outcomes.
+acr_scott_future_fixture <- function(data, horizon = 3L) {
+  metadata <- unique(data[c("Combo", "Product", "Market")])
+  dates <- seq.Date(max(data$Date), by = "month", length.out = horizon + 1L)[-1L]
+  merge(metadata, data.frame(Date = dates))
+}
+
 read_unselected_forecast_data <- function(run_info) {
   splits <- get_prepped_models(run_info) %>%
     dplyr::filter(Type == "Train_Test_Splits") %>%

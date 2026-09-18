@@ -2,6 +2,7 @@
 
 ## Improvements
 
+- Added the opt-in `acr-scott-custom` monthly peer-aware rule model. It shares training-only reference trends within configurable peer groups, retains per-series recursive forecasts, supports calendar or supplied adjusted days, and exposes forecast-rule explanations. The first version requires original-scale, uncleaned `bottoms_up` R1 inputs and global execution. It is excluded from default model lists and does not change Agent search or forecast-selection policies.
 - Improved model selection to balance backtest accuracy with forecast plausibility, preserve supported growth and seasonal patterns, and reject invalid predictions, with more reliable averaging, forecast updates, and run recovery.
 
 ## Bug Fixes

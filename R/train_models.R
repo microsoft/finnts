@@ -59,6 +59,11 @@
 #'
 #' train_models(run_info)
 #' }
+# The custom model is global-only: retain a separate workflow template for each
+# dispatched job and suppress empty local jobs only for a custom-only selection.
+# Its raw-input contract is checked before fitting; custom metadata never reaches
+# other model recipes or feature selection. Existing fit/resampling/artifact
+# schemas and final-selection policies are unchanged.
 train_models <- function(run_info,
                          run_global_models = FALSE,
                          run_local_models = TRUE,
@@ -147,6 +152,19 @@ train_models <- function(run_info,
   model_workflow_list <- model_workflow_tbl %>%
     dplyr::pull(Model_Name) %>%
     unique()
+
+  custom_requested <- "acr-scott-custom" %in% model_workflow_list
+  custom_options <- acr_scott_log_options(log_df)
+  if (custom_requested) {
+    if (is.null(custom_options) || stationary || box_cox ||
+        isTRUE(log_df$clean_outliers) || isTRUE(log_df$clean_missing_values)) {
+      stop("acr-scott-custom requires configured, untransformed and uncleaned R1 data.", call. = FALSE)
+    }
+    if (!isTRUE(run_global_models) || !"R1" %in% global_model_recipes) {
+      stop("acr-scott-custom requires run_global_models=TRUE and global_model_recipes including R1.", call. = FALSE)
+    }
+    if (!length(setdiff(model_workflow_list, "acr-scott-custom"))) run_local_models <- FALSE
+  }
 
   global_model_list <- list_global_models()
   multivariate_model_list <- list_multivariate_models()
@@ -238,6 +256,9 @@ train_models <- function(run_info,
   }
 
   # define columns to check for input changes
+  if (custom_requested && !isTRUE(run_global_models)) {
+    stop("acr-scott-custom requires at least two series in a global run.", call. = FALSE)
+  }
   cols_check_list <- c(
     "run_global_models", "run_local_models", "global_model_recipes",
     "feature_selection", "seed"
@@ -335,6 +356,8 @@ train_models <- function(run_info,
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
 
+  all_model_workflows <- model_workflow_tbl
+
   # submit tasks
   train_models_tbl <- foreach::foreach(
     x = current_combo_list_final,
@@ -350,6 +373,7 @@ train_models <- function(run_info,
     {
       # get time series
       combo_hash <- x
+      model_workflow_tbl <- all_model_workflows
 
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x,
@@ -367,6 +391,9 @@ train_models <- function(run_info,
             Model_Name %in% global_model_list,
             Model_Recipe %in% global_model_recipes
           )
+      } else {
+        model_workflow_tbl <- model_workflow_tbl %>%
+          dplyr::filter(Model_Name != "acr-scott-custom")
       }
 
       # get other time series info
@@ -419,6 +446,7 @@ train_models <- function(run_info,
             dplyr::filter(Recipe == "R1") %>%
             dplyr::select(Data) %>%
             tidyr::unnest(Data) %>%
+            acr_scott_strip_metadata() %>%
             run_feature_selection(
               run_info = run_info,
               train_test_data = model_train_test_tbl,
@@ -499,6 +527,12 @@ train_models <- function(run_info,
           dplyr::filter(Recipe == data_prep_recipe) %>%
           dplyr::select(Data) %>%
           tidyr::unnest(Data)
+
+        if (model == "acr-scott-custom") {
+          prep_data <- acr_scott_restore_metadata(prep_data, custom_options)
+        } else {
+          prep_data <- acr_scott_strip_metadata(prep_data)
+        }
 
         workflow <- model_workflow_tbl %>%
           dplyr::filter(
