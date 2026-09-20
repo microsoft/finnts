@@ -37,7 +37,7 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: macOS-latest,   r: 'release'}
+          - {os: macOS-latest,   r: 'release', extra-packages: 'ca?source'}
 
           - {os: windows-latest, r: 'release'}
 
@@ -46,8 +46,8 @@ jobs:
           - {os: ubuntu-22.04,   r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-22.04,   r: 'release'}
           - {os: ubuntu-22.04,   r: 'oldrel-1'}
-          - {os: ubuntu-22.04,   r: 'oldrel-2'}
-          - {os: ubuntu-22.04,   r: '4.1'}
+          - {os: ubuntu-22.04,   r: 'oldrel-2', extra-packages: 'gsl@2.1-8'}
+          - {os: ubuntu-22.04,   r: '4.1', extra-packages: 'gsl@2.1-8'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -76,7 +76,7 @@ jobs:
           
       - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
         with:
-          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, ranger=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0
+          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, ranger=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0, ${{ matrix.config.extra-packages }}
           needs: check
 
       - name: Verify feature-selection dependencies
@@ -125,17 +125,20 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
         with:
+          cache: false
           extra-packages: any::rcmdcheck, vip=?ignore, Boruta=?ignore, corrr=?ignore, ranger=?ignore
           needs: check
 
       - name: Verify feature-selection packages are unavailable
         run: |
-          stopifnot(all(!vapply(
+          available <- vapply(
             c("vip", "Boruta", "corrr", "ranger"),
             requireNamespace,
             logical(1),
             quietly = TRUE
-          )))
+          )
+          print(available)
+          stopifnot(all(!available))
         shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0

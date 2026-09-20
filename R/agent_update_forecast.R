@@ -549,9 +549,9 @@ read_update_csv <- function(path) {
   utils::read.csv(connection, stringsAsFactors = FALSE, check.names = FALSE)
 }
 
-#' Read a current update artifact without mistaking storage failures for damage
+#' Read an update artifact without mistaking storage failures for damage
 #'
-#' @param run_info Current result storage and format information.
+#' @param run_info Current or predecessor result storage and format information.
 #' @param path One exact artifact path.
 #' @return The deserialized artifact, or NULL for a missing file or recognized
 #'   truncated/invalid serialization. Other errors retain their original cause.
@@ -1820,8 +1820,10 @@ read_global_update_selection <- function(run_info, run_log, combos) {
 # parallel settings and seed retain the ordinary refit/retune behavior. Valid
 # current outputs resume completion in memory; damaged results are overwritten
 # through the existing writers after fitting. Preparation caching is unchanged.
-# Returns status and quality-rejected combo hashes. Missing predecessor fits or
-# storage failures are hard errors; no additional state is persisted or shipped.
+# Returns status and quality-rejected combo hashes. Missing or recognized corrupt
+# predecessor files enter the existing default-model fallback. Storage failures
+# and inconsistent selected-fit identities remain hard errors; no extra state is
+# persisted or shipped.
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
                                   parallel_processing,
@@ -1909,24 +1911,24 @@ update_forecast_combo <- function(agent_info,
   # read the trained models file and filter by model IDs
   trained_models_tbl <- tryCatch(
     {
-      read_file(
-        run_info = prev_run_info,
-        file_list = paste0(
-          prev_run_info$path, "/models/",
-          hash_data(prev_run_info$project_name), "-",
-          hash_data(prev_run_info$run_name), "-",
-          hash_data(combo), "-single_models.",
-          prev_run_info$object_output
-        ) %>% fs::path_tidy(),
-        return_type = "df"
-      ) %>%
-        dplyr::filter(Model_ID %in% model_id_list)
+      models <- read_update_artifact(
+        prev_run_info,
+        local_artifact_path(prev_run_info, "models", "-single_models",
+          hash_data(combo), prev_run_info$object_output)
+      )
+      if (!is.null(models)) dplyr::filter(models, Model_ID %in% model_id_list)
     },
     error = function(e) {
       rlang::abort(paste0("Error in update_forecast(). No trained models found from previous run for combo: ",
-        combo, ". ", conditionMessage(e)), class = "finnts_update_artifact_error", parent = e)
+        combo, ". ", conditionMessage(e)),
+        class = unique(c("finnts_update_artifact_error", class(e))), parent = e)
     }
   )
+
+  if (is.null(trained_models_tbl)) {
+    stop("Error in update_forecast(). No trained models found from previous run for combo: ",
+      combo, ". The saved model artifact is missing or unreadable.", call. = FALSE)
+  }
 
   # verify models were found
   if (nrow(trained_models_tbl) == 0) {

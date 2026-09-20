@@ -1,9 +1,10 @@
 # Construct selected local/global predictions and small real serialized fits for
 # update tests. Cadence and signed/zero actuals exercise reporting invariants;
 # expensive engines are mocked and the temporary artifacts belong to the caller.
+# write_models = FALSE leaves predecessor fits absent without deleting files.
 make_global_update_selection_fixture <- function(date_type = "month", weekly_to_daily = FALSE,
                                                  zero_targets = FALSE, global = TRUE,
-                                                 signed_targets = FALSE) {
+                                                 signed_targets = FALSE, write_models = TRUE) {
   path <- withr::local_tempdir(pattern = "finnts-global-selection-", .local_envir = parent.frame())
   combos <- if (global) c("first", "second") else "first"
   combo_id <- if (global) "All-Data" else "first"
@@ -72,8 +73,10 @@ make_global_update_selection_fixture <- function(date_type = "month", weekly_to_
   fitted$Model_Fit <- rep(list(stats::lm(mpg ~ wt, data = mtcars)), nrow(fitted))
   trained <- fitted[, c("Combo_ID", "Model_Name", "Model_Type", "Recipe_ID", "Model_Fit")]
   trained$Model_ID <- model_ids
-  write_data(trained, combo = combo_id, run_info = previous,
-    output_type = "object", folder = "models", suffix = "-single_models")
+  if (write_models) {
+    write_data(trained, combo = combo_id, run_info = previous,
+      output_type = "object", folder = "models", suffix = "-single_models")
+  }
   log <- read_selection_file(previous, "logs")
   settings <- list(models_to_run = paste(models, collapse = "---"), recipes_to_run = "R1",
     external_regressors = NA_character_, lag_periods = NA_character_, rolling_window_periods = NA_character_,
@@ -100,6 +103,9 @@ make_global_update_selection_fixture <- function(date_type = "month", weekly_to_
       best_run_name = previous$run_name, weighted_mape = 0.2))
 }
 
+# Keep real artifact reads and selected-model decisions while replacing expensive
+# preparation/fitting with fixture results. Returns mutable fit/read/log counters;
+# mocked bindings are restored when the calling test environment exits.
 local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) {
   state <- new.env(parent = emptyenv())
   state$fits <- list()
@@ -150,6 +156,158 @@ local_global_update_selection_mocks <- function(fixture, .env = parent.frame()) 
   )
   state
 }
+
+test_that("missing or corrupt predecessor fits enter the existing update fallback", {
+  for (global in c(FALSE, TRUE)) for (damage in c("missing", "corrupt", "remote-missing", "remote-corrupt")) local({
+    fixture <- make_global_update_selection_fixture(global = global, write_models = FALSE)
+    if (startsWith(damage, "remote")) {
+      fixture$agent$project_info$storage_object <- structure(list(), class = "blob_container")
+    }
+    state <- local_global_update_selection_mocks(fixture)
+    previous <- fixture$best
+    previous$agent_run_id <- "previous"
+    previous$models_to_run <- fixture$log$models_to_run
+    model_path <- local_artifact_path(fixture$previous, "models", "-single_models",
+      hash_data(if (global) "All-Data" else "first"), "rds")
+    if (damage == "corrupt") {
+      fs::dir_create(dirname(model_path))
+      writeBin(charToRaw("broken predecessor model"), model_path)
+    }
+    original_reader <- read_file
+    local_mocked_bindings(
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      read_file = function(run_info, path = NULL, file_list = NULL, ...) {
+        if (any(grepl("-agent_best_run.csv", file_list, fixed = TRUE))) return(previous)
+        original_reader(run_info, path = path, file_list = file_list, ...)
+      },
+      download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        if (identical(path, model_path)) {
+          expect_true(allow_missing)
+          if (damage == "remote-missing") return(FALSE)
+          writeBin(charToRaw("broken predecessor model"), destination)
+          return(TRUE)
+        }
+        file.copy(path, destination)
+      }
+    )
+    wrapper <- if (global) update_global_models else update_local_models
+    result <- tryCatch(suppressWarnings(wrapper(fixture$agent, previous, NULL, FALSE, 1, 123)),
+      error = identity)
+    expect_false(inherits(result, "condition"), info = paste(global, damage))
+    expect_identical(result$failed_combos,
+      vapply(previous$combo, hash_data, character(1), USE.NAMES = FALSE))
+    expect_length(state$fits, 0L)
+  })
+})
+
+test_that("predecessor provider failures remain fatal through update wrappers", {
+  for (global in c(FALSE, TRUE)) for (error_class in c("http_403", "http_503", "unexpected_storage_error")) local({
+    fixture <- make_global_update_selection_fixture(global = global)
+    fixture$agent$project_info$storage_object <- structure(list(), class = "blob_container")
+    state <- local_global_update_selection_mocks(fixture)
+    previous <- fixture$best
+    previous$agent_run_id <- "previous"
+    previous$models_to_run <- fixture$log$models_to_run
+    model_path <- local_artifact_path(fixture$previous, "models", "-single_models",
+      hash_data(if (global) "All-Data" else "first"), "rds")
+    original_reader <- read_file
+    local_mocked_bindings(
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      read_file = function(run_info, path = NULL, file_list = NULL, ...) {
+        if (any(grepl("-agent_best_run.csv", file_list, fixed = TRUE))) return(previous)
+        original_reader(run_info, path = path, file_list = file_list, ...)
+      },
+      download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        if (identical(path, model_path)) {
+          rlang::abort("predecessor storage unavailable", class = error_class)
+        }
+        file.copy(path, destination)
+      }
+    )
+    wrapper <- if (global) update_global_models else update_local_models
+    result <- tryCatch(wrapper(fixture$agent, previous, NULL, FALSE, 1, 123), error = identity)
+    expect_s3_class(result, "finnts_update_artifact_error")
+    expect_s3_class(result, error_class)
+    expect_s3_class(result$parent, error_class)
+    expect_match(conditionMessage(result), "predecessor storage unavailable")
+    expect_length(state$fits, 0L)
+  })
+})
+
+test_that("a missing predecessor and a new series both produce default results", {
+  fixture <- make_global_update_selection_fixture(global = FALSE, write_models = FALSE)
+  state <- local_global_update_selection_mocks(fixture)
+  previous <- fixture$best
+  previous$agent_run_id <- "previous"
+  previous$models_to_run <- fixture$log$models_to_run
+  combos <- c("first", "new")
+  hashes <- vapply(combos, hash_data, character(1), USE.NAMES = FALSE)
+  previous_parent <- fixture$agent$project_info
+  previous_parent$run_name <- "previous"
+  metadata_path <- local_artifact_path(previous_parent, "logs", "-agent_best_run", hashes[[1]], "csv")
+  selection <- do.call(select_forecast_candidate,
+    make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03)))
+  submitted <- character()
+  outputs <- list()
+  original_reader <- read_file
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    get_foundation_model_suffix = function() "",
+    resolve_combo_hashes = function(agent_info, combo_hashes) combos[match(combo_hashes, hashes)],
+    read_file = function(run_info, path = NULL, file_list = NULL, ...) {
+      if (identical(file_list, metadata_path)) return(previous)
+      original_reader(run_info, path = path, file_list = file_list, ...)
+    },
+    submit_fcst_run = function(agent_info, inputs, combo, timestamp, ...) {
+      expect_true(isTRUE(agent_info$default_reforecast))
+      expect_identical(inputs$forecast_approach, "bottoms_up")
+      expect_identical(timestamp, "default")
+      submitted <<- c(submitted, combo)
+      info <- fixture$updated
+      info$run_name <- paste0("default-", combo)
+      info$forecast_selection <- list(selections = stats::setNames(list(selection), combos[match(combo, hashes)]))
+      info
+    },
+    get_fcst_output = function(run_info) {
+      rows <- make_agent_metric_forecasts(run_info$forecast_selection)
+      combo <- names(run_info$forecast_selection$selections)
+      write_data(rows, combo = combo, run_info = run_info, output_type = "data",
+        folder = "forecasts", suffix = "-single_models")
+      outputs[[combo]] <<- run_info
+      rows
+    },
+    log_best_run = function(agent_info, run_info, weighted_mape, check_best_run, combo) {
+      expect_false(check_best_run)
+      parent <- agent_info$project_info
+      parent$run_name <- agent_info$run_id
+      rows <- data.frame(combo = combos[match(combo, hashes)], agent_run_id = agent_info$run_id,
+        best_run_name = run_info$run_name, model_type = "local", weighted_mape = as.numeric(weighted_mape))
+      write_data(rows, combo = rows$combo, run_info = parent, output_type = "log",
+        folder = "logs", suffix = "-agent_best_run")
+    }
+  )
+  updated <- update_local_models(fixture$agent, previous, NULL, FALSE, 1, 123)
+  failed <- check_update_failures(fixture$agent, previous, hashes, character(), updated$failed_combos)
+  expect_identical(failed, hashes[[1]])
+  result <- forecast_new_combos(fixture$agent, hashes[[2]], failed, NULL, FALSE, 1, 123)
+  expect_identical(result, "Finished Forecasting New Time Series")
+  expect_setequal(submitted, hashes)
+  expect_length(submitted, 2L)
+  expect_length(state$fits, 0L)
+  parent <- fixture$agent$project_info
+  parent$run_name <- fixture$agent$run_id
+  for (combo in combos) {
+    forecasts <- read_selection_file(outputs[[combo]], "forecasts", "-single_models", combo)
+    best <- read_selection_file(parent, "logs", "-agent_best_run", combo)
+    expect_true(nrow(forecasts) > 0)
+    expect_true(all(is.finite(forecasts$Forecast)))
+    expect_identical(best$combo, combo)
+    expect_identical(best$best_run_name, outputs[[combo]]$run_name)
+  }
+})
 
 test_that("global updates refit selected components and retain each saved winner", {
   fixture <- make_global_update_selection_fixture()

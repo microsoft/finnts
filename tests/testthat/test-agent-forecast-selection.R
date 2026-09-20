@@ -107,16 +107,22 @@ for (date_type in c("month", "week")) test_that(
   invalid_retune <- FALSE
   original_selector <- select_series_forecasts
   original_reconcile <- reconcile
+  original_update_reader <- read_update_artifact
   local_mocked_bindings(
     get_run_info = function(...) previous,
     validate_prev_run_log = function(log) log,
     list_files = function(...) "input.csv",
+    read_update_artifact = function(run_info, path) {
+      predecessor_path <- local_artifact_path(run_info, "models", "-single_models",
+        hash_data("All-Data"), run_info$object_output)
+      if (identical(run_info$run_name, "previous") && identical(path, predecessor_path)) {
+        return(data.frame(Model_ID = c("xgboost--global--R1", "chronos2--global--R1")))
+      }
+      original_update_reader(run_info, path)
+    },
     read_file = function(run_info, file_list = NULL, path = NULL, return_type = "df", ...) {
       if (return_type == "object") return(fixture$metadata)
       if (!is.null(path)) return(fixture$history)
-      if (any(grepl("/models/", file_list, fixed = TRUE))) {
-        return(data.frame(Model_ID = c("xgboost--global--R1", "chronos2--global--R1")))
-      }
       fixture$history
     },
     set_run_info = function(...) fixture$project_info,
