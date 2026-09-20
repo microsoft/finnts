@@ -2097,7 +2097,8 @@ reason_inputs <- function(agent_info,
 #'   `rebuild_update_models` value bypasses model/final-output caches for this
 #'   submission, without changing preparation, saved log fields, or retry limits.
 #'   A genuinely rejected default still cannot be submitted again. Existing
-#'   output validation precedes returning a successful run.
+#'   output validation precedes returning a successful run. Input CSV series
+#'   identities remain text, and known recipe settings are reused for coverage.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2167,7 +2168,8 @@ submit_fcst_run <- function(agent_info,
     input_info <- project_info
     input_info$run_name <- agent_info$run_id
     read_local_artifacts(input_info,
-      local_artifact_path(input_info, "input_data", combo = combo)
+      local_artifact_path(input_info, "input_data", combo = combo),
+      character_columns = "Combo"
     )
   } else read_file(
     run_info = project_info,
@@ -2178,7 +2180,7 @@ submit_fcst_run <- function(agent_info,
         hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df", character_columns = "Combo"
   )
 
   # adjust inputs based on data
@@ -2224,7 +2226,8 @@ submit_fcst_run <- function(agent_info,
     }
     if (identical(as.character(default_log[["default_reforecast_status"]]), "accepted")) {
       current_result <- read_update_result(run_info, unique(as.character(input_data$Combo)),
-        global_models, agent_info$forecast_horizon, default_log$forecast_approach)
+        global_models, agent_info$forecast_horizon, default_log$forecast_approach,
+        recipes = default_log[["recipes_to_run"]])
       if (!is.null(current_result)) {
         restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
         run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]

@@ -49,6 +49,9 @@
 #'   from the replacement individual predictions through the same policy, with
 #'   stale averages reset using the ordinary forecast schema. This recovery does
 #'   not change preparation or allow repeated genuinely rejected defaults.
+#'   If only one individual remains eligible, the schema-correct empty optional
+#'   average represents no average and remains readable during publication and
+#'   restart. Empty required artifacts and malformed optional averages are errors.
 #'
 #' @param run_info run info using the [set_run_info()] function.
 #' @param average_models If TRUE, create simple averages of individual models

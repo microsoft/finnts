@@ -97,6 +97,9 @@ outputs and selection-completion flags are not reused. Selection is rebuilt
 from the replacement individual predictions through the same policy, with
 stale averages reset using the ordinary forecast schema. This recovery does
 not change preparation or allow repeated genuinely rejected defaults.
+If only one individual remains eligible, the schema-correct empty optional
+average represents no average and remains readable during publication and
+restart. Empty required artifacts and malformed optional averages are errors.
 }
 \examples{
 \donttest{

@@ -167,6 +167,68 @@ test_that("model-result repair replaces a damaged old average before selecting",
   expect_true(nrow(read_selection_file(info, "forecasts", "-average_models", "Synthetic")) > 0)
 })
 
+test_that("repair with one surviving model publishes and restarts without an average", {
+  local_mocked_bindings(par_start = function(...) {
+    list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+  })
+  original <- make_best_models_fixture()
+  info <- original
+  info$project_name <- paste0("repair-parent_", hash_data("Synthetic"))
+  for (artifact in list(c("logs", "", ""), c("prep_models", "-train_test_split", ""),
+    c("prep_data", "-R1", "Synthetic"), c("forecasts", "-single_models", "Synthetic"))) {
+    combo <- if (nzchar(artifact[[3]])) hash_data(artifact[[3]]) else NULL
+    fs::file_copy(local_artifact_path(original, artifact[[1]], artifact[[2]], combo),
+      local_artifact_path(info, artifact[[1]], artifact[[2]], combo))
+  }
+  make_restart_average_predictions(info)
+  final_models(info, weekly_to_daily = FALSE)
+  rows <- read_fcst_file(locate_single_models_file(info))
+  rows <- rows[rows$Model_Name == "meanf", ]
+  write_fcst_file(rows, locate_single_models_file(info))
+  info$rebuild_update_models <- TRUE
+  repaired <- final_models(info, weekly_to_daily = FALSE)
+  expect_identical(repaired$selections$Synthetic$selected_id, "meanf--local--R1")
+  agent <- list(run_id = "current", forecast_approach = "bottoms_up", project_info = info)
+  agent$project_info$project_name <- "repair-parent"
+  agent$project_info$combo_variables <- "Series"
+  local_mocked_bindings(
+    check_agent_info = function(...) invisible(NULL),
+    load_best_agent_run = function(...) data.frame(combo = "Synthetic", model_type = "local",
+      best_run_name = info$run_name, recipes_to_run = "R1", models_to_run = "meanf---snaive",
+      average_models = TRUE)
+  )
+  published <- tryCatch(save_agent_forecast(agent), error = identity)
+  expect_false(inherits(published, "condition"))
+  info$rebuild_update_models <- NULL
+  repeated <- tryCatch(final_models(info, weekly_to_daily = FALSE), error = identity)
+  expect_false(inherits(repeated, "condition"))
+  if (!inherits(repeated, "condition")) {
+    expect_identical(repeated$selections$Synthetic$selected_id, repaired$selections$Synthetic$selected_id)
+  }
+})
+
+test_that("only schema-correct optional averages allow empty artifacts", {
+  info <- make_best_models_fixture()
+  rows <- read_fcst_file(locate_single_models_file(info))
+  for (format in c("csv", "rds", "parquet")) {
+    info$data_output <- format
+    write_data(rows[0, ], combo = "Synthetic", run_info = info,
+      output_type = "data", folder = "forecasts", suffix = "-average_models")
+    expect_equal(nrow(read_selection_file(info, "forecasts", "-average_models",
+      "Synthetic", optional = TRUE)), 0L)
+    expect_error(read_selection_file(info, "forecasts", "-average_models", "Synthetic"),
+      "empty or unreadable")
+    write_data(rows[0, "Model_ID", drop = FALSE], combo = "Malformed", run_info = info,
+      output_type = "data", folder = "forecasts", suffix = "-average_models")
+    expect_error(read_selection_file(info, "forecasts", "-average_models",
+      "Malformed", optional = TRUE), "empty or unreadable")
+    write_data(rows[0, ], combo = "Synthetic", run_info = info,
+      output_type = "data", folder = "forecasts", suffix = "-single_models")
+    expect_error(read_selection_file(info, "forecasts", "-single_models",
+      "Synthetic", optional = TRUE), "empty or unreadable")
+  }
+})
+
 test_that("prediction read errors are not treated as absent model families", {
   local_mocked_bindings(par_start = function(...) {
     list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)

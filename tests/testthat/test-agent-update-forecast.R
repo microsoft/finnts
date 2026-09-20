@@ -489,7 +489,7 @@ run_initial_checks_case <- function(final_outputs,
                          strict = FALSE,
                          character_columns = NULL) {
       artifact <- if (is.null(file_list)) path else file_list
-      if (!is.null(artifact_path) && any(grepl("/(models|forecasts)/", artifact))) {
+      if (!is.null(artifact_path) && any(file.exists(artifact))) {
         return(original_reader(run_info, path = path, file_list = file_list,
           return_type = return_type, allow_missing = allow_missing, strict = strict))
       }
@@ -556,7 +556,7 @@ run_initial_checks_case <- function(final_outputs,
 # scoped to the calling test; no predecessor or preparation files are changed.
 make_current_update_files <- function(corrupt = character()) {
   path <- withr::local_tempdir(.local_envir = parent.frame())
-  fs::dir_create(fs::path(path, c("models", "forecasts")))
+  fs::dir_create(fs::path(path, c("models", "forecasts", "logs", "prep_data", "prep_models")))
   model_id <- "lm--local--R1"
   fit <- stats::lm(mpg ~ wt, data = mtcars)
   for (combo in c("combo-a", "combo-b")) {
@@ -577,6 +577,15 @@ make_current_update_files <- function(corrupt = character()) {
       Best_Model = "Yes")
     utils::write.csv(forecasts,
       fs::path(path, "forecasts", paste0(prefix, "-single_models.csv")), row.names = FALSE)
+    run_prefix <- paste0("project_", combo, "-agent_run-5_", combo)
+    utils::write.csv(data.frame(date_type = "month", recipes_to_run = "R1",
+      hist_end_date = as.Date("2027-01-01")),
+      fs::path(path, "logs", paste0(run_prefix, ".csv")), row.names = FALSE)
+    utils::write.csv(data.frame(Combo = combo, Date = unique(forecasts$Date), Target = 100),
+      fs::path(path, "prep_data", paste0(prefix, "-R1.csv")), row.names = FALSE)
+    utils::write.csv(data.frame(Train_Test_ID = c(1, 2), Run_Type = c("Future_Forecast", "Back_Test"),
+      Train_End = as.Date("2026-07-01"), Test_End = as.Date("2027-01-01")),
+      fs::path(path, "prep_models", paste0(run_prefix, "-train_test_split.csv")), row.names = FALSE)
   }
   path
 }
@@ -785,6 +794,12 @@ test_that("partial global completion retains the entire shared update group", {
   saveRDS(local_models, fs::path(path, "models", "project_all-current-global-All-Data-single_models.rds"))
   utils::write.csv(rows, fs::path(path, "forecasts", "project_all-current-global-combo-a-global_models.csv"),
     row.names = FALSE)
+  fs::file_copy(fs::path(path, "logs", "project_combo-a-agent_run-5_combo-a.csv"),
+    fs::path(path, "logs", "project_all-current-global.csv"))
+  fs::file_copy(fs::path(path, "prep_models", "project_combo-a-agent_run-5_combo-a-train_test_split.csv"),
+    fs::path(path, "prep_models", "project_all-current-global-train_test_split.csv"))
+  fs::file_copy(fs::path(path, "prep_data", "project_combo-a-agent_run-5_combo-a-combo-a-R1.csv"),
+    fs::path(path, "prep_data", "project_all-current-global-combo-a-R1.csv"))
   current <- make_update_run_metadata("run-5", "combo-a")
   current$model_type <- "global"
   current$best_run_name <- "current-global"

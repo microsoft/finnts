@@ -48,6 +48,16 @@ make_global_update_selection_fixture <- function(date_type = "month", weekly_to_
     }))
   }))
   source <- create_prediction_intervals(source, splits)
+  for (info in list(previous, updated)) {
+    write_data(splits, combo = NULL, run_info = info, output_type = "data",
+      folder = "prep_models", suffix = "-train_test_split")
+    calendar <- sort(unique(c(fixture$history$Date, source$Date)))
+    for (combo in combos) {
+      write_data(data.frame(Combo = combo, Date = calendar,
+        Target = fixture$history$Target[match(calendar, fixture$history$Date)]),
+        combo = combo, run_info = info, output_type = "data", folder = "prep_data", suffix = "-R1")
+    }
+  }
   average_id <- paste(sort(model_ids[1:2]), collapse = "_")
   average <- source[source$Combo == "first" & source$Model_ID == model_ids[1], ]
   average$Model_ID <- average_id
@@ -182,6 +192,10 @@ test_that("missing or corrupt predecessor fits enter the existing update fallbac
         original_reader(run_info, path = path, file_list = file_list, ...)
       },
       download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        if (grepl("-agent_best_run.csv", path, fixed = TRUE)) {
+          utils::write.csv(previous, destination, row.names = FALSE)
+          return(TRUE)
+        }
         if (identical(path, model_path)) {
           expect_true(allow_missing)
           if (damage == "remote-missing") return(FALSE)
@@ -220,6 +234,10 @@ test_that("predecessor provider failures remain fatal through update wrappers", 
         original_reader(run_info, path = path, file_list = file_list, ...)
       },
       download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        if (grepl("-agent_best_run.csv", path, fixed = TRUE)) {
+          utils::write.csv(previous, destination, row.names = FALSE)
+          return(TRUE)
+        }
         if (identical(path, model_path)) {
           rlang::abort("predecessor storage unavailable", class = error_class)
         }
@@ -233,6 +251,30 @@ test_that("predecessor provider failures remain fatal through update wrappers", 
     expect_s3_class(result$parent, error_class)
     expect_match(conditionMessage(result), "predecessor storage unavailable")
     expect_length(state$fits, 0L)
+  })
+})
+
+test_that("predecessor metadata failures propagate before model fitting", {
+  for (error_class in c("http_403", "http_503", "unexpected_storage_error")) local({
+    agent <- list(run_id = "current", project_info = list(project_name = "project",
+      path = withr::local_tempdir(), data_output = "csv", storage_object = NULL))
+    previous <- data.frame(combo = "first", agent_run_id = "previous", model_type = "local",
+      best_run_name = "previous-fit", weighted_mape = 0.1, models_to_run = "meanf")
+    fits <- 0L
+    local_mocked_bindings(
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      read_file = function(run_info, file_list, ...) {
+        expect_match(file_list, "-agent_best_run.csv", fixed = TRUE)
+        rlang::abort("predecessor metadata unavailable", class = error_class)
+      },
+      update_forecast_combo = function(...) { fits <<- fits + 1L }
+    )
+    result <- tryCatch(update_local_models(agent, previous, NULL, FALSE, 1, 123), error = identity)
+    expect_s3_class(result, "finnts_update_artifact_error")
+    expect_s3_class(result, error_class)
+    expect_s3_class(result$parent, error_class)
+    expect_identical(fits, 0L)
   })
 })
 
@@ -506,6 +548,65 @@ test_that("a damaged accepted default reaches training without preparation chang
   expect_false("rebuild_update_models" %in% names(read_selection_file(fixture$updated, "logs")))
 })
 
+test_that("completion audits reject truncated backtests and shifted future dates", {
+  for (defect in c("backtest", "future")) local({
+    fixture <- make_global_update_selection_fixture(global = FALSE)
+    info <- fixture$previous
+    calendar <- sort(unique(c(fixture$series$calendar, fixture$source$Date)))
+    write_data(data.frame(Combo = "first", Date = calendar, Target = 100),
+      combo = "first", run_info = info, output_type = "data", folder = "prep_data", suffix = "-R1")
+    log <- fixture$log
+    log$weighted_mape <- 0.1
+    write_data(log, combo = NULL, run_info = info, output_type = "log", folder = "logs", suffix = NULL)
+    metadata <- data.frame(combo = "first", agent_run_id = fixture$agent$run_id,
+      best_run_name = info$run_name, model_type = "local", weighted_mape = 0.1,
+      forecast_approach = "bottoms_up")
+    parent <- fixture$agent$project_info
+    parent$run_name <- fixture$agent$run_id
+    write_data(metadata, combo = "first", run_info = parent, output_type = "log",
+      folder = "logs", suffix = "-agent_best_run")
+    expect_equal(nrow(completed_update_runs(fixture$agent, metadata)), 1L)
+    for (suffix in c("-single_models", "-average_models")) {
+      rows <- read_selection_file(info, "forecasts", suffix, "first")
+      if (defect == "backtest") {
+        first_date <- min(rows$Date[rows$Train_Test_ID == 2])
+        rows <- rows[rows$Train_Test_ID == 1 | rows$Date == first_date, ]
+      } else {
+        rows$Date[rows$Train_Test_ID == 1] <- rows$Date[rows$Train_Test_ID == 1] + 1
+      }
+      write_data(rows, combo = "first", run_info = info, output_type = "data",
+        folder = "forecasts", suffix = suffix)
+    }
+    expect_null(read_update_result(info, "first", FALSE, 6), info = defect)
+    expect_equal(nrow(completed_update_runs(fixture$agent, metadata)), 0L, info = defect)
+    expect_false(resume_update_result(fixture$agent, info, "first", FALSE,
+      fixture$splits, fixture$model_ids[1:2]), info = defect)
+  })
+})
+
+test_that("completion keys cover every cadence and partial-length backtest scenario", {
+  for (cadence in c("day", "week", "month", "quarter", "year")) local({
+    fixture <- make_global_update_selection_fixture(cadence, cadence == "week", global = FALSE)
+    saved <- read_update_result(fixture$previous, "first", FALSE, 6)
+    expect_false(is.null(saved), info = cadence)
+    expected <- dplyr::bind_rows(forecast_selection_keys(fixture$series, "Future_Forecast"),
+      forecast_selection_keys(fixture$series, "Back_Test"))
+    expect_true(valid_update_forecasts(saved$forecasts, saved$models, 6, expected), info = cadence)
+    later <- expected[expected$Train_Test_ID == 2, ][1:3, ]
+    later$Train_Test_ID <- 3
+    expected <- dplyr::bind_rows(expected, later)
+    expect_false(valid_update_forecasts(saved$forecasts, saved$models, 6, expected), info = cadence)
+    added <- saved$forecasts[saved$forecasts$Train_Test_ID == 2 &
+      saved$forecasts$Date %in% later$Date, ]
+    added$Train_Test_ID <- 3
+    rows <- dplyr::bind_rows(saved$forecasts, added)
+    expect_true(valid_update_forecasts(rows, saved$models, 6, expected), info = cadence)
+    expect_false(valid_update_forecasts(rows[-nrow(rows), ], saved$models, 6, expected), info = cadence)
+    expect_false(valid_update_forecasts(dplyr::bind_rows(rows, rows[1, ]),
+      saved$models, 6, expected), info = cadence)
+  })
+})
+
 test_that("completion requires every single or averaged winner flag", {
   fixture <- make_global_update_selection_fixture()
   saved <- read_update_result(fixture$previous, fixture$best$combo, TRUE, 6)
@@ -570,6 +671,72 @@ test_that("quality-rejected updates reuse or repair accepted defaults through di
     }
     expect_length(state$fits, 0L)
   })
+})
+
+test_that("worker recovery and default dispatch retain exact CSV run identifiers", {
+  for (backend in c("vroom", "fallback")) for (run_id in c(
+    "4282d17137126405", "1e10", "9007199254740993", "0012345678901234")) {
+    for (global in c(FALSE, TRUE)) local({
+      fixture <- make_global_update_selection_fixture(global = global)
+      agent <- fixture$agent
+      agent$run_id <- run_id
+      log <- fixture$log
+      log$weighted_mape <- 0.1
+      write_data(log, combo = NULL, run_info = fixture$previous, output_type = "log",
+        folder = "logs", suffix = NULL)
+      parent <- agent$project_info
+      parent$run_name <- run_id
+      metadata <- data.frame(combo = "first", agent_run_id = run_id, agent_version = 2,
+        best_run_name = fixture$previous$run_name, model_type = if (global) "global" else "local",
+        weighted_mape = 0.1, forecast_approach = "bottoms_up", default_reforecast_status = "accepted")
+      write_data(metadata, combo = "first", run_info = parent, output_type = "log",
+        folder = "logs", suffix = "-agent_best_run")
+      if (backend == "fallback") {
+        testthat::local_mocked_bindings(vroom = function(...) stop("force base CSV reader"),
+          .package = "vroom")
+      }
+      local_mocked_bindings(
+        get_foundation_model_suffix = function() "",
+        par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+        par_end = function(...) NULL,
+        submit_fcst_run = function(...) stop("complete results must not be fitted again")
+      )
+      recovered <- tryCatch(resume_update_result(agent, fixture$previous,
+        fixture$best$combo, global, fixture$splits, fixture$model_ids[1:2]), error = identity)
+      expect_identical(recovered, TRUE, info = paste(run_id, global))
+      if (global && identical(recovered, TRUE)) {
+        expect_identical(load_best_agent_run(agent)$agent_run_id, rep(run_id, 2))
+      }
+      if (!global) {
+        agent$quality_rejected_combos <- hash_data("first")
+        dispatched <- tryCatch(forecast_new_combos(agent, character(), hash_data("first"),
+          NULL, FALSE, 1, 123), error = identity)
+        expect_identical(dispatched, "Finished Forecasting New Time Series", info = run_id)
+      }
+    })
+  }
+})
+
+test_that("update CSV forecasts preserve text series and model identities", {
+  info <- list(path = withr::local_tempdir(), storage_object = NULL, data_output = "csv")
+  path <- fs::path(info$path, "predictions.csv")
+  for (combo in c("00042", "T", "F", "1e10", "9007199254740993")) {
+    expected <- data.frame(Combo = combo, Model_ID = "00123", Train_Test_ID = 1,
+      Date = as.Date("2026-01-01"), Forecast = 12.5)
+    utils::write.csv(expected, path, row.names = FALSE)
+    actual <- read_update_artifact(info, path)
+    expect_identical(actual$Combo, combo)
+    expect_identical(actual$Model_ID, "00123")
+    expect_identical(actual$Forecast, 12.5)
+    expect_identical(actual$Date, expected$Date)
+    remote <- info
+    remote$storage_object <- structure(list(), class = "blob_container")
+    local_mocked_bindings(download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+      utils::write.csv(expected, destination, row.names = FALSE)
+      TRUE
+    })
+    expect_identical(read_update_artifact(remote, "forecasts/predictions.csv"), actual)
+  }
 })
 
 test_that("global retuning retains saved subsets and rejects only required failures", {

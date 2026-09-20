@@ -1,11 +1,12 @@
 # Write count deterministic result sets using a few genuine fitted lm templates.
 # ownership selects local/shared/mixed models; state selects complete, partial or
 # unstarted records. Returns agent identity, expected work, file sizes and setup
-# time. Artifacts use ordinary package names; temporary lifetime is caller-owned.
+# time. Artifacts include authoritative split/calendar context under ordinary
+# package names; temporary lifetime is caller-owned.
 make_completion_benchmark <- function(ownership, state, count = 600L) {
   started <- proc.time()[["elapsed"]]
   path <- withr::local_tempdir(.local_envir = parent.frame())
-  fs::dir_create(fs::path(path, c("logs", "models", "forecasts")))
+  fs::dir_create(fs::path(path, c("logs", "models", "forecasts", "prep_models", "prep_data")))
   combos <- sprintf("series-%04d", seq_len(count))
   global <- switch(ownership, local = rep(FALSE, count), global = rep(TRUE, count),
     mixed = seq_len(count) <= count / 2)
@@ -39,6 +40,14 @@ make_completion_benchmark <- function(ownership, state, count = 600L) {
         }
         files <- c(files, model_path)
       }
+      log_path <- local_artifact_path(info, "logs", extension = "csv")
+      split_path <- local_artifact_path(info, "prep_models", "-train_test_split")
+      utils::write.csv(data.frame(date_type = "month", recipes_to_run = "R1",
+        hist_end_date = as.Date("2026-07-01")), log_path, row.names = FALSE)
+      utils::write.csv(data.frame(Train_Test_ID = c(1, 2), Run_Type = c("Future_Forecast", "Back_Test"),
+        Train_End = as.Date(c("2026-07-01", "2026-01-01")),
+        Test_End = as.Date(c("2027-01-01", "2026-07-01"))), split_path, row.names = FALSE)
+      files <- c(files, log_path, split_path)
       written_models <- c(written_models, model_path)
     }
     average <- index %% 2L == 0L
@@ -46,6 +55,9 @@ make_completion_benchmark <- function(ownership, state, count = 600L) {
       Date = c(seq(as.Date("2026-08-01"), by = "month", length.out = 6),
         seq(as.Date("2026-02-01"), by = "month", length.out = 6)),
       Target = rep(c(NA_real_, 100), each = 6), Forecast = 100)
+    recipe_path <- local_artifact_path(info, "prep_data", "-R1", hash_data(combo))
+    utils::write.csv(template[, c("Combo", "Date", "Target")], recipe_path, row.names = FALSE)
+    files <- c(files, recipe_path)
     rows <- do.call(rbind, lapply(ids, function(model_id) {
       values <- template
       values$Model_ID <- model_id
@@ -72,7 +84,7 @@ make_completion_benchmark <- function(ownership, state, count = 600L) {
     metadata_path <- local_artifact_path(parent, "logs", "-agent_best_run", hash_data(combo), "csv")
     utils::write.csv(data.frame(combo = combo, agent_run_id = agent$run_id,
       best_run_name = info$run_name, model_type = model_type, weighted_mape = 0.1,
-      forecast_approach = "bottoms_up"), metadata_path, row.names = FALSE)
+      forecast_approach = "bottoms_up", recipes_to_run = "R1"), metadata_path, row.names = FALSE)
     files <- c(files, metadata_path)
     if (status[[index]] %in% c(0L, 6L) || (global[[index]] && status[[index]] %in% c(2L, 3L))) {
       expected_complete <- c(expected_complete, combo)

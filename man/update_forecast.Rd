@@ -91,7 +91,11 @@ Legacy second-order differenced original targets without their own starting
 values require regeneration of prepared data from the original input.
 On restart, the driver checks fitted objects and required selected forecasts
 only for series with current best-run metadata. Missing or damaged current
-results remain eligible for refitting. Shared global results are checked and
+results remain eligible for refitting. Every selected forecast must match
+the expected dates and scenarios from saved preparation, including expanded
+weekly days. Required preparation and predecessor metadata access failures
+propagate rather than triggering default fitting. CSV identities remain text.
+Shared global results are checked and
 updated as one group, preserving valid local winners. Workers independently
 check current outputs before refitting and can finish missing best-run logging
 from complete saved forecasts and existing run-log metrics. Reuse does not
