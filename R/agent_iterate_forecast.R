@@ -653,6 +653,15 @@ final_agent_artifact_exists <- function(project_info, artifact_path) {
   fs::file_exists(artifact_file)
 }
 
+#' Read one final Agent output without coercing saved run identities
+#'
+#' @param agent_info Agent identity and project storage settings.
+#' @param suffix Final-output suffix, such as run_metadata or forecast.
+#' @param allow_missing Whether absent outputs may return an empty tibble.
+#' @return The saved data frame. Run-metadata CSV identifiers remain character;
+#'   other columns and output formats retain their existing types. Provider and
+#'   unreadable-output failures propagate; no artifacts are written.
+#' @noRd
 load_final_agent_artifact <- function(agent_info,
                                       suffix,
                                       allow_missing = FALSE) {
@@ -673,7 +682,12 @@ load_final_agent_artifact <- function(agent_info,
       run_info = project_info,
       path = artifact_path,
       return_type = "df",
-      allow_missing = allow_missing
+      allow_missing = allow_missing,
+      character_columns = if (identical(suffix, "run_metadata")) {
+        c("combo", "agent_run_id", "best_run_name")
+      } else {
+        NULL
+      }
     ),
     warning = function(condition) {
       if (grepl(
@@ -894,10 +908,13 @@ save_agent_forecast <- function(agent_info) {
 #' Load the best run for an agent
 #'
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete
+#' Intermediate CSV identities are parsed as text before they can be saved to
+#' final metadata. Provider failures and inconsistent global winners remain errors.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return table containing the best run information for the agent.
+#' @return Best-run records, or an empty tibble when no files exist. Numeric
+#'   accuracy fields keep their inferred types; no stored artifacts are modified.
 #' @noRd
 load_best_agent_run <- function(agent_info) {
   # metadata
@@ -922,7 +939,8 @@ load_best_agent_run <- function(agent_info) {
     best_run_tbl <- read_exact_artifact(
       run_info = project_info,
       file_list = combo_best_run_list,
-      return_type = "df"
+      return_type = "df",
+      character_columns = c("combo", "agent_run_id", "best_run_name")
     )
   }
 

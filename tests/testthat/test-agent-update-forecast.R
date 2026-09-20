@@ -114,6 +114,331 @@ make_complete_final_outputs <- function(run_id,
   outputs
 }
 
+# Write nonempty final outputs and version logs under the caller's temporary
+# path. Identifiers remain opaque text in the source data, while metrics and
+# versions are numeric. Returns real-file Agent inputs and expected metadata;
+# no model training, provider calls, or artifact deletion is performed.
+make_csv_update_fixture <- function(path, run_id, combo = "00042") {
+  agent_info <- make_update_agent_info()
+  agent_info$project_info$path <- path
+  agent_info$run_id <- "1000000000000000"
+  agent_runs <- make_update_agent_run_table()[1:2, ]
+  agent_runs$run_id <- c(agent_info$run_id, run_id)
+  previous <- agent_info
+  previous$run_id <- run_id
+  previous$agent_version <- agent_runs$agent_version[[2]]
+  outputs <- make_complete_final_outputs(run_id, combo, weighted_mape = 0.125)
+  outputs$run_metadata$best_run_name <- "00007"
+  fs::dir_create(fs::path(path, c("final_output", "logs")))
+  for (suffix in names(outputs)) {
+    utils::write.csv(outputs[[suffix]], fs::path(path, "final_output", paste0(
+      hash_data(agent_info$project_info$project_name), "-", hash_data(run_id),
+      "-", suffix, ".csv"
+    )), row.names = FALSE)
+  }
+  for (index in seq_len(nrow(agent_runs))) {
+    utils::write.csv(agent_runs[index, ], fs::path(path, "logs", paste0(
+      hash_data(agent_info$project_info$project_name), "-",
+      hash_data(agent_runs$run_id[[index]]), "-agent_run.csv"
+    )), row.names = FALSE)
+  }
+  list(agent_info = agent_info, previous = previous, agent_runs = agent_runs,
+    metadata = outputs$run_metadata, combo = combo)
+}
+
+test_that("real CSV completion metadata preserves opaque Agent identifiers", {
+  run_ids <- c("4282d17137126405", "1e10", "9007199254740993",
+    "0012345678901234", "19d7e8f9db2fb790")
+  for (run_id in run_ids) {
+    fixture <- make_csv_update_fixture(withr::local_tempdir(), run_id)
+    metadata <- load_final_agent_run_metadata(fixture$previous)
+    identifiers <- c("agent_run_id", "combo", "best_run_name")
+    expect_identical(lapply(metadata[identifiers], as.character),
+      lapply(fixture$metadata[identifiers], as.character))
+    expect_true(all(vapply(metadata[identifiers], is.character, logical(1))))
+    expect_identical(metadata$weighted_mape, 0.125)
+    expect_length(find_completed_previous_agent_runs(fixture$agent_info,
+      fixture$agent_runs[2, ]), 1L)
+  }
+})
+
+test_that("CSV fallback preserves final metadata identifiers and metrics", {
+  fixture <- make_csv_update_fixture(withr::local_tempdir(), "0012345678901234")
+  original_vroom <- vroom::vroom
+  testthat::local_mocked_bindings(
+    vroom = function(file, ...) {
+      if (any(startsWith(as.character(file), fixture$previous$project_info$path))) {
+        stop("force fixture CSV fallback")
+      }
+      original_vroom(file, ...)
+    }, .package = "vroom"
+  )
+  metadata <- load_final_agent_run_metadata(fixture$previous)
+  identifiers <- c("agent_run_id", "combo", "best_run_name")
+  expect_identical(lapply(metadata[identifiers], as.character),
+    lapply(fixture$metadata[identifiers], as.character))
+  expect_true(all(vapply(metadata[identifiers], is.character, logical(1))))
+  expect_identical(metadata$weighted_mape, 0.125)
+  expect_length(find_completed_previous_agent_runs(fixture$agent_info,
+    fixture$agent_runs[2, ]), 1L)
+})
+
+test_that("saving final Agent metadata preserves the intermediate CSV identity", {
+  for (backend in c("vroom", "fallback")) {
+    for (run_id in c("4282d17137126405", "1e10", "9007199254740993",
+      "0012345678901234", "19d7e8f9db2fb790")) local({
+      fixture <- make_csv_update_fixture(withr::local_tempdir(), run_id)
+      log_info <- fixture$previous$project_info
+      log_info$run_name <- fixture$previous$run_id
+      utils::write.csv(fixture$metadata, local_artifact_path(log_info, "logs",
+        "-agent_best_run", hash_data(fixture$combo), extension = "csv"), row.names = FALSE)
+      original_vroom <- vroom::vroom
+      if (identical(backend, "fallback")) {
+        testthat::local_mocked_bindings(
+          vroom = function(file, ...) {
+            if (any(startsWith(as.character(file), log_info$path))) stop("force fixture CSV fallback")
+            original_vroom(file, ...)
+          }, .package = "vroom"
+        )
+      }
+      testthat::local_mocked_bindings(
+        check_agent_info = function(...) invisible(NULL),
+        get_total_combos = function(...) hash_data(fixture$combo),
+        .package = "finnts"
+      )
+      save_best_agent_run(fixture$previous)
+      metadata <- load_final_agent_run_metadata(fixture$previous)
+      expect_identical(metadata$agent_run_id, fixture$previous$run_id)
+      expect_identical(metadata$combo, fixture$combo)
+      expect_identical(metadata$best_run_name, fixture$metadata$best_run_name)
+      expect_identical(metadata$weighted_mape, 0.125)
+      expect_length(find_completed_previous_agent_runs(fixture$agent_info,
+        fixture$agent_runs[2, ]), 1L)
+    })
+  }
+})
+
+test_that("current update metadata preserves identifiers with one base CSV read", {
+  fixture <- make_csv_update_fixture(withr::local_tempdir(), "0012345678901234")
+  log_info <- fixture$previous$project_info
+  log_info$run_name <- fixture$previous$run_id
+  path <- local_artifact_path(log_info, "logs", "-agent_best_run", hash_data(fixture$combo))
+  utils::write.csv(fixture$metadata, path, row.names = FALSE)
+  before <- tools::md5sum(path)
+  original_reader <- read_update_csv
+  reads <- 0L
+  testthat::local_mocked_bindings(
+    read_update_csv = function(path, ...) {
+      reads <<- reads + 1L
+      original_reader(path, ...)
+    },
+    .package = "finnts"
+  )
+  testthat::local_mocked_bindings(
+    vroom = function(...) stop("current metadata must use its single-connection base reader"),
+    .package = "vroom"
+  )
+  metadata <- load_update_runs(fixture$previous)
+  expect_identical(metadata$agent_run_id, fixture$previous$run_id)
+  expect_identical(metadata$combo, fixture$combo)
+  expect_identical(metadata$best_run_name, fixture$metadata$best_run_name)
+  expect_identical(metadata$weighted_mape, 0.125)
+  expect_equal(reads, 1L)
+  expect_identical(tools::md5sum(path), before)
+})
+
+test_that("exact CSV reads forward identity types without extra storage operations", {
+  for (provider in c("local", "staged")) {
+    for (backend in c("vroom", "fallback")) local({
+      directory <- withr::local_tempdir()
+      source_path <- fs::path(directory, "metadata.csv")
+      expected <- data.frame(agent_run_id = "0012345678901234", weighted_mape = 0.125)
+      utils::write.csv(expected, source_path, row.names = FALSE)
+      info <- list(path = directory, storage_object = NULL)
+      path <- source_path
+      if (provider == "staged") {
+        info$storage_object <- structure(list(), class = "blob_container")
+        path <- "logs/metadata.csv"
+      }
+      downloads <- 0L
+      reads <- 0L
+      original_vroom <- vroom::vroom
+      testthat::local_mocked_bindings(
+        download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+          downloads <<- downloads + 1L
+          fs::file_copy(source_path, destination)
+          TRUE
+        },
+        list_files = function(...) stop("exact reader enumerated storage"),
+        .package = "finnts"
+      )
+      testthat::local_mocked_bindings(
+        vroom = function(file, ...) {
+          reads <<- reads + 1L
+          if (backend == "fallback") stop("force fixture CSV fallback")
+          original_vroom(file, ...)
+        }, .package = "vroom"
+      )
+      result <- read_exact_artifact(info, path, character_columns = "agent_run_id")
+      expect_identical(result$agent_run_id, expected$agent_run_id)
+      expect_identical(result$weighted_mape, expected$weighted_mape)
+      expect_equal(downloads, as.integer(provider == "staged"))
+      expect_equal(reads, 1L)
+    })
+  }
+})
+
+test_that("identity schemas do not conceal missing or failed exact reads", {
+  info <- list(path = withr::local_tempdir(), storage_object = NULL)
+  missing <- fs::path(info$path, "missing.csv")
+  expect_null(read_exact_artifact(info, missing, allow_missing = TRUE,
+    character_columns = "agent_run_id"))
+  expect_error(read_local_artifacts(info, missing, character_columns = "agent_run_id"),
+    "Missing required Finn artifact")
+  info$storage_object <- structure(list(), class = "blob_container")
+  provider_error <- structure(list(message = "access denied", call = NULL),
+    class = c("http_403", "error", "condition"))
+  testthat::local_mocked_bindings(
+    download_exact_artifact = function(...) stop(provider_error),
+    list_files = function(...) stop("exact reader enumerated storage"),
+    .package = "finnts"
+  )
+  expect_error(read_exact_artifact(info, "logs/metadata.csv", allow_missing = TRUE,
+    character_columns = "agent_run_id"), class = "http_403")
+})
+
+test_that("already rewritten corrupt Agent metadata remains rejected without mutation", {
+  fixture <- make_csv_update_fixture(withr::local_tempdir(), "4282d17137126405")
+  info <- fixture$previous$project_info
+  info$run_name <- fixture$previous$run_id
+  path <- local_artifact_path(info, "final_output", "-run_metadata")
+  corrupt <- fixture$metadata
+  corrupt$agent_run_id <- "4.282e-304"
+  utils::write.csv(corrupt, path, row.names = FALSE)
+  before <- tools::md5sum(path)
+  expect_null(load_completed_agent_run_outputs(fixture$previous))
+  expect_identical(tools::md5sum(path), before)
+})
+
+test_that("CSV identity schemas allow absent columns without hiding read warnings", {
+  path <- fs::path(withr::local_tempdir(), "metadata.csv")
+  utils::write.csv(data.frame(combo = "00042", weighted_mape = 0.125),
+    path, row.names = FALSE)
+  info <- list(path = dirname(path), storage_object = NULL)
+  columns <- c("combo", "agent_run_id", "best_run_name")
+  expect_warning(metadata <- read_exact_artifact(info, path,
+    character_columns = columns), NA)
+  expect_identical(metadata$combo, "00042")
+  expect_identical(metadata$weighted_mape, 0.125)
+  expect_false("agent_run_id" %in% names(metadata))
+  expect_false(validate_completed_run_metadata(metadata, "expected-owner"))
+  expect_warning(current <- read_update_csv(path, character_columns = columns), NA)
+  expect_identical(current$combo, "00042")
+  expect_identical(current$weighted_mape, 0.125)
+  original_vroom <- vroom::vroom
+  local({
+    testthat::local_mocked_bindings(
+      vroom = function(...) stop("force fixture CSV fallback"), .package = "vroom"
+    )
+    expect_warning(fallback <- read_exact_artifact(info, path,
+      character_columns = columns), NA)
+    expect_identical(fallback$combo, "00042")
+    expect_identical(fallback$weighted_mape, 0.125)
+    original_csv <- utils::read.csv
+    testthat::local_mocked_bindings(
+      read.csv = function(file, ...) {
+        warning("Base CSV parse warning remains visible", call. = FALSE)
+        original_csv(file, ...)
+      }, .package = "utils"
+    )
+    expect_warning(read_exact_artifact(info, path, character_columns = columns),
+      "Base CSV parse warning remains visible")
+    expect_warning(read_update_csv(path, character_columns = columns),
+      "Base CSV parse warning remains visible")
+  })
+  testthat::local_mocked_bindings(
+    vroom = function(file, ...) {
+      warning("CSV parse warning remains visible", call. = FALSE)
+      original_vroom(file, ...)
+    }, .package = "vroom"
+  )
+  expect_warning(read_exact_artifact(info, path, character_columns = "combo"),
+    "CSV parse warning remains visible")
+})
+
+test_that("real Agent CSV logs preserve predecessor identity in both readers", {
+  for (backend in c("vroom", "fallback")) {
+    for (run_id in c("4282d17137126405", "0012345678901234")) local({
+      fixture <- make_csv_update_fixture(withr::local_tempdir(), run_id)
+      original_vroom <- vroom::vroom
+      if (identical(backend, "fallback")) {
+        testthat::local_mocked_bindings(
+          vroom = function(file, ...) {
+            if (any(startsWith(as.character(file), fixture$previous$project_info$path))) {
+              stop("force fixture CSV fallback")
+            }
+            original_vroom(file, ...)
+          }, .package = "vroom"
+        )
+      }
+      testthat::local_mocked_bindings(
+        check_agent_info = function(...) invisible(NULL),
+        load_update_runs = function(...) tibble::tibble(),
+        get_total_combos = function(...) hash_data(fixture$combo),
+        get_best_agent_run = function(...) fixture$metadata,
+        .package = "finnts"
+      )
+      result <- initial_checks(fixture$agent_info)
+      expect_identical(result$prev_best_runs_tbl$agent_run_id, run_id)
+      expect_identical(result$prev_best_runs_tbl$combo, fixture$combo)
+      expect_identical(result$prev_best_runs_tbl$weighted_mape, 0.125)
+      expect_equal(analyze_results(fixture$agent_info), 0)
+    })
+  }
+})
+
+test_that("CSV character columns use one payload read and retain other types", {
+  for (backend in c("vroom", "fallback")) local({
+    path <- fs::path(withr::local_tempdir(), "metadata.csv")
+    expected <- data.frame(run_id = "0012345678901234", agent_version = 4,
+      weighted_mape = 0.125, hist_end_date = as.Date("2026-07-01"))
+    utils::write.csv(expected, path, row.names = FALSE)
+    info <- list(path = dirname(path), storage_object = NULL)
+    original_vroom <- vroom::vroom
+    original_csv <- utils::read.csv
+    calls <- c(vroom = 0L, fallback = 0L)
+    testthat::local_mocked_bindings(
+      vroom = function(file, ...) {
+        calls[["vroom"]] <<- calls[["vroom"]] + 1L
+        if (identical(backend, "fallback")) stop("force fixture CSV fallback")
+        original_vroom(file, ...)
+      }, .package = "vroom"
+    )
+    testthat::local_mocked_bindings(
+      read.csv = function(file, ...) {
+        calls[["fallback"]] <<- calls[["fallback"]] + 1L
+        original_csv(file, ...)
+      }, .package = "utils"
+    )
+    testthat::local_mocked_bindings(
+      list_files = function(...) stop("exact-path read enumerated storage"),
+      .package = "finnts"
+    )
+    result <- read_file(info, file_list = path, character_columns = "run_id")
+    expect_identical(result$run_id, expected$run_id)
+    expect_true(is.numeric(result$agent_version))
+    expect_identical(result$weighted_mape, expected$weighted_mape)
+    expect_identical(calls, c(vroom = 1L, fallback = as.integer(backend == "fallback")))
+    untyped <- read_file(info, file_list = path)
+    expect_identical(result[setdiff(names(result), "run_id")],
+      untyped[setdiff(names(untyped), "run_id")])
+    rds_path <- sub("csv$", "rds", path)
+    saveRDS(expected, rds_path)
+    expect_equal(read_file(info, file_list = rds_path, character_columns = "run_id"),
+      expected)
+  })
+})
+
 # Run startup against deterministic version metadata and optional real current
 # model/forecast artifacts. Returns startup routing; provider errors are injected
 # only for the requested final artifact. Temporary paths belong to the caller.
@@ -161,7 +486,8 @@ run_initial_checks_case <- function(final_outputs,
                          return_type = "df",
                          schema = NULL,
                          allow_missing = FALSE,
-                         strict = FALSE) {
+                         strict = FALSE,
+                         character_columns = NULL) {
       artifact <- if (is.null(file_list)) path else file_list
       if (!is.null(artifact_path) && any(grepl("/(models|forecasts)/", artifact))) {
         return(original_reader(run_info, path = path, file_list = file_list,
@@ -990,7 +1316,8 @@ test_that("analyze_results uses finalized previous versions", {
                          file_list = NULL,
                          return_type = "df",
                          schema = NULL,
-                         allow_missing = FALSE) {
+                         allow_missing = FALSE,
+                         character_columns = NULL) {
       if (!is.null(file_list)) {
         return(agent_runs)
       }

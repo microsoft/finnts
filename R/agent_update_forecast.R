@@ -540,13 +540,30 @@ find_completed_previous_agent_runs <- function(agent_info,
 #' Parse one local update CSV through a single connection
 #'
 #' @param path Exact local CSV path, including supported mounted paths.
+#' @param character_columns Optional identifier column names to retain as text
+#'   before base CSV type inference; other columns keep their inferred types.
+#'   Absent schema columns are ignored, leaving required-field checks to callers.
 #' @return A data frame parsed without altering its columns. The gzip-capable
 #'   connection also accepts ordinary CSV and is closed on success or failure.
 #' @noRd
-read_update_csv <- function(path) {
+read_update_csv <- function(path, character_columns = NULL) {
   connection <- gzfile(path, open = "rt", encoding = "UTF-8")
   on.exit(close(connection), add = TRUE)
-  utils::read.csv(connection, stringsAsFactors = FALSE, check.names = FALSE)
+  col_classes <- if (length(character_columns) > 0L) {
+    stats::setNames(rep("character", length(character_columns)), character_columns)
+  } else {
+    NA
+  }
+  withCallingHandlers(
+    utils::read.csv(connection, stringsAsFactors = FALSE, check.names = FALSE,
+      colClasses = col_classes),
+    warning = function(condition) {
+      if (length(character_columns) > 0L && identical(conditionMessage(condition),
+        gettext("not all columns named in 'colClasses' exist", domain = "R-utils"))) {
+        invokeRestart("muffleWarning")
+      }
+    }
+  )
 }
 
 #' Read an update artifact without mistaking storage failures for damage
@@ -603,6 +620,7 @@ read_update_artifact <- function(run_info, path) {
 #' @return Current best-run records, or an empty table. Local one-row CSV files
 #'   use the base parser to avoid per-file compression probes; malformed metadata
 #'   and provider errors propagate. No model or forecast files are read here.
+#'   Run, combo, and best-run identifiers remain text without adding payload reads.
 #' @noRd
 load_update_runs <- function(agent_info) {
   info <- agent_info$project_info
@@ -611,7 +629,8 @@ load_update_runs <- function(agent_info) {
     "-", hash_data(agent_info$run_id), "*-agent_best_run.csv"), fail_on_error = TRUE)
   if (!length(paths)) return(tibble::tibble())
   rows <- lapply(paths, function(path) {
-    record <- read_update_csv(path)
+    record <- read_update_csv(path,
+      character_columns = c("combo", "agent_run_id", "best_run_name"))
     if (!nrow(record)) stop("Empty current best-run metadata: ", path, call. = FALSE)
     record
   })
@@ -824,6 +843,8 @@ completed_update_runs <- function(agent_info, metadata) {
 #' Checks current recorded outputs before skipping completed series, then loads
 #' the predecessor for unfinished series. Missing current metadata does not
 #' trigger artifact reads. Invalid metadata or storage access remains an error.
+#' Agent-log run IDs are parsed as text so numeric-looking hashes retain their
+#' exact artifact identity; numeric versions still determine predecessor order.
 #'
 #' @param agent_info A list containing the agent information.
 #'
@@ -886,7 +907,8 @@ initial_checks <- function(agent_info) {
   prev_agent_run_tbl <- read_file(
     run_info = agent_info$project_info,
     file_list = agent_runs_list,
-    return_type = "df"
+    return_type = "df",
+    character_columns = "run_id"
   ) %>%
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)
@@ -1370,6 +1392,9 @@ check_update_failures <- function(agent_info,
 #' Analyze Results of Agent Run
 #'
 #' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
+#' Agent-log run IDs remain character while versions and accuracy retain numeric
+#' types. Missing completed predecessors, absent common series, and storage/read
+#' failures remain errors; the comparison does not write artifacts.
 #'
 #' @param agent_info A list containing the agent information.
 #'
@@ -1398,7 +1423,8 @@ analyze_results <- function(agent_info) {
   prev_agent_run_tbl <- read_file(
     run_info = agent_info$project_info,
     file_list = agent_runs_list,
-    return_type = "df"
+    return_type = "df",
+    character_columns = "run_id"
   ) %>%
     dplyr::arrange(dplyr::desc(agent_version)) %>%
     dplyr::filter(agent_version < agent_info$agent_version)

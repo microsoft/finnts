@@ -48,7 +48,7 @@ jobs:
           - {os: ubuntu-22.04,   r: 'oldrel-1'}
           # Boruta 10 imports fru, whose native code requires R 4.5.
           - {os: ubuntu-22.04,   r: 'oldrel-2', extra-packages: 'gsl@2.1-8, Boruta@9.0.0'}
-          - {os: ubuntu-22.04,   r: '4.1', extra-packages: 'gsl@2.1-8, Boruta@9.0.0, arrow@23.0.1.2, xgboost@1.7.11.1'}
+          - {os: ubuntu-22.04,   r: '4.1', extra-packages: 'gsl@2.1-8, Boruta@9.0.0, arrow@23.0.1.2, xgboost@1.7.11.1, duckdb@1.5.2'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
