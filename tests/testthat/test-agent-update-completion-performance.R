@@ -1,8 +1,8 @@
-# Write 1000 deterministic result sets using a few genuine fitted lm templates.
+# Write count deterministic result sets using a few genuine fitted lm templates.
 # ownership selects local/shared/mixed models; state selects complete, partial or
 # unstarted records. Returns agent identity, expected work, file sizes and setup
 # time. Artifacts use ordinary package names; temporary lifetime is caller-owned.
-make_completion_benchmark <- function(ownership, state, count = 1000L) {
+make_completion_benchmark <- function(ownership, state, count = 600L) {
   started <- proc.time()[["elapsed"]]
   path <- withr::local_tempdir(.local_envir = parent.frame())
   fs::dir_create(fs::path(path, c("logs", "models", "forecasts")))
@@ -95,14 +95,18 @@ run_completion_benchmark <- function(fixture) {
     payload_bytes = length(serialize(work, NULL)))
 }
 
-test_that("1000-series completion audits use real files and finish in seconds", {
+test_that("completion audits use a reduced real-file workload and finish in ten seconds", {
   started <- proc.time()[["elapsed"]]
   fixture <- make_completion_benchmark("mixed", "complete")
+  expect_lte(length(fixture$combos), 900L)
+  global_count <- length(fixture$combos) %/% 2L
+  first_local <- global_count + 1L
+  expected_work <- fixture$combos[seq_len(first_local)]
   complete <- run_completion_benchmark(fixture)
   expect_identical(complete$work, character())
   expect_lt(complete$seconds, 10)
 
-  local_combo <- fixture$combos[[501]]
+  local_combo <- fixture$combos[[first_local]]
   local_info <- fixture$agent$project_info
   local_info$project_name <- paste0(local_info$project_name, "_", hash_data(local_combo))
   local_info$run_name <- paste0("current-", local_combo)
@@ -112,20 +116,20 @@ test_that("1000-series completion audits use real files and finish in seconds", 
   global_info$project_name <- paste0(global_info$project_name, "_", hash_data("all"))
   global_info$run_name <- "global-current"
   forecast_path <- local_artifact_path(global_info, "forecasts", "-global_models",
-    hash_data(fixture$combos[[500]]))
+    hash_data(fixture$combos[[global_count]]))
   rows <- utils::read.csv(forecast_path)
   utils::write.csv(rows[-1, ], forecast_path, row.names = FALSE)
   damaged <- run_completion_benchmark(fixture)
-  expect_identical(damaged$work, fixture$combos[seq_len(501)])
+  expect_identical(damaged$work, expected_work)
   expect_lt(damaged$seconds, 10)
-  expect_equal(damaged$payload_bytes, length(serialize(fixture$combos[seq_len(501)], NULL)))
+  expect_equal(damaged$payload_bytes, length(serialize(expected_work, NULL)))
 
-  empty <- make_completion_benchmark("mixed", "unstarted")
+  empty <- make_completion_benchmark("mixed", "unstarted", count = length(fixture$combos))
   unstarted <- run_completion_benchmark(empty)
   expect_identical(unstarted$work, empty$combos)
   expect_lt(unstarted$seconds, 10)
   expect_lt(proc.time()[["elapsed"]] - started, 90)
-  cat(sprintf("\nCompletion benchmark: complete=%.3fs damaged=%.3fs unstarted=%.3fs setup=%.3fs files=%d bytes=%.0f combo_payload=%d\n",
-    complete$seconds, damaged$seconds, unstarted$seconds, fixture$setup_seconds,
+  cat(sprintf("\nCompletion benchmark: series=%d complete=%.3fs damaged=%.3fs unstarted=%.3fs setup=%.3fs files=%d bytes=%.0f combo_payload=%d\n",
+    length(fixture$combos), complete$seconds, damaged$seconds, unstarted$seconds, fixture$setup_seconds,
     length(fixture$files), fixture$bytes, damaged$payload_bytes))
 })

@@ -348,6 +348,72 @@ test_that("a damaged accepted default reaches training without preparation chang
   expect_false("rebuild_update_models" %in% names(read_selection_file(fixture$updated, "logs")))
 })
 
+test_that("completion requires every single or averaged winner flag", {
+  fixture <- make_global_update_selection_fixture()
+  saved <- read_update_result(fixture$previous, fixture$best$combo, TRUE, 6)
+  expect_false(is.null(saved))
+  accepted <- logical()
+  for (combo in fixture$best$combo) {
+    rows <- saved$forecasts[saved$forecasts$Combo == combo, ]
+    expect_true(valid_update_forecasts(rows, saved$models, 6))
+    selected <- which(rows$Best_Model == "Yes" & rows$Train_Test_ID == 1)[1]
+    for (flag in c("No", NA_character_)) {
+      damaged <- rows
+      damaged$Best_Model[selected] <- flag
+      accepted <- c(accepted, valid_update_forecasts(damaged, saved$models, 6))
+    }
+  }
+  expect_identical(accepted, rep(FALSE, 4))
+})
+
+test_that("quality-rejected updates reuse or repair accepted defaults through dispatch", {
+  for (damaged in c(FALSE, TRUE)) local({
+    fixture <- make_global_update_selection_fixture(global = FALSE)
+    state <- local_global_update_selection_mocks(fixture)
+    agent <- fixture$agent
+    agent$quality_rejected_combos <- hash_data("first")
+    parent <- agent$project_info
+    parent$run_name <- agent$run_id
+    metadata <- data.frame(agent_run_id = agent$run_id, combo = "first", model_type = "local",
+      best_run_name = fixture$previous$run_name, weighted_mape = 0.1,
+      forecast_approach = "bottoms_up", default_reforecast_status = "accepted")
+    write_data(metadata, combo = "first", run_info = parent, output_type = "log",
+      folder = "logs", suffix = "-agent_best_run")
+    write_data(fixture$input, combo = "first", run_info = parent, output_type = "data",
+      folder = "input_data", suffix = NULL)
+    log <- fixture$log
+    log$default_reforecast_status <- "accepted"
+    write_data(log, combo = NULL, run_info = fixture$previous, output_type = "log", folder = "logs", suffix = NULL)
+    expect_false(is.null(read_update_result(fixture$previous, "first", FALSE, 6)))
+    if (damaged) {
+      writeBin(charToRaw("broken model"), local_artifact_path(fixture$previous, "models",
+        "-single_models", hash_data("first"), "rds"))
+    }
+    trained <- 0L
+    local_mocked_bindings(
+      get_foundation_model_suffix = function() "",
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      set_run_info = function(...) fixture$previous,
+      train_models = function(run_info, ...) {
+        expect_true(isTRUE(run_info$rebuild_update_models))
+        trained <<- trained + 1L
+        stop("accepted default repair reached", call. = FALSE)
+      }
+    )
+    result <- tryCatch(forecast_new_combos(agent, character(), hash_data("first"), NULL, FALSE, 1, 123),
+      error = identity)
+    if (damaged) {
+      expect_match(conditionMessage(result), "accepted default repair reached")
+      expect_identical(trained, 1L)
+    } else {
+      expect_identical(result, "Finished Forecasting New Time Series")
+      expect_identical(trained, 0L)
+    }
+    expect_length(state$fits, 0L)
+  })
+})
+
 test_that("global retuning retains saved subsets and rejects only required failures", {
   fixture <- make_global_update_selection_fixture()
   fixture$best$weighted_mape <- 0

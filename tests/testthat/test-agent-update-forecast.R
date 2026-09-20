@@ -320,6 +320,67 @@ test_that("downloaded malformed model content is recoverable without hiding prov
   expect_null(read_update_artifact(info, "models/current.rds"))
 })
 
+test_that("update wrappers preserve failures from current completion reads", {
+  results <- list()
+  for (global in c(FALSE, TRUE)) for (failure in c("log", "completion", "empty", "conflict")) local({
+    agent <- make_update_agent_info()
+    agent$project_info$storage_object <- structure(list(), class = "blob_container")
+    info <- agent$project_info
+    info$run_name <- "current-fit"
+    previous <- make_update_run_metadata("run-4", "west")
+    previous$models_to_run <- "lm"
+    previous$model_type <- if (global) "global" else "local"
+    original_reader <- read_file
+    local_mocked_bindings(
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      read_file = function(run_info, ...) {
+        if (!is.null(run_info$storage_object)) return(previous)
+        original_reader(run_info, ...)
+      },
+      read_update_result = function(...) list(models = data.frame(Model_ID = "lm")),
+      download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        completion <- grepl("-agent_best_run.csv", path, fixed = TRUE)
+        if ((failure == "log" && !completion) || (failure == "completion" && completion)) {
+          rlang::abort("completion storage unavailable", class = "http_503")
+        }
+        rows <- if (completion) data.frame(agent_run_id = agent$run_id, combo = "west",
+          best_run_name = "conflicting-fit", model_type = previous$model_type, weighted_mape = 0.1) else
+          data.frame(weighted_mape = 0.1)
+        if (completion && failure == "empty") rows <- rows[0, ]
+        utils::write.csv(rows, destination, row.names = FALSE)
+        TRUE
+      },
+      update_forecast_combo = function(...) {
+        resume_update_result(agent, info, "west", global, data.frame(), "lm")
+      }
+    )
+    wrapper <- if (global) update_global_models else update_local_models
+    results[[paste(global, failure)]] <<- tryCatch(
+      wrapper(agent, previous, NULL, FALSE, 1, 123), error = identity)
+  })
+  expect_true(all(vapply(results, inherits, logical(1), "finnts_update_artifact_error")))
+  provider <- results[grepl("log$|completion$", names(results))]
+  expect_true(all(vapply(provider, inherits, logical(1), "http_503")))
+  expect_true(all(vapply(provider, function(error) inherits(error$parent, "http_503"), logical(1))))
+  for (global in c(FALSE, TRUE)) {
+    expect_match(conditionMessage(results[[paste(global, "empty")]]), "empty or unreadable")
+    expect_match(conditionMessage(results[[paste(global, "conflict")]]), "conflicts with the saved update")
+  }
+})
+
+test_that("absent or damaged current run logs request refitting", {
+  info <- list(project_name = "project", run_name = "current", path = withr::local_tempdir(),
+    data_output = "csv", storage_object = NULL)
+  fs::dir_create(fs::path(info$path, "logs"))
+  agent <- make_update_agent_info()
+  local_mocked_bindings(read_update_result = function(...) list(models = data.frame(Model_ID = "lm")))
+  missing <- tryCatch(resume_update_result(agent, info, "west", FALSE, data.frame(), "lm"), error = identity)
+  writeLines(character(), local_artifact_path(info, "logs", extension = "csv"))
+  damaged <- tryCatch(resume_update_result(agent, info, "west", FALSE, data.frame(), "lm"), error = identity)
+  expect_identical(list(missing, damaged), list(FALSE, FALSE))
+})
+
 test_that("local dispatch serializes only its existing free-variable context", {
   agent <- make_update_agent_info()
   previous <- make_update_run_metadata("run-4", c("east", "west"))

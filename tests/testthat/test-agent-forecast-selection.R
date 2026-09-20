@@ -668,7 +668,11 @@ test_that("a rejected default run cannot be fitted again on restart", {
   fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
   selection <- do.call(select_forecast_candidate, fixture)
   prepared <- 0L
+  rejected_reads <- 0L
   local_mocked_bindings(
+    get_foundation_model_suffix = function() "",
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
     list_files = function(...) stop("known input must not require directory discovery"),
     read_local_artifacts = function(run_info, file_list, ...) {
       expect_length(file_list, 1L)
@@ -677,7 +681,10 @@ test_that("a rejected default run cannot be fitted again on restart", {
     },
     read_file = function(...) data.frame(Combo = "series", Date = fixture$history$Date, Target = 100),
     set_run_info = function(...) list(project_name = "project", run_name = "default", path = tempdir()),
-    read_selection_file = function(...) data.frame(default_reforecast_status = "rejected"),
+    read_selection_file = function(...) {
+      rejected_reads <<- rejected_reads + 1L
+      data.frame(default_reforecast_status = "rejected")
+    },
     prep_data = function(...) { prepared <<- prepared + 1L },
     prep_models = function(...) NULL,
     train_models = function(...) NULL,
@@ -688,17 +695,26 @@ test_that("a rejected default run cannot be fitted again on restart", {
     project_info = list(project_name = "project", path = tempdir(), data_output = "csv"))
   expect_error(submit_fcst_run(agent, list(models_to_run = "meanf"), hash_data("series"), "default"),
     class = "finnts_forecast_selection_rejected")
+  agent$quality_rejected_combos <- hash_data("series")
+  expect_error(forecast_new_combos(agent, character(), hash_data("series"), NULL, FALSE, 1, 1),
+    class = "finnts_forecast_selection_rejected")
   expect_identical(prepared, 0L)
+  expect_identical(rejected_reads, 2L)
 })
 
-test_that("an already-used default best run cannot be recovered a second time", {
+test_that("an accepted default is audited before a quality-rejected update is skipped", {
   fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
   selection <- do.call(select_forecast_candidate, fixture)
   submissions <- 0L
+  audits <- 0L
   local_mocked_bindings(
     get_foundation_model_suffix = function() "",
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
     read_file = function(...) data.frame(combo = "series", best_run_name = "default", default_reforecast_status = "accepted"),
+    completed_update_runs = function(agent_info, metadata) {
+      audits <<- audits + 1L
+      metadata
+    },
     submit_fcst_run = function(...) {
       submissions <<- submissions + 1L
       list(forecast_selection = list(selections = list(series = selection)))
@@ -708,8 +724,10 @@ test_that("an already-used default best run cannot be recovered a second time", 
   )
   agent <- list(run_id = "run", quality_rejected_combos = hash_data("series"),
     project_info = list(project_name = "project", path = tempdir()))
-  expect_error(forecast_new_combos(agent, character(), hash_data("series"), NULL, FALSE, 1, 1),
-    class = "finnts_forecast_selection_rejected")
+  result <- tryCatch(forecast_new_combos(agent, character(), hash_data("series"), NULL, FALSE, 1, 1),
+    error = identity)
+  expect_identical(result, "Finished Forecasting New Time Series")
+  expect_identical(audits, 1L)
   expect_identical(submissions, 0L)
 })
 

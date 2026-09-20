@@ -628,6 +628,7 @@ load_update_runs <- function(agent_info) {
 #' @param horizon Expected native forecast length.
 #' @return TRUE for a complete selected result, otherwise FALSE. This only
 #'   validates recorded output, never reselects models or evaluates quality.
+#'   Every winning-model row must be selected; average components may remain No.
 #' @noRd
 valid_update_forecasts <- function(rows, models, horizon) {
   required <- c("Combo", "Model_ID", "Train_Test_ID", "Date", "Forecast", "Best_Model")
@@ -650,6 +651,7 @@ valid_update_forecasts <- function(rows, models, horizon) {
     if (anyNA(as.Date(rows[[date_column]], format = "%Y-%m-%d")) ||
       anyNA(as.Date(rows$Date, format = "%Y-%m-%d"))) return(FALSE)
   winner <- rows[rows$Model_ID == selected, , drop = FALSE]
+  if (anyNA(winner$Best_Model) || any(winner$Best_Model != "Yes")) return(FALSE)
   future <- winner[winner$Train_Test_ID == 1, , drop = FALSE]
     if (nrow(future) != horizon * (if (date_column == "Date_Day") 7L else 1L) ||
       !any(winner$Train_Test_ID == 2)) return(FALSE)
@@ -733,26 +735,36 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #' @return TRUE when complete outputs were reused, otherwise FALSE to refit.
 #'   Missing completion records are rebuilt using existing settings and native
 #'   aggregate accuracy. No predictions, fits or matching best records are written.
-#'   Access failures and conflicting completion identities remain errors.
+#'   Missing or recognized damaged run logs request refitting. Completion-record
+#'   read errors and conflicting identities retain the hard artifact-error class;
+#'   the read-error handler preserves the provider's original class and cause.
 #' @noRd
 resume_update_result <- function(agent_info, info, combos, global, splits, components,
                                  approach = "bottoms_up") {
   saved <- read_update_result(info, combos, global, agent_info$forecast_horizon, approach)
   if (is.null(saved) || !all(components %in% saved$models$Model_ID)) return(FALSE)
-  log <- read_selection_file(info, "logs")
+  log <- read_update_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
+  if (!is.data.frame(log) || !nrow(log)) return(FALSE)
   if (!is.numeric(log$weighted_mape) || length(log$weighted_mape) != 1L ||
       !is.finite(log$weighted_mape) || log$weighted_mape < 0) return(FALSE)
   parent <- agent_info$project_info
   parent$run_name <- agent_info$run_id
   missing <- character()
   for (combo in combos) {
-    record <- read_selection_file(parent, "logs", "-agent_best_run", combo, optional = TRUE)
+    record <- tryCatch(
+      read_selection_file(parent, "logs", "-agent_best_run", combo, optional = TRUE),
+      error = function(error) {
+        rlang::abort(paste0("Cannot read current completion metadata for series '", combo,
+          "': ", conditionMessage(error)),
+          class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+      }
+    )
     if (!nrow(record)) {
       missing <- c(missing, combo)
     } else if (!validate_completed_run_metadata(record, agent_info$run_id) ||
         !identical(as.character(record$best_run_name), as.character(info$run_name))) {
-      stop("Current completion metadata conflicts with the saved update for series: ", combo,
-        call. = FALSE)
+      rlang::abort(paste0("Current completion metadata conflicts with the saved update for series: ", combo),
+        class = "finnts_update_artifact_error")
     }
   }
   if (!length(missing)) return(TRUE)
@@ -1600,7 +1612,9 @@ reconcile_agent_forecast <- function(agent_info,
 #' @details Already rejected defaults keep their one-attempt quality guard.
 #'   Other recorded results must have readable model/forecast artifacts before
 #'   skipping. An unusable accepted default is refitted by its existing submission
-#'   path; any recovery state is created inside the worker, never dispatched.
+#'   path, even when the original update was quality-rejected. Complete accepted
+#'   defaults are reused; quality-rejected original results cannot bypass their
+#'   replacement. Recovery state is created inside the worker, never dispatched.
 #' @noRd
 forecast_new_combos <- function(agent_info,
                                 new_combos,
@@ -1700,18 +1714,11 @@ forecast_new_combos <- function(agent_info,
             ) %>% fs::path_tidy(), allow_missing = TRUE
           ) %||% tibble::tibble()
 
-          if (nrow(agent_best_run_tbl) > 0 && combo_hash %in% agent_info_lean$quality_rejected_combos &&
-              identical(as.character(agent_best_run_tbl$default_reforecast_status), "accepted")) {
-            return(list(quality_error = rlang::error_cnd(
-              "finnts_forecast_selection_rejected",
-              message = "The default replacement was already attempted and cannot be fitted again.",
-              combo = agent_best_run_tbl$combo
-            )))
-          }
-          current_complete <- !combo_hash %in% agent_info_lean$quality_rejected_combos &&
-            nrow(agent_best_run_tbl) > 0 &&
+          accepted_default <- identical(as.character(agent_best_run_tbl[["default_reforecast_status"]]), "accepted")
+          current_complete <- nrow(agent_best_run_tbl) > 0 &&
+            (!combo_hash %in% agent_info_lean$quality_rejected_combos || accepted_default) &&
             nrow(completed_update_runs(agent_info_lean, agent_best_run_tbl)) > 0
-          if (current_complete && !combo_hash %in% agent_info_lean$quality_rejected_combos) {
+          if (current_complete) {
             return(data.frame(Combo = combo_hash))
           }
 
