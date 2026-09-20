@@ -1,3 +1,6 @@
+# Construct selected local/global predictions and small real serialized fits for
+# update tests. Cadence and signed/zero actuals exercise reporting invariants;
+# expensive engines are mocked and the temporary artifacts belong to the caller.
 make_global_update_selection_fixture <- function(date_type = "month", weekly_to_daily = FALSE,
                                                  zero_targets = FALSE, global = TRUE,
                                                  signed_targets = FALSE) {
@@ -66,6 +69,7 @@ make_global_update_selection_fixture <- function(date_type = "month", weekly_to_
   }))
   fitted$Combo_ID <- combo_id
   fitted$Model_Type <- model_type
+  fitted$Model_Fit <- rep(list(stats::lm(mpg ~ wt, data = mtcars)), nrow(fitted))
   trained <- fitted[, c("Combo_ID", "Model_Name", "Model_Type", "Recipe_ID", "Model_Fit")]
   trained$Model_ID <- model_ids
   write_data(trained, combo = combo_id, run_info = previous,
@@ -240,8 +244,8 @@ test_that("weekly updates retain native aggregate and completed per-series accur
     repeated <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
 
     expect_identical(repeated$status, "done")
-    expect_identical(state$retunes, rep(if (case$retune) c(FALSE, TRUE) else FALSE, 2))
-    expect_identical(state$conversions, 2L)
+    expect_identical(state$retunes, if (case$retune) c(FALSE, TRUE) else FALSE)
+    expect_identical(state$conversions, 1L)
     for (combo in fixture$best$combo) {
       expect_equal(read_selection_file(parent, "logs", "-agent_best_run", combo), saved_before[[combo]])
       expect_equal(read_selection_file(fixture$updated, "forecasts",
@@ -266,6 +270,82 @@ test_that("an unselected series prediction cannot invalidate another global winn
   rows <- read_candidate_forecasts(fixture$updated, c("first", "second"), fixture$log)
   expect_true(all(is.finite(rows$Forecast)))
   expect_identical(unique(rows$Model_ID[rows$Combo == "second"]), fixture$winners[["second"]])
+})
+
+test_that("workers finish interrupted logging without refitting saved outputs", {
+  for (global in c(FALSE, TRUE)) local({
+    fixture <- make_global_update_selection_fixture("week", TRUE, global = global)
+    original_logger <- log_best_run
+    state <- local_global_update_selection_mocks(fixture)
+    state$interrupt <- TRUE
+    state$before_metric <- NULL
+    local_mocked_bindings(log_best_run = function(run_info, weighted_mape, ...) {
+      if (state$interrupt) {
+        state$before_metric <- weighted_mape
+        stop("logging interrupted", call. = FALSE)
+      }
+      expect_equal(weighted_mape, state$before_metric)
+      original_logger(run_info = run_info, weighted_mape = weighted_mape, ...)
+    })
+    expect_error(update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123),
+      "logging interrupted")
+    paths <- c(fs::dir_ls(fs::path(fixture$updated$path, "models")),
+      fs::dir_ls(fs::path(fixture$updated$path, "forecasts")))
+    before <- tools::md5sum(paths)
+    state$interrupt <- FALSE
+    result <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+    expect_identical(result$status, "done")
+    expect_length(state$fits, 1L)
+    expect_identical(tools::md5sum(paths), before)
+    parent <- fixture$agent$project_info
+    parent$run_name <- fixture$agent$run_id
+    for (combo in fixture$best$combo) {
+      saved <- read_selection_file(parent, "logs", "-agent_best_run", combo)
+      expect_identical(saved$best_run_name, fixture$updated$run_name)
+      expect_equal(saved$weighted_mape,
+        round(unname(attr(state$before_metric, "forecast_accuracy")$by_series[combo]), 4))
+      expect_false("rebuild_update_models" %in% names(saved))
+    }
+  })
+})
+
+test_that("a worker refits a corrupt current result in its existing paths", {
+  fixture <- make_global_update_selection_fixture(global = FALSE)
+  state <- local_global_update_selection_mocks(fixture)
+  update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+  model_path <- local_artifact_path(fixture$updated, "models", "-single_models", hash_data("first"), "rds")
+  writeBin(charToRaw("broken fitted model"), model_path)
+  result <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+  expect_identical(result$status, "done")
+  expect_length(state$fits, 2L)
+  expect_true(all(!vapply(readRDS(model_path)$Model_Fit, is.null, logical(1))))
+})
+
+test_that("a damaged accepted default reaches training without preparation changes", {
+  fixture <- make_global_update_selection_fixture(global = FALSE)
+  state <- local_global_update_selection_mocks(fixture)
+  agent <- fixture$agent
+  agent$default_reforecast <- TRUE
+  log <- fixture$log
+  log$default_reforecast_status <- "accepted"
+  write_data(log, combo = NULL, run_info = fixture$updated, output_type = "log",
+    folder = "logs", suffix = NULL)
+  inputs <- list(models_to_run = "meanf", external_regressors = "NULL",
+    clean_missing_values = TRUE, clean_outliers = FALSE, stationary = FALSE,
+    negative_forecast = FALSE, forecast_approach = "bottoms_up", lag_periods = "NULL",
+    rolling_window_periods = "NULL", recipes_to_run = "R1", multistep_horizon = FALSE,
+    seasonal_period = "NULL", feature_selection = FALSE)
+  local_mocked_bindings(
+    read_local_artifacts = function(...) fixture$input,
+    assess_agent_run = function(...) stop("damaged output cannot be restored"),
+    train_models = function(run_info, ...) {
+      expect_true(isTRUE(run_info$rebuild_update_models))
+      stop("training reached", call. = FALSE)
+    }
+  )
+  expect_error(submit_fcst_run(agent, inputs, hash_data("first"), "default",
+    num_cores = 1), "training reached")
+  expect_false("rebuild_update_models" %in% names(read_selection_file(fixture$updated, "logs")))
 })
 
 test_that("global retuning retains saved subsets and rejects only required failures", {

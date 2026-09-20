@@ -151,6 +151,22 @@ test_that("saved average reuse requires its original component predictions", {
     "component predictions are missing")
 })
 
+test_that("model-result repair replaces a damaged old average before selecting", {
+  local_mocked_bindings(par_start = function(...) {
+    list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+  })
+  info <- make_best_models_fixture()
+  make_restart_average_predictions(info)
+  expected <- final_models(info, average_models = TRUE, weekly_to_daily = FALSE)
+  path <- local_artifact_path(info, "forecasts", "-average_models", hash_data("Synthetic"))
+  writeLines("broken", path)
+  info$rebuild_update_models <- TRUE
+  result <- final_models(info, average_models = TRUE, weekly_to_daily = FALSE)
+  expect_identical(result$selections$Synthetic$selected_id,
+    expected$selections$Synthetic$selected_id)
+  expect_true(nrow(read_selection_file(info, "forecasts", "-average_models", "Synthetic")) > 0)
+})
+
 test_that("prediction read errors are not treated as absent model families", {
   local_mocked_bindings(par_start = function(...) {
     list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)

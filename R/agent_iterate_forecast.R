@@ -2074,6 +2074,13 @@ reason_inputs <- function(agent_info,
 
 #' Submit a Finn forecasting run
 #'
+#' @details Accepted default results are reused only when their current models
+#'   and forecasts remain readable. Otherwise a worker-local
+#'   `rebuild_update_models` value bypasses model/final-output caches for this
+#'   submission, without changing preparation, saved log fields, or retry limits.
+#'   A genuinely rejected default still cannot be submitted again. Existing
+#'   output validation precedes returning a successful run.
+#'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
@@ -2198,12 +2205,17 @@ submit_fcst_run <- function(agent_info,
         class = "finnts_forecast_selection_rejected", combo = unique(as.character(input_data$Combo)))
     }
     if (identical(as.character(default_log[["default_reforecast_status"]]), "accepted")) {
-      restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
-      run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
-      run_info$forecast_selection$quality_accepted <- TRUE
-      run_info$selection_combos <- names(restored$selections)
-      validate_run_outputs(run_info, combo)
-      return(run_info)
+      current_result <- read_update_result(run_info, unique(as.character(input_data$Combo)),
+        global_models, agent_info$forecast_horizon, default_log$forecast_approach)
+      if (!is.null(current_result)) {
+        restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
+        run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
+        run_info$forecast_selection$quality_accepted <- TRUE
+        run_info$selection_combos <- names(restored$selections)
+        validate_run_outputs(run_info, combo)
+        return(run_info)
+      }
+      run_info$rebuild_update_models <- TRUE
     }
   }
 

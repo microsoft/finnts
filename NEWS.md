@@ -1,25 +1,43 @@
-# finnts 0.7.0.9008 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9009 (DEVELOPMENT VERSION)
 
 ## Improvements
 
-- Improved model selection to balance backtest accuracy with forecast plausibility, preserve supported growth and seasonal patterns, and reject invalid predictions, with more reliable averaging, forecast updates, and run recovery.
+- Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
+- Improved averaging, forecast updates, and run recovery.
 
 ## Bug Fixes
 
--   Fixed future actuals being written as `0` instead of `NA` when `clean_outliers = TRUE`. The R1 and R2 feature-engineering recipes replace remaining missing values with zero, which previously reset the future `Target_Original` values to `0`; those zeros were then copied into the future assessment `Target` during resampling. Future `Target_Original` is now reset to `NA` after each recipe, so future actuals stay `NA` while backtest folds continue to use the original uncleaned values.
--   Nonnegative hierarchical reconciliation now limits the ratio between the largest and smallest inverse-error weights to `1e15`, reducing numerical slow-zone failures caused by near-perfect back-test fits. The same rule applies to standard, grouped, and Agent reconciliation without changing the HTS dependency or adding runtime timeouts. Extreme-weight cases may produce different forecasts, particularly for small series; valid weights within the limit and reconciliation that allows negative forecasts retain their previous calculation. Invalid residual variances now produce an actionable reconciliation error.
--   Local and ADLS-mounted workflows now read known series inputs, recipes, EDA results, model outputs, and completion artifacts by exact path. Necessary directory listings are reused during model preparation, EDA aggregation, and condensed forecast reads. Standalone forecast getters discover unknown condensed batches once and preserve their precedence even when the first batch is absent. Exact-file validation is not repeated before reading, and local CSV read-time metadata and I/O failures propagate instead of becoming empty or partial results. Valid empty CSV files and optional missing artifacts retain their supported behavior. Default legacy reads, remote-provider downloads, and Spark data-frame routing are unchanged.
--   `update_forecast()` now excludes predecessor time series that are absent from the current input before global or local update routing. Removed series no longer produce empty-schema or missing-artifact fallback errors, while current-only series continue to receive default local forecasts.
--   Global Agent iterations now use hierarchy choices that match the outer optimization scope. Bottom-level runs may compare `bottoms_up` with the exact standard or grouped hierarchy detected by EDA after reconciliation to bottom-level series. Runs whose input was already expanded to hierarchy-level `ID` series use `bottoms_up` for every inner global and local iteration before one final outer reconciliation.
--   `iterate_forecast()` now skips repeated global optimization when any current-run best result was already finalized at the requested iteration target, then resumes only unfinished local series. Incomplete metadata and higher iteration targets retain the existing global retry behavior.
--   Forecast updates now require nonempty final run metadata, forecast, model summary, and EDA files before selecting a predecessor version, plus a nonempty hierarchy summary for hierarchical forecasts. Run metadata is checked only for the fields needed to reuse the predecessor; other final outputs are not compared by schema, combo, or model identifier. Missing or empty files cause canceled or incomplete versions to be skipped in favor of the newest complete run, while storage and read failures remain hard errors.
--   Fixed agent duplicate-run detection so `NULL` defaults and equivalent explicit values compare as the same settings. Order-insensitive multipart settings such as `3---6---9` and `9---6---3` are also treated as equivalent, preventing redundant forecast iterations.
--   Character combo-variable values now have leading and trailing whitespace removed before validation and internal `Combo` identifiers are created. This keeps input, EDA, global-model, and local-model artifact hashes aligned in both agentic and standard forecasts; normalization collisions and whitespace-only identifiers fail early with actionable errors.
--   Agent EDA summaries now represent missing outlier dates as `None observed` and omit regressor-lag groups without finite distance correlations instead of emitting `Inf`, `-Inf`, or `NaN` warnings into LLM context.
--   When an expected intermediate forecast file cannot be found, Finn now explains that the saved run may be incomplete or inconsistent and recommends starting a new run or regenerating the missing workflow step, instead of returning `subscript out of bounds`.
--   Custom `seasonal_period` values supplied to `prep_models()` now flow into `stlm-arima`, `stlm-ets`, and `tbats` after early validation. Default `NULL` values continue to be stored as `NA` in run logs.
--   Agent-proposed seasonal periods are now validated before forecast submission, so any value at or below 1 is returned to the reasoning step for correction. If all reasoning retries remain invalid, Finn gracefully preserves and finalizes the existing best forecast. Yearly defaults use valid two- and three-year periods. Earlier-version replay now presents saved default-backed settings to the LLM as literal `NULL` values; invalid legacy seasonal periods emit one actionable warning containing the original value and replay cadence defaults. Forecast updates retain the same invalid-period fallback.
--   Agent reasoning now validates every proposed run setting before submission and uses typed failures for correction retries and graceful exhaustion. Retries reuse one history snapshot, completed iterations refresh history once, and current-version runs alone determine run counts, best metrics, duplicate checks, and change budgets while earlier versions remain available for replay context. External-regressor configurations have no separate change cap and can be explored until the overall iteration limit is reached. Lag, rolling-window, and seasonal-period budgets use canonical current-version configurations, so defaults, reordered equivalents, and previously tested configurations do not consume another change. Global/local finalization and post-write verification avoid repeated wildcard storage listings, and best-run listing failures remain hard storage errors instead of appearing as empty results.
+-   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
+  -   Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.
+  -   Restart checks do not prevent concurrent attempts from overwriting files.
+-   Fixed future actuals becoming `0` with `clean_outliers = TRUE`; they remain `NA`, while backtests retain original actuals.
+-   Nonnegative hierarchical reconciliation caps inverse-error weight ratios at `1e15`, reducing slowdowns from near-perfect fits without adding timeouts.
+  -   Extreme-weight forecasts may change; valid weights and negative-allowed reconciliation remain unchanged. Invalid residual variances produce actionable errors.
+-   Local and ADLS-mounted workflows read known artifacts by exact path and reuse necessary listings, reducing repeated storage discovery.
+  -   Condensed forecast getters preserve batch precedence; storage failures propagate, while optional missing files and valid empty CSVs remain supported.
+  -   Legacy reads, remote downloads, and Spark data-frame routing remain unchanged.
+-   `update_forecast()` excludes removed series before update routing, avoiding missing-artifact errors; new series retain default local forecasts.
+-   Global Agent iterations compare only hierarchy approaches supported by their input scope and consolidated EDA.
+  -   Pre-expanded hierarchy `ID` inputs use `bottoms_up` internally, followed by one outer reconciliation.
+  -   Bottom-level inputs may compare `bottoms_up` against their detected standard or grouped hierarchy after bottom-level reconciliation.
+-   `iterate_forecast()` skips completed global optimization and resumes unfinished local series; incomplete metadata or higher iteration targets retain retries.
+-   Forecast updates choose the newest completed predecessor with nonempty required final outputs, skipping canceled or incomplete versions.
+  -   Required outputs include run metadata, forecasts, model summaries, and EDA; hierarchical runs also require hierarchy summaries.
+  -   Predecessor metadata validates reuse fields only; other final outputs are not checked for schema, combo, or model identity.
+  -   Storage and read failures remain hard errors during predecessor selection.
+-   Agent duplicate detection treats `NULL` defaults, equivalent explicit values, and reordered multipart settings as identical, avoiding redundant iterations.
+-   Trimmed character combo boundaries before validation and hashing, aligning artifacts across workflows; blank values and normalization collisions fail early.
+-   Agent EDA summaries report absent outlier dates and omit non-finite regressor-lag correlations, keeping infinite values out of LLM context.
+-   Missing intermediate forecasts now explain incomplete or inconsistent runs and recommend restarting or regenerating the missing step.
+-   Validated custom `seasonal_period` values reach `stlm-arima`, `stlm-ets`, and `tbats`; default `NULL` remains logged as `NA`.
+-   Agent seasonal-period proposals require values above one; exhausted correction retries preserve and finalize the best forecast.
+  -   Yearly defaults use two- and three-year periods; earlier-version replay presents default-backed settings as literal `NULL`.
+  -   Invalid legacy seasonal periods warn once with their original value, then use cadence defaults during replay and forecast updates.
+-   Agent reasoning validates all proposed settings, using typed correction retries and graceful exhaustion.
+  -   Retries reuse history; completed iterations refresh it once. Current-version runs control iteration limits, accuracy signals, duplicates, and change budgets.
+  -   Earlier versions remain replay context; external-regressor exploration has no separate cap beyond the overall iteration limit.
+  -   Canonical lag, rolling-window, and seasonal-period settings prevent reordered, default, or previously tested configurations consuming additional changes.
+  -   Finalization and verification avoid repeated listings; best-run listing failures propagate as storage errors.
 
 # finnts 0.7.0
 
@@ -43,8 +61,8 @@
   - Added a Chronos controller, which will support other Chronos variant API POST requests as well
   - Added two new package dependencies: `jsonlite` and `httr`
   - Integrated Chronos2 into the finn agent workflow
-  - Added `chronos-bolt-base` foundation model. Uses the same Chronos API as `chronos2` but does not support external regressors. Passes `model_type = "chronos-bolt-base"` to the API.
-  - Added `chronos-bolt-tiny` foundation model. Lightweight Chronos model variant using the same API as `chronos2` and `chronos-bolt-base`. Does not support external regressors. Passes `model_type = "chronos-bolt-tiny"` to the API.
+  - Added `chronos-bolt-base`: uses the Chronos2 API without external regressors, with `model_type = "chronos-bolt-base"`.
+  - Added lightweight `chronos-bolt-tiny`: shares the Chronos API without external regressors, with `model_type = "chronos-bolt-tiny"`.
 
 - New TimesFM Integration
   - Added TimesFM as a new foundation model for zero-shot time series forecasting
@@ -60,38 +78,36 @@
   - Enabled TimeGPT as a global model
   - Added support for padding time series that don't meet minimum data requirements
   - Integrated TimeGPT into the finn agent workflow
-  - Declared `nixtlar` as an optional dependency. TimeGPT requires R 4.1 or newer, while core FinnTS workflows remain available on R 4.0.
+  - Optional `nixtlar` enables TimeGPT on R 4.1+; core FinnTS remains available on R 4.0.
 
 - Updated Train Model function
   - Added debug arg to trace error while training over various models
   - Fixed differencing restoration for combo data in global models.
     
-- Updated how outliers are handled in `prep_data()`. Outliers are removed from the training data, but still kept in the testing splits during time series cross validation.
+- `prep_data()` removes outliers from training data while retaining them in time-series cross-validation testing splits.
 
 - Adaptive daily ARIMA to reduce runtime
   - Users continue to select `"arima"`; daily workflows now use the bounded `arima_fast` engine while non-daily workflows retain classic `auto_arima` behavior.
-  - The daily engine validates nonseasonal, weekly-difference, 364/365-day-difference, and Fourier-with-ARIMA-errors strategies on an internal holdout, then refits the simplest competitive strategy. Finn's outer back-tests continue to score original targets when outlier cleaning is enabled.
+  - Daily ARIMA validates nonseasonal, weekly-difference, 364/365-day-difference, and Fourier-with-ARIMA-errors strategies on an internal holdout, then refits the simplest competitive strategy.
+  - Outer backtests retain original targets when outlier cleaning is enabled.
   - Daily candidate searches use nonseasonal frequency-one ARIMA fits and never construct the expensive period-365 seasonal state-space model.
-  - Candidate failures fall through to another validation-successful strategy or a deterministic drift fallback. No model timeout or process-termination behavior was added.
-  - Agent model summaries identify the actual engine, selected strategy, transformed and effective ARIMA orders, Fourier/seasonal settings, validation WMAPE, candidate scores, and fallback status.
-  - Added `forecast` as a direct `Imports` dependency. It was already transitively required by `modeltime`; using its mature ARIMA implementation avoids reimplementing numerical estimation. This adds no new runtime service, credential, or network surface and retains the package's existing open-source dependency chain.
+  - Failed daily ARIMA candidates use another validated strategy or deterministic drift, without timeouts or process termination.
+  - Agent summaries report ARIMA engine, strategy, transformed/effective orders, Fourier/seasonal settings, validation WMAPE, candidate scores, and fallback status.
+  - Declared `forecast` in `Imports`, reusing the mature ARIMA implementation already required transitively by `modeltime`.
+  - This adds no runtime service, credentials, or network surface and preserves the existing open-source dependency chain.
 
-- Updated optional variable-importance support for `vip` 0.5.0. `vip` remains
-  in `Suggests` and is resolved from its maintainer's r-universe repository.
-  `ranger` is now declared directly in `Suggests`, and Boruta feature selection
-  uses Boruta's ranger adapter to preserve behavior after Boruta 10.0 changed
-  its default importance provider. FinnTS continues to install and run without
-  these optional packages: feature selection now fails early with installation
-  guidance, while model summaries retain all sections except variable
-  importance.
+- Updated optional variable importance to `vip` 0.5.0 from its maintainer's r-universe; `vip` remains in `Suggests`.
+  - Declared `ranger` in `Suggests`; Boruta feature selection explicitly uses its ranger adapter after Boruta 10.0 changed defaults.
+  - FinnTS works without feature-selection packages; requesting unavailable feature selection fails with installation guidance.
+  - Without `vip`, model summaries retain everything except variable importance.
 
 ## Bug Fixes
 
--   Prevented random MARS tuning failures when `prune_method = "cv"` was selected without the required folds. Automatic grids now use the five non-CV pruning methods, while explicit multistep CV pruning supplies a bounded fold count.
--   Fixed `subscript out of bounds` failures for time series combos containing non-ASCII characters. File name hashes are now stable regardless of how the text was read in (e.g. `read.csv` vs `vroom`), so input data, EDA, and forecast outputs resolve to the same file.
--   Fixed partial-fold models incorrectly winning Best_Model selection. Models that fail on some back-test folds are now excluded from best-model ranking while other complete models continue normally.
+-   Avoided MARS tuning failures by excluding CV pruning from automatic grids; explicit multistep CV pruning uses bounded folds.
+-   Fixed non-ASCII combo hashing across readers, preventing mismatched input, EDA, forecast paths and `subscript out of bounds` errors.
+-   Excluded models with incomplete backtest folds from best-model ranking while retaining complete candidates.
 -   Fixed `null_converter()` crash in agent workflow when input is `NA`.
--   Added retry with exponential backoff (up to 3 retries) for Chronos and TimesFM API calls on transient failures (HTTP 429, 5xx, connection errors).
+-   Added exponential-backoff retries, up to three, for transient Chronos and TimesFM failures: HTTP 429, 5xx, and connection errors.
 -   Fixed hierarchical forecast reconciliation failure caused by floating-point Target discrepancies across models.
 -   Improved error messages during hierarchical reconciliation to include the underlying error for easier debugging.
 -   Fixed aggregation error when running hierarchical forecasts with standard hierarchy approach.
@@ -100,19 +116,20 @@
 -   Fixed weighted mape calculation when target variable has negative values.
 -   Support for latest xgboost 3x version.
 -   Fixed model summary for global models by considering average models too.
--   Fixed issue when future values of external regressors exist in some series but not all, leading to missing data issues when training a global model.
+-   Fixed global-model failures when future external-regressor values exist for only some series.
 -   Fixed issue around NA handling with external regressors. 
 -   Fixed issue when reconciling hierarchical forecasts that are very close to zero.
 -   Fixed issue when checking if best models have been selected before. 
 -   Fixed multistep Cubist, GLMnet, MARS, polynomial SVM, and radial SVM failures caused by non-unique fiscal date-index joins expanding assessment rows.
--   Multistep prediction now preserves one prediction per original assessment row and fails explicitly on missing, duplicated, padded, truncated, recycled, or non-finite output.
+-   Multistep prediction preserves one row per assessment and rejects missing, duplicate, padded, truncated, recycled, or non-finite outputs.
 -   Removed XGBoost multistep prediction padding and truncation that previously masked row-alignment defects.
--   Custom multistep `lag_periods` now propagate consistently through feature engineering, feature selection, model training, and forecast updates. Lag lists that do not cover the forecast horizon automatically include the horizon as a final boundary.
+-   Custom multistep `lag_periods` propagate through feature engineering, selection, training, and updates; uncovered horizons are appended as final lag boundaries.
 
 ## Breaking Changes
 
 - `experiment_name` within `set_run_info()` has been changed to `project_name` to comply with new AI agent capabilities. 
-- Migrated from the `qs` package to [`qs2`](https://CRAN.R-project.org/package=qs2) for fast object serialization. The `qs2` package is actively maintained and CRAN-ready with improved compression. Files previously saved with `qs` format cannot be read by `qs2`; any cached `.qs` files from prior runs will need to be regenerated.
+- Migrated from `qs` to maintained, CRAN-ready [`qs2`](https://CRAN.R-project.org/package=qs2) for fast serialization and improved compression.
+  - Existing `.qs` artifacts are incompatible with `qs2` and must be regenerated.
 
 # finnts 0.6.0
 
@@ -137,7 +154,7 @@
 -   Added support for hierarchical forecasting with external regressors
 -   Allow global models for hierarchical forecasts
 -   Multistep horizon forecasts for R1 recipe, listed as `multistep_horizon` within `prep_data()` 
--   Always save the most accurate model average, regardless if selected as best model. This allows for improved scaling with large data sets.
+-   Always save the most accurate model average, even when unselected, improving scalability for larger datasets.
 -   Automatically condense large forecasts (+3k time series) into smaller amount of files to make it easier to read forecast outputs
 -   Improved weighted MAPE calculation across all time series
 -   Changed default for box_cox argument in `prep_data()` to FALSE
@@ -157,7 +174,7 @@
 ## Improvements
 
 -   Tidymodels speed up
--   Added external regressor support for ARIMA by introducing a new model option of `arimax`, which uses engineered features in addition to any external regressors supplied.
+-   Added `arimax` for ARIMA forecasting with engineered features and supplied external regressors.
 -   Automated feature selection, refer to feature selection vignette for more details
 -   Error handling in hierarchical forecast reconciliation
 -   Box-cox and differencing transformations
@@ -172,19 +189,19 @@
 
 ## Improvements
 
--   Spark data frame support. Initial input data can now be a spark data frame, enabling millions of time series to be ran across a spark compute cluster.
+-   Added Spark data-frame input support for forecasting millions of time series across a cluster.
 -   Updated train/validation/test process for multivariate ML models.
--   In addition to existing `forecast_time_series()`, added new sub components of the finnts forecast process that can be called separately or in a production pipeline. Allows for more control of the forecast process
+-   Added independently callable forecasting components for finer workflow control and production pipelines.
     -   `prep_data()`
     -   `prep_models()`
     -   `train_models()`
     -   `ensemble_models()`
     -   `final_models()`
--   Automated read and write capabilities. Intermediate and final Finn outputs are now automatically written to disk (see options below). This creates better MLOps capabilities, easier scale on spark, and better fault tolerance by not needing to start the whole forecast process over from scratch if an error occurred.
+-   Automated intermediate and final artifact reads and writes improve MLOps, scalability, and restart recovery.
     -   Temporary location on local machine, which will then get deleted after R session is closed.
-    -   Path on local machine or a mounted Azure Data Lake Storage path in spark to save the intermediate and final Finn run results.
-    -   Azure Blob Storage to store non-spark runs on a data lake. SharePoint/OneDrive storage to store non-spark runs within M365.
--   New MLOps features that allow you to retrieve the final trained models through `get_trained_models()`, get specific run information thorough `get_run_info()`, and even retrieve the initial feature engineered data through `get_prepped_data()`.
+  -   Local or mounted Azure Data Lake Storage paths persist intermediate and final results in Spark.
+  -   Azure Blob Storage supports non-Spark data-lake runs; SharePoint/OneDrive stores results within M365.
+-   Added `get_trained_models()`, `get_run_info()`, and `get_prepped_data()` to retrieve fitted models, run metadata, and feature-engineered data.
 
 ## Deprecated
 
@@ -194,7 +211,7 @@
 ## Breaking Changes
 
 -   No longer support for Azure Batch parallel processing, please use spark instead
--   Parallel processing through spark now needs a mounted Azure Data Lake Storage path supplied through `set_run_info()`. Please refer to the vignettes for more details.
+-   Parallel Spark processing now requires an Azure Data Lake Storage mount supplied through `set_run_info()`; see the vignettes.
 
 # finnts 0.2.4
 
@@ -227,24 +244,25 @@
 ## Improvements
 
 -   Added spark support to run Finn in parallel on Azure Databricks or Azure Synapse.
--   Added error handling when creating simple model averages. Should allow forecast to keep running even if there are memory issues when averaging individual forecast models, which helps on large data sets.
--   Expand Azure Batch task timeout from one day to one week. Prevents errors when running large forecasts that take over a day to run in Azure Batch.
+-   Added error handling for model averages so forecasting can continue despite memory failures with large model sets.
+-   Extended Azure Batch task timeout from one day to one week for long-running forecasts.
 
 ## Deprecated
 
--   Deprecated azure_batch parallel compute option within forecast_time_series function since the Azure Batch R packages are deprecated. Please use the new integration with spark on Azure.
+-   Deprecated `azure_batch` in `forecast_time_series()` following Azure Batch R package deprecation; use Spark instead.
 
 # finnts 0.1.1
 
 ## Default Function Behavior
 
--   Change default behavior to only run R1 feature engineering recipe when the argument run_global_models is set to TRUE or NULL and recipes_to_run is set to NULL in the forecast_time_series function. Running R2 recipe with global models on large data sets often results in RAM issues when running in Azure Batch.
+-   `forecast_time_series()` defaults to R1 when `run_global_models` is TRUE or NULL and `recipes_to_run` is NULL.
+  -   This avoids R2 memory issues with large global-model datasets in Azure Batch.
 
 ## Bug Fixes
 
 -   Fixed error when converting infinite values to NA values after model forecasts are created.
 -   Changed the cubist model to reference the new cubist model definition in parsnip package.
--   Fixed bug in hierarchical forecasting. Missing values in the hierarchy are converted from NA to zero, which fixes how data is aggregated at various levels of hierarchy.
+-   Fixed hierarchical aggregation by replacing missing hierarchy values with zero.
 
 # finnts 0.1.0
 

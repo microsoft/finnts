@@ -114,13 +114,23 @@ make_complete_final_outputs <- function(run_id,
   outputs
 }
 
+# Run startup against deterministic version metadata and optional real current
+# model/forecast artifacts. Returns startup routing; provider errors are injected
+# only for the requested final artifact. Temporary paths belong to the caller.
 run_initial_checks_case <- function(final_outputs,
                                     intermediate_tables = NULL,
                                     read_error = NULL,
                                     read_counts = NULL,
                                     forecast_approach = "bottoms_up",
-                                    combos_by_run = NULL) {
+                                    combos_by_run = NULL,
+                                    artifact_path = NULL) {
   agent_info <- make_update_agent_info(forecast_approach)
+  if (!is.null(artifact_path)) {
+    agent_info$project_info$path <- artifact_path
+    agent_info$project_info$object_output <- "rds"
+    agent_info$project_info$date_type <- "month"
+  }
+  original_reader <- read_file
   agent_runs <- make_update_agent_run_table(forecast_approach)
   run_ids <- agent_runs$run_id
   run_files <- paste0(run_ids, "-agent_run.csv")
@@ -150,7 +160,13 @@ run_initial_checks_case <- function(final_outputs,
                          file_list = NULL,
                          return_type = "df",
                          schema = NULL,
-                         allow_missing = FALSE) {
+                         allow_missing = FALSE,
+                         strict = FALSE) {
+      artifact <- if (is.null(file_list)) path else file_list
+      if (!is.null(artifact_path) && any(grepl("/(models|forecasts)/", artifact))) {
+        return(original_reader(run_info, path = path, file_list = file_list,
+          return_type = return_type, allow_missing = allow_missing, strict = strict))
+      }
       if (!is.null(file_list)) {
         return(agent_runs)
       }
@@ -195,7 +211,7 @@ run_initial_checks_case <- function(final_outputs,
       }
       result
     },
-    load_best_agent_run = function(agent_info) {
+    load_update_runs = function(agent_info) {
       result <- intermediate_tables[[agent_info$run_id]]
       if (is.null(result)) {
         return(tibble::tibble())
@@ -209,12 +225,207 @@ run_initial_checks_case <- function(final_outputs,
   initial_checks(agent_info)
 }
 
+# Build current local model/forecast files for the identity-hash startup harness.
+# corrupt lists series whose model stream is malformed. Returns the temp path,
+# scoped to the calling test; no predecessor or preparation files are changed.
+make_current_update_files <- function(corrupt = character()) {
+  path <- withr::local_tempdir(.local_envir = parent.frame())
+  fs::dir_create(fs::path(path, c("models", "forecasts")))
+  model_id <- "lm--local--R1"
+  fit <- stats::lm(mpg ~ wt, data = mtcars)
+  for (combo in c("combo-a", "combo-b")) {
+    prefix <- paste0("project_", combo, "-agent_run-5_", combo, "-", combo)
+    model_path <- fs::path(path, "models", paste0(prefix, "-single_models.rds"))
+    if (!combo %in% corrupt) {
+      saveRDS(tibble::tibble(Combo_ID = combo, Model_ID = model_id,
+        Model_Name = "linear_reg", Model_Type = "local", Recipe_ID = "R1",
+        Model_Fit = list(fit)), model_path)
+    } else {
+      writeBin(charToRaw("not a serialized model"), model_path)
+    }
+    forecasts <- data.frame(Combo = combo, Model_ID = model_id,
+      Model_Name = "linear_reg", Model_Type = "local", Recipe_ID = "R1",
+      Train_Test_ID = rep(c(1, 2), each = 6),
+      Date = rep(seq(as.Date("2026-08-01"), by = "month", length.out = 6), 2),
+      Target = rep(c(NA_real_, 100), each = 6), Forecast = 100,
+      Best_Model = "Yes")
+    utils::write.csv(forecasts,
+      fs::path(path, "forecasts", paste0(prefix, "-single_models.csv")), row.names = FALSE)
+  }
+  path
+}
+
+test_that("current completion metadata cannot hide a corrupt fitted model", {
+  path <- make_current_update_files(corrupt = "combo-b")
+  runs <- make_update_agent_run_table()$run_id
+  metadata <- stats::setNames(lapply(runs, make_update_run_metadata), runs)
+  result <- run_initial_checks_case(
+    final_outputs = list("run-4" = make_complete_final_outputs("run-4")),
+    intermediate_tables = metadata, artifact_path = path)
+  expect_false(identical(result, "no updates required"))
+  if (is.list(result)) {
+    expect_equal(result$prev_best_runs_tbl$combo, "combo-b")
+  }
+})
+
 test_that("initial_checks skips a canceled immediate predecessor", {
   result <- run_initial_checks_case(list(
     "run-3" = make_complete_final_outputs("run-3")
   ))
 
   expect_true(all(grepl("run-3", result$prev_best_runs_tbl$best_run_name, fixed = TRUE)))
+})
+
+test_that("incomplete current forecasts remain eligible for refitting", {
+  path <- make_current_update_files()
+  forecast_path <- fs::path(path, "forecasts",
+    "project_combo-b-agent_run-5_combo-b-combo-b-single_models.csv")
+  rows <- utils::read.csv(forecast_path)
+  utils::write.csv(rows[-1, ], forecast_path, row.names = FALSE)
+  runs <- make_update_agent_run_table()$run_id
+  result <- run_initial_checks_case(
+    final_outputs = list("run-4" = make_complete_final_outputs("run-4")),
+    intermediate_tables = stats::setNames(lapply(runs, make_update_run_metadata), runs),
+    artifact_path = path)
+  expect_false(identical(result, "no updates required"))
+  if (is.list(result)) expect_equal(result$prev_best_runs_tbl$combo, "combo-b")
+})
+
+test_that("completion requires backtests and valid forecast dates", {
+  path <- make_current_update_files()
+  rows <- utils::read.csv(fs::path(path, "forecasts",
+    "project_combo-a-agent_run-5_combo-a-combo-a-single_models.csv"))
+  models <- readRDS(fs::path(path, "models",
+    "project_combo-a-agent_run-5_combo-a-combo-a-single_models.rds"))
+  expect_true(valid_update_forecasts(rows, models, 6))
+  expect_false(valid_update_forecasts(rows[rows$Train_Test_ID == 1, ], models, 6))
+  rows$Date[1] <- "invalid-date"
+  expect_false(valid_update_forecasts(rows, models, 6))
+})
+
+test_that("provider read errors cannot be classified as corrupt models", {
+  info <- list(storage_object = structure(list(), class = "blob_container"))
+  local_mocked_bindings(download_exact_artifact = function(...) {
+    rlang::abort("error reading from connection", class = "http_503")
+  })
+  expect_error(read_update_artifact(info, "models/current.rds"), class = "http_503")
+})
+
+test_that("downloaded malformed model content is recoverable without hiding provider errors", {
+  info <- list(storage_object = structure(list(), class = "blob_container"))
+  local_mocked_bindings(download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+    writeBin(charToRaw("broken model"), destination)
+    TRUE
+  })
+  expect_null(read_update_artifact(info, "models/current.rds"))
+})
+
+test_that("local dispatch serializes only its existing free-variable context", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", c("east", "west"))
+  previous$models_to_run <- "lm"
+  lean <- agent
+  lean$llm <- NULL
+  captured <- NULL
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(),
+      foreach_operator = function(iterator, expression) {
+        expression <- substitute(expression)
+        environment <- parent.frame()
+        symbols <- intersect(all.vars(expression), ls(envir = environment, all.names = TRUE))
+        globals <- mget(symbols, envir = environment, inherits = FALSE)
+        captured <<- list(expression = expression, globals = globals, iterator_names = iterator$argnames)
+        list(data.frame(Combo = "east"), data.frame(Combo = "west"))
+      }),
+    par_end = function(...) NULL
+  )
+  update_local_models(agent, previous, NULL, FALSE, 1, 123)
+  expected <- list(agent_info_lean = lean, project_info = agent$project_info,
+    prev_run_id = "run-4", num_cores = 1, inner_parallel = FALSE, seed = 123)
+  expect_setequal(names(captured$globals), names(expected))
+  expect_equal(length(serialize(captured[c("expression", "globals")], NULL)),
+    length(serialize(list(expression = captured$expression,
+      globals = expected[names(captured$globals)]), NULL)))
+  expect_identical(captured$iterator_names, "combo")
+})
+
+test_that("mixed update dispatch keeps grouped globals and lean local workers", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", c("north", "south", "east", "west"))
+  previous$model_type <- c("global", "global", "local", "local")
+  previous$best_run_name[1:2] <- "one-global-run"
+  previous$models_to_run <- "lm"
+  calls <- list()
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    hash_data = function(value) value,
+    read_file = function(run_info, file_list, ...) {
+      combo <- if (grepl("-east-agent_best_run", file_list)) "east" else "west"
+      previous[previous$combo == combo, ]
+    },
+    update_forecast_combo = function(agent_info, prev_best_run_tbl, ...) {
+      calls[[length(calls) + 1L]] <<- list(combos = prev_best_run_tbl$combo,
+        context = names(agent_info), bytes = length(serialize(agent_info, NULL)))
+      list(status = "done", quality_rejected_combos = character())
+    }
+  )
+  update_global_models(agent, previous, NULL, FALSE, 1, 123)
+  update_local_models(agent, previous, NULL, FALSE, 1, 123)
+  expect_length(calls, 3L)
+  expect_identical(calls[[1]]$combos, c("north", "south"))
+  lean <- agent
+  lean$llm <- NULL
+  for (index in 2:3) {
+    expect_length(calls[[index]]$combos, 1L)
+    expect_identical(calls[[index]]$context, names(lean))
+    expect_equal(calls[[index]]$bytes, length(serialize(lean, NULL)))
+  }
+})
+
+test_that("partial global completion retains the entire shared update group", {
+  path <- make_current_update_files()
+  info <- list(project_name = "project_all", run_name = "current-global", path = path,
+    data_output = "csv", object_output = "rds")
+  local_models <- readRDS(fs::path(path, "models",
+    "project_combo-a-agent_run-5_combo-a-combo-a-single_models.rds"))
+  local_models$Model_ID <- "lm--global--R1"
+  local_models$Model_Type <- "global"
+  rows <- utils::read.csv(fs::path(path, "forecasts",
+    "project_combo-a-agent_run-5_combo-a-combo-a-single_models.csv"))
+  rows$Model_ID <- "lm--global--R1"
+  rows$Model_Type <- "global"
+  saveRDS(local_models, fs::path(path, "models", "project_all-current-global-All-Data-single_models.rds"))
+  utils::write.csv(rows, fs::path(path, "forecasts", "project_all-current-global-combo-a-global_models.csv"),
+    row.names = FALSE)
+  current <- make_update_run_metadata("run-5", "combo-a")
+  current$model_type <- "global"
+  current$best_run_name <- "current-global"
+  previous <- make_complete_final_outputs("run-4")
+  previous$run_metadata$model_type <- "global"
+  previous$run_metadata$best_run_name <- "previous-global"
+  result <- run_initial_checks_case(list("run-4" = previous),
+    intermediate_tables = list("run-5" = current), artifact_path = path)
+  expect_setequal(result$prev_best_runs_tbl$combo, c("combo-a", "combo-b"))
+})
+
+test_that("update wrappers propagate storage failures instead of default fitting", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", "west")
+  previous$models_to_run <- "lm"
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    read_file = function(...) previous,
+    update_forecast_combo = function(...) {
+      rlang::abort("storage unavailable", class = "finnts_update_artifact_error")
+    }
+  )
+  expect_error(update_local_models(agent, previous, NULL, FALSE, 1, 123),
+    class = "finnts_update_artifact_error")
+  previous$model_type <- "global"
+  expect_error(update_global_models(agent, previous, NULL, FALSE, 1, 123),
+    class = "finnts_update_artifact_error")
 })
 
 test_that("initial_checks selects a finalized immediate predecessor", {
@@ -309,11 +520,13 @@ test_that("update failure fallback keeps only current input combos", {
 })
 
 test_that("initial_checks retry stops after all current combos finish", {
+  path <- make_current_update_files()
   result <- run_initial_checks_case(
     final_outputs = list(),
     intermediate_tables = list(
       "run-5" = make_update_run_metadata("run-5")
-    )
+    ),
+    artifact_path = path
   )
 
   expect_identical(result, "no updates required")
