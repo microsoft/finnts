@@ -683,6 +683,10 @@ download_file <- function(storage_object,
 #' @param allow_missing whether a missing optional artifact returns an empty
 #'   result instead of an error
 #' @param strict whether CSV fallback metadata and read failures are errors
+#' @param character_columns Optional CSV column names to parse as character in
+#'   both readers, preserving opaque identifiers before type inference. Other
+#'   columns retain inferred types; absent named columns and non-CSV reads ignore
+#'   this argument. Callers remain responsible for required-column validation.
 #'
 #' @return file read into memory
 #' @noRd
@@ -692,7 +696,8 @@ read_file <- function(run_info,
                       return_type = "df",
                       schema = NULL,
                       allow_missing = FALSE,
-                      strict = FALSE) {
+                      strict = FALSE,
+                      character_columns = NULL) {
   storage_object <- run_info$storage_object
 
   if (!is.null(path)) {
@@ -753,7 +758,23 @@ read_file <- function(run_info,
         arrow::read_parquet(path)
       }),
       csv = tryCatch(
-        vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ","),
+        {
+          col_types <- if (length(character_columns) > 0L) {
+            do.call(vroom::cols, stats::setNames(
+              rep(list(vroom::col_character()), length(character_columns)),
+              character_columns
+            ))
+          } else {
+            NULL
+          }
+          withCallingHandlers(
+            vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ",",
+              col_types = col_types),
+            vroom_mismatched_column_name = function(condition) {
+              if (length(character_columns) > 0L) invokeRestart("muffleWarning")
+            }
+          )
+        },
         error = function(e) {
           files %>%
             purrr::map(function(path) {
@@ -770,7 +791,20 @@ read_file <- function(run_info,
                     return(tibble::tibble())
                   }
 
-                  df <- read.csv(path, stringsAsFactors = FALSE)
+                  col_classes <- if (length(character_columns) > 0L) {
+                    stats::setNames(rep("character", length(character_columns)), character_columns)
+                  } else {
+                    NA
+                  }
+                  df <- withCallingHandlers(
+                    read.csv(path, stringsAsFactors = FALSE, colClasses = col_classes),
+                    warning = function(condition) {
+                      if (length(character_columns) > 0L && identical(conditionMessage(condition),
+                        gettext("not all columns named in 'colClasses' exist", domain = "R-utils"))) {
+                        invokeRestart("muffleWarning")
+                      }
+                    }
+                  )
                   if (nrow(df) == 0) {
                     return(tibble::tibble())
                   }
@@ -850,13 +884,26 @@ download_exact_artifact <- function(storage_object, path, destination, allow_mis
   stop("Unsupported storage object for an exact Finn artifact read.", call. = FALSE)
 }
 
-read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_missing = FALSE) {
+#' Read deterministic artifact paths without discovering their directory
+#'
+#' @param run_info Artifact storage and format settings.
+#' @param file_list Exact artifact paths to read.
+#' @param return_type Requested output format passed to read_file().
+#' @param allow_missing Whether confirmed missing optional artifacts are allowed.
+#' @param character_columns Optional CSV identifier columns parsed as text.
+#' @return The requested output, or NULL when all optional paths are absent.
+#'   Remote paths are staged once per distinct path in temporary directories.
+#'   Provider and strict read errors propagate; stored artifacts are not changed.
+#' @noRd
+read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_missing = FALSE,
+                                 character_columns = NULL) {
   if (is.null(run_info$storage_object)) {
     if (allow_missing) {
       file_list <- local_artifact_files(file_list, allow_missing = TRUE)
       if (!length(file_list)) return(NULL)
     }
-    return(read_file(run_info, file_list = file_list, return_type = return_type, strict = TRUE))
+    return(read_file(run_info, file_list = file_list, return_type = return_type, strict = TRUE,
+      character_columns = character_columns))
   }
   staged <- character()
   for (path in unique(as.character(file_list))) {
@@ -870,7 +917,8 @@ read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_m
   if (!length(staged) && allow_missing) return(NULL)
   local_info <- run_info
   local_info$storage_object <- NULL
-  read_local_artifacts(local_info, staged, return_type = return_type)
+  read_local_artifacts(local_info, staged, return_type = return_type,
+    character_columns = character_columns)
 }
 
 local_artifact_inventory <- function(run_info, folder, suffix = "*",
@@ -933,11 +981,21 @@ local_artifact_files <- function(files, allow_missing = FALSE) {
   files
 }
 
+#' Validate and read exact local artifact paths
+#'
+#' @param run_info Local storage and output-format settings.
+#' @param file_list Exact local paths; no directory inventory is requested.
+#' @param return_type Requested output format passed to read_file().
+#' @param allow_missing Whether absent optional paths may produce empty output.
+#' @param character_columns Optional CSV identifier columns parsed as text.
+#' @return The requested output with strict read failures preserved. Path access
+#'   and regular-file checks run before parsing; no artifacts are written.
+#' @noRd
 read_local_artifacts <- function(run_info, file_list, return_type = "df",
-                                  allow_missing = FALSE) {
+                                  allow_missing = FALSE, character_columns = NULL) {
   files <- local_artifact_files(file_list, allow_missing = allow_missing)
   read_file(run_info, file_list = files, return_type = return_type,
-    allow_missing = allow_missing, strict = TRUE
+    allow_missing = allow_missing, strict = TRUE, character_columns = character_columns
   )
 }
 

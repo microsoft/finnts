@@ -92,6 +92,14 @@ output is reused only when all original series have complete, unique backtest
 and future keys with finite forecasts, including every day of a daily-expanded
 week. Incomplete reconciled output is rebuilt from selected source forecasts
 and checked before completion is logged; storage and read errors propagate.
+During model-result repair of an accepted default forecast, old average
+outputs and selection-completion flags are not reused. Selection is rebuilt
+from the replacement individual predictions through the same policy, with
+stale averages reset using the ordinary forecast schema. This recovery does
+not change preparation or allow repeated genuinely rejected defaults.
+If only one individual remains eligible, the schema-correct empty optional
+average represents no average and remains readable during publication and
+restart. Empty required artifacts and malformed optional averages are errors.
 }
 \examples{
 \donttest{

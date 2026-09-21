@@ -44,6 +44,14 @@
 #'   and future keys with finite forecasts, including every day of a daily-expanded
 #'   week. Incomplete reconciled output is rebuilt from selected source forecasts
 #'   and checked before completion is logged; storage and read errors propagate.
+#'   During model-result repair of an accepted default forecast, old average
+#'   outputs and selection-completion flags are not reused. Selection is rebuilt
+#'   from the replacement individual predictions through the same policy, with
+#'   stale averages reset using the ordinary forecast schema. This recovery does
+#'   not change preparation or allow repeated genuinely rejected defaults.
+#'   If only one individual remains eligible, the schema-correct empty optional
+#'   average represents no average and remains readable during publication and
+#'   restart. Empty required artifacts and malformed optional averages are errors.
 #'
 #' @param run_info run info using the [set_run_info()] function.
 #' @param average_models If TRUE, create simple averages of individual models
@@ -305,19 +313,29 @@ final_models <- function(run_info,
         }
 
         combo_name <- unique(all_model_tbl$Combo)
-        if (isTRUE(run_info$allow_quality_rejection) && length(combo_name) == 1 &&
+        if (!isTRUE(run_info$rebuild_update_models) &&
+          isTRUE(run_info$allow_quality_rejection) && length(combo_name) == 1 &&
           identical(as.character(prev_log_df[["selection_status"]]), "rejected")) {
           rejected <- rejected_agent_selection(combo_name, "rejected_evaluation")
           return(selection_worker_result(combo_name, rejected$selections[[1]], reused = TRUE))
         }
         series_data <- read_series_history(run_info, combo_name, run_log = prev_log_df)
-        saved_average <- read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
+        if (isTRUE(run_info$rebuild_update_models)) {
+          saved_average <- all_model_tbl[0, , drop = FALSE]
+          if (average_models) {
+            write_data(saved_average, combo = combo_name, run_info = run_info,
+              output_type = "data", folder = "forecasts", suffix = "-average_models")
+          }
+        } else {
+          saved_average <- read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
+        }
         saved_rows <- dplyr::bind_rows(native_forecast_rows(all_model_tbl, date_type),
           if (average_models) native_forecast_rows(saved_average, date_type))
         # Completion belongs to the combined artifacts: all individual flags can
         # be No when an average is the winner. Reuse only validated content;
         # otherwise rebuild selection below from saved predictions, without fits.
-        existing_selection <- completed_forecast_selection(saved_rows, series_data, model_train_test_tbl)
+        existing_selection <- if (isTRUE(run_info$rebuild_update_models)) NULL else
+          completed_forecast_selection(saved_rows, series_data, model_train_test_tbl)
         if (!is.null(existing_selection)) {
           return(selection_worker_result(combo_name, existing_selection, reused = TRUE))
         }

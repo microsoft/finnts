@@ -653,6 +653,15 @@ final_agent_artifact_exists <- function(project_info, artifact_path) {
   fs::file_exists(artifact_file)
 }
 
+#' Read one final Agent output without coercing saved run identities
+#'
+#' @param agent_info Agent identity and project storage settings.
+#' @param suffix Final-output suffix, such as run_metadata or forecast.
+#' @param allow_missing Whether absent outputs may return an empty tibble.
+#' @return The saved data frame. Run-metadata CSV identifiers remain character;
+#'   other columns and output formats retain their existing types. Provider and
+#'   unreadable-output failures propagate; no artifacts are written.
+#' @noRd
 load_final_agent_artifact <- function(agent_info,
                                       suffix,
                                       allow_missing = FALSE) {
@@ -673,7 +682,12 @@ load_final_agent_artifact <- function(agent_info,
       run_info = project_info,
       path = artifact_path,
       return_type = "df",
-      allow_missing = allow_missing
+      allow_missing = allow_missing,
+      character_columns = if (identical(suffix, "run_metadata")) {
+        c("combo", "agent_run_id", "best_run_name")
+      } else {
+        NULL
+      }
     ),
     warning = function(condition) {
       if (grepl(
@@ -894,10 +908,13 @@ save_agent_forecast <- function(agent_info) {
 #' Load the best run for an agent
 #'
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete
+#' Intermediate CSV identities are parsed as text before they can be saved to
+#' final metadata. Provider failures and inconsistent global winners remain errors.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return table containing the best run information for the agent.
+#' @return Best-run records, or an empty tibble when no files exist. Numeric
+#'   accuracy fields keep their inferred types; no stored artifacts are modified.
 #' @noRd
 load_best_agent_run <- function(agent_info) {
   # metadata
@@ -922,7 +939,8 @@ load_best_agent_run <- function(agent_info) {
     best_run_tbl <- read_exact_artifact(
       run_info = project_info,
       file_list = combo_best_run_list,
-      return_type = "df"
+      return_type = "df",
+      character_columns = c("combo", "agent_run_id", "best_run_name")
     )
   }
 
@@ -2074,6 +2092,14 @@ reason_inputs <- function(agent_info,
 
 #' Submit a Finn forecasting run
 #'
+#' @details Accepted default results are reused only when their current models
+#'   and forecasts remain readable. Otherwise a worker-local
+#'   `rebuild_update_models` value bypasses model/final-output caches for this
+#'   submission, without changing preparation, saved log fields, or retry limits.
+#'   A genuinely rejected default still cannot be submitted again. Existing
+#'   output validation precedes returning a successful run. Input CSV series
+#'   identities remain text, and known recipe settings are reused for coverage.
+#'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
 #' @param combo A character string representing the combo to use for the run. If NULL, all combos are used.
@@ -2142,7 +2168,8 @@ submit_fcst_run <- function(agent_info,
     input_info <- project_info
     input_info$run_name <- agent_info$run_id
     read_local_artifacts(input_info,
-      local_artifact_path(input_info, "input_data", combo = combo)
+      local_artifact_path(input_info, "input_data", combo = combo),
+      character_columns = "Combo"
     )
   } else read_file(
     run_info = project_info,
@@ -2153,7 +2180,7 @@ submit_fcst_run <- function(agent_info,
         hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
       )
     ),
-    return_type = "df"
+    return_type = "df", character_columns = "Combo"
   )
 
   # adjust inputs based on data
@@ -2198,12 +2225,18 @@ submit_fcst_run <- function(agent_info,
         class = "finnts_forecast_selection_rejected", combo = unique(as.character(input_data$Combo)))
     }
     if (identical(as.character(default_log[["default_reforecast_status"]]), "accepted")) {
-      restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
-      run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
-      run_info$forecast_selection$quality_accepted <- TRUE
-      run_info$selection_combos <- names(restored$selections)
-      validate_run_outputs(run_info, combo)
-      return(run_info)
+      current_result <- read_update_result(run_info, unique(as.character(input_data$Combo)),
+        global_models, agent_info$forecast_horizon, default_log$forecast_approach,
+        recipes = default_log[["recipes_to_run"]])
+      if (!is.null(current_result)) {
+        restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
+        run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
+        run_info$forecast_selection$quality_accepted <- TRUE
+        run_info$selection_combos <- names(restored$selections)
+        validate_run_outputs(run_info, combo)
+        return(run_info)
+      }
+      run_info$rebuild_update_models <- TRUE
     }
   }
 
