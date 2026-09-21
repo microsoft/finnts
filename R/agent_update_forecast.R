@@ -651,15 +651,23 @@ load_update_runs <- function(agent_info) {
 #'   source components have already been validated.
 #' @param horizon Expected native forecast length.
 #' @param expected Expected native scenario/date keys from saved preparation.
+#' @param non_delivery_ids IDs explicitly declared Validation or Ensemble in
+#'   the saved splits. These rows are excluded from winner/component checks;
+#'   other IDs must occur in expected when authoritative keys are supplied.
 #' @return TRUE for a complete selected result, otherwise FALSE. This only
 #'   validates recorded output, never reselects models or evaluates quality.
 #'   Every winning-model row must be selected; average components may remain No.
 #' @noRd
-valid_update_forecasts <- function(rows, models, horizon, expected = NULL) {
+valid_update_forecasts <- function(rows, models, horizon, expected = NULL,
+                                    non_delivery_ids = numeric()) {
   required <- c("Combo", "Model_ID", "Train_Test_ID", "Date", "Forecast", "Best_Model")
   if (!is.data.frame(rows) || !nrow(rows) || !all(required %in% names(rows))) return(FALSE)
   if (!is.numeric(rows$Forecast) || !is.numeric(rows$Train_Test_ID) ||
-      anyNA(rows$Train_Test_ID) || any(rows$Train_Test_ID < 1)) return(FALSE)
+      any(!is.finite(rows$Train_Test_ID)) || any(rows$Train_Test_ID < 1) ||
+      any(rows$Train_Test_ID != trunc(rows$Train_Test_ID))) return(FALSE)
+  if (!is.null(expected) && any(!rows$Train_Test_ID %in%
+    c(expected$Train_Test_ID, non_delivery_ids))) return(FALSE)
+  rows <- rows[!rows$Train_Test_ID %in% non_delivery_ids, , drop = FALSE]
   selected <- unique(as.character(rows$Model_ID[!is.na(rows$Best_Model) & rows$Best_Model == "Yes"]))
   if (length(selected) != 1L || is.na(selected) || !nzchar(selected)) return(FALSE)
   components <- if (is.null(models)) selected else strsplit(selected, "_", fixed = TRUE)[[1]]
@@ -707,6 +715,8 @@ valid_update_forecasts <- function(rows, models, horizon, expected = NULL) {
 # Shared global preparation has a common padded calendar; use one source series
 # and reuse already loaded splits and recipe settings when supplied. Only dates
 # are needed, so R2 contributes Horizon 1 without target or quality evaluation.
+# Returns required future/backtest keys and declared non-delivery IDs separately.
+# Scenario IDs must be unique positive integers with recognized split types.
 # Missing or malformed required preparation remains a hard artifact error.
 read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
   if (is.null(splits)) {
@@ -720,7 +730,11 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
     recipes <- log[["recipes_to_run"]]
   }
   if (!is.data.frame(splits) ||
-      !all(c("Train_Test_ID", "Run_Type", "Train_End", "Test_End") %in% names(splits))) {
+      !all(c("Train_Test_ID", "Run_Type", "Train_End", "Test_End") %in% names(splits)) ||
+      !is.numeric(splits$Train_Test_ID) || any(!is.finite(splits$Train_Test_ID)) ||
+      any(splits$Train_Test_ID < 1 | splits$Train_Test_ID != trunc(splits$Train_Test_ID)) ||
+      anyDuplicated(splits$Train_Test_ID) ||
+      any(!splits$Run_Type %in% c("Future_Forecast", "Back_Test", "Validation", "Ensemble"))) {
     rlang::abort("Update completion requires the saved run log and train/test splits.",
       class = "finnts_update_artifact_error")
   }
@@ -738,8 +752,9 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
       class = "finnts_update_artifact_error")
   }
   context <- list(calendar = sort(as.Date(prepared$Date)), train_test_split = splits)
-  dplyr::bind_rows(forecast_selection_keys(context, "Future_Forecast"),
-    forecast_selection_keys(context, "Back_Test"))
+  list(required = dplyr::bind_rows(forecast_selection_keys(context, "Future_Forecast"),
+    forecast_selection_keys(context, "Back_Test")),
+    non_delivery_ids = splits$Train_Test_ID[splits$Run_Type %in% c("Validation", "Ensemble")])
 }
 
 #' Read a reusable current fitted result from exact paths
@@ -754,6 +769,9 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
 #' @param recipes Optional recipe setting already loaded for this result.
 #' @return Loaded models and forecasts if complete, otherwise NULL. Shared fits
 #'   are read once. Provider/access errors propagate; recognized damage does not.
+#'   Declared validation/ensemble rows do not determine the selected artifact
+#'   and are excluded from completion checks;
+#'   returned predictions retain all saved rows without writes or conversion.
 #' @noRd
 read_update_result <- function(info, combos, global, horizon, approach = "bottoms_up",
                                splits = NULL, recipes = NULL) {
@@ -764,24 +782,26 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
       anyNA(models$Model_ID) || anyDuplicated(models$Model_ID)) return(NULL)
   hierarchical <- global && !identical(approach, "bottoms_up")
   sources <- if (hierarchical) read_selection_hierarchy(info)$hts_combos else combos
-  expected <- NULL
+  coverage <- NULL
   forecasts <- vector("list", length(sources))
   for (index in seq_along(sources)) {
     combo <- sources[[index]]
     single <- read_update_artifact(info, local_artifact_path(info, "forecasts",
       if (global) "-global_models" else "-single_models", hash_data(combo)))
     if (!is.data.frame(single) || !nrow(single) || !"Best_Model" %in% names(single)) return(NULL)
+    if (is.null(coverage)) {
+      coverage <- read_update_keys(info, sources[[1]], splits, recipes)
+    }
     rows <- single
-    if (!any(single$Best_Model == "Yes", na.rm = TRUE)) {
+    if (!any(single$Best_Model == "Yes" &
+      !single$Train_Test_ID %in% coverage$non_delivery_ids, na.rm = TRUE)) {
       average <- read_update_artifact(info, local_artifact_path(info, "forecasts", "-average_models", hash_data(combo)))
       if (!is.data.frame(average) || !nrow(average)) return(NULL)
       rows <- dplyr::bind_rows(single, average)
     }
     if (!all(rows$Combo == combo)) return(NULL)
-    if (is.null(expected)) {
-      expected <- read_update_keys(info, sources[[1]], splits, recipes)
-    }
-    if (!valid_update_forecasts(rows, models, horizon, expected)) return(NULL)
+    if (!valid_update_forecasts(rows, models, horizon, coverage$required,
+      coverage$non_delivery_ids)) return(NULL)
     forecasts[[index]] <- rows
   }
   rows <- dplyr::bind_rows(forecasts)
@@ -790,7 +810,8 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
     if (!is.data.frame(rows) || !"Combo" %in% names(rows)) return(NULL)
     rows <- rows[rows$Combo %in% combos, , drop = FALSE]
     for (combo in combos) {
-      if (!valid_update_forecasts(rows[rows$Combo == combo, , drop = FALSE], NULL, horizon, expected)) return(NULL)
+      if (!valid_update_forecasts(rows[rows$Combo == combo, , drop = FALSE], NULL,
+        horizon, coverage$required, coverage$non_delivery_ids)) return(NULL)
     }
   }
   list(models = models, forecasts = rows)

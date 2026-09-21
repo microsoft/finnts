@@ -548,6 +548,267 @@ test_that("a damaged accepted default reaches training without preparation chang
   expect_false("rebuild_update_models" %in% names(read_selection_file(fixture$updated, "logs")))
 })
 
+# Add producer-shaped Validation/Ensemble predictions to a saved fixture and
+# its mocked fitting results. Splits are written for both run identities, while
+# saved averages may deliberately contain delivery rows only. Returns the
+# updated fixture; no fitting, directory discovery or artifact deletion occurs.
+add_update_nondelivery_splits <- function(fixture, average_rows = TRUE) {
+  extra <- fixture$splits[rep(which(fixture$splits$Run_Type == "Back_Test")[1], 2), ]
+  extra$Train_Test_ID <- c(8, 12)
+  extra$Run_Type <- c("Validation", "Ensemble")
+  fixture$splits <- dplyr::bind_rows(fixture$splits, extra)
+  fixture$series$train_test_split <- fixture$splits
+  # Copy existing backtest predictions to the declared extra scenario IDs.
+  add_rows <- function(rows) {
+    additional <- lapply(seq_len(nrow(extra)), function(index) {
+      values <- rows[rows$Train_Test_ID == 2, , drop = FALSE]
+      values$Train_Test_ID <- extra$Train_Test_ID[index]
+      if ("Run_Type" %in% names(values)) values$Run_Type <- extra$Run_Type[index]
+      values
+    })
+    dplyr::bind_rows(c(list(rows), additional))
+  }
+  for (info in list(fixture$previous, fixture$updated)) {
+    write_data(fixture$splits, combo = NULL, run_info = info, output_type = "data",
+      folder = "prep_models", suffix = "-train_test_split")
+  }
+  global <- fixture$best$model_type[1] == "global"
+  for (combo in fixture$best$combo) {
+    suffix <- if (global) "-global_models" else "-single_models"
+    rows <- read_selection_file(fixture$previous, "forecasts", suffix, combo)
+    write_data(add_rows(rows), combo = combo, run_info = fixture$previous,
+      output_type = "data", folder = "forecasts", suffix = suffix)
+  }
+  if (average_rows) {
+    rows <- read_selection_file(fixture$previous, "forecasts", "-average_models", "first")
+    write_data(add_rows(rows), combo = "first", run_info = fixture$previous,
+      output_type = "data", folder = "forecasts", suffix = "-average_models")
+  }
+  fixture$fitted$Forecast_Tbl <- lapply(fixture$fitted$Forecast_Tbl, add_rows)
+  fixture
+}
+
+test_that("completion reuses declared validation and ensemble prediction rows", {
+  for (global in c(FALSE, TRUE)) for (average_rows in c(FALSE, TRUE)) local({
+    fixture <- add_update_nondelivery_splits(
+      make_global_update_selection_fixture(global = global), average_rows)
+    parent <- fixture$agent$project_info
+    parent$run_name <- fixture$agent$run_id
+    metadata <- data.frame(combo = fixture$best$combo, agent_run_id = fixture$agent$run_id,
+      best_run_name = fixture$previous$run_name, model_type = fixture$best$model_type,
+      weighted_mape = 0.1, forecast_approach = "bottoms_up", recipes_to_run = "R1")
+    log <- fixture$log
+    log$weighted_mape <- 0.1
+    write_data(log, combo = NULL, run_info = fixture$previous, output_type = "log", folder = "logs")
+    for (index in seq_len(nrow(metadata))) {
+      write_data(metadata[index, ], combo = metadata$combo[index], run_info = parent,
+        output_type = "log", folder = "logs", suffix = "-agent_best_run")
+    }
+    expect_false(is.null(read_update_result(fixture$previous, fixture$best$combo, global, 6)))
+    expect_equal(nrow(completed_update_runs(fixture$agent, metadata)), nrow(metadata))
+    expect_true(resume_update_result(fixture$agent, fixture$previous, fixture$best$combo,
+      global, fixture$splits, fixture$model_ids[1:2]))
+  })
+})
+
+test_that("updates retain non-delivery output without fitting again after interruption", {
+  for (global in c(FALSE, TRUE)) for (daily in c(FALSE, TRUE)) local({
+    fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(
+      if (daily) "week" else "month", daily, global = global))
+    original_logger <- log_best_run
+    original_converter <- convert_weekly_to_daily
+    state <- local_global_update_selection_mocks(fixture)
+    state$interrupt <- TRUE
+    conversions <- 0L
+    local_mocked_bindings(
+      convert_weekly_to_daily = function(...) {
+        conversions <<- conversions + 1L
+        original_converter(...)
+      },
+      log_best_run = function(agent_info, run_info, weighted_mape, ...) {
+        if (state$interrupt) {
+          if (global) {
+            first <- names(run_info$forecast_selection$selections)[1]
+            run_info$forecast_selection$selections <- run_info$forecast_selection$selections[first]
+            run_info$selection_combos <- first
+            original_logger(agent_info, run_info, weighted_mape, ...)
+          }
+          stop("completion logging interrupted", call. = FALSE)
+        }
+        original_logger(agent_info, run_info, weighted_mape, ...)
+      }
+    )
+    expect_error(update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123),
+      "completion logging interrupted")
+    paths <- c(local_artifact_path(fixture$updated, "models", "-single_models",
+      hash_data(if (global) "All-Data" else "first"), "rds"),
+      vapply(fixture$best$combo, function(combo) local_artifact_path(fixture$updated,
+        "forecasts", if (global) "-global_models" else "-single_models", hash_data(combo)), character(1)),
+      local_artifact_path(fixture$updated, "forecasts", "-average_models", hash_data("first")))
+    before <- tools::md5sum(paths)
+    initial_conversions <- conversions
+    state$interrupt <- FALSE
+    for (attempt in seq_len(2)) {
+      result <- update_forecast_combo(fixture$agent, fixture$best, NULL, 1, FALSE, 123)
+      expect_identical(result$status, "done")
+      expect_length(state$fits, 1L)
+      expect_identical(conversions, initial_conversions)
+      expect_identical(tools::md5sum(paths), before)
+    }
+    parent <- fixture$agent$project_info
+    parent$run_name <- fixture$agent$run_id
+    metadata <- dplyr::bind_rows(lapply(fixture$best$combo, function(combo) {
+      read_selection_file(parent, "logs", "-agent_best_run", combo)
+    }))
+    expect_equal(nrow(completed_update_runs(fixture$agent, metadata)), nrow(fixture$best))
+    rows <- read_update_result(fixture$updated, fixture$best$combo, global, 6)$forecasts
+    expect_setequal(unique(rows$Train_Test_ID), fixture$splits$Train_Test_ID)
+  })
+})
+
+test_that("finalized default forecasts with validation rows are reused without submission", {
+  fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(global = FALSE), FALSE)
+  info <- fixture$previous
+  info$combo <- hash_data("first")
+  log <- read_selection_file(info, "logs")
+  log$combo_variables <- "Series"
+  write_data(log, combo = NULL, run_info = info, output_type = "log", folder = "logs")
+  rows <- read_selection_file(info, "forecasts", "-single_models", "first")
+  rows$Run_Type <- NULL
+  rows$Forecast <- ifelse(rows$Model_ID == fixture$model_ids[2], 100,
+    ifelse(rows$Model_ID == fixture$model_ids[1], 120, 130))
+  rows$Best_Model <- "No"
+  write_data(rows, combo = "first", run_info = info, output_type = "data",
+    folder = "forecasts", suffix = "-single_models")
+  average <- read_selection_file(info, "forecasts", "-average_models", "first")
+  average$Run_Type <- NULL
+  average$Best_Model <- "No"
+  write_data(average, combo = "first", run_info = info, output_type = "data",
+    folder = "forecasts", suffix = "-average_models")
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    get_foundation_model_suffix = function() ""
+  )
+  selection <- final_models(info, weekly_to_daily = FALSE)
+  expect_identical(selection$selections$first$selected_id, fixture$model_ids[2])
+  saved <- read_selection_file(info, "forecasts", "-single_models", "first")
+  expect_setequal(unique(saved$Train_Test_ID), c(1, 2, 8, 12))
+  log <- read_selection_file(info, "logs")
+  log$default_reforecast_status <- "accepted"
+  write_data(log, combo = NULL, run_info = info, output_type = "log", folder = "logs")
+  agent <- fixture$agent
+  agent$quality_rejected_combos <- hash_data("first")
+  parent <- agent$project_info
+  parent$run_name <- agent$run_id
+  metadata <- data.frame(combo = "first", agent_run_id = agent$run_id,
+    best_run_name = info$run_name, model_type = "local", weighted_mape = 0,
+    forecast_approach = "bottoms_up", recipes_to_run = "R1", default_reforecast_status = "accepted")
+  write_data(metadata, combo = "first", run_info = parent, output_type = "log",
+    folder = "logs", suffix = "-agent_best_run")
+  paths <- c(local_artifact_path(info, "forecasts", "-single_models", hash_data("first")),
+    local_artifact_path(info, "forecasts", "-average_models", hash_data("first")),
+    local_artifact_path(info, "models", "-single_models", hash_data("first"), "rds"),
+    local_artifact_path(parent, "logs", "-agent_best_run", hash_data("first"), "csv"))
+  before <- tools::md5sum(paths)
+  submissions <- 0L
+  local_mocked_bindings(
+    submit_fcst_run = function(...) { submissions <<- submissions + 1L; stop("unexpected refit") },
+    select_series_forecasts = function(...) stop("unexpected reselection"),
+    convert_weekly_to_daily = function(...) stop("unexpected conversion"),
+    write_data = function(...) stop("unexpected artifact write")
+  )
+  expect_identical(forecast_new_combos(agent, character(), hash_data("first"),
+    NULL, FALSE, 1, 123), "Finished Forecasting New Time Series")
+  expect_identical(submissions, 0L)
+  expect_identical(tools::md5sum(paths), before)
+})
+
+test_that("completion ignores non-delivery winner flags and reuses one prepared context", {
+  fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(), FALSE)
+  info <- fixture$previous
+  source <- read_selection_file(info, "forecasts", "-global_models", "first")
+  source$Best_Model[source$Train_Test_ID %in% c(8, 12)] <- "Yes"
+  write_data(source, combo = "first", run_info = info, output_type = "data",
+    folder = "forecasts", suffix = "-global_models")
+  prepared <- read_update_artifact(info, local_artifact_path(info, "prep_data", "-R1", hash_data("first")))
+  prepared <- dplyr::bind_rows(dplyr::mutate(prepared, Horizon = 1),
+    dplyr::mutate(prepared, Horizon = 2))
+  write_data(prepared, combo = "first", run_info = info, output_type = "data",
+    folder = "prep_data", suffix = "-R2")
+  original_reader <- read_update_artifact
+  reads <- character()
+  local_mocked_bindings(
+    read_update_artifact = function(run_info, path) {
+      reads <<- c(reads, path)
+      original_reader(run_info, path)
+    },
+    list_files = function(...) stop("completion must not discover artifacts")
+  )
+  for (provided in c(FALSE, TRUE)) {
+    reads <- character()
+    saved <- read_update_result(info, fixture$best$combo, TRUE, 6,
+      splits = if (provided) fixture$splits[nrow(fixture$splits):1, ] else NULL, recipes = "R2")
+    expect_false(is.null(saved))
+    expect_equal(sum(grepl("-train_test_split", reads, fixed = TRUE)), if (provided) 0 else 1)
+    expect_equal(sum(grepl("/prep_data/", reads, fixed = TRUE)), 1)
+    expect_equal(sum(grepl("/logs/", reads, fixed = TRUE)), 0)
+    if (!is.null(saved)) {
+      retained <- saved$forecasts[saved$forecasts$Combo == "first" &
+        saved$forecasts$Train_Test_ID %in% c(8, 12), ]
+      expect_true(all(retained$Best_Model == "Yes"))
+    }
+  }
+})
+
+test_that("non-delivery rows never conceal invalid required predictions or scenario IDs", {
+  fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(global = FALSE), FALSE)
+  saved <- read_update_result(fixture$previous, "first", FALSE, 6)
+  coverage <- read_update_keys(fixture$previous, "first")
+  rows <- saved$forecasts
+  # Validate candidate rows against the fixture's authoritative split context.
+  valid <- function(predictions) valid_update_forecasts(predictions, saved$models, 6,
+    coverage$required, coverage$non_delivery_ids)
+  expect_true(valid(rows[nrow(rows):1, ]))
+  expect_true(valid(rows[!rows$Train_Test_ID %in% c(8, 12), ]))
+  ignored <- rows$Train_Test_ID %in% c(8, 12)
+  irrelevant <- rows
+  irrelevant$Forecast[ignored] <- NA_real_
+  expect_true(valid(irrelevant))
+  expect_true(valid(rows[!(ignored & rows$Model_ID == fixture$model_ids[1]), ]))
+  for (scenario in c(3, 99, 1.5, NA_real_, Inf)) {
+    unknown <- rows[1, ]
+    unknown$Train_Test_ID <- scenario
+    unknown$Run_Type <- "Validation"
+    expect_false(valid(dplyr::bind_rows(rows, unknown)))
+  }
+  required <- which(rows$Best_Model == "Yes" & rows$Train_Test_ID == 1)[1]
+  expect_false(valid(rows[-required, ]))
+  expect_false(valid(rows[rows$Train_Test_ID != 2, ]))
+  expect_false(valid(dplyr::bind_rows(rows, rows[required, ])))
+  shifted <- rows
+  shifted$Date[required] <- shifted$Date[required] + 1
+  expect_false(valid(shifted))
+  invalid <- rows
+  invalid$Forecast[required] <- Inf
+  expect_false(valid(invalid))
+  expect_false(valid(rows[rows$Model_ID != fixture$model_ids[1], ]))
+  for (defect in c("duplicate", "unknown_type", "missing_type")) {
+    splits <- fixture$splits
+    if (defect == "duplicate") splits$Train_Test_ID[nrow(splits)] <- 2
+    if (defect == "unknown_type") splits$Run_Type[nrow(splits)] <- "Unknown"
+    if (defect == "missing_type") splits$Run_Type[nrow(splits)] <- NA_character_
+    expect_error(read_update_keys(fixture$previous, "first", splits),
+      class = "finnts_update_artifact_error", info = defect)
+  }
+  for (scenario in c(0, -1, 1.5, NA_real_, Inf)) {
+    splits <- fixture$splits
+    splits$Train_Test_ID[nrow(splits)] <- scenario
+    expect_error(read_update_keys(fixture$previous, "first", splits),
+      class = "finnts_update_artifact_error")
+  }
+})
+
 test_that("completion audits reject truncated backtests and shifted future dates", {
   for (defect in c("backtest", "future")) local({
     fixture <- make_global_update_selection_fixture(global = FALSE)
