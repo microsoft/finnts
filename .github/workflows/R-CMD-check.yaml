@@ -46,8 +46,9 @@ jobs:
           - {os: ubuntu-22.04,   r: 'devel', http-user-agent: 'release'}
           - {os: ubuntu-22.04,   r: 'release'}
           - {os: ubuntu-22.04,   r: 'oldrel-1'}
-          - {os: ubuntu-22.04,   r: 'oldrel-2'}
-          - {os: ubuntu-22.04,   r: '4.1'}
+          # Boruta 10 imports fru, whose native code requires R 4.5.
+          - {os: ubuntu-22.04,   r: 'oldrel-2', extra-packages: 'gsl@2.1-8, Boruta@9.0.0'}
+          - {os: ubuntu-22.04,   r: '4.1', extra-packages: 'gsl@2.1-8, Boruta@9.0.0, arrow@23.0.1.2, xgboost@1.7.11.1, duckdb@1.5.2'}
 
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
@@ -75,9 +76,51 @@ jobs:
           extra-repositories: https://bgreenwell.r-universe.dev
           
       - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
+        if: runner.os != 'macOS'
         with:
-          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, ranger=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0
+          extra-packages: any::rcmdcheck, vip=?ignore-before-r=4.1.0, ranger=?ignore-before-r=4.1.0, Boruta=?ignore-before-r=4.1.0, corrr=?ignore-before-r=4.1.0, ${{ matrix.config.extra-packages }}
           needs: check
+
+      - name: Install macOS dependencies with native R
+        if: runner.os == 'macOS'
+        run: |
+          # Native R supports the Zstandard binaries not recognized by pak.
+          # Install all direct dependency tiers and their strong dependencies,
+          # then reject missing, unloadable or incompatible declared packages.
+          metadata <- read.dcf("DESCRIPTION")
+          repositories <- unique(c(getOption("repos"),
+            strsplit(trimws(metadata[1, "Additional_repositories"]), "[[:space:]]+")[[1]]))
+          options(install.packages.check.source = "no",
+            install.packages.compile.from.source = "never")
+          check_tools <- c("desc", "rcmdcheck", "sessioninfo")
+          utils::install.packages(check_tools, repos = repositories,
+            type = "both", dependencies = NA)
+          for (package in check_tools) {
+            if (!requireNamespace(package, quietly = TRUE)) {
+              stop("Required check tool is unavailable or unloadable: ", package)
+            }
+          }
+          dependencies <- desc::desc_get_deps("DESCRIPTION")
+          dependencies <- dependencies[dependencies$type %in%
+            c("Depends", "Imports", "LinkingTo", "Suggests") & dependencies$package != "R", ]
+          base_packages <- rownames(utils::installed.packages(priority = "base"))
+          packages <- setdiff(unique(dependencies$package), c(base_packages, check_tools))
+          utils::install.packages(packages, repos = repositories,
+            type = "both", dependencies = NA)
+          for (index in seq_len(nrow(dependencies))) {
+            package <- dependencies$package[[index]]
+            constraint <- dependencies$version[[index]]
+            version_check <- NULL
+            if (constraint != "*") {
+              parts <- strsplit(constraint, "[[:space:]]+")[[1]]
+              version_check <- list(op = parts[[1]], version = package_version(parts[[2]]))
+            }
+            if (!requireNamespace(package, quietly = TRUE, versionCheck = version_check)) {
+              stop("Dependency unavailable, unloadable or incompatible: ",
+                package, " (", constraint, ")")
+            }
+          }
+        shell: Rscript {0}
 
       - name: Verify feature-selection dependencies
         run: |
@@ -125,17 +168,20 @@ jobs:
 
       - uses: r-lib/actions/setup-r-dependencies@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
         with:
+          cache: false
           extra-packages: any::rcmdcheck, vip=?ignore, Boruta=?ignore, corrr=?ignore, ranger=?ignore
           needs: check
 
       - name: Verify feature-selection packages are unavailable
         run: |
-          stopifnot(all(!vapply(
+          available <- vapply(
             c("vip", "Boruta", "corrr", "ranger"),
             requireNamespace,
             logical(1),
             quietly = TRUE
-          )))
+          )
+          print(available)
+          stopifnot(all(!available))
         shell: Rscript {0}
 
       - uses: r-lib/actions/check-r-package@465b7d8e732ca3921382b1674c59bada9cbf3399 # v2.13.0
