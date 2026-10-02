@@ -62,7 +62,8 @@ normalize_series_history <- function(data, hist_end_date, recipe = "R1",
 }
 
 # One run/series cache entry serves every candidate; known artifact names are
-# read directly, not discovered again inside the candidate loop.
+# read directly, not discovered again inside the candidate loop. CSV series
+# identifiers are parsed as text before checking ownership; metrics retain types.
 read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
   if (length(combo) != 1 || is.na(combo)) {
     stop("Read prepared history for exactly one series at a time.", call. = FALSE)
@@ -89,7 +90,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
   }
   prepared <- read_exact_artifact(run_info, file_list = fs::path(
     run_info$path, "prep_data", paste0(prefix, "-", hash_data(combo), "-", recipe, ".", run_info$data_output)
-  ), return_type = "df")
+  ), return_type = "df", character_columns = "Combo")
   prepared <- adjust_combo_column(prepared)
   if ("Combo" %in% names(prepared) && any(is.na(prepared$Combo) | as.character(prepared$Combo) != combo)) {
     stop("Prepared history does not match the requested series.", call. = FALSE)
@@ -104,7 +105,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
     } else {
       combo_info <- read_exact_artifact(run_info, file_list = fs::path(
         run_info$path, "prep_data", paste0(metadata_key, ".", run_info$data_output)
-      ), return_type = "df")
+      ), return_type = "df", character_columns = "Combo")
       if (!is.null(cache)) assign(metadata_key, combo_info, envir = cache)
     }
     combo_info <- adjust_combo_column(combo_info)
@@ -707,12 +708,15 @@ read_candidate_forecasts <- function(run_info, combos, run_log = NULL, cache = N
   native_forecast_rows(rows, run_log$date_type)
 }
 
+# Read one exact per-series prediction artifact, retaining text CSV identities.
+# Missing local files return NULL; empty content and provider errors propagate.
 read_final_predictions <- function(run_info, combo_hash, suffix) {
   filename <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
     "-", combo_hash, suffix, ".", run_info$data_output)
   path <- fs::path(run_info$path, "forecasts", filename)
   if (is.null(run_info$storage_object) && !file.exists(path)) return(NULL)
-  rows <- read_exact_artifact(run_info, file_list = path, return_type = "df")
+  rows <- read_exact_artifact(run_info, file_list = path, return_type = "df",
+    character_columns = c("Combo", "Combo_ID", "Model_ID"))
   if (!is.data.frame(rows) || !nrow(rows)) {
     stop("The model prediction artifact is empty or unreadable: ", filename, call. = FALSE)
   }
@@ -958,6 +962,12 @@ agent_selection_combos <- function(agent_info, combo = NULL) {
   combos
 }
 
+# Read one exact selection artifact and optionally cache it by path. Missing
+# optional artifacts return an empty table; only optional average predictions
+# may also be a schema-correct zero-row table left by result repair. Required
+# empty content, malformed averages and storage failures remain hard errors.
+# CSV run/series/model identifiers retain their original text; numeric metrics
+# and dates keep their ordinary inferred types.
 read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
                                 optional = FALSE, cache = NULL) {
   prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name))
@@ -965,8 +975,16 @@ read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
   filename <- paste0(prefix, if (!is.null(combo)) paste0("-", hash_data(combo)), suffix, ".", extension)
   path <- fs::path(run_info$path, folder, filename)
   if (!is.null(cache) && exists(path, cache, inherits = FALSE)) return(get(path, cache, inherits = FALSE))
-  result <- read_exact_artifact(run_info, file_list = path, allow_missing = optional)
+  result <- read_exact_artifact(run_info, file_list = path, allow_missing = optional,
+    character_columns = if (folder == "logs") {
+      c("combo", "agent_run_id", "best_run_name", "run_id", "run_name")
+    } else c("Combo", "Combo_ID", "Model_ID"))
   if (optional && is.null(result)) return(tibble::tibble())
+  empty_average <- optional && identical(folder, "forecasts") &&
+    identical(suffix, "-average_models") && is.data.frame(result) && nrow(result) == 0L &&
+    all(c("Combo", "Model_ID", "Model_Name", "Model_Type", "Recipe_ID",
+      "Train_Test_ID", "Date", "Forecast", "Target") %in% names(result))
+  if (empty_average) return(tibble::tibble())
   if (!is.data.frame(result) || nrow(result) == 0) {
     stop("The exact forecast artifact is empty or unreadable: ", filename, call. = FALSE)
   }

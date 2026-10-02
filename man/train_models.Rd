@@ -63,6 +63,13 @@ trained model outputs are written to disk.
 \description{
 Train Individual Models
 }
+\details{
+Ordinary calls retain the saved-training reuse checks. When invoked
+by forecast-update recovery for an unusable accepted default result, model
+fitting may be repeated despite an existing training log. Preparation and
+output formats are unchanged; the recovery control is internal and is not
+saved in the run log.
+}
 \examples{
 \donttest{
 data_tbl <- timetk::m4_monthly \%>\%

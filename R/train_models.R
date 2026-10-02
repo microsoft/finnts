@@ -1,5 +1,11 @@
 #' Train Individual Models
 #'
+#' @details Ordinary calls retain the saved-training reuse checks. When invoked
+#'   by forecast-update recovery for an unusable accepted default result, model
+#'   fitting may be repeated despite an existing training log. Preparation and
+#'   output formats are unchanged; the recovery control is internal and is not
+#'   saved in the run log.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #' @param run_global_models If TRUE, run multivariate models on the entire data
 #'   set (across all time series) as a global model. Can be override by
@@ -270,7 +276,7 @@ train_models <- function(run_info,
         "new run with 'set_run_info'.",
         call. = FALSE
       )
-    } else {
+    } else if (!isTRUE(run_info$rebuild_update_models)) {
       cli::cli_alert_info("Individual Models Already Trained")
       return(cli::cli_progress_done())
     }
