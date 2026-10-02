@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9006</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9009</span>
       </span>
     </div>
 
@@ -537,6 +537,38 @@ and create a <strong>new agent run</strong> with updated
 all global winners to reference one iteration, then updates local series
 that need it. Mixed global iteration metadata fails before refitting
 instead of dispatching several global updates.</li>
+<li>
+<strong>Verifies recorded completions</strong>: On restart, the
+driver reads the selected fitted models and required forecasts for
+series that have current best-run metadata. Completion requires every
+expected date and backtest scenario from the saved preparation calendar
+and splits, including every day of expanded weekly forecasts. Rows
+declared <code>Validation</code> or <code>Ensemble</code> in the saved
+splits are excluded only from delivery-completion checks, for both
+winners and average components; all saved rows remain intact. Unknown
+scenario IDs still invalidate completion. Valid results are skipped;
+missing or damaged results are scheduled for the ordinary refit and
+overwritten at their existing paths. Shared global results are handled
+together, without refitting separately for each series or replacing
+valid local winners. Known recipe settings and worker splits are reused,
+and required context is read by exact path. Series without current
+best-run metadata follow the normal update path without an additional
+driver artifact audit.</li>
+<li>
+<strong>Avoids repeated fitting inside workers</strong>: Before
+refitting, each worker checks whether another attempt already completed
+the current models and forecasts. Complete results can be reused,
+including finishing missing best-run logging when existing run settings
+and metrics are sufficient. This does not repeat quality selection or
+date conversion. CSV run, series, and model identifiers retain their
+exact text. A repaired default with one eligible model can publish
+without an average; only a schema-correct empty optional average is
+accepted, not malformed or required empty artifacts. Only the existing
+combo task list and worker context are dispatched; there are no
+additional saved fields or preparation-repair controls. Required
+preparation and predecessor metadata access failures remain hard errors
+rather than default-model fallbacks. These checks do not lock files or
+prevent an active duplicate from overwriting them later.</li>
 <li>
 <strong>Handles new time series</strong>: If new series appear in
 the data (up to 20% of existing series, floor of 10), simple forecasts
