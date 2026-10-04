@@ -69,6 +69,93 @@ It would be hard to aggregate the above data in a traditional hierarchy. The sam
 -   Segment: model "Target" across the sum of "Segment". Creating forecasts for the grand total of "Enterprise" and "Public Sector"
 -   Product: model "Target" across the sum of "Product". Creating forecasts for the grand total of "Coffee" and "Tea".
 
+### Reviewed Custom Rules
+
+Standalone hierarchy runs can apply a reviewed custom rule independently to every
+prepared node, including aggregates, then use FinnTS's regular hts reconciliation
+to publish the lowest level. Review must explicitly permit this adjustment:
+reconciled values are not guaranteed to equal the rule's original base predictions.
+
+An HTS forecast using custom models requires a shared, explicitly enrolled mixed
+custom/FinnTS candidate pool. Custom-only requests must use `bottoms_up` with a
+compatible bottom-up definition. Finn does not silently add competitors or switch
+approaches. Eligibility depends on requested candidates, not winners; custom
+models may win everywhere. Existing built-in-only hierarchy behavior is unchanged.
+
+```{r reviewed-custom-hierarchy, eval=FALSE}
+custom <- create_custom_model(
+  instructions = paste(
+    "For each hierarchy node, forecast the mean of all historical targets.",
+    "Allow normal FinnTS reconciliation to adjust base forecasts."
+  ),
+  llm = llm, input_data = data_tbl,
+  combo_variables = c("Region", "Product"), target_variable = "value",
+  date_type = "month", forecast_horizon = 3,
+  model_type = "local", name = "business_mean",
+  forecast_approach = "standard_hierarchy"
+)
+
+run_info <- set_run_info(data_output = "csv", object_output = "rds")
+forecast_time_series(
+  run_info, data_tbl, c("Region", "Product"), "value", "month", 3,
+  forecast_approach = "standard_hierarchy",
+  custom_models = list(business_mean = custom),
+  models_to_run = c("business_mean", "meanf"),
+  recipes_to_run = "R1", stationary = FALSE,
+  clean_missing_values = FALSE, clean_outliers = FALSE,
+  run_local_models = TRUE, run_global_models = FALSE,
+  run_ensemble_models = FALSE, average_models = FALSE,
+  feature_selection = FALSE, inner_parallel = FALSE,
+  negative_forecast = TRUE, weekly_to_daily = FALSE
+)
+```
+
+The input must contain a complete finite leaf panel over the requested historical
+window. This custom profile does not silently zero-fill missing observations.
+Raw authoring samples up to three deterministic leaf series and keeps all their
+derived nodes; prepared authoring reads the whole existing hierarchy without
+modifying it. Both enforce a 10000 historical-node-row bound and validate every
+captured node. Deferred review uses the same gates and persists exact source
+references. Individual authoring validation does not enroll a custom-only HTS run.
+
+Old bottom-up definitions and hashes remain valid but do not acquire hierarchy
+permission. New hierarchy definitions bind one approach, per-node application
+and permission for reconciliation. The approved envelope and registry format are
+unchanged. Run manifests additionally bind topology and input artifacts. Changed
+context or missing base candidates cannot be treated as a completed restart.
+
+Custom hierarchy requires `average_models = FALSE`, no external regressors, no
+target transformations or cleaning, and no pooled/global fitting. Weekly output
+stays weekly. Every enrolled candidate must have complete finite node/fold/date
+coverage before reconciliation; missing nodes are not filled from `snaive` and
+failed candidates are not silently skipped. Normal weights and selection policy
+remain unchanged. Per-model results retain their readable aliases and full
+version IDs; the selected mixture is published as `Best-Model`.
+
+The following matrix distinguishes implementation from qualification evidence.
+It does not imply every cross-product of formats, cadences and workers was tested.
+
+| Capability | Current Evidence or Boundary |
+| --- | --- |
+| Standard/grouped, local R1, monthly CSV | Implemented-tested: real mixed forecasts, strict coverage and exact-version restarts |
+| Grouped monthly CSV, two local-machine workers | Implemented-tested: sequential parity, two worker PIDs and exact installed namespace |
+| Year/quarter/month/week/day at native cadence | Implemented-tested: independent reconciliation projection and date-key checks; complete nonmonthly pipeline qualification remains open |
+| RDS and Parquet data, RDS objects | Implemented-tested: preparation, context capture and exact-path reload; full forecasting/worker combinations remain unverified |
+| Raw/prepared deferred hierarchy review | Implemented-tested: real installed TEST/APPROVE children, complete-node evidence and authored mixed forecast |
+| Other installed compatible local R1 FinnTS competitors | Inert workflow/dependency checks implemented; individual model-family qualification remains open |
+| Custom-only HTS | Disallowed by explainability policy; use compatible bottom-up definitions |
+| Foundation-model competitors | Not qualified for this custom hierarchy profile; rejected rather than counted as token competitors |
+| Drivers, pooling, R2, transformed targets, hierarchy averages, weekly expansion | Remaining work; rejected by the current profile |
+| Agent hierarchy and hierarchical new-data updates | Remaining work; current custom Agent behavior remains bottom-up only |
+| Remote/Spark, other platforms, minimum dependency versions and live providers | Not qualified here; separate approval and validation required |
+
+The per-series routing interface is deferred. Future user-specific model
+restrictions will require `bottoms_up`; ordinary node-level winner differences
+and internal worker partitions are not routing restrictions. Users requiring
+exact single-rule bottom-up output must also explicitly disable averaging.
+Trusted source and RDS are not sandboxed or authenticated approval. Offline
+provider fixtures verify control flow, not live generation quality.
+
 ### External Regressors
 
 The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one or more combo variables, then the relationship is respected while still being able to aggregate to the total level. Aggregations of drivers are always summed. 

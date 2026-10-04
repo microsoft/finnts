@@ -53,6 +53,25 @@
 #'   average represents no average and remains readable during publication and
 #'   restart. Empty required artifacts and malformed optional averages are errors.
 #'
+#'   Experimental custom runs validate pinned versions, fitted context and saved
+#'   candidate membership before selection or completion reuse. Foreign versions,
+#'   excluded models and averages containing foreign components are errors.
+#'   Custom aliases remain in `Model_Name`; full version hashes identify custom
+#'   `Model_ID` components without conflicting with average separators. Simple
+#'   averages may contain only selected complete eligible components. Ranking,
+#'   accuracy allowances and plausibility policy are unchanged; custom enrollment
+#'   does not guarantee that a candidate will be selected.
+#'
+#'   Explicitly reviewed custom hierarchy runs require `average_models = FALSE`
+#'   and native weekly output (`weekly_to_daily = FALSE` for weekly data).
+#'   Every enrolled candidate must have complete finite node/fold/date coverage
+#'   before reconciliation. No missing-node substitution or silent candidate
+#'   omission is permitted. Existing hts weighting and selection remain unchanged;
+#'   reconciliation may adjust base forecasts before bottom-level publication.
+#'   Eligibility comes from the shared requested mixed pool, not the winners:
+#'   custom models may win at every node. Custom aliases and full version IDs
+#'   remain in per-model outputs; the selected mixture retains `Best-Model`.
+#'
 #' @param run_info run info using the [set_run_info()] function.
 #' @param average_models If TRUE, create simple averages of individual models
 #'  and save the eligible average selected by accuracy and future-quality checks.
@@ -143,6 +162,14 @@ final_models <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  custom_run <- custom_run_load(run_info, prev_log_df)
+  if (!is.null(custom_run)) {
+    custom_run_hierarchy_controls(custom_run$manifest$context, average_models = average_models, weekly_to_daily = weekly_to_daily)
+    custom_run_training_controls(custom_run, prev_log_df$run_local_models, prev_log_df$run_global_models,
+      "R1", prev_log_df$feature_selection, prev_log_df$negative_forecast, parallel_processing, inner_parallel)
+  }
+  custom_saved <- custom_run_audit(run_info, custom_run,
+    prev_log_df$run_local_models, prev_log_df$run_global_models, complete = TRUE)
 
   date_type <- prev_log_df$date_type
   forecast_approach <- prev_log_df$forecast_approach
@@ -282,7 +309,8 @@ final_models <- function(run_info,
 
         single_model_tbl <- NULL
         if (run_local_models) {
-          single_model_tbl <- read_final_predictions(run_info, combo, "-single_models")
+          single_model_tbl <- if (!is.null(custom_run)) custom_saved[[combo]]$single else
+            read_final_predictions(run_info, combo, "-single_models")
         }
 
         ensemble_model_tbl <- NULL
@@ -292,7 +320,8 @@ final_models <- function(run_info,
 
         global_model_tbl <- NULL
         if (run_global_models) {
-          global_model_tbl <- read_final_predictions(run_info, combo, "-global_models")
+          global_model_tbl <- if (!is.null(custom_run)) custom_saved[[combo]]$global else
+            read_final_predictions(run_info, combo, "-global_models")
         }
 
         all_model_tbl <- dplyr::bind_rows(single_model_tbl, ensemble_model_tbl, global_model_tbl)
@@ -327,7 +356,9 @@ final_models <- function(run_info,
               output_type = "data", folder = "forecasts", suffix = "-average_models")
           }
         } else {
-          saved_average <- read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
+          saved_average <- if (!is.null(custom_run)) custom_saved[[combo]]$average else
+            read_selection_file(run_info, "forecasts", "-average_models", combo_name, optional = TRUE)
+          if (!is.null(custom_run) && is.null(saved_average)) saved_average <- all_model_tbl[0, , drop = FALSE]
         }
         saved_rows <- dplyr::bind_rows(native_forecast_rows(all_model_tbl, date_type),
           if (average_models) native_forecast_rows(saved_average, date_type))
@@ -895,7 +926,8 @@ final_models <- function(run_info,
       negative_forecast,
       weekly_to_daily,
       date_type,
-      num_cores
+      num_cores,
+      custom_run = custom_run
     )
     fcst_data <- read_reconciliation()
     if (!complete_reconciled_forecast(fcst_data, run_info, prev_log_df,

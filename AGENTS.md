@@ -57,9 +57,19 @@ For model selection, start with the [architecture map](.github/agent-guides/arch
 3. Make the smallest grounded change and run a focused executable check immediately.
 4. Add or update tests for the happy path, relevant edge cases, and the regression being fixed.
 5. Document every new or modified function, including internal helpers, following the [function documentation contract](.claude/rules/r-package.md#function-documentation). Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.
-6. Run the broadest practical validation before finishing and report anything not run.
+6. Run the checks required by the selected validation scope and report anything not run.
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
+
+## Validation Scope
+
+Interactive development defaults to targeted tests for the changed behavior and its direct callers. Honor explicit requests for targeted tests only. Record the selected scope and exact checks in the plan; do not silently expand into the unfiltered package suite, R CMD check, or full vignette/site builds.
+
+Targeted scope still requires focused regression checks, relevant edge cases, necessary documentation generation, and final diff/integrity review. Include a narrowly scoped installed-package or worker check only when the touched behavior needs it. If more coverage is necessary, explain why and get approval before broadening the scope.
+
+Full validation remains required for release qualification, explicit full-validation requests, and unattended work. A public API, metadata, or multi-file change does not by itself override an explicitly selected targeted development scope; record the broader release checks as deferred instead.
+
+Report targeted completion as "Targeted tests passed; full validation not run by request." This is not a claim that the package is R CMD check-clean or release-qualified. Preserve historical validation findings, test assertions, CRAN skips, and runtime limits; selecting fewer tests is not permission to weaken them.
 
 ## Artifact I/O
 

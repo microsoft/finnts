@@ -20,6 +20,8 @@ recipe steps, feature importance, etc.) after an agent completes its run.
 Variable-importance rows are included when the optional \code{vip} package was
 available while summaries were generated; all other summary sections remain
 available without it.
+Custom models expose their exact version, confirmed interpretation and
+representation, without source text, fitted-state introspection or importance.
 }
 \examples{
 \dontrun{

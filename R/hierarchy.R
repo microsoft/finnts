@@ -508,6 +508,43 @@ reconciliation_weights <- function(residuals, negative_forecast) {
   weights
 }
 
+# Check all enrolled candidate/node/fold keys before custom reconciliation can
+# fill gaps or publish partial coverage. The selected mixture is checked without
+# imposing a winner quota. Reuse FinnTS date-key validation; no I/O occurs.
+custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_run) {
+  required <- c("Combo", "Date", "Train_Test_ID", "Forecast", "Target", "Best_Model")
+  if (!is.data.frame(forecasts) || !all(required %in% names(forecasts)) || !nrow(forecasts)) {
+    stop("Custom hierarchy requires complete candidate coverage.", call. = FALSE)
+  }
+  candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
+  custom_run_membership(forecasts, custom_run, candidates, required_custom = TRUE)
+  selected_splits <- splits[splits$Run_Type %in% c("Back_Test", "Future_Forecast"), , drop = FALSE]
+  if (!all(c("Back_Test", "Future_Forecast") %in% selected_splits$Run_Type) || anyDuplicated(selected_splits$Train_Test_ID)) {
+    stop("Custom hierarchy requires complete backtest and future coverage.", call. = FALSE)
+  }
+  context <- list(train_test_split = selected_splits, calendar = seq(min(as.Date(selected_splits$Train_End)),
+    max(as.Date(selected_splits$Test_End)), by = custom_run$manifest$context$date_type))
+  expected <- dplyr::bind_rows(forecast_selection_keys(context, "Back_Test"), forecast_selection_keys(context, "Future_Forecast"))
+  rows <- forecasts[forecasts$Train_Test_ID %in% selected_splits$Train_Test_ID, , drop = FALSE]
+  if (!is.numeric(rows$Forecast) || any(!is.finite(rows$Forecast)) || anyNA(rows$Combo) ||
+    anyNA(rows$Best_Model) || any(!rows$Best_Model %in% c("Yes", "No")) ||
+    !setequal(unique(rows$Combo), metadata$hts_combos) || !setequal(unique(rows$Model_ID), candidates$Model_ID)) {
+    stop("Custom hierarchy requires complete finite candidate coverage.", call. = FALSE)
+  }
+  for (candidate in c(candidates$Model_ID, "Best-Model")) {
+    model <- if (candidate == "Best-Model") rows[rows$Best_Model == "Yes", , drop = FALSE] else
+      rows[rows$Model_ID == candidate, , drop = FALSE]
+    for (combo in metadata$hts_combos) {
+      node <- model[model$Combo == combo, , drop = FALSE]
+      backtest <- node$Train_Test_ID %in% selected_splits$Train_Test_ID[selected_splits$Run_Type == "Back_Test"]
+      if (!forecast_keys_complete(node, expected) || !is.numeric(node$Target) || any(!is.finite(node$Target[backtest]))) {
+        stop("Custom hierarchy requires complete unique candidate/node/date coverage; no fallback is permitted.", call. = FALSE)
+      }
+    }
+  }
+  invisible(NULL)
+}
+
 #' Reconcile hierarchical forecasts down to lowest bottoms up level
 #'
 #' @param run_info run info
@@ -517,6 +554,10 @@ reconciliation_weights <- function(residuals, negative_forecast) {
 #' @param weekly_to_daily convert weekly data to daily
 #' @param date_type date type
 #' @param num_cores number of cores for parallel processing
+#' @param custom_run Optional validated custom enrollment passed by finalization.
+#'   Its exact candidate IDs restore readable aliases in reconciled output.
+#'   Custom hierarchy requires complete candidate coverage, retains finite base
+#'   predictions without clipping and propagates errors instead of fallback.
 #'
 #' @return hierarchy structure
 #' @noRd
@@ -526,7 +567,13 @@ reconcile_hierarchical_data <- function(run_info,
                                         negative_forecast = FALSE,
                                         weekly_to_daily = TRUE,
                                         date_type,
-                                        num_cores) {
+                                        num_cores,
+                                        custom_run = NULL) {
+  if (!is.null(custom_run)) {
+    custom_run_eligibility(custom_run$pool, custom_run$manifest$context)
+    custom_run_hierarchy_controls(custom_run$manifest$context, weekly_to_daily = weekly_to_daily)
+    custom_run_training_controls(custom_run, TRUE, FALSE, "R1", FALSE, negative_forecast, parallel_processing, FALSE)
+  }
   # get run splits
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
@@ -591,6 +638,11 @@ reconcile_hierarchical_data <- function(run_info,
   )
   unreconciled_tbl <- unreconciled_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+
+  if (is.null(custom_run) && any(grepl("^custom-[a-f0-9]{64}--", unreconciled_tbl$Model_ID))) {
+    stop("Custom hierarchy requires validated enrollment before reconciliation.", call. = FALSE)
+  }
+  if (!is.null(custom_run)) custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
 
   # get models to reconcile down to lowest level
   model_list <- unreconciled_tbl %>%
@@ -657,7 +709,7 @@ reconcile_hierarchical_data <- function(run_info,
                 dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test"))
             }
 
-            if (length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
+            if (is.null(custom_run) && length(unique(model_tbl$Combo)) != length(hts_combo_list)) {
               # add snaive fcst to missing combos to get a full hierarchy of forecasts to reconcile
               snaive_combo_list <- setdiff(hts_combo_list, unique(model_tbl$Combo))
 
@@ -686,12 +738,12 @@ reconcile_hierarchical_data <- function(run_info,
 
             forecast_tbl <- model_tbl %>%
               dplyr::select(Date, Train_Test_ID, Combo, Forecast) %>%
-              dplyr::mutate(Forecast = ifelse(Forecast > 100000000000000, 100000000000000, Forecast)) %>%
+              dplyr::mutate(Forecast = if (is.null(custom_run)) ifelse(Forecast > 100000000000000, 100000000000000, Forecast) else Forecast) %>%
               dplyr::group_by(Date, Train_Test_ID, Combo) %>%
               dplyr::summarise(Forecast = mean(Forecast, na.rm = TRUE), .groups = "drop") %>%
               tidyr::pivot_wider(names_from = Combo, values_from = Forecast)
 
-            forecast_tbl[is.na(forecast_tbl)] <- 0
+            if (is.null(custom_run)) forecast_tbl[is.na(forecast_tbl)] <- 0
 
             date_tbl <- forecast_tbl %>%
               dplyr::select(Date, Train_Test_ID)
@@ -735,6 +787,7 @@ reconcile_hierarchical_data <- function(run_info,
             }
           },
           error = function(e) {
+            if (!is.null(custom_run)) stop(e)
             if (inherits(e, "finnts_forecast_selection_rejected")) {
               if (model == "Best-Model") stop(e)
               return(NULL)
@@ -791,6 +844,13 @@ reconcile_hierarchical_data <- function(run_info,
           ) %>%
           convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
+
+        if (!is.null(custom_run)) {
+          candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
+          positions <- match(reconciled_tbl$Model_ID, candidates$Model_ID)
+          known <- !is.na(positions)
+          reconciled_tbl$Model_Name[known] <- candidates$Model_Name[positions[known]]
+        }
 
         write_data(
           x = reconciled_tbl, combo = model, run_info = run_info,

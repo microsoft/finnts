@@ -22,7 +22,8 @@ update_forecast(
 
 \item{allow_iterate_forecast}{Logical indicating if the forecast iteration
 should be allowed if poor performance is detected, meaning >40\% of
-time series with >20\% worse weighted MAPE than previous agent run}
+time series with >20\% worse weighted MAPE than previous agent run.
+Custom updates require this argument to be supplied explicitly as FALSE.}
 
 \item{max_iter}{Numeric indicating the maximum number of iterations
 if iterate_forecast is ran}
@@ -49,6 +50,8 @@ Nothing
 }
 \description{
 This function updates the forecast agent with the latest data and inputs.
+The default recovery behavior below applies to ordinary built-in runs;
+approved custom pools use the bounded replay contract described in Details.
 If new time series are detected in the data (up to 20\\% of existing series,
 with a floor of 10), simple forecasts are automatically created for them
 using default local model inputs without LLM involvement. If the number
@@ -103,6 +106,27 @@ repeat quality selection, date conversion, or forecast writes. Preparation
 caching and artifact formats are unchanged. Required predecessor and storage
 access failures remain errors. These checks do not coordinate concurrent
 writers or guarantee that another attempt cannot overwrite a checked file.
+Approved custom pools require explicit \code{allow_iterate_forecast = FALSE},
+\code{overwrite = TRUE}, identical enrollment and approval evidence, cadence,
+horizon, regressors, enabled modes and series membership. New observations,
+historical cutoffs and backtest settings are allowed in the new parent.
+Original-scale R1, local/mounted CSV data, RDS objects and no inner parallelism
+remain required. The completed predecessor, exact selected components,
+current input signatures and replay controls are pinned before child fitting.
+Replay retains full custom version IDs and per-series global subsets. Custom
+logic is never regenerated or tuned; mixed retuning reuses fixed custom
+results while retuning selected built-ins only. Temporal custom resampling
+evaluates complete horizons from existing predictors but preserves the
+original analysis cutoffs and scoring rows. No implicit iteration, new
+series, default fallback or custom repair is permitted. Any required quality
+rejection, source error, identity mismatch or damaged saved result is a hard
+error. Complete outputs can resume missing completion logging without refits
+or forecast writes; conflicting or incomplete fitted outputs fail untouched.
+A completed compatible custom update can be the next update's predecessor.
+Ordinary EDA post-processing may still call its isolated LLM; approved source
+and approval payloads are excluded. Replay provenance is not authenticated
+approval, a sandbox or a concurrent-writer transaction. A built-in-only parent
+cannot adopt a custom predecessor without explicit enrollment.
 }
 \examples{
 \dontrun{

@@ -5,6 +5,8 @@
 #' Variable-importance rows are included when the optional `vip` package was
 #' available while summaries were generated; all other summary sections remain
 #' available without it.
+#' Custom models expose their exact version, confirmed interpretation and
+#' representation, without source text, fitted-state introspection or importance.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
@@ -68,12 +70,37 @@ get_summarized_models <- function(agent_info) {
   return(model_summary_tbl)
 }
 
+# Summarize only validated custom definition metadata and bounded check text.
+# The fitted workflow must bind the same version and actual mode. No arbitrary
+# fitted-state introspection, candidate code, predictions or vip calls occur.
+summarize_model_custom <- function(workflow, model, mode) {
+  model <- custom_run_envelope(model)
+  fit <- workflows::extract_fit_parsnip(workflow)$fit
+  definition <- model$definition
+  if (!identical(fit$definition$version_id, definition$version_id) ||
+    !identical(fit$context$model_type, mode) || !identical(fit$allow_code, TRUE)) {
+    stop("Custom model summary identity or consent mismatch.", call. = FALSE)
+  }
+  custom_model_current_definition(fit$definition)
+  values <- list(name = definition$name, interpretation = definition$interpretation,
+    version_id = definition$version_id, model_type = mode,
+    predictors = paste(definition$requirements$predictors, collapse = ", "),
+    date_type = fit$context$date_type, forecast_horizon = as.character(fit$context$forecast_horizon),
+    recipe_id = fit$context$recipe_id, target_scale = fit$context$target_scale)
+  metadata <- tibble::tibble(section = "custom_model", name = names(values), value = unlist(values, use.names = FALSE))
+  checks <- model$validation$checks
+  dplyr::bind_rows(metadata, tibble::tibble(section = "validation", name = paste0("check_", seq_along(checks)),
+    value = substr(unlist(checks, use.names = FALSE), 1L, 2000L)))
+}
+
 #' Summarize Models
 #'
 #' Summarizes trained models for each time series in the best agent run by extracting
 #' model details, hyperparameters, and diagnostics into a structured format.
 #' When the optional `vip` package is unavailable, variable importance is
 #' omitted and all other supported summary sections are retained.
+#' Custom parent/child identity is audited before reads. Generic custom summaries
+#' never fit, predict, execute model source or call optional importance engines.
 #'
 #' @param agent_info Agent info from [set_agent_info()]
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -95,7 +122,9 @@ summarize_models <- function(agent_info,
   check_input_type("parallel_processing", parallel_processing, c("character", "NULL"), c("NULL", "local_machine", "spark"))
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
-  if (!vip_available()) {
+  agent_info <- load_agent_custom_state(agent_info)
+  custom_contract <- agent_info$custom_agent_contract
+  if ((is.null(custom_contract) || any(!custom_contract$selected %in% names(custom_contract$envelopes))) && !vip_available()) {
     warning(
       paste0(
         "Package 'vip' 0.5.0 or newer is not available; variable importance ",
@@ -111,7 +140,9 @@ summarize_models <- function(agent_info,
   project_info$run_name <- agent_info$run_id
 
   # Step 1: Get best agent run info
-  best_run_tbl <- get_best_agent_run(agent_info = agent_info) %>%
+  best_run_tbl <- get_best_agent_run(agent_info = agent_info)
+  audit_agent_custom_best(agent_info, best_run_tbl)
+  best_run_tbl <- best_run_tbl %>%
     dplyr::select(combo, best_run_name, model_type) %>%
     dplyr::distinct()
 
@@ -361,7 +392,9 @@ summarize_models <- function(agent_info,
         # Get the appropriate summarize function
         summarize_fn <- model_summarize_map[[model_name]]
 
-        if (is.null(summarize_fn)) {
+        if (!is.null(custom_contract) && model_name %in% names(custom_contract$envelopes)) {
+          summary_df <- summarize_model_custom(workflow, custom_contract$envelopes[[model_name]], model_type)
+        } else if (is.null(summarize_fn)) {
           # Model type not supported for summarization
           summary_df <- tibble::tibble(
             section = "error",

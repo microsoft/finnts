@@ -38,6 +38,12 @@ Ensemble model outputs are written to disk
 \description{
 Create ensemble model forecasts
 }
+\details{
+Experimental custom runs require \code{run_ensemble_models = FALSE} during
+\code{\link[=prep_models]{prep_models()}}. Their pinned enrollment and existing artifact identities
+are validated before the disabled-ensemble shortcut; no learned ensemble
+or fallback model is introduced. Built-in-only runs retain existing behavior.
+}
 \examples{
 \donttest{
 data_tbl <- timetk::m4_monthly \%>\%

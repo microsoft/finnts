@@ -1,12 +1,15 @@
-# finnts 0.7.0.9009 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9010 (DEVELOPMENT VERSION)
 
 ## Improvements
 
+- `create_custom_model()` creates reusable local/global forecasting models from business rules, with worked examples, validation, review, and resumable drafts.
+- Custom models require compatible original-scale R1 settings; generated code needs authorization, is not sandboxed, and has no hard timeout.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Improved averaging, forecast updates, and run recovery.
 
 ## Bug Fixes
 
+- Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.
 -   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
   -   Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.
   -   Restart checks do not prevent concurrent attempts from overwriting files.

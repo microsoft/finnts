@@ -33,6 +33,12 @@
 #'   existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 #'   values. Turned off when running hierarchical forecasts.
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data
+#' @param custom_models Named list of experimental approved custom-model envelopes,
+#'   enrolled only through `models_to_run`. See [prep_models()] for the envelope
+#'   contract and supported profile. Incompatible explicit custom settings error
+#'   before data preparation. Use [create_custom_model()] for reviewed authoring.
+#' @param stationary Apply differencing during preparation; retains the existing
+#'   TRUE default. Selected original-scale custom models require FALSE.
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model.
 #'   Default of NULL will automatically choose the number of back tests to run based on historical data size,
 #'   which tries to always use a minimum of 80% of the data when training a model.
@@ -116,6 +122,11 @@
 #'
 #' models_tbl <- get_trained_models(run_info)
 #' }
+#' @details Reviewed custom hierarchy models require a shared explicitly mixed
+#'   custom/FinnTS pool, local-only R1 execution and no averaging or regressors.
+#'   Eligibility uses requested candidates, not the eventual winning models.
+#'   Custom-only forecasts require a compatible bottom-up definition instead;
+#'   no model is automatically added and no requested approach is changed.
 #' @export
 forecast_time_series <- function(run_info = NULL,
                                  input_data,
@@ -155,7 +166,9 @@ forecast_time_series <- function(run_info = NULL,
                                  seed = 123,
                                  run_model_parallel = FALSE,
                                  return_data = TRUE,
-                                 run_name = "finnts_forecast") {
+                                 run_name = "finnts_forecast",
+                                 custom_models = NULL,
+                                 stationary = TRUE) {
   if (is.null(run_info)) {
     run_info <- set_run_info()
   }
@@ -163,6 +176,22 @@ forecast_time_series <- function(run_info = NULL,
   if (run_model_parallel) {
     inner_parallel <- TRUE
     cli::cli_alert_warning("run_model_parallel is deprecated, please use inner_parallel argument instead")
+  }
+
+  custom_pool <- custom_run_pool(models_to_run, models_not_to_run, custom_models)
+  if (!is.null(custom_pool)) {
+    custom_context <- custom_run_context(run_info, list(forecast_approach = forecast_approach, recipes_to_run = recipes_to_run,
+      stationary = stationary, box_cox = FALSE, clean_missing_values = clean_missing_values,
+      clean_outliers = clean_outliers, multistep_horizon = FALSE, date_type = date_type,
+      forecast_horizon = forecast_horizon), run_ensemble_models, allow_hierarchy = TRUE)
+    custom_run_eligibility(custom_pool, custom_context)
+    custom_run_hierarchy_controls(custom_context, external_regressors, average_models, weekly_to_daily)
+    effective_global <- if (is.null(run_global_models)) !date_type %in% c("day", "week") else run_global_models
+    custom_run_training_controls(list(pool = custom_pool, manifest = list(context = custom_context)), run_local_models, effective_global, "R1",
+      feature_selection, negative_forecast, parallel_processing, inner_parallel)
+    if (forecast_approach != "bottoms_up") {
+      custom_run_hierarchy_panel(input_data, combo_variables, target_variable, date_type, hist_start_date, hist_end_date)
+    }
   }
 
   prep_data(
@@ -179,6 +208,7 @@ forecast_time_series <- function(run_info = NULL,
     fiscal_year_start = fiscal_year_start,
     clean_missing_values = clean_missing_values,
     clean_outliers = clean_outliers,
+    stationary = stationary,
     forecast_approach = forecast_approach,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
@@ -197,7 +227,8 @@ forecast_time_series <- function(run_info = NULL,
     run_ensemble_models = run_ensemble_models,
     pca = pca,
     num_hyperparameters = 10,
-    seed = seed
+    seed = seed,
+    custom_models = custom_models
   )
 
   train_models(

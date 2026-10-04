@@ -3,6 +3,44 @@
 #' Preps various aspects of run before training models. Things like train/test
 #'   splits, creating hyperparameters, etc.
 #'
+#' @details Experimental custom enrollment requires named `finnts_custom_model`
+#'   envelopes with schema version 1, an exact passive definition, and technical
+#'   validation and approval bound to its content version. Validation contains
+#'   `version_id`, `technical_passed = TRUE`, and a nonempty list of check-summary
+#'   strings. Manual approval contains the same `version_id`,
+#'   `intent_confirmed = TRUE` and `allow_code = TRUE`. Explicit automatic approval
+#'   has `intent_confirmed = FALSE`, `allow_code = TRUE` and `mode = "automatic"`,
+#'   bound to the same version. Unknown fields or modes fail. Older FinnTS versions
+#'   may reject automatic approval records. These are trusted-caller attestations, not
+#'   authenticated human identity, a sandbox or an approval inferred from storage.
+#'   Use [create_custom_model()] for manual or explicitly automatic authoring.
+#'
+#'   Only explicit `models_to_run` selects custom models. The initial profile
+#'   requires `bottoms_up`, explicit R1, original-scale targets, and preparation
+#'   with `stationary`, `box_cox`, `clean_missing_values`, `clean_outliers` and
+#'   `multistep_horizon` all FALSE. Set `run_ensemble_models = FALSE`; training
+#'   additionally requires `feature_selection = FALSE`, `negative_forecast = TRUE`
+#'   and `inner_parallel = FALSE`. Local/mounted storage, CSV/RDS/Parquet data,
+#'   RDS model objects and sequential/local-machine execution are supported.
+#'   Custom recipes retain only Date, Combo and declared predictors; no implicit
+#'   PCA, feature selection or target transformation is applied. Missing required
+#'   values and incompatible settings error rather than changing model semantics.
+#'
+#'   A separate reviewed schema-2 definition permits `standard_hierarchy` or
+#'   `grouped_hierarchy` with local univariate original-scale R1 logic. Every
+#'   prepared node receives the same explicitly selected mixed custom/FinnTS
+#'   pool. Custom-only hierarchy requests fail; no built-in is silently added.
+#'   Forecast use requires local-only training, no averaging or regressors, and
+#'   no weekly-to-daily expansion. Topology and exact input artifacts are pinned
+#'   before enrollment. Existing schema-1 approvals do not authorize hierarchy.
+#'
+#'   Definitions and attestations are pinned in a run manifest before workflow
+#'   completion. Reentry requires the same approved effective pool; changed
+#'   versions or preparation context require a new run. Supplying definitions
+#'   without selecting them leaves built-in defaults unchanged. Registry presence
+#'   alone grants neither enrollment nor execution consent. No source is evaluated
+#'   during preparation and no packages are installed.
+#'
 #' @param run_info Run info using the [set_run_info()] function.
 #' @param back_test_scenarios Number of specific back test folds to run when
 #'   determining the best model. Default of NULL will automatically choose
@@ -25,6 +63,9 @@
 #'   greater than 1. Custom values are used by `stlm-arima`, `stlm-ets`, and
 #'   `tbats`. A value of NULL uses the defaults for `date_type`.
 #' @param seed Set seed for random number generator. Numeric value.
+#' @param custom_models Named list of experimental, version-bound approved
+#'   `finnts_custom_model` envelopes. Only `models_to_run` enrolls custom models.
+#'   Raw definitions or registry references do not grant execution permission.
 #'
 #' @return Writes outputs related to model prep to disk.
 #'
@@ -62,7 +103,8 @@ prep_models <- function(run_info,
                         pca = NULL,
                         num_hyperparameters = 10,
                         seasonal_period = NULL,
-                        seed = 123) {
+                        seed = 123,
+                        custom_models = NULL) {
   # check input values
   check_input_type("run_info", run_info, "list")
   check_input_type("back_test_scenarios", back_test_scenarios, c("NULL", "numeric"))
@@ -73,6 +115,8 @@ prep_models <- function(run_info,
   check_input_type("num_hyperparameters", num_hyperparameters, "numeric")
   seasonal_period <- validate_seasonal_period(seasonal_period)
   check_input_type("seed", seed, "numeric")
+
+  custom_pool <- custom_run_pool(models_to_run, models_not_to_run, custom_models)
 
   if (is.null(run_info$storage_object) && run_info$data_output %in% c("csv", "parquet", "rds")) {
     run_info$recipe_inventory <- new.env(parent = emptyenv())
@@ -85,7 +129,9 @@ prep_models <- function(run_info,
     models_not_to_run,
     pca,
     seasonal_period,
-    seed
+    seed,
+    custom_pool,
+    run_ensemble_models
   )
 
   # create model hyperparameters
@@ -527,6 +573,8 @@ train_test_split <- function(run_info,
 #' @param pca pca
 #' @param seasonal_period seasonal period
 #' @param seed Set seed for random number generator. Numeric value.
+#' @param custom_pool Internal resolved enrollment, or NULL for legacy calls.
+#' @param run_ensemble_models Requested ensemble flag checked for custom runs.
 #'
 #' @return Returns table of model workflows
 #' @noRd
@@ -535,7 +583,9 @@ model_workflows <- function(run_info,
                             models_not_to_run = NULL,
                             pca = NULL,
                             seasonal_period = NULL,
-                            seed = 123) {
+                            seed = 123,
+                            custom_pool = NULL,
+                            run_ensemble_models = TRUE) {
   cli::cli_progress_step("Creating Model Workflows")
 
   set.seed(seed)
@@ -545,6 +595,7 @@ model_workflows <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  custom_run <- custom_run_prepare(run_info, custom_pool, log_df, run_ensemble_models)
 
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
@@ -591,6 +642,13 @@ model_workflows <- function(run_info,
       dplyr::mutate(seasonal_period = ifelse(is.numeric(seasonal_period), as.character(seasonal_period), seasonal_period)) %>%
       data.frame()
 
+    if (!is.null(custom_run)) {
+      current_log_df$models_to_run <- prev_log_df$models_to_run <- paste(custom_run$pool$selected, collapse = "---")
+      current_log_df$models_not_to_run <- prev_log_df$models_not_to_run <- NA_character_
+      custom_run_check_workflows(read_exact_artifact(run_info,
+        local_artifact_path(run_info, "prep_models", "-model_workflows", extension = "rds"),
+        return_type = "object"), custom_run)
+    }
     if (hash_data(normalize_log_df(current_log_df)) == hash_data(normalize_log_df(prev_log_df))) {
       cli::cli_alert_info("Model Workflows Already Created")
       return(cli::cli_progress_done())
@@ -691,7 +749,9 @@ model_workflows <- function(run_info,
   # models to run
   ml_models <- list_models()
 
-  if (is.null(models_to_run) & is.null(models_not_to_run)) {
+  if (!is.null(custom_run)) {
+    ml_models <- custom_run$pool$selected
+  } else if (is.null(models_to_run) & is.null(models_not_to_run)) {
     # do nothing, using existing ml_models list
   } else if (is.null(models_to_run) & !is.null(models_not_to_run)) {
     ml_models <- setdiff(ml_models, models_not_to_run)
@@ -739,6 +799,13 @@ model_workflows <- function(run_info,
     if ("Target_Original" %in% colnames(recipe_tbl)) {
       recipe_tbl <- recipe_tbl %>%
         dplyr::select(-Target_Original)
+    }
+
+    if (!is.null(custom_run) && model %in% names(custom_run$pool$custom)) {
+      workflow_tbl <- custom_run_workflows(custom_run$pool$custom[[model]], recipe_tbl,
+        custom_run$manifest$context)
+      model_workflow_tbl <- dplyr::bind_rows(model_workflow_tbl, workflow_tbl)
+      next
     }
 
     # get args to feed into model spec functions
@@ -795,7 +862,7 @@ model_workflows <- function(run_info,
       Model_Workflow = list(model_workflow)
     )
 
-    model_workflow_tbl <- rbind(model_workflow_tbl, workflow_tbl)
+    model_workflow_tbl <- dplyr::bind_rows(model_workflow_tbl, workflow_tbl)
   }
 
   # write model workflow info
@@ -809,6 +876,10 @@ model_workflows <- function(run_info,
   )
 
   # update logging file
+  if (!is.null(custom_run)) {
+    log_df$custom_pool_id <- custom_run$manifest$pool_id
+    log_df$custom_manifest_id <- custom_run$manifest$manifest_id
+  }
   log_df <- log_df %>%
     dplyr::mutate(
       models_to_run = ifelse(is.null(models_to_run), NA, paste(models_to_run, collapse = "---")),
@@ -961,7 +1032,8 @@ model_hyperparameters <- function(run_info,
   )
 
   iter_tbl <- model_workflow_tbl %>%
-    dplyr::select(Model_Name, Model_Recipe)
+    dplyr::select(Model_Name, Model_Recipe) %>%
+    dplyr::distinct()
 
   # get hyperparameters
   hyperparameters_tbl <- tibble::tibble()

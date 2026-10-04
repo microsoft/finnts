@@ -2,6 +2,11 @@
 #'
 #' Create ensemble model forecasts
 #'
+#' @details Experimental custom runs require `run_ensemble_models = FALSE` during
+#'   [prep_models()]. Their pinned enrollment and existing artifact identities
+#'   are validated before the disabled-ensemble shortcut; no learned ensemble
+#'   or fallback model is introduced. Built-in-only runs retain existing behavior.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
@@ -74,6 +79,8 @@ ensemble_models <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  custom_run <- custom_run_load(run_info, log_df)
+  custom_run_audit(run_info, custom_run, log_df$run_local_models, log_df$run_global_models, complete = TRUE)
 
   num_hyperparameters <- as.numeric(log_df$num_hyperparameters)
   negative_forecast <- log_df$negative_forecast

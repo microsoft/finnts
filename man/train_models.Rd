@@ -69,6 +69,29 @@ by forecast-update recovery for an unusable accepted default result, model
 fitting may be repeated despite an existing training log. Preparation and
 output formats are unchanged; the recovery control is internal and is not
 saved in the run log.
+
+Selected experimental custom models use the pinned enrollment from
+\code{\link[=prep_models]{prep_models()}}. They run only in declared enabled local/global modes,
+bypass tuning, and retain chronological analysis-fold isolation. Custom
+source/dependency failures and missing fold predictions are hard errors,
+including in mixed pools. Required predictors and finite historical targets
+must remain available. No source regeneration or dependency installation
+occurs. Custom \code{Model_Name} retains its alias; \code{Model_ID} begins with
+\verb{custom-} and the full version hash, followed by model type and recipe.
+Saved workflows, fits and forecasts must match the pinned pool before reuse.
+The initial profile requires \code{feature_selection = FALSE},
+\code{negative_forecast = TRUE}, \code{inner_parallel = FALSE} and sequential or
+\code{local_machine} execution. Existing built-in-only behavior is unchanged.
+Temporal custom definitions evaluate complete horizons from existing
+predictor rows during resampling, then retain only the original scoring
+rows. Analysis cutoffs, scored targets and selection rules do not change.
+
+Reviewed custom hierarchy runs additionally require \code{run_local_models = TRUE}
+and \code{run_global_models = FALSE}. Each prepared hierarchy node is fitted
+independently under the same explicitly enrolled mixed pool. These are base
+forecasts; \code{\link[=final_models]{final_models()}} applies normal reconciliation to the bottom level.
+Missing or changed topology, inputs, approval or candidate artifacts cannot
+be treated as successful saved results.
 }
 \examples{
 \donttest{

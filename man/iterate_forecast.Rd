@@ -68,6 +68,19 @@ Hierarchical accuracy uses reconciled backtests; later comparisons and
 reconciliation do not require retained source-node quality rankings. Final
 reconciliation publishes the selected mixture without future-quality scoring,
 whole-set fallback, or extra refitting.
+
+Custom pools enrolled by \code{\link[=set_agent_info]{set_agent_info()}} constrain every proposal to
+approved versions and original-scale R1 settings. Missing proposal fields
+do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
+sequential or local-machine execution and \code{inner_parallel = FALSE} are
+required. Global-only pools require at least two series. Saved parent and
+child identities are verified before completed results can be reused.
+Ordinary EDA still runs; model source and approval payloads are not sent to
+forecast reasoning. The Agent can choose a subset but cannot rewrite source,
+calibrate fixed parameters or add models. Generic summaries preserve exact
+custom identity without executing source. Compatible new-data replay uses
+\code{\link[=update_forecast]{update_forecast()}} with explicit \code{allow_iterate_forecast = FALSE} and a new
+identically enrolled parent. Changed enrollment or series requires iteration.
 }
 \examples{
 \dontrun{

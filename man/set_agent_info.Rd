@@ -19,7 +19,9 @@ set_agent_info(
   negative_forecast = FALSE,
   run_global_models = NULL,
   run_local_models = TRUE,
-  overwrite = FALSE
+  overwrite = FALSE,
+  custom_models = NULL,
+  models_to_run = NULL
 )
 }
 \arguments{
@@ -62,6 +64,11 @@ except week and day.}
 local models. Default is TRUE.}
 
 \item{overwrite}{Logical indicating whether to overwrite existing agent run info}
+
+\item{custom_models}{Named approved custom-model envelopes from \code{\link[=create_custom_model]{create_custom_model()}}.}
+
+\item{models_to_run}{Explicit custom or mixed candidate names. Must select at
+least one supplied custom model; NULL retains ordinary Agent behavior.}
 }
 \value{
 A list containing the agent run information
@@ -70,6 +77,24 @@ A list containing the agent run information
 This function sets up the necessary information for a Finn Agent run,
 including input data, forecast horizon, and other parameters.
 It checks for existing runs and allows for overwriting if specified.
+}
+\details{
+Custom Agent runs require original-scale R1, CSV data, RDS objects,
+local/mounted storage, no hierarchy and \code{negative_forecast = TRUE}. The exact
+approved pool is pinned before the parent run log. Existing-run setup requires
+equivalent explicit enrollment; changed or omitted approval requires a new
+run. Source is trusted R, not sandboxed. For compatible new-data updates,
+create a new parent with \code{overwrite = TRUE}, the same explicit enrollment,
+horizon, regressors, modes and series, then call \code{\link[=update_forecast]{update_forecast()}} with
+explicit \code{allow_iterate_forecast = FALSE}. Changed enrollment needs iteration.
+Supplying definitions alone does not enroll them. Explicit built-in-only
+narrowing is not supported by this Agent argument. Mixed pools may select
+built-in subsets, but retain the fixed representation. Global-only custom
+runs need at least two series. Each selected custom model must support an
+enabled mode and the project's cadence, horizon and required predictors.
+The return adds \code{custom_agent_contract} and \code{custom_agent_contract_id} only
+for active enrollment. Saved approval is trusted-caller evidence, not
+authenticated identity; forecasting never calls the authoring LLM again.
 }
 \examples{
 \dontrun{

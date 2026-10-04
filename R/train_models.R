@@ -6,6 +6,29 @@
 #'   output formats are unchanged; the recovery control is internal and is not
 #'   saved in the run log.
 #'
+#'   Selected experimental custom models use the pinned enrollment from
+#'   [prep_models()]. They run only in declared enabled local/global modes,
+#'   bypass tuning, and retain chronological analysis-fold isolation. Custom
+#'   source/dependency failures and missing fold predictions are hard errors,
+#'   including in mixed pools. Required predictors and finite historical targets
+#'   must remain available. No source regeneration or dependency installation
+#'   occurs. Custom `Model_Name` retains its alias; `Model_ID` begins with
+#'   `custom-` and the full version hash, followed by model type and recipe.
+#'   Saved workflows, fits and forecasts must match the pinned pool before reuse.
+#'   The initial profile requires `feature_selection = FALSE`,
+#'   `negative_forecast = TRUE`, `inner_parallel = FALSE` and sequential or
+#'   `local_machine` execution. Existing built-in-only behavior is unchanged.
+#'   Temporal custom definitions evaluate complete horizons from existing
+#'   predictor rows during resampling, then retain only the original scoring
+#'   rows. Analysis cutoffs, scored targets and selection rules do not change.
+#'
+#'   Reviewed custom hierarchy runs additionally require `run_local_models = TRUE`
+#'   and `run_global_models = FALSE`. Each prepared hierarchy node is fitted
+#'   independently under the same explicitly enrolled mixed pool. These are base
+#'   forecasts; [final_models()] applies normal reconciliation to the bottom level.
+#'   Missing or changed topology, inputs, approval or candidate artifacts cannot
+#'   be treated as successful saved results.
+#'
 #' @param run_info run info using the [set_run_info()] function
 #' @param run_global_models If TRUE, run multivariate models on the entire data
 #'   set (across all time series) as a global model. Can be override by
@@ -96,6 +119,7 @@ train_models <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
+  custom_run <- custom_run_load(run_info, log_df)
 
   combo_variables <- strsplit(log_df$combo_variables, split = "---")[[1]]
   date_type <- log_df$date_type
@@ -125,6 +149,8 @@ train_models <- function(run_info,
   }
 
   # get model prep info
+  custom_run_training_controls(custom_run, run_local_models, run_global_models, global_model_recipes,
+    feature_selection, negative_forecast, parallel_processing, inner_parallel)
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
       "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
@@ -150,11 +176,16 @@ train_models <- function(run_info,
   )
 
   # adjust based on models planned to run
+  model_workflow_tbl <- custom_run_check_workflows(model_workflow_tbl, custom_run)
   model_workflow_list <- model_workflow_tbl %>%
     dplyr::pull(Model_Name) %>%
     unique()
 
   global_model_list <- list_global_models()
+  if (!is.null(custom_run)) {
+    global_model_list <- c(global_model_list, names(custom_run$pool$custom)[vapply(
+      custom_run$pool$custom, function(definition) "global" %in% definition$model_type, logical(1))])
+  }
   multivariate_model_list <- list_multivariate_models()
   foundation_model_list <- list_foundation_models()
   multistep_model_list <- list_multistep_models()
@@ -244,6 +275,10 @@ train_models <- function(run_info,
   }
 
   # define columns to check for input changes
+  custom_run_training_controls(custom_run, run_local_models, run_global_models, global_model_recipes,
+    feature_selection, negative_forecast, parallel_processing, inner_parallel)
+  custom_run_audit(run_info, custom_run, run_local_models, run_global_models, all_combo_list,
+    complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)))
   cols_check_list <- c(
     "run_global_models", "run_local_models", "global_model_recipes",
     "feature_selection", "seed"
@@ -342,6 +377,7 @@ train_models <- function(run_info,
   `%op%` <- par_info$foreach_operator
 
   # submit tasks
+  prepared_custom_workflows <- if (!is.null(custom_run)) model_workflow_tbl else NULL
   train_models_tbl <- foreach::foreach(
     x = current_combo_list_final,
     .combine = "rbind",
@@ -356,6 +392,13 @@ train_models <- function(run_info,
     {
       # get time series
       combo_hash <- x
+
+      if (!is.null(custom_run)) {
+        mode <- if (identical(x, "All-Data")) "global" else "local"
+        model_workflow_tbl <- prepared_custom_workflows
+        model_workflow_tbl <- model_workflow_tbl[is.na(model_workflow_tbl$Model_Type) |
+          model_workflow_tbl$Model_Type == mode, ]
+      }
 
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x,
@@ -488,7 +531,7 @@ train_models <- function(run_info,
           dplyr::select(Model_Name, Model_Recipe) %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE),
         .combine = "rbind",
-        .errorhandling = if (debug) "stop" else "remove",
+        .errorhandling = if (debug || !is.null(custom_run)) "stop" else "remove",
         .verbose = FALSE,
         .inorder = FALSE,
         .multicombine = TRUE,
@@ -501,6 +544,10 @@ train_models <- function(run_info,
         data_prep_recipe <- model_run %>%
           dplyr::pull(Model_Recipe)
 
+        is_custom <- !is.null(custom_run) && model %in% names(custom_run$pool$custom)
+        # Preserve legacy built-in failure removal in mixed runs while custom
+        # failures propagate with their exact identity and execution mode.
+        tryCatch({
         prep_data <- model_recipe_tbl %>%
           dplyr::filter(Recipe == data_prep_recipe) %>%
           dplyr::select(Data) %>%
@@ -524,7 +571,7 @@ train_models <- function(run_info,
           )
         }
 
-        if (combo_hash == "All-Data") {
+        if (combo_hash == "All-Data" && !is_custom) {
           # adjust column types to match original data
           prep_data <- adjust_column_types(
             prep_data,
@@ -613,6 +660,17 @@ train_models <- function(run_info,
         # tune hyperparameters
         set.seed(seed)
 
+        if (is_custom) {
+          definition <- custom_run$pool$custom[[model]]
+          custom_run_predictors(definition, prep_data)
+          history <- prep_data$Date <= max(model_train_test_tbl$Train_End)
+          if (any(!is.finite(prep_data$Target[history]))) stop("Custom model requires finite historical targets.", call. = FALSE)
+          for (package in definition$packages) {
+            if (!custom_model_package_available(package)) stop("Custom model requires unavailable package '", package, "'.", call. = FALSE)
+          }
+          hyperparameter_id <- 1
+          finalized_workflow <- empty_workflow_final
+        } else {
         tune_results <- tune::tune_grid(
           object = empty_workflow_final,
           resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
@@ -639,6 +697,7 @@ train_models <- function(run_info,
         }
 
         finalized_workflow <- tune::finalize_workflow(empty_workflow_final, best_param)
+        }
 
         set.seed(seed)
         wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
@@ -647,7 +706,13 @@ train_models <- function(run_info,
         # refit on all train test splits
         set.seed(seed)
 
-        refit_tbl <- tune::fit_resamples(
+        refit_tbl <- if (is_custom) {
+          custom_run_fit_resamples(finalized_workflow, prep_data,
+            create_splits(prep_data, model_train_test_tbl),
+            tune::control_resamples(allow_par = inner_parallel, save_pred = TRUE,
+              pkgs = inner_packages, parallel_over = "everything")) %>%
+            base::suppressMessages() %>% base::suppressWarnings()
+        } else tune::fit_resamples(
           object = finalized_workflow,
           resamples = create_splits(prep_data, model_train_test_tbl),
           metrics = NULL,
@@ -661,6 +726,9 @@ train_models <- function(run_info,
           tune::collect_predictions() %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
+
+        if (is_custom) custom_run_check_predictions(refit_tbl, prep_data,
+          create_splits(prep_data, model_train_test_tbl))
 
         # finalize forecast
         final_fcst <- refit_tbl %>%
@@ -779,6 +847,12 @@ train_models <- function(run_info,
         )
 
         return(final_return_tbl)
+        }, error = function(error) {
+          if (is_custom) stop("Custom model ", model, " [", custom_run$pool$custom[[model]]$version_id,
+            "] ", if (combo_hash == "All-Data") "global" else "local", ": ", conditionMessage(error), call. = FALSE)
+          if (!is.null(custom_run) && !debug) return(NULL)
+          stop(error)
+        })
       }
 
       par_end(inner_cl)
@@ -792,6 +866,7 @@ train_models <- function(run_info,
       fitted_models <- model_tbl %>%
         tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
         dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
+      fitted_models <- custom_run_model_ids(fitted_models, custom_run)
 
       write_data(
         x = fitted_models,
@@ -810,6 +885,7 @@ train_models <- function(run_info,
         dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
         dplyr::mutate(Horizon = dplyr::row_number()) %>%
         dplyr::ungroup()
+      final_forecast_tbl <- custom_run_model_ids(final_forecast_tbl, custom_run)
 
       if (unique(final_forecast_tbl$Combo_ID) == "All-Data") {
         for (combo_name in unique(final_forecast_tbl$Combo)) {

@@ -82,6 +82,9 @@ xgb_get_feature_names <- function(model) {
 # environment inside of parsnip so they have to be executed once parsnip has
 # been loaded.
 
+# Initialize built-in and dormant custom engine registrations after namespace
+# loading. Inputs are the library/package names; returns invisibly and sets the
+# existing OpenMP limit. Custom definitions are neither loaded nor executed.
 .onLoad <- function(libname, pkgname) {
   # CRAN OMP THREAD LIMIT
   Sys.setenv("OMP_THREAD_LIMIT" = 1)
@@ -99,4 +102,5 @@ xgb_get_feature_names <- function(model) {
   make_chronos_bolt_tiny_model()
   make_timesfm_model()
   make_arima_fast_model()
+  make_custom_model_engine()
 }

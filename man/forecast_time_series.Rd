@@ -43,7 +43,9 @@ forecast_time_series(
   seed = 123,
   run_model_parallel = FALSE,
   return_data = TRUE,
-  run_name = "finnts_forecast"
+  run_name = "finnts_forecast",
+  custom_models = NULL,
+  stationary = TRUE
 )
 }
 \arguments{
@@ -165,6 +167,14 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 \code{\link[=get_forecast_data]{get_forecast_data()}} for new features.}
 
 \item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
+
+\item{custom_models}{Named list of experimental approved custom-model envelopes,
+enrolled only through \code{models_to_run}. See \code{\link[=prep_models]{prep_models()}} for the envelope
+contract and supported profile. Incompatible explicit custom settings error
+before data preparation. Use \code{\link[=create_custom_model]{create_custom_model()}} for reviewed authoring.}
+
+\item{stationary}{Apply differencing during preparation; retains the existing
+TRUE default. Selected original-scale custom models require FALSE.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -181,6 +191,12 @@ The saved nonwinning average uses the same ranking among eligible averages.
 Hierarchical forecasts use the selected base forecasts as input to the existing
 reconciliation solver. Reconciled future outputs are not evaluated to choose
 a replacement set or trigger additional model fitting.
+
+Reviewed custom hierarchy models require a shared explicitly mixed
+custom/FinnTS pool, local-only R1 execution and no averaging or regressors.
+Eligibility uses requested candidates, not the eventual winning models.
+Custom-only forecasts require a compatible bottom-up definition instead;
+no model is automatically added and no requested approach is changed.
 }
 \examples{
 \donttest{

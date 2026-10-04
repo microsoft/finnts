@@ -1,10 +1,12 @@
 # FinnTS Validation Matrix
 
-Choose the smallest check that can falsify the current change, run it immediately after the first edit, then broaden validation according to risk.
+Choose the smallest check that can falsify the current change, run it immediately after the first edit, then complete the checks in the selected scope.
+
+Follow [AGENTS.md's validation scope](../../AGENTS.md#validation-scope). Interactive development uses targeted checks by default. The full-scope follow-up column below is not an instruction to override a targeted-only request: select affected tests and necessary documentation checks, and record full-suite/package checks as not run by approved scope. Seek approval before expanding coverage. Release qualification and explicit full-validation requests still require full checks.
 
 When a file matches multiple scoped rules, follow all matching rules. No rule takes precedence by file order.
 
-| Changed area | First focused check | Required follow-up |
+| Changed area | First focused check | Full-scope follow-up |
 | --- | --- | --- |
 | Combo identity or input validation | `R -q -e 'devtools::test(filter = "combo-normalization|prep_data")'` | Full tests when artifact naming or hierarchy behavior changes |
 | Agent sessions or parallel serialization | `R -q -e 'devtools::test(filter = "agent-chat-serialization")'` | Agent-focused tests, then full tests |

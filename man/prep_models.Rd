@@ -14,7 +14,8 @@ prep_models(
   pca = NULL,
   num_hyperparameters = 10,
   seasonal_period = NULL,
-  seed = 123
+  seed = 123,
+  custom_models = NULL
 )
 }
 \arguments{
@@ -49,6 +50,10 @@ greater than 1. Custom values are used by \code{stlm-arima}, \code{stlm-ets}, an
 \code{tbats}. A value of NULL uses the defaults for \code{date_type}.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
+
+\item{custom_models}{Named list of experimental, version-bound approved
+\code{finnts_custom_model} envelopes. Only \code{models_to_run} enrolls custom models.
+Raw definitions or registry references do not grant execution permission.}
 }
 \value{
 Writes outputs related to model prep to disk.
@@ -56,6 +61,45 @@ Writes outputs related to model prep to disk.
 \description{
 Preps various aspects of run before training models. Things like train/test
 splits, creating hyperparameters, etc.
+}
+\details{
+Experimental custom enrollment requires named \code{finnts_custom_model}
+envelopes with schema version 1, an exact passive definition, and technical
+validation and approval bound to its content version. Validation contains
+\code{version_id}, \code{technical_passed = TRUE}, and a nonempty list of check-summary
+strings. Manual approval contains the same \code{version_id},
+\code{intent_confirmed = TRUE} and \code{allow_code = TRUE}. Explicit automatic approval
+has \code{intent_confirmed = FALSE}, \code{allow_code = TRUE} and \code{mode = "automatic"},
+bound to the same version. Unknown fields or modes fail. Older FinnTS versions
+may reject automatic approval records. These are trusted-caller attestations, not
+authenticated human identity, a sandbox or an approval inferred from storage.
+Use \code{\link[=create_custom_model]{create_custom_model()}} for manual or explicitly automatic authoring.
+
+Only explicit \code{models_to_run} selects custom models. The initial profile
+requires \code{bottoms_up}, explicit R1, original-scale targets, and preparation
+with \code{stationary}, \code{box_cox}, \code{clean_missing_values}, \code{clean_outliers} and
+\code{multistep_horizon} all FALSE. Set \code{run_ensemble_models = FALSE}; training
+additionally requires \code{feature_selection = FALSE}, \code{negative_forecast = TRUE}
+and \code{inner_parallel = FALSE}. Local/mounted storage, CSV/RDS/Parquet data,
+RDS model objects and sequential/local-machine execution are supported.
+Custom recipes retain only Date, Combo and declared predictors; no implicit
+PCA, feature selection or target transformation is applied. Missing required
+values and incompatible settings error rather than changing model semantics.
+
+A separate reviewed schema-2 definition permits \code{standard_hierarchy} or
+\code{grouped_hierarchy} with local univariate original-scale R1 logic. Every
+prepared node receives the same explicitly selected mixed custom/FinnTS
+pool. Custom-only hierarchy requests fail; no built-in is silently added.
+Forecast use requires local-only training, no averaging or regressors, and
+no weekly-to-daily expansion. Topology and exact input artifacts are pinned
+before enrollment. Existing schema-1 approvals do not authorize hierarchy.
+
+Definitions and attestations are pinned in a run manifest before workflow
+completion. Reentry requires the same approved effective pool; changed
+versions or preparation context require a new run. Supplying definitions
+without selecting them leaves built-in defaults unchanged. Registry presence
+alone grants neither enrollment nor execution consent. No source is evaluated
+during preparation and no packages are installed.
 }
 \examples{
 \donttest{

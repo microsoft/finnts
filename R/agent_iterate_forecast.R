@@ -129,6 +129,19 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   reconciliation publishes the selected mixture without future-quality scoring,
 #'   whole-set fallback, or extra refitting.
 #'
+#'   Custom pools enrolled by [set_agent_info()] constrain every proposal to
+#'   approved versions and original-scale R1 settings. Missing proposal fields
+#'   do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
+#'   sequential or local-machine execution and `inner_parallel = FALSE` are
+#'   required. Global-only pools require at least two series. Saved parent and
+#'   child identities are verified before completed results can be reused.
+#'   Ordinary EDA still runs; model source and approval payloads are not sent to
+#'   forecast reasoning. The Agent can choose a subset but cannot rewrite source,
+#'   calibrate fixed parameters or add models. Generic summaries preserve exact
+#'   custom identity without executing source. Compatible new-data replay uses
+#'   [update_forecast()] with explicit `allow_iterate_forecast = FALSE` and a new
+#'   identically enrolled parent. Changed enrollment or series requires iteration.
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param max_iter Maximum number of iterations for forecast optimization.
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
@@ -200,6 +213,11 @@ iterate_forecast <- function(agent_info,
   check_input_type("inner_parallel", inner_parallel, "logical")
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
+  agent_info <- load_agent_custom_state(agent_info)
+  agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+  if (!is.null(agent_info$custom_agent_contract)) {
+    agent_info$custom_foundation_suffix <- agent_custom_foundations(agent_info$custom_agent_contract)
+  }
   if (!is.null(parallel_processing)) {
     check_agent_ellmer_version()
   }
@@ -210,6 +228,12 @@ iterate_forecast <- function(agent_info,
   # get metadata
   run_global_models <- agent_info$run_global_models
   run_local_models <- agent_info$run_local_models
+  if (!is.null(agent_info$custom_agent_contract)) {
+    run_global_models <- run_global_models && length(agent_custom_candidates(agent_info$custom_agent_contract,
+      foundation_suffix = agent_info$custom_foundation_suffix)$models) > 0L
+    run_local_models <- run_local_models && length(agent_custom_candidates(agent_info$custom_agent_contract,
+      "local", agent_info$custom_foundation_suffix)$models) > 0L
+  }
 
   # agent info adjustments
   if (agent_info$forecast_approach != "bottoms_up") {
@@ -233,8 +257,12 @@ iterate_forecast <- function(agent_info,
   if (eda_exists) {
     message("[agent] EDA already ran. Skipping EDA process.")
   } else {
+    eda_info <- agent_info
+    if (!is.null(agent_info$custom_agent_contract)) {
+      eda_info <- eda_info[setdiff(names(eda_info), c("custom_agent_contract", "custom_agent_contract_id", "custom_foundation_suffix"))]
+    }
     eda_agent_workflow(
-      agent_info = agent_info,
+      agent_info = eda_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores
     )
@@ -257,6 +285,8 @@ iterate_forecast <- function(agent_info,
     unique()
 
   agent_info$selection_combos <- combo_list
+  if (!is.null(agent_info$custom_agent_contract) && !run_local_models &&
+    (!run_global_models || length(combo_list) < 2L)) stop("No compatible custom Agent mode is available for these series.", call. = FALSE)
   agent_info$selection_cache <- new.env(parent = emptyenv())
 
   best_run_tbl <- load_best_agent_run(agent_info = agent_info)
@@ -910,6 +940,8 @@ save_agent_forecast <- function(agent_info) {
 #' This function retrieves the best run information for a Finn agent after the forecast iteration process is complete
 #' Intermediate CSV identities are parsed as text before they can be saved to
 #' final metadata. Provider failures and inconsistent global winners remain errors.
+#' Custom winner records additionally require matching parent/child enrollment
+#' and fitted artifact identities before reuse; no scoring policy changes.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
@@ -945,6 +977,7 @@ load_best_agent_run <- function(agent_info) {
   }
 
   validate_global_iteration(best_run_tbl)
+  audit_agent_custom_best(agent_info, best_run_tbl)
   return(best_run_tbl)
 }
 
@@ -1025,6 +1058,8 @@ save_best_agent_run <- function(agent_info) {
 #'   to enabled local models when no global best run exists.
 #' @param eda_results Consolidated EDA results used to resolve the legal global
 #'   forecast approaches before reasoning. Not used by local workflows.
+#' @details Custom contracts constrain mode/representation and preserve existing
+#'   session isolation. They never fall through to an unselected local pool.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -1039,9 +1074,10 @@ fcst_agent_workflow <- function(agent_info,
                                 previous_run_results = NULL,
                                 fallback_available = FALSE,
                                 eda_results = NULL) {
+  agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
   agent_info$allow_quality_rejection <- TRUE
   if (is.null(agent_info$selection_cache)) agent_info$selection_cache <- new.env(parent = emptyenv())
-  agent_info$global_forecast_approaches <- if (is.null(combo)) {
+  agent_info$global_forecast_approaches <- if (!is.null(agent_info$custom_agent_contract)) "bottoms_up" else if (is.null(combo)) {
     resolve_agent_global_forecast_approaches(agent_info, eda_results)
   } else {
     "bottoms_up"
@@ -1237,6 +1273,15 @@ fcst_agent_workflow <- function(agent_info,
     abort_reason = NULL,
     fallback_available = fallback_available
   )
+
+  if (!is.null(agent_info$custom_agent_contract)) {
+    init_ctx$custom_agent_info <- agent_info
+    for (node in names(workflow)) {
+      if ("agent_info" %in% names(workflow[[node]]$args)) {
+        workflow[[node]]$args$agent_info <- "{ctx$custom_agent_info}"
+      }
+    }
+  }
 
   # run the graph
   run_graph(agent_info$llm, workflow, init_ctx)
@@ -1769,6 +1814,8 @@ parse_agent_seasonal_period <- function(value) {
 #' @param combo A character string representing the combo variables, or NULL for global model.
 #' @param weighted_mape_goal A numeric value representing the weighted MAPE goal.
 #' @param last_error A character string representing the last error message, or NULL if no errors.
+#' @details Active custom contracts require complete proposals before legacy
+#'   defaults or coercion. Retry history and setting-change budgets are unchanged.
 #'
 #' @return A list containing the LLM response and the parsed JSON object.
 #' @noRd
@@ -1918,6 +1965,10 @@ reason_inputs <- function(agent_info,
   }
 
   # force specific inputs if single time series
+  if (!is.null(agent_info$custom_agent_contract)) {
+    input_list <- validate_agent_custom_proposal(input_list, agent_info$custom_agent_contract, combo,
+      agent_info$custom_foundation_suffix %||% "")
+  } else {
   if (!is.null(combo)) {
     input_list$forecast_approach <- "bottoms_up"
   }
@@ -1991,6 +2042,7 @@ reason_inputs <- function(agent_info,
     combo = combo,
     available_models = get_available_agent_models(combo, fm_suffix)
   )
+  }
 
   # inject negative_forecast from agent_info (user-controlled, not LLM-decided)
   input_list$negative_forecast <- if (!is.null(agent_info$negative_forecast)) {
@@ -2099,6 +2151,8 @@ reason_inputs <- function(agent_info,
 #'   A genuinely rejected default still cannot be submitted again. Existing
 #'   output validation precedes returning a successful run. Input CSV series
 #'   identities remain text, and known recipe settings are reused for coverage.
+#'   Custom submissions verify parent identity and complete fixed-rule settings,
+#'   then pass exact approved envelopes into ordinary standard preparation.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2119,6 +2173,12 @@ submit_fcst_run <- function(agent_info,
                             inner_parallel = FALSE,
                             num_cores = NULL,
                             seed = 123) {
+  agent_info <- load_agent_custom_state(agent_info)
+  custom_contract <- agent_info$custom_agent_contract
+  if (!is.null(custom_contract)) {
+    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    inputs <- agent_custom_submission(inputs, agent_info, combo)
+  }
   cli::cli_alert_info(
     "Starting Finn forecasting run with inputs: {jsonlite::toJSON(inputs, auto_unbox = TRUE)}"
   )
@@ -2184,7 +2244,7 @@ submit_fcst_run <- function(agent_info,
   )
 
   # adjust inputs based on data
-  if (nrow(input_data) >= 10000) {
+  if (nrow(input_data) >= 10000 && is.null(custom_contract)) {
     pca <- TRUE
   }
 
@@ -2203,6 +2263,19 @@ submit_fcst_run <- function(agent_info,
   )
 
   # kick off Finn run
+  if (!is.null(custom_contract)) {
+    child_info <- project_info
+    child_info$project_name <- project_name
+    child_info$run_name <- run_name
+    prior <- read_selection_file(child_info, "logs", optional = TRUE)
+    if (nrow(prior) && !identical(prior[["custom_agent_contract_id"]], agent_info$custom_agent_contract_id)) {
+      stop("Custom Agent child parent identity changed; start a new run.", call. = FALSE)
+    }
+    if (nrow(prior) && all(c("run_local_models", "run_global_models", "negative_forecast", "feature_selection") %in% names(prior))) {
+      audit_agent_custom_child(agent_info, child_info, vapply(unique(input_data$Combo), hash_data, character(1)), complete = FALSE)
+    }
+    pca <- FALSE
+  }
   run_info <- set_run_info(
     project_name = project_name,
     run_name = run_name,
@@ -2268,6 +2341,11 @@ submit_fcst_run <- function(agent_info,
   )
 
   # prepare models for training
+  if (!is.null(custom_contract)) {
+    child_log <- read_exact_artifact(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
+    child_log$custom_agent_contract_id <- agent_info$custom_agent_contract_id
+    write_data(child_log, NULL, run_info, "log", "logs")
+  }
   prep_models(
     run_info = run_info,
     back_test_scenarios = back_test_scenarios,
@@ -2277,7 +2355,8 @@ submit_fcst_run <- function(agent_info,
     run_ensemble_models = FALSE,
     pca = pca,
     num_hyperparameters = 10,
-    seasonal_period = null_converter(inputs$seasonal_period)
+    seasonal_period = null_converter(inputs$seasonal_period),
+    custom_models = if (!is.null(custom_contract)) custom_contract$envelopes else NULL
   )
 
   # train models
@@ -2821,6 +2900,8 @@ log_best_run <- function(agent_info,
 # are not a transaction, so reload/update must also reject mixed global metadata.
 log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_best_run = TRUE,
                                    weighted_mape = NULL, run_history = NULL) {
+  if (!is.null(agent_info$custom_agent_contract)) audit_agent_custom_child(agent_info, run_info,
+    if (!is.null(combo)) combo else vapply(run_info$selection_combos, hash_data, character(1)))
   current_log <- read_selection_file(run_info, "logs")
   current_result <- list(selections = run_info$forecast_selection$selections,
     run_info = run_info, run_log = current_log)
@@ -2913,7 +2994,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
         isTRUE(as.numeric(previous$agent_version) == as.numeric(agent_info$agent_version))
       # Advancing search settings is not permission to overwrite a superior local
       # forecast. Existing global rows instead follow the shared promotion gate.
-      protect_individual <- !global || !identical(as.character(previous$model_type), "global")
+      protect_individual <- !global || !identical(as.character(previous[["model_type"]]), "global")
       if (same_version && protect_individual && isTRUE(is.finite(as.numeric(previous$weighted_mape))) &&
           isTRUE(as.numeric(previous$weighted_mape) <= score$WMAPE)) {
         retained <- c(retained, series)
@@ -2951,6 +3032,8 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
 #' This function updates the agent best run file for each combo by setting
 #' the max_iterations and run_complete flags. For global models (combo = NULL or combo = "all"),
 #' it updates all combo files. For local models, it updates a single combo file.
+#' Identity columns are read as text before rewriting, preserving numeric-looking
+#' run hashes and leading-zero series names while metrics retain their types.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param combo A character string representing the hashed combo. If NULL or "all", updates all combos for global models.
@@ -2982,7 +3065,8 @@ finalize_run <- function(agent_info,
     best_run_tbl <- read_file(
       run_info = project_info,
       file_list = best_run_file,
-      return_type = "df"
+      return_type = "df",
+      character_columns = c("combo", "agent_run_id", "best_run_name")
     )
 
     if (nrow(best_run_tbl) == 0) {
@@ -3057,7 +3141,8 @@ finalize_run <- function(agent_info,
     best_run_tbl <- read_file(
       run_info = project_info,
       file_list = best_run_file,
-      return_type = "df"
+      return_type = "df",
+      character_columns = c("combo", "agent_run_id", "best_run_name")
     )
 
     if (nrow(best_run_tbl) == 0) {
@@ -3090,6 +3175,9 @@ finalize_run <- function(agent_info,
 #'   so the best-run comparison can include the current run.
 #'
 #' @return A tibble containing the previous run results or a message indicating no previous runs.
+#'   Active custom histories require the same parent identity for current rows;
+#'   incompatible earlier-version context is excluded. Global history retains
+#'   explicit model subsets. Metrics and iteration-ranking rules are unchanged.
 #' @noRd
 load_run_results <- function(agent_info,
                              combo = NULL,
@@ -3198,6 +3286,15 @@ load_run_results <- function(agent_info,
       dplyr::ungroup() %>%
       dplyr::relocate(agent_version, run_number, weighted_mape)
 
+    if (!is.null(agent_info$custom_agent_contract)) {
+      marker <- previous_runs_formatted[["custom_agent_contract_id"]]
+      if (is.null(marker)) marker <- rep(NA_character_, nrow(previous_runs_formatted))
+      current <- as.numeric(previous_runs_formatted$agent_version) == as.numeric(agent_info$agent_version)
+      matches <- !is.na(marker) & marker == agent_info$custom_agent_contract_id
+      if (any(current & !matches)) stop("Current custom Agent history has inconsistent parent identity.", call. = FALSE)
+      previous_runs_formatted <- previous_runs_formatted[matches, , drop = FALSE]
+      column_list <- unique(c(column_list, "models_to_run", "recipes_to_run", "custom_agent_contract_id", "custom_pool_id", "custom_manifest_id"))
+    }
     if (nrow(previous_runs_formatted) == 0) return("No Previous Runs")
     current_version <- agent_info$agent_version %||% max(previous_runs_formatted$agent_version)
     previous_runs_formatted$best_run <- "no"
@@ -3683,10 +3780,13 @@ null_converter <- function(x) {
 #' @param weighted_mape_goal A numeric value representing the target weighted MAPE goal for the agent.
 #'
 #' @return A character string containing the system prompt for the agent.
+#'   Custom enrollment uses a separate constrained prompt with source-free
+#'   candidate metadata; the legacy model/default prompt is unchanged.
 #' @noRd
 iterate_forecast_system_prompt <- function(agent_info,
                                            combo = NULL,
                                            weighted_mape_goal) {
+  if (!is.null(agent_info$custom_agent_contract)) return(agent_custom_prompt(agent_info, combo, weighted_mape_goal))
   # get metadata
   project_info <- agent_info$project_info
   combo_str <- paste(project_info$combo_variables, collapse = "---")

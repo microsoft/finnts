@@ -50,6 +50,110 @@ Use these helpers to retrieve outputs:
 
 ---
 
+## Approved Custom Models
+
+`create_custom_model()` produces reviewed, version-bound definitions before an
+Agent forecast begins. Supply those envelopes to `set_agent_info()` and select
+their names explicitly through `models_to_run`; supplying `custom_models` alone
+leaves ordinary Agent behavior unchanged. This Agent selection argument must
+include at least one approved custom model. Mixed custom/built-in pools are
+supported, but explicit built-in-only narrowing is not part of this interface.
+
+Authoring can now pause and resume at human review gates through
+`create_custom_model(draft = ..., responses = ...)`. Use `approval = "deferred"`
+and a caller-owned `draft_path` for durable review. Noninteractive calls without
+an `interact` callback choose deferred review automatically. A pending draft is
+not an approved model and cannot be supplied for enrollment. See the
+[deferred authoring walkthrough](best-model-selection.html#deferred-review)
+for revision-bound responses, storage privacy and context-expiry limits.
+
+```{r custom-agent-example, eval=FALSE}
+# custom is an already reviewed create_custom_model() result named business_mean.
+agent_info <- set_agent_info(
+  project_info = project,
+  llm = llm,
+  input_data = hist_data,
+  forecast_horizon = 3,
+  custom_models = list(business_mean = custom),
+  models_to_run = c("business_mean", "meanf"),
+  negative_forecast = TRUE,
+  allow_hierarchical_forecast = FALSE,
+  run_global_models = FALSE
+)
+iterate_forecast(agent_info, max_iter = 3, inner_parallel = FALSE)
+get_summarized_models(agent_info)
+```
+
+The first custom Agent profile uses original-scale R1, local/mounted storage,
+CSV data and RDS objects. Target cleaning, differencing, Box-Cox, feature selection
+and multistep are disabled. Sequential and `local_machine` execution are supported;
+Spark and inner parallelism are not. Each model must support the requested cadence,
+horizon, drivers and enabled local/global mode. A global-only run needs two series.
+The ordinary accuracy/plausibility rules still decide the winning eligible model;
+enrollment does not guarantee selection. Even built-in-only subsets of a mixed
+pool retain the fixed representation. No unrequested models are fallback candidates.
+
+The Agent may select subsets but never regenerate source or calibrate the human's
+fixed rule. It receives descriptive candidate metadata, not custom source or
+approval payloads. Ordinary EDA and forecast reasoning retain their existing data
+disclosures. Generated R is trusted code under your account, not sandboxed code;
+authoring review and version-specific consent remain separate from forecasting.
+
+Parent and child records pin source versions, approval evidence and context.
+Reentering `set_agent_info()` requires the same explicit approved pool; equivalent
+ordering is accepted, while missing or changed enrollment requires a new run.
+Calling `iterate_forecast()` again on the same saved Agent object reuses valid
+completed results without authoring or refitting. Corrupt or inconsistent required
+identity fails rather than silently substituting another version. These checks
+are not transactional protection against concurrent writers.
+
+Custom model summaries include exact version, interpretation and representation,
+without fitted-state introspection or invented variable importance. They work
+without `vip`.
+
+### Updating Approved Choices
+
+Create a new parent for new observations using the same explicit approved pool,
+cadence, forecast horizon, regressor set, enabled modes and series membership.
+Historical cutoffs and backtest settings may change in this new parent. Explicitly
+set `allow_iterate_forecast = FALSE`; omitting it is not custom replay consent.
+
+```{r custom-agent-update-example, eval=FALSE}
+updated_agent <- set_agent_info(
+  project_info = project,
+  llm = llm,
+  input_data = updated_hist_data,
+  forecast_horizon = 3,
+  custom_models = list(business_mean = custom),
+  models_to_run = c("business_mean", "meanf"),
+  negative_forecast = TRUE,
+  allow_hierarchical_forecast = FALSE,
+  run_global_models = FALSE,
+  overwrite = TRUE
+)
+update_forecast(updated_agent, allow_iterate_forecast = FALSE, inner_parallel = FALSE)
+get_agent_forecast(updated_agent)
+```
+
+The update pins its completed predecessor, per-series selected components,
+current input signatures and controls before fitting. It replays those choices,
+including saved custom/built-in averages and different subsets from one shared
+global run. It never regenerates or tunes the custom rule. When selected built-ins
+need retuning, existing custom results are reused. A completed custom update can
+be the predecessor of another compatible update.
+
+Calling the same update again reuses complete valid results; an interrupted
+completion-log write can finish without fitting or rewriting forecasts. Missing,
+corrupt or conflicting required identities and incomplete fitted outputs are hard
+errors, not automatic repair. Source failures and quality rejection never trigger
+default built-ins or implicit iteration. New or removed series, changed enrollment
+or a changed horizon require a new initial `iterate_forecast()` run. An ordinary
+built-in parent cannot infer custom enrollment from a predecessor.
+
+Normal EDA post-processing still uses its isolated LLM when needed, without the
+custom source or approval payload. These provenance checks are not a sandbox,
+authenticated approval or concurrent-writer transaction.
+
 ## Prerequisites
 
 - Package: `finnts`  
