@@ -78,12 +78,26 @@ All globally selected series must reference one winning global iteration.
 Mixed global iteration metadata is rejected before refitting rather than
 split into multiple global updates. Different model subsets within that
 single iteration and separately selected local winners remain supported.
-Missing or ambiguous saved winners or selected fits require restoring the
-original artifacts; the requested model list is not used as a fallback.
+Missing or ambiguous saved winners or selected fits normally require
+restoring the original artifacts. For older hierarchical global updates
+whose source files are wholly absent, valid reconciled output and saved
+global fits permit an explicit compatibility path: reuse each actual fitted
+model/recipe component, averaging them equally at every source node when
+there is more than one. This warns once per global group; requested but
+unfitted models are never invented. Partial source sets, malformed content
+and storage failures cannot trigger that compatibility path. Earlier Agent
+versions are not searched to reconstruct lost per-node choices.
 These are checks on newly generated predictions, not repeated assessments of
 past iteration winners. A reused hierarchy that
 is incomplete or contains a rejected node is not reconciled; its covered
 current series follow the existing default-local forecast path. Existing
+nodes are matched by identity and surviving bottom membership, not position
+or node count. Reassigned generated aggregate labels are treated as new
+nodes rather than inheriting another aggregate's selection. New nodes have
+no historical selection and use the ordinary new-series/default-local
+workflow; removed nodes are not published. A topology change that leaves
+an inner hierarchy incomplete can therefore move its covered series to
+local defaults rather than guessing new global selections. Existing
 run logs record default acceptance or rejection for restart safety. The
 selected mixture is then reconciled without post-reconciliation future
 evaluation, whole-set replacement, or late quality-triggered refitting.
@@ -99,7 +113,12 @@ Shared global results are checked and
 updated as one group, preserving valid local winners. Workers independently
 check current outputs before refitting and can finish missing best-run logging
 from complete saved forecasts and existing run-log metrics. Reuse does not
-repeat quality selection, date conversion, or forecast writes. Preparation
+repeat quality selection, date conversion, or forecast writes.
+Every accepted hierarchical global update saves and validates its component
+and selected-average source files before publishing best-run records.
+Unselected average files are overwritten with schema-correct empty tables
+to prevent stale winners after interrupted refits. Restart also checks
+per-node selections, not just the union of fitted models. Preparation
 caching and artifact formats are unchanged. Required predecessor and storage
 access failures remain errors. These checks do not coordinate concurrent
 writers or guarantee that another attempt cannot overwrite a checked file.

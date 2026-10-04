@@ -739,9 +739,9 @@ test_that("completion ignores non-delivery winner flags and reuses one prepared 
   original_reader <- read_update_artifact
   reads <- character()
   local_mocked_bindings(
-    read_update_artifact = function(run_info, path) {
+    read_update_artifact = function(run_info, path, ...) {
       reads <<- c(reads, path)
-      original_reader(run_info, path)
+      original_reader(run_info, path, ...)
     },
     list_files = function(...) stop("completion must not discover artifacts")
   )

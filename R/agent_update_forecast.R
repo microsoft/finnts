@@ -30,12 +30,26 @@
 #'   Mixed global iteration metadata is rejected before refitting rather than
 #'   split into multiple global updates. Different model subsets within that
 #'   single iteration and separately selected local winners remain supported.
-#'   Missing or ambiguous saved winners or selected fits require restoring the
-#'   original artifacts; the requested model list is not used as a fallback.
+#'   Missing or ambiguous saved winners or selected fits normally require
+#'   restoring the original artifacts. For older hierarchical global updates
+#'   whose source files are wholly absent, valid reconciled output and saved
+#'   global fits permit an explicit compatibility path: reuse each actual fitted
+#'   model/recipe component, averaging them equally at every source node when
+#'   there is more than one. This warns once per global group; requested but
+#'   unfitted models are never invented. Partial source sets, malformed content
+#'   and storage failures cannot trigger that compatibility path. Earlier Agent
+#'   versions are not searched to reconstruct lost per-node choices.
 #'   These are checks on newly generated predictions, not repeated assessments of
 #'   past iteration winners. A reused hierarchy that
 #'   is incomplete or contains a rejected node is not reconciled; its covered
 #'   current series follow the existing default-local forecast path. Existing
+#'   nodes are matched by identity and surviving bottom membership, not position
+#'   or node count. Reassigned generated aggregate labels are treated as new
+#'   nodes rather than inheriting another aggregate's selection. New nodes have
+#'   no historical selection and use the ordinary new-series/default-local
+#'   workflow; removed nodes are not published. A topology change that leaves
+#'   an inner hierarchy incomplete can therefore move its covered series to
+#'   local defaults rather than guessing new global selections. Existing
 #'   run logs record default acceptance or rejection for restart safety. The
 #'   selected mixture is then reconciled without post-reconciliation future
 #'   evaluation, whole-set replacement, or late quality-triggered refitting.
@@ -51,7 +65,12 @@
 #'   updated as one group, preserving valid local winners. Workers independently
 #'   check current outputs before refitting and can finish missing best-run logging
 #'   from complete saved forecasts and existing run-log metrics. Reuse does not
-#'   repeat quality selection, date conversion, or forecast writes. Preparation
+#'   repeat quality selection, date conversion, or forecast writes.
+#'   Every accepted hierarchical global update saves and validates its component
+#'   and selected-average source files before publishing best-run records.
+#'   Unselected average files are overwritten with schema-correct empty tables
+#'   to prevent stale winners after interrupted refits. Restart also checks
+#'   per-node selections, not just the union of fitted models. Preparation
 #'   caching and artifact formats are unchanged. Required predecessor and storage
 #'   access failures remain errors. These checks do not coordinate concurrent
 #'   writers or guarantee that another attempt cannot overwrite a checked file.
@@ -574,21 +593,29 @@ read_update_csv <- function(path, character_columns = NULL) {
 #'
 #' @param run_info Current or predecessor result storage and format information.
 #' @param path One exact artifact path.
-#' @return The deserialized artifact, or NULL for a missing file or recognized
-#'   truncated/invalid serialization. Other errors retain their original cause.
+#' @param missing_value Value returned only for confirmed absence. Optional
+#'   readers can distinguish this from recognized corruption, which stays NULL.
+#'   Accessible local parent directories permit an exact absence check without
+#'   opening a missing file; inaccessible paths retain the error-handling path.
+#' @return The deserialized artifact, missing_value for an absent file, or NULL
+#'   for recognized truncated/invalid serialization. Other errors retain their original cause.
 #'   CSV series and model identities are parsed as text before type inference.
 #' @noRd
-read_update_artifact <- function(run_info, path) {
+read_update_artifact <- function(run_info, path, missing_value = NULL) {
+  if (!is.null(missing_value) && is.null(run_info$storage_object) &&
+      !file.exists(path) && dir.exists(dirname(path)) && file.access(dirname(path), mode = 5) == 0L) {
+    return(missing_value)
+  }
   tryCatch(
     suppressWarnings({
       if (!is.null(run_info$storage_object)) {
         directory <- tempfile("finnts-update-")
         fs::dir_create(directory)
         destination <- fs::path(directory, fs::path_file(path))
-        if (!download_exact_artifact(run_info$storage_object, path, destination, TRUE)) return(NULL)
+        if (!download_exact_artifact(run_info$storage_object, path, destination, TRUE)) return(missing_value)
         local_info <- run_info
         local_info$storage_object <- NULL
-        return(read_update_artifact(local_info, destination))
+        return(read_update_artifact(local_info, destination, missing_value))
       }
       if (is.null(run_info$storage_object)) {
         extension <- fs::path_ext(path)
@@ -602,13 +629,14 @@ read_update_artifact <- function(run_info, path) {
           return(rows)
         }
       }
-      read_exact_artifact(run_info, path, allow_missing = TRUE)
+      result <- read_exact_artifact(run_info, path, allow_missing = TRUE)
+      if (is.null(result)) missing_value else result
     }),
     error = function(error) {
       if (is.null(run_info$storage_object) && !file.exists(path)) {
         directory <- dirname(path)
         while (!dir.exists(directory) && dirname(directory) != directory) directory <- dirname(directory)
-        if (file.access(directory, mode = 5) == 0L) return(NULL)
+        if (file.access(directory, mode = 5) == 0L) return(missing_value)
       }
       if (inherits(error, "simpleError") && is.null(run_info$storage_object) &&
           grepl("unknown input format|error reading from connection|invalid or incomplete compressed data|no lines available in input",
@@ -767,41 +795,62 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
 #'   locate its required source predictions, not to audit or repair preparation.
 #' @param splits Optional already loaded prepared train/test splits.
 #' @param recipes Optional recipe setting already loaded for this result.
+#' @param selected_ids Optional named predecessor selection for each source node.
+#'   When supplied, matching the fitted model pool alone is insufficient: each
+#'   current node must retain its own selected single model or average.
+#' @param previous_hierarchy Optional predecessor hierarchy for validating source
+#'   identities when generated labels can be reused after membership changes.
 #' @return Loaded models and forecasts if complete, otherwise NULL. Shared fits
 #'   are read once. Provider/access errors propagate; recognized damage does not.
 #'   Declared validation/ensemble rows do not determine the selected artifact
 #'   and are excluded from completion checks;
+#'   optional averages are also inspected for stale selected flags. Missing
+#'   unselected averages are allowed; recognized corrupt averages require refit.
 #'   returned predictions retain all saved rows without writes or conversion.
 #' @noRd
 read_update_result <- function(info, combos, global, horizon, approach = "bottoms_up",
-                               splits = NULL, recipes = NULL) {
+                               splits = NULL, recipes = NULL, selected_ids = NULL,
+                               previous_hierarchy = NULL) {
   models <- read_update_artifact(info, local_artifact_path(info, "models", "-single_models",
     hash_data(if (global) "All-Data" else combos[[1]]), info$object_output))
   if (!is.data.frame(models) || !nrow(models) ||
       !all(c("Model_ID", "Model_Fit") %in% names(models)) ||
       anyNA(models$Model_ID) || anyDuplicated(models$Model_ID)) return(NULL)
   hierarchical <- global && !identical(approach, "bottoms_up")
-  sources <- if (hierarchical) read_selection_hierarchy(info)$hts_combos else combos
+  hierarchy <- if (hierarchical) read_selection_hierarchy(info) else NULL
+  if (hierarchical && !is.null(previous_hierarchy) &&
+      length(changed_update_hierarchy_sources(previous_hierarchy, hierarchy))) return(NULL)
+  sources <- if (hierarchical) hierarchy$hts_combos else combos
   coverage <- NULL
+  absent <- new.env(parent = emptyenv())
   forecasts <- vector("list", length(sources))
   for (index in seq_along(sources)) {
     combo <- sources[[index]]
+    combo_hash <- hash_data(combo)
     single <- read_update_artifact(info, local_artifact_path(info, "forecasts",
-      if (global) "-global_models" else "-single_models", hash_data(combo)))
+      if (global) "-global_models" else "-single_models", combo_hash))
     if (!is.data.frame(single) || !nrow(single) || !"Best_Model" %in% names(single)) return(NULL)
     if (is.null(coverage)) {
       coverage <- read_update_keys(info, sources[[1]], splits, recipes)
     }
-    rows <- single
-    if (!any(single$Best_Model == "Yes" &
-      !single$Train_Test_ID %in% coverage$non_delivery_ids, na.rm = TRUE)) {
-      average <- read_update_artifact(info, local_artifact_path(info, "forecasts", "-average_models", hash_data(combo)))
-      if (!is.data.frame(average) || !nrow(average)) return(NULL)
-      rows <- dplyr::bind_rows(single, average)
+    average <- read_update_artifact(info,
+      local_artifact_path(info, "forecasts", "-average_models", combo_hash), missing_value = absent)
+    if (identical(average, absent)) {
+      rows <- single
+    } else {
+      if (!is.data.frame(average)) return(NULL)
+      if (!nrow(average) && !all(c("Combo", "Model_ID", "Model_Name", "Model_Type",
+        "Recipe_ID", "Train_Test_ID", "Date", "Forecast", "Target") %in% names(average))) return(NULL)
+      rows <- if (nrow(average)) dplyr::bind_rows(single, average) else single
     }
     if (!all(rows$Combo == combo)) return(NULL)
     if (!valid_update_forecasts(rows, models, horizon, coverage$required,
       coverage$non_delivery_ids)) return(NULL)
+    if (!is.null(selected_ids)) {
+      winner <- unique(as.character(rows$Model_ID[rows$Best_Model == "Yes" &
+        !rows$Train_Test_ID %in% coverage$non_delivery_ids]))
+      if (!identical(winner, unname(selected_ids[combo]))) return(NULL)
+    }
     forecasts[[index]] <- rows
   }
   rows <- dplyr::bind_rows(forecasts)
@@ -826,6 +875,11 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #' @param splits Existing prepared train/test splits.
 #' @param components Model IDs selected for this update from its predecessor.
 #' @param recipes Optional recipe setting used for the current preparation.
+#' @param selected_ids Optional named source selections expected from the
+#'   predecessor; a different per-node choice requires refitting even if the
+#'   saved model pool is unchanged.
+#' @param previous_hierarchy Optional predecessor topology; generated labels
+#'   cannot certify reuse when their surviving bottom membership changed.
 #' @param approach Saved forecast approach used to locate source and reconciled
 #'   predictions. Saved preparation supplies coverage keys, without being changed.
 #' @return TRUE when complete outputs were reused, otherwise FALSE to refit.
@@ -836,8 +890,10 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #'   the read-error handler preserves the provider's original class and cause.
 #' @noRd
 resume_update_result <- function(agent_info, info, combos, global, splits, components,
-                                 approach = "bottoms_up", recipes = NULL) {
-  saved <- read_update_result(info, combos, global, agent_info$forecast_horizon, approach, splits, recipes)
+                                 approach = "bottoms_up", recipes = NULL, selected_ids = NULL,
+                                 previous_hierarchy = NULL) {
+  saved <- read_update_result(info, combos, global, agent_info$forecast_horizon,
+    approach, splits, recipes, selected_ids, previous_hierarchy)
   if (is.null(saved) || !all(components %in% saved$models$Model_ID)) return(FALSE)
   log <- read_update_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
   if (!is.data.frame(log) || !nrow(log)) return(FALSE)
@@ -929,6 +985,10 @@ completed_update_runs <- function(agent_info, metadata) {
 #' @return A list with `prev_best_runs_tbl` (data frame of previous best runs),
 #'   `current_run_combos` (character vector of current combo hashes), and
 #'   `new_combos` (character vector of new combo hashes), or "no updates required".
+#'   For pre-expanded hierarchy ID input, generated labels with reassigned
+#'   surviving bottom members count as new nodes and use default-local routing.
+#'   This reads each parent hierarchy once by exact path; invalid metadata or
+#'   access failures remain errors.
 #' @noRd
 initial_checks <- function(agent_info) {
   # get metadata
@@ -1034,6 +1094,17 @@ initial_checks <- function(agent_info) {
 
   # check if new time series have been added
   new_combos <- setdiff(current_run_combos, prev_run_combos)
+  if (agent_info$forecast_approach != "bottoms_up" &&
+      identical(project_info$combo_variables, "ID")) {
+    previous_info <- prev_agent_info$project_info
+    previous_info$run_name <- prev_agent_info$run_id
+    current_info <- project_info
+    current_info$run_name <- agent_info$run_id
+    changed_nodes <- changed_update_hierarchy_sources(
+      read_selection_hierarchy(previous_info), read_selection_hierarchy(current_info))
+    new_combos <- union(new_combos,
+      intersect(current_run_combos, vapply(changed_nodes, hash_data, character(1), USE.NAMES = FALSE)))
+  }
 
   if (length(new_combos) > 0) {
     # allow a limited number of new series; cap at max(10, 20% of existing)
@@ -1091,10 +1162,11 @@ initial_checks <- function(agent_info) {
     dplyr::rowwise() %>%
     dplyr::mutate(combo_hash = hash_data(combo)) %>%
     dplyr::filter(
-      combo_hash %in% current_run_combos |
+      !combo_hash %in% new_combos &
+      (combo_hash %in% current_run_combos |
         (preserve_global_combos &
           model_type == "global" &
-          combo %in% hierarchy_aggregate_combos)
+          combo %in% hierarchy_aggregate_combos))
     ) %>%
     dplyr::select(-combo_hash) %>%
     dplyr::ungroup()
@@ -1884,32 +1956,126 @@ forecast_new_combos <- function(agent_info,
   return("Finished Forecasting New Time Series")
 }
 
-#' Update Forecast for a Combo
-#'
-#' This function updates the forecast for a specific combo based on the previous best run.
-#'
-#' @param agent_info A list containing the agent information.
-#' @param prev_best_run_tbl A data frame containing the previous best run information.
-#' @param parallel_processing Logical indicating if parallel processing should be used.
-#' @param num_cores Numeric indicating the number of cores to use for parallel processing.
-#' @param inner_parallel Logical indicating if inner parallel processing should be used.
-#' @param seed Numeric seed for reproducibility.
-#'
-#' @return A data frame containing the updated forecast results.
-#' @noRd
+# Read predecessor fits once, preserving the update artifact error class and
+# underlying storage condition. Confirmed absence/recognized corruption returns
+# NULL for the existing default-model recovery; provider errors always propagate.
+read_previous_update_models <- function(run_info, combo) {
+  tryCatch(
+    read_update_artifact(run_info, local_artifact_path(run_info, "models", "-single_models",
+      hash_data(combo), run_info$object_output)),
+    error = function(e) {
+      rlang::abort(paste0("Error in update_forecast(). No trained models found from previous run for combo: ",
+        combo, ". ", conditionMessage(e)),
+        class = unique(c("finnts_update_artifact_error", class(e))), parent = e)
+    }
+  )
+}
+
+# Recover the historical uniform policy only for wholly absent HTS source files.
+# Require reconciled forecasts covering the requested global series (other
+# series may have local winners) and consistent, usable saved global model/recipe
+# identities, not merely requested models. Return the named mapping
+# plus the loaded fits for caller reuse, and warn once about the lost per-node
+# selection information. Invalid evidence is an artifact error, never a fallback
+# to guessed models or earlier Agent versions.
+read_legacy_global_selection <- function(run_info, run_log, hierarchy, combos) {
+  settings <- c("models_to_run", "global_model_recipes")
+  if (nrow(run_log) != 1L || !all(settings %in% names(run_log)) ||
+      anyNA(run_log[, settings, drop = FALSE])) {
+    rlang::abort("Legacy global update requires the saved model and global recipe settings.",
+      class = "finnts_update_artifact_error")
+  }
+  reconciled <- tryCatch(
+    read_selection_file(run_info, "forecasts", "-reconciled", "Best-Model"),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read legacy global reconciled evidence: ", conditionMessage(error)),
+        class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+    }
+  )
+  required <- c("Combo", "Model_ID", "Best_Model", "Date", "Train_Test_ID", "Forecast")
+  if (!isTRUE(as.logical(run_log$run_global_models)) ||
+      !all(required %in% names(reconciled)) || anyNA(reconciled[, required]) ||
+      !is.numeric(reconciled$Forecast) || any(!is.finite(reconciled$Forecast)) ||
+      any(reconciled$Model_ID != "Best-Model" | reconciled$Best_Model != "Yes") ||
+      !length(combos) || !all(combos %in% reconciled$Combo) ||
+      !all(reconciled$Combo %in% hierarchy$original_combos)) {
+    rlang::abort("Legacy global update requires valid reconciled forecasts for every requested global series.",
+      class = "finnts_update_artifact_error")
+  }
+  models <- read_previous_update_models(run_info, "All-Data")
+  if (is.null(models)) {
+    stop("Error in update_forecast(). No trained models found from previous run for combo: ",
+      "All-Data. The saved model artifact is missing or unreadable.", call. = FALSE)
+  }
+  required <- c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID", "Model_Fit")
+  if (!is.data.frame(models) || !nrow(models) || !all(required %in% names(models))) {
+    rlang::abort("Legacy global update requires usable saved model fits and component identities.",
+      class = "finnts_update_artifact_error")
+  }
+  ids <- as.character(models$Model_ID)
+  parts <- strsplit(ids, "--", fixed = TRUE)
+  valid <- vapply(parts, function(part) {
+    length(part) == 3L && !anyNA(part) && all(nzchar(part)) &&
+      part[1] %in% list_global_models() && part[2] == "global" && part[3] %in% c("R1", "R2")
+  }, logical(1))
+  requested_models <- adjust_inputs(run_log$models_to_run)
+  requested_recipes <- adjust_inputs(run_log$global_model_recipes)
+  if (anyNA(ids) || anyDuplicated(ids) || !all(valid) ||
+      !identical(ids, paste(models$Model_Name, models$Model_Type, models$Recipe_ID, sep = "--")) ||
+      any(vapply(models$Model_Fit, is.null, logical(1))) ||
+      (!"all" %in% requested_models && !all(models$Model_Name %in% requested_models)) ||
+      (!"all" %in% requested_recipes && !all(models$Recipe_ID %in% requested_recipes))) {
+    rlang::abort("Legacy global update has missing, ambiguous or inconsistent saved model fits.",
+      class = "finnts_update_artifact_error")
+  }
+  ids <- sort(ids)
+  selected_id <- paste(ids, collapse = "_")
+  warning("Legacy global update: source selections are absent for run ", run_info$run_name,
+    ". Reusing ", if (length(ids) > 1L) "an equal-weight average of " else "",
+    paste(ids, collapse = ", "), " for every source series.", call. = FALSE)
+  list(selected_ids = stats::setNames(rep(selected_id, length(hierarchy$hts_combos)), hierarchy$hts_combos),
+    components = stats::setNames(rep(list(ids), length(hierarchy$hts_combos)), hierarchy$hts_combos),
+    models = models, hierarchy = hierarchy)
+}
+
+# Recover each predecessor source node's selected model or average components.
+# HTS uses the predecessor hierarchy, not new/removed current input identities.
+# Only wholly absent HTS source artifacts may use the explicit legacy policy;
+# partial, ambiguous or malformed selections fail without changing winners.
+# Storage/read failures preserve their cause and hard update-artifact class.
+# Returns named selected_ids/components and predecessor hierarchy metadata, with
+# loaded models on the legacy path.
 read_global_update_selection <- function(run_info, run_log, combos) {
-  source_combos <- if (identical(run_log$forecast_approach, "bottoms_up")) {
-    combos
-  } else read_selection_hierarchy(run_info)$hts_combos
-  forecasts <- read_candidate_forecasts(run_info, source_combos, run_log, reconciled = FALSE)
+  hierarchical <- !identical(run_log$forecast_approach, "bottoms_up")
+  forecasts <- tryCatch({
+    hierarchy <- if (hierarchical) read_selection_hierarchy(run_info) else NULL
+    source_combos <- if (hierarchical) hierarchy$hts_combos else combos
+    if (!length(source_combos) || anyNA(source_combos) ||
+        any(!nzchar(source_combos)) || anyDuplicated(source_combos)) {
+      rlang::abort("Saved global source series are empty, missing or ambiguous.",
+        class = "finnts_update_artifact_error")
+    }
+    read_candidate_forecasts(run_info, source_combos, run_log,
+      reconciled = FALSE, allow_missing = hierarchical)
+  }, error = function(error) {
+    rlang::abort(paste0("Cannot recover saved global source selections: ", conditionMessage(error)),
+      class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+  })
+  if (is.null(forecasts)) return(read_legacy_global_selection(run_info, run_log, hierarchy, combos))
+  required <- c("Combo", "Model_ID", "Best_Model")
+  if (!all(required %in% names(forecasts)) || anyNA(forecasts[, required, drop = FALSE]) ||
+      any(!forecasts$Best_Model %in% c("Yes", "No"))) {
+    rlang::abort("Saved global winner is missing or ambiguous. Restore the selected source forecasts before updating.",
+      class = "finnts_update_artifact_error")
+  }
   selected_ids <- stats::setNames(vapply(source_combos, function(combo) {
     rows <- forecasts[forecasts$Combo == combo, , drop = FALSE]
     winner <- if ("Best_Model" %in% names(rows)) {
       unique(as.character(rows$Model_ID[!is.na(rows$Best_Model) & rows$Best_Model == "Yes"]))
     } else character()
     if (length(winner) != 1 || anyNA(winner) || !nzchar(winner)) {
-      stop("Saved global winner is missing or ambiguous for series: ", combo,
-        ". Restore the selected source forecasts before updating.", call. = FALSE)
+      rlang::abort(paste0("Saved global winner is missing or ambiguous for series: ", combo,
+        ". Restore the selected source forecasts before updating."), class = "finnts_update_artifact_error")
     }
     winner
   }, character(1)), source_combos)
@@ -1919,12 +2085,22 @@ read_global_update_selection <- function(run_info, run_log, combos) {
     valid <- vapply(parts, function(part) {
       length(part) == 3 && all(nzchar(part)) && part[2] == "global"
     }, logical(1))
-    if (!all(valid) || anyDuplicated(model_ids)) {
-      stop("Saved global winner has invalid component identities: ", model_id, call. = FALSE)
+    reconstructed <- vapply(parts, paste, character(1), collapse = "--")
+    if (!all(valid) || !identical(reconstructed, model_ids) ||
+        anyDuplicated(model_ids) || paste(model_ids, collapse = "_") != model_id) {
+      rlang::abort(paste0("Saved global winner has invalid component identities: ", model_id),
+        class = "finnts_update_artifact_error")
     }
     model_ids
   })
-  list(selected_ids = selected_ids, components = components)
+  for (combo in source_combos) {
+    missing <- setdiff(components[[combo]], forecasts$Model_ID[forecasts$Combo == combo])
+    if (length(missing)) {
+      rlang::abort(paste0("Saved global source component forecasts are missing for series: ", combo,
+        ". Restore the original component outputs before updating."), class = "finnts_update_artifact_error")
+    }
+  }
+  list(selected_ids = selected_ids, components = components, hierarchy = hierarchy)
 }
 
 # Update one local series or one coherent global group using predecessor fits.
@@ -1933,7 +2109,12 @@ read_global_update_selection <- function(run_info, run_log, combos) {
 # current outputs resume completion in memory; damaged results are overwritten
 # through the existing writers after fitting. Preparation caching is unchanged.
 # Returns status and quality-rejected combo hashes. Missing or recognized corrupt
-# predecessor files enter the existing default-model fallback. Storage failures
+# predecessor model files enter the existing default-model fallback. Legacy HTS
+# predecessors without any source artifacts reuse their actual fitted pool,
+# while every newly accepted update persists its per-node source selections.
+# An unselected average is overwritten with a schema-correct empty table so a
+# refit cannot leave an older selected average behind after an interrupted run.
+# Storage failures
 # and inconsistent selected-fit identities remain hard errors; no extra state is
 # persisted or shipped.
 update_forecast_combo <- function(agent_info,
@@ -2021,21 +2202,16 @@ update_forecast_combo <- function(agent_info,
 
   # get trained models from previous run
   # read the trained models file and filter by model IDs
-  trained_models_tbl <- tryCatch(
-    {
-      models <- read_update_artifact(
-        prev_run_info,
-        local_artifact_path(prev_run_info, "models", "-single_models",
-          hash_data(combo), prev_run_info$object_output)
-      )
-      if (!is.null(models)) dplyr::filter(models, Model_ID %in% model_id_list)
-    },
-    error = function(e) {
-      rlang::abort(paste0("Error in update_forecast(). No trained models found from previous run for combo: ",
-        combo, ". ", conditionMessage(e)),
-        class = unique(c("finnts_update_artifact_error", class(e))), parent = e)
+  trained_models_tbl <- if (!is.null(selected_models$models)) selected_models$models else {
+    read_previous_update_models(prev_run_info, combo)
+  }
+  if (!is.null(trained_models_tbl)) {
+    if (!is.data.frame(trained_models_tbl) || !"Model_ID" %in% names(trained_models_tbl)) {
+      rlang::abort("Saved selected model fits are missing their component identities.",
+        class = "finnts_update_artifact_error")
     }
-  )
+    trained_models_tbl <- dplyr::filter(trained_models_tbl, Model_ID %in% model_id_list)
+  }
 
   if (is.null(trained_models_tbl)) {
     stop("Error in update_forecast(). No trained models found from previous run for combo: ",
@@ -2215,7 +2391,7 @@ update_forecast_combo <- function(agent_info,
 
   if (resume_update_result(agent_info, new_run_info, combo_list, combo == "All-Data",
     model_train_test_tbl, model_id_list, prev_run_log_tbl$forecast_approach,
-    paste(prev_best_recipes, collapse = "---"))) {
+    paste(prev_best_recipes, collapse = "---"), selected_models$selected_ids, selected_models$hierarchy)) {
     return(list(status = "done", quality_rejected_combos = character()))
   }
 
@@ -2255,7 +2431,7 @@ update_forecast_combo <- function(agent_info,
   assessment <- assess_update_forecasts(
     final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
     expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
-    cache = selection_cache, combos = combo_list
+    cache = selection_cache, combos = combo_list, previous_hierarchy = selected_models$hierarchy
   )
   quality_rejected <- assessment$quality_rejected_combos
   final_fcst_tbl <- assessment$forecasts
@@ -2300,7 +2476,7 @@ update_forecast_combo <- function(agent_info,
     assessment <- assess_update_forecasts(
       final_fcst_tbl, new_run_info, selection_log, model_train_test_tbl,
       expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
-      cache = selection_cache, combos = combo_list
+      cache = selection_cache, combos = combo_list, previous_hierarchy = selected_models$hierarchy
     )
     quality_rejected <- unique(c(quality_rejected, assessment$quality_rejected_combos))
     final_fcst_tbl <- assessment$forecasts
@@ -2352,10 +2528,8 @@ update_forecast_combo <- function(agent_info,
         convert_weekly_to_daily(project_info$date_type, prev_run_log_tbl$weekly_to_daily)
       write_data(source_rows[source_rows$Recipe_ID != "simple_average", ], combo = source_combo,
         run_info = new_run_info, output_type = "data", folder = "forecasts", suffix = "-global_models")
-      if ("simple_average" %in% source_rows$Recipe_ID) {
-        write_data(source_rows[source_rows$Recipe_ID == "simple_average", ], combo = source_combo,
-          run_info = new_run_info, output_type = "data", folder = "forecasts", suffix = "-average_models")
-      }
+      write_data(source_rows[source_rows$Recipe_ID == "simple_average", ], combo = source_combo,
+        run_info = new_run_info, output_type = "data", folder = "forecasts", suffix = "-average_models")
     }
     write_data(
       x = completed_fcst_tbl,
@@ -2381,17 +2555,15 @@ update_forecast_combo <- function(agent_info,
         suffix = "-global_models"
       )
 
-      if ("simple_average" %in% unique(combo_fcst$Recipe_ID)) {
-        write_data(
-          x = combo_fcst %>%
-            dplyr::filter(Recipe_ID == "simple_average"),
-          combo = combo_name,
-          run_info = new_run_info,
-          output_type = "data",
-          folder = "forecasts",
-          suffix = "-average_models"
-        )
-      }
+      write_data(
+        x = combo_fcst %>%
+          dplyr::filter(Recipe_ID == "simple_average"),
+        combo = combo_name,
+        run_info = new_run_info,
+        output_type = "data",
+        folder = "forecasts",
+        suffix = "-average_models"
+      )
     }
   } else {
     # local models: write single models per combo
@@ -2405,17 +2577,15 @@ update_forecast_combo <- function(agent_info,
       suffix = "-single_models"
     )
 
-    if ("simple_average" %in% unique(write_fcst_tbl$Recipe_ID)) {
-      write_data(
-        x = completed_fcst_tbl %>%
-          dplyr::filter(Recipe_ID == "simple_average"),
-        combo = combo_id,
-        run_info = new_run_info,
-        output_type = "data",
-        folder = "forecasts",
-        suffix = "-average_models"
-      )
-    }
+    write_data(
+      x = completed_fcst_tbl %>%
+        dplyr::filter(Recipe_ID == "simple_average"),
+      combo = combo_id,
+      run_info = new_run_info,
+      output_type = "data",
+      folder = "forecasts",
+      suffix = "-average_models"
+    )
   }
 
   # log run
@@ -2438,8 +2608,10 @@ update_forecast_combo <- function(agent_info,
       negative_forecast = prev_run_log_tbl$negative_forecast,
       weekly_to_daily = prev_run_log_tbl$weekly_to_daily,
       inner_parallel = inner_parallel,
-      average_models = prev_run_log_tbl$average_models,
-      max_model_average = prev_run_log_tbl$max_model_average,
+      average_models = prev_run_log_tbl$average_models | any(lengths(selected_models$components) > 1L),
+      max_model_average = if (is.null(selected_models)) prev_run_log_tbl$max_model_average else {
+        max(prev_run_log_tbl$max_model_average, lengths(selected_models$components), na.rm = TRUE)
+      },
       weighted_mape = log_wmape
     )
 
@@ -2457,9 +2629,20 @@ update_forecast_combo <- function(agent_info,
   new_run_info$forecast_selection <- list(selections = accepted_selections,
     source_selections = assessment$source_selections, rejected_combos = character())
   new_run_info$selection_combos <- names(accepted_selections)
+  saved_update <- NULL
+  if (combo == "All-Data" && prev_run_log_tbl$forecast_approach != "bottoms_up") {
+    saved_update <- read_update_result(new_run_info, combo_list, TRUE,
+      agent_info$forecast_horizon, prev_run_log_tbl$forecast_approach,
+      model_train_test_tbl, paste(prev_best_recipes, collapse = "---"), selected_models$selected_ids)
+    if (is.null(saved_update)) {
+      rlang::abort("Cannot log an incomplete global update: restore the selected source forecasts and fitted models.",
+        class = "finnts_update_artifact_error")
+    }
+  }
   validate_run_outputs(
     run_info = new_run_info,
-    combo = if (combo == "All-Data") NULL else hash_data(combo)
+    combo = if (combo == "All-Data") NULL else hash_data(combo),
+    saved_update = saved_update
   )
 
   metric_fcst_tbl <- completed_fcst_tbl %>%
@@ -3051,7 +3234,8 @@ adjust_forecast <- function(model_tbl,
 #' @param forecast_approach The approach used for forecasting, either "standard_hierarchy" or "grouped_hierarchy".
 #' @param negative_forecast Logical indicating if negative forecasts are allowed.
 #'
-#' @return A reconciled forecast table.
+#' @return A reconciled forecast table. Reads the exact hierarchy and history
+#'   artifacts without directory discovery; storage and solver errors propagate.
 #' @noRd
 reconcile <- function(initial_fcst,
                       run_info,
@@ -3063,14 +3247,9 @@ reconcile <- function(initial_fcst,
     negative_forecast <- FALSE
   }
 
-  hts_list <- read_file(run_info,
-    path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_info.", run_info$object_output),
-    return_type = "object"
-  )
+  hts_list <- read_selection_hierarchy(run_info)
 
-  hist_tbl <- read_file(run_info,
-    path = paste0("/prep_data/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-hts_data.", run_info$data_output)
-  ) %>%
+  hist_tbl <- read_selection_file(run_info, "prep_data", "-hts_data") %>%
     dplyr::select(Combo, Date, Target)
 
   hts_nodes <- hts_list$nodes

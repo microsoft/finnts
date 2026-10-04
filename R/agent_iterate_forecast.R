@@ -2367,10 +2367,13 @@ submit_fcst_run <- function(agent_info,
 #'   storage_object, path, data_output, object_output).
 #' @param combo A character string of the combo hash for local models, or NULL
 #'   for global models.
+#' @param saved_update Optional complete result already read and validated by
+#'   read_update_result(). Reuses those persisted forecasts and fits without
+#'   listing or downloading them again; preparation objects are still checked.
 #'
 #' @return TRUE invisibly if all outputs are valid.
 #' @noRd
-validate_run_outputs <- function(run_info, combo = NULL) {
+validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL) {
   # determine combo hash for file paths
   if (is.null(combo)) {
     forecast_combo <- "All-Data"
@@ -2381,7 +2384,7 @@ validate_run_outputs <- function(run_info, combo = NULL) {
   }
 
   # validate forecast data
-  fcst_tbl <- tryCatch(
+  fcst_tbl <- if (!is.null(saved_update)) saved_update$forecasts else tryCatch(
     if (isTRUE(run_info$forecast_selection$unpublished)) {
       NULL
     } else if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$rejected_combos)) {
@@ -2403,7 +2406,7 @@ validate_run_outputs <- function(run_info, combo = NULL) {
   }
 
   # validate trained models
-  trained_models_tbl <- tryCatch(
+  trained_models_tbl <- if (!is.null(saved_update)) saved_update$models else tryCatch(
     read_file(
       run_info = run_info,
       file_list = paste0(

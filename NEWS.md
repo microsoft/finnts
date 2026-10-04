@@ -1,4 +1,4 @@
-# finnts 0.7.0.9009 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9010 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -7,6 +7,9 @@
 
 ## Bug Fixes
 
+-   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
+  -   Preserves saved model selections; older runs reuse saved models, averaging when needed.
+  -   Handles interrupted updates and changes to hierarchy membership.
 -   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
   -   Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.
   -   Restart checks do not prevent concurrent attempts from overwriting files.

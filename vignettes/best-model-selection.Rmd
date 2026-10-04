@@ -151,7 +151,7 @@ contribute to either accuracy calculation.
 
 `update_forecast()` follows a different fitting path but uses the same evaluator:
 
-1. Recover the previously selected single model or average for each series from its saved source forecasts. All globally selected series must reference one winning global iteration; mixed iteration metadata fails before any global refit. Refit only the union of required components from that run with their saved settings; do not average all models listed in the earlier request. Different series or hierarchy source nodes can retain different subsets within that one iteration. Missing or ambiguous selected identities or saved fits require restoring the original artifacts. Reused fits do not call `final_models()` to search over a new candidate pool.
+1. Recover the previously selected single model or average for each series from its saved source forecasts. All globally selected series must reference one winning global iteration; mixed iteration metadata fails before any global refit. Refit only the union of required components from that run with their saved settings; do not average all models listed in the earlier request. Different series or hierarchy source nodes can retain different subsets within that one iteration. Missing or ambiguous selected identities or saved fits normally require restoring the original artifacts, except for the explicit legacy compatibility path below. Reused fits do not call `final_models()` to search over a new candidate pool.
 2. Assemble component and reused-average forecasts without reconciling them. Check every required component for hard eligibility and the selected reused combination for applicable soft concerns. Repeat before reconciliation after any existing WMAPE-triggered retuning. Passing reuse keeps that original chosen combination; it does not silently swap to another component.
 3. Deduplicate quality-rejected current series into the existing new-series/default-local forecast path. Healthy siblings are retained and removed series are excluded. Quality-only rejections do not consume the ordinary execution-failure cap of `max(10, ceiling(0.20 * existing_series))`.
 4. Run `final_models()` for each default replacement, then require the replacement to pass all applicable quality checks. Short-history checks that cannot be assessed do not count as failures. Good backtest accuracy alone cannot publish a still-questionable replacement.
@@ -164,6 +164,53 @@ Update accuracy keeps the existing native-cadence aggregate used for refit/retun
 and aggregate logging. Completed-output backtests supply per-series saved-winner
 accuracy and local model-pool statistics. This distinction preserves the update
 workflow's metric meanings when weekly output is expanded to daily rows.
+
+### Updating an earlier update
+
+Some older hierarchical global updates saved fitted models and reconciled
+forecasts, but no per-series source forecasts. When **all** expected source
+artifacts are genuinely absent, Finn can reuse that run's actual saved global
+model/recipe components. One component is used directly; multiple components
+are averaged equally at every source node. A warning identifies this policy
+once per global group. Requested models without saved fits are not added, and
+recipe identities are preserved rather than replaced with `R1`.
+
+This compatibility path requires valid reconciled output covering the global
+series being updated and consistent saved model settings and fits. It cannot
+recover heterogeneous historical choices from reconciled `Best-Model` rows.
+It does not search older Agent versions. Partial source sets, existing empty or
+corrupt source content, ambiguous winners, and storage/access failures cannot
+be treated as legacy absence. A missing optional unselected average remains
+valid; a schema-correct empty average represents an intentionally cleared
+average, not proof that the entire source set is absent.
+
+Accepted new hierarchical updates save their pre-reconciliation components and
+selected averages in the existing per-series format. Unused average files are
+overwritten with empty tables so an interrupted refit cannot leave a second
+winner behind. Publication verifies readable source coverage, selected
+identities, fitted components, prediction keys and average arithmetic. Restart
+checks also compare each node's intended selection, not just the shared model
+pool. Subsequent updates therefore use the normal per-node mapping path.
+
+### Changing hierarchy membership
+
+Selection recovery uses the predecessor's identities, while reconciliation
+requires the current hierarchy. Removed bottom series and orphaned aggregates
+are excluded; input ordering or an unchanged node count does not establish
+identity. Generated HTS aggregate labels can be reassigned when membership or
+hierarchy ordering changes. Finn compares their membership on surviving bottom
+series: a reassigned label is treated as a new node, not as the old aggregate.
+Added or reintroduced nodes have no selection in the immediate
+predecessor and follow the default-local workflow. Their saved local result is
+the predecessor for the next update. This includes first/last group members and
+overlapping grouped aggregates, not only bottom-level additions.
+
+An inner global hierarchy with new source nodes may no longer have a complete
+saved selection. Finn does not guess those choices or reconcile a partial
+hierarchy: its covered current series enter the existing default-local recovery
+path. Pre-expanded hierarchy inputs retain their local/global per-node routing,
+followed by one outer reconciliation. The existing new-series limits, quality
+gates, retuning rules and coherent-global-run policy remain unchanged.
 
 ## Evidence and limitations
 

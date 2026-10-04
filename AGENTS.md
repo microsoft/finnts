@@ -61,6 +61,11 @@ For model selection, start with the [architecture map](.github/agent-guides/arch
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
 
+For work-item and repository-hosting services, prefer authenticated command-line or API
+tools over browser automation when those tools can retrieve the required information.
+Keep repository guidance provider-neutral and never record organization names, private
+project identifiers, work-item URLs, or other environment-specific details.
+
 ## Artifact I/O
 
 - Prefer direct reads of deterministic artifact paths over `list_files()` or wildcard directory enumeration whenever the project, run, combo, recipe, and artifact suffix are already known. This is especially important during per-series iteration and training against large ADLS-backed logging and artifact folders.

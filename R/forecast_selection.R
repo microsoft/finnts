@@ -685,23 +685,33 @@ native_forecast_rows <- function(rows, date_type) {
   rows
 }
 
-read_candidate_forecasts <- function(run_info, combos, run_log = NULL, cache = NULL, reconciled = TRUE) {
+# Read exact candidate artifacts for the requested series, at native cadence.
+# By default absent/empty candidates error. With allow_missing, only a wholly
+# absent unreconciled artifact set returns NULL; existing empty average tables,
+# partial sets and storage failures are never reclassified as absent.
+read_candidate_forecasts <- function(run_info, combos, run_log = NULL, cache = NULL,
+                                     reconciled = TRUE, allow_missing = FALSE) {
   if (is.null(run_log)) run_log <- read_selection_file(run_info, "logs", cache = cache)
   if (reconciled && !identical(run_log$forecast_approach, "bottoms_up")) {
     rows <- read_selection_file(run_info, "forecasts", "-reconciled", "Best-Model", cache = cache)
     rows <- rows[rows$Combo %in% combos, , drop = FALSE]
   } else {
-    rows <- dplyr::bind_rows(lapply(combos, function(combo) {
-      suffixes <- c(
-        if (isTRUE(as.logical(run_log$run_local_models))) "-single_models",
-        if (isTRUE(as.logical(run_log$run_global_models))) "-global_models",
-        if (isTRUE(as.logical(run_log$run_ensemble_models))) "-ensemble_models",
-        if (isTRUE(as.logical(run_log[["average_models"]]))) "-average_models"
-      )
-      dplyr::bind_rows(lapply(suffixes, function(suffix) {
-        read_selection_file(run_info, "forecasts", suffix, combo, optional = TRUE, cache = cache)
-      }))
-    }))
+    suffixes <- c(
+      if (isTRUE(as.logical(run_log$run_local_models))) "-single_models",
+      if (isTRUE(as.logical(run_log$run_global_models))) "-global_models",
+      if (isTRUE(as.logical(run_log$run_ensemble_models))) "-ensemble_models",
+      if (isTRUE(as.logical(run_log[["average_models"]])) || allow_missing) "-average_models"
+    )
+    artifacts <- lapply(combos, function(combo) {
+      lapply(suffixes, function(suffix) {
+        read_selection_file(run_info, "forecasts", suffix, combo, optional = TRUE,
+          cache = cache, missing_null = TRUE)
+      })
+    })
+    if (allow_missing && all(vapply(artifacts, function(tables) {
+      all(vapply(tables, is.null, logical(1)))
+    }, logical(1)))) return(NULL)
+    rows <- dplyr::bind_rows(lapply(artifacts, dplyr::bind_rows))
   }
   if (nrow(rows) == 0) stop("No candidate forecasts were found in the exact run artifacts.", call. = FALSE)
   rows$Date <- as.Date(rows$Date)
@@ -967,9 +977,10 @@ agent_selection_combos <- function(agent_info, combo = NULL) {
 # may also be a schema-correct zero-row table left by result repair. Required
 # empty content, malformed averages and storage failures remain hard errors.
 # CSV run/series/model identifiers retain their original text; numeric metrics
-# and dates keep their ordinary inferred types.
+# and dates keep their ordinary inferred types. missing_null distinguishes true
+# optional absence from an existing empty average without changing other reads.
 read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
-                                optional = FALSE, cache = NULL) {
+                                optional = FALSE, cache = NULL, missing_null = FALSE) {
   prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name))
   extension <- if (folder == "logs") "csv" else run_info$data_output
   filename <- paste0(prefix, if (!is.null(combo)) paste0("-", hash_data(combo)), suffix, ".", extension)
@@ -979,7 +990,7 @@ read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
     character_columns = if (folder == "logs") {
       c("combo", "agent_run_id", "best_run_name", "run_id", "run_name")
     } else c("Combo", "Combo_ID", "Model_ID"))
-  if (optional && is.null(result)) return(tibble::tibble())
+  if (optional && is.null(result)) return(if (missing_null) NULL else tibble::tibble())
   empty_average <- optional && identical(folder, "forecasts") &&
     identical(suffix, "-average_models") && is.data.frame(result) && nrow(result) == 0L &&
     all(c("Combo", "Model_ID", "Model_Name", "Model_Type", "Recipe_ID",
@@ -1005,17 +1016,48 @@ read_selection_hierarchy <- function(run_info, cache = NULL) {
   hierarchy
 }
 
+# Compare source-node meaning on surviving bottom identities, not generated HTS
+# labels or row positions. Return current source names whose surviving members
+# were reassigned. Removed members may disappear without changing an aggregate's
+# identity; reassignment of surviving members cannot.
+# Unchanged metadata avoids constructing summing matrices. Invalid hierarchy
+# metadata errors through the ordinary HTS constructor, never implies a match.
+changed_update_hierarchy_sources <- function(previous, current) {
+  if (identical(previous, current)) return(character())
+  shared_bottoms <- intersect(previous$original_combos, current$original_combos)
+  shared_sources <- intersect(previous$hts_combos, current$hts_combos)
+  if (!length(shared_bottoms)) return(current$hts_combos)
+  if (!length(shared_sources)) return(character())
+  # Label each summing matrix with the saved source and original bottom IDs.
+  membership <- function(hierarchy) {
+    if (is.null(hierarchy$nodes)) stop("Update hierarchy is missing its node structure.", call. = FALSE)
+    bottom <- matrix(1, nrow = 2, ncol = length(hierarchy$original_combos),
+      dimnames = list(NULL, hierarchy$original_combos))
+    structure <- get_hts(stats::ts(bottom), hierarchy$nodes,
+      if (is.matrix(hierarchy$nodes)) "grouped_hierarchy" else "standard_hierarchy")
+    summed <- hts::smatrix(structure)
+    if (nrow(summed) != length(hierarchy$hts_combos)) {
+      stop("Update hierarchy source identities do not match its node structure.", call. = FALSE)
+    }
+    dimnames(summed) <- list(hierarchy$hts_combos, hierarchy$original_combos)
+    summed[shared_sources, shared_bottoms, drop = FALSE] != 0
+  }
+  shared_sources[rowSums(membership(previous) != membership(current)) > 0]
+}
+
 # Assess newly refitted predictions while preserving the saved model identity.
 # Every required component must be hard-eligible and the delivered choice must
 # have no soft concerns. Return rejected combo hashes for default recovery;
-# a hierarchy is reconciled only after all its source nodes pass.
+# a hierarchy is reconciled only after all its source nodes pass. Optional
+# previous_hierarchy rejects reused labels whose surviving membership changed.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
-                                    combos = NULL) {
+                                    combos = NULL, previous_hierarchy = NULL) {
   hierarchical <- !is.null(run_log[["forecast_approach"]]) && !identical(run_log$forecast_approach, "bottoms_up")
   hierarchy <- if (hierarchical) read_selection_hierarchy(run_info, cache) else NULL
   if (is.null(combos)) combos <- if (hierarchical) hierarchy$original_combos else unique(as.character(forecasts$Combo))
-  if (hierarchical && !setequal(unique(as.character(forecasts$Combo)), hierarchy$hts_combos)) {
+  if (hierarchical && (!setequal(unique(as.character(forecasts$Combo)), hierarchy$hts_combos) ||
+      (!is.null(previous_hierarchy) && length(changed_update_hierarchy_sources(previous_hierarchy, hierarchy))))) {
     return(list(forecasts = forecasts[0, ], source_forecasts = forecasts, selections = list(),
       source_selections = NULL, quality_rejected_combos = vapply(combos, hash_data, character(1), USE.NAMES = FALSE)))
   }

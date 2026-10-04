@@ -112,13 +112,13 @@ for (date_type in c("month", "week")) test_that(
     get_run_info = function(...) previous,
     validate_prev_run_log = function(log) log,
     list_files = function(...) "input.csv",
-    read_update_artifact = function(run_info, path) {
+    read_update_artifact = function(run_info, path, ...) {
       predecessor_path <- local_artifact_path(run_info, "models", "-single_models",
         hash_data("All-Data"), run_info$object_output)
       if (identical(run_info$run_name, "previous") && identical(path, predecessor_path)) {
         return(data.frame(Model_ID = c("xgboost--global--R1", "chronos2--global--R1")))
       }
-      original_update_reader(run_info, path)
+      original_update_reader(run_info, path, ...)
     },
     read_file = function(run_info, file_list = NULL, path = NULL, return_type = "df", ...) {
       if (return_type == "object") return(fixture$metadata)
@@ -141,7 +141,18 @@ for (date_type in c("month", "week")) test_that(
       }
       updated
     },
-    read_selection_file = function(...) previous[, names(previous) != "negative_forecast", drop = FALSE],
+    read_selection_file = function(run_info, folder, suffix = NULL, ...) {
+      if (identical(folder, "prep_data") && identical(suffix, "-hts_data")) return(fixture$history)
+      previous[, names(previous) != "negative_forecast", drop = FALSE]
+    },
+    # This fixture isolates assessment/solver order; chaining tests validate
+    # persisted publication. Reuse only outputs captured after this refit.
+    read_update_result = function(...) {
+      reconciled <- Filter(function(write) identical(write$suffix, "-reconciled"), writes)
+      models <- Filter(function(write) identical(write$suffix, "-single_models"), writes)
+      if (!length(reconciled) || !length(models)) return(NULL)
+      list(models = models[[1]]$data, forecasts = reconciled[[1]]$data)
+    },
     read_selection_hierarchy = function(...) fixture$metadata,
     read_candidate_forecasts = function(...) {
       adjust_forecast(fitted, fixture$project_info, "standard_hierarchy", FALSE)
