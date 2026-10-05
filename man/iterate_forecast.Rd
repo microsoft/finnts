@@ -44,7 +44,9 @@ This function orchestrates the forecast iteration process for a Finn agent, incl
 }
 \details{
 Future quality is evaluated when \code{\link[=final_models]{final_models()}} selects the winner
-within each iteration. Iteration ranking starts from the earliest minimum
+within each iteration, including usable least-issues fallbacks with warnings.
+Parallel fallback warnings are relayed to the caller without saved fields.
+Iteration ranking starts from the earliest minimum
 WMAPE and may prefer a later eligible iteration within 10 percent relative
 WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
 standard deviation summarize individual-model backtests, excluding simple

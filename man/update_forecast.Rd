@@ -68,6 +68,10 @@ reforecast through the same path as new series, without LLM quality judgments.
 Quality-only rejections do not count toward the ordinary execution-failure
 limit; existing data/provider failures retain that limit. Replacement models
 are evaluated using \code{\link[=final_models]{final_models()}} and cannot trigger an unbounded retry.
+Both new-series defaults and failed-update replacements may select a
+complete finite least-issues fallback with a warning. Existing rejected
+defaults are reconsidered from saved usable predictions without fitting.
+This fallback does not change ordinary update or retuning acceptance.
 Reused fits do not call \code{final_models()}; their components must pass hard
 eligibility and their selected combination must pass applicable quality checks
 before any reconciliation, including after retuning. Global updates recover
@@ -101,8 +105,10 @@ existing global series usable without promoting newly added series to
 global winners: their ordinary new-series/default-local routing is unchanged.
 Heterogeneous selections are not extrapolated, removed nodes are not
 published, and reassigned-label safeguards still apply. An incomplete inner
-hierarchy continues to use default-local recovery. Existing
-run logs record default acceptance or rejection for restart safety. The
+hierarchy continues to use default-local recovery. Stable default run
+identities and saved forecasts preserve restart safety without an additional
+acceptance-status column. Unpublished defaults are reassessed from saved
+predictions before reuse, without fitting. The
 selected mixture is then reconciled without post-reconciliation future
 evaluation, whole-set replacement, or late quality-triggered refitting.
 Legacy second-order differenced original targets without their own starting

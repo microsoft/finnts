@@ -104,7 +104,9 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #' This function orchestrates the forecast iteration process for a Finn agent, including exploratory data analysis,
 #'
 #' @details Future quality is evaluated when [final_models()] selects the winner
-#'   within each iteration. Iteration ranking starts from the earliest minimum
+#'   within each iteration, including usable least-issues fallbacks with warnings.
+#'   Parallel fallback warnings are relayed to the caller without saved fields.
+#'   Iteration ranking starts from the earliest minimum
 #'   WMAPE and may prefer a later eligible iteration within 10 percent relative
 #'   WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
 #'   standard deviation summarize individual-model backtests, excluding simple
@@ -392,6 +394,7 @@ iterate_forecast <- function(agent_info,
     ) %op%
       {
         message("[agent] Running local model optimization for combo: ", x)
+        fallback_warnings <- list()
 
         # ensure functions are available in the local environment
         if (inner_parallel) {
@@ -432,7 +435,7 @@ iterate_forecast <- function(agent_info,
           }
 
           # run the local model workflow
-          fcst_results <- fcst_agent_workflow(
+          fcst_results <- capture_forecast_warnings(fcst_agent_workflow(
             agent_info = agent_info,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
@@ -443,15 +446,19 @@ iterate_forecast <- function(agent_info,
             seed = seed,
             previous_run_results = previous_runs,
             fallback_available = FALSE
-          )
+          ))
+          fallback_warnings <- fcst_results$warnings
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
         }
 
-        return(data.frame(Combo = x))
+        return(list(Combo = x, warnings = fallback_warnings))
       } %>% base::suppressPackageStartupMessages()
 
     par_end(cl)
+    for (result in local_models) {
+      for (condition in result$warnings) warning(condition)
+    }
   }
 
   # save the best run for the agent
@@ -2090,13 +2097,69 @@ reason_inputs <- function(agent_info,
   return(input_list)
 }
 
+# Reject a saved default only when every individual path is structurally unusable.
+# All-No flags alone do not prove rejection: require complete candidate coverage
+# or final_models' existing unavailable-accuracy result and finalization inputs.
+# The latter preserves genuine incomplete-model rejections without new metadata.
+# A usable candidate with saved fits returns TRUE for selection-only recovery;
+# otherwise damaged output returns FALSE for ordinary repair.
+# Reads exact forecasts and preparation without writes or model fitting.
+# Provider errors propagate; a confirmed rejection raises the typed condition.
+reject_saved_default_forecasts <- function(run_info, run_log, combos, global) {
+  cache <- new.env(parent = emptyenv())
+  recoverable <- FALSE
+  finalized_rejection <- all(c("average_models", "max_model_average",
+    "weekly_to_daily", "weighted_mape") %in% names(run_log)) &&
+    isTRUE(is.na(run_log[["weighted_mape"]]))
+  for (combo in combos) {
+    rows <- read_update_artifact(run_info, local_artifact_path(run_info, "forecasts",
+      if (global) "-global_models" else "-single_models", hash_data(combo)))
+    required <- c("Combo", "Model_ID", "Train_Test_ID", "Date", "Forecast", "Target",
+      "Best_Model", "lo_80", "lo_95", "hi_80", "hi_95")
+    if (!is.data.frame(rows) || !nrow(rows) || !all(required %in% names(rows)) ||
+        anyNA(rows[, c("Combo", "Model_ID", "Best_Model")]) ||
+        any(rows$Combo != combo) || any(!nzchar(rows$Model_ID)) ||
+        any(rows$Best_Model != "No")) next
+    rows <- native_forecast_rows(rows, run_log$date_type)
+    coverage <- read_update_keys(run_info, combo, recipes = run_log[["recipes_to_run"]])
+    if (is.null(coverage) || anyNA(rows$Train_Test_ID) ||
+        any(!rows$Train_Test_ID %in% c(coverage$required$Train_Test_ID, coverage$non_delivery_ids))) next
+    delivery <- rows[!rows$Train_Test_ID %in% coverage$non_delivery_ids, , drop = FALSE]
+    complete <- vapply(split(delivery, delivery$Model_ID), function(candidate) {
+      forecast_keys_complete(candidate, coverage$required)
+    }, logical(1))
+    if ((!length(complete) || !all(complete) ||
+        !setequal(names(complete), unique(rows$Model_ID))) && !finalized_rejection) next
+    selection <- select_series_forecasts(rows,
+      read_series_history(run_info, combo, run_log, cache),
+      read_selection_file(run_info, "prep_models", "-train_test_split", cache = cache),
+      allow_plausibility_fallback = TRUE, require_clean_selection = TRUE)
+    if (is.na(selection$selected_id)) {
+      rlang::abort("The default replacement was already rejected and cannot be fitted again.",
+        class = "finnts_forecast_selection_rejected", combo = combo)
+    }
+    models <- read_update_artifact(run_info, local_artifact_path(run_info, "models",
+      "-single_models", hash_data(if (global) "All-Data" else combo), run_info$object_output))
+    if (is.data.frame(models) && all(c("Model_ID", "Model_Fit") %in% names(models)) &&
+        !anyNA(models$Model_ID) && !anyDuplicated(models$Model_ID)) {
+      index <- match(selection$selected_id, models$Model_ID)
+      recoverable <- recoverable || (!is.na(index) && !is.null(models$Model_Fit[[index]]))
+    }
+  }
+  recoverable
+}
+
 #' Submit a Finn forecasting run
 #'
-#' @details Accepted default results are reused only when their current models
-#'   and forecasts remain readable. Otherwise a worker-local
+#' @details Default results are reused only when their current models and
+#'   forecasts remain readable and pass acceptance recomputed from saved output.
+#'   No acceptance status is persisted. Otherwise a worker-local
 #'   `rebuild_update_models` value bypasses model/final-output caches for this
 #'   submission, without changing preparation, saved log fields, or retry limits.
-#'   A genuinely rejected default still cannot be submitted again. Existing
+#'   A structurally unusable rejected default still cannot be submitted again.
+#'   Older plausibility-only rejections are reselected from saved predictions
+#'   and fits without preparation or training. The default policy is attached
+#'   only to finalization, never fitted objects or metadata. Existing
 #'   output validation precedes returning a successful run. Input CSV series
 #'   identities remain text, and known recipe settings are reused for coverage.
 #'
@@ -2220,18 +2283,30 @@ submit_fcst_run <- function(agent_info,
   run_info$allow_quality_rejection <- isTRUE(agent_info$allow_quality_rejection) || isTRUE(agent_info$default_reforecast)
   if (isTRUE(agent_info$default_reforecast)) {
     default_log <- read_selection_file(run_info, "logs")
-    if (identical(as.character(default_log[["default_reforecast_status"]]), "rejected")) {
-      rlang::abort("The default replacement was already rejected and cannot be fitted again.",
-        class = "finnts_forecast_selection_rejected", combo = unique(as.character(input_data$Combo)))
-    }
-    if (identical(as.character(default_log[["default_reforecast_status"]]), "accepted")) {
-      current_result <- read_update_result(run_info, unique(as.character(input_data$Combo)),
+    if ("average_models" %in% names(default_log)) {
+      combos <- unique(as.character(input_data$Combo))
+      current_result <- read_update_result(run_info, combos,
         global_models, agent_info$forecast_horizon, default_log$forecast_approach,
         recipes = default_log[["recipes_to_run"]])
-      if (!is.null(current_result)) {
-        restored <- assess_agent_run(run_info, default_log, unique(as.character(input_data$Combo)))
+      if (!is.null(current_result) ||
+          reject_saved_default_forecasts(run_info, default_log, combos, global_models)) {
+        restored <- if (!is.null(current_result)) {
+          assess_agent_run(run_info, default_log, combos, check_quality = TRUE)
+        } else NULL
+        if (is.null(restored) || !agent_selection_summary(restored, check_quality = TRUE)$acceptable) {
+          final_info <- run_info
+          final_info$default_reforecast <- TRUE
+          restored <- final_models(final_info, average_models = default_log$average_models,
+            max_model_average = default_log$max_model_average,
+            weekly_to_daily = project_info$weekly_to_daily,
+            parallel_processing = final_parallel, inner_parallel = inner_parallel, num_cores = num_cores)
+        }
+        if (!agent_selection_summary(restored, check_quality = TRUE,
+          allow_plausibility_fallback = TRUE)$acceptable) {
+          rlang::abort("The default replacement was already rejected and cannot be fitted again.",
+            class = "finnts_forecast_selection_rejected", combo = combos)
+        }
         run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
-        run_info$forecast_selection$quality_accepted <- TRUE
         run_info$selection_combos <- names(restored$selections)
         validate_run_outputs(run_info, combo)
         return(run_info)
@@ -2307,8 +2382,10 @@ submit_fcst_run <- function(agent_info,
   }
 
   # evaluate models
+  final_info <- run_info
+  final_info$default_reforecast <- isTRUE(agent_info$default_reforecast)
   selection_result <- tryCatch(final_models(
-    run_info = run_info,
+    run_info = final_info,
     average_models = TRUE,
     max_model_average = 3,
     weekly_to_daily = project_info$weekly_to_daily,
@@ -2326,7 +2403,8 @@ submit_fcst_run <- function(agent_info,
     log <- read_selection_file(run_info, "logs")
     evaluated <- assess_agent_run(run_info, log, combos,
       agent_info$selection_cache %||% new.env(parent = emptyenv()),
-      check_quality = isTRUE(agent_info$default_reforecast))
+      check_quality = isTRUE(agent_info$default_reforecast),
+      allow_plausibility_fallback = isTRUE(agent_info$default_reforecast))
     run_info$forecast_selection <- evaluated[c("selections", "source_selections", "rejected_combos")]
     run_info$selection_combos <- combos
   }
@@ -2338,14 +2416,13 @@ submit_fcst_run <- function(agent_info,
       length(score) != 1 || is.na(score)
     }, logical(1))
     if (any(quality_missing) && !isTRUE(run_info$forecast_selection$quality_accepted)) {
-      evaluated <- assess_agent_run(run_info, default_log, run_info$selection_combos, check_quality = TRUE)
+      evaluated <- assess_agent_run(run_info, default_log, run_info$selection_combos, check_quality = TRUE,
+        allow_plausibility_fallback = TRUE)
       run_info$forecast_selection <- evaluated[c("selections", "source_selections", "rejected_combos")]
+      for (series in names(evaluated$selections)) {
+        warn_forecast_fallback(evaluated$selections[[series]], series)
+      }
     }
-    default_log$default_reforecast_status <- if (agent_selection_summary(run_info$forecast_selection, check_quality = TRUE)$acceptable) {
-      "accepted"
-    } else "rejected"
-    write_data(default_log, combo = NULL, run_info = run_info, output_type = "log",
-      folder = "logs", suffix = NULL)
   }
 
   # validate that all outputs can be loaded before proceeding
@@ -2893,7 +2970,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     selected <- current_result$selections[[series]]
     if (is.null(selected) || is.na(selected$selected_id)) next
     score <- selected$rankings[selected$rankings$Model_ID == selected$selected_id, , drop = FALSE]
-    if (nrow(score) != 1 || !isTRUE(score$Eligible) || !is.finite(score$WMAPE)) next
+    if (!usable_forecast_selection(selected)) next
     if (!is.null(forecast_accuracy)) {
       completed_wmape <- unname(forecast_accuracy$by_series[series])
       if (length(completed_wmape) != 1L || !is.finite(completed_wmape)) next

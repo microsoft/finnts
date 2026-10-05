@@ -12,6 +12,7 @@ paths:
 # R Package Rules
 
 - Keep exported functions stable. Ask before introducing a breaking API change, and document an approved breaking change in `NEWS.md`.
+- Follow [AGENTS.md's persisted-data approval gate](../../AGENTS.md#artifact-io) before changing saved columns or values; API approval alone does not authorize a storage-contract change.
 - Prefer small, composable functions and packages already declared in `Depends`, `Imports`, or `Suggests`.
 - Add a package dependency only for a concrete feature when existing dependencies and a small maintainable implementation are inadequate, unsafe, or would recreate substantial mature functionality. Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers, and do not vendor third-party source.
 - A dependency-changing pull request must explain alternatives, necessity, maintenance/security/license implications, placement in `Imports` or `Suggests`, and version constraints. Validate it with a clean-library installation and `devtools::check()`.

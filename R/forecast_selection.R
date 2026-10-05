@@ -480,6 +480,8 @@ forecast_backtest_accuracy <- function(history, backtest) {
 
 # Hard failures control Eligible; soft path concerns only affect ranking.
 # Log_Weight carries backtest target mass for stable aggregation across series.
+# An explicitly enabled final-selection fallback also scores usable extreme
+# paths, retaining strict eligibility and reasons. Nothing here is persisted.
 evaluate_forecast_candidates <- function(history, backtests, forecasts, context) {
   evaluation <- context$forecast_evaluation %||% prepare_forecast_evaluation(history, context)
   history <- evaluation$history
@@ -520,8 +522,18 @@ evaluate_forecast_candidates <- function(history, backtests, forecasts, context)
     }
     accuracy <- forecast_backtest_accuracy(history, backtest)
     if (!is.finite(accuracy$WMAPE)) reasons <- c(reasons, "unavailable_accuracy")
-    # A hard-invalid path is not soft-scored. Zero risk here is not eligibility.
-    risk <- forecast_path_risk(if (length(reasons) == 0) future$Forecast else numeric(), reference)
+    fallback_path <- isTRUE(context$allow_plausibility_fallback) &&
+      all(reasons %in% "catastrophic_magnitude")
+    risk <- forecast_path_risk(if (length(reasons) == 0 || fallback_path) future$Forecast else numeric(), reference)
+    if (fallback_path && "catastrophic_magnitude" %in% reasons) {
+      future_scale <- if (is.null(reference$trend)) {
+        log(reference$normalization) + log(reference$scale)
+      } else reference$trend$log_magnitude_scale
+      excess <- max(c(log(abs(backtest$Forecast)) - log(reference$normalization) -
+        log(reference$scale), log(abs(future$Forecast)) - future_scale)) - log(100)
+      risk$components["magnitude"] <- max(0, expm1(min(excess, log(.Machine$double.xmax))))
+      risk$risk <- max(risk$risk, risk$components["magnitude"])
+    }
     tibble::new_tibble(list(
       Model_ID = candidate_id, Eligible = length(reasons) == 0,
       WMAPE = accuracy$WMAPE, Log_Weight = accuracy$Log_Weight, Risk = risk$risk,
@@ -554,8 +566,26 @@ order_forecast_candidates <- function(rankings) {
   indices
 }
 
-rank_forecast_candidates <- function(rankings) {
-  if (nrow(rankings) == 1) {
+# Identify deliverable fallback rows from existing reasons and accuracy.
+# Only known plausibility failures may be relaxed; new structural reasons
+# remain disqualifying by default. This never changes strict Eligible flags.
+forecast_fallback_candidates <- function(rankings) {
+  plausible <- c("catastrophic_magnitude", "unsupported_level", "level_deviation",
+    "trend_deviation", "seasonal_amplitude", "seasonal_phase")
+  is.finite(rankings$WMAPE) & vapply(seq_len(nrow(rankings)), function(index) {
+    reasons <- rankings$Reasons[[index]]
+    (isTRUE(rankings$Eligible[index]) || length(reasons) > 0L) &&
+      !anyNA(reasons) && all(reasons %in% plausible)
+  }, logical(1))
+}
+
+# Rank normally first. Explicit fallback may select a structurally usable path
+# by issue count, severity, accuracy, then stable ID, without an accuracy window.
+# require_clean_selection is only for fresh defaults' stricter acceptance gate.
+# fallback_id is transient evidence, never an artifact column or quality waiver.
+rank_forecast_candidates <- function(rankings, allow_plausibility_fallback = FALSE,
+                                      require_clean_selection = FALSE) {
+  if (nrow(rankings) == 1 && !allow_plausibility_fallback) {
     selected_id <- if (isTRUE(rankings$Eligible[1]) && is.finite(rankings$WMAPE[1])) {
       rankings$Model_ID[1]
     } else NA_character_
@@ -576,21 +606,44 @@ rank_forecast_candidates <- function(rankings) {
   # Keep all candidates for diagnostics. Consumers must use selected_id, not
   # rankings[1, ], because this full ordering is not restricted to the shortlist.
   rankings <- rankings[order_forecast_candidates(rankings), , drop = FALSE]
-  list(selected_id = selected_id, rankings = rankings)
+  result <- list(selected_id = selected_id, rankings = rankings)
+  chosen <- match(selected_id, rankings$Model_ID)
+  if (allow_plausibility_fallback && (is.na(selected_id) ||
+      (require_clean_selection && !isTRUE(rankings$Violations[chosen] == 0)))) {
+    candidates <- rankings[forecast_fallback_candidates(rankings), , drop = FALSE]
+    if (nrow(candidates)) {
+      issues <- vapply(candidates$Reasons, function(reasons) length(unique(reasons)), integer(1))
+      winner <- order(issues, candidates$Risk, candidates$WMAPE, candidates$Model_ID,
+        method = "radix", na.last = TRUE)[1]
+      result$selected_id <- candidates$Model_ID[winner]
+      result$fallback_id <- result$selected_id
+    }
+  }
+  result
 }
 
+# Evaluate and rank one pool; context opts final/default selection into fallback.
+# Update and ensemble-training callers retain strict selection by default.
 select_forecast_candidate <- function(history, backtests, forecasts, context) {
-  rank_forecast_candidates(evaluate_forecast_candidates(history, backtests, forecasts, context))
+  rank_forecast_candidates(evaluate_forecast_candidates(history, backtests, forecasts, context),
+    allow_plausibility_fallback = isTRUE(context$allow_plausibility_fallback),
+    require_clean_selection = isTRUE(context$require_clean_selection))
 }
 
 # Storage-free adapter: split one series' existing predictions by run type and
 # require exactly one ranking row per requested ID from the internal selector.
+# Policy arguments opt finalization into a usable fallback and fresh defaults
+# into clean-selection preference; strict callers cannot inherit those options.
 select_series_forecasts <- function(predictions, series_data, splits,
                                     candidate_ids = unique(predictions$Model_ID),
-                                    selector = select_forecast_candidate) {
+                                    selector = select_forecast_candidate,
+                                    allow_plausibility_fallback = FALSE,
+                                    require_clean_selection = FALSE) {
   context <- series_data
   context$train_test_split <- splits
   context$candidate_ids <- candidate_ids
+  context$allow_plausibility_fallback <- allow_plausibility_fallback
+  context$require_clean_selection <- require_clean_selection
   backtest_ids <- splits$Train_Test_ID[splits$Run_Type == "Back_Test"]
   future_ids <- splits$Train_Test_ID[splits$Run_Type == "Future_Forecast"]
   predictions$Date <- as.Date(predictions$Date)
@@ -600,7 +653,7 @@ select_series_forecasts <- function(predictions, series_data, splits,
     predictions[predictions$Train_Test_ID %in% future_ids, , drop = FALSE],
     context
   )
-  validate_forecast_selection(result, candidate_ids)
+  validate_forecast_selection(result, candidate_ids, allow_plausibility_fallback)
 }
 
 screen_ensemble_inputs <- function(predictions, series_data, splits) {
@@ -615,7 +668,9 @@ screen_ensemble_inputs <- function(predictions, series_data, splits) {
   predictions[predictions$Model_ID %in% valid_ids, , drop = FALSE]
 }
 
-validate_forecast_selection <- function(selection, candidate_ids) {
+# Validate selector identity/shape and enforce strict eligibility unless the
+# caller explicitly permits a checked, structurally usable fallback selection.
+validate_forecast_selection <- function(selection, candidate_ids, allow_plausibility_fallback = FALSE) {
   if (!is.list(selection) || length(selection$selected_id) != 1 ||
       !is.data.frame(selection$rankings) ||
       !all(c("Model_ID", "Eligible", "WMAPE", "Risk", "Violations", "Reasons") %in% names(selection$rankings)) ||
@@ -626,12 +681,47 @@ validate_forecast_selection <- function(selection, candidate_ids) {
     stop("The forecast selector returned an invalid selection contract.", call. = FALSE)
   }
   if (!is.na(selection$selected_id) &&
-      !isTRUE(selection$rankings$Eligible[match(selection$selected_id, selection$rankings$Model_ID)])) {
+      !isTRUE(selection$rankings$Eligible[match(selection$selected_id, selection$rankings$Model_ID)]) &&
+      !(allow_plausibility_fallback && usable_forecast_selection(selection))) {
     stop("The forecast selector selected an ineligible candidate.", call. = FALSE)
   }
   selection
 }
 
+# Recognize an ordinary selected result or an explicitly authorized in-memory
+# fallback. Retain strict failure evidence instead of changing Eligible to TRUE.
+usable_forecast_selection <- function(selection) {
+  if (is.null(selection) || length(selection$selected_id) != 1L || is.na(selection$selected_id)) return(FALSE)
+  chosen <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, , drop = FALSE]
+  nrow(chosen) == 1L && is.finite(chosen$WMAPE) &&
+    (isTRUE(chosen$Eligible) || (identical(selection$fallback_id, selection$selected_id) &&
+      isTRUE(forecast_fallback_candidates(chosen))))
+}
+
+# Emit a catchable warning only for an actual fallback, outside selection workers.
+# The selected model and original reasons are kept in the condition, not on disk.
+warn_forecast_fallback <- function(selection, combo) {
+  if (is.null(selection$fallback_id)) return(invisible(NULL))
+  row <- selection$rankings[selection$rankings$Model_ID == selection$fallback_id, , drop = FALSE]
+  concerns <- if (length(row$Reasons[[1]])) paste(row$Reasons[[1]], collapse = ", ") else
+    "none (selected outside the normal accuracy shortlist)"
+  rlang::warn(paste0("Selected forecast fallback '", selection$fallback_id, "' for series '",
+    combo, "'; selection concerns: ", concerns,
+    ". Review this forecast before use."),
+    class = "finnts_forecast_selection_fallback", combo = combo, model_id = selection$fallback_id)
+}
+
+# Carry only fallback warning conditions across worker boundaries in memory.
+# Other warnings/errors retain their normal handling; callers re-emit captured
+# conditions on the coordinator and never pass this envelope to artifact writers.
+capture_forecast_warnings <- function(expr) {
+  warnings <- list()
+  value <- withCallingHandlers(expr, finnts_forecast_selection_fallback = function(condition) {
+    warnings[[length(warnings) + 1L]] <<- condition
+    invokeRestart("muffleWarning")
+  })
+  list(value = value, warnings = warnings)
+}
 abort_forecast_selection <- function(combo, selection) {
   rlang::abort(
     paste0("No acceptable forecast candidate for series '", combo, "': ",
@@ -810,8 +900,10 @@ selected_forecast_accuracy <- function(predictions, series, splits, require_fore
   list(selected_id = if (rankings$Eligible) model_id else NA_character_, rankings = rankings)
 }
 
+# Assess exact saved output without fitting or writes. Strict quality remains
+# the default; fresh-default recovery may explicitly permit a usable fallback.
 assess_agent_run <- function(run_info, run_log, combos, cache = new.env(parent = emptyenv()),
-                             check_quality = FALSE) {
+                             check_quality = FALSE, allow_plausibility_fallback = FALSE) {
   hierarchical <- !identical(run_log$forecast_approach, "bottoms_up")
   splits <- read_selection_file(run_info, "prep_models", "-train_test_split", cache = cache)
   if (hierarchical && !check_quality) {
@@ -830,9 +922,14 @@ assess_agent_run <- function(run_info, run_log, combos, cache = new.env(parent =
     if (!check_quality) return(selected_forecast_accuracy(predictions, series, splits))
     selected <- if ("Best_Model" %in% names(predictions)) predictions[!is.na(predictions$Best_Model) & predictions$Best_Model == "Yes", , drop = FALSE] else predictions[0, ]
     selection <- select_series_forecasts(
-      if (nrow(selected)) selected else predictions, series, splits
+      if (nrow(selected)) selected else predictions, series, splits,
+      allow_plausibility_fallback = allow_plausibility_fallback,
+      require_clean_selection = check_quality
     )
-    if (nrow(selected) == 0) selection$selected_id <- NA_character_
+    if (nrow(selected) == 0) {
+      selection$selected_id <- NA_character_
+      selection$fallback_id <- NULL
+    }
     selection
   }), source_combos)
   result <- list(selections = selections, source_selections = NULL, rejected_combos = character())
@@ -868,8 +965,10 @@ hierarchical_selection_result <- function(run_info, run_log, source_selections, 
 # Missing entries in the supplied selection set make it partial/rejected.
 # Callers must include the full expected series set, including missing selections.
 # Ordinary iteration decisions require completeness and finite accuracy only;
-# update/default acceptance explicitly opts into the stricter quality boundary.
-agent_selection_summary <- function(result, check_quality = FALSE) {
+# update acceptance explicitly opts into the stricter quality boundary.
+# Fresh defaults may also accept an explicitly selected usable fallback;
+# its original strict eligibility and issue evidence remain unchanged.
+agent_selection_summary <- function(result, check_quality = FALSE, allow_plausibility_fallback = FALSE) {
   chosen <- lapply(result$selections, function(selection) {
     if (is.null(selection) || is.na(selection$selected_id)) return(NULL)
     if (nrow(selection$rankings) == 1 && identical(selection$rankings$Model_ID, selection$selected_id)) {
@@ -879,19 +978,26 @@ agent_selection_summary <- function(result, check_quality = FALSE) {
   })
   rows <- dplyr::bind_rows(chosen)
   complete <- length(chosen) > 0 && nrow(rows) == length(chosen) &&
-    all(rows$Eligible) && all(is.finite(rows$WMAPE))
+    all(vapply(result$selections, usable_forecast_selection, logical(1))) && all(is.finite(rows$WMAPE))
   source <- if (check_quality && length(result$source_selections)) {
-    agent_selection_summary(list(selections = result$source_selections), check_quality = TRUE)
+    agent_selection_summary(list(selections = result$source_selections), check_quality = TRUE,
+      allow_plausibility_fallback = allow_plausibility_fallback)
   } else NULL
   if (!is.null(source)) complete <- complete && is.finite(source$weighted_mape)
   weights <- if (nrow(rows) && "Log_Weight" %in% names(rows) && all(is.finite(rows$Log_Weight))) {
     exp(rows$Log_Weight - max(rows$Log_Weight))
   } else rep(1, nrow(rows))
   fidelity <- rows[["Seasonal_Fidelity"]]
+  quality_ok <- vapply(result$selections, function(selection) {
+    if (!usable_forecast_selection(selection)) return(FALSE)
+    row <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, , drop = FALSE]
+    (isTRUE(row$Eligible) && isTRUE(row$Violations == 0)) || (allow_plausibility_fallback &&
+      identical(selection$fallback_id, selection$selected_id))
+  }, logical(1))
   list(
     weighted_mape = if (complete) sum(rows$WMAPE * weights) / sum(weights) else Inf,
     acceptable = complete && (!check_quality || isTRUE(result$quality_accepted) ||
-      (all(!is.na(rows$Violations) & rows$Violations == 0) && (is.null(source) || source$acceptable))),
+      (all(quality_ok) && (is.null(source) || source$acceptable))),
     status = if (complete) "evaluated" else if (nrow(rows)) "partial" else "rejected",
     risk = if (!is.null(source)) source$risk else if (nrow(rows)) max(rows$Risk) else 0,
     violations = if (!is.null(source)) source$violations else if (nrow(rows)) sum(rows$Violations) else 0L,

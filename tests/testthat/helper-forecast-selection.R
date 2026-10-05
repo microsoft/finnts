@@ -34,10 +34,13 @@ write_fcst_file <- function(data, path) {
   }
 }
 
-make_best_models_fixture <- function(date_type = "month") {
+# Create deterministic prepared history, splits and two model prediction tables.
+# The caller-owned environment controls temporary artifact lifetime, including
+# when another fixture helper composes this fixture. No model fitting occurs.
+make_best_models_fixture <- function(date_type = "month", .local_envir = parent.frame()) {
   run_path <- withr::local_tempdir(
     pattern = "finnts-best-models-",
-    .local_envir = parent.frame()
+    .local_envir = .local_envir
   )
   run_info <- set_run_info(
     project_name = "best_models_test",

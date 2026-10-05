@@ -3,10 +3,10 @@
 ## Improvements
 
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
-- Improved averaging, forecast updates, and run recovery.
 
 ## Bug Fixes
 
+-   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
   -   Preserves saved model selections; older runs reuse saved models, averaging when needed.
   -   Handles interrupted updates and changes to hierarchy membership.

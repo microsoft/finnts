@@ -29,8 +29,8 @@ test_that("hierarchical recovery persists replacement identities through restart
     expected[changed] <- current$ids[2]
     expect_identical(mapping$selected_ids, expected)
     expect_identical(mapping$components[[changed]], current$ids[2])
-    expect_identical(log$global_update_status, "recovered")
-    expect_equal(log$global_update_recovered_sources, 1)
+    expect_false(any(startsWith(names(log), "global_update_")))
+    expect_equal(sum(mapping$selected_ids != previous$winners), 1)
     rows <- read_candidate_forecasts(current$info, changed, log, reconciled = FALSE)
     expect_true(all(is.finite(rows$Forecast)))
     expect_true(all(rows$Model_ID[rows$Best_Model == "Yes"] == current$ids[2]))
@@ -39,7 +39,8 @@ test_that("hierarchical recovery persists replacement identities through restart
     expect_identical(restarted$result$status, "done")
     expect_length(restarted$fits, 0L)
 
-    # A source-only winner edit cannot masquerade as the recorded recovery.
+    # A different valid winner must reproduce recovery from the predecessor;
+    # conflicting winner flags must also fail the source reader's own checks.
     untouched <- setdiff(current$hierarchy$hts_combos, changed)[1]
     single <- read_selection_file(current$info, "forecasts", "-global_models", untouched)
     average <- read_selection_file(current$info, "forecasts", "-average_models", untouched)
@@ -52,8 +53,12 @@ test_that("hierarchical recovery persists replacement identities through restart
     expect_null(read_update_result(current$info, previous$hierarchy$original_combos, TRUE, 6,
       approach, current$splits, "R1", previous$winners, previous$hierarchy,
       allow_selection_recovery = TRUE))
+    write_data(average, untouched, current$info, "data", "forecasts", "-average_models")
+    expect_null(read_update_result(current$info, previous$hierarchy$original_combos, TRUE, 6,
+      approach, current$splits, "R1", previous$winners, previous$hierarchy,
+      allow_selection_recovery = TRUE))
     expect_error(read_global_update_selection(current$info, log, previous$hierarchy$original_combos),
-      "disagree with the recorded update decision", class = "finnts_update_artifact_error")
+      "winner is missing or ambiguous", class = "finnts_update_artifact_error")
     write_data(single, untouched, current$info, "data", "forecasts", "-global_models")
     write_data(average, untouched, current$info, "data", "forecasts", "-average_models")
 
@@ -82,7 +87,7 @@ test_that("hierarchical recovery persists replacement identities through restart
   }
 })
 
-test_that("recovered weekly CSV output resumes only with intact recorded decisions", {
+test_that("recovered weekly CSV output resumes only with unambiguous source decisions", {
   path <- withr::local_tempdir()
   previous <- make_update_chain_case(path, uniform = TRUE, date_type = "week", data_output = "csv")
   current <- make_update_chain_case(path, "weekly-recovery", legacy = TRUE,
@@ -98,15 +103,24 @@ test_that("recovered weekly CSV output resumes only with intact recorded decisio
   expect_equal(sum(rows$Train_Test_ID == 1L & rows$Best_Model == "Yes"), 42L)
   expect_length(run_update_chain_step(previous, current)$fits, 0L)
   log <- read_selection_file(current$info, "logs")
-  for (field in c("global_update_selected", "global_update_previous_selection")) {
-    damaged <- log
-    damaged[[field]] <- "selection-not-the-recorded-decision"
-    write_data(damaged, NULL, current$info, "log", "logs")
+  expect_false(any(startsWith(names(log), "global_update_")))
+  untouched <- setdiff(current$hierarchy$hts_combos, changed)[1]
+  single <- read_selection_file(current$info, "forecasts", "-global_models", untouched)
+  average <- read_selection_file(current$info, "forecasts", "-average_models", untouched)
+  for (defect in c("missing_winner", "duplicate_winner")) {
+    damaged_single <- single
+    damaged_average <- average
+    damaged_single$Best_Model <- ifelse(
+      defect == "duplicate_winner" & damaged_single$Model_ID == current$ids[1], "Yes", "No")
+    damaged_average$Best_Model <- if (defect == "duplicate_winner") "Yes" else "No"
+    write_data(damaged_single, untouched, current$info, "data", "forecasts", "-global_models")
+    write_data(damaged_average, untouched, current$info, "data", "forecasts", "-average_models")
     expect_null(read_update_result(current$info, previous$hierarchy$original_combos, TRUE, 6,
       "standard_hierarchy", current$splits, "R1", previous$winners, previous$hierarchy,
       allow_selection_recovery = TRUE))
   }
-  write_data(log, NULL, current$info, "log", "logs")
+  write_data(single, untouched, current$info, "data", "forecasts", "-global_models")
+  write_data(average, untouched, current$info, "data", "forecasts", "-average_models")
   expect_length(run_update_chain_step(previous, current)$fits, 0L)
 })
 
@@ -207,7 +221,7 @@ test_that("global recovery ranks soft concerns without weakening hard eligibilit
   expect_length(step$result$quality_rejected_combos, 0L)
   if (!identical(step$result$status, "done")) return(invisible(NULL))
   log <- read_selection_file(current$info, "logs")
-  expect_gt(log$global_update_concerned_sources, 0)
+  expect_false(any(startsWith(names(log), "global_update_")))
   rows <- read_candidate_forecasts(current$info, changed, log, reconciled = FALSE)
   selection <- select_series_forecasts(rows, read_series_history(current$info, changed, log), current$splits)
   chosen <- unique(rows$Model_ID[rows$Best_Model == "Yes"])

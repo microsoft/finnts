@@ -55,6 +55,8 @@ For a shorter horizon with at least three future points, Finn compares only the 
 
 One or two seasonal cycles remain usable. One cycle supplies a cautious reference, while repeated cycles support stronger comparisons. Weak seasonality, fewer than three future points, low-variation partial phases, and unavailable checks remain unassessed instead of making the series fail. Flat forecasts are not rejected simply because observations are noisy.
 
+The table describes strict screening. The least-issues fallback below may relax catastrophic magnitude, but not structural failures, and assesses applicable soft checks on those usable extreme paths.
+
 | Check | Trigger | Effect | When Unassessed |
 | --- | --- | --- | --- |
 | Coverage | Missing, duplicate, or unexpected expected scenario/date keys in backtests or future predictions | Hard rejection | Never for a candidate being selected |
@@ -103,14 +105,22 @@ After hard failures are excluded, let `best_wmape` be the smallest eligible weig
 
 For example, with a best eligible WMAPE of 8.0%, the ceiling is 8.5%. A safer 8.3% candidate can beat a questionable 8.0% candidate, but an 8.8% candidate is outside the allowance. At 20% the ceiling is 21%; at 2% it is 2.5%. The absolute allowance is relatively generous for very accurate series and is an initial engineering default, not a calibrated statistical bound.
 
-For ordinary and iterative forecasts, when every shortlisted eligible candidate has soft concerns, Finn selects the best available one and reports them. When all candidates hard-fail, Finn raises an error. Update reuse and default replacements have a stricter acceptance boundary, described below. No policy can guarantee that a good forecast exists for every input.
+For ordinary and iterative forecasts, when every shortlisted eligible candidate has soft concerns, Finn retains the existing best-available selection. When normal selection has no winner solely because of plausibility failures, it may select a usable fallback as described below. Ordinary update acceptance is unchanged. No policy can guarantee that a good forecast exists for every input.
+
+### Least-issues fallback
+
+Standard and iterative forecasts, and fresh default forecasts for both new series and failed updates, can select a fallback from existing complete, finite predictions with usable backtest accuracy. Missing, extra or duplicate required keys, nonfinite predictions, unavailable accuracy, and artifact/provider failures cannot be waived. If no usable candidate exists, the run still fails.
+
+Fallback ordering is the number of distinct failed plausibility checks, maximum normalized failure severity (including magnitude beyond the existing bound), backtest WMAPE, then stable model ID. Unlike normal selection, this last-resort ranking is not restricted to the accuracy shortlist. Applicable soft checks are assessed even on usable extreme forecasts, so a previously skipped zero risk cannot make an extreme forecast look safe. Normal successful selections and their seasonal-fidelity preference remain unchanged.
+
+The selected candidate receives the existing `Best_Model = "Yes"` flag. A catchable `finnts_forecast_selection_fallback` warning names the series, model, and concerns; parallel workers relay this warning to the caller. No extra models are fitted, no predictions are fabricated, and strictly rejected components are not introduced into averages or learned ensembles. Fallback evidence stays in memory: there are no new saved columns, status values, attributes, or tracking files. Existing forecast, accuracy and best-run values reflect the actual selected result.
 
 ## Standard forecasts and saved averages
 
 `forecast_time_series()` finishes through `final_models()`. A manual standard workflow uses the same process when `final_models()` is called:
 
 1. Load prepared original-scale actuals and expected backtest/future dates. Future target values never become historical evidence.
-2. Exclude candidates with missing or duplicate required keys, non-finite predictions, catastrophic magnitude, or unavailable finite WMAPE. A model with incomplete backtest coverage cannot win or enter a simple average. Learned-ensemble inputs are screened before fitting their existing ensemble specifications.
+2. For normal selection and averaging, exclude candidates with missing or duplicate required keys, non-finite predictions, catastrophic magnitude, or unavailable finite WMAPE. A model with incomplete backtest coverage cannot win or enter a simple average. Learned-ensemble inputs are screened before fitting their existing ensemble specifications.
 3. Form the requested simple averages from eligible existing predictions, up to `max_model_average`. A non-finite component is not concealed by averaging with `na.rm = TRUE`.
 4. Evaluate the individual, learned-ensemble, and simple-average candidates on the same dates and actuals. Apply the accuracy allowance, then rank by risk, number of concerns, the supported seasonal-amplitude preference within ties, WMAPE, and stable model identifier.
 5. Mark the delivered winner `Best_Model = "Yes"`. If it is an average, save that exact combination in the existing average-model artifact. Otherwise rank just the eligible averages by the same policy and save the winner of that subset with `Best_Model = "No"`. This is not necessarily the lowest-WMAPE average. If no eligible average can be formed, there is no required average artifact.
@@ -154,11 +164,21 @@ contribute to either accuracy calculation.
 1. Recover the previously selected single model or average for each series from its saved source forecasts. All globally selected series must reference one winning global iteration; mixed iteration metadata fails before any global refit. Refit only the union of required components from that run with their saved settings; do not average all models listed in the earlier request. Different series or hierarchy source nodes can retain different subsets within that one iteration. Missing or ambiguous selected identities or saved fits normally require restoring the original artifacts, except for the explicit legacy compatibility path below. Reused fits do not call `final_models()` to search over a new candidate pool.
 2. Assemble predictions before reconciliation. Preserve a saved choice when its components are hard-eligible and its selected path has no soft concerns. Local and nonhierarchical updates retain this strict reuse gate. For an inner hierarchical global update, recover a rejected source from the already-refitted component union and eligible-component averages using the ordinary accuracy shortlist and risk ranking. Average sizes respect the configured limit or the saved combination size. Soft concerns rank these replacements rather than vetoing the entire global group; hard-invalid components cannot be hidden inside an average. Repeat assessment after any existing WMAPE-triggered retuning.
 3. Deduplicate quality-rejected current series into the existing new-series/default-local forecast path. Healthy siblings are retained and removed series are excluded. Quality-only rejections do not consume the ordinary execution-failure cap of `max(10, ceiling(0.20 * existing_series))`.
-4. Run `final_models()` for each default replacement, then require the replacement to pass all applicable quality checks. Short-history checks that cannot be assessed do not count as failures. Good backtest accuracy alone cannot publish a still-questionable replacement.
-5. An inner hierarchical global update needs a hard-valid selection for every current source node. If recovery cannot provide one or the hierarchy is incomplete, do not solve a partial hierarchy; report a global quality rejection and send the covered current series through the existing default-local path. Accepted hierarchies reconcile only selected rows, not both components and their average together. Existing-format source files retain the actual selected component identities for subsequent updates. Run logs record recovered-source and soft-concern counts, and diagnostics report hard-rejection reasons. No post-reconciliation candidate switch occurs.
-6. If outer reconciliation is required, reconcile the selected forecasts once and publish its result without a post-quality switch or late default reforecast. A default replacement rejected before reconciliation raises an explicit quality error and cannot trigger repeated fitting. Stable default run identities and an acceptance/rejection field in existing run logs preserve that boundary across restarts.
+4. Run `final_models()` for each fresh default, including new series and failed-update replacements. Prefer a normal acceptable winner; otherwise select a usable least-issues fallback with a warning. Short-history checks that cannot be assessed do not count as failures. Structural validity and usable accuracy remain mandatory. This exception does not apply to ordinary update assessment or retuning.
+5. An inner hierarchical global update needs a hard-valid selection for every current source node. If recovery cannot provide one or the hierarchy is incomplete, do not solve a partial hierarchy; report a global quality rejection and send the covered current series through the existing default-local path. Accepted hierarchies reconcile only selected rows, not both components and their average together. Existing-format source files retain the actual selected component identities for subsequent updates. Recovery counts remain in memory, and diagnostics report hard-rejection reasons. No post-reconciliation candidate switch occurs.
+6. If outer reconciliation is required, reconcile the selected forecasts once and publish its result without a post-quality switch or late default reforecast. A structurally unusable default raises an explicit quality error and cannot trigger repeated fitting while its saved forecasts establish the rejection. Stable default run identities and existing forecast artifacts preserve that boundary without an acceptance/rejection column.
 
-The optional accuracy-degradation `allow_iterate_forecast` workflow remains separate. Checks after refit or retune assess newly generated predictions, not old iteration winners. A default's saved acceptance or rejection prevents repeating that acceptance decision after it has completed; an interrupted acceptance step can still assess the new output once. Quality recovery itself does not ask the LLM to waive a check. Default refitting can increase compute or configured-provider cost, and it is a bounded recovery attempt rather than a promise of a satisfactory forecast.
+The optional accuracy-degradation `allow_iterate_forecast` workflow remains separate. Checks after refit or retune assess newly generated predictions, not old iteration winners. A published default is identified by its deterministic run name and reused only after its saved models and forecasts pass integrity checks. When submission resumes without a usable parent completion record, quality is recomputed from existing predictions. Older plausibility-only rejections, including legacy rejection metadata, can be reselected and published from saved usable predictions and fits without training again. Structurally unusable rejections retain the typed error. All-`No` winner flags alone do not establish rejection; incomplete or damaged results retain the appropriate repair path. No replacement status is stored in another field or artifact. Accuracy is recomputed honestly when selection changes. Quality recovery itself does not ask the LLM to waive a check. Default refitting can increase compute or configured-provider cost, and it is a bounded recovery attempt rather than a promise of a satisfactory forecast.
+
+With `parallel_processing = "spark"`, local-model updates and default forecasts
+each receive up to three Spark attempts. After three execution failures, the
+failing step retries once with `parallel_processing = "local_machine"` and
+`inner_parallel = FALSE`, preserving `num_cores` and all other inputs. This
+fallback applies independently to each step; a local-update fallback does not
+change the default-forecast step's initial backend. A successful Spark attempt
+stops retries, and an unsuccessful local fallback raises an error. Explicit
+forecast-quality rejections are not backend failures and bypass these retries.
+Non-Spark default forecasts retain their existing three-attempt budget.
 
 Update accuracy keeps the existing native-cadence aggregate used for refit/retune
 and aggregate logging. Completed-output backtests supply per-series saved-winner
@@ -189,11 +209,18 @@ selected averages in the existing per-series format. Unused average files are
 overwritten with empty tables so an interrupted refit cannot leave a second
 winner behind. Publication verifies readable source coverage, selected
 identities, fitted components, prediction keys and average arithmetic. Restart
-checks also compare each node's intended selection, not just the shared model
-pool. A recovered update records digests of the predecessor and accepted source
-maps in its existing run log. Restarts validate those digests before reusing a
-changed choice; unrecorded winner-flag changes cannot masquerade as recovery.
-Subsequent updates validate and use the actual recovered per-node mapping.
+checks compare each node's intended selection, not just the shared model pool,
+unless hierarchical recovery is enabled. A changed choice must then match
+recovery recomputed in memory from the saved source predictions, prepared
+history, and predecessor selections, without fitting or reconciliation. Existing
+source artifacts record the per-node mapping for subsequent updates.
+No additional tracking columns or values are stored in run logs, parent
+best-run records, or final run metadata. Source files are authoritative: missing
+or ambiguous winners and invalid components are rejected, but there is no
+separate provenance record to authenticate an internally consistent flag edit.
+The withdrawn global-update tracking columns and `default_reforecast_status`,
+if encountered in older metadata, are omitted
+when that metadata is next written; existing files are not migrated in place.
 If the raw hierarchy table omits a historical target, hierarchical global
 updates use the corresponding original-scale prepared source history already
 used for selection. Observed targets stay unchanged, and future targets remain
