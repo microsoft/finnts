@@ -152,10 +152,10 @@ contribute to either accuracy calculation.
 `update_forecast()` follows a different fitting path but uses the same evaluator:
 
 1. Recover the previously selected single model or average for each series from its saved source forecasts. All globally selected series must reference one winning global iteration; mixed iteration metadata fails before any global refit. Refit only the union of required components from that run with their saved settings; do not average all models listed in the earlier request. Different series or hierarchy source nodes can retain different subsets within that one iteration. Missing or ambiguous selected identities or saved fits normally require restoring the original artifacts, except for the explicit legacy compatibility path below. Reused fits do not call `final_models()` to search over a new candidate pool.
-2. Assemble component and reused-average forecasts without reconciling them. Check every required component for hard eligibility and the selected reused combination for applicable soft concerns. Repeat before reconciliation after any existing WMAPE-triggered retuning. Passing reuse keeps that original chosen combination; it does not silently swap to another component.
+2. Assemble predictions before reconciliation. Preserve a saved choice when its components are hard-eligible and its selected path has no soft concerns. Local and nonhierarchical updates retain this strict reuse gate. For an inner hierarchical global update, recover a rejected source from the already-refitted component union and eligible-component averages using the ordinary accuracy shortlist and risk ranking. Average sizes respect the configured limit or the saved combination size. Soft concerns rank these replacements rather than vetoing the entire global group; hard-invalid components cannot be hidden inside an average. Repeat assessment after any existing WMAPE-triggered retuning.
 3. Deduplicate quality-rejected current series into the existing new-series/default-local forecast path. Healthy siblings are retained and removed series are excluded. Quality-only rejections do not consume the ordinary execution-failure cap of `max(10, ceiling(0.20 * existing_series))`.
 4. Run `final_models()` for each default replacement, then require the replacement to pass all applicable quality checks. Short-history checks that cannot be assessed do not count as failures. Good backtest accuracy alone cannot publish a still-questionable replacement.
-5. An inner reused hierarchical candidate needs its complete source-node forecast set. If a node is rejected or the hierarchy is incomplete, do not solve a partial hierarchy; send the candidate's covered current series through the existing default-local path. Accepted hierarchies reconcile only the selected rows, not both components and their average together. Existing-format source forecast files retain selected component identities for subsequent updates, not a required diagnostic ranking snapshot.
+5. An inner hierarchical global update needs a hard-valid selection for every current source node. If recovery cannot provide one or the hierarchy is incomplete, do not solve a partial hierarchy; report a global quality rejection and send the covered current series through the existing default-local path. Accepted hierarchies reconcile only selected rows, not both components and their average together. Existing-format source files retain the actual selected component identities for subsequent updates. Run logs record recovered-source and soft-concern counts, and diagnostics report hard-rejection reasons. No post-reconciliation candidate switch occurs.
 6. If outer reconciliation is required, reconcile the selected forecasts once and publish its result without a post-quality switch or late default reforecast. A default replacement rejected before reconciliation raises an explicit quality error and cannot trigger repeated fitting. Stable default run identities and an acceptance/rejection field in existing run logs preserve that boundary across restarts.
 
 The optional accuracy-degradation `allow_iterate_forecast` workflow remains separate. Checks after refit or retune assess newly generated predictions, not old iteration winners. A default's saved acceptance or rejection prevents repeating that acceptance decision after it has completed; an interrupted acceptance step can still assess the new output once. Quality recovery itself does not ask the LLM to waive a check. Default refitting can increase compute or configured-provider cost, and it is a bounded recovery attempt rather than a promise of a satisfactory forecast.
@@ -190,7 +190,10 @@ overwritten with empty tables so an interrupted refit cannot leave a second
 winner behind. Publication verifies readable source coverage, selected
 identities, fitted components, prediction keys and average arithmetic. Restart
 checks also compare each node's intended selection, not just the shared model
-pool. Subsequent updates therefore use the normal per-node mapping path.
+pool. A recovered update records digests of the predecessor and accepted source
+maps in its existing run log. Restarts validate those digests before reusing a
+changed choice; unrecorded winner-flag changes cannot masquerade as recovery.
+Subsequent updates validate and use the actual recovered per-node mapping.
 
 ### Changing hierarchy membership
 
@@ -215,8 +218,10 @@ and quality checks; reassigned-label safeguards remain in force.
 
 This source-node coverage does not promote a newly added bottom series to a
 global winner: its default-local delivery routing remains unchanged. When
-previous source selections differ, Finn does not guess a new node's choice or
-reconcile a partial hierarchy; the covered series use default-local recovery.
+previous source selections differ, new inner sources are evaluated from the
+already-refitted pool rather than inheriting another node's identity. The whole
+inner hierarchy is rejected only when it cannot supply a complete hard-valid
+source set or a surviving generated label was reassigned.
 Pre-expanded hierarchy inputs retain their local/global per-node routing,
 followed by one outer reconciliation. The existing new-series limits, quality
 gates, retuning rules and coherent-global-run policy remain unchanged.

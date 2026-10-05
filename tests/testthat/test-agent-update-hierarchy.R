@@ -26,7 +26,7 @@ test_that("updates compare complete current topology rather than counts or order
       parent$run_name <- step$agent$run_id
       uniform <- length(unique(previous$winners)) == 1L
       reassigned <- changed_update_hierarchy_sources(previous$hierarchy, current$hierarchy)
-      if ((length(new_nodes) && !uniform) || length(reassigned)) {
+      if (length(reassigned)) {
         expect_setequal(step$result$quality_rejected_combos, vapply(surviving, hash_data, character(1)))
         for (combo in current$hierarchy$original_combos) {
           expect_equal(nrow(read_selection_file(parent, "logs", "-agent_best_run", combo, optional = TRUE)), 0)
@@ -35,9 +35,16 @@ test_that("updates compare complete current topology rather than counts or order
         expect_identical(step$result$status, "done")
         mapping <- read_global_update_selection(current$info, read_selection_file(current$info, "logs"), surviving)
         expect_setequal(names(mapping$selected_ids), expected_nodes)
-        expected_winners <- previous$winners[names(mapping$selected_ids)]
-        if (uniform) expected_winners[is.na(expected_winners)] <- unique(previous$winners)
-        expect_identical(unname(mapping$selected_ids), unname(expected_winners))
+        existing <- intersect(names(mapping$selected_ids), names(previous$winners))
+        expect_identical(mapping$selected_ids[existing], previous$winners[existing])
+        for (combo in new_nodes) {
+          rows <- read_candidate_forecasts(current$info, combo,
+            read_selection_file(current$info, "logs"), reconciled = FALSE)
+          selection <- select_series_forecasts(rows,
+            read_series_history(current$info, combo), current$splits)
+          expect_true(selection$rankings$Eligible[
+            match(mapping$selected_ids[[combo]], selection$rankings$Model_ID)])
+        }
         delivered <- read_selection_file(current$info, "forecasts", "-reconciled", "Best-Model")
         expect_setequal(delivered$Combo, surviving)
         next_run <- make_update_chain_case(path, paste0("repeat-", change), approach,
@@ -77,8 +84,17 @@ test_that("iteration selection and hierarchy persistence survive membership repl
     reintroduced <- make_update_chain_case(path, "reintroduced", approach, members = base,
       legacy = TRUE, data_output = "csv")
     outcome <- run_update_chain_step(current, reintroduced)
-    expect_setequal(outcome$result$quality_rejected_combos,
-      vapply(intersect(current$hierarchy$original_combos, reintroduced$hierarchy$original_combos),
-        hash_data, character(1)))
+    if (length(changed_update_hierarchy_sources(current$hierarchy, reintroduced$hierarchy))) {
+      expect_setequal(outcome$result$quality_rejected_combos,
+        vapply(intersect(current$hierarchy$original_combos, reintroduced$hierarchy$original_combos),
+          hash_data, character(1)))
+    } else {
+      expect_identical(outcome$result$status, "done")
+      restored <- read_global_update_selection(reintroduced$info,
+        read_selection_file(reintroduced$info, "logs"), reintroduced$hierarchy$original_combos)
+      expect_setequal(names(restored$selected_ids), reintroduced$hierarchy$hts_combos)
+      retained <- intersect(names(mapping$selected_ids), names(restored$selected_ids))
+      expect_identical(restored$selected_ids[retained], mapping$selected_ids[retained])
+    }
   }
 })

@@ -142,8 +142,9 @@ make_update_chain_case <- function(path, run_name = "previous",
 # Optional dropped writes simulate interruption. Returns observed fits/reads,
 # status, and the parent identity for inspecting persisted completion metadata.
 # Explicit agent/combos let parent-chain tests use real routed completion groups.
+# Optional retuned fits exercise the updater's second assessment without training.
 run_update_chain_step <- function(previous, current, drop_source = NULL, agent = NULL, combos = NULL,
-                                  drop_suffix = "-global_models") {
+                                  drop_suffix = "-global_models", retuned = NULL) {
   parent <- current$info
   parent$project_name <- "chain"
   parent$date_type <- current$log$date_type
@@ -186,9 +187,10 @@ run_update_chain_step <- function(previous, current, drop_source = NULL, agent =
     prep_models = function(...) NULL,
     get_prepped_models = function(...) tibble::tibble(Type = c("Train_Test_Splits", "Model_Hyperparameters"),
       Data = list(current$splits, data.frame(Hyperparameter_ID = 1L))),
-    fit_models = function(trained_models_tbl, ...) {
+    fit_models = function(trained_models_tbl, retune_hyperparameters, ...) {
       state$fits[[length(state$fits) + 1L]] <- trained_models_tbl$Model_ID
-      current$fitted[match(trained_models_tbl$Model_ID, current$ids), ]
+      fitted <- if (retune_hyperparameters && !is.null(retuned)) retuned else current$fitted
+      fitted[match(trained_models_tbl$Model_ID, current$ids), ]
     },
     write_data = function(x, combo, run_info, output_type, folder = NULL, suffix = NULL) {
       if (identical(run_info$run_name, current$info$run_name) &&

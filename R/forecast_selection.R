@@ -1045,19 +1045,74 @@ changed_update_hierarchy_sources <- function(previous, current) {
   shared_sources[rowSums(membership(previous) != membership(current)) > 0]
 }
 
-# Assess newly refitted predictions while preserving the saved model identity.
-# Every required component must be hard-eligible and the delivered choice must
-# have no soft concerns. Return rejected combo hashes for default recovery;
-# a hierarchy is reconciled only after all its source nodes pass. Optional
-# previous_hierarchy rejects reused labels whose surviving membership changed.
+# Recover one hierarchical update source from its already refitted global pool.
+# Preserve a hard-valid, concern-free saved choice. Otherwise use the ordinary
+# accuracy shortlist and risk ranking; soft concerns do not veto recovery.
+# Averages use only hard-eligible components, bounded by the existing request
+# and saved combination size. Return selected flags, full ranking diagnostics,
+# and whether recovery was needed. No fitting, storage, or reconciliation occurs.
+recover_global_update_source <- function(rows, series, splits, components,
+                                         max_model_average = 1L) {
+  individuals <- rows[rows$Recipe_ID != "simple_average", , drop = FALSE]
+  individual_selection <- select_series_forecasts(individuals, series, splits)
+  eligible <- individual_selection$rankings$Model_ID[individual_selection$rankings$Eligible]
+  previous_id <- if (length(components)) paste(components, collapse = "_") else NA_character_
+  combinations <- list()
+  maximum <- min(length(eligible), max(max_model_average, length(components)))
+  if (maximum >= 2L) {
+    combinations <- unlist(lapply(seq.int(2L, maximum), function(size) {
+      utils::combn(sort(eligible), size, simplify = FALSE)
+    }), recursive = FALSE)
+  }
+  average_ids <- vapply(combinations, paste, character(1), collapse = "_")
+  if (length(components) > 1L && all(components %in% eligible) && !previous_id %in% average_ids) {
+    combinations <- c(combinations, list(components))
+  }
+  averages <- dplyr::bind_rows(lapply(combinations, function(ids) {
+    average_update_forecasts(individuals, ids)
+  }))
+  rankings <- individual_selection$rankings
+  if (nrow(averages)) {
+    rankings <- dplyr::bind_rows(rankings, select_series_forecasts(averages, series, splits)$rankings)
+  }
+  selection <- rank_forecast_candidates(rankings)
+  previous <- rankings[rankings$Model_ID == previous_id & !is.na(previous_id), , drop = FALSE]
+  preserve <- nrow(previous) == 1L && isTRUE(previous$Eligible) &&
+    previous$Violations == 0L && all(components %in% eligible)
+  if (preserve) selection$selected_id <- previous_id
+  if (is.na(selection$selected_id)) {
+    return(list(forecasts = rows[0, ], selection = selection, recovered = FALSE))
+  }
+  # Keep the selected average, or one eligible diagnostic average when a single
+  # model wins. Invalid and superseded averages must not survive publication.
+  if (nrow(averages)) {
+    average_selection <- rank_forecast_candidates(rankings[rankings$Model_ID %in% averages$Model_ID, ])
+    average_id <- if (selection$selected_id %in% averages$Model_ID) {
+      selection$selected_id
+    } else average_selection$selected_id
+    averages <- averages[!is.na(average_id) & averages$Model_ID == average_id, , drop = FALSE]
+  }
+  forecasts <- dplyr::bind_rows(individuals[individuals$Model_ID %in% eligible, , drop = FALSE], averages)
+  forecasts$Best_Model <- ifelse(forecasts$Model_ID == selection$selected_id, "Yes", "No")
+  list(forecasts = forecasts, selection = selection, recovered = !preserve)
+}
+
+# Assess newly refitted predictions. Local and ordinary reuse require hard-valid
+# components and a concern-free saved choice. Hierarchical global callers may
+# opt into per-source recovery from the existing fitted pool, including new
+# sources. Return selected source rows and diagnostics; reconcile only a complete
+# hard-valid hierarchy. Reassigned labels still reject reuse. No artifact writes
+# occur here; the update writer records recovered identities before completion.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
-                                    combos = NULL, previous_hierarchy = NULL) {
+                                    combos = NULL, previous_hierarchy = NULL,
+                                    recover_global = FALSE, max_model_average = 1L) {
   hierarchical <- !is.null(run_log[["forecast_approach"]]) && !identical(run_log$forecast_approach, "bottoms_up")
   hierarchy <- if (hierarchical) read_selection_hierarchy(run_info, cache) else NULL
   if (is.null(combos)) combos <- if (hierarchical) hierarchy$original_combos else unique(as.character(forecasts$Combo))
   if (hierarchical && (!setequal(unique(as.character(forecasts$Combo)), hierarchy$hts_combos) ||
       (!is.null(previous_hierarchy) && length(changed_update_hierarchy_sources(previous_hierarchy, hierarchy))))) {
+    cli::cli_alert_warning("Global update rejected: hierarchy source coverage is incomplete or surviving source identities were reassigned.")
     return(list(forecasts = forecasts[0, ], source_forecasts = forecasts, selections = list(),
       source_selections = NULL, quality_rejected_combos = vapply(combos, hash_data, character(1), USE.NAMES = FALSE)))
   }
@@ -1065,9 +1120,30 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
   accepted <- character()
   rejected <- if (hierarchical) character() else setdiff(combos, unique(as.character(forecasts$Combo)))
   selections <- list()
+  source_rows <- list()
+  recovered <- character()
+  concerned <- character()
   for (combo in unique(as.character(forecasts$Combo))) {
     rows <- forecasts[forecasts$Combo == combo, , drop = FALSE]
     series <- read_series_history(run_info, combo, run_log, cache)
+    if (hierarchical && recover_global) {
+      choice <- recover_global_update_source(rows, series, splits,
+        expected_components[[combo]], max_model_average)
+      selection <- choice$selection
+      if (is.na(selection$selected_id)) {
+        rejected <- c(rejected, combo)
+        reasons <- unique(unlist(selection$rankings$Reasons, use.names = FALSE))
+        cli::cli_alert_warning("No hard-valid global forecast for source '{combo}': {paste(reasons, collapse = ', ')}.")
+      } else {
+        accepted <- c(accepted, combo)
+        if (choice$recovered) recovered <- c(recovered, combo)
+        score <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, ]
+        if (score$Violations > 0L) concerned <- c(concerned, combo)
+      }
+      selections[[combo]] <- selection
+      source_rows[[combo]] <- choice$forecasts
+      next
+    }
     selection <- select_series_forecasts(rows, series, splits)
     selected_ids <- unique(rows$Model_ID[rows$Best_Model == "Yes"])
     components <- unique(rows$Model_ID[!is.na(rows$Recipe_ID) & rows$Recipe_ID != "simple_average"])
@@ -1085,17 +1161,26 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
       rejected <- c(rejected, combo)
     }
     selections[[combo]] <- selection
+    source_rows[[combo]] <- rows
   }
+  forecasts <- dplyr::bind_rows(source_rows)
   result <- list(
     forecasts = forecasts[forecasts$Combo %in% accepted, , drop = FALSE],
     quality_rejected_combos = vapply(rejected, hash_data, character(1), USE.NAMES = FALSE),
-    selections = selections, source_selections = NULL, source_forecasts = forecasts
+    selections = selections, source_selections = NULL, source_forecasts = forecasts,
+    recovered_sources = recovered, concerned_sources = concerned
   )
   if (hierarchical) {
     if (length(rejected)) {
       result$forecasts <- forecasts[0, ]
       result$quality_rejected_combos <- vapply(combos, hash_data, character(1), USE.NAMES = FALSE)
       return(result)
+    }
+    if (recover_global) {
+      cli::cli_alert_info("Global source selection: {length(selections) - length(recovered)} reused, {length(recovered)} recovered.")
+      if (length(concerned)) {
+        cli::cli_alert_warning("{length(concerned)} selected global source forecast{?s} retain soft concerns; all selected components passed hard checks.")
+      }
     }
     result$forecasts <- reconcile(forecasts[forecasts$Best_Model == "Yes", , drop = FALSE],
       run_info, run_log$forecast_approach, run_log$negative_forecast)

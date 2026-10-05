@@ -78,7 +78,7 @@ test_that("uniform global updates publish growing hierarchies and remain chainab
   }
 })
 
-test_that("new hierarchy nodes still require every selected component", {
+test_that("new hierarchy nodes recover from a missing component using a complete global alternative", {
   path <- withr::local_tempdir()
   previous <- make_update_chain_case(path, approach = "grouped_hierarchy", legacy = TRUE)
   current <- make_update_chain_case(path, "missing-new-component", "grouped_hierarchy",
@@ -87,8 +87,10 @@ test_that("new hierarchy nodes still require every selected component", {
   rows <- current$fitted$Forecast_Tbl[[1]]
   current$fitted$Forecast_Tbl[[1]] <- rows[rows$Combo != new_node, ]
   expect_warning(step <- run_update_chain_step(previous, current), "Legacy global update")
-  expect_setequal(step$result$quality_rejected_combos,
-    vapply(previous$hierarchy$original_combos, hash_data, character(1)))
-  expect_equal(nrow(read_selection_file(current$info, "forecasts", "-global_models",
+  expect_identical(step$result$status, "done")
+  expect_length(step$result$quality_rejected_combos, 0L)
+  rows <- read_selection_file(current$info, "forecasts", "-global_models", new_node)
+  expect_true(all(rows$Model_ID[rows$Best_Model == "Yes"] == current$ids[2]))
+  expect_equal(nrow(read_selection_file(current$info, "forecasts", "-average_models",
     new_node, optional = TRUE)), 0L)
 })
