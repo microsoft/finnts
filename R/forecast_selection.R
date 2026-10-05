@@ -1103,6 +1103,8 @@ recover_global_update_source <- function(rows, series, splits, components,
 # sources. Return selected source rows and diagnostics; reconcile only a complete
 # hard-valid hierarchy. Reassigned labels still reject reuse. No artifact writes
 # occur here; the update writer records recovered identities before completion.
+# Missing historical delivery targets use the same original-scale prepared
+# history as selection, never invented zeros or future target placeholders.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
                                     combos = NULL, previous_hierarchy = NULL,
@@ -1185,6 +1187,24 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
     result$forecasts <- reconcile(forecasts[forecasts$Best_Model == "Yes", , drop = FALSE],
       run_info, run_log$forecast_approach, run_log$negative_forecast)
     result$forecasts <- result$forecasts[result$forecasts$Combo %in% combos, , drop = FALSE]
+    if (recover_global) {
+      # Raw HTS data can omit dates that preparation padded before fitting.
+      # Recover their actuals from the already-validated original-scale history,
+      # preserving observed raw targets and leaving genuinely unknown dates NA.
+      bottom_sources <- stats::setNames(utils::tail(hierarchy$hts_combos,
+        length(hierarchy$original_combos)), hierarchy$original_combos)
+      restored <- 0L
+      for (combo in combos) {
+        missing <- which(result$forecasts$Combo == combo & is.na(result$forecasts$Target) &
+          result$forecasts$Date <= as.Date(run_log$hist_end_date))
+        if (!length(missing)) next
+        history <- read_series_history(run_info, bottom_sources[[combo]], run_log, cache)$history
+        targets <- history$Target[match(result$forecasts$Date[missing], history$Date)]
+        result$forecasts$Target[missing] <- targets
+        restored <- restored + sum(is.finite(targets))
+      }
+      if (restored) cli::cli_alert_info("Restored {restored} historical delivery targets from prepared source history.")
+    }
     selected <- hierarchical_selection_result(run_info, run_log, selections, result$forecasts, splits, combos, cache)
     result$selections <- selected$selections
     result$source_selections <- selections

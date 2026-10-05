@@ -797,6 +797,18 @@ hash_global_update_selection <- function(selected_ids) {
   paste0("selection-", hash_data(selected_ids[order(names(selected_ids), method = "radix")]))
 }
 
+# Require the completion logger's verified series set to match the requested
+# hierarchical global group (or its missing-record resume subset). A normal
+# logger return without those records is a hard publication error, not success.
+# This check performs no reads or writes; the logger verifies each written file.
+validate_global_update_publication <- function(result, combos) {
+  if (!is.list(result) || !setequal(result$selected_combos, combos)) {
+    rlang::abort("The update did not publish every requested global series. Restore complete forecast accuracy and completion records before continuing.",
+      class = "finnts_update_artifact_error")
+  }
+  invisible(NULL)
+}
+
 #' Read a reusable current fitted result from exact paths
 #'
 #' @param info Result project/run/storage identity.
@@ -964,8 +976,11 @@ resume_update_result <- function(agent_info, info, combos, global, splits, compo
   metrics <- calculate_fcst_metrics(info, rows, aggregate_wmape = log$weighted_mape)
   info$forecast_selection$selections <- selections[missing]
   info$selection_combos <- missing
-  log_best_run(agent_info = agent_info, run_info = info, weighted_mape = metrics,
+  logged <- log_best_run(agent_info = agent_info, run_info = info, weighted_mape = metrics,
     combo = if (global) NULL else hash_data(combos[[1]]), check_best_run = FALSE)
+  if (global && !identical(approach, "bottoms_up")) {
+    validate_global_update_publication(logged, missing)
+  }
   TRUE
 }
 
@@ -2176,6 +2191,7 @@ extend_global_update_selection <- function(selection, hierarchy) {
 # choices use the refitted global pool's ordinary ranking before reconciliation.
 # Hard component checks and source-identity guards remain mandatory. Source
 # selections and counts are bound in the existing run log for safe restart.
+# Completion requires the logger to confirm every requested global series.
 # An unselected average is overwritten with a schema-correct empty table so a
 # refit cannot leave an older selected average behind after an interrupted run.
 # Storage failures and inconsistent selected-fit identities remain hard errors;
@@ -2744,6 +2760,9 @@ update_forecast_combo <- function(agent_info,
       hash_data(combo)
     }
   )
+  if (combo == "All-Data" && prev_run_log_tbl$forecast_approach != "bottoms_up") {
+    validate_global_update_publication(final_log_results, combo_list)
+  }
 
   cli::cli_progress_done("Update Forecast Complete for {combo}")
 

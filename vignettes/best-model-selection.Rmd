@@ -194,6 +194,13 @@ pool. A recovered update records digests of the predecessor and accepted source
 maps in its existing run log. Restarts validate those digests before reusing a
 changed choice; unrecorded winner-flag changes cannot masquerade as recovery.
 Subsequent updates validate and use the actual recovered per-node mapping.
+If the raw hierarchy table omits a historical target, hierarchical global
+updates use the corresponding original-scale prepared source history already
+used for selection. Observed targets stay unchanged, and future targets remain
+unknown. This keeps delivered accuracy and completion logging usable for sparse
+series without inventing actuals or bypassing the accuracy gate. The updater
+requires the logger to confirm every requested global series before reporting
+completion.
 
 ### Changing hierarchy membership
 
