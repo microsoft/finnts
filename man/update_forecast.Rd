@@ -93,11 +93,15 @@ is incomplete or contains a rejected node is not reconciled; its covered
 current series follow the existing default-local forecast path. Existing
 nodes are matched by identity and surviving bottom membership, not position
 or node count. Reassigned generated aggregate labels are treated as new
-nodes rather than inheriting another aggregate's selection. New nodes have
-no historical selection and use the ordinary new-series/default-local
-workflow; removed nodes are not published. A topology change that leaves
-an inner hierarchy incomplete can therefore move its covered series to
-local defaults rather than guessing new global selections. Existing
+nodes rather than inheriting another aggregate's selection. When every
+predecessor source node has the same selected model or average, new inner
+hierarchy source nodes inherit that uniform choice. Their component and
+average forecasts must pass the same checks before publication. This keeps
+existing global series usable without promoting newly added series to
+global winners: their ordinary new-series/default-local routing is unchanged.
+Heterogeneous selections are not extrapolated, removed nodes are not
+published, and reassigned-label safeguards still apply. An incomplete inner
+hierarchy continues to use default-local recovery. Existing
 run logs record default acceptance or rejection for restart safety. The
 selected mixture is then reconciled without post-reconciliation future
 evaluation, whole-set replacement, or late quality-triggered refitting.

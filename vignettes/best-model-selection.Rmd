@@ -205,10 +205,19 @@ predecessor and follow the default-local workflow. Their saved local result is
 the predecessor for the next update. This includes first/last group members and
 overlapping grouped aggregates, not only bottom-level additions.
 
-An inner global hierarchy with new source nodes may no longer have a complete
-saved selection. Finn does not guess those choices or reconcile a partial
-hierarchy: its covered current series enter the existing default-local recovery
-path. Pre-expanded hierarchy inputs retain their local/global per-node routing,
+For an inner global hierarchy, new source nodes inherit the predecessor's
+selection when every previous source used the same single model or average.
+This includes the uniform selection recovered from older reconciled-only runs.
+Finn retains all existing choices and saves the new nodes' component and selected
+average forecasts, allowing the existing global series to remain global through
+later updates. New source predictions must pass the same completeness, component
+and quality checks; reassigned-label safeguards remain in force.
+
+This source-node coverage does not promote a newly added bottom series to a
+global winner: its default-local delivery routing remains unchanged. When
+previous source selections differ, Finn does not guess a new node's choice or
+reconcile a partial hierarchy; the covered series use default-local recovery.
+Pre-expanded hierarchy inputs retain their local/global per-node routing,
 followed by one outer reconciliation. The existing new-series limits, quality
 gates, retuning rules and coherent-global-run policy remain unchanged.
 

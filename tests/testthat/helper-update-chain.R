@@ -2,7 +2,8 @@
 # Members define current bottom identities; hierarchy preparation and the solver
 # are real. The source choice is either heterogeneous, uniform, or deliberately
 # absent to model a legacy update. Optional levels supply named target levels;
-# local runs contain one member. Returns the run, fits, and expected selections.
+# local runs contain one member. R2 history uses sequential Horizon 1 origins.
+# Returns the run, fits, and expected selections.
 make_update_chain_case <- function(path, run_name = "previous",
                                    approach = "standard_hierarchy",
                                    members = data.frame(Region = c("North", "North", "South", "South"),
@@ -79,7 +80,10 @@ make_update_chain_case <- function(path, run_name = "previous",
     for (recipe in unique(recipes)) {
       data <- data.frame(Combo = combo, Date = context$calendar,
         Target = context$history$Target[match(context$calendar, context$history$Date)])
-      if (recipe == "R2") data$Horizon <- 1L
+      if (recipe == "R2") {
+        data$Horizon <- 1L
+        data$Origin <- seq_len(nrow(data))
+      }
       write_data(data, combo, info, "data", "prep_data", paste0("-", recipe))
     }
     if (!legacy && !combo %in% omit_sources) {

@@ -24,8 +24,9 @@ test_that("updates compare complete current topology rather than counts or order
       surviving <- intersect(previous$hierarchy$original_combos, current$hierarchy$original_combos)
       parent <- step$agent$project_info
       parent$run_name <- step$agent$run_id
-      if (length(new_nodes) || (approach == "standard_hierarchy" &&
-          change %in% c("last_group_member", "remove_first_group"))) {
+      uniform <- length(unique(previous$winners)) == 1L
+      reassigned <- changed_update_hierarchy_sources(previous$hierarchy, current$hierarchy)
+      if ((length(new_nodes) && !uniform) || length(reassigned)) {
         expect_setequal(step$result$quality_rejected_combos, vapply(surviving, hash_data, character(1)))
         for (combo in current$hierarchy$original_combos) {
           expect_equal(nrow(read_selection_file(parent, "logs", "-agent_best_run", combo, optional = TRUE)), 0)
@@ -34,15 +35,18 @@ test_that("updates compare complete current topology rather than counts or order
         expect_identical(step$result$status, "done")
         mapping <- read_global_update_selection(current$info, read_selection_file(current$info, "logs"), surviving)
         expect_setequal(names(mapping$selected_ids), expected_nodes)
-        expect_identical(unname(mapping$selected_ids),
-          unname(previous$winners[names(mapping$selected_ids)]))
+        expected_winners <- previous$winners[names(mapping$selected_ids)]
+        if (uniform) expected_winners[is.na(expected_winners)] <- unique(previous$winners)
+        expect_identical(unname(mapping$selected_ids), unname(expected_winners))
         delivered <- read_selection_file(current$info, "forecasts", "-reconciled", "Best-Model")
-        expect_setequal(delivered$Combo, current$hierarchy$original_combos)
+        expect_setequal(delivered$Combo, surviving)
         next_run <- make_update_chain_case(path, paste0("repeat-", change), approach,
           members = changes[[change]], legacy = TRUE)
-        repeated <- expect_no_warning(run_update_chain_step(current, next_run))
+        repeated <- expect_no_warning(run_update_chain_step(current, next_run, combos = surviving))
         expect_identical(repeated$result$status, "done")
         expect_length(repeated$result$quality_rejected_combos, 0)
+        expect_setequal(read_selection_file(next_run$info, "forecasts", "-reconciled", "Best-Model")$Combo,
+          surviving)
       }
       expect_length(step$fits, 1)
     }

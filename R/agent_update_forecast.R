@@ -45,11 +45,15 @@
 #'   current series follow the existing default-local forecast path. Existing
 #'   nodes are matched by identity and surviving bottom membership, not position
 #'   or node count. Reassigned generated aggregate labels are treated as new
-#'   nodes rather than inheriting another aggregate's selection. New nodes have
-#'   no historical selection and use the ordinary new-series/default-local
-#'   workflow; removed nodes are not published. A topology change that leaves
-#'   an inner hierarchy incomplete can therefore move its covered series to
-#'   local defaults rather than guessing new global selections. Existing
+#'   nodes rather than inheriting another aggregate's selection. When every
+#'   predecessor source node has the same selected model or average, new inner
+#'   hierarchy source nodes inherit that uniform choice. Their component and
+#'   average forecasts must pass the same checks before publication. This keeps
+#'   existing global series usable without promoting newly added series to
+#'   global winners: their ordinary new-series/default-local routing is unchanged.
+#'   Heterogeneous selections are not extrapolated, removed nodes are not
+#'   published, and reassigned-label safeguards still apply. An incomplete inner
+#'   hierarchy continues to use default-local recovery. Existing
 #'   run logs record default acceptance or rejection for restart safety. The
 #'   selected mixture is then reconciled without post-reconciliation future
 #'   evaluation, whole-set replacement, or late quality-triggered refitting.
@@ -795,7 +799,8 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
 #'   locate its required source predictions, not to audit or repair preparation.
 #' @param splits Optional already loaded prepared train/test splits.
 #' @param recipes Optional recipe setting already loaded for this result.
-#' @param selected_ids Optional named predecessor selection for each source node.
+#' @param selected_ids Optional named expected selection for each source node,
+#'   including inherited uniform choices for newly added hierarchy sources.
 #'   When supplied, matching the fitted model pool alone is insufficient: each
 #'   current node must retain its own selected single model or average.
 #' @param previous_hierarchy Optional predecessor hierarchy for validating source
@@ -2103,6 +2108,25 @@ read_global_update_selection <- function(run_info, run_log, combos) {
   list(selected_ids = selected_ids, components = components, hierarchy = hierarchy)
 }
 
+# Extend a validated uniform predecessor selection to new current HTS sources.
+# Existing choices and predecessor topology remain unchanged; heterogeneous
+# choices are not extrapolated. Return the selection with the same fitted pool
+# and an informational message when extending it. No artifacts are read or
+# written; ordinary component, quality and topology checks still gate publication.
+extend_global_update_selection <- function(selection, hierarchy) {
+  new_sources <- setdiff(hierarchy$hts_combos, names(selection$selected_ids))
+  selected_id <- unique(unname(selection$selected_ids))
+  if (!length(new_sources) || length(selected_id) != 1L) return(selection)
+  selection$selected_ids <- c(selection$selected_ids,
+    stats::setNames(rep(selected_id, length(new_sources)), new_sources))
+  selection$components <- c(selection$components,
+    stats::setNames(rep(selection$components[1], length(new_sources)), new_sources))
+  cli::cli_alert_info(
+    "Reusing the uniform saved global selection for {length(new_sources)} new hierarchy source node{?s}."
+  )
+  selection
+}
+
 # Update one local series or one coherent global group using predecessor fits.
 # agent_info and prev_best_run_tbl supply current input and previous selections;
 # parallel settings and seed retain the ordinary refit/retune behavior. Valid
@@ -2112,6 +2136,8 @@ read_global_update_selection <- function(run_info, run_log, combos) {
 # predecessor model files enter the existing default-model fallback. Legacy HTS
 # predecessors without any source artifacts reuse their actual fitted pool,
 # while every newly accepted update persists its per-node source selections.
+# Uniform source choices extend to new current hierarchy nodes before restart,
+# assembly and publication checks; existing choices and topology guards remain.
 # An unselected average is overwritten with a schema-correct empty table so a
 # refit cannot leave an older selected average behind after an interrupted run.
 # Storage failures
@@ -2340,6 +2366,12 @@ update_forecast_combo <- function(agent_info,
     multistep_horizon = prev_run_log_tbl$multistep_horizon
   )
 
+  selection_cache <- new.env(parent = emptyenv())
+  if (!is.null(selected_models$hierarchy)) {
+    selected_models <- extend_global_update_selection(selected_models,
+      read_selection_hierarchy(new_run_info, selection_cache))
+  }
+
   if (isTRUE(prev_run_log_tbl$box_cox) || isTRUE(prev_run_log_tbl$stationary)) {
     combo_info_tbl <- read_file(new_run_info,
       file_list = paste0(
@@ -2424,7 +2456,6 @@ update_forecast_combo <- function(agent_info,
 
   selection_log <- read_selection_file(new_run_info, "logs")
   selection_log$negative_forecast <- prev_run_log_tbl$negative_forecast
-  selection_cache <- new.env(parent = emptyenv())
   # This is acceptance of new predictions for the saved choice, not a fresh
   # candidate search. Assess source components before any hierarchy solve;
   # return quality rejections to the existing default-local recovery workflow.
