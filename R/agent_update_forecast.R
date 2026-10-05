@@ -2059,7 +2059,9 @@ read_previous_update_models <- function(run_info, combo) {
 # identities, not merely requested models. Return the named mapping
 # plus the loaded fits for caller reuse, and warn once about the lost per-node
 # selection information. Invalid evidence is an artifact error, never a fallback
-# to guessed models or earlier Agent versions.
+# to guessed models or earlier Agent versions. Read the shared saved calendar
+# and splits once; every requested series must have unique, complete delivery
+# keys, including all days of expanded weekly predictions.
 read_legacy_global_selection <- function(run_info, run_log, hierarchy, combos) {
   settings <- c("models_to_run", "global_model_recipes")
   if (nrow(run_log) != 1L || !all(settings %in% names(run_log)) ||
@@ -2108,6 +2110,24 @@ read_legacy_global_selection <- function(run_info, run_log, hierarchy, combos) {
       (!"all" %in% requested_models && !all(models$Model_Name %in% requested_models)) ||
       (!"all" %in% requested_recipes && !all(models$Recipe_ID %in% requested_recipes))) {
     rlang::abort("Legacy global update has missing, ambiguous or inconsistent saved model fits.",
+      class = "finnts_update_artifact_error")
+  }
+  coverage <- tryCatch(
+    read_update_keys(run_info, hierarchy$hts_combos[[1]],
+      recipes = paste(unique(models$Recipe_ID), collapse = "---")),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read legacy global forecast coverage: ", conditionMessage(error)),
+        class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+    }
+  )
+  horizon <- run_log$forecast_horizon
+  if (length(horizon) != 1L || !is.numeric(horizon) || !is.finite(horizon) ||
+      horizon < 1 || horizon != trunc(horizon) ||
+      !all(vapply(combos, function(combo) {
+        valid_update_forecasts(reconciled[reconciled$Combo == combo, , drop = FALSE],
+          NULL, horizon, coverage$required, coverage$non_delivery_ids)
+      }, logical(1)))) {
+    rlang::abort("Legacy global update requires complete, unique reconciled forecast keys for every requested global series.",
       class = "finnts_update_artifact_error")
   }
   ids <- sort(ids)

@@ -190,6 +190,119 @@ test_that("legacy global subsets do not require other local winners' reconciled 
     "every requested global series")
 })
 
+test_that("legacy reconciled evidence requires complete saved delivery keys", {
+  fixture <- make_update_chain_case(withr::local_tempdir(), legacy = TRUE)
+  combos <- fixture$hierarchy$original_combos
+  reconciled <- read_selection_file(fixture$info, "forecasts", "-reconciled", "Best-Model")
+  future <- which(reconciled$Combo == tail(combos, 1) & reconciled$Train_Test_ID == 1)[1]
+  backtest <- which(reconciled$Combo == tail(combos, 1) & reconciled$Train_Test_ID == 2)[1]
+  for (defect in c("truncated", "duplicate_future", "duplicate_backtest", "missing_future",
+    "missing_backtest", "missing_split", "shifted_future", "shifted_backtest", "unknown_split")) {
+    rows <- reconciled
+    if (defect == "truncated") rows <- rows[!duplicated(rows$Combo), ]
+    if (defect == "duplicate_future") rows <- rbind(rows, rows[future, ])
+    if (defect == "duplicate_backtest") rows <- rbind(rows, rows[backtest, ])
+    if (defect == "missing_future") rows <- rows[-future, ]
+    if (defect == "missing_backtest") rows <- rows[-backtest, ]
+    if (defect == "missing_split") {
+      rows <- rows[!(rows$Combo == tail(combos, 1) & rows$Train_Test_ID == 2), ]
+    }
+    if (defect == "shifted_future") rows$Date[future] <- rows$Date[future] + 1
+    if (defect == "shifted_backtest") rows$Date[backtest] <- rows$Date[backtest] + 1
+    if (defect == "unknown_split") {
+      extra <- rows[future, ]
+      extra$Train_Test_ID <- 99
+      rows <- rbind(rows, extra)
+    }
+    write_data(rows, "Best-Model", fixture$info, "data", "forecasts", "-reconciled")
+    expect_error(read_global_update_selection(fixture$info, fixture$log, combos),
+      class = "finnts_update_artifact_error", info = defect)
+  }
+})
+
+test_that("legacy weekly evidence validates expanded daily keys for CSV and RDS", {
+  for (format in c("csv", "rds")) {
+    fixture <- make_update_chain_case(withr::local_tempdir(), models = "xgboost",
+      recipes = "R2", legacy = TRUE, date_type = "week", data_output = format)
+    combos <- fixture$hierarchy$original_combos
+    reconciled <- read_selection_file(fixture$info, "forecasts", "-reconciled", "Best-Model")
+    reconciled <- convert_weekly_to_daily(reconciled, "week", TRUE)
+    fixture$log$weekly_to_daily <- TRUE
+    write_data(reconciled[nrow(reconciled):1, ], "Best-Model", fixture$info, "data", "forecasts", "-reconciled")
+    expect_warning(mapping <- read_global_update_selection(fixture$info, fixture$log, combos),
+      "Legacy global update")
+    expect_true(all(mapping$selected_ids == fixture$ids))
+    day <- which(reconciled$Combo == tail(combos, 1) & reconciled$Train_Test_ID == 2)[1]
+    for (defect in c("missing_day", "duplicate_day", "shifted_day")) {
+      rows <- reconciled
+      if (defect == "missing_day") rows <- rows[-day, ]
+      if (defect == "duplicate_day") rows <- rbind(rows, rows[day, ])
+      if (defect == "shifted_day") rows$Date_Day[day] <- rows$Date_Day[day] - 1
+      write_data(rows, "Best-Model", fixture$info, "data", "forecasts", "-reconciled")
+      expect_error(read_global_update_selection(fixture$info, fixture$log, combos),
+        class = "finnts_update_artifact_error", info = paste(format, defect))
+    }
+  }
+})
+
+test_that("legacy coverage reuses exact reads and permits declared non-delivery splits", {
+  fixture <- make_update_chain_case(withr::local_tempdir(), legacy = TRUE)
+  extra <- fixture$splits[rep(which(fixture$splits$Run_Type == "Back_Test")[1], 2), ]
+  extra$Train_Test_ID <- c(8, 12)
+  extra$Run_Type <- c("Validation", "Ensemble")
+  write_data(rbind(fixture$splits, extra), NULL, fixture$info, "data", "prep_models", "-train_test_split")
+  reconciled <- read_selection_file(fixture$info, "forecasts", "-reconciled", "Best-Model")
+  for (id in extra$Train_Test_ID) {
+    rows <- reconciled[reconciled$Train_Test_ID == 2, ]
+    rows$Train_Test_ID <- id
+    reconciled <- rbind(reconciled, rows)
+  }
+  write_data(reconciled, "Best-Model", fixture$info, "data", "forecasts", "-reconciled")
+  reads <- character()
+  reader <- read_update_artifact
+  local_mocked_bindings(
+    # Record exact preparation/model reads without changing storage behavior.
+    read_update_artifact = function(info, path, ...) {
+      reads <<- c(reads, path)
+      reader(info, path, ...)
+    },
+    list_files = function(...) stop("legacy coverage must use exact paths")
+  )
+  expect_warning(mapping <- read_global_update_selection(fixture$info, fixture$log,
+    fixture$hierarchy$original_combos), "Legacy global update")
+  expect_true(all(mapping$selected_ids == paste(sort(fixture$ids), collapse = "_")))
+  expect_equal(sum(grepl("-train_test_split", reads, fixed = TRUE)), 1)
+  expect_equal(sum(grepl("/prep_data/", reads, fixed = TRUE)), 1)
+  expect_equal(sum(grepl("-single_models", reads, fixed = TRUE)), 1)
+  expect_equal(sum(grepl("/logs/", reads, fixed = TRUE)), 0)
+})
+
+test_that("legacy coverage requires readable saved preparation", {
+  fixture <- make_update_chain_case(withr::local_tempdir(), legacy = TRUE)
+  reader <- read_update_artifact
+  for (defect in c("missing", "malformed", "provider")) {
+    expect_error(with_mocked_bindings(
+      read_global_update_selection(fixture$info, fixture$log, fixture$hierarchy$original_combos),
+      # Damage only the authoritative calendar; fits and reconciled rows stay valid.
+      read_update_artifact = function(info, path, ...) {
+        if (grepl("/prep_data/", path, fixed = TRUE)) {
+          if (defect == "provider") rlang::abort("calendar access denied", class = "chain_storage_error")
+          if (defect == "missing") return(NULL)
+          return(data.frame(Target = 100))
+        }
+        reader(info, path, ...)
+      }), class = "finnts_update_artifact_error", info = defect)
+  }
+  expect_error(with_mocked_bindings(
+    read_global_update_selection(fixture$info, fixture$log, fixture$hierarchy$original_combos),
+    read_update_artifact = function(info, path, ...) {
+      if (grepl("/prep_models/", path, fixed = TRUE)) {
+        rlang::abort("split access denied", class = "chain_storage_error")
+      }
+      reader(info, path, ...)
+    }), class = "chain_storage_error")
+})
+
 test_that("publication rejects an interrupted stale-average overwrite", {
   path <- withr::local_tempdir()
   previous <- make_update_chain_case(path)

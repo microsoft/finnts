@@ -196,7 +196,11 @@ once per global group. Requested models without saved fits are not added, and
 recipe identities are preserved rather than replaced with `R1`.
 
 This compatibility path requires valid reconciled output covering the global
-series being updated and consistent saved model settings and fits. It cannot
+series being updated and consistent saved model settings and fits. Each requested
+series must have unique, complete future and backtest keys matching the saved
+preparation calendar and train/test splits, including every day when weekly
+forecasts were expanded to daily output. Missing or unreadable preparation is a
+hard artifact error. Unrelated local winners' rows are not required. It cannot
 recover heterogeneous historical choices from reconciled `Best-Model` rows.
 It does not search older Agent versions. Partial source sets, existing empty or
 corrupt source content, ambiguous winners, and storage/access failures cannot
