@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9009</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9010</span>
       </span>
     </div>
 
@@ -190,7 +190,14 @@ magnitude bound; supported future paths use 100 times the larger of the
 historical robust scale and the absolute projected reference at each step.
 Prepared-history imputation remains part of the evidence. These checks are
 engineering guardrails, not calibrated intervals or accuracy guarantees.
-If all candidates fail the required checks, selection raises an error.
+If normal selection has no winner, complete finite candidates with usable
+backtest accuracy may receive a plausibility fallback. It prefers fewer
+failed checks, lower maximum normalized severity (including extreme
+magnitude), lower weighted MAPE, then stable model identity. A classed
+<code>finnts_forecast_selection_fallback</code> warning identifies the selected model
+and concerns. Missing/duplicate required keys, nonfinite predictions and
+unavailable accuracy cannot be relaxed; an entirely unusable pool errors.
+Strictly rejected components are not added to averages or ensemble training.
 Evaluation is deterministic for fixed inputs and creates no diagnostic files.
 If an individual model wins, the best eligible simple average is still saved
 with <code>Best_Model = "No"</code>, using the same quality-aware ranking among averages.
@@ -214,7 +221,14 @@ During model-result repair of an accepted default forecast, old average
 outputs and selection-completion flags are not reused. Selection is rebuilt
 from the replacement individual predictions through the same policy, with
 stale averages reset using the ordinary forecast schema. This recovery does
-not change preparation or allow repeated genuinely rejected defaults.
+not change preparation. Older plausibility-only rejected defaults can
+recover from usable saved predictions and fits without training again;
+structurally unusable defaults remain rejected. Fresh defaults also use
+fallback when the normal winner has soft concerns. Ordinary update
+assessment and retuning do not opt into this final-selection policy.
+Single-series finalization reads its known log, splits and prediction paths
+directly, including daily-expanded weekly rows, without directory discovery.
+Fallback evidence is in memory only; no tracking fields are persisted.
 If only one individual remains eligible, the schema-correct empty optional
 average represents no average and remains readable during publication and
 restart. Empty required artifacts and malformed optional averages are errors.</p>
@@ -234,7 +248,7 @@ restart. Empty required artifacts and malformed optional averages are errors.</p
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: finn_project</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261005T214723Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261006T150453Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_data.html">prep_data</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -245,7 +259,7 @@ restart. Empty required artifacts and malformed optional averages are errors.</p
 <span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[3s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[2.8s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_models.html">prep_models</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -253,10 +267,10 @@ restart. Empty required artifacts and malformed optional averages are errors.</p
 <span class="r-in"><span>  back_test_scenarios <span class="op">=</span> <span class="fl">3</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[122ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[133ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[127ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[113ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Turning ensemble models off since no multivariate models were chosen to run.</span>
@@ -268,12 +282,12 @@ restart. Empty required artifacts and malformed optional averages are errors.</p
 <span class="r-in"><span>  run_global_models <span class="op">=</span> <span class="cn">FALSE</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Training Individual Models</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Training Individual Models <span style="color: #B2B2B2;">[24.6s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Training Individual Models <span style="color: #B2B2B2;">[24.2s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">final_models</span><span class="op">(</span><span class="va">run_info</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Selecting Best Models</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Selecting Best Models <span style="color: #B2B2B2;">[1.1s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Selecting Best Models <span style="color: #B2B2B2;">[869ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>

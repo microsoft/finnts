@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9009</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9010</span>
       </span>
     </div>
 
@@ -161,7 +161,9 @@ greater than number of cores on machine minus 1.</p></dd>
     <div id="details">
     <h2>Details</h2>
     <p>Future quality is evaluated when <code><a href="final_models.html">final_models()</a></code> selects the winner
-within each iteration. Iteration ranking starts from the earliest minimum
+within each iteration, including usable least-issues fallbacks with warnings.
+Parallel fallback warnings are relayed to the caller without saved fields.
+Iteration ranking starts from the earliest minimum
 WMAPE and may prefer a later eligible iteration within 10 percent relative
 WMAPE when its average model WMAPE is strictly lower. Local mean, median, and
 standard deviation summarize individual-model backtests, excluding simple
