@@ -5,7 +5,9 @@
 #' @details Final selection uses the deterministic accuracy and future-plausibility
 #'   checks documented in [final_models()]. It selects from the models already
 #'   produced; an invalid forecast is not repaired into a zero forecast or replaced
-#'   by an additional model fit. No acceptable candidate results in an error.
+#'   by an additional model fit. When normal selection has no winner, a complete
+#'   finite candidate may be selected with a least-issues plausibility fallback
+#'   and a warning. No structurally usable candidate still results in an error.
 #'   The saved nonwinning average uses the same ranking among eligible averages.
 #'   Hierarchical forecasts use the selected base forecasts as input to the existing
 #'   reconciliation solver. Reconciled future outputs are not evaluated to choose

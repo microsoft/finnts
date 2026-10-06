@@ -177,7 +177,7 @@ test_that("best-run logging compares the saved incumbent without forecast reread
 
 test_that("only unfinished default acceptance restores one-time quality evidence", {
   quality_calls <- 0L
-  status <- NULL
+  writes <- 0L
   current <- make_agent_policy_result(0.03)
   current$rejected_combos <- character()
   restored <- current
@@ -203,21 +203,24 @@ test_that("only unfinished default acceptance restores one-time quality evidence
       quality_calls <<- quality_calls + 1L
       current
     },
-    write_data = function(x, ...) { status <<- x$default_reforecast_status },
+    write_data = function(x, ...) {
+      writes <<- writes + 1L
+      expect_false("default_reforecast_status" %in% names(x))
+    },
     validate_run_outputs = function(...) TRUE
   )
   agent <- list(run_id = "run", agent_version = 1, default_reforecast = TRUE,
     project_info = list(project_name = "project", path = tempdir(), data_output = "csv"))
   result <- submit_fcst_run(agent, list(models_to_run = "meanf"), hash_data("series"), "default")
   expect_identical(quality_calls, 1L)
-  expect_identical(status, "accepted")
+  expect_identical(writes, 0L)
   expect_true(agent_selection_summary(result$forecast_selection, check_quality = TRUE)$acceptable)
   agent$default_reforecast <- FALSE
   quality_calls <- 0L
-  status <- NULL
+  writes <- 0L
   submit_fcst_run(agent, list(models_to_run = "meanf"), hash_data("series"), "iteration")
   expect_identical(quality_calls, 0L)
-  expect_null(status)
+  expect_identical(writes, 0L)
 })
 
 make_selected_agent_log_fixture <- function(path, series = c("North--Revenue", "South--Revenue"),

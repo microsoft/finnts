@@ -148,6 +148,13 @@ is_graceful_reason_failure <- function(error) {
 
 #' Execute a node in the workflow
 #'
+#' Plain retries for local updates and default forecasts switch from Spark to
+#' local-machine execution after three failed attempts, if the node's retry
+#' budget permits another attempt. Only this node's backend and inner parallelism
+#' change; core count and other arguments are preserved. Quality-selection
+#' rejections propagate immediately, and exhausted execution failures remain
+#' errors. This executor does not read or write forecast artifacts.
+#'
 #' @param node The node to execute.
 #' @param ctx The current context containing arguments and results.
 #' @param chat The chat object for interacting with the LLM.
@@ -235,16 +242,17 @@ execute_node <- function(node, ctx, chat) {
         ctx$args$last_error <- paste0(ctx$args$last_error, ", ", ctx$last_error)
       }
 
-      # SPECIAL FAILOVER: update_local_models spark -> local_machine
-      if (tool_name == "update_local_models" &&
+      if (tool_name %in% c("update_local_models", "forecast_new_combos") &&
         attempt == 3L &&
         is.character(ctx$args$parallel_processing) &&
         identical(tolower(ctx$args$parallel_processing), "spark")) {
         cli::cli_alert_info(
-          "Failover: 'update_local_models' failed with Spark. Switching parallel_processing to 'local_machine' for the next retry."
+          sprintf(
+            "Failover: '%s' failed with Spark. Switching parallel_processing to 'local_machine' and inner_parallel to FALSE for the next retry.",
+            tool_name
+          )
         )
 
-        # Flip the arg for the next loop iteration
         ctx$args$parallel_processing <- "local_machine"
         ctx$args$inner_parallel <- FALSE
       }

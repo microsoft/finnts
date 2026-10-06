@@ -72,7 +72,14 @@ magnitude bound; supported future paths use 100 times the larger of the
 historical robust scale and the absolute projected reference at each step.
 Prepared-history imputation remains part of the evidence. These checks are
 engineering guardrails, not calibrated intervals or accuracy guarantees.
-If all candidates fail the required checks, selection raises an error.
+If normal selection has no winner, complete finite candidates with usable
+backtest accuracy may receive a plausibility fallback. It prefers fewer
+failed checks, lower maximum normalized severity (including extreme
+magnitude), lower weighted MAPE, then stable model identity. A classed
+\code{finnts_forecast_selection_fallback} warning identifies the selected model
+and concerns. Missing/duplicate required keys, nonfinite predictions and
+unavailable accuracy cannot be relaxed; an entirely unusable pool errors.
+Strictly rejected components are not added to averages or ensemble training.
 Evaluation is deterministic for fixed inputs and creates no diagnostic files.
 If an individual model wins, the best eligible simple average is still saved
 with \code{Best_Model = "No"}, using the same quality-aware ranking among averages.
@@ -96,7 +103,14 @@ During model-result repair of an accepted default forecast, old average
 outputs and selection-completion flags are not reused. Selection is rebuilt
 from the replacement individual predictions through the same policy, with
 stale averages reset using the ordinary forecast schema. This recovery does
-not change preparation or allow repeated genuinely rejected defaults.
+not change preparation. Older plausibility-only rejected defaults can
+recover from usable saved predictions and fits without training again;
+structurally unusable defaults remain rejected. Fresh defaults also use
+fallback when the normal winner has soft concerns. Ordinary update
+assessment and retuning do not opt into this final-selection policy.
+Single-series finalization reads its known log, splits and prediction paths
+directly, including daily-expanded weekly rows, without directory discovery.
+Fallback evidence is in memory only; no tracking fields are persisted.
 If only one individual remains eligible, the schema-correct empty optional
 average represents no average and remains readable during publication and
 restart. Empty required artifacts and malformed optional averages are errors.

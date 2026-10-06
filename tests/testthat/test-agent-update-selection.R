@@ -1,16 +1,18 @@
 # Construct selected local/global predictions and small real serialized fits for
 # update tests. Cadence and signed/zero actuals exercise reporting invariants;
 # expensive engines are mocked and the temporary artifacts belong to the caller.
-# write_models = FALSE leaves predecessor fits absent without deleting files.
+# write_models = FALSE leaves predecessor fits absent without deleting files;
+# run_name can use the deterministic default identity for dispatch tests.
 make_global_update_selection_fixture <- function(date_type = "month", weekly_to_daily = FALSE,
                                                  zero_targets = FALSE, global = TRUE,
-                                                 signed_targets = FALSE, write_models = TRUE) {
+                                                 signed_targets = FALSE, write_models = TRUE,
+                                                 run_name = "previous") {
   path <- withr::local_tempdir(pattern = "finnts-global-selection-", .local_envir = parent.frame())
   combos <- if (global) c("first", "second") else "first"
   combo_id <- if (global) "All-Data" else "first"
   model_type <- if (global) "global" else "local"
   previous <- set_run_info(project_name = paste0("global-selection_", hash_data(if (global) "all" else "first")),
-    run_name = "previous", path = path, data_output = "csv", add_unique_id = FALSE)
+    run_name = run_name, path = path, data_output = "csv", add_unique_id = FALSE)
   updated <- previous
   updated$run_name <- "updated"
   actuals <- rep(100, 36)
@@ -527,7 +529,6 @@ test_that("a damaged accepted default reaches training without preparation chang
   agent <- fixture$agent
   agent$default_reforecast <- TRUE
   log <- fixture$log
-  log$default_reforecast_status <- "accepted"
   write_data(log, combo = NULL, run_info = fixture$updated, output_type = "log",
     folder = "logs", suffix = NULL)
   inputs <- list(models_to_run = "meanf", external_regressors = "NULL",
@@ -546,6 +547,127 @@ test_that("a damaged accepted default reaches training without preparation chang
   expect_error(submit_fcst_run(agent, inputs, hash_data("first"), "default",
     num_cores = 1), "training reached")
   expect_false("rebuild_update_models" %in% names(read_selection_file(fixture$updated, "logs")))
+})
+
+test_that("saved default quality is recovered without status columns or refitting", {
+  for (cadence in c("month", "week")) for (outcome in c("accepted", "soft", "hard")) local({
+    fixture <- make_global_update_selection_fixture(cadence, cadence == "week", global = FALSE)
+    info <- fixture$previous
+    agent <- fixture$agent
+    agent$default_reforecast <- TRUE
+    for (suffix in c("-single_models", "-average_models")) {
+      rows <- read_selection_file(info, "forecasts", suffix, "first")
+      if (outcome != "accepted") {
+        rows$Forecast[rows$Train_Test_ID == 1] <- if (outcome == "hard") Inf else 0
+        if (outcome == "hard") rows$Best_Model <- "No"
+      }
+      write_data(rows, "first", info, "data", "forecasts", suffix)
+    }
+    paths <- c(local_artifact_path(info, "logs", extension = "csv"),
+      local_artifact_path(info, "forecasts", "-single_models", hash_data("first")),
+      local_artifact_path(info, "forecasts", "-average_models", hash_data("first")),
+      local_artifact_path(info, "models", "-single_models", hash_data("first"), "rds"))
+    before <- tools::md5sum(paths)
+    expect_false("default_reforecast_status" %in% names(read_selection_file(info, "logs")))
+    original_local_reader <- read_local_artifacts
+    original_writer <- write_data
+    local_mocked_bindings(
+      read_local_artifacts = function(run_info, file_list, ...) {
+        if (any(grepl("input_data", file_list, fixed = TRUE))) return(fixture$input)
+        original_local_reader(run_info, file_list, ...)
+      },
+      set_run_info = function(...) info,
+      prep_data = function(...) stop("unexpected preparation"),
+      train_models = function(...) stop("unexpected fitting"),
+      write_data = function(...) {
+        if (outcome != "soft") stop("unexpected metadata or forecast write")
+        original_writer(...)
+      },
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      list_files = function(...) stop("unexpected discovery"),
+      validate_run_outputs = function(...) TRUE
+    )
+    captured <- capture_forecast_warnings(tryCatch(submit_fcst_run(agent, list(models_to_run = "meanf"),
+      hash_data("first"), "default"), error = identity))
+    result <- captured$value
+    if (outcome == "accepted") {
+      expect_false(inherits(result, "error"))
+      expect_true(agent_selection_summary(result$forecast_selection, check_quality = TRUE)$acceptable)
+    } else if (outcome == "soft") {
+      expect_false(inherits(result, "error"))
+      expect_true(agent_selection_summary(result$forecast_selection, check_quality = TRUE,
+        allow_plausibility_fallback = TRUE)$acceptable)
+      expect_length(captured$warnings, 1L)
+      expect_identical(tools::md5sum(paths[4]), before[4])
+    } else {
+      expect_s3_class(result, "finnts_forecast_selection_rejected")
+    }
+    if (outcome != "soft") {
+      expect_identical(tools::md5sum(paths), before)
+      expect_length(captured$warnings, 0L)
+    }
+  })
+})
+
+test_that("all-No flags and incomplete default forecasts do not prove rejection", {
+  for (defect in c("flags", "missing-key", "duplicate-key", "unknown-split", "missing-column")) local({
+    fixture <- make_global_update_selection_fixture(global = FALSE)
+    info <- fixture$previous
+    rows <- read_selection_file(info, "forecasts", "-single_models", "first")
+    rows$Best_Model <- "No"
+    if (defect != "flags") rows$Forecast[rows$Train_Test_ID == 1] <- Inf
+    if (defect == "missing-key") rows <- rows[-1, ]
+    if (defect == "duplicate-key") rows <- dplyr::bind_rows(rows, rows[1, ])
+    if (defect == "unknown-split") rows$Train_Test_ID[1] <- 99
+    if (defect == "missing-column") rows$Forecast <- NULL
+    write_data(rows, "first", info, "data", "forecasts", "-single_models")
+    expect_no_error(reject_saved_default_forecasts(info, fixture$log, "first", FALSE))
+  })
+})
+
+test_that("a finalized incomplete default is rejected again without fitting", {
+  fixture <- make_global_update_selection_fixture(global = FALSE)
+  info <- fixture$previous
+  info$combo <- hash_data("first")
+  info$allow_quality_rejection <- TRUE
+  for (suffix in c("-single_models", "-average_models")) {
+    rows <- read_selection_file(info, "forecasts", suffix, "first")
+    rows$Best_Model <- "No"
+    missing_date <- min(rows$Date[rows$Train_Test_ID == 2])
+    rows <- rows[!(rows$Train_Test_ID == 2 & rows$Date == missing_date), ]
+    write_data(rows, "first", info, "data", "forecasts", suffix)
+  }
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL
+  )
+  result <- final_models(info, weekly_to_daily = FALSE)
+  expect_true(is.na(result$selections$first$selected_id))
+  log <- read_selection_file(info, "logs")
+  expect_true(is.na(log$weighted_mape))
+  expect_false("default_reforecast_status" %in% names(log))
+  agent <- fixture$agent
+  agent$default_reforecast <- TRUE
+  local_mocked_bindings(
+    read_local_artifacts = function(...) fixture$input,
+    set_run_info = function(...) info,
+    prep_data = function(...) stop("unexpected preparation"),
+    train_models = function(...) stop("unexpected fitting")
+  )
+  expect_error(submit_fcst_run(agent, list(models_to_run = "meanf"),
+    hash_data("first"), "default"), class = "finnts_forecast_selection_rejected")
+})
+
+test_that("default rejection recovery propagates artifact access errors", {
+  local_mocked_bindings(
+    read_update_artifact = function(...) {
+      rlang::abort("access denied", class = "finnts_update_artifact_error")
+    }
+  )
+  expect_error(reject_saved_default_forecasts(
+    list(project_name = "project", run_name = "default", path = tempdir(), data_output = "csv"),
+    data.frame(date_type = "month"), "first", FALSE), class = "finnts_update_artifact_error")
 })
 
 # Add producer-shaped Validation/Ensemble predictions to a saved fixture and
@@ -667,7 +789,8 @@ test_that("updates retain non-delivery output without fitting again after interr
 })
 
 test_that("finalized default forecasts with validation rows are reused without submission", {
-  fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(global = FALSE), FALSE)
+  fixture <- add_update_nondelivery_splits(make_global_update_selection_fixture(global = FALSE,
+    run_name = paste0("agent_updated_", hash_data("first"), "_default")), FALSE)
   info <- fixture$previous
   info$combo <- hash_data("first")
   log <- read_selection_file(info, "logs")
@@ -694,16 +817,13 @@ test_that("finalized default forecasts with validation rows are reused without s
   expect_identical(selection$selections$first$selected_id, fixture$model_ids[2])
   saved <- read_selection_file(info, "forecasts", "-single_models", "first")
   expect_setequal(unique(saved$Train_Test_ID), c(1, 2, 8, 12))
-  log <- read_selection_file(info, "logs")
-  log$default_reforecast_status <- "accepted"
-  write_data(log, combo = NULL, run_info = info, output_type = "log", folder = "logs")
   agent <- fixture$agent
   agent$quality_rejected_combos <- hash_data("first")
   parent <- agent$project_info
   parent$run_name <- agent$run_id
   metadata <- data.frame(combo = "first", agent_run_id = agent$run_id,
     best_run_name = info$run_name, model_type = "local", weighted_mape = 0,
-    forecast_approach = "bottoms_up", recipes_to_run = "R1", default_reforecast_status = "accepted")
+    forecast_approach = "bottoms_up", recipes_to_run = "R1")
   write_data(metadata, combo = "first", run_info = parent, output_type = "log",
     folder = "logs", suffix = "-agent_best_run")
   paths <- c(local_artifact_path(info, "forecasts", "-single_models", hash_data("first")),
@@ -739,9 +859,9 @@ test_that("completion ignores non-delivery winner flags and reuses one prepared 
   original_reader <- read_update_artifact
   reads <- character()
   local_mocked_bindings(
-    read_update_artifact = function(run_info, path) {
+    read_update_artifact = function(run_info, path, ...) {
       reads <<- c(reads, path)
-      original_reader(run_info, path)
+      original_reader(run_info, path, ...)
     },
     list_files = function(...) stop("completion must not discover artifacts")
   )
@@ -888,7 +1008,8 @@ test_that("completion requires every single or averaged winner flag", {
 
 test_that("quality-rejected updates reuse or repair accepted defaults through dispatch", {
   for (damaged in c(FALSE, TRUE)) local({
-    fixture <- make_global_update_selection_fixture(global = FALSE)
+    fixture <- make_global_update_selection_fixture(global = FALSE,
+      run_name = paste0("agent_updated_", hash_data("first"), "_default"))
     state <- local_global_update_selection_mocks(fixture)
     agent <- fixture$agent
     agent$quality_rejected_combos <- hash_data("first")
@@ -896,13 +1017,12 @@ test_that("quality-rejected updates reuse or repair accepted defaults through di
     parent$run_name <- agent$run_id
     metadata <- data.frame(agent_run_id = agent$run_id, combo = "first", model_type = "local",
       best_run_name = fixture$previous$run_name, weighted_mape = 0.1,
-      forecast_approach = "bottoms_up", default_reforecast_status = "accepted")
+      forecast_approach = "bottoms_up")
     write_data(metadata, combo = "first", run_info = parent, output_type = "log",
       folder = "logs", suffix = "-agent_best_run")
     write_data(fixture$input, combo = "first", run_info = parent, output_type = "data",
       folder = "input_data", suffix = NULL)
     log <- fixture$log
-    log$default_reforecast_status <- "accepted"
     write_data(log, combo = NULL, run_info = fixture$previous, output_type = "log", folder = "logs", suffix = NULL)
     expect_false(is.null(read_update_result(fixture$previous, "first", FALSE, 6)))
     if (damaged) {
@@ -938,7 +1058,8 @@ test_that("worker recovery and default dispatch retain exact CSV run identifiers
   for (backend in c("vroom", "fallback")) for (run_id in c(
     "4282d17137126405", "1e10", "9007199254740993", "0012345678901234")) {
     for (global in c(FALSE, TRUE)) local({
-      fixture <- make_global_update_selection_fixture(global = global)
+      fixture <- make_global_update_selection_fixture(global = global,
+        run_name = if (global) "previous" else paste0("agent_", run_id, "_", hash_data("first"), "_default"))
       agent <- fixture$agent
       agent$run_id <- run_id
       log <- fixture$log
@@ -949,7 +1070,7 @@ test_that("worker recovery and default dispatch retain exact CSV run identifiers
       parent$run_name <- run_id
       metadata <- data.frame(combo = "first", agent_run_id = run_id, agent_version = 2,
         best_run_name = fixture$previous$run_name, model_type = if (global) "global" else "local",
-        weighted_mape = 0.1, forecast_approach = "bottoms_up", default_reforecast_status = "accepted")
+        weighted_mape = 0.1, forecast_approach = "bottoms_up")
       write_data(metadata, combo = "first", run_info = parent, output_type = "log",
         folder = "logs", suffix = "-agent_best_run")
       if (backend == "fallback") {

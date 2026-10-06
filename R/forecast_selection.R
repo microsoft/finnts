@@ -480,6 +480,8 @@ forecast_backtest_accuracy <- function(history, backtest) {
 
 # Hard failures control Eligible; soft path concerns only affect ranking.
 # Log_Weight carries backtest target mass for stable aggregation across series.
+# An explicitly enabled final-selection fallback also scores usable extreme
+# paths, retaining strict eligibility and reasons. Nothing here is persisted.
 evaluate_forecast_candidates <- function(history, backtests, forecasts, context) {
   evaluation <- context$forecast_evaluation %||% prepare_forecast_evaluation(history, context)
   history <- evaluation$history
@@ -520,8 +522,18 @@ evaluate_forecast_candidates <- function(history, backtests, forecasts, context)
     }
     accuracy <- forecast_backtest_accuracy(history, backtest)
     if (!is.finite(accuracy$WMAPE)) reasons <- c(reasons, "unavailable_accuracy")
-    # A hard-invalid path is not soft-scored. Zero risk here is not eligibility.
-    risk <- forecast_path_risk(if (length(reasons) == 0) future$Forecast else numeric(), reference)
+    fallback_path <- isTRUE(context$allow_plausibility_fallback) &&
+      all(reasons %in% "catastrophic_magnitude")
+    risk <- forecast_path_risk(if (length(reasons) == 0 || fallback_path) future$Forecast else numeric(), reference)
+    if (fallback_path && "catastrophic_magnitude" %in% reasons) {
+      future_scale <- if (is.null(reference$trend)) {
+        log(reference$normalization) + log(reference$scale)
+      } else reference$trend$log_magnitude_scale
+      excess <- max(c(log(abs(backtest$Forecast)) - log(reference$normalization) -
+        log(reference$scale), log(abs(future$Forecast)) - future_scale)) - log(100)
+      risk$components["magnitude"] <- max(0, expm1(min(excess, log(.Machine$double.xmax))))
+      risk$risk <- max(risk$risk, risk$components["magnitude"])
+    }
     tibble::new_tibble(list(
       Model_ID = candidate_id, Eligible = length(reasons) == 0,
       WMAPE = accuracy$WMAPE, Log_Weight = accuracy$Log_Weight, Risk = risk$risk,
@@ -554,8 +566,26 @@ order_forecast_candidates <- function(rankings) {
   indices
 }
 
-rank_forecast_candidates <- function(rankings) {
-  if (nrow(rankings) == 1) {
+# Identify deliverable fallback rows from existing reasons and accuracy.
+# Only known plausibility failures may be relaxed; new structural reasons
+# remain disqualifying by default. This never changes strict Eligible flags.
+forecast_fallback_candidates <- function(rankings) {
+  plausible <- c("catastrophic_magnitude", "unsupported_level", "level_deviation",
+    "trend_deviation", "seasonal_amplitude", "seasonal_phase")
+  is.finite(rankings$WMAPE) & vapply(seq_len(nrow(rankings)), function(index) {
+    reasons <- rankings$Reasons[[index]]
+    (isTRUE(rankings$Eligible[index]) || length(reasons) > 0L) &&
+      !anyNA(reasons) && all(reasons %in% plausible)
+  }, logical(1))
+}
+
+# Rank normally first. Explicit fallback may select a structurally usable path
+# by issue count, severity, accuracy, then stable ID, without an accuracy window.
+# require_clean_selection is only for fresh defaults' stricter acceptance gate.
+# fallback_id is transient evidence, never an artifact column or quality waiver.
+rank_forecast_candidates <- function(rankings, allow_plausibility_fallback = FALSE,
+                                      require_clean_selection = FALSE) {
+  if (nrow(rankings) == 1 && !allow_plausibility_fallback) {
     selected_id <- if (isTRUE(rankings$Eligible[1]) && is.finite(rankings$WMAPE[1])) {
       rankings$Model_ID[1]
     } else NA_character_
@@ -576,21 +606,44 @@ rank_forecast_candidates <- function(rankings) {
   # Keep all candidates for diagnostics. Consumers must use selected_id, not
   # rankings[1, ], because this full ordering is not restricted to the shortlist.
   rankings <- rankings[order_forecast_candidates(rankings), , drop = FALSE]
-  list(selected_id = selected_id, rankings = rankings)
+  result <- list(selected_id = selected_id, rankings = rankings)
+  chosen <- match(selected_id, rankings$Model_ID)
+  if (allow_plausibility_fallback && (is.na(selected_id) ||
+      (require_clean_selection && !isTRUE(rankings$Violations[chosen] == 0)))) {
+    candidates <- rankings[forecast_fallback_candidates(rankings), , drop = FALSE]
+    if (nrow(candidates)) {
+      issues <- vapply(candidates$Reasons, function(reasons) length(unique(reasons)), integer(1))
+      winner <- order(issues, candidates$Risk, candidates$WMAPE, candidates$Model_ID,
+        method = "radix", na.last = TRUE)[1]
+      result$selected_id <- candidates$Model_ID[winner]
+      result$fallback_id <- result$selected_id
+    }
+  }
+  result
 }
 
+# Evaluate and rank one pool; context opts final/default selection into fallback.
+# Update and ensemble-training callers retain strict selection by default.
 select_forecast_candidate <- function(history, backtests, forecasts, context) {
-  rank_forecast_candidates(evaluate_forecast_candidates(history, backtests, forecasts, context))
+  rank_forecast_candidates(evaluate_forecast_candidates(history, backtests, forecasts, context),
+    allow_plausibility_fallback = isTRUE(context$allow_plausibility_fallback),
+    require_clean_selection = isTRUE(context$require_clean_selection))
 }
 
 # Storage-free adapter: split one series' existing predictions by run type and
 # require exactly one ranking row per requested ID from the internal selector.
+# Policy arguments opt finalization into a usable fallback and fresh defaults
+# into clean-selection preference; strict callers cannot inherit those options.
 select_series_forecasts <- function(predictions, series_data, splits,
                                     candidate_ids = unique(predictions$Model_ID),
-                                    selector = select_forecast_candidate) {
+                                    selector = select_forecast_candidate,
+                                    allow_plausibility_fallback = FALSE,
+                                    require_clean_selection = FALSE) {
   context <- series_data
   context$train_test_split <- splits
   context$candidate_ids <- candidate_ids
+  context$allow_plausibility_fallback <- allow_plausibility_fallback
+  context$require_clean_selection <- require_clean_selection
   backtest_ids <- splits$Train_Test_ID[splits$Run_Type == "Back_Test"]
   future_ids <- splits$Train_Test_ID[splits$Run_Type == "Future_Forecast"]
   predictions$Date <- as.Date(predictions$Date)
@@ -600,7 +653,7 @@ select_series_forecasts <- function(predictions, series_data, splits,
     predictions[predictions$Train_Test_ID %in% future_ids, , drop = FALSE],
     context
   )
-  validate_forecast_selection(result, candidate_ids)
+  validate_forecast_selection(result, candidate_ids, allow_plausibility_fallback)
 }
 
 screen_ensemble_inputs <- function(predictions, series_data, splits) {
@@ -615,7 +668,9 @@ screen_ensemble_inputs <- function(predictions, series_data, splits) {
   predictions[predictions$Model_ID %in% valid_ids, , drop = FALSE]
 }
 
-validate_forecast_selection <- function(selection, candidate_ids) {
+# Validate selector identity/shape and enforce strict eligibility unless the
+# caller explicitly permits a checked, structurally usable fallback selection.
+validate_forecast_selection <- function(selection, candidate_ids, allow_plausibility_fallback = FALSE) {
   if (!is.list(selection) || length(selection$selected_id) != 1 ||
       !is.data.frame(selection$rankings) ||
       !all(c("Model_ID", "Eligible", "WMAPE", "Risk", "Violations", "Reasons") %in% names(selection$rankings)) ||
@@ -626,12 +681,47 @@ validate_forecast_selection <- function(selection, candidate_ids) {
     stop("The forecast selector returned an invalid selection contract.", call. = FALSE)
   }
   if (!is.na(selection$selected_id) &&
-      !isTRUE(selection$rankings$Eligible[match(selection$selected_id, selection$rankings$Model_ID)])) {
+      !isTRUE(selection$rankings$Eligible[match(selection$selected_id, selection$rankings$Model_ID)]) &&
+      !(allow_plausibility_fallback && usable_forecast_selection(selection))) {
     stop("The forecast selector selected an ineligible candidate.", call. = FALSE)
   }
   selection
 }
 
+# Recognize an ordinary selected result or an explicitly authorized in-memory
+# fallback. Retain strict failure evidence instead of changing Eligible to TRUE.
+usable_forecast_selection <- function(selection) {
+  if (is.null(selection) || length(selection$selected_id) != 1L || is.na(selection$selected_id)) return(FALSE)
+  chosen <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, , drop = FALSE]
+  nrow(chosen) == 1L && is.finite(chosen$WMAPE) &&
+    (isTRUE(chosen$Eligible) || (identical(selection$fallback_id, selection$selected_id) &&
+      isTRUE(forecast_fallback_candidates(chosen))))
+}
+
+# Emit a catchable warning only for an actual fallback, outside selection workers.
+# The selected model and original reasons are kept in the condition, not on disk.
+warn_forecast_fallback <- function(selection, combo) {
+  if (is.null(selection$fallback_id)) return(invisible(NULL))
+  row <- selection$rankings[selection$rankings$Model_ID == selection$fallback_id, , drop = FALSE]
+  concerns <- if (length(row$Reasons[[1]])) paste(row$Reasons[[1]], collapse = ", ") else
+    "none (selected outside the normal accuracy shortlist)"
+  rlang::warn(paste0("Selected forecast fallback '", selection$fallback_id, "' for series '",
+    combo, "'; selection concerns: ", concerns,
+    ". Review this forecast before use."),
+    class = "finnts_forecast_selection_fallback", combo = combo, model_id = selection$fallback_id)
+}
+
+# Carry only fallback warning conditions across worker boundaries in memory.
+# Other warnings/errors retain their normal handling; callers re-emit captured
+# conditions on the coordinator and never pass this envelope to artifact writers.
+capture_forecast_warnings <- function(expr) {
+  warnings <- list()
+  value <- withCallingHandlers(expr, finnts_forecast_selection_fallback = function(condition) {
+    warnings[[length(warnings) + 1L]] <<- condition
+    invokeRestart("muffleWarning")
+  })
+  list(value = value, warnings = warnings)
+}
 abort_forecast_selection <- function(combo, selection) {
   rlang::abort(
     paste0("No acceptable forecast candidate for series '", combo, "': ",
@@ -685,23 +775,33 @@ native_forecast_rows <- function(rows, date_type) {
   rows
 }
 
-read_candidate_forecasts <- function(run_info, combos, run_log = NULL, cache = NULL, reconciled = TRUE) {
+# Read exact candidate artifacts for the requested series, at native cadence.
+# By default absent/empty candidates error. With allow_missing, only a wholly
+# absent unreconciled artifact set returns NULL; existing empty average tables,
+# partial sets and storage failures are never reclassified as absent.
+read_candidate_forecasts <- function(run_info, combos, run_log = NULL, cache = NULL,
+                                     reconciled = TRUE, allow_missing = FALSE) {
   if (is.null(run_log)) run_log <- read_selection_file(run_info, "logs", cache = cache)
   if (reconciled && !identical(run_log$forecast_approach, "bottoms_up")) {
     rows <- read_selection_file(run_info, "forecasts", "-reconciled", "Best-Model", cache = cache)
     rows <- rows[rows$Combo %in% combos, , drop = FALSE]
   } else {
-    rows <- dplyr::bind_rows(lapply(combos, function(combo) {
-      suffixes <- c(
-        if (isTRUE(as.logical(run_log$run_local_models))) "-single_models",
-        if (isTRUE(as.logical(run_log$run_global_models))) "-global_models",
-        if (isTRUE(as.logical(run_log$run_ensemble_models))) "-ensemble_models",
-        if (isTRUE(as.logical(run_log[["average_models"]]))) "-average_models"
-      )
-      dplyr::bind_rows(lapply(suffixes, function(suffix) {
-        read_selection_file(run_info, "forecasts", suffix, combo, optional = TRUE, cache = cache)
-      }))
-    }))
+    suffixes <- c(
+      if (isTRUE(as.logical(run_log$run_local_models))) "-single_models",
+      if (isTRUE(as.logical(run_log$run_global_models))) "-global_models",
+      if (isTRUE(as.logical(run_log$run_ensemble_models))) "-ensemble_models",
+      if (isTRUE(as.logical(run_log[["average_models"]])) || allow_missing) "-average_models"
+    )
+    artifacts <- lapply(combos, function(combo) {
+      lapply(suffixes, function(suffix) {
+        read_selection_file(run_info, "forecasts", suffix, combo, optional = TRUE,
+          cache = cache, missing_null = TRUE)
+      })
+    })
+    if (allow_missing && all(vapply(artifacts, function(tables) {
+      all(vapply(tables, is.null, logical(1)))
+    }, logical(1)))) return(NULL)
+    rows <- dplyr::bind_rows(lapply(artifacts, dplyr::bind_rows))
   }
   if (nrow(rows) == 0) stop("No candidate forecasts were found in the exact run artifacts.", call. = FALSE)
   rows$Date <- as.Date(rows$Date)
@@ -800,8 +900,10 @@ selected_forecast_accuracy <- function(predictions, series, splits, require_fore
   list(selected_id = if (rankings$Eligible) model_id else NA_character_, rankings = rankings)
 }
 
+# Assess exact saved output without fitting or writes. Strict quality remains
+# the default; fresh-default recovery may explicitly permit a usable fallback.
 assess_agent_run <- function(run_info, run_log, combos, cache = new.env(parent = emptyenv()),
-                             check_quality = FALSE) {
+                             check_quality = FALSE, allow_plausibility_fallback = FALSE) {
   hierarchical <- !identical(run_log$forecast_approach, "bottoms_up")
   splits <- read_selection_file(run_info, "prep_models", "-train_test_split", cache = cache)
   if (hierarchical && !check_quality) {
@@ -820,9 +922,14 @@ assess_agent_run <- function(run_info, run_log, combos, cache = new.env(parent =
     if (!check_quality) return(selected_forecast_accuracy(predictions, series, splits))
     selected <- if ("Best_Model" %in% names(predictions)) predictions[!is.na(predictions$Best_Model) & predictions$Best_Model == "Yes", , drop = FALSE] else predictions[0, ]
     selection <- select_series_forecasts(
-      if (nrow(selected)) selected else predictions, series, splits
+      if (nrow(selected)) selected else predictions, series, splits,
+      allow_plausibility_fallback = allow_plausibility_fallback,
+      require_clean_selection = check_quality
     )
-    if (nrow(selected) == 0) selection$selected_id <- NA_character_
+    if (nrow(selected) == 0) {
+      selection$selected_id <- NA_character_
+      selection$fallback_id <- NULL
+    }
     selection
   }), source_combos)
   result <- list(selections = selections, source_selections = NULL, rejected_combos = character())
@@ -858,8 +965,10 @@ hierarchical_selection_result <- function(run_info, run_log, source_selections, 
 # Missing entries in the supplied selection set make it partial/rejected.
 # Callers must include the full expected series set, including missing selections.
 # Ordinary iteration decisions require completeness and finite accuracy only;
-# update/default acceptance explicitly opts into the stricter quality boundary.
-agent_selection_summary <- function(result, check_quality = FALSE) {
+# update acceptance explicitly opts into the stricter quality boundary.
+# Fresh defaults may also accept an explicitly selected usable fallback;
+# its original strict eligibility and issue evidence remain unchanged.
+agent_selection_summary <- function(result, check_quality = FALSE, allow_plausibility_fallback = FALSE) {
   chosen <- lapply(result$selections, function(selection) {
     if (is.null(selection) || is.na(selection$selected_id)) return(NULL)
     if (nrow(selection$rankings) == 1 && identical(selection$rankings$Model_ID, selection$selected_id)) {
@@ -869,19 +978,26 @@ agent_selection_summary <- function(result, check_quality = FALSE) {
   })
   rows <- dplyr::bind_rows(chosen)
   complete <- length(chosen) > 0 && nrow(rows) == length(chosen) &&
-    all(rows$Eligible) && all(is.finite(rows$WMAPE))
+    all(vapply(result$selections, usable_forecast_selection, logical(1))) && all(is.finite(rows$WMAPE))
   source <- if (check_quality && length(result$source_selections)) {
-    agent_selection_summary(list(selections = result$source_selections), check_quality = TRUE)
+    agent_selection_summary(list(selections = result$source_selections), check_quality = TRUE,
+      allow_plausibility_fallback = allow_plausibility_fallback)
   } else NULL
   if (!is.null(source)) complete <- complete && is.finite(source$weighted_mape)
   weights <- if (nrow(rows) && "Log_Weight" %in% names(rows) && all(is.finite(rows$Log_Weight))) {
     exp(rows$Log_Weight - max(rows$Log_Weight))
   } else rep(1, nrow(rows))
   fidelity <- rows[["Seasonal_Fidelity"]]
+  quality_ok <- vapply(result$selections, function(selection) {
+    if (!usable_forecast_selection(selection)) return(FALSE)
+    row <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, , drop = FALSE]
+    (isTRUE(row$Eligible) && isTRUE(row$Violations == 0)) || (allow_plausibility_fallback &&
+      identical(selection$fallback_id, selection$selected_id))
+  }, logical(1))
   list(
     weighted_mape = if (complete) sum(rows$WMAPE * weights) / sum(weights) else Inf,
     acceptable = complete && (!check_quality || isTRUE(result$quality_accepted) ||
-      (all(!is.na(rows$Violations) & rows$Violations == 0) && (is.null(source) || source$acceptable))),
+      (all(quality_ok) && (is.null(source) || source$acceptable))),
     status = if (complete) "evaluated" else if (nrow(rows)) "partial" else "rejected",
     risk = if (!is.null(source)) source$risk else if (nrow(rows)) max(rows$Risk) else 0,
     violations = if (!is.null(source)) source$violations else if (nrow(rows)) sum(rows$Violations) else 0L,
@@ -967,9 +1083,10 @@ agent_selection_combos <- function(agent_info, combo = NULL) {
 # may also be a schema-correct zero-row table left by result repair. Required
 # empty content, malformed averages and storage failures remain hard errors.
 # CSV run/series/model identifiers retain their original text; numeric metrics
-# and dates keep their ordinary inferred types.
+# and dates keep their ordinary inferred types. missing_null distinguishes true
+# optional absence from an existing empty average without changing other reads.
 read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
-                                optional = FALSE, cache = NULL) {
+                                optional = FALSE, cache = NULL, missing_null = FALSE) {
   prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name))
   extension <- if (folder == "logs") "csv" else run_info$data_output
   filename <- paste0(prefix, if (!is.null(combo)) paste0("-", hash_data(combo)), suffix, ".", extension)
@@ -979,7 +1096,7 @@ read_selection_file <- function(run_info, folder, suffix = NULL, combo = NULL,
     character_columns = if (folder == "logs") {
       c("combo", "agent_run_id", "best_run_name", "run_id", "run_name")
     } else c("Combo", "Combo_ID", "Model_ID"))
-  if (optional && is.null(result)) return(tibble::tibble())
+  if (optional && is.null(result)) return(if (missing_null) NULL else tibble::tibble())
   empty_average <- optional && identical(folder, "forecasts") &&
     identical(suffix, "-average_models") && is.data.frame(result) && nrow(result) == 0L &&
     all(c("Combo", "Model_ID", "Model_Name", "Model_Type", "Recipe_ID",
@@ -1005,17 +1122,105 @@ read_selection_hierarchy <- function(run_info, cache = NULL) {
   hierarchy
 }
 
-# Assess newly refitted predictions while preserving the saved model identity.
-# Every required component must be hard-eligible and the delivered choice must
-# have no soft concerns. Return rejected combo hashes for default recovery;
-# a hierarchy is reconciled only after all its source nodes pass.
+# Compare source-node meaning on surviving bottom identities, not generated HTS
+# labels or row positions. Return current source names whose surviving members
+# were reassigned. Removed members may disappear without changing an aggregate's
+# identity; reassignment of surviving members cannot.
+# Unchanged metadata avoids constructing summing matrices. Invalid hierarchy
+# metadata errors through the ordinary HTS constructor, never implies a match.
+changed_update_hierarchy_sources <- function(previous, current) {
+  if (identical(previous, current)) return(character())
+  shared_bottoms <- intersect(previous$original_combos, current$original_combos)
+  shared_sources <- intersect(previous$hts_combos, current$hts_combos)
+  if (!length(shared_bottoms)) return(current$hts_combos)
+  if (!length(shared_sources)) return(character())
+  # Label each summing matrix with the saved source and original bottom IDs.
+  membership <- function(hierarchy) {
+    if (is.null(hierarchy$nodes)) stop("Update hierarchy is missing its node structure.", call. = FALSE)
+    bottom <- matrix(1, nrow = 2, ncol = length(hierarchy$original_combos),
+      dimnames = list(NULL, hierarchy$original_combos))
+    structure <- get_hts(stats::ts(bottom), hierarchy$nodes,
+      if (is.matrix(hierarchy$nodes)) "grouped_hierarchy" else "standard_hierarchy")
+    summed <- hts::smatrix(structure)
+    if (nrow(summed) != length(hierarchy$hts_combos)) {
+      stop("Update hierarchy source identities do not match its node structure.", call. = FALSE)
+    }
+    dimnames(summed) <- list(hierarchy$hts_combos, hierarchy$original_combos)
+    summed[shared_sources, shared_bottoms, drop = FALSE] != 0
+  }
+  shared_sources[rowSums(membership(previous) != membership(current)) > 0]
+}
+
+# Recover one hierarchical update source from its already refitted global pool.
+# Preserve a hard-valid, concern-free saved choice. Otherwise use the ordinary
+# accuracy shortlist and risk ranking; soft concerns do not veto recovery.
+# Averages use only hard-eligible components, bounded by the existing request
+# and saved combination size. Return selected flags, full ranking diagnostics,
+# and whether recovery was needed. No fitting, storage, or reconciliation occurs.
+recover_global_update_source <- function(rows, series, splits, components,
+                                         max_model_average = 1L) {
+  individuals <- rows[rows$Recipe_ID != "simple_average", , drop = FALSE]
+  individual_selection <- select_series_forecasts(individuals, series, splits)
+  eligible <- individual_selection$rankings$Model_ID[individual_selection$rankings$Eligible]
+  previous_id <- if (length(components)) paste(components, collapse = "_") else NA_character_
+  combinations <- list()
+  maximum <- min(length(eligible), max(max_model_average, length(components)))
+  if (maximum >= 2L) {
+    combinations <- unlist(lapply(seq.int(2L, maximum), function(size) {
+      utils::combn(sort(eligible), size, simplify = FALSE)
+    }), recursive = FALSE)
+  }
+  average_ids <- vapply(combinations, paste, character(1), collapse = "_")
+  if (length(components) > 1L && all(components %in% eligible) && !previous_id %in% average_ids) {
+    combinations <- c(combinations, list(components))
+  }
+  averages <- dplyr::bind_rows(lapply(combinations, function(ids) {
+    average_update_forecasts(individuals, ids)
+  }))
+  rankings <- individual_selection$rankings
+  if (nrow(averages)) {
+    rankings <- dplyr::bind_rows(rankings, select_series_forecasts(averages, series, splits)$rankings)
+  }
+  selection <- rank_forecast_candidates(rankings)
+  previous <- rankings[rankings$Model_ID == previous_id & !is.na(previous_id), , drop = FALSE]
+  preserve <- nrow(previous) == 1L && isTRUE(previous$Eligible) &&
+    previous$Violations == 0L && all(components %in% eligible)
+  if (preserve) selection$selected_id <- previous_id
+  if (is.na(selection$selected_id)) {
+    return(list(forecasts = rows[0, ], selection = selection, recovered = FALSE))
+  }
+  # Keep the selected average, or one eligible diagnostic average when a single
+  # model wins. Invalid and superseded averages must not survive publication.
+  if (nrow(averages)) {
+    average_selection <- rank_forecast_candidates(rankings[rankings$Model_ID %in% averages$Model_ID, ])
+    average_id <- if (selection$selected_id %in% averages$Model_ID) {
+      selection$selected_id
+    } else average_selection$selected_id
+    averages <- averages[!is.na(average_id) & averages$Model_ID == average_id, , drop = FALSE]
+  }
+  forecasts <- dplyr::bind_rows(individuals[individuals$Model_ID %in% eligible, , drop = FALSE], averages)
+  forecasts$Best_Model <- ifelse(forecasts$Model_ID == selection$selected_id, "Yes", "No")
+  list(forecasts = forecasts, selection = selection, recovered = !preserve)
+}
+
+# Assess newly refitted predictions. Local and ordinary reuse require hard-valid
+# components and a concern-free saved choice. Hierarchical global callers may
+# opt into per-source recovery from the existing fitted pool, including new
+# sources. Return selected source rows and diagnostics; reconcile only a complete
+# hard-valid hierarchy. Reassigned labels still reject reuse. No artifact writes
+# occur here; the update writer records recovered identities before completion.
+# Missing historical delivery targets use the same original-scale prepared
+# history as selection, never invented zeros or future target placeholders.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
-                                    combos = NULL) {
+                                    combos = NULL, previous_hierarchy = NULL,
+                                    recover_global = FALSE, max_model_average = 1L) {
   hierarchical <- !is.null(run_log[["forecast_approach"]]) && !identical(run_log$forecast_approach, "bottoms_up")
   hierarchy <- if (hierarchical) read_selection_hierarchy(run_info, cache) else NULL
   if (is.null(combos)) combos <- if (hierarchical) hierarchy$original_combos else unique(as.character(forecasts$Combo))
-  if (hierarchical && !setequal(unique(as.character(forecasts$Combo)), hierarchy$hts_combos)) {
+  if (hierarchical && (!setequal(unique(as.character(forecasts$Combo)), hierarchy$hts_combos) ||
+      (!is.null(previous_hierarchy) && length(changed_update_hierarchy_sources(previous_hierarchy, hierarchy))))) {
+    cli::cli_alert_warning("Global update rejected: hierarchy source coverage is incomplete or surviving source identities were reassigned.")
     return(list(forecasts = forecasts[0, ], source_forecasts = forecasts, selections = list(),
       source_selections = NULL, quality_rejected_combos = vapply(combos, hash_data, character(1), USE.NAMES = FALSE)))
   }
@@ -1023,9 +1228,30 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
   accepted <- character()
   rejected <- if (hierarchical) character() else setdiff(combos, unique(as.character(forecasts$Combo)))
   selections <- list()
+  source_rows <- list()
+  recovered <- character()
+  concerned <- character()
   for (combo in unique(as.character(forecasts$Combo))) {
     rows <- forecasts[forecasts$Combo == combo, , drop = FALSE]
     series <- read_series_history(run_info, combo, run_log, cache)
+    if (hierarchical && recover_global) {
+      choice <- recover_global_update_source(rows, series, splits,
+        expected_components[[combo]], max_model_average)
+      selection <- choice$selection
+      if (is.na(selection$selected_id)) {
+        rejected <- c(rejected, combo)
+        reasons <- unique(unlist(selection$rankings$Reasons, use.names = FALSE))
+        cli::cli_alert_warning("No hard-valid global forecast for source '{combo}': {paste(reasons, collapse = ', ')}.")
+      } else {
+        accepted <- c(accepted, combo)
+        if (choice$recovered) recovered <- c(recovered, combo)
+        score <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, ]
+        if (score$Violations > 0L) concerned <- c(concerned, combo)
+      }
+      selections[[combo]] <- selection
+      source_rows[[combo]] <- choice$forecasts
+      next
+    }
     selection <- select_series_forecasts(rows, series, splits)
     selected_ids <- unique(rows$Model_ID[rows$Best_Model == "Yes"])
     components <- unique(rows$Model_ID[!is.na(rows$Recipe_ID) & rows$Recipe_ID != "simple_average"])
@@ -1043,11 +1269,14 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
       rejected <- c(rejected, combo)
     }
     selections[[combo]] <- selection
+    source_rows[[combo]] <- rows
   }
+  forecasts <- dplyr::bind_rows(source_rows)
   result <- list(
     forecasts = forecasts[forecasts$Combo %in% accepted, , drop = FALSE],
     quality_rejected_combos = vapply(rejected, hash_data, character(1), USE.NAMES = FALSE),
-    selections = selections, source_selections = NULL, source_forecasts = forecasts
+    selections = selections, source_selections = NULL, source_forecasts = forecasts,
+    recovered_sources = recovered, concerned_sources = concerned
   )
   if (hierarchical) {
     if (length(rejected)) {
@@ -1055,9 +1284,33 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
       result$quality_rejected_combos <- vapply(combos, hash_data, character(1), USE.NAMES = FALSE)
       return(result)
     }
+    if (recover_global) {
+      cli::cli_alert_info("Global source selection: {length(selections) - length(recovered)} reused, {length(recovered)} recovered.")
+      if (length(concerned)) {
+        cli::cli_alert_warning("{length(concerned)} selected global source forecast{?s} retain soft concerns; all selected components passed hard checks.")
+      }
+    }
     result$forecasts <- reconcile(forecasts[forecasts$Best_Model == "Yes", , drop = FALSE],
       run_info, run_log$forecast_approach, run_log$negative_forecast)
     result$forecasts <- result$forecasts[result$forecasts$Combo %in% combos, , drop = FALSE]
+    if (recover_global) {
+      # Raw HTS data can omit dates that preparation padded before fitting.
+      # Recover their actuals from the already-validated original-scale history,
+      # preserving observed raw targets and leaving genuinely unknown dates NA.
+      bottom_sources <- stats::setNames(utils::tail(hierarchy$hts_combos,
+        length(hierarchy$original_combos)), hierarchy$original_combos)
+      restored <- 0L
+      for (combo in combos) {
+        missing <- which(result$forecasts$Combo == combo & is.na(result$forecasts$Target) &
+          result$forecasts$Date <= as.Date(run_log$hist_end_date))
+        if (!length(missing)) next
+        history <- read_series_history(run_info, bottom_sources[[combo]], run_log, cache)$history
+        targets <- history$Target[match(result$forecasts$Date[missing], history$Date)]
+        result$forecasts$Target[missing] <- targets
+        restored <- restored + sum(is.finite(targets))
+      }
+      if (restored) cli::cli_alert_info("Restored {restored} historical delivery targets from prepared source history.")
+    }
     selected <- hierarchical_selection_result(run_info, run_log, selections, result$forecasts, splits, combos, cache)
     result$selections <- selected$selections
     result$source_selections <- selections

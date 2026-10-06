@@ -24,7 +24,14 @@
 #'   historical robust scale and the absolute projected reference at each step.
 #'   Prepared-history imputation remains part of the evidence. These checks are
 #'   engineering guardrails, not calibrated intervals or accuracy guarantees.
-#'   If all candidates fail the required checks, selection raises an error.
+#'   If normal selection has no winner, complete finite candidates with usable
+#'   backtest accuracy may receive a plausibility fallback. It prefers fewer
+#'   failed checks, lower maximum normalized severity (including extreme
+#'   magnitude), lower weighted MAPE, then stable model identity. A classed
+#'   `finnts_forecast_selection_fallback` warning identifies the selected model
+#'   and concerns. Missing/duplicate required keys, nonfinite predictions and
+#'   unavailable accuracy cannot be relaxed; an entirely unusable pool errors.
+#'   Strictly rejected components are not added to averages or ensemble training.
 #'   Evaluation is deterministic for fixed inputs and creates no diagnostic files.
 #'   If an individual model wins, the best eligible simple average is still saved
 #'   with `Best_Model = "No"`, using the same quality-aware ranking among averages.
@@ -48,7 +55,14 @@
 #'   outputs and selection-completion flags are not reused. Selection is rebuilt
 #'   from the replacement individual predictions through the same policy, with
 #'   stale averages reset using the ordinary forecast schema. This recovery does
-#'   not change preparation or allow repeated genuinely rejected defaults.
+#'   not change preparation. Older plausibility-only rejected defaults can
+#'   recover from usable saved predictions and fits without training again;
+#'   structurally unusable defaults remain rejected. Fresh defaults also use
+#'   fallback when the normal winner has soft concerns. Ordinary update
+#'   assessment and retuning do not opt into this final-selection policy.
+#'   Single-series finalization reads its known log, splits and prediction paths
+#'   directly, including daily-expanded weekly rows, without directory discovery.
+#'   Fallback evidence is in memory only; no tracking fields are persisted.
 #'   If only one individual remains eligible, the schema-correct empty optional
 #'   average represents no average and remains readable during publication and
 #'   restart. Empty required artifacts and malformed optional averages are errors.
@@ -130,19 +144,10 @@ final_models <- function(run_info,
   )
 
   # get run splits
-  model_train_test_tbl <- read_file(run_info,
-    path = paste0(
-      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-      "-train_test_split.", run_info$data_output
-    ),
-    return_type = "df"
-  )
+  model_train_test_tbl <- read_selection_file(run_info, "prep_models", "-train_test_split")
 
   # read previous log
-  prev_log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-    return_type = "df"
-  )
+  prev_log_df <- read_selection_file(run_info, "logs")
 
   date_type <- prev_log_df$date_type
   forecast_approach <- prev_log_df$forecast_approach
@@ -313,13 +318,20 @@ final_models <- function(run_info,
         }
 
         combo_name <- unique(all_model_tbl$Combo)
+        series_data <- read_series_history(run_info, combo_name, run_log = prev_log_df)
         if (!isTRUE(run_info$rebuild_update_models) &&
           isTRUE(run_info$allow_quality_rejection) && length(combo_name) == 1 &&
           identical(as.character(prev_log_df[["selection_status"]]), "rejected")) {
-          rejected <- rejected_agent_selection(combo_name, "rejected_evaluation")
-          return(selection_worker_result(combo_name, rejected$selections[[1]], reused = TRUE))
+          candidates <- native_forecast_rows(all_model_tbl, date_type)
+          usable <- vapply(split(candidates, candidates$Model_ID), function(rows) {
+            rows$Best_Model <- "Yes"
+            !is.na(selected_forecast_accuracy(rows, series_data, model_train_test_tbl)$selected_id)
+          }, logical(1))
+          if (!any(usable)) {
+            rejected <- rejected_agent_selection(combo_name, "rejected_evaluation")
+            return(selection_worker_result(combo_name, rejected$selections[[1]], reused = TRUE))
+          }
         }
-        series_data <- read_series_history(run_info, combo_name, run_log = prev_log_df)
         if (isTRUE(run_info$rebuild_update_models)) {
           saved_average <- all_model_tbl[0, , drop = FALSE]
           if (average_models) {
@@ -336,6 +348,15 @@ final_models <- function(run_info,
         # otherwise rebuild selection below from saved predictions, without fits.
         existing_selection <- if (isTRUE(run_info$rebuild_update_models)) NULL else
           completed_forecast_selection(saved_rows, series_data, model_train_test_tbl)
+        if (!is.null(existing_selection) && isTRUE(run_info$default_reforecast)) {
+          checked <- select_series_forecasts(
+            saved_rows[saved_rows$Model_ID == existing_selection$selected_id, ],
+            series_data, model_train_test_tbl)
+          score <- checked$rankings[checked$rankings$Model_ID == existing_selection$selected_id, ]
+          if (!usable_forecast_selection(checked) || !isTRUE(score$Violations == 0)) {
+            existing_selection <- NULL
+          } else existing_selection <- checked
+        }
         if (!is.null(existing_selection)) {
           return(selection_worker_result(combo_name, existing_selection, reused = TRUE))
         }
@@ -455,12 +476,12 @@ final_models <- function(run_info,
         # a component here, but averaging must never conceal a hard-invalid path.
         individual_selection <- select_series_forecasts(
           predictions_tbl, series_data, model_train_test_tbl,
-          unique(predictions_tbl$Model_ID)
+          unique(predictions_tbl$Model_ID), allow_plausibility_fallback = TRUE
         )
         final_model_list <- individual_selection$rankings$Model_ID[
           individual_selection$rankings$Eligible
         ]
-        if (length(final_model_list) == 0) {
+        if (length(final_model_list) == 0 && is.na(individual_selection$selected_id)) {
           write_rejected_forecasts(
             list("-single_models" = single_model_tbl, "-ensemble_models" = ensemble_model_tbl,
               "-global_models" = global_model_tbl),
@@ -551,18 +572,21 @@ final_models <- function(run_info,
           dplyr::filter(Train_Test_ID != 1) %>%
           dplyr::mutate(MAPE = round(abs((Forecast - Target) / abs(Target)), digits = 4))
 
-        # build allow-list of Model_IDs eligible to win Best_Model: individual
-        # models with complete back test coverage plus any model averages
-        # (averages_tbl was already constructed from complete models only).
+        # Fresh-default fallback ranks all usable individuals, not just strict
+        # averaging components. The selector still rejects structural failures.
         eligible_model_ids <- unique(c(
-          final_model_list,
+          if (isTRUE(run_info$default_reforecast) || !length(final_model_list)) {
+            unique(predictions_tbl$Model_ID)
+          } else final_model_list,
           if (!is.null(averages_tbl)) unique(averages_tbl$Model_ID) else character(0)
         ))
 
         # Rank the delivered candidate pool once it includes requested averages.
         # A standard run may keep the best available candidate with soft concerns.
         selection <- select_series_forecasts(
-          final_predictions_tbl, series_data, model_train_test_tbl, eligible_model_ids
+          final_predictions_tbl, series_data, model_train_test_tbl, eligible_model_ids,
+          allow_plausibility_fallback = TRUE,
+          require_clean_selection = isTRUE(run_info$default_reforecast)
         )
         if (is.na(selection$selected_id)) {
           abort_forecast_selection(unique(predictions_tbl$Combo), selection)
@@ -578,7 +602,7 @@ final_models <- function(run_info,
           ) %>% dplyr::filter(!is.na(Model_ID))
         }
         selected_checks <- selection$rankings[selection$rankings$Model_ID == selection$selected_id, ]
-        if (selected_checks$Violations > 0) {
+        if (selected_checks$Violations > 0 && is.null(selection$fallback_id)) {
           cli::cli_alert_warning("Selected forecast has plausibility concerns: {paste(selected_checks$Reasons[[1]], collapse = ', ')}")
         }
         best_model_mape <- selection$rankings %>%
@@ -830,6 +854,9 @@ final_models <- function(run_info,
     rejected_combos <- names(selection_results)[vapply(selection_results, function(result) {
       !is.null(result) && is.na(result$selected_id)
     }, logical(1))]
+    for (combo in names(selection_results)) {
+      warn_forecast_fallback(selection_results[[combo]], combo)
+    }
 
     # condense outputs into less files for larger runs
     if (length(combo_list) > 3000 && length(rejected_combos) == 0 && !all_reused) {
@@ -907,7 +934,18 @@ final_models <- function(run_info,
 
   # validate that every combo has a best model
   if (forecast_approach == "bottoms_up") {
-    fcst_data <- get_forecast_data(run_info = run_info)
+    if (length(run_info$combo) == 1L) {
+      suffixes <- c(if (run_local_models) "-single_models",
+        if (run_global_models) "-global_models", if (run_ensemble_models) "-ensemble_models",
+        if (average_models) "-average_models")
+      fcst_data <- dplyr::bind_rows(lapply(suffixes, function(suffix) {
+        if (identical(suffix, "-average_models")) {
+          read_selection_file(run_info, "forecasts", suffix, names(selection_results), optional = TRUE)
+        } else read_final_predictions(run_info, run_info$combo, suffix)
+      })) %>%
+        dplyr::select(-tidyselect::any_of("Run_Type")) %>%
+        dplyr::left_join(model_train_test_tbl[, c("Train_Test_ID", "Run_Type")], by = "Train_Test_ID")
+    } else fcst_data <- get_forecast_data(run_info = run_info)
   } else {
     fcst_data <- fcst_data %>%
       dplyr::select(-tidyselect::any_of("Run_Type")) %>%

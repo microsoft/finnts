@@ -61,8 +61,16 @@ For model selection, start with the [architecture map](.github/agent-guides/arch
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
 
+For work-item and repository-hosting services, prefer authenticated command-line or API
+tools over browser automation when those tools can retrieve the required information.
+Keep repository guidance provider-neutral and never record organization names, private
+project identifiers, work-item URLs, or other environment-specific details.
+
 ## Artifact I/O
 
+- Before a code change adds, removes, renames, or changes columns or stored values in any file saved to disk, ask for and receive the user's explicit approval. This includes logs, forecasts, metadata, serialized objects, and downstream copies; approval to fix a bug or improve logging is not blanket approval to change persisted data.
+- Before asking for approval, explicitly warn: "This changes how data is saved in ADLS." Identify the affected files, columns or values, and downstream compatibility implications. The rule applies even when developing or validating with local files.
+- Do not work around this approval gate by placing new tracking data in existing columns, serialized attributes, or additional files. Keep unapproved bookkeeping in memory.
 - Prefer direct reads of deterministic artifact paths over `list_files()` or wildcard directory enumeration whenever the project, run, combo, recipe, and artifact suffix are already known. This is especially important during per-series iteration and training against large ADLS-backed logging and artifact folders.
 - Do not list a directory merely to locate or check the existence of a known file. Reuse the storage abstraction's exact-path read/download support; distinguish a genuinely missing optional artifact from authentication, storage, and deserialization failures.
 - Keep listings for genuine discovery of unknown artifact names. When discovery is necessary, perform it once in the coordinating workflow and reuse the resulting paths or metadata across loops and workers where safe. Avoid repeated per-series, per-model, or per-retry listings and stale cross-run caches.
