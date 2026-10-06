@@ -5,25 +5,35 @@ make_custom_model_engine <- function() {
   parsnip::set_model_mode(model = "finnts_custom", mode = "regression")
   parsnip::set_model_engine(model = "finnts_custom", mode = "regression", eng = "finnts")
   parsnip::set_dependency(model = "finnts_custom", eng = "finnts", pkg = "finnts")
-  parsnip::set_encoding(model = "finnts_custom", eng = "finnts", mode = "regression",
-    options = list(predictor_indicators = "none", compute_intercept = FALSE,
-      remove_intercept = FALSE, allow_sparse_x = FALSE))
+  parsnip::set_encoding(
+    model = "finnts_custom", eng = "finnts", mode = "regression",
+    options = list(
+      predictor_indicators = "none", compute_intercept = FALSE,
+      remove_intercept = FALSE, allow_sparse_x = FALSE
+    )
+  )
   parsnip::set_fit(model = "finnts_custom", eng = "finnts", mode = "regression", value = list(
     interface = "data.frame", protect = c("x", "y"),
-    func = c(pkg = "finnts", fun = "custom_model_fit_impl"), defaults = list()))
+    func = c(pkg = "finnts", fun = "custom_model_fit_impl"), defaults = list()
+  ))
   parsnip::set_pred(model = "finnts_custom", eng = "finnts", mode = "regression", type = "numeric", value = list(
     pre = NULL, post = NULL,
     func = c(pkg = "finnts", fun = "custom_model_predict_impl"),
-    args = list(object = rlang::expr(object$fit), new_data = rlang::expr(new_data))))
+    args = list(object = rlang::expr(object$fit), new_data = rlang::expr(new_data))
+  ))
 }
 
 # Build an internal, non-tunable spec. Literal quosures avoid capturing a user's
 # session, training data or provider object in the engine arguments.
 custom_model_spec <- function(definition, context, allow_code = FALSE) {
   arguments <- lapply(list(definition = definition, context = context, allow_code = allow_code),
-    rlang::new_quosure, env = emptyenv())
-  parsnip::new_model_spec("finnts_custom", args = list(), eng_args = arguments,
-    mode = "regression", method = NULL, engine = "finnts")
+    rlang::new_quosure,
+    env = emptyenv()
+  )
+  parsnip::new_model_spec("finnts_custom",
+    args = list(), eng_args = arguments,
+    mode = "regression", method = NULL, engine = "finnts"
+  )
 }
 
 # Compose an unfitted workflow from an M1 definition and an unprepped recipe.
@@ -32,8 +42,10 @@ custom_model_spec <- function(definition, context, allow_code = FALSE) {
 custom_model_workflow <- function(definition, recipe, model_type, recipe_id,
                                   date_type, forecast_horizon, target_scale,
                                   allow_code = FALSE) {
-  context <- list(model_type = model_type, recipe_id = recipe_id,
-    date_type = date_type, forecast_horizon = forecast_horizon, target_scale = target_scale)
+  context <- list(
+    model_type = model_type, recipe_id = recipe_id,
+    date_type = date_type, forecast_horizon = forecast_horizon, target_scale = target_scale
+  )
   custom_model_context(definition, context, allow_code)
   custom_model_recipe(recipe, definition)
   workflows::workflow() %>%
@@ -57,8 +69,10 @@ custom_model_context <- function(definition, context, allow_code) {
   if (!is.list(context) || anyDuplicated(names(context)) || !setequal(names(context), fields)) {
     stop("Custom model context must contain only its five representation fields.", call. = FALSE)
   }
-  permitted <- list(model_type = definition$model_type, recipe_id = definition$requirements$recipes,
-    date_type = definition$requirements$date_types, target_scale = definition$requirements$target_scale)
+  permitted <- list(
+    model_type = definition$model_type, recipe_id = definition$requirements$recipes,
+    date_type = definition$requirements$date_types, target_scale = definition$requirements$target_scale
+  )
   for (field in names(permitted)) {
     value <- context[[field]]
     if (!is.character(value) || length(value) != 1L || is.na(value) || !value %in% permitted[[field]]) {
@@ -71,6 +85,64 @@ custom_model_context <- function(definition, context, allow_code) {
     stop("Custom model has incompatible forecast_horizon.", call. = FALSE)
   }
   context[fields]
+}
+
+# Validate the single passive execution contract without evaluating source.
+# It separates shared fitting from per-series, per-group or
+# complete-cohort prediction. Group columns must be explicit nonidentity drivers.
+# Returns the same contract or raises before fitting on unknown/ambiguous fields.
+custom_model_runtime <- function(runtime, predictors, model_type) {
+  fields <- c("version", "prediction_scope", "cohort", "group_columns")
+  if (!is.list(runtime) || length(runtime) != length(fields) || anyDuplicated(names(runtime)) ||
+    !setequal(names(runtime), fields) || !identical(runtime$version, 2L) ||
+    !identical(runtime$prediction_scope, "complete_horizon")) {
+    stop("Unsupported custom-model development runtime; recreate the model with complete_horizon and cohort requirements.", call. = FALSE)
+  }
+  if (!is.character(runtime$cohort) || length(runtime$cohort) != 1L ||
+    is.na(runtime$cohort) || !runtime$cohort %in% c("series", "groups", "all") ||
+    !is.character(runtime$group_columns) || anyNA(runtime$group_columns) || anyDuplicated(runtime$group_columns) ||
+    any(!runtime$group_columns %in% setdiff(predictors, c("Date", "Combo"))) ||
+    (runtime$cohort == "groups") != (length(runtime$group_columns) > 0L) ||
+    (!"global" %in% model_type && runtime$cohort != "series")) {
+    stop("Custom model cohort requires series, groups with declared group columns, or all.", call. = FALSE)
+  }
+  runtime
+}
+
+# Capture fitted cohort membership for global execution. Group
+# labels are stable per series, finite and nonmissing; factor labels, never their
+# integer codes, identify groups. Returns a portable key table or NULL for local
+# execution. No candidate code or storage I/O occurs.
+custom_model_cohort <- function(data, runtime, model_type) {
+  if (model_type != "global") return(NULL)
+  columns <- c("Combo", runtime$group_columns)
+  keys <- as.data.frame(data[columns], stringsAsFactors = FALSE)
+  for (column in columns) {
+    if (is.factor(keys[[column]])) keys[[column]] <- as.character(keys[[column]])
+    if (!is.atomic(keys[[column]]) || anyNA(keys[[column]]) ||
+      (is.numeric(keys[[column]]) && any(!is.finite(keys[[column]])))) {
+      stop("Custom model cohort keys must be finite and nonmissing.", call. = FALSE)
+    }
+  }
+  keys <- unique(keys)
+  if (anyDuplicated(keys$Combo)) stop("Custom model group columns must be constant within each fitted series.", call. = FALSE)
+  rownames(keys) <- NULL
+  keys
+}
+
+# Resolve the peers needed for requested series using captured fit membership.
+# Full-cohort rules require every fitted series; group rules require every fitted
+# peer in each requested group. Local/series-separable rules keep their
+# requested batch. Unknown series fail, never create a new cohort implicitly.
+custom_model_cohort_members <- function(cohort, selected, runtime) {
+  if (is.null(cohort)) return(selected)
+  if (any(!selected %in% cohort$Combo)) stop("Custom model cannot predict a Combo without training history.", call. = FALSE)
+  if (runtime$cohort == "all") return(cohort$Combo)
+  if (runtime$cohort == "groups") return(dplyr::semi_join(cohort,
+    cohort[cohort$Combo %in% selected, runtime$group_columns, drop = FALSE],
+    by = runtime$group_columns
+  )$Combo)
+  selected
 }
 
 # Check an untrained recipe without fitting it. This experimental adapter admits
@@ -90,9 +162,11 @@ custom_model_recipe <- function(recipe, definition) {
     stop("Custom model recipe must retain Target as outcome and required Date/Combo predictors.", call. = FALSE)
   }
   protected <- c("Target", "Date", "Combo", "Horizon", ".finnts_row")
-  supported <- c("step_normalize", "step_center", "step_scale", "step_log", "step_sqrt",
+  supported <- c(
+    "step_normalize", "step_center", "step_scale", "step_log", "step_sqrt",
     "step_impute_mean", "step_impute_median", "step_impute_mode", "step_rm",
-    "step_zv", "step_nzv", "step_dummy", "step_unknown", "step_novel")
+    "step_zv", "step_nzv", "step_dummy", "step_unknown", "step_novel"
+  )
   for (step in recipe$steps) {
     if (!class(step)[[1]] %in% supported || isTRUE(step$skip)) {
       stop("Custom model recipe contains an unsupported or skipped step.", call. = FALSE)
@@ -131,7 +205,8 @@ custom_model_functions <- function(definition, allow_code) {
   environment <- new.env(parent = baseenv())
   for (name in names(definition$source)) {
     assign(name, eval(parse(text = enc2utf8(definition$source[[name]])), envir = environment),
-      envir = environment)
+      envir = environment
+    )
   }
   lockEnvironment(environment, bindings = TRUE)
   environment
@@ -139,10 +214,9 @@ custom_model_functions <- function(definition, allow_code) {
 
 # Validate data identities after baking and return predictor data. Recipes turn
 # character predictors into factors by default; restore Combo labels, never their
-# integer codes. R2 may repeat dates at distinct horizons, not duplicate keys.
+# integer codes. Duplicate series/date keys are always rejected.
 custom_model_data <- function(data, definition, context) {
-  required <- unique(c("Date", "Combo", definition$requirements$predictors,
-    if (context$recipe_id == "R2") "Horizon"))
+  required <- unique(c("Date", "Combo", definition$requirements$predictors))
   if (!is.data.frame(data) || !nrow(data) || anyDuplicated(names(data)) ||
     !all(required %in% names(data)) || ".finnts_row" %in% names(data)) {
     stop("Custom model data has missing required predictors or invalid row identity.", call. = FALSE)
@@ -153,13 +227,6 @@ custom_model_data <- function(data, definition, context) {
     stop("Custom model requires unchanged Date and character Combo identity columns.", call. = FALSE)
   }
   keys <- c("Combo", "Date")
-  if (context$recipe_id == "R2") {
-    if (!is.numeric(data$Horizon) || anyNA(data$Horizon) ||
-      any(!data$Horizon %in% definition$requirements$forecast_horizon)) {
-      stop("Custom model R2 Horizon values are unsupported.", call. = FALSE)
-    }
-    keys <- c(keys, "Horizon")
-  }
   if (anyDuplicated(data[keys])) stop("Custom model data has duplicate row keys.", call. = FALSE)
   if (context$model_type == "local" && length(unique(data$Combo)) != 1L) {
     stop("Custom model local fitting/prediction requires exactly one Combo.", call. = FALSE)
@@ -200,8 +267,9 @@ custom_model_state <- function(value, depth = 0L) {
 #' @return Internal fitted state, definition and fold-specific context.
 #' @details No packages are installed. Source errors propagate without fallback.
 #'   Source must return portable state; this adapter does not invert transforms.
-#'   Definition schema 3 sorts each series chronologically before fitting. Earlier
-#'   definitions retain their original row order and execution semantics.
+#'   Each series is sorted chronologically before fitting. The current runtime
+#'   captures global cohort membership; declared group columns
+#'   must be finite, nonmissing and constant within each series.
 #' @keywords internal
 #' @export
 custom_model_fit_impl <- function(x, y, definition, context, allow_code = FALSE) {
@@ -215,12 +283,12 @@ custom_model_fit_impl <- function(x, y, definition, context, allow_code = FALSE)
   functions <- custom_model_functions(definition, allow_code)
   data <- x
   data$Target <- y
-  if (identical(definition$schema_version, 3L)) {
-    data <- data[order(data$Combo, data$Date, method = "radix"), , drop = FALSE]
-    rownames(data) <- NULL
-  }
+  data <- data[order(data$Combo, data$Date, method = "radix"), , drop = FALSE]
+  rownames(data) <- NULL
   context$cutoff <- max(data$Date)
   context$series_cutoffs <- lapply(split(data$Date, data$Combo), max)
+  cohort <- custom_model_cohort(data, definition$requirements$runtime, context$model_type)
+  if (!is.null(cohort)) context$prediction_cohort <- cohort
   state <- functions$fit(data = data, context = context, parameters = definition$fixed_parameters)
   custom_model_state(state)
   list(definition = definition, context = context, allow_code = allow_code, state = state)
@@ -236,10 +304,12 @@ custom_model_fit_impl <- function(x, y, definition, context, allow_code = FALSE)
 #'   Missing, duplicate or extra row IDs are errors, not fallback opportunities.
 #'   Identity and execution consent are checked on every call. Trusted R source
 #'   is not sandboxed; do not use this experimental engine for untrusted code.
-#'   Definition schema 3 requires the complete forecast horizon for each included
+#'   Prediction requires the complete forecast horizon for each included
 #'   series. It supplies chronological rows and aligned integer context$forecast_step
-#'   values, then restores the caller's row order. Series may be batched separately;
-#'   partial-date requests fail rather than inventing missing driver values.
+#'   values, then restores the caller's row order. It enforces the declared series,
+#'   group or full fitted cohort
+#'   before executing prediction source. Partial-date requests fail rather than
+#'   inventing missing driver values; group membership cannot change after fitting.
 #' @keywords internal
 #' @export
 custom_model_predict_impl <- function(object, new_data) {
@@ -249,18 +319,33 @@ custom_model_predict_impl <- function(object, new_data) {
   if (!isTRUE(object$allow_code)) stop("Custom model execution requires allow_code = TRUE.", call. = FALSE)
   new_data$Target <- NULL
   new_data <- custom_model_data(new_data, object$definition, context)
-  temporal <- identical(object$definition$schema_version, 3L)
+  runtime <- object$definition$requirements$runtime
+  if (context$model_type == "global") {
+    cohort <- context$prediction_cohort
+    if (is.null(cohort)) stop("Custom model is missing fitted cohort membership; refit this version.", call. = FALSE)
+    required <- custom_model_cohort_members(cohort, unique(new_data$Combo), runtime)
+    if (!setequal(required, unique(new_data$Combo))) stop("Custom model incomplete_cohort: prediction requires all fitted peers in its declared scope.", call. = FALSE)
+    current <- custom_model_cohort(new_data, runtime, context$model_type)
+    if (nrow(dplyr::anti_join(current, cohort, by = c("Combo", runtime$group_columns)))) {
+      stop("Custom model prediction group membership differs from the fitted cohort.", call. = FALSE)
+    }
+  }
   steps <- integer(nrow(new_data))
   for (combo in unique(new_data$Combo)) {
     cutoff <- context$series_cutoffs[[combo]]
     if (is.null(cutoff)) stop("Custom model cannot predict a Combo without training history.", call. = FALSE)
-    dates <- seq(cutoff, by = switch(context$date_type, year = "year", quarter = "quarter",
-      month = "month", week = "week", day = "day"), length.out = context$forecast_horizon + 1L)[-1L]
+    dates <- seq(cutoff, by = switch(context$date_type,
+      year = "year",
+      quarter = "quarter",
+      month = "month",
+      week = "week",
+      day = "day"
+    ), length.out = context$forecast_horizon + 1L)[-1L]
     if (any(!new_data$Date[new_data$Combo == combo] %in% dates)) {
       stop("Custom model requested dates are outside the forecast horizon after the training cutoff.", call. = FALSE)
     }
     rows <- which(new_data$Combo == combo)
-    if (temporal && !setequal(new_data$Date[rows], dates)) {
+    if (!setequal(new_data$Date[rows], dates)) {
       stop("Custom model requires the complete forecast horizon for each requested series.", call. = FALSE)
     }
     steps[rows] <- match(new_data$Date[rows], dates)
@@ -269,12 +354,10 @@ custom_model_predict_impl <- function(object, new_data) {
   custom_model_state(object$state)
   original_rows <- seq_len(nrow(new_data))
   new_data$.finnts_row <- original_rows
-  if (temporal) {
-    execution_order <- order(new_data$Combo, new_data$Date, method = "radix")
-    new_data <- new_data[execution_order, , drop = FALSE]
-    rownames(new_data) <- NULL
-    context$forecast_step <- steps[execution_order]
-  }
+  execution_order <- order(new_data$Combo, new_data$Date, method = "radix")
+  new_data <- new_data[execution_order, , drop = FALSE]
+  rownames(new_data) <- NULL
+  context$forecast_step <- steps[execution_order]
   result <- functions$predict(object = object$state, new_data = new_data, context = context)
   if (!is.data.frame(result) || anyDuplicated(names(result)) ||
     !all(c(".finnts_row", ".pred") %in% names(result)) || nrow(result) != nrow(new_data) ||

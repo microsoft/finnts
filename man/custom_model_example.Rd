@@ -69,7 +69,8 @@ history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Target = c(
 future <- data.frame(Date = as.Date("2020-03-01"))
 custom_model_example(history, future, expected = 15)
 custom_model_example(transform(history, Target = 0), future,
-  expected_error = list(phase = "fit", code = "zero_denominator"))
+  expected_error = list(phase = "fit", code = "zero_denominator")
+)
 }
 \seealso{
 \code{\link[=create_custom_model]{create_custom_model()}}

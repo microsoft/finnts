@@ -168,15 +168,13 @@ work; every supplied expectation remains mandatory during repair.
 `required_properties = character()`, `forecast_approach = NULL`,
 `draft_path = NULL`, and `interact = NULL`. Build a fresh control to change
 settings; explicit-setting markers distinguish supplied values from defaults.
-The public signature exposes these settings only through `control`. A private
-compatibility wrapper accepts legacy named and positional calls through `...`,
-preserving argument promises and missing-value semantics. Supply `approval`,
-`control`, `draft` and `responses` by name in new calls. Unknown arguments fail. Equal
-explicit duplicates are allowed, conflicting duplicates fail, and omitted
-defaults never overwrite saved draft settings. The legacy `validation_timeout`
-name maps to `validation_budget`; neither is a hard timeout. The legacy top-level
-`draft_path` still forces deferred manual review. Inside `control`, it controls
-persistence only, including synchronous callback or console review.
+The public signature exposes these settings only through `control`. Supply
+`approval`, `control`, `draft` and `responses` by name. Unknown arguments fail;
+omitted controls never overwrite saved draft settings. `validation_budget` is
+not a hard timeout. `control$draft_path` controls persistence only, including
+synchronous callback or console review. Custom-model creation supports one
+current implementation; obsolete development arguments and artifacts must be
+recreated, not migrated through compatibility bridges.
 
 In an interactive R session, answer `y`/`yes` or `n`/`no`, without typing hashes.
 Case and surrounding whitespace are ignored; blank or EOF declines. `details`
@@ -190,13 +188,12 @@ A trusted `control$interact` callback receives `stage`, `prompt`, `identity`, `r
 and `questions`. Stage `clarify` requires named text answers. Stage `review_create`
 accepts the user's yes/no decision, `details`, or
 `list(action = "edit", instructions = "requested change")`. Present the review
-to a user; never implement unconditional approval. Callback code written for the
-old three stages must be updated. Stale or exhausted responses return no
+to a user; never implement unconditional approval. Stale or exhausted responses return no
 enrollable model. See `?create_custom_model` for the complete contract.
 
 ### Deterministic Authoring Mechanics
 
-New calls use authoring protocol 6. The default
+The current authoring contract uses typed structured responses. The default
 `control$package_policy = "installed_finnts"` freezes installed direct FinnTS `Depends`,
 `Imports` and `Suggests`, plus the existing R base/recommended allowance. It does
 not admit arbitrary installed or transitive-only packages. Use
@@ -216,7 +213,7 @@ answers and business rationale. Prediction bodies return finite numeric vectors
 in request order; the fixed wrapper rejects wrong lengths/types rather than
 recycling, clipping or imputing. The full reusable model remains ordinary R.
 
-Protocol-6 authoring metadata lists only the workflow's actual input columns:
+Authoring metadata lists only the workflow's actual input columns:
 `Date`, `Combo`, `Target` and declared external regressors. Prediction excludes
 `Target`. Internal prepared features such as `Date_index.num` are not advertised
 as implicit inputs; an explicitly declared driver with that name remains valid.
@@ -264,17 +261,16 @@ character/factor or logical predictor types locally as well. The missing-data
 policy is fixed to rejection of required missing inputs; the LLM cannot return
 a blank replacement. This adds neither cleaning nor imputation.
 
-The arbitrary passive fixed-parameter map still uses `parameters_json` for
-compatibility. Invalid parameter JSON identifies that field explicitly. Existing
-protocol-2 example JSON receives similarly specific errors; malformed strings
-are not repaired by guessing braces or stripping text. Expected answers remain
+The arbitrary passive fixed-parameter map uses `parameters_json` to support
+structured parameter values. Invalid JSON identifies that field explicitly;
+malformed strings are not repaired by guessing braces or stripping text. Expected answers remain
 independent of candidate execution. Structural validation does not independently
 prove their arithmetic. New calls treat LLM-generated numerical expectations as
 diagnostics: mismatches produce a user warning, not rejection or a request to
 rewrite the formula. Measured errors remain in the validation evidence, and the
 warning is retained in `model$validation$checks$llm_example_warning`. Matching
 incorrect code and answers can still pass finite comparisons; a warning alone
-cannot identify which side is wrong. Existing drafts retain their saved policy.
+cannot identify which side is wrong. Current-format drafts retain their saved policy.
 
 **Bring your own validation examples.** Calculate expected outputs with business
 logic reviewed independently of the generated model, then pass the materialized
@@ -312,11 +308,11 @@ properties and coded-error mismatches still fail and may use bounded repair.
 Only caller-supplied numerical expectations can request an output-matching
 rewrite. LLM-generated numerical differences cannot.
 
-Protocol 5 adds explicit parameter types and units. Declared numeric weight or
+Parameters have explicit types and units. Declared numeric weight or
 decay vectors become atomic R vectors; objects and arrays of records retain list
 structure. Synthetic numeric history and future columns share double types,
 including whole-valued historical discounts followed by fractional forecasts.
-Protocol 6 allows blank nonnumeric units, normalizing them to `not_applicable`.
+Blank nonnumeric units normalize to `not_applicable`.
 Numeric units remain required; no business units are inferred. Malformed
 declarations receive bounded field-specific diagnostics before contract acceptance.
 
@@ -332,11 +328,10 @@ Additional named error scenarios remain within the existing eight-case limit.
 
 Row-order invariance and fitted-state serialization are mandatory. Other properties
 are tested when declared: constant forecasts, target-scale equivariance,
-independent series, fixed history windows, and relative calendars. In protocol 6,
+independent series, fixed history windows, and relative calendars. The
 caller `control$required_properties` are frozen hard requirements. Other LLM suggestions
 are diagnostic only: their failed checks are reported without rejecting valid
-calculations. Protocol 5 retains its original hard-property checks. Neither path
-weakens caller numerical cases, coded business errors, row identity, finite outputs,
+calculations. This does not weaken caller numerical cases, coded business errors, row identity, finite outputs,
 portability or exact-version approval. For example, use
 `custom_model_control(required_properties = "constant_forecast")` only when constant output is a genuine
 business requirement, not for every custom model. Calendar tests
@@ -360,8 +355,7 @@ questions receive package-owned facts within the existing retry budget, while
 unresolved business questions still require clarification. Automatic defaults
 cannot override explicitly supplied settings. Invalid defaults declarations are
 corrected as contract defects, not by changing the caller's settings.
-Saved protocols retain their original behavior under existing runtime checks;
-previously approved models are not silently revalidated or repaired.
+Current-format approved models are not silently revalidated or repaired.
 
 Generated examples use one basic and one edge scenario per declared mode, with a
 fixed cadence-aligned synthetic cutoff and enough provider-supplied historical
@@ -369,10 +363,10 @@ values for the rule. Caller-provided examples retain their original tables,
 values and tolerances. No candidate execution supplies its own expected answers.
 Those answers and business interpretation remain fallible LLM work: this is not
 an independent general formula evaluator. New automatic calls supply a
-percentage-growth convention through defaults catalog 2, but that policy does
+percentage-growth convention through the current defaults catalog, but that policy does
 not prove arbitrary provider prose or code follows it.
 
-Protocol 4 also requests explicit `history_requirements`: a positive integer
+The contract requests explicit `history_requirements`: a nonnegative integer
 `minimum_rows_per_series` and unique positive `required_lag_periods`, bounded
 by the existing example limits. Offsets use the captured cadence. Rules without
 exact observed-history lookups may declare an empty lag array. FinnTS validates
@@ -396,7 +390,7 @@ misrepresents the rule; FinnTS never silently drops its lags or changes expected
 answers. Seasonal forecast-date lookups retain their existing strict checks.
 
 Missing coverage is rejected during contract review, before source generation.
-Protocol 6 can retry an unaccepted history declaration that conflicts with
+Authoring can retry an unaccepted history declaration that conflicts with
 structurally valid caller examples. For example, a fit-time growth window must
 not be described as observed lags reaching into the forecast window. The next
 attempt receives numerical-case row counts and impossible-lag feedback;
@@ -417,11 +411,8 @@ quoted/formula and unknown nonstandard-evaluation syntax alone. Uncertain contro
 flow still requires runtime validation. Bounded `source_binding` evidence names
 the function and symbol for source repair, without arbitrary exception text.
 
-Single-confirmation drafts without a protocol keep their original source schema
-and declared-only dependency policy. Protocol-2 drafts retain their original
-stringified-example and metadata schema; protocol-3 drafts retain typed examples
-without the new history declaration. No saved draft is automatically upgraded. Existing drafts and approved models never
-gain new permissions on resume or forecast reuse. Omit `control$package_policy` when
+Drafts and approved models never gain new permissions on resume or forecast reuse.
+Omit `control$package_policy` when
 resuming; an explicit policy change requires a new call. Unknown protocols,
 altered scaffolds and changed runtime/package metadata are rejected.
 
@@ -444,10 +435,7 @@ custom <- create_custom_model(
 )
 ```
 
-New automatic calls use closed, package-owned defaults catalog **2**. Saved
-catalog-1 drafts retain their original catalog, request schema, source identity
-and authorization under the existing runtime checks; they never acquire the new
-growth convention. Manual clarification is unchanged. Explicit supported
+Automatic calls use one closed, package-owned defaults catalog. Explicit supported
 instructions and supplied metadata take precedence; incompatible or contradictory
 requirements fail instead of silently widening capabilities.
 
@@ -500,16 +488,14 @@ fallback was applied, not for explicit growth bases or non-growth rules.
 Every source version receives a separate automatic authorization before execution.
 The record has `intent_confirmed = FALSE`, `allow_code = TRUE` and
 `mode = "automatic"`, bound to its `version_id`; it never claims human review.
-Manual envelopes keep the original three-field approval shape. Definition hashes
+Manual envelopes record the three explicit confirmation fields. Definition hashes
 and `Model_ID` do not change solely because approval policy differs, while run and
-Agent provenance distinguish the policies. Older FinnTS may reject automatic
-records. Forecast reuse does not call the authoring LLM or regenerate source.
+Agent provenance distinguish the policies. Forecast reuse does not call the authoring LLM or regenerate source.
 
 The only public approval values are `"manual"` and `"automatic"`. Explicit NULL,
-`"interactive"` and `"deferred"` now fail; migrate them to `"manual"` and use
-the legacy top-level `draft_path` for deferred review in an interactive session. Omitted approval on
-resume inherits the saved mode, including manual for older schema-2 drafts without
-a mode. Explicit mode changes fail. Automatic `control$draft_path` stores confidential
+`"interactive"` and `"deferred"` fail. Noninteractive manual calls return a review
+draft. Omitted approval on resume inherits the explicitly saved mode; mode changes
+fail. Automatic `control$draft_path` stores confidential
 audit state without pausing; an approved current pointer replays without refitting.
 
 ### Example Dates and Retries
@@ -543,7 +529,7 @@ The final error includes the last safe rejection if attempts are exhausted.
 Raw exception messages, private values, paths and provider output are not copied
 into that feedback. A draft retains its diagnostic code and attempt counts.
 
-Protocol-3/4 feedback also names the rejected field, such as `parameters_json` or
+Feedback also names the rejected field, such as `parameters_json` or
 `examples.series`. Unexpected validator failures stop rather than consume more
 provider retries. An optional `diagnostics$rejected_contract` snapshot retains
 only known provider-visible response fields, their hash, the field/code and an
@@ -565,7 +551,7 @@ require clarification rather than guessed answers.
 For insufficient declared history, retries receive `feedback$history` with
 package-computed minimum rows, the supplied row counts per scenario/series,
 declared lags and whether all lookups can remain historical through the horizon.
-Generated cases use scaffold identities; protocol-6 caller cases use their
+Generated cases use scaffold identities; caller cases use their
 already provider-visible names and series keys. Only counts and identifiers are
 included in this feedback, not observed training values.
 No rows or answers are filled or rewritten. New examples should use simple,
@@ -575,7 +561,7 @@ oracle merely to pass validation.
 The provider may replace invalid generated examples only before the contract is
 accepted. Caller-provided examples are never replaced: structurally invalid
 supplied examples fail when checked, without spending further provider attempts
-on them. A conflicting unaccepted protocol-6 history declaration is retried
+on them. A conflicting unaccepted history declaration is retried
 instead of blaming or changing a valid caller example; earlier protocols retain
 their existing history-failure behavior. After
 contract acceptance, code repairs must preserve its examples and tolerances.
@@ -588,8 +574,7 @@ repair information; it does not guarantee successful live generation.
 New source requests contain `fit_body`, `predict_body` and optional named helper
 functions. Body fields may use the exact complete-function alternate form above.
 FinnTS assembles the fixed interfaces and row-identity wrapper from
-parsed expressions, without evaluating them. Legacy drafts retain complete
-function requests and compatible `...` signatures. A passive preflight checks
+parsed expressions, without evaluating them. A passive preflight checks
 syntax, permitted namespaces and resolvable base/lexical function calls, without
 guessing packages for unresolved calls. Units come from the accepted
 interpretation and examples: a lag of twelve monthly observations means one
@@ -602,8 +587,8 @@ different semantics. Date lookup guidance preserves matching key classes:
 `vapply()` can drop a `Date` result's class even with a Date template. These aids
 reduce mechanical errors, but do not prove arbitrary generated logic correct.
 
-New protocol-6 authoring freezes `date_helpers = "calendar_v1"`. Every new local
-or global custom model receives the same reviewed, identity-bound helper source:
+Every custom model uses one current calendar-helper bundle. The reviewed
+helper source includes:
 
 - `finntsShiftDate(dates, periods, date_type, invalid_day = "error")` returns
   Date values in the supplied order for integral day, week, month, quarter or
@@ -616,11 +601,40 @@ or global custom model receives the same reviewed, identity-bound helper source:
   must supply both character series-key vectors. Date vectors must retain their
   class, and historical keys must be unique within each series. Missing keys
   return NA rather than filling history or changing the model's error policy.
+- `finntsRowsDate(dates, history_dates, history_combo)` returns
+  a list of all matching historical row indices for each requested date.
+  Repeated dates across different series are valid; duplicate series/date keys
+  still error. Missing dates return `integer(0)`. The LLM implements the actual
+  aggregation, weighting, grouping and business missing-history behavior.
 
 These helpers handle calendar mechanics, not the business calculation. Their
 source and the reserved `finntsDateError` helper are frozen into model identity,
 repair snapshots and saved approvals. They require no new package dependency
-or provider call during prediction and leave room for 25 provider helpers.
+or provider call during prediction and leave room for 24 provider helpers within
+the unchanged source-size limit.
+
+New global contracts distinguish shared fitting from prediction scope.
+`prediction_cohort` declares `series`, `groups` with explicit stable group
+columns, or `all` fitted series. A shared regression can predict complete series
+batches independently; portfolio allocations generally need the full cohort.
+FinnTS checks required peers and group membership before generated prediction
+code runs. Resampling expands execution to required peers and dates while
+retaining the original analysis rows and scoring only original assessment rows.
+Local models use series scope; global models declare the scope their rule needs.
+
+New explicit global authoring validates the complete supplied cohort under the
+existing 10000 historical-row cap. Oversized inputs fail with subset guidance;
+FinnTS does not silently drop peers or categories to fit the cap. Regression
+guidance asks generated code to retain feature order, category levels, contrasts,
+scaling and time origin in portable fitted state. These mechanics do not choose
+formulas: the LLM still writes the actual model, transformations and allocation.
+
+A genuine fixed-contract contradiction stops authoring. An explicitly reported
+implementation difficulty can use only remaining source attempts; it cannot
+change examples, extend the retry budget or bypass exact-version approval.
+Provider failures are separate operational errors with bounded category, HTTP
+status when known, phase, prompt bytes and elapsed time. Unknown causes remain
+unknown; raw provider messages, response bodies and headers are not retained.
 
 The shared source guard catches explicit Date-template `vapply()` and plainly
 Date-returning `sapply()` simplification before execution. It preserves numeric
@@ -632,8 +646,8 @@ conditions distinguish `date_key_type`, `date_key_duplicate`, and
 exposing lookup values, rewriting examples, increasing retries or bypassing
 approval. They are not a general proof of generated-code correctness.
 
-Saved drafts without the marker retain their original source and checks.
-Existing approved models never acquire helpers silently. Newly approved helper
+Unsupported development formats require recreation, not compatibility bridges.
+Approved models never acquire helpers silently. Approved helper
 source remains unchanged during later-cutoff refits, serialization and worker
 execution, just like the model's calculation source.
 
@@ -668,7 +682,7 @@ remain readable without changing their source or triggering new authoring.
 Messages are package-owned by default. An exact constant literal `stop()` message
 already present in source can be returned only after restrictive length/content
 checks. Dynamic error values, arbitrary stack traces and credential/path-like
-content are withheld. Preparation, legacy missing dependencies and RDS I/O remain
+content are withheld. Preparation, missing dependencies and RDS I/O remain
 hard operational failures instead of being disguised as repairable business logic.
 
 New-protocol dependency failures carry up to eight static references and 32
@@ -724,7 +738,7 @@ With `control$draft_path`, diagnostics share the existing immutable revisions; o
 the condition carries them in memory. No new default data persistence or cloud
 upload occurs. Treat source, instructions and provider-visible examples as
 confidential. The snapshot excludes real training rows, fitted objects and Chat.
-Legacy schema-2 drafts without history remain valid under their original checks.
+Current drafts require their diagnostic history and explicit approval policy.
 
 Source repair cannot change the rule, units, parameters, expected answers or
 tolerances, and each candidate still needs exact manual or automatic authorization.
@@ -739,8 +753,7 @@ reliability requires separate evaluation; no sandbox or hard timeout is added.
 
 Manual noninteractive calls without a callback return a non-enrollable draft at
 the next review gate. `control$draft_path` persists state without changing review
-delivery; `control$interact` supplies synchronous trusted-callback review. The
-legacy top-level `draft_path` still requests deferred review even interactively.
+delivery; `control$interact` supplies synchronous trusted-callback review.
 Resume with the same public function and one response bound to the pending
 request. Inspect the complete review before entering any confirmation.
 
@@ -800,10 +813,11 @@ Authoring validation uses the currently loaded FinnTS functions in the current R
 session, including `devtools::load_all()`. It starts no child process and installs
 no package snapshot. Load the intended development code and revalidate after
 changing it; FinnTS does not compare loaded functions against on-disk source.
-Draft schema 2 records the combined decision. Unfinished old three-gate or
-isolated-execution drafts require a new call and fresh review; previously
-approved custom model objects remain reusable.
-Authoring prepares at most three deterministic series with at most 10000 total
+The current draft format records the combined decision. Unsupported development
+formats require a new call and fresh review; no compatibility implementation is
+retained for them.
+Local authoring prepares at most three deterministic series; explicit global
+authoring retains the complete supplied cohort. Both enforce at most 10000 total
 historical rows, using a separate temporary root for raw data. Existing prepared
 runs are read without writes. Explicit hierarchy authoring samples up to three
 raw leaf series and retains every derived node; a prepared hierarchy is read

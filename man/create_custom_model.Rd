@@ -19,7 +19,6 @@ create_custom_model(
   name = NULL,
   model_type = NULL,
   validation_examples = NULL,
-  ...,
   approval = "manual",
   control = NULL,
   draft = NULL,
@@ -64,9 +63,7 @@ to local; pooled/global behavior requires explicit compatible settings.}
 \item{validation_examples}{Recommended list of two to eight independently
 calculated examples, covering every declared mode and a deliberate edge case.
 Use \code{\link[=custom_model_example]{custom_model_example()}} or the existing materialized-list format.
-Supplied expected values, errors and tolerances remain mandatory during repair.}
-
-\item{...}{Compatibility arguments for older calls; see Compatibility below.
+Supplied expected values, errors and tolerances remain mandatory during repair.
 Unknown arguments are rejected. Use named \code{approval}, \code{control}, \code{draft}
 and \code{responses} in new calls.}
 
@@ -108,10 +105,16 @@ on supplied values; historical plan vintages/publication lags are not verified.
 
 Raw input is privately prepared; existing runs and Chat templates are unchanged.
 Original-scale R1 requires differencing, Box-Cox, missing-value cleaning,
-outlier cleaning and multistep disabled. Sampling retains up to three series
-or raw hierarchy leaves, and at most 10000 historical node rows. Prepared
+outlier cleaning and multistep disabled. Local sampling retains up to three
+series or raw hierarchy leaves. New explicit global calls retain the complete
+supplied cohort; oversized cohorts fail rather than dropping peers/categories.
+All paths retain at most 10000 historical node rows. Prepared
 hierarchies retain all nodes. Hierarchy rules must be local and univariate;
 forecast execution requires a mixed custom/FinnTS pool and reconciliation.
+New global contracts separately declare per-series, per-group or full-cohort
+prediction. Required peers and complete horizons are checked before prediction.
+The LLM still writes pooling, regression, transformations and allocation logic;
+portable calendar/key helpers and prompts do not choose formulas or fit models.
 
 Examples must forecast the next complete horizon immediately after their own
 history and include enough history for the rule. Supplied answers are never
@@ -163,17 +166,12 @@ values. Callbacks and Chat objects are never saved. No automatic cleanup or
 upload occurs. Feedback is advisory and never grants consent or extra retries.
 }
 
-\section{Compatibility}{
+\section{Development Artifacts}{
 
-Older named and positional calls remain accepted through \code{...}. The seven
-legacy settings are \code{interact}, \code{max_attempts}, \code{validation_timeout},
-\code{draft_path}, \code{forecast_approach}, \code{package_policy} and \code{required_properties}.
-Move them into \code{custom_model_control()}; rename \code{validation_timeout} to
-\code{validation_budget}. Equal explicit duplicates are allowed; conflicting values
-fail. Legacy top-level \code{draft_path} still forces deferred manual review and
-cannot be combined with a callback. The control setting governs persistence
-only. Omit creation inputs/limits on continuation. Saved protocols and approved
-models are not silently upgraded, and existing runtime-integrity checks apply.
+This unreleased feature supports one current creation contract. Advanced
+settings belong only in \code{custom_model_control()}. Older development artifacts
+or argument forms must be recreated, not silently migrated. Current-format
+continuation retains exact code identity, approval and cumulative limits.
 }
 
 \examples{
@@ -184,14 +182,17 @@ future <- data.frame(Date = as.Date("2020-03-01"))
 examples <- list(
   custom_model_example(history, future, expected = 15),
   custom_model_example(transform(history, Target = 0), future,
-    expected = 0, edge_case = TRUE)
+    expected = 0, edge_case = TRUE
+  )
 )
 \dontrun{
 model_or_draft <- create_custom_model(
   instructions = "Use the mean of all historical targets per series.",
   llm = ellmer::chat_openai(),
-  input_data = data.frame(Date = seq(as.Date("2021-01-01"), by = "month",
-    length.out = 12), id = "one", value = 15),
+  input_data = data.frame(Date = seq(as.Date("2021-01-01"),
+    by = "month",
+    length.out = 12
+  ), id = "one", value = 15),
   combo_variables = "id", target_variable = "value",
   date_type = "month", forecast_horizon = 1,
   validation_examples = examples,

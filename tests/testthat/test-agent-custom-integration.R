@@ -1,29 +1,37 @@
 # Independent trusted-envelope fixture for offline Agent integration. The literal
 # mean rule has synthetic attestations and is never authored by a live provider.
 custom_agent_model <- function(name = "business_mean", modes = c("local", "global")) {
-  definition <- finnts:::new_custom_model_definition(name, "Use the historical mean.",
-    "Use the analysis mean without transformations; {literal_contract_text} is descriptive text.", modes,
-    c(fit = "function(data, context, parameters) { mean(data$Target) }",
-      predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row,.pred=rep(object,nrow(new_data)))"),
-    list(predictors = character(), recipes = "R1", target_scale = "original", date_types = "month",
-      forecast_horizon = c(1, 2), missing_data = "error"))
-  structure(list(schema_version = 1L, definition = definition,
-    validation = list(version_id = definition$version_id, technical_passed = TRUE,
-      checks = list(arithmetic = "Independent synthetic mean fixture")),
-    approval = list(version_id = definition$version_id, intent_confirmed = TRUE, allow_code = TRUE)),
-    class = "finnts_custom_model")
+  definition <- finnts:::new_custom_model_definition(
+    name, "Use the historical mean.", "Use the analysis mean without transformations; {literal_contract_text} is descriptive text.",
+    modes, c(fit = "function(data, context, parameters) { mean(data$Target) }", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row,.pred=rep(object,nrow(new_data)))"),
+    list(predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = c(
+      1,
+      2
+    ), missing_data = "error")
+  )
+  structure(list(schema_version = 1L, definition = definition, validation = list(
+    version_id = definition$version_id, technical_passed = TRUE,
+    checks = list(arithmetic = "Independent synthetic mean fixture")
+  ), approval = list(
+    version_id = definition$version_id,
+    intent_confirmed = TRUE, allow_code = TRUE
+  )), class = "finnts_custom_model")
 }
 
 # Create only input/project metadata, not a forecasting pipeline. The optional
 # series count supports local and pooled fixtures using constant known targets.
 custom_agent_inputs <- function(path, series = 1L) {
-  data <- data.frame(Date = rep(seq(as.Date("2020-01-01"), by = "month", length.out = 24), series),
-    id = rep(paste0("series", seq_len(series)), each = 24), value = rep(seq_len(series) * 100, each = 24))
-  list(project_info = set_project_info(project_name = "custom-agent", path = path,
-    combo_variables = "id", target_variable = "value", date_type = "month"),
-    llm = structure(list(), class = "Chat"), input_data = data, forecast_horizon = 1,
-    negative_forecast = TRUE, run_global_models = FALSE, back_test_scenarios = 1,
-    custom_models = list(business_mean = custom_agent_model()), models_to_run = "business_mean")
+  data <- data.frame(Date = rep(seq(as.Date("2020-01-01"), by = "month", length.out = 24), series), id = rep(paste0(
+    "series",
+    seq_len(series)
+  ), each = 24), value = rep(seq_len(series) * 100, each = 24))
+  list(
+    project_info = set_project_info(
+      project_name = "custom-agent", path = path, combo_variables = "id", target_variable = "value",
+      date_type = "month"
+    ), llm = structure(list(), class = "Chat"), input_data = data, forecast_horizon = 1, negative_forecast = TRUE,
+    run_global_models = FALSE, back_test_scenarios = 1, custom_models = list(business_mean = custom_agent_model()), models_to_run = "business_mean"
+  )
 }
 
 test_that("public Agent setup pins approved custom enrollment without executing source", {
@@ -104,11 +112,14 @@ test_that("execution entry restores saved identity and rejects conflicting conte
 
 # Complete offline forecast proposal; the LLM selects fixed approved logic only.
 custom_agent_response <- function(models = "business_mean", ...) {
-  jsonlite::toJSON(utils::modifyList(list(models_to_run = models, external_regressors = "NULL",
-    clean_missing_values = FALSE, clean_outliers = FALSE, forecast_approach = "bottoms_up",
-    stationary = FALSE, feature_selection = FALSE, multistep_horizon = FALSE,
-    seasonal_period = "NULL", recipes_to_run = "R1", lag_periods = "NULL",
-    rolling_window_periods = "NULL", reasoning = "Use the approved fixed mean."), list(...)), auto_unbox = TRUE)
+  jsonlite::toJSON(utils::modifyList(
+    list(
+      models_to_run = models, external_regressors = "NULL", clean_missing_values = FALSE,
+      clean_outliers = FALSE, forecast_approach = "bottoms_up", stationary = FALSE, feature_selection = FALSE, multistep_horizon = FALSE,
+      seasonal_period = "NULL", recipes_to_run = "R1", lag_periods = "NULL", rolling_window_periods = "NULL", reasoning = "Use the approved fixed mean."
+    ),
+    list(...)
+  ), auto_unbox = TRUE)
 }
 
 test_that("custom reasoning has no built-in defaults or source in its prompt", {
@@ -116,25 +127,34 @@ test_that("custom reasoning has no built-in defaults or source in its prompt", {
   info <- do.call(set_agent_info, args)
   info$custom_foundation_suffix <- ""
   info$llm <- list(chat = function(...) custom_agent_response())
-  testthat::local_mocked_bindings(get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
-    load_eda_results = function(...) "Offline EDA", .package = "finnts")
+  testthat::local_mocked_bindings(
+    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"), load_eda_results = function(...) "Offline EDA",
+    .package = "finnts"
+  )
   prompt <- iterate_forecast_system_prompt(info, "combo", 0.1)
   expect_match(prompt, "business_mean", fixed = TRUE)
   expect_false(grepl("arima---|function\\(data|feature_selection=\"TRUE\"", prompt))
-  result <- reason_inputs(info, "combo", 0.1, previous_run_results = "No Previous Runs",
-    previous_version_results = "No Previous Runs", total_runs = 0)
+  result <- reason_inputs(info, "combo", 0.1,
+    previous_run_results = "No Previous Runs", previous_version_results = "No Previous Runs",
+    total_runs = 0
+  )
   expect_identical(result$models_to_run, "business_mean")
   expect_false(result$stationary)
-  info$llm <- list(chat = function(...) '{"models_to_run":"business_mean"}')
-  expect_error(reason_inputs(info, "combo", 0.1, previous_run_results = "No Previous Runs",
-    previous_version_results = "No Previous Runs", total_runs = 0), class = "finnts_reason_proposal_invalid")
+  info$llm <- list(chat = function(...) "{\"models_to_run\":\"business_mean\"}")
+  expect_error(reason_inputs(info, "combo", 0.1,
+    previous_run_results = "No Previous Runs", previous_version_results = "No Previous Runs",
+    total_runs = 0
+  ), class = "finnts_reason_proposal_invalid")
 })
 
 test_that("custom Agent submission uses the real pinned standard runtime", {
   args <- custom_agent_inputs(withr::local_tempdir())
   args$models_to_run <- c("business_mean", "meanf")
   info <- do.call(set_agent_info, args)
-  proposal <- validate_agent_custom_proposal(jsonlite::fromJSON(custom_agent_response("business_mean---meanf")), info$custom_agent_contract, "combo")
+  proposal <- validate_agent_custom_proposal(
+    jsonlite::fromJSON(custom_agent_response("business_mean---meanf")), info$custom_agent_contract,
+    "combo"
+  )
   run <- submit_fcst_run(info, proposal, hash_data("series1"), "fixed", num_cores = 1)
   forecasts <- get_forecast_data(run)
   expect_true(nrow(forecasts) > 0)
@@ -150,7 +170,10 @@ test_that("custom Agent submission uses the real pinned standard runtime", {
   expect_equal(get_forecast_data(run_again), forecasts)
   expect_identical(tools::md5sum(names(before)), before)
   expect_no_error(audit_agent_custom_child(info, run, hash_data("series1")))
-  builtin <- validate_agent_custom_proposal(jsonlite::fromJSON(custom_agent_response("meanf")), info$custom_agent_contract, "combo")
+  builtin <- validate_agent_custom_proposal(
+    jsonlite::fromJSON(custom_agent_response("meanf")), info$custom_agent_contract,
+    "combo"
+  )
   builtin_run <- submit_fcst_run(info, builtin, hash_data("series1"), "builtin-subset", num_cores = 1)
   expect_equal(unique(get_forecast_data(builtin_run)$Forecast), 100)
   expect_no_error(audit_agent_custom_child(info, builtin_run, hash_data("series1")))
@@ -158,8 +181,7 @@ test_that("custom Agent submission uses the real pinned standard runtime", {
   altered$negative_forecast <- FALSE
   write_data(altered, NULL, builtin_run, "log", "logs")
   expect_error(audit_agent_custom_child(info, builtin_run, hash_data("series1")), "negative_forecast|controls")
-  expect_error(submit_fcst_run(info, builtin, hash_data("series1"), "builtin-subset", num_cores = 1),
-    "negative_forecast|controls")
+  expect_error(submit_fcst_run(info, builtin, hash_data("series1"), "builtin-subset", num_cores = 1), "negative_forecast|controls")
   log$custom_agent_contract_id <- "custom-agent-wrong"
   write_data(log, NULL, run, "log", "logs")
   expect_error(audit_agent_custom_child(info, run, hash_data("series1")), "parent identity")
@@ -168,17 +190,27 @@ test_that("custom Agent submission uses the real pinned standard runtime", {
 # Serializable offline Chat stand-in with independent session state per clone.
 # The shared tracker observes calls only; no conversation state is shared.
 custom_agent_chat <- function(response, tracker = new.env(parent = emptyenv()), observation_path = NULL) {
-  if (is.null(tracker$calls)) tracker$calls <- 0L
+  if (is.null(tracker$calls))
+    tracker$calls <- 0L
   factory <- function(response, tracker, observation_path) {
     session <- new.env(parent = emptyenv())
     class(session) <- "Chat"
     session$turns <- list()
     session$clone <- function(deep = FALSE) factory(response, tracker, observation_path)
-    session$set_system_prompt <- function(prompt) { session$prompt <- prompt; session }
-    session$set_turns <- function(turns) { session$turns <- turns; session }
+    session$set_system_prompt <- function(prompt) {
+      session$prompt <- prompt
+      session
+    }
+    session$set_turns <- function(turns) {
+      session$turns <- turns
+      session
+    }
     session$chat <- function(prompt, ...) {
-      if (!is.null(observation_path)) saveRDS(list(pid = Sys.getpid(), previous_turns = length(session$turns)),
-        file.path(observation_path, paste0("chat-", Sys.getpid(), ".rds")))
+      if (!is.null(observation_path))
+        saveRDS(list(pid = Sys.getpid(), previous_turns = length(session$turns)), file.path(observation_path, paste0(
+          "chat-",
+          Sys.getpid(), ".rds"
+        )))
       tracker$calls <- tracker$calls + 1L
       session$turns <- c(session$turns, list(prompt))
       response
@@ -193,9 +225,10 @@ test_that("public custom iteration publishes summaries and restarts without new 
   tracker <- new.env(parent = emptyenv())
   args$llm <- custom_agent_chat(custom_agent_response(), tracker)
   info <- do.call(set_agent_info, args)
-  testthat::local_mocked_bindings(get_eda_data = function(...) data.frame(done = TRUE),
-    load_eda_results = function(...) "Offline EDA",
-    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"), .package = "finnts")
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) data.frame(done = TRUE), load_eda_results = function(...) "Offline EDA",
+    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"), .package = "finnts"
+  )
   iterate_forecast(info, max_iter = 1, weighted_mape_goal = 0.01, num_cores = 1)
   forecast <- get_agent_forecast(info)
   summaries <- get_summarized_models(info)
@@ -224,9 +257,10 @@ test_that("custom execution and update guards run before expensive work", {
   info <- do.call(set_agent_info, args)
   stripped <- info
   stripped$custom_agent_contract <- stripped$custom_agent_contract_id <- NULL
-  testthat::local_mocked_bindings(get_eda_data = function(...) stop("Unexpected EDA"),
-    update_fcst_agent_workflow = function(...) stop("Unexpected update graph"),
-    load_update_runs = function(...) stop("Unexpected completion scan"), .package = "finnts")
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) stop("Unexpected EDA"), update_fcst_agent_workflow = function(...) stop("Unexpected update graph"),
+    load_update_runs = function(...) stop("Unexpected completion scan"), .package = "finnts"
+  )
   expect_error(iterate_forecast(stripped, parallel_processing = "spark"), "sequential|local_machine")
   expect_error(iterate_forecast(info, inner_parallel = TRUE), "inner_parallel")
   expect_error(update_forecast(stripped), "Custom Agent.*update|custom.*update")
@@ -241,9 +275,11 @@ test_that("global-only custom iteration preserves one pinned global run and hist
   tracker <- new.env(parent = emptyenv())
   args$llm <- custom_agent_chat(custom_agent_response(), tracker)
   info <- do.call(set_agent_info, args)
-  testthat::local_mocked_bindings(get_eda_data = function(...) data.frame(done = TRUE),
-    load_eda_results = function(...) "Offline EDA", vip_available = function(...) FALSE,
-    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"), .package = "finnts")
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) data.frame(done = TRUE), load_eda_results = function(...) "Offline EDA",
+    vip_available = function(...) FALSE, get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    .package = "finnts"
+  )
   iterate_forecast(info, max_iter = 1, weighted_mape_goal = 1, num_cores = 1)
   forecast <- get_agent_forecast(info)
   best <- get_best_agent_run(info)
@@ -279,17 +315,19 @@ test_that("missing parent records and custom predecessors cannot enter update re
   current$overwrite <- TRUE
   current$custom_agent_contract <- current$custom_agent_contract_id <- NULL
   original_read <- finnts:::read_file
-  testthat::local_mocked_bindings(load_update_runs = function(...) tibble::tibble(),
-    list_files = function(...) c("first.csv", "second.csv"),
-    read_file = function(run_info, ...) {
+  testthat::local_mocked_bindings(
+    load_update_runs = function(...) tibble::tibble(), list_files = function(...) c(
+      "first.csv",
+      "second.csv"
+    ), read_file = function(run_info, ...) {
       arguments <- list(...)
       if (identical(arguments$file_list, c("first.csv", "second.csv"))) {
         return(tibble::tibble(agent_version = 1, run_id = predecessor$run_id))
       }
       original_read(run_info, ...)
-    },
-    find_completed_previous_agent_runs = function(...) list(list(agent_info = predecessor)),
-    get_total_combos = function(...) stop("Unexpected recovery routing"), .package = "finnts")
+    }, find_completed_previous_agent_runs = function(...) list(list(agent_info = predecessor)), get_total_combos = function(...) stop("Unexpected recovery routing"),
+    .package = "finnts"
+  )
   expect_error(initial_checks(current), "Custom Agent updates are unsupported")
   marker_only <- current
   marker_only$run_id <- "marker-without-record"
@@ -329,42 +367,44 @@ test_that("invalid custom setup fails before writing and metadata ownership stay
 
 test_that("installed custom Agent forecasts dispatch to two independent real workers", {
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
-  skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")),
-    "Real Agent worker dispatch is verified from the installed namespace")
+  skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Real Agent worker dispatch is verified from the installed namespace")
   withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
   args <- custom_agent_inputs(withr::local_tempdir(), series = 2L)
   observations <- withr::local_tempdir()
   args$llm <- custom_agent_chat(custom_agent_response(), observation_path = observations)
   info <- do.call(set_agent_info, args)
   original_parallel <- finnts:::par_start
-  # Keep real clusters and forecasting; only EDA reads are offline fixtures in
-  # each test-owned process. Workers terminate normally through the real driver.
-  testthat::local_mocked_bindings(get_eda_data = function(...) data.frame(done = TRUE),
-    load_eda_results = function(...) "Offline EDA",
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) data.frame(done = TRUE), load_eda_results = function(...) "Offline EDA",
     par_start = function(...) {
       parallel_info <- original_parallel(...)
-      if (!is.null(parallel_info$cl)) parallel::clusterCall(parallel_info$cl, function(expected_namespace) {
-        stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
-        testthat::local_mocked_bindings(load_eda_results = function(...) "Offline EDA",
-          .package = "finnts", .env = globalenv())
-        invisible(NULL)
-      }, namespace)
+      if (!is.null(parallel_info$cl))
+        parallel::clusterCall(parallel_info$cl, function(expected_namespace) {
+          stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
+          testthat::local_mocked_bindings(load_eda_results = function(...) "Offline EDA", .package = "finnts", .env = globalenv())
+          invisible(NULL)
+        }, namespace)
       parallel_info
-    }, .package = "finnts")
+    }, .package = "finnts"
+  )
   sequential_args <- custom_agent_inputs(withr::local_tempdir(), series = 2L)
   sequential_args$llm <- custom_agent_chat(custom_agent_response())
   sequential <- do.call(set_agent_info, sequential_args)
   iterate_forecast(sequential, max_iter = 1, weighted_mape_goal = 0.01, num_cores = 1)
   expected_forecast <- get_agent_forecast(sequential)
-  iterate_forecast(info, max_iter = 1, weighted_mape_goal = 0.01,
-    parallel_processing = "local_machine", num_cores = 2)
+  iterate_forecast(info, max_iter = 1, weighted_mape_goal = 0.01, parallel_processing = "local_machine", num_cores = 2)
   forecast <- get_agent_forecast(info)
   expected <- ifelse(forecast$Combo == "series1", 100, 200)
   expect_equal(forecast$Forecast, expected)
   columns <- c("Combo", "Date", "Model_ID", "Train_Test_ID", "Forecast", "Best_Model")
-  expect_equal(dplyr::arrange(forecast[, columns], Combo, Date, Train_Test_ID),
-    dplyr::arrange(expected_forecast[, columns], Combo, Date, Train_Test_ID))
-  expect_identical(unique(forecast$Model_ID), paste0("custom-", args$custom_models$business_mean$definition$version_id, "--local--R1"))
+  expect_equal(dplyr::arrange(forecast[, columns], Combo, Date, Train_Test_ID), dplyr::arrange(
+    expected_forecast[, columns],
+    Combo, Date, Train_Test_ID
+  ))
+  expect_identical(unique(forecast$Model_ID), paste0(
+    "custom-", args$custom_models$business_mean$definition$version_id,
+    "--local--R1"
+  ))
   sessions <- lapply(list.files(observations, full.names = TRUE), readRDS)
   expect_length(sessions, 2L)
   expect_length(unique(vapply(sessions, function(session) session$pid, integer(1))), 2L)
@@ -379,23 +419,24 @@ test_that("partial custom local restart does not repeat the global phase", {
   args$run_global_models <- TRUE
   info <- do.call(set_agent_info, args)
   state <- new.env(parent = emptyenv())
-  state$best <- data.frame(combo = c("series1", "series2"), model_type = c("local", "global"),
-    weighted_mape = c(0.2, 0.2), run_complete = c(TRUE, FALSE), max_iterations = c(2, 0))
+  state$best <- data.frame(
+    combo = c("series1", "series2"), model_type = c("local", "global"), weighted_mape = c(0.2, 0.2),
+    run_complete = c(TRUE, FALSE), max_iterations = c(2, 0)
+  )
   state$calls <- character()
-  # This test isolates restart routing only; real local/global fits, metadata and
-  # publication are checked by the end-to-end cases above, not these mock rows.
-  testthat::local_mocked_bindings(get_eda_data = function(...) data.frame(done = TRUE),
-    load_best_agent_run = function(...) state$best,
-    load_run_results = function(...) "No Previous Runs",
-    fcst_agent_workflow = function(agent_info, combo, ...) {
-      if (is.null(combo)) stop("Unexpected repeated global phase")
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) data.frame(done = TRUE), load_best_agent_run = function(...) state$best,
+    load_run_results = function(...) "No Previous Runs", fcst_agent_workflow = function(agent_info, combo, ...) {
+      if (is.null(combo))
+        stop("Unexpected repeated global phase")
       state$calls <- c(state$calls, combo)
       state$best$model_type[[2]] <- "local"
       state$best$run_complete[[2]] <- TRUE
       state$best$max_iterations[[2]] <- 2
       invisible(NULL)
-    }, save_best_agent_run = function(...) invisible(NULL), save_agent_forecast = function(...) invisible(NULL),
-    summarize_models = function(...) invisible(NULL), .package = "finnts")
+    }, save_best_agent_run = function(...) invisible(NULL), save_agent_forecast = function(...) invisible(NULL), summarize_models = function(...) invisible(NULL),
+    .package = "finnts"
+  )
   iterate_forecast(info, max_iter = 2, weighted_mape_goal = 0.01, num_cores = 1)
   expect_identical(state$calls, hash_data("series2"))
   iterate_forecast(info, max_iter = 2, weighted_mape_goal = 0.01, num_cores = 1)

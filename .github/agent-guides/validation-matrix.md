@@ -31,3 +31,44 @@ When a file matches multiple scoped rules, follow all matching rules. No rule ta
 On Windows without R on `PATH`, run expressions with `./tools/run-r.ps1 -Expression '<R expression>'` and scripts with `./tools/run-r.ps1 -File '<script path>'`.
 
 Do not run live provider tests on the CRAN profile. Do not report a skipped credentialed test as a successful live integration test.
+
+## Global Custom-Model Regressions
+
+`tests/testthat/helper-custom-model-global.R` supplies synthetic fixed-seed panels,
+test-only source counterparts and independent arithmetic, explicit-matrix and
+root-solver references. These helpers are not a production model catalog and
+must never replace generated source or supply expectations from candidate output.
+
+- `test-custom-model-global.R`: ten pooled rule families; series counts and
+	cutoffs; peer sensitivity; calendar/fiscal and category features; exact errors;
+	ordering, leakage, RDS, cohort scope, resampling and bounded sampling.
+- `test-custom-model-authoring.R`: provider diagnostic privacy, prompt/schema
+	contracts and pooled demonstrations.
+- `test-custom-model-drafts.R`: fixed caller examples, bounded repair attempts,
+	manual consent, exact saved identity and current-format continuation.
+- `test-custom-model-runtime.R`: adapter contracts and executable demonstrations
+	under the current contract, including explicit rejection of obsolete formats.
+
+Focused offline entrypoint:
+
+```r
+withr::with_envvar(c(NOT_CRAN = "false"),
+	devtools::test(filter = "^custom-model-global$"))
+```
+
+After changing authoring, cohort or runtime contracts, also run the affected
+`custom-model-(authoring|drafts|validation|runtime|contract|standard)` files with
+the unchanged 90-second file and 600-second aggregate limits. Run the global
+worker replay test from a temporary installed namespace: its normal development
+skip is not worker validation. Existing release/full-check requirements remain.
+
+Peer tests must use a perturbation capable of changing shared coefficients:
+uniform target scaling can be absorbed by a regional intercept in a log model.
+Allocation checks compare every result to the reference and preserve totals/caps;
+they do not require a binding-cap row to move. Preserve literal oracle checks,
+negative controls, old assertions and CRAN skips when extending this library.
+
+Live low/medium LLM benchmarks remain separate, explicitly authorized evidence.
+Freeze inputs, expected values, code and source identities before each benchmark;
+retain every failed attempt without replacement. Deterministic source-counterpart
+tests establish engine capability, not live LLM success or arbitrary correctness.

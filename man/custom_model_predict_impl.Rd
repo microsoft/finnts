@@ -23,9 +23,11 @@ Source returns a data frame with .finnts_row and finite numeric .pred.
 Missing, duplicate or extra row IDs are errors, not fallback opportunities.
 Identity and execution consent are checked on every call. Trusted R source
 is not sandboxed; do not use this experimental engine for untrusted code.
-Definition schema 3 requires the complete forecast horizon for each included
+Prediction requires the complete forecast horizon for each included
 series. It supplies chronological rows and aligned integer context$forecast_step
-values, then restores the caller's row order. Series may be batched separately;
-partial-date requests fail rather than inventing missing driver values.
+values, then restores the caller's row order. It enforces the declared series,
+group or full fitted cohort
+before executing prediction source. Partial-date requests fail rather than
+inventing missing driver values; group membership cannot change after fitting.
 }
 \keyword{internal}

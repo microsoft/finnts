@@ -28,7 +28,8 @@ Fit a trusted custom-model definition through parsnip
 \details{
 No packages are installed. Source errors propagate without fallback.
 Source must return portable state; this adapter does not invert transforms.
-Definition schema 3 sorts each series chronologically before fitting. Earlier
-definitions retain their original row order and execution semantics.
+Each series is sorted chronologically before fitting. The current runtime
+captures global cohort membership; declared group columns
+must be finite, nonmissing and constant within each series.
 }
 \keyword{internal}

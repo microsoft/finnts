@@ -61,6 +61,8 @@ For model selection, start with the [architecture map](.github/agent-guides/arch
 
 Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.
 
+Keep one current implementation of custom-model logic and helpers. Update it directly without retaining older versions or building compatibility bridges to prior versions.
+
 ## Validation Scope
 
 Interactive development defaults to targeted tests for the changed behavior and its direct callers. Honor explicit requests for targeted tests only. Record the selected scope and exact checks in the plan; do not silently expand into the unfiltered package suite, R CMD check, or full vignette/site builds.
