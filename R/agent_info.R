@@ -9,6 +9,8 @@
 #' @param input_data A data frame or tibble containing the input data. Leading
 #'   and trailing whitespace in character combo-variable values is removed
 #'   before Finn creates internal series identifiers and writes input artifacts.
+#'   Resuming a version uses previously uploaded inputs, not replacement values
+#'   from this data frame. Create a new version to use revised data.
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
 #' @param hist_end_date Optional Date object indicating the end of the historical data
@@ -29,6 +31,11 @@
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models. Default is TRUE.
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
+#' @details With `overwrite = FALSE`, an existing version retains its saved
+#'   forecast approach even if hierarchy detection changes after a package upgrade.
+#'   Logged user settings must still match. New versions use current detection;
+#'   one retained series or one combo column uses bottoms-up. Updating a new
+#'   version across an outer forecast-approach change requires fresh iteration.
 #'
 #' @return A list containing the agent run information
 #' @examples
@@ -164,8 +171,29 @@ set_agent_info <- function(project_info,
       hist_end_date
     )
 
-  # check if a hierarchy exists in the data and should be applied
-  if (allow_hierarchical_forecast) {
+  raw_agent_runs_tbl <- load_agent_runs(project_info)
+  agent_runs_tbl <- if (nrow(raw_agent_runs_tbl) > 0) {
+    raw_agent_runs_tbl %>%
+      dplyr::arrange(dplyr::desc(created)) %>%
+      dplyr::slice(1)
+  } else {
+    tibble::tibble()
+  }
+
+  if ((nrow(agent_runs_tbl) == 0 || overwrite) && nrow(final_input_data) == 0) {
+    stop("No retained time series remain for Agent setup. Check the cleanup date and historical target activity.",
+      call. = FALSE)
+  }
+
+  # A resume keeps its saved interpretation; detector upgrades apply to new versions.
+  if (nrow(agent_runs_tbl) > 0 && !overwrite) {
+    forecast_approach <- agent_runs_tbl$forecast_approach
+    if (length(forecast_approach) != 1L || is.na(forecast_approach) ||
+      !forecast_approach %in% c("bottoms_up", "standard_hierarchy", "grouped_hierarchy")) {
+      stop("Cannot resume Agent version: saved forecast_approach is missing or unsupported. Restore the original run metadata or create a new version with overwrite = TRUE.",
+        call. = FALSE)
+    }
+  } else if (allow_hierarchical_forecast) {
     forecast_approach <- hierarchy_detect(
       agent_info = list(
         project_info = project_info,
@@ -182,18 +210,6 @@ set_agent_info <- function(project_info,
     }
   } else {
     forecast_approach <- "bottoms_up"
-  }
-
-  # check if agent run already exists
-  raw_agent_runs_tbl <- load_agent_runs(project_info)
-
-  if (nrow(raw_agent_runs_tbl) > 0) {
-    # filter on latest run
-    agent_runs_tbl <- raw_agent_runs_tbl %>%
-      dplyr::arrange(dplyr::desc(created)) %>%
-      dplyr::slice(1)
-  } else {
-    agent_runs_tbl <- tibble::tibble()
   }
 
   if (nrow(agent_runs_tbl) > 0 & overwrite == FALSE) {
@@ -227,10 +243,14 @@ set_agent_info <- function(project_info,
         colnames(current_log_df)
       ))
 
-    # for older logs that do not yet have allow_hierarchical_forecast recorded,
-    # default to the current value for backward compatibility
+    # Hierarchical saved inputs prove expansion was enabled. Bottoms-up legacy
+    # logs cannot distinguish a disabled flag from a single-column policy.
     if (!"allow_hierarchical_forecast" %in% colnames(prev_log_raw)) {
-      prev_log_raw$allow_hierarchical_forecast <- allow_hierarchical_forecast
+      prev_log_raw$allow_hierarchical_forecast <- if (forecast_approach != "bottoms_up") {
+        TRUE
+      } else {
+        allow_hierarchical_forecast
+      }
     }
     prev_log_df <- align_types(
       current_log_df,

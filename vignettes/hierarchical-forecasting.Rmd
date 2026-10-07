@@ -16,6 +16,66 @@ knitr::opts_chunk$set(
 
 The finnts package leverages the great work of the [hts](https://github.com/earowang/hts) package. It's currently retired but we think old dogs can still learn new tricks! It's still of great use to finnts and allows for both standard and grouped hierarchical forecasting.
 
+### Selecting a Hierarchy
+
+Use `detect_hierarchy()` before a non-agentic forecast to choose a structurally
+valid approach. A unique bottom-level ID alone does not prove nesting: intermediate
+labels can still occur under multiple parents. Detection checks every adjacent
+parent-child relationship in the same cardinality-based order used by the engine.
+
+```{r, eval = FALSE}
+decision <- finnts::detect_hierarchy(
+  input_data = data,
+  combo_variables = c("Region", "Country", "Site"),
+  target_variable = "Revenue",
+  combo_cleanup_date = as.Date("2025-08-01"),
+  hist_end_date = as.Date("2026-08-01")
+)
+decision$forecast_approach
+decision$conflicts
+# Pass decision$forecast_approach as forecast_approach to prep_data(),
+# using the same input data and cleanup settings.
+```
+
+The function returns diagnostics in memory and does not save files or change
+the caller's input. Without a cleanup date it considers all supplied tuples;
+with a cleanup date it uses the existing target-sum cleanup policy and excludes
+future targets from activity. One retained series selects `bottoms_up`, and no
+retained series produces an error. Character-like labels are trimmed consistently
+with preprocessing; invalid labels and ambiguous combo identities fail explicitly.
+Collect Spark data frames before detection.
+
+Detection describes observed data, not unobserved business relationships.
+Inspect `hierarchy_order` and `conflicts` when validating the result. Existing
+explicit `prep_data()` settings are not overridden. Agent setup and EDA share
+the structural analysis, with an intentional single-column bottoms-up policy.
+Adopting
+a different approach changes the prepared aggregates and hierarchy metadata;
+use a new run rather than reusing artifacts from a different hierarchy.
+
+New Agent versions with only one retained series use `bottoms_up`, even with
+multiple combo columns. EDA reports `none`, and global reasoning allows only
+bottoms-up for this scope. Pre-expanded hierarchy-level `ID` inputs also use
+bottoms-up internally, but retain their configured outer reconciliation.
+
+Resuming an existing Agent version preserves its saved forecast approach and
+previously uploaded inputs; a package upgrade does not reclassify that version.
+Logged settings such as dates, horizon, regressors, and forecast flags must still
+match. Supplied replacement data values are not uploaded on a resume; create a
+new version to use changed history, drivers, or series. Missing required saved
+artifacts remain errors rather than triggering a hierarchy migration.
+Legacy bottoms-up run logs without `allow_hierarchical_forecast` cannot reveal
+whether expansion was disabled or the single-column policy selected bottoms-up;
+these retain the existing flag-comparison fallback. A saved hierarchical
+approach proves expansion was enabled. No new log columns are added.
+
+A new version uses current detection on its cleaned population. If its outer
+approach differs from the latest completed predecessor (for example, standard
+to grouped, or hierarchical to single-series bottoms-up), `update_forecast()`
+rejects reuse and directs the user to `iterate_forecast()`. The
+`allow_iterate_forecast` performance fallback does not bypass this compatibility
+check. Existing predecessor artifacts are not rewritten.
+
 ### Standard Hierarchy
 
 A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.

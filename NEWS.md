@@ -1,11 +1,14 @@
-# finnts 0.7.0.9010 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9011 (DEVELOPMENT VERSION)
 
 ## Improvements
 
+- Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks and optional preprocessing-compatible inactive-series cleanup. Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 
 ## Bug Fixes
 
+- New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction. EDA and iteration prompts reflect the input scope.
+  - Existing-version resumes preserve the saved forecast approach and uploaded inputs while still rejecting changed logged settings. New versions use current detection; updates across outer-approach changes still require fresh iteration.
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
   -   Preserves saved model selections; older runs reuse saved models, averaging when needed.

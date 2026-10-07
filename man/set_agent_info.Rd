@@ -29,7 +29,9 @@ set_agent_info(
 
 \item{input_data}{A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed
-before Finn creates internal series identifiers and writes input artifacts.}
+before Finn creates internal series identifiers and writes input artifacts.
+Resuming a version uses previously uploaded inputs, not replacement values
+from this data frame. Create a new version to use revised data.}
 
 \item{forecast_horizon}{The number of periods to forecast}
 
@@ -70,6 +72,13 @@ A list containing the agent run information
 This function sets up the necessary information for a Finn Agent run,
 including input data, forecast horizon, and other parameters.
 It checks for existing runs and allows for overwriting if specified.
+}
+\details{
+With \code{overwrite = FALSE}, an existing version retains its saved
+forecast approach even if hierarchy detection changes after a package upgrade.
+Logged user settings must still match. New versions use current detection;
+one retained series or one combo column uses bottoms-up. Updating a new
+version across an outer forecast-approach change requires fresh iteration.
 }
 \examples{
 \dontrun{

@@ -86,6 +86,7 @@ project identifiers, work-item URLs, or other environment-specific details.
 
 - Never commit secrets, tokens, local paths, or machine-specific configuration.
 - Preserve established forecasting decision policies unless the user explicitly approves changing them. In particular, protect the Agent's average-model accuracy signal for iteration selection; its rationale and rules are in [.claude/rules/agent-runtime.md](.claude/rules/agent-runtime.md#iteration-selection-policy). Logging or performance work is not permission to simplify those decisions.
+- Before changing behavior, assess compatibility with existing projects and saved runs, including same-version restarts and new-version `iterate_forecast()` / `update_forecast()` workflows. Follow the [version compatibility contract](.claude/rules/agent-runtime.md#existing-project-and-version-compatibility) for Agent changes.
 - Prefer existing dependencies and established package patterns. New dependencies require a concrete feature need and explicit justification.
 - Do not weaken or delete tests to hide a failure; fix the underlying behavior.
 - Do not create code or functions that delete files.

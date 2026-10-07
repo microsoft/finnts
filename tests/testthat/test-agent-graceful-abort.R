@@ -867,6 +867,16 @@ test_that("global system prompt advertises only resolved forecast approaches", {
     '"forecast_approach"     : "bottoms_up"',
     fixed = TRUE
   )
+  expect_match(expanded_prompt, 'A "none" hierarchy result does not remove a saved outer hierarchy',
+    fixed = TRUE)
+
+  agent_info$forecast_approach <- "bottoms_up"
+  eda <- data.frame(Analysis_Type = "Hierarchy", Metric = "hierarchy_type", Value = "none")
+  agent_info$global_forecast_approaches <- resolve_agent_global_forecast_approaches(agent_info, eda)
+  single_prompt <- iterate_forecast_system_prompt(agent_info, combo = NULL, weighted_mape_goal = 0.05)
+  expect_identical(agent_info$global_forecast_approaches, "bottoms_up")
+  expect_match(single_prompt, "This includes one retained series", fixed = TRUE)
+  expect_match(single_prompt, '"forecast_approach"     : "bottoms_up"', fixed = TRUE)
 })
 
 test_that("local reasoning always uses bottoms up", {

@@ -199,4 +199,7 @@ test_that("global EDA prompt handles no outliers and unavailable correlations", 
   expect_match(prompt, "Last Outlier Date: None observed", fixed = TRUE)
   expect_false(grepl("Inf|-Inf|NaN", prompt))
   expect_match(prompt, "Non_PO_Mix", fixed = TRUE)
+  expect_match(prompt, "Hierarchy Type: none", fixed = TRUE)
+  expect_match(prompt, "One retained series has no aggregation hierarchy", fixed = TRUE)
+  expect_match(prompt, "Prepared hierarchy nodes still receive outer reconciliation", fixed = TRUE)
 })
