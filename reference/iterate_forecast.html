@@ -137,8 +137,9 @@
 forecasts each individual time series one after another. 'local_machine'
 leverages all cores on current machine Finn is running on. 'spark'
 runs time series in parallel on a spark cluster in Azure Databricks or
-Azure Synapse. Parallel agent workflows require ellmer 0.4.0 or later on
-the main process and every worker.</p></dd>
+Azure Synapse. Ellmer-backed workflows require ellmer 0.4.0 or later on
+the main process and every worker. Copilot-backed workflows require
+the CLI, processx, and authentication on each worker; see <code><a href="chat_copilot.html">chat_copilot()</a></code>.</p></dd>
 
 
 <dt id="arg-inner-parallel">inner_parallel<a class="anchor" aria-label="anchor" href="#arg-inner-parallel"></a></dt>

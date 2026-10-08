@@ -193,11 +193,14 @@ importance).</li>
 <ul>
 <li>Package: <code>finnts</code><br>
 </li>
-<li>LLM driver: the agent uses an <strong>ellmer</strong> Chat object
-for tool calling.
+<li>LLM driver: an <strong>ellmer</strong> Chat object or
+<code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> configuration.
 <ul>
-<li>Example here shows Azure OpenAI, but any ellmer Chat backend
+<li>The main example uses Azure OpenAI; any ellmer Chat backend
 works.</li>
+<li>GitHub Copilot CLI is an optional alternative described below. Finn
+executes workflow tools; the CLI is used only to generate
+responses.</li>
 </ul>
 </li>
 </ul>
@@ -299,19 +302,87 @@ them used in forecasting).</li>
 <div class="section level3">
 <h3 id="define-the-llm">3) Define the LLM<a class="anchor" aria-label="anchor" href="#define-the-llm"></a>
 </h3>
-<p><code>llm</code> is an ellmer Chat that Finn uses as a configuration
-template. Finn never mutates this template. It creates an isolated,
-empty-history session for each forecast series and each
-<code><a href="../reference/ask_agent.html">ask_agent()</a></code> request, so one modern model can perform both
-forecast input selection and results analysis without conversation
-history leaking between workflows.</p>
+<p><code>llm</code> is an ellmer Chat or <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code>
+object that Finn uses as a configuration template. Finn never mutates
+this template. It creates an isolated, empty-history session for each
+forecast series and each <code><a href="../reference/ask_agent.html">ask_agent()</a></code> request, so one modern
+model can perform both forecast input selection and results analysis
+without conversation history leaking between workflows.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
+<div class="section level4">
+<h4 id="alternative-github-copilot-cli">Alternative: GitHub Copilot CLI<a class="anchor" aria-label="anchor" href="#alternative-github-copilot-cli"></a>
+</h4>
+<p>Install GitHub Copilot CLI <strong>1.0.93 or later</strong> from its
+<a href="https://github.com/github/copilot-cli" class="external-link">official
+distribution</a>. On Windows, use the standalone
+<code>copilot.exe</code> (for example, installed through WinGet), not an
+npm <code>.cmd</code> shim. Install the optional R dependency if
+needed:</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"processx"</span><span class="op">)</span></span>
+<span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/chat_copilot.html">chat_copilot</a></span><span class="op">(</span>timeout <span class="op">=</span> <span class="fl">120</span><span class="op">)</span> <span class="co"># defaults to Copilot's auto model routing</span></span>
+<span><span class="co"># Or pin a model:</span></span>
+<span><span class="co"># llm &lt;- chat_copilot(model = "gpt-5.4")</span></span>
+<span><span class="co"># Or supply a standalone executable path:</span></span>
+<span><span class="co"># llm &lt;- chat_copilot(model = "gpt-5.4", command = "&lt;path-to-copilot-executable&gt;")</span></span></code></pre></div>
+<p>The default <code>model = "auto"</code> lets Copilot choose a model
+for each request; the selected model may change between turns. To pin a
+model, choose one available to your Copilot account. The account must
+have a Copilot subscription and any required organization policy
+enabled. Authenticate using <code>COPILOT_GITHUB_TOKEN</code>,
+<code>GH_TOKEN</code>, or <code>GITHUB_TOKEN</code> (in that order), or
+run <code>gh auth login</code> before starting R. Finn privately
+retrieves the existing GitHub CLI token when no environment token is
+present. It never saves a token in the LLM template. A cached
+Copilot-only login is not copied into the isolated CLI home. Do not put
+tokens in scripts, shared files, or the <code>command</code>
+argument.</p>
+<p>Pass this <code>llm</code> to the same <code><a href="../reference/set_agent_info.html">set_agent_info()</a></code>
+call below. Ellmer is not required for a Copilot-backed Agent
+workflow.</p>
+<p><strong>Data handling:</strong> every response request starts a new
+CLI process in an isolated home and working directory under R’s
+<code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>. Copilot can save configuration, full
+prompt/response transcripts, and a session database there. Finn does not
+delete these local files; normal R/OS temporary-directory cleanup
+applies. Use only data approved for GitHub Copilot, and apply your
+organization’s local retention requirements. The CLI still contacts
+GitHub Copilot and consumes your account’s model quota. No transcript
+sharing, gist publication, or remote session export is enabled.</p>
+<p>Finn disables model tools, built-in MCP servers, repository
+instructions, hooks, IDE connections, cross-session memory, and
+inherited custom-provider overrides. Finn, not the CLI, continues to
+execute and validate its existing workflow. System instructions and
+prior turns are replayed as text in a JSON conversation envelope through
+stdin; this is not a native system-role API. Long workflows therefore
+resend growing history and may hit model context limits. CLI JSONL is a
+transport envelope, not a guarantee of valid forecast proposal JSON;
+Finn’s existing proposal validation and retries still apply. Within one
+time-series workflow, successful user/assistant turns remain in memory
+across forecast iterations and proposal retries. Other series get
+independent sessions. A new or restarted workflow starts fresh;
+CLI-local transcripts are not used to restore the conversation.</p>
+<p>Missing executables, unsupported CLI versions, authentication
+failures, timeouts, and invalid transport responses are explicit errors.
+There is no automatic provider fallback. Start with sequential
+execution; for parallel runs, every worker needs a compatible CLI,
+processx 3.9.0 or later, and its own available environment or GitHub CLI
+credentials. A driver-local executable path or login may not exist on
+Spark workers.</p>
+<p>The live Copilot integration test is local-only and disabled by
+default. To run it locally, set
+<code>FINNTS_TEST_COPILOT_LIVE=true</code> before running
+<code>devtools::test(filter = "agent-copilot")</code>. It always skips
+on CRAN and in CI, including GitHub Actions, regardless of credentials
+or opt-in. Offline adapter tests still run without contacting
+Copilot.</p>
+</div>
 </div>
 <div class="section level3">
 <h3 id="create-the-agent-run">4) Create the agent run<a class="anchor" aria-label="anchor" href="#create-the-agent-run"></a>
 </h3>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
 <span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
@@ -329,7 +400,7 @@ history leaking between workflows.</p>
 <div class="section level3">
 <h3 id="let-the-agent-iterate-to-a-best-run">5) Let the agent iterate to a best run<a class="anchor" aria-label="anchor" href="#let-the-agent-iterate-to-a-best-run"></a>
 </h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/iterate_forecast.html">iterate_forecast</a></span><span class="op">(</span></span>
 <span>  agent_info          <span class="op">=</span> <span class="va">agent</span>,</span>
 <span>  weighted_mape_goal  <span class="op">=</span> <span class="fl">0.05</span>, <span class="co"># your accuracy target of 5%</span></span>
@@ -369,7 +440,7 @@ iterations.</p>
 <div class="section level3">
 <h3 id="retrieve-results">6) Retrieve results<a class="anchor" aria-label="anchor" href="#retrieve-results"></a>
 </h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">best_runs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_best_agent_run.html">get_best_agent_run</a></span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent</span>, full_run_info <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">best_runs</span><span class="op">)</span></span>
 <span></span>
@@ -418,7 +489,7 @@ results</p>
 <div class="section level3">
 <h3 id="example-questions">Example questions<a class="anchor" aria-label="anchor" href="#example-questions"></a>
 </h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Ask about forecast accuracy</span></span>
 <span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
 <span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
@@ -504,7 +575,7 @@ your question.</p>
 <p>When you have <strong>new input data</strong>, keep the same project
 and create a <strong>new agent run</strong> with updated
 <code>input_data</code>. Then call <code><a href="../reference/update_forecast.html">update_forecast()</a></code>:</p>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># suppose you've appended more months to hist_data:</span></span>
 <span><span class="va">hist_data2</span> <span class="op">&lt;-</span> <span class="va">hist_data</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Date</span> <span class="op">&lt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2016-06-01"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>
@@ -732,12 +803,15 @@ Processing”</strong> vignette).<br>
 <code>num_cores = NULL</code> defaults to <em>all cores minus
 one</em>.</li>
 </ul>
-<p>Every time-series combo receives independent driver and reasoning
-Chat objects with empty conversation history, whether execution is
-sequential or parallel. Parallel runs require ellmer 0.4.0 or later on
-the driver and every worker; Finn serializes the configured Chats
-through <code>foreach</code> before creating the per-combo deep
-clones.</p>
+<p>Every time-series combo receives an independent LLM session with
+empty conversation history, whether execution is sequential or parallel.
+Finn serializes the template through <code>foreach</code> before
+creating the per-combo session. Ellmer workflows require ellmer 0.4.0 or
+later on the driver and every worker and use public deep clones. Copilot
+workflows recreate their configuration on workers and require the CLI,
+processx, and authentication there. CLI startup and quota costs apply to
+each request; do not assume forecast CPU parallelism is also an
+appropriate Copilot request concurrency.</p>
 <hr>
 </div>
 <div class="section level2">

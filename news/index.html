@@ -103,7 +103,11 @@
 <h2 class="page-header" data-toc-text="0.7.0.9011" id="finnts-0709011-development-version">finnts 0.7.0.9011 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709011-development-version"></a></h2>
 <div class="section level3">
 <h3 id="improvements-0-7-0-9011">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9011"></a></h3>
-<ul><li>Added <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> for explicit, read-only standard/grouped selection using nesting checks and optional preprocessing-compatible inactive-series cleanup. Agent detection shares this structural analysis; explicit <code><a href="../reference/prep_data.html">prep_data()</a></code> choices are unchanged.</li>
+<ul><li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
+<ul><li>Defaults to automatic model selection, with isolated conversations and tool-disabled requests.</li>
+<li>Copilot saves CLI-local session state under R’s temporary directory.</li>
+</ul></li>
+<li>Added <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> for explicit, read-only standard/grouped selection using nesting checks and optional preprocessing-compatible inactive-series cleanup. Agent detection shares this structural analysis; explicit <code><a href="../reference/prep_data.html">prep_data()</a></code> choices are unchanged.</li>
 <li>Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.</li>
 </ul></div>
 <div class="section level3">

@@ -153,25 +153,38 @@ testing and build dozens of models within Finn.</p>
 <div class="section level2">
 <h2 id="parallel-ai-agent-workflows">Parallel AI Agent Workflows<a class="anchor" aria-label="anchor" href="#parallel-ai-agent-workflows"></a>
 </h2>
-<p><code><a href="../reference/set_agent_info.html">set_agent_info()</a></code> accepts one <code>llm</code> Chat as an
-immutable configuration template. Every <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>
-time-series combo receives an independent, empty-history session cloned
-from that template, whether combos run sequentially or in parallel. For
-parallel execution, Finn sends the template through the standard
-<code>foreach</code> serialization path and creates each deep clone
-inside the series workflow after it reaches the worker. A session
-persists across iterations for its own series but is never shared with
-another series.</p>
-<p>Parallel runs require ellmer 0.4.0 or later in the main process and
-every worker R library. The public <code>Chat$clone(deep = TRUE)</code>
-method preserves the provider, model, parameters, tools, and credentials
-without rebuilding Chat objects through internal ellmer APIs. With Azure
-OpenAI API-key authentication, the default ellmer 0.4 credential
-callback is serialized with the template, so worker task payloads must
-be treated as sensitive. A custom <code>credentials</code> callback that
-reads an environment variable or obtains a token at request time
-requires that credential source to be available from every worker
-process.</p>
+<p><code><a href="../reference/set_agent_info.html">set_agent_info()</a></code> accepts one ellmer Chat or
+<code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> object as an immutable configuration
+template. Every <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> time-series combo
+receives an independent, empty-history session from that template,
+whether combos run sequentially or in parallel. For parallel execution,
+Finn sends the template through the standard <code>foreach</code>
+serialization path and creates each session inside the series workflow
+after it reaches the worker. A session persists across iterations for
+its own series but is never shared with another series.</p>
+<p>Ellmer-backed parallel runs require ellmer 0.4.0 or later in the main
+process and every worker R library. The public
+<code>Chat$clone(deep = TRUE)</code> method preserves the provider,
+model, parameters, tools, and credentials without rebuilding Chat
+objects through internal ellmer APIs. With Azure OpenAI API-key
+authentication, the default ellmer 0.4 credential callback is serialized
+with the template, so worker task payloads must be treated as sensitive.
+A custom <code>credentials</code> callback that reads an environment
+variable or obtains a token at request time requires that credential
+source to be available from every worker process.</p>
+<p>Copilot-backed workflows recreate configuration rather than cloning
+an ellmer Chat. Each worker needs GitHub Copilot CLI 1.0.93 or later,
+processx 3.9.0 or later, and available environment-token or GitHub CLI
+authentication. CLI version and option checks are cached in memory per
+process and executable; each worker checks independently, and executable
+changes trigger revalidation. Credentials are resolved on the worker and
+never serialized in the template. Copilot starts a tool-disabled process
+per request, replays that series’ history through stdin, and saves
+CLI-local state under the worker’s R temporary directory. Consider
+request quotas and CLI startup costs when choosing concurrency; a
+driver-local executable path or login is not automatically available on
+a Spark cluster. See the <a href="ai-agent.html">AI Agent vignette</a>
+for setup and data handling requirements.</p>
 </div>
 <div class="section level2">
 <h2 id="within-azure-using-spark">Within Azure using Spark<a class="anchor" aria-label="anchor" href="#within-azure-using-spark"></a>
