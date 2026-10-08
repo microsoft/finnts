@@ -37,6 +37,7 @@ reference:
       - starts_with("get_trained_models")
       - starts_with("get_prepped_data")
       - starts_with("get_prepped_models")
+      - starts_with("detect_hierarchy")
       - starts_with("prep_data")
       - starts_with("prep_models")
       - starts_with("train_models")

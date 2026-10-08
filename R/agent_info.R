@@ -9,6 +9,8 @@
 #' @param input_data A data frame or tibble containing the input data. Leading
 #'   and trailing whitespace in character combo-variable values is removed
 #'   before Finn creates internal series identifiers and writes input artifacts.
+#'   Resuming a version uses previously uploaded inputs, not replacement values
+#'   from this data frame. Create a new version to use revised data.
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors
 #' @param hist_end_date Optional Date object indicating the end of the historical data
@@ -29,6 +31,11 @@
 #' @param run_local_models If TRUE, run models by individual time series as
 #'   local models. Default is TRUE.
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
+#' @details With `overwrite = FALSE`, an existing version retains its saved
+#'   forecast approach even if hierarchy detection changes after a package upgrade.
+#'   Logged user settings must still match. New versions use current detection;
+#'   one retained series or one combo column uses bottoms-up. Updating a new
+#'   version across an outer forecast-approach change requires fresh iteration.
 #'
 #' @return A list containing the agent run information
 #' @examples
@@ -74,6 +81,34 @@ set_agent_info <- function(project_info,
                            run_global_models = NULL,
                            run_local_models = TRUE,
                            overwrite = FALSE) {
+  set_agent_info_impl(
+    project_info, llm, input_data, forecast_horizon, external_regressors,
+    hist_end_date, hist_start_date, back_test_scenarios, back_test_spacing,
+    combo_cleanup_date, allow_hierarchical_forecast, negative_forecast,
+    run_global_models, run_local_models, overwrite
+  )
+}
+
+# Shared setup preserves the public defaults and saved-setting validation.
+# An internal resume_run_id selects exactly one saved run for request-ID retries;
+# missing or duplicate matches fail before writes. NULL retains latest-run setup.
+# Returns the Agent contract; new versions retain the existing artifact writes.
+set_agent_info_impl <- function(project_info,
+                                llm,
+                                input_data,
+                                forecast_horizon,
+                                external_regressors = NULL,
+                                hist_end_date = NULL,
+                                hist_start_date = NULL,
+                                back_test_scenarios = NULL,
+                                back_test_spacing = NULL,
+                                combo_cleanup_date = NULL,
+                                allow_hierarchical_forecast = FALSE,
+                                negative_forecast = FALSE,
+                                run_global_models = NULL,
+                                run_local_models = TRUE,
+                                overwrite = FALSE,
+                                resume_run_id = NULL) {
   # get metadata
   combo_variables <- project_info$combo_variables
   target_variable <- project_info$target_variable
@@ -164,8 +199,37 @@ set_agent_info <- function(project_info,
       hist_end_date
     )
 
-  # check if a hierarchy exists in the data and should be applied
-  if (allow_hierarchical_forecast) {
+  raw_agent_runs_tbl <- load_agent_runs(project_info)
+  agent_runs_tbl <- if (!is.null(resume_run_id)) {
+    matched <- raw_agent_runs_tbl %>%
+      dplyr::filter(.data$run_id == resume_run_id)
+    if (overwrite || nrow(matched) != 1L) {
+      stop("Cannot resume requested Agent run: expected exactly one saved run matching run_id. Restore the original run metadata.",
+        call. = FALSE)
+    }
+    matched
+  } else if (nrow(raw_agent_runs_tbl) > 0) {
+    raw_agent_runs_tbl %>%
+      dplyr::arrange(dplyr::desc(created)) %>%
+      dplyr::slice(1)
+  } else {
+    tibble::tibble()
+  }
+
+  if ((nrow(agent_runs_tbl) == 0 || overwrite) && nrow(final_input_data) == 0) {
+    stop("No retained time series remain for Agent setup. Check the cleanup date and historical target activity.",
+      call. = FALSE)
+  }
+
+  # A resume keeps its saved interpretation; detector upgrades apply to new versions.
+  if (nrow(agent_runs_tbl) > 0 && !overwrite) {
+    forecast_approach <- agent_runs_tbl$forecast_approach
+    if (length(forecast_approach) != 1L || is.na(forecast_approach) ||
+      !forecast_approach %in% c("bottoms_up", "standard_hierarchy", "grouped_hierarchy")) {
+      stop("Cannot resume Agent version: saved forecast_approach is missing or unsupported. Restore the original run metadata or create a new version with overwrite = TRUE.",
+        call. = FALSE)
+    }
+  } else if (allow_hierarchical_forecast) {
     forecast_approach <- hierarchy_detect(
       agent_info = list(
         project_info = project_info,
@@ -182,18 +246,6 @@ set_agent_info <- function(project_info,
     }
   } else {
     forecast_approach <- "bottoms_up"
-  }
-
-  # check if agent run already exists
-  raw_agent_runs_tbl <- load_agent_runs(project_info)
-
-  if (nrow(raw_agent_runs_tbl) > 0) {
-    # filter on latest run
-    agent_runs_tbl <- raw_agent_runs_tbl %>%
-      dplyr::arrange(dplyr::desc(created)) %>%
-      dplyr::slice(1)
-  } else {
-    agent_runs_tbl <- tibble::tibble()
   }
 
   if (nrow(agent_runs_tbl) > 0 & overwrite == FALSE) {
@@ -227,10 +279,14 @@ set_agent_info <- function(project_info,
         colnames(current_log_df)
       ))
 
-    # for older logs that do not yet have allow_hierarchical_forecast recorded,
-    # default to the current value for backward compatibility
+    # Hierarchical saved inputs prove expansion was enabled. Bottoms-up legacy
+    # logs cannot distinguish a disabled flag from a single-column policy.
     if (!"allow_hierarchical_forecast" %in% colnames(prev_log_raw)) {
-      prev_log_raw$allow_hierarchical_forecast <- allow_hierarchical_forecast
+      prev_log_raw$allow_hierarchical_forecast <- if (forecast_approach != "bottoms_up") {
+        TRUE
+      } else {
+        allow_hierarchical_forecast
+      }
     }
     prev_log_df <- align_types(
       current_log_df,
@@ -445,6 +501,9 @@ set_agent_info <- function(project_info,
 #' @param request_id A unique identifier for the agent run request
 #' @param agent_action A character string indicating the action: "iterate_forecast" or
 #' "update_forecast"
+#' @details Matching request IDs resume their exact saved run, not the latest
+#'   version. Saved settings are still validated and retry artifacts are not
+#'   rewritten. Missing run identities or duplicate request matches fail.
 #'
 #' @return A list containing the agent run information
 #' @noRd
@@ -514,14 +573,25 @@ set_agent_info_custom <- function(project_info,
 
   # use existing agent run info if request id matches
   if (nrow(agent_run_request_id_tbl) > 0) {
+    if (nrow(agent_run_request_id_tbl) != 1L) {
+      stop("Cannot resume request_id: multiple saved Agent runs match this request. Correct the run metadata.",
+        call. = FALSE)
+    }
+    requested_run <- agent_run_request_id_tbl$run_id
+    if (!is.character(requested_run) || length(requested_run) != 1L ||
+      is.na(requested_run) || !nzchar(requested_run)) {
+      stop("Cannot resume request_id: saved run_id is missing or invalid. Restore the original run metadata.",
+        call. = FALSE)
+    }
+    agent_args$resume_run_id <- requested_run
     if (agent_action == "iterate_forecast") {
       # use existing agent run info with overwrite = FALSE
       agent_args$overwrite <- FALSE
-      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
+      agent_info <- do.call("set_agent_info_impl", agent_args, quote = TRUE)
     } else if (agent_action == "update_forecast") {
       # use existing agent run info but set overwrite = TRUE manually
       agent_args$overwrite <- FALSE
-      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
+      agent_info <- do.call("set_agent_info_impl", agent_args, quote = TRUE)
       agent_info$overwrite <- TRUE
     }
 

@@ -7,6 +7,9 @@
 #' @param forecast_approach whether it's a bottoms up or hierarchical forecast
 #' @param frequency_number frequency of time series
 #'
+#' @details Level-mapped additive regressors count each observed source entity
+#'   once within each node's actual bottom-series membership. Original bottom
+#'   values are preserved. Invalid or ambiguous source grains fail before writes.
 #' @return data aggregated to the correct data hierarchies
 #' @noRd
 prep_hierarchical_data <- function(input_data,
@@ -108,84 +111,12 @@ prep_hierarchical_data <- function(input_data,
         hierarchical_tbl <- hierarchical_tbl %>%
           dplyr::left_join(temp_tbl, by = c("Date"))
       } else if (value_level != "All") {
-        # agg by lowest level
-        bottom_tbl <- input_data_adj %>%
-          tidyr::unite("Combo",
-            tidyselect::all_of(combo_variables),
-            sep = "_",
-            remove = F
-          ) %>%
-          dplyr::select(Date, Combo, tidyselect::all_of(regressor_var)) %>%
-          dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
-
-        bottom_combos <- unique(bottom_tbl$Combo)
-
-        hier_temp_tbl_1 <- hierarchical_tbl %>%
-          dplyr::select(Combo, Date) %>%
-          dplyr::filter(Combo %in% bottom_combos) %>%
-          dplyr::left_join(bottom_tbl, by = c("Combo", "Date"))
-
-        # agg by specific combo variable level
-        value_level <- strsplit(value_level, split = "---")[[1]]
-
-        hier_temp_tbl_2 <- foreach::foreach(
-          value_level_iter = value_level,
-          .combine = "rbind",
-          .errorhandling = "stop",
-          .verbose = FALSE,
-          .inorder = FALSE,
-          .multicombine = TRUE,
-          .noexport = NULL
-        ) %do% {
-          temp_tbl <- input_data_adj %>%
-            tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
-            dplyr::select(Date, tidyselect::all_of(value_level_iter), tidyselect::all_of(regressor_var)) %>%
-            dplyr::distinct() %>%
-            dplyr::group_by(dplyr::across(tidyselect::all_of(c("Date", value_level_iter)))) %>%
-            dplyr::summarise(Value = sum(.data[[regressor_var]], na.rm = TRUE), .groups = "drop")
-
-          names(temp_tbl)[names(temp_tbl) == "Value"] <- regressor_var
-
-          colnames(temp_tbl) <- c("Date", "Combo", regressor_var)
-
-          temp_tbl$Combo <- paste0(value_level_iter, "_", temp_tbl$Combo)
-
-          temp_tbl <- temp_tbl %>%
-            dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
-
-          temp_combos <- unique(temp_tbl$Combo)
-
-          hier_temp_tbl <- hierarchical_tbl %>%
-            dplyr::select(Combo, Date) %>%
-            dplyr::filter(Combo %in% temp_combos) %>%
-            dplyr::distinct() %>%
-            dplyr::left_join(temp_tbl, by = c("Combo", "Date"))
-
-          return(hier_temp_tbl)
-        }
-
-        # agg by total
-        total_tbl <- input_data_adj %>%
-          tidyr::drop_na(tidyselect::all_of(regressor_var)) %>%
-          dplyr::select(Date, value_level[[1]], tidyselect::all_of(regressor_var)) %>%
-          dplyr::distinct() %>%
-          dplyr::group_by(Date) %>%
-          dplyr::rename("Agg" = tidyselect::all_of(regressor_var)) %>%
-          dplyr::summarise(Agg = sum(Agg, na.rm = TRUE))
-
-        colnames(total_tbl)[colnames(total_tbl) == "Agg"] <- regressor_var
-
-        hier_temp_tbl_3 <- hierarchical_tbl %>%
-          dplyr::select(Combo, Date) %>%
-          dplyr::filter(Combo %in% setdiff(unique(hierarchical_tbl$Combo), c(unique(hier_temp_tbl_2$Combo), bottom_combos))) %>%
-          dplyr::left_join(total_tbl, by = c("Date"))
-
-        # combine together
-        hierarchical_tbl <- hierarchical_tbl %>%
-          dplyr::left_join(
-            rbind(hier_temp_tbl_1, hier_temp_tbl_2, hier_temp_tbl_3),
-            by = c("Combo", "Date")
-          )
+        temp_tbl <- aggregate_hierarchy_regressor(
+          input_data_adj, bottom_level_tbl, hts_nodes, forecast_approach,
+          frequency_number, value_level, regressor_var
+        )
+        hierarchical_tbl <- dplyr::left_join(hierarchical_tbl, temp_tbl,
+          by = c("Combo", "Date"))
       } else if (value_level == "All") {
         bottom_level_temp_tbl <- input_data_adj %>%
           dplyr::select(Combo, Date, tidyselect::all_of(regressor_var)) %>%
@@ -1039,12 +970,21 @@ reconcile_hierarchical_data <- function(run_info,
 #' @param combo_variables combo variables
 #' @param external_regressors external regressors
 #'
-#' @return data frame of regressor mappings
+#' @details A source grain must determine at most one nonmissing value per date
+#'   and reduce repetition relative to full bottom tuples. Try single columns,
+#'   then progressively wider tuples only when no narrower grain is valid.
+#'   Within that width, prefer the fewest grain/date/value tuples. Equally coarse
+#'   grains must identify the same partition; otherwise inference fails.
+#'   Search is limited to 1,024 candidates per regressor. A width is checked
+#'   completely or rejected before scanning, so exhaustion cannot hide ambiguity.
+#'   Missing values do not create conflicting observations. Full-bottom conflicts
+#'   and nonfinite values fail; valid bottom-specific drivers retain the All route.
+#' @return data frame of regressor mappings, without artifact I/O
 #' @noRd
 external_regressor_mapping <- function(data,
                                        combo_variables,
                                        external_regressors) {
-  # helper: count unique (vars x Date x regressor) tuples
+  # Count grain/date/value tuples, including missing values, for coarseness ranking.
   count_unique <- function(var_list, regressor) {
     data %>%
       dplyr::distinct(
@@ -1053,6 +993,14 @@ external_regressor_mapping <- function(data,
         )
       ) %>%
       nrow()
+  }
+
+  # Exhaustion is a hard input error, never an inferred All mapping or write.
+  stop_search_budget <- function(regressor) {
+    stop("External regressor '", regressor,
+      "' source-grain inference exceeds the 1,024-candidate search budget. ",
+      "Reduce redundant combo columns or prepare the driver at its known source grain; ",
+      "no bottom-level fallback was applied.", call. = FALSE)
   }
 
   # get final mapping of regressor to combo var level
@@ -1065,6 +1013,20 @@ external_regressor_mapping <- function(data,
     .multicombine = TRUE,
     .noexport = NULL
   ) %do% {
+    observed <- data %>%
+      dplyr::filter(!is.na(.data[[regressor]]))
+    if (any(is.nan(data[[regressor]])) || any(!is.finite(observed[[regressor]]))) {
+      stop("External regressor '", regressor, "' contains nonfinite values.", call. = FALSE)
+    }
+    full_values <- observed %>%
+      dplyr::distinct(dplyr::across(tidyselect::all_of(c(combo_variables, "Date", regressor))))
+    full_keys <- full_values %>%
+      dplyr::distinct(dplyr::across(tidyselect::all_of(c(combo_variables, "Date"))))
+    if (nrow(full_values) != nrow(full_keys)) {
+      stop("External regressor '", regressor,
+        "' has conflicting values for a bottom-series/date. Correct the input data.",
+        call. = FALSE)
+    }
     # check if regressor is global (same value per date across all combos)
     if (length(unique(data$Date)) == data %>%
       dplyr::select(Date, tidyselect::all_of(regressor)) %>%
@@ -1089,36 +1051,103 @@ external_regressor_mapping <- function(data,
       return(data.frame(Regressor = regressor, Var = "All"))
     }
 
-    single_var_tbl <- data.frame(
-      Var = multi_value_vars,
-      Unique = vapply(multi_value_vars, function(v) {
-        count_unique(v, regressor)
-      }, numeric(1)),
-      stringsAsFactors = FALSE
-    )
-
-    # find single vars that reduce unique count vs "All"
-    candidates <- single_var_tbl[single_var_tbl$Unique < all_unique, ]
-
-    if (nrow(candidates) > 0) {
-      # pick all single variables with the fewest unique values
-      min_val <- min(candidates$Unique)
-      best_vars <- candidates$Var[candidates$Unique == min_val]
-
-      if (length(best_vars) > 1) {
-        return(data.frame(
-          Regressor = regressor,
-          Var = paste0(best_vars, collapse = "---")
-        ))
+    grains <- lapply(multi_value_vars, function(variable) variable)
+    candidates_checked <- 0L
+    while (length(grains) > 0) {
+      if (length(grains) > 1024L - candidates_checked) {
+        stop_search_budget(regressor)
       }
-      return(data.frame(Regressor = regressor, Var = best_vars))
+      candidates_checked <- candidates_checked + length(grains)
+      counts <- vapply(grains, count_unique, numeric(1), regressor = regressor)
+      # Adding columns cannot restore repetition once a tuple is bottom-specific.
+      grains <- grains[counts < all_unique]
+      counts <- counts[counts < all_unique]
+      valid <- vapply(grains, function(grain) {
+        values <- observed %>%
+          dplyr::distinct(dplyr::across(tidyselect::all_of(c(grain, "Date", regressor))))
+        keys <- values %>%
+          dplyr::distinct(dplyr::across(tidyselect::all_of(c(grain, "Date"))))
+        nrow(values) == nrow(keys)
+      }, logical(1))
+      if (any(valid)) {
+        best_grains <- grains[valid & counts == min(counts[valid])]
+        first <- best_grains[[1]]
+        equivalent <- vapply(best_grains, function(grain) {
+          pairs <- dplyr::distinct(data[, unique(c(first, grain)), drop = FALSE])
+          nrow(pairs) == nrow(dplyr::distinct(pairs[, first, drop = FALSE])) &&
+            nrow(pairs) == nrow(dplyr::distinct(pairs[, grain, drop = FALSE]))
+        }, logical(1))
+        if (!all(equivalent)) {
+          stop("External regressor '", regressor, "' has ambiguous source levels: ",
+            paste(vapply(best_grains, paste, character(1), collapse = "---"), collapse = ", "),
+            ". Supply data with an unambiguous source grain.", call. = FALSE)
+        }
+        return(data.frame(Regressor = regressor, Var = paste(first, collapse = "---")))
+      }
+      next_grains <- list()
+      for (grain in grains) {
+        remaining <- multi_value_vars[seq_along(multi_value_vars) >
+          match(tail(grain, 1), multi_value_vars)]
+        for (variable in remaining) {
+          next_grains[[length(next_grains) + 1L]] <- c(grain, variable)
+          if (length(next_grains) > 1024L - candidates_checked) {
+            stop_search_budget(regressor)
+          }
+        }
+      }
+      grains <- next_grains
     }
 
-    # no single variable reduces unique count
+    # No valid source grain reduces repetition relative to bottom tuples.
     return(data.frame(Regressor = regressor, Var = "All"))
   }
 
   return(regressor_mapping_tbl)
+}
+
+# Aggregate an additive level driver through HTS bottom membership, counting each
+# source tuple once per node/date rather than distinct numeric values or all labels.
+# Preserve bottom observations and missing bottoms; aggregate missing-only dates
+# remain NA. source_level encodes column names with "---", not source values;
+# tuple identity is assigned by an exact join. Inputs use the exact column order
+# of bottom_level_tbl. No writes.
+aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
+                                          forecast_approach, frequency_number,
+                                          source_level, regressor) {
+  object <- get_hts(stats::ts(as.matrix(bottom_level_tbl[, -1, drop = FALSE]),
+    frequency = frequency_number), nodes, forecast_approach)
+  membership <- hts::smatrix(object)
+  node_names <- snakecase::to_any_case(colnames(hts::allts(object)), case = "none")
+  bottom_names <- colnames(bottom_level_tbl)[-1]
+  source_columns <- strsplit(source_level, "---", fixed = TRUE)[[1]]
+  source_keys <- dplyr::distinct(input_data[, source_columns, drop = FALSE])
+  source_id <- tail(make.unique(c(names(input_data), ".source_id")), 1)
+  source_keys[[source_id]] <- seq_len(nrow(source_keys))
+  source_data <- dplyr::left_join(
+    input_data[, unique(c("Combo", "Date", regressor, source_columns)), drop = FALSE],
+    source_keys, by = source_columns
+  )
+  bottom_labels <- dplyr::distinct(source_data[, c("Combo", source_id), drop = FALSE])
+  labels <- bottom_labels[[source_id]][match(bottom_names, bottom_labels$Combo)]
+  source_values <- source_data %>%
+    dplyr::filter(!is.na(.data[[regressor]])) %>%
+    dplyr::distinct(dplyr::across(tidyselect::all_of(c("Date", source_id, regressor))))
+  aggregate_count <- nrow(membership) - length(bottom_names)
+  aggregates <- lapply(seq_len(aggregate_count), function(i) {
+    source_labels <- unique(labels[membership[i, ] != 0])
+    values <- source_values %>%
+      dplyr::filter(.data[[source_id]] %in% source_labels) %>%
+      dplyr::group_by(Date) %>%
+      dplyr::summarise(Value = sum(.data[[regressor]]), .groups = "drop")
+    values <- dplyr::left_join(data.frame(Date = bottom_level_tbl$Date), values, by = "Date")
+    names(values)[2] <- regressor
+    values$Combo <- node_names[i]
+    values
+  })
+  bottoms <- input_data %>%
+    dplyr::select(Combo, Date, tidyselect::all_of(regressor))
+  bottoms$Combo <- node_names[aggregate_count + match(bottoms$Combo, bottom_names)]
+  dplyr::bind_rows(aggregates, bottoms)
 }
 
 #' Create hierarchical aggregations

@@ -3847,9 +3847,10 @@ iterate_forecast_system_prompt <- function(agent_info,
       6.  HIERARCHICAL RULES
           6-A.  IF run_count == 0 then set forecast_approach="bottoms_up"
           6-B.  IF run_count > 0 AND *Step A is complete*, choose only from: <<global_forecast_approaches>>.
-          6-C.  IF only "bottoms_up" is allowed, the input already contains prepared hierarchy levels or no hierarchy exists. ALWAYS set forecast_approach="bottoms_up".
+          6-C.  IF only "bottoms_up" is allowed, ALWAYS set forecast_approach="bottoms_up". This includes one retained series, the Agent single-column policy, and already prepared hierarchy-level ID input.
           6-D.  IF an exact hierarchical value is allowed, you may test it after bottoms_up. Finn reconciles that candidate to bottom-level series before weighted MAPE comparison.
           6-E.  You MUST NOT propose a forecast_approach that is not listed in the allowed values.
+          6-F.  A "none" hierarchy result does not remove a saved outer hierarchy. Prepared hierarchy-level ID input is reconciled by the outer workflow, not by an inner hierarchical proposal.
       7.  MISSING VALUES RULES
           7-A.  IF missing values are present AND run_count == 0 then set clean_missing_values="FALSE"
           7-B.  IF missing values are present AND run_count > 0 AND *Step B is complete* then set clean_missing_values="TRUE"
