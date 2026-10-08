@@ -35,6 +35,14 @@ paths:
 - Use `normalize_combo_values()` before validation, `Combo` construction, hierarchy processing, or artifact writes in both `set_agent_info()` and `prep_data()`. Trim character boundaries only; preserve internal spaces, missing values, and numeric identifiers. Fail before writing when normalization creates a blank value or duplicate combo/date. Do not trim generic `hash_data()` inputs.
 - Never send `Inf`, `-Inf`, or `NaN` in EDA summaries to an LLM. Represent absent outlier dates explicitly and omit unavailable regressor-lag rankings while preserving raw EDA artifacts.
 
+## Existing Project And Version Compatibility
+
+- Trace every behavior change through setup, repeated request IDs, same-version restarts, new-version `iterate_forecast()`, `update_forecast()`, and update-to-iteration fallback. Distinguish package-version upgrades from Agent forecast-version transitions and compare updates against the actual completed predecessor selected by the workflow.
+- Assess compatibility of saved settings, combo and hierarchy-node identities, membership, prepared inputs, cached EDA, history, selected models, and reconciliation. Cover unchanged, added, removed, and cleanup-reduced populations, approach transitions, incomplete predecessors, and partially completed current runs. Preserving cached EDA alone is insufficient when setup recomputes settings before checking saved metadata.
+- Preserve the saved execution contract of existing runs. Do not silently reclassify, rewrite, or reinterpret their artifacts or reuse predecessor fits across incompatible approaches. Identify whether a transition is supported, requires an explicitly approved migration, or must fail with actionable guidance to start fresh iteration; preserve existing compatibility guards.
+- Keep prompt templates, dynamically inserted EDA context, allowed forecast approaches, and executable validation consistent with changed behavior. Test generated prompt content as well as routing; an LLM instruction is not a substitute for a runtime guard. Distinguish bottom-level input from pre-expanded hierarchy-level `ID` input.
+- Add focused regression tests for affected resume and version-transition paths, including local/global winner reuse and supported storage and worker modes where relevant. Report the compatibility matrix, intentional behavior changes, and unvalidated paths before claiming backward compatibility. Follow the persisted-data approval gate in `AGENTS.md` for any changed saved values or outputs.
+
 ## Iteration Selection Policy
 
 - Average model accuracy is a critical search-direction signal, not redundant logging. The best individual model can stay unchanged while an input or setting change improves other models that may become the winners after further iterations.

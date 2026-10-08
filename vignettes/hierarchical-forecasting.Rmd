@@ -16,7 +16,91 @@ knitr::opts_chunk$set(
 
 The finnts package leverages the great work of the [hts](https://github.com/earowang/hts) package. It's currently retired but we think old dogs can still learn new tricks! It's still of great use to finnts and allows for both standard and grouped hierarchical forecasting.
 
+### Selecting a Hierarchy
+
+Use `detect_hierarchy()` before a non-agentic forecast to choose a structurally
+valid approach. A unique bottom-level ID alone does not prove nesting: intermediate
+labels can still occur under multiple parents. Detection checks every adjacent
+parent-child relationship in the same cardinality-based order used by the engine.
+
+```{r, eval = FALSE}
+decision <- finnts::detect_hierarchy(
+  input_data = data,
+  combo_variables = c("Region", "Country", "Site"),
+  target_variable = "Revenue",
+  combo_cleanup_date = as.Date("2025-08-01"),
+  hist_end_date = as.Date("2026-08-01")
+)
+decision$forecast_approach
+decision$conflicts
+# Pass decision$forecast_approach as forecast_approach to prep_data(),
+# using the same input data and cleanup settings.
+```
+
+The function returns diagnostics in memory and does not save files or change
+the caller's input. Without a cleanup date it considers all supplied tuples;
+with a cleanup date it uses the existing target-sum cleanup policy and excludes
+future targets from activity. One retained series selects `bottoms_up`, and no
+retained series produces an error. Character-like labels are trimmed consistently
+with preprocessing; invalid labels and ambiguous combo identities fail explicitly.
+Collect Spark data frames before detection.
+
+Detection describes observed data, not unobserved business relationships.
+Inspect `hierarchy_order` and `conflicts` when validating the result. Existing
+explicit `prep_data()` settings are not overridden. Agent setup and EDA share
+the structural analysis, with an intentional single-column bottoms-up policy.
+Adopting
+a different approach changes the prepared aggregates and hierarchy metadata;
+use a new run rather than reusing artifacts from a different hierarchy.
+
+New Agent versions with only one retained series use `bottoms_up`, even with
+multiple combo columns. EDA reports `none`, and global reasoning allows only
+bottoms-up for this scope. Pre-expanded hierarchy-level `ID` inputs also use
+bottoms-up internally, but retain their configured outer reconciliation.
+
+Resuming an existing Agent version preserves its saved forecast approach and
+previously uploaded inputs; a package upgrade does not reclassify that version.
+API request-ID retries select the version belonging to that request, even if a
+newer request has since created another version.
+Logged settings such as dates, horizon, regressors, and forecast flags must still
+match. Supplied replacement data values are not uploaded on a resume; create a
+new version to use changed history, drivers, or series. Missing required saved
+artifacts remain errors rather than triggering a hierarchy migration.
+Legacy bottoms-up run logs without `allow_hierarchical_forecast` cannot reveal
+whether expansion was disabled or the single-column policy selected bottoms-up;
+these retain the existing flag-comparison fallback. A saved hierarchical
+approach proves expansion was enabled. No new log columns are added.
+
+A new version uses current detection on its cleaned population. If its outer
+approach differs from the latest completed predecessor (for example, standard
+to grouped, or hierarchical to single-series bottoms-up), `update_forecast()`
+rejects reuse and directs the user to `iterate_forecast()`. The
+`allow_iterate_forecast` performance fallback does not bypass this compatibility
+check. Existing predecessor artifacts are not rewritten.
+
 ### Standard Hierarchy
+
+Hierarchical external regressors retain the existing additive convention.
+A level-mapped driver must have at most one nonmissing value for each source
+tuple and date. Inference first checks single columns, then progressively wider
+tuples only if no narrower grain is valid. At the first valid width, it selects
+the grain with the fewest distinct grain/date/value tuples; equally coarse
+candidates must identify equivalent source partitions.
+Inference checks at most 1,024 candidate grains per driver. Each candidate-width
+batch is evaluated completely or rejected before scanning. If the search budget
+is exhausted, preparation fails before hierarchy artifacts are written; it does
+not silently fall back to bottom-level summation. Reduce redundant combo columns
+or prepare the driver at its known source grain before retrying.
+Aggregates count each source tuple once within the node's actual
+bottom-series membership, including separate tuples with equal numeric values.
+Original bottom observations are preserved; missing-only level aggregates stay
+missing. Date-global drivers are copied, while full-bottom drivers retain the
+existing bottom-level summation and missing-value handling. Equally coarse
+candidate levels must describe the same partition or preparation fails with an
+ambiguity error. Observed equality cannot establish business meaning: validate
+the source grain and additive assumption before preparing a production forecast.
+These corrections can change newly prepared driver values. Use a new run or
+Agent version; existing saved inputs and fitted models are not migrated.
 
 A standard hierarchy of data is pretty straight forward. Each combo variable can be aggregated into the next combo variable when producing forecasts at higher aggregations of the data. This structure resembles a pyramid, with the bottom being the lowest granularity of time series and the top being a single time series of the grand total of the data. Below is a good example with geographical combo variables that can be aggregated into one another when building a standard hierarchy forecast.
 
@@ -73,7 +157,9 @@ It would be hard to aggregate the above data in a traditional hierarchy. The sam
 
 The aggregation process is automatically calculated for each external regressor, depending on how the regressor maps to the combo variables. If a regressor is unique for each time series, then the standard aggregation process is implemented (same as the process for the target variable). If the regressor repeats the same values across all time series, then only one global copy is retained and applied to all new aggregated time series. If the regressor specifically maps to one or more combo variables, then the relationship is respected while still being able to aggregate to the total level. Aggregations of drivers are always summed. 
 
-The only limitation is when an external regressor maps to the middle of a standard hierarchy (not at the global level or bottom level), in this case the regressor will be summed at the global level across the hierarchy. This is due to limitations of aggregation naming in the hts package used in finnts.
+Intermediate standard-hierarchy nodes use their actual bottom-series membership,
+even when `hts` assigns synthetic node names. Each node sums only its own source
+entities, rather than inheriting a grand-total driver value.
 
 Explore the final results of the aggregations by seeing the end result using `get_prepped_data()`.
 
