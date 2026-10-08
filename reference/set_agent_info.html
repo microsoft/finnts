@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9010</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9011</span>
       </span>
     </div>
 
@@ -143,7 +143,9 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <dt id="arg-input-data">input_data<a class="anchor" aria-label="anchor" href="#arg-input-data"></a></dt>
 <dd><p>A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed
-before Finn creates internal series identifiers and writes input artifacts.</p></dd>
+before Finn creates internal series identifiers and writes input artifacts.
+Resuming a version uses previously uploaded inputs, not replacement values
+from this data frame. Create a new version to use revised data.</p></dd>
 
 
 <dt id="arg-forecast-horizon">forecast_horizon<a class="anchor" aria-label="anchor" href="#arg-forecast-horizon"></a></dt>
@@ -205,6 +207,14 @@ local models. Default is TRUE.</p></dd>
     <div id="value">
     <h2>Value</h2>
     <p>A list containing the agent run information</p>
+    </div>
+    <div id="details">
+    <h2>Details</h2>
+    <p>With <code>overwrite = FALSE</code>, an existing version retains its saved
+forecast approach even if hierarchy detection changes after a package upgrade.
+Logged user settings must still match. New versions use current detection;
+one retained series or one combo column uses bottoms-up. Updating a new
+version across an outer forecast-approach change requires fresh iteration.</p>
     </div>
 
     <div id="ref-examples">

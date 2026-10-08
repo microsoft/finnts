@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9010</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9011</span>
       </span>
     </div>
 
@@ -134,8 +134,96 @@ retired but we think old dogs can still learn new tricks! It’s still of
 great use to finnts and allows for both standard and grouped
 hierarchical forecasting.</p>
 <div class="section level3">
+<h3 id="selecting-a-hierarchy">Selecting a Hierarchy<a class="anchor" aria-label="anchor" href="#selecting-a-hierarchy"></a>
+</h3>
+<p>Use <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> before a non-agentic forecast to
+choose a structurally valid approach. A unique bottom-level ID alone
+does not prove nesting: intermediate labels can still occur under
+multiple parents. Detection checks every adjacent parent-child
+relationship in the same cardinality-based order used by the engine.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">decision</span> <span class="op">&lt;-</span> <span class="fu">finnts</span><span class="fu">::</span><span class="fu"><a href="../reference/detect_hierarchy.html">detect_hierarchy</a></span><span class="op">(</span></span>
+<span>  input_data <span class="op">=</span> <span class="va">data</span>,</span>
+<span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Region"</span>, <span class="st">"Country"</span>, <span class="st">"Site"</span><span class="op">)</span>,</span>
+<span>  target_variable <span class="op">=</span> <span class="st">"Revenue"</span>,</span>
+<span>  combo_cleanup_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2025-08-01"</span><span class="op">)</span>,</span>
+<span>  hist_end_date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2026-08-01"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">decision</span><span class="op">$</span><span class="va">forecast_approach</span></span>
+<span><span class="va">decision</span><span class="op">$</span><span class="va">conflicts</span></span>
+<span><span class="co"># Pass decision$forecast_approach as forecast_approach to prep_data(),</span></span>
+<span><span class="co"># using the same input data and cleanup settings.</span></span></code></pre></div>
+<p>The function returns diagnostics in memory and does not save files or
+change the caller’s input. Without a cleanup date it considers all
+supplied tuples; with a cleanup date it uses the existing target-sum
+cleanup policy and excludes future targets from activity. One retained
+series selects <code>bottoms_up</code>, and no retained series produces
+an error. Character-like labels are trimmed consistently with
+preprocessing; invalid labels and ambiguous combo identities fail
+explicitly. Collect Spark data frames before detection.</p>
+<p>Detection describes observed data, not unobserved business
+relationships. Inspect <code>hierarchy_order</code> and
+<code>conflicts</code> when validating the result. Existing explicit
+<code><a href="../reference/prep_data.html">prep_data()</a></code> settings are not overridden. Agent setup and
+EDA share the structural analysis, with an intentional single-column
+bottoms-up policy. Adopting a different approach changes the prepared
+aggregates and hierarchy metadata; use a new run rather than reusing
+artifacts from a different hierarchy.</p>
+<p>New Agent versions with only one retained series use
+<code>bottoms_up</code>, even with multiple combo columns. EDA reports
+<code>none</code>, and global reasoning allows only bottoms-up for this
+scope. Pre-expanded hierarchy-level <code>ID</code> inputs also use
+bottoms-up internally, but retain their configured outer
+reconciliation.</p>
+<p>Resuming an existing Agent version preserves its saved forecast
+approach and previously uploaded inputs; a package upgrade does not
+reclassify that version. API request-ID retries select the version
+belonging to that request, even if a newer request has since created
+another version. Logged settings such as dates, horizon, regressors, and
+forecast flags must still match. Supplied replacement data values are
+not uploaded on a resume; create a new version to use changed history,
+drivers, or series. Missing required saved artifacts remain errors
+rather than triggering a hierarchy migration. Legacy bottoms-up run logs
+without <code>allow_hierarchical_forecast</code> cannot reveal whether
+expansion was disabled or the single-column policy selected bottoms-up;
+these retain the existing flag-comparison fallback. A saved hierarchical
+approach proves expansion was enabled. No new log columns are added.</p>
+<p>A new version uses current detection on its cleaned population. If
+its outer approach differs from the latest completed predecessor (for
+example, standard to grouped, or hierarchical to single-series
+bottoms-up), <code><a href="../reference/update_forecast.html">update_forecast()</a></code> rejects reuse and directs
+the user to <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>. The
+<code>allow_iterate_forecast</code> performance fallback does not bypass
+this compatibility check. Existing predecessor artifacts are not
+rewritten.</p>
+</div>
+<div class="section level3">
 <h3 id="standard-hierarchy">Standard Hierarchy<a class="anchor" aria-label="anchor" href="#standard-hierarchy"></a>
 </h3>
+<p>Hierarchical external regressors retain the existing additive
+convention. A level-mapped driver must have at most one nonmissing value
+for each source tuple and date. Inference first checks single columns,
+then progressively wider tuples only if no narrower grain is valid. At
+the first valid width, it selects the grain with the fewest distinct
+grain/date/value tuples; equally coarse candidates must identify
+equivalent source partitions. Inference checks at most 1,024 candidate
+grains per driver. Each candidate-width batch is evaluated completely or
+rejected before scanning. If the search budget is exhausted, preparation
+fails before hierarchy artifacts are written; it does not silently fall
+back to bottom-level summation. Reduce redundant combo columns or
+prepare the driver at its known source grain before retrying. Aggregates
+count each source tuple once within the node’s actual bottom-series
+membership, including separate tuples with equal numeric values.
+Original bottom observations are preserved; missing-only level
+aggregates stay missing. Date-global drivers are copied, while
+full-bottom drivers retain the existing bottom-level summation and
+missing-value handling. Equally coarse candidate levels must describe
+the same partition or preparation fails with an ambiguity error.
+Observed equality cannot establish business meaning: validate the source
+grain and additive assumption before preparing a production forecast.
+These corrections can change newly prepared driver values. Use a new run
+or Agent version; existing saved inputs and fitted models are not
+migrated.</p>
 <p>A standard hierarchy of data is pretty straight forward. Each combo
 variable can be aggregated into the next combo variable when producing
 forecasts at higher aggregations of the data. This structure resembles a
@@ -234,11 +322,10 @@ aggregated time series. If the regressor specifically maps to one or
 more combo variables, then the relationship is respected while still
 being able to aggregate to the total level. Aggregations of drivers are
 always summed.</p>
-<p>The only limitation is when an external regressor maps to the middle
-of a standard hierarchy (not at the global level or bottom level), in
-this case the regressor will be summed at the global level across the
-hierarchy. This is due to limitations of aggregation naming in the hts
-package used in finnts.</p>
+<p>Intermediate standard-hierarchy nodes use their actual bottom-series
+membership, even when <code>hts</code> assigns synthetic node names.
+Each node sums only its own source entities, rather than inheriting a
+grand-total driver value.</p>
 <p>Explore the final results of the aggregations by seeing the end
 result using <code><a href="../reference/get_prepped_data.html">get_prepped_data()</a></code>.</p>
 </div>
