@@ -19,6 +19,7 @@ reference:
     contents:
       - starts_with("set_project_info")
       - starts_with("set_agent_info")
+      - starts_with("chat_copilot")
       - starts_with("iterate_forecast")
       - starts_with("update_forecast")
       - starts_with("ask_agent")

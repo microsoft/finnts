@@ -5,7 +5,8 @@
 #'  It checks for existing runs and allows for overwriting if specified.
 #'
 #' @param project_info A Finn project from `set_project_info()`
-#' @param llm A Chat LLM object used as the template for isolated agent sessions
+#' @param llm An ellmer Chat or [chat_copilot()] object used as the template
+#'   for isolated agent sessions.
 #' @param input_data A data frame or tibble containing the input data. Leading
 #'   and trailing whitespace in character combo-variable values is removed
 #'   before Finn creates internal series identifiers and writes input artifacts.
@@ -117,7 +118,7 @@ set_agent_info_impl <- function(project_info,
 
   # check inputs
   check_input_type("project_info", project_info, "list")
-  check_input_type("llm", llm, "Chat")
+  check_agent_llm(llm)
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame"))
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
@@ -481,7 +482,8 @@ set_agent_info_impl <- function(project_info,
 #' you may need to rerun forecasts multiple times with the same or updated parameters.
 #'
 #' @param project_info A Finn project from `set_project_info()`
-#' @param llm A Chat LLM object used as the template for isolated agent sessions
+#' @param llm An ellmer Chat or [chat_copilot()] object used as the template
+#'   for isolated agent sessions.
 #' @param input_data A data frame or tibble containing the input data
 #' @param forecast_horizon The number of periods to forecast
 #' @param external_regressors Optional character vector of external regressors

@@ -25,7 +25,8 @@ set_agent_info(
 \arguments{
 \item{project_info}{A Finn project from \code{set_project_info()}}
 
-\item{llm}{A Chat LLM object used as the template for isolated agent sessions}
+\item{llm}{An ellmer Chat or \code{\link[=chat_copilot]{chat_copilot()}} object used as the template
+for isolated agent sessions.}
 
 \item{input_data}{A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed

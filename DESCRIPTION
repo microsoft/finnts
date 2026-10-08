@@ -80,6 +80,7 @@ Suggests:
     Microsoft365R,
     nixtlar,
     notebookutils, 
+    processx (>= 3.9.0),
     qs2,
     ranger,
     reactable,

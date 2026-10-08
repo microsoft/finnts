@@ -53,8 +53,10 @@ Use these helpers to retrieve outputs:
 ## Prerequisites
 
 - Package: `finnts`  
-- LLM driver: the agent uses an **ellmer** Chat object for tool calling.
-  - Example here shows Azure OpenAI, but any ellmer Chat backend works.
+- LLM driver: an **ellmer** Chat object or `chat_copilot()` configuration.
+  - The main example uses Azure OpenAI; any ellmer Chat backend works.
+  - GitHub Copilot CLI is an optional alternative described below. Finn
+    executes workflow tools; the CLI is used only to generate responses.
 
 Set up environment variables for Azure OpenAI (example):
 
@@ -122,11 +124,76 @@ hist_data <- timetk::m4_monthly %>%
 
 ### 3) Define the LLM
 
-`llm` is an ellmer Chat that Finn uses as a configuration template. Finn never mutates this template. It creates an isolated, empty-history session for each forecast series and each `ask_agent()` request, so one modern model can perform both forecast input selection and results analysis without conversation history leaking between workflows.
+`llm` is an ellmer Chat or `chat_copilot()` object that Finn uses as a configuration template. Finn never mutates this template. It creates an isolated, empty-history session for each forecast series and each `ask_agent()` request, so one modern model can perform both forecast input selection and results analysis without conversation history leaking between workflows.
 
 ```{r eval=FALSE}
 llm <- ellmer::chat_azure_openai(model = "gpt-4o-mini")
 ```
+
+#### Alternative: GitHub Copilot CLI
+
+Install GitHub Copilot CLI **1.0.93 or later** from its
+[official distribution](https://github.com/github/copilot-cli). On Windows,
+use the standalone `copilot.exe` (for example, installed through WinGet),
+not an npm `.cmd` shim. Install the optional R dependency if needed:
+
+```{r eval=FALSE}
+install.packages("processx")
+llm <- chat_copilot(timeout = 120) # defaults to Copilot's auto model routing
+# Or pin a model:
+# llm <- chat_copilot(model = "gpt-5.4")
+# Or supply a standalone executable path:
+# llm <- chat_copilot(model = "gpt-5.4", command = "<path-to-copilot-executable>")
+```
+
+The default `model = "auto"` lets Copilot choose a model for each request;
+the selected model may change between turns. To pin a model, choose one
+available to your Copilot account. The account must have a
+Copilot subscription and any required organization policy enabled.
+Authenticate using `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`
+(in that order), or run `gh auth login` before starting R. Finn privately
+retrieves the existing GitHub CLI token when no environment token is present.
+It never saves a token in the LLM template. A cached Copilot-only login is not
+copied into the isolated CLI home. Do not put tokens in scripts, shared files,
+or the `command` argument.
+
+Pass this `llm` to the same `set_agent_info()` call below. Ellmer is not
+required for a Copilot-backed Agent workflow.
+
+**Data handling:** every response request starts a new CLI process in an
+isolated home and working directory under R's `tempdir()`. Copilot can save
+configuration, full prompt/response transcripts, and a session database there.
+Finn does not delete these local files;
+normal R/OS temporary-directory cleanup applies. Use only data approved for
+GitHub Copilot, and apply your organization's local retention requirements.
+The CLI still contacts GitHub Copilot and consumes your account's model quota.
+No transcript sharing, gist publication, or remote session export is enabled.
+
+Finn disables model tools, built-in MCP servers, repository instructions,
+hooks, IDE connections, cross-session memory, and inherited custom-provider
+overrides. Finn, not the CLI, continues to execute and validate its existing
+workflow. System instructions and prior turns are replayed as text in a JSON
+conversation envelope through stdin; this is not a native system-role API.
+Long workflows therefore resend growing history and may hit model context
+limits. CLI JSONL is a transport envelope, not a guarantee of valid forecast
+proposal JSON; Finn's existing proposal validation and retries still apply.
+Within one time-series workflow, successful user/assistant turns remain in
+memory across forecast iterations and proposal retries. Other series get
+independent sessions. A new or restarted workflow starts fresh; CLI-local
+transcripts are not used to restore the conversation.
+
+Missing executables, unsupported CLI versions, authentication failures,
+timeouts, and invalid transport responses are explicit errors. There is no
+automatic provider fallback. Start with sequential execution; for parallel
+runs, every worker needs a compatible CLI, processx 3.9.0 or later, and its own
+available environment or GitHub CLI credentials. A driver-local executable
+path or login may not exist on Spark workers.
+
+The live Copilot integration test is local-only and disabled by default.
+To run it locally, set `FINNTS_TEST_COPILOT_LIVE=true` before running
+`devtools::test(filter = "agent-copilot")`. It always skips on CRAN and in
+CI, including GitHub Actions, regardless of credentials or opt-in.
+Offline adapter tests still run without contacting Copilot.
 
 ### 4) Create the agent run
 
@@ -354,7 +421,14 @@ If you pass `external_regressors = c("Price","Promo", ...)`:
 - `inner_parallel = TRUE` parallelizes work **inside** a combo (useful when outer parallelism is `NULL` or `"spark"`).  
 - `num_cores = NULL` defaults to *all cores minus one*.
 
-Every time-series combo receives independent driver and reasoning Chat objects with empty conversation history, whether execution is sequential or parallel. Parallel runs require ellmer 0.4.0 or later on the driver and every worker; Finn serializes the configured Chats through `foreach` before creating the per-combo deep clones.
+Every time-series combo receives an independent LLM session with empty
+conversation history, whether execution is sequential or parallel. Finn
+serializes the template through `foreach` before creating the per-combo
+session. Ellmer workflows require ellmer 0.4.0 or later on the driver and every
+worker and use public deep clones. Copilot workflows recreate their
+configuration on workers and require the CLI, processx, and authentication
+there. CLI startup and quota costs apply to each request; do not assume
+forecast CPU parallelism is also an appropriate Copilot request concurrency.
 
 ---
 
