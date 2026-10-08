@@ -1,3 +1,5 @@
+# Require the public ellmer cloning API for ellmer-backed sessions only.
+# Returns invisibly; missing/older optional ellmer installations are errors.
 check_agent_ellmer_version <- function() {
   if (!requireNamespace("ellmer", quietly = TRUE) ||
     utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
@@ -10,14 +12,14 @@ check_agent_ellmer_version <- function() {
   invisible(NULL)
 }
 
+# Create a clean workflow-local session from an immutable provider template.
+# Copilot configuration is recreated in workers; ellmer uses public deep cloning.
 new_llm_session <- function(llm) {
-  if (!requireNamespace("ellmer", quietly = TRUE) ||
-    utils::compareVersion(as.character(utils::packageVersion("ellmer")), "0.4.0") < 0) {
-    stop(
-      "Agent workflows require the 'ellmer' package version 0.4.0 or later. Install or upgrade it with install.packages(\"ellmer\").",
-      call. = FALSE
-    )
+  if (inherits(llm, "finnts_copilot_chat")) {
+    check_copilot_runtime(llm$command, llm$timeout)
+    return(new_copilot_chat(llm$model, llm$command, llm$timeout))
   }
+  check_agent_ellmer_version()
 
   session <- llm$clone(deep = TRUE)
   session$set_system_prompt(NULL)
@@ -138,8 +140,9 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   forecasts each individual time series one after another. 'local_machine'
 #'   leverages all cores on current machine Finn is running on. 'spark'
 #'   runs time series in parallel on a spark cluster in Azure Databricks or
-#'   Azure Synapse. Parallel agent workflows require ellmer 0.4.0 or later on
-#'   the main process and every worker.
+#'   Azure Synapse. Ellmer-backed workflows require ellmer 0.4.0 or later on
+#'   the main process and every worker. Copilot-backed workflows require
+#'   the CLI, processx, and authentication on each worker; see [chat_copilot()].
 #' @param inner_parallel Run components of forecast process inside a specific
 #'   time series in parallel. Can only be used if parallel_processing is
 #'   set to NULL or 'spark'.
@@ -203,7 +206,11 @@ iterate_forecast <- function(agent_info,
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   if (!is.null(parallel_processing)) {
-    check_agent_ellmer_version()
+    if (inherits(agent_info$llm, "finnts_copilot_chat")) {
+      check_copilot_runtime(agent_info$llm$command, agent_info$llm$timeout)
+    } else {
+      check_agent_ellmer_version()
+    }
   }
 
   # get project info
@@ -1904,7 +1911,7 @@ reason_inputs <- function(agent_info,
   )
 
   # send prompt to LLM
-  response <- llm$chat(final_prompt, echo = FALSE)
+  response <- agent_chat_text(llm$chat(final_prompt, echo = FALSE))
 
   # extract out json from response and convert to list
   input_list <- tryCatch(

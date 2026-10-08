@@ -10,6 +10,7 @@ paths:
 - Preserve every existing `testthat::skip_on_cran()` marker, including deterministic, integration, performance, and credential-security tests. Do not remove one solely because a test was optimized or does not use a network connection.
 - Live tests must skip on CRAN before checking credentials or invoking a provider. Credentials must never override CRAN skipping.
 - Non-CRAN runs automatically execute every live Agent, Chronos, TimeGPT/Nixtla, and TimesFM test whose provider credentials are available. Do not add separate opt-in flags.
+- Exception: live GitHub Copilot CLI tests are local-only and require `FINNTS_TEST_COPILOT_LIVE=true`. Always skip them on CRAN and in CI (including GitHub Actions), even with credentials and the opt-in flag present. Offline Copilot adapter tests remain enabled.
 - The R CMD check matrix supplies configured Agent, Nixtla, and Chronos credentials. Other provider tests run when their credentials are present; fork pull requests skip live tests because repository secrets are unavailable.
 - Simulate CRAN skips with `R -q -e 'withr::with_envvar(c(NOT_CRAN = "false"), devtools::test())'`.
 - Use `FINNTS_TEST_TIME_LIMIT_SECONDS` for a full-suite limit and `FINNTS_TEST_FILE_TIME_LIMIT_SECONDS` for a per-file limit. Keep the CRAN profile below ten minutes and use 90 seconds as the per-file budget for the restored `fit_resamples()` path.

@@ -32,7 +32,7 @@ run_graph <- function(chat,
           "Reply ONLY with the chosen node name."
         )
       )
-      ctx$node <- trimws(decision$content)
+      ctx$node <- trimws(agent_chat_text(decision))
       next
     }
 
@@ -281,7 +281,7 @@ execute_node <- function(node, ctx, chat) {
       '{ "tool": "tool_name", "arguments": { "arg1": ..., "arg2": ... } }'
     )
 
-    raw_response <- chat$chat(prompt, echo = FALSE)
+    raw_response <- agent_chat_text(chat$chat(prompt, echo = FALSE))
     clean_json <- gsub("(?s)```.*?\\n|\\n```", "", raw_response, perl = TRUE)
     tool_call <- try(jsonlite::fromJSON(clean_json), silent = TRUE)
 

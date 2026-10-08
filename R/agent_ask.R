@@ -495,14 +495,7 @@ Q: Which segments were the most challenging to forecast and why?
 Return ONLY the JSON array."
   )
 
-  response <- llm$chat(planning_prompt, echo = FALSE)
-
-  # Extract JSON from response
-  if (inherits(response, "list") && !is.null(response$content)) {
-    plan_text <- response$content
-  } else {
-    plan_text <- as.character(response)
-  }
+  plan_text <- agent_chat_text(llm$chat(planning_prompt, echo = FALSE))
 
   # Parse JSON - look for content between BEGIN_JSON_SCHEMA and END_JSON_SCHEMA markers or clean up
   plan_text <- gsub("BEGIN_JSON_SCHEMA.*?END_JSON_SCHEMA", "", plan_text, perl = TRUE)
@@ -675,14 +668,7 @@ importance %>%
   ))"
   )
 
-  code_response <- llm$chat(code_prompt, echo = FALSE)
-
-  # Extract raw code
-  r_code <- if (inherits(code_response, "list") && !is.null(code_response$content)) {
-    code_response$content
-  } else {
-    as.character(code_response)
-  }
+  r_code <- agent_chat_text(llm$chat(code_prompt, echo = FALSE))
 
   # Clean up code
   r_code <- gsub("```r|```R|```", "", r_code)
@@ -889,15 +875,8 @@ Return plain text with simple lists only."
   )
 
   cli::cli_progress_step("Generating answer...")
-  response <- llm$chat(answer_prompt, echo = FALSE)
+  answer_text <- agent_chat_text(llm$chat(answer_prompt, echo = FALSE))
   cli::cli_progress_done()
-
-  # Extract answer text
-  if (inherits(response, "list") && !is.null(response$content)) {
-    answer_text <- response$content
-  } else {
-    answer_text <- as.character(response)
-  }
 
   return(answer_text)
 }

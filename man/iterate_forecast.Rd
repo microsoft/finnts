@@ -25,8 +25,9 @@ iterate_forecast(
 forecasts each individual time series one after another. 'local_machine'
 leverages all cores on current machine Finn is running on. 'spark'
 runs time series in parallel on a spark cluster in Azure Databricks or
-Azure Synapse. Parallel agent workflows require ellmer 0.4.0 or later on
-the main process and every worker.}
+Azure Synapse. Ellmer-backed workflows require ellmer 0.4.0 or later on
+the main process and every worker. Copilot-backed workflows require
+the CLI, processx, and authentication on each worker; see \code{\link[=chat_copilot]{chat_copilot()}}.}
 
 \item{inner_parallel}{Run components of forecast process inside a specific
 time series in parallel. Can only be used if parallel_processing is
