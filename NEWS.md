@@ -2,7 +2,9 @@
 
 ## Improvements
 
-- Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows, defaulting to automatic model selection, with isolated conversations and tool-disabled requests. Copilot saves CLI-local session state under R's temporary directory.
+- Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
+  - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
+  - Copilot saves CLI-local session state under R's temporary directory.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 
 ## Bug Fixes
