@@ -7,6 +7,7 @@
 
 ## Bug Fixes
 
+- Hierarchical external-regressor mapping requires one observed value per source grain/date instead of relying on distinct-count reduction, including validated composite grains when single columns are insufficient. Additive level drivers are summed once per source entity within each node's actual membership; conflicting bottom values and ambiguous source grains fail explicitly. Standard intermediate nodes no longer inherit grand-total driver values. Newly prepared regressor values may change; existing saved runs are not migrated.
 - New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction. EDA and iteration prompts reflect the input scope.
   - Existing-version resumes preserve the saved forecast approach and uploaded inputs while still rejecting changed logged settings. New versions use current detection; updates across outer-approach changes still require fresh iteration.
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
