@@ -28,8 +28,10 @@ Ellmer-backed parallel runs require ellmer 0.4.0 or later in the main process an
 
 Copilot-backed workflows recreate configuration rather than cloning an ellmer
 Chat. Each worker needs GitHub Copilot CLI 1.0.93 or later, processx 3.9.0 or
-later, and available environment-token or GitHub CLI authentication. Credentials
-are resolved on the worker and never serialized in the template. Copilot starts
+later, and available environment-token or GitHub CLI authentication.
+CLI version and option checks are cached in memory per process and executable;
+each worker checks independently, and executable changes trigger revalidation.
+Credentials are resolved on the worker and never serialized in the template. Copilot starts
 a tool-disabled process per request, replays that series' history through
 stdin, and saves CLI-local state under the worker's R temporary directory.
 Consider request quotas and CLI startup costs when choosing concurrency; a

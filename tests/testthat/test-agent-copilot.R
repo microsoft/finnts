@@ -306,6 +306,87 @@ test_that("runtime preflight rejects old or incompatible CLI versions", {
   expect_error(check_copilot_runtime("copilot", 10), "lacks required options")
 })
 
+test_that("preflight caches successes by executable and process, not failures", {
+  skip_if_not_installed("processx", minimum_version = "3.9.0")
+  executable <- tempfile()
+  writeLines("first executable", executable)
+  cache <- new.env(parent = emptyenv())
+  local_mocked_bindings(
+    copilot_runtime_cache = cache,
+    resolve_copilot_command = function(command) command
+  )
+  calls <- 0L
+  status <- 0L
+  help <- paste(sub("=.*$", "", copilot_cli_args("model")), collapse = "\n")
+  local_mocked_bindings(
+    run = function(command, args, ...) {
+      calls <<- calls + 1L
+      list(status = status, stdout = if ("--version" %in% args) "1.0.93" else help)
+    },
+    .package = "processx"
+  )
+  template <- chat_copilot(command = executable)
+  expect_identical(calls, 2L)
+  new_llm_session(template)
+  new_llm_session(template)
+  expect_identical(calls, 2L)
+
+  writeLines("changed executable with a different size", executable)
+  check_copilot_runtime(executable, 10)
+  expect_identical(calls, 4L)
+  other <- tempfile()
+  writeLines("other executable", other)
+  check_copilot_runtime(other, 10)
+  expect_identical(calls, 6L)
+
+  writeLines("another executable change", executable)
+  status <- 1L
+  expect_error(check_copilot_runtime(executable, 10), "inspection failed")
+  expect_error(check_copilot_runtime(executable, 10), "inspection failed")
+  expect_identical(calls, 8L)
+  status <- 0L
+  check_copilot_runtime(executable, 10)
+  expect_identical(calls, 10L)
+
+  cluster <- parallel::makePSOCKcluster(1)
+  on.exit(parallel::stopCluster(cluster), add = TRUE)
+  # Serialize the parent's successful cache deliberately: worker PID must
+  # prevent reuse, while later series in that worker reuse its own inspection.
+  results <- parallel::clusterCall(
+    cluster,
+    function(check, cache, executable, cli_args, abort) {
+      calls <- 0L
+      testthat::local_mocked_bindings(
+        run = function(command, args, ...) {
+          calls <<- calls + 1L
+          list(
+            status = 0L,
+            stdout = if ("--version" %in% args) "1.0.93" else
+              paste(sub("=.*$", "", cli_args("model")), collapse = "\n")
+          )
+        },
+        .package = "processx"
+      )
+      environment(check) <- list2env(
+        list(
+          copilot_runtime_cache = cache,
+          resolve_copilot_command = function(command) command,
+          copilot_cli_args = cli_args,
+          abort_copilot_transport = abort
+        ),
+        parent = environment(check)
+      )
+      check(executable, 10)
+      first <- calls
+      check(executable, 10)
+      c(first = first, second = calls)
+    },
+    check = check_copilot_runtime, cache = cache, executable = executable,
+    cli_args = copilot_cli_args, abort = abort_copilot_transport
+  )
+  expect_identical(results[[1]], c(first = 2L, second = 2L))
+})
+
 test_that("gh authentication fallback is private and host-aware", {
   skip_if_not_installed("processx", minimum_version = "3.9.0")
   skip_if(!nzchar(Sys.which("gh")), "GitHub CLI not installed")

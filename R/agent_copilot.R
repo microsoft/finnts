@@ -126,8 +126,13 @@ resolve_copilot_command <- function(command) {
   resolved
 }
 
-# Verify optional dependencies, CLI version and required flags in the calling
-# process (including workers). No authentication or model request is made.
+# Successful inspections only, held in memory and never in chat templates.
+copilot_runtime_cache <- new.env(parent = emptyenv())
+
+# Verify dependencies, CLI version and flags; reuse successful inspections only
+# for the same process, resolved path, and executable size/change timestamps.
+# Workers must inspect independently, even if a cache was serialized to them.
+# No authentication or model request is made; failures are never cached.
 check_copilot_runtime <- function(command, timeout) {
   if (!requireNamespace("processx", quietly = TRUE) ||
     utils::compareVersion(as.character(utils::packageVersion("processx")), "3.9.0") < 0) {
@@ -138,6 +143,12 @@ check_copilot_runtime <- function(command, timeout) {
     )
   }
   executable <- resolve_copilot_command(command)
+  identity <- file.info(executable)[, c("size", "mtime", "ctime"), drop = FALSE]
+  cacheable <- !anyNA(identity)
+  key <- paste(Sys.getpid(), executable, sep = ":")
+  if (cacheable && identical(copilot_runtime_cache[[key]], identity)) {
+    return(invisible(executable))
+  }
   # Capture help/version only; suppress processx errors that can expose args.
   inspect_cli <- function(flag) {
     result <- tryCatch(
@@ -172,6 +183,7 @@ check_copilot_runtime <- function(command, timeout) {
       call. = FALSE
     )
   }
+  if (cacheable) copilot_runtime_cache[[key]] <- identity
   invisible(executable)
 }
 
