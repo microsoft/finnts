@@ -217,3 +217,52 @@ test_that("sparse nonzero observations invalidate otherwise zero source candidat
   expect_equal(result$SqFt[result$Combo == "Total"], c(0, 20))
   expect_equal(result$SqFt[result$Combo == "ExecFunction_B"], c(0, 0))
 })
+
+test_that("three-column source grains remain supported within the search budget", {
+  data <- expand.grid(A = 0:1, B = 0:1, C = 0:1, Leaf = 0:1)
+  data$Date <- as.Date("2026-08-01")
+  data$Target <- 1
+  data$Reg <- 10 + (data$A + data$B + data$C) %% 2
+  data[c("A", "B", "C", "Leaf")] <- lapply(data[c("A", "B", "C", "Leaf")], as.character)
+  data <- tidyr::unite(data, "Combo", A, B, C, Leaf, sep = "--", remove = FALSE)
+  expect_identical(external_regressor_mapping(data, c("A", "B", "C", "Leaf"), "Reg")$Var,
+    "A---B---C")
+  testthat::local_mocked_bindings(write_data = function(...) invisible(NULL))
+  result <- prep_hierarchical_data(data, set_run_info(path = withr::local_tempdir()),
+    c("A", "B", "C", "Leaf"), "Reg", "grouped_hierarchy", 12)
+  expect_equal(result$Reg[result$Combo == "Total"], 84)
+  expect_equal(result$Reg[result$Combo == "Leaf_0"], 84)
+  expect_equal(result$Reg[result$Combo == "A_0"], 42)
+})
+
+test_that("adversarial inference stops before a partial width or artifact writes", {
+  vars <- paste0("V", seq_len(11))
+  data <- expand.grid(stats::setNames(rep(list(0:1), 11), vars))
+  data$Reg <- rowSums(data) %% 2
+  data$Date <- as.Date("2026-08-01")
+  data$Target <- 1
+  data$Combo <- paste0("bottom", seq_len(nrow(data)))
+  scans <- 0L
+  original_distinct <- dplyr::distinct
+  # Count the actual table scans; the parity fixture keeps every partial grain
+  # invalid and repeated. Widths 1:5 contain exactly 1,023 candidates.
+  testthat::local_mocked_bindings(.package = "dplyr", distinct = function(...) {
+    scans <<- scans + 1L
+    original_distinct(...)
+  })
+  testthat::local_mocked_bindings(
+    sum_hts_data = function(...) tibble::tibble(),
+    write_data = function(...) stop("Unexpected inference-failure write"))
+  expect_error(prep_hierarchical_data(data, set_run_info(path = withr::local_tempdir()),
+    vars, "Reg", "grouped_hierarchy", 12), "1,024-candidate search budget")
+  # Four setup distinct calls plus one prep combo-table call, before candidates.
+  expect_equal(scans, 5L + 3L * 1023L)
+})
+
+test_that("the candidate budget does not impose a three-column width limit", {
+  vars <- c("A", "B", "C", "D", "Leaf")
+  data <- expand.grid(stats::setNames(rep(list(0:1), 5), vars))
+  data$Reg <- rowSums(data[c("A", "B", "C", "D")]) %% 2
+  data$Date <- as.Date("2026-08-01")
+  expect_identical(external_regressor_mapping(data, vars, "Reg")$Var, "A---B---C---D")
+})

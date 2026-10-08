@@ -975,6 +975,8 @@ reconcile_hierarchical_data <- function(run_info,
 #'   then progressively wider tuples only when no narrower grain is valid.
 #'   Within that width, prefer the fewest grain/date/value tuples. Equally coarse
 #'   grains must identify the same partition; otherwise inference fails.
+#'   Search is limited to 1,024 candidates per regressor. A width is checked
+#'   completely or rejected before scanning, so exhaustion cannot hide ambiguity.
 #'   Missing values do not create conflicting observations. Full-bottom conflicts
 #'   and nonfinite values fail; valid bottom-specific drivers retain the All route.
 #' @return data frame of regressor mappings, without artifact I/O
@@ -991,6 +993,14 @@ external_regressor_mapping <- function(data,
         )
       ) %>%
       nrow()
+  }
+
+  # Exhaustion is a hard input error, never an inferred All mapping or write.
+  stop_search_budget <- function(regressor) {
+    stop("External regressor '", regressor,
+      "' source-grain inference exceeds the 1,024-candidate search budget. ",
+      "Reduce redundant combo columns or prepare the driver at its known source grain; ",
+      "no bottom-level fallback was applied.", call. = FALSE)
   }
 
   # get final mapping of regressor to combo var level
@@ -1042,7 +1052,12 @@ external_regressor_mapping <- function(data,
     }
 
     grains <- lapply(multi_value_vars, function(variable) variable)
+    candidates_checked <- 0L
     while (length(grains) > 0) {
+      if (length(grains) > 1024L - candidates_checked) {
+        stop_search_budget(regressor)
+      }
+      candidates_checked <- candidates_checked + length(grains)
       counts <- vapply(grains, count_unique, numeric(1), regressor = regressor)
       # Adding columns cannot restore repetition once a tuple is bottom-specific.
       grains <- grains[counts < all_unique]
@@ -1075,6 +1090,9 @@ external_regressor_mapping <- function(data,
           match(tail(grain, 1), multi_value_vars)]
         for (variable in remaining) {
           next_grains[[length(next_grains) + 1L]] <- c(grain, variable)
+          if (length(next_grains) > 1024L - candidates_checked) {
+            stop_search_budget(regressor)
+          }
         }
       }
       grains <- next_grains

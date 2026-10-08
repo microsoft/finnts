@@ -115,6 +115,12 @@ test_that("empty new populations fail before saving inputs including one-column 
 
 test_that("new setup versions prepare standard and grouped populations independently", {
   args <- hierarchy_setup_args(withr::local_tempdir())
+  timestamp <- as.POSIXct("2026-01-01", tz = "UTC")
+  # Separate saved versions must not depend on the wall-clock setup duration.
+  testthat::local_mocked_bindings(get_timestamp = function() {
+    timestamp <<- timestamp + 1
+    timestamp
+  })
   history <- args$input_data
   args$input_data <- dplyr::bind_rows(
     transform(history, Region = "North", Site = "a"),
@@ -147,6 +153,59 @@ test_that("repeated request IDs resume saved versions for both API actions", {
     expect_identical(retry$agent_version, first$agent_version)
     expect_identical(retry$overwrite, action == "update_forecast")
   }
+})
+
+test_that("request retries select their own contract after another version is created", {
+  args <- hierarchy_setup_args(withr::local_tempdir())
+  timestamp <- as.POSIXct("2026-01-01", tz = "UTC")
+  # Distinct creation times keep the fixture independent of setup execution speed.
+  testthat::local_mocked_bindings(get_timestamp = function() {
+    timestamp <<- timestamp + 1
+    timestamp
+  })
+  args$request_id <- "request-A"
+  args$agent_action <- "iterate_forecast"
+  first <- do.call(set_agent_info_custom, args)
+  args$request_id <- "request-B"
+  args$forecast_horizon <- 3
+  second <- do.call(set_agent_info_custom, args)
+  expect_equal(second$agent_version, first$agent_version + 1)
+  expect_false(identical(first$run_id, second$run_id))
+  logs <- load_agent_runs(args$project_info)
+  logs$forecast_approach[logs$run_id == first$run_id] <- "standard_hierarchy"
+  logs$forecast_approach[logs$run_id == second$run_id] <- "grouped_hierarchy"
+  testthat::local_mocked_bindings(
+    load_agent_runs = function(...) logs,
+    hierarchy_detect = function(...) stop("Unexpected retry detection"),
+    prep_hierarchical_data = function(...) stop("Unexpected retry preparation"),
+    write_data = function(...) stop("Unexpected retry artifact rewrite"))
+  for (action in c("iterate_forecast", "update_forecast")) {
+    args$agent_action <- action
+    args$request_id <- "request-A"
+    args$forecast_horizon <- 2
+    retry <- do.call(set_agent_info_custom, args)
+    expect_identical(retry$run_id, first$run_id)
+    expect_identical(retry$agent_version, first$agent_version)
+    expect_identical(retry$forecast_approach, "standard_hierarchy")
+    expect_identical(retry$overwrite, action == "update_forecast")
+    args$forecast_horizon <- 3
+    expect_error(do.call(set_agent_info_custom, args), "Inputs have recently changed")
+    args$request_id <- "request-B"
+    retry <- do.call(set_agent_info_custom, args)
+    expect_identical(retry$run_id, second$run_id)
+    expect_identical(retry$forecast_approach, "grouped_hierarchy")
+  }
+  public_args <- args[setdiff(names(args), c("request_id", "agent_action"))]
+  public_args$overwrite <- FALSE
+  expect_identical(do.call(set_agent_info, public_args)$run_id, second$run_id)
+  logs <- dplyr::bind_rows(logs, logs[logs$run_id == first$run_id, ])
+  args$request_id <- "request-A"
+  expect_error(do.call(set_agent_info_custom, args), "multiple saved Agent runs")
+  public_args$resume_run_id <- "absent-run"
+  expect_error(do.call(set_agent_info_impl, public_args), "exactly one saved run")
+  logs <- logs[!duplicated(logs$run_id), ]
+  logs$run_id[logs$request_id == "request-A"] <- NA_character_
+  expect_error(do.call(set_agent_info_custom, args), "saved run_id is missing or invalid")
 })
 
 test_that("Agent pair diagnostics and saved schema preserve legacy contracts", {

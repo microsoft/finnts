@@ -60,6 +60,8 @@ bottoms-up internally, but retain their configured outer reconciliation.
 
 Resuming an existing Agent version preserves its saved forecast approach and
 previously uploaded inputs; a package upgrade does not reclassify that version.
+API request-ID retries select the version belonging to that request, even if a
+newer request has since created another version.
 Logged settings such as dates, horizon, regressors, and forecast flags must still
 match. Supplied replacement data values are not uploaded on a resume; create a
 new version to use changed history, drivers, or series. Missing required saved
@@ -84,6 +86,11 @@ tuple and date. Inference first checks single columns, then progressively wider
 tuples only if no narrower grain is valid. At the first valid width, it selects
 the grain with the fewest distinct grain/date/value tuples; equally coarse
 candidates must identify equivalent source partitions.
+Inference checks at most 1,024 candidate grains per driver. Each candidate-width
+batch is evaluated completely or rejected before scanning. If the search budget
+is exhausted, preparation fails before hierarchy artifacts are written; it does
+not silently fall back to bottom-level summation. Reduce redundant combo columns
+or prepare the driver at its known source grain before retrying.
 Aggregates count each source tuple once within the node's actual
 bottom-series membership, including separate tuples with equal numeric values.
 Original bottom observations are preserved; missing-only level aggregates stay

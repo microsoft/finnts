@@ -81,6 +81,34 @@ set_agent_info <- function(project_info,
                            run_global_models = NULL,
                            run_local_models = TRUE,
                            overwrite = FALSE) {
+  set_agent_info_impl(
+    project_info, llm, input_data, forecast_horizon, external_regressors,
+    hist_end_date, hist_start_date, back_test_scenarios, back_test_spacing,
+    combo_cleanup_date, allow_hierarchical_forecast, negative_forecast,
+    run_global_models, run_local_models, overwrite
+  )
+}
+
+# Shared setup preserves the public defaults and saved-setting validation.
+# An internal resume_run_id selects exactly one saved run for request-ID retries;
+# missing or duplicate matches fail before writes. NULL retains latest-run setup.
+# Returns the Agent contract; new versions retain the existing artifact writes.
+set_agent_info_impl <- function(project_info,
+                                llm,
+                                input_data,
+                                forecast_horizon,
+                                external_regressors = NULL,
+                                hist_end_date = NULL,
+                                hist_start_date = NULL,
+                                back_test_scenarios = NULL,
+                                back_test_spacing = NULL,
+                                combo_cleanup_date = NULL,
+                                allow_hierarchical_forecast = FALSE,
+                                negative_forecast = FALSE,
+                                run_global_models = NULL,
+                                run_local_models = TRUE,
+                                overwrite = FALSE,
+                                resume_run_id = NULL) {
   # get metadata
   combo_variables <- project_info$combo_variables
   target_variable <- project_info$target_variable
@@ -172,7 +200,15 @@ set_agent_info <- function(project_info,
     )
 
   raw_agent_runs_tbl <- load_agent_runs(project_info)
-  agent_runs_tbl <- if (nrow(raw_agent_runs_tbl) > 0) {
+  agent_runs_tbl <- if (!is.null(resume_run_id)) {
+    matched <- raw_agent_runs_tbl %>%
+      dplyr::filter(.data$run_id == resume_run_id)
+    if (overwrite || nrow(matched) != 1L) {
+      stop("Cannot resume requested Agent run: expected exactly one saved run matching run_id. Restore the original run metadata.",
+        call. = FALSE)
+    }
+    matched
+  } else if (nrow(raw_agent_runs_tbl) > 0) {
     raw_agent_runs_tbl %>%
       dplyr::arrange(dplyr::desc(created)) %>%
       dplyr::slice(1)
@@ -465,6 +501,9 @@ set_agent_info <- function(project_info,
 #' @param request_id A unique identifier for the agent run request
 #' @param agent_action A character string indicating the action: "iterate_forecast" or
 #' "update_forecast"
+#' @details Matching request IDs resume their exact saved run, not the latest
+#'   version. Saved settings are still validated and retry artifacts are not
+#'   rewritten. Missing run identities or duplicate request matches fail.
 #'
 #' @return A list containing the agent run information
 #' @noRd
@@ -534,14 +573,25 @@ set_agent_info_custom <- function(project_info,
 
   # use existing agent run info if request id matches
   if (nrow(agent_run_request_id_tbl) > 0) {
+    if (nrow(agent_run_request_id_tbl) != 1L) {
+      stop("Cannot resume request_id: multiple saved Agent runs match this request. Correct the run metadata.",
+        call. = FALSE)
+    }
+    requested_run <- agent_run_request_id_tbl$run_id
+    if (!is.character(requested_run) || length(requested_run) != 1L ||
+      is.na(requested_run) || !nzchar(requested_run)) {
+      stop("Cannot resume request_id: saved run_id is missing or invalid. Restore the original run metadata.",
+        call. = FALSE)
+    }
+    agent_args$resume_run_id <- requested_run
     if (agent_action == "iterate_forecast") {
       # use existing agent run info with overwrite = FALSE
       agent_args$overwrite <- FALSE
-      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
+      agent_info <- do.call("set_agent_info_impl", agent_args, quote = TRUE)
     } else if (agent_action == "update_forecast") {
       # use existing agent run info but set overwrite = TRUE manually
       agent_args$overwrite <- FALSE
-      agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
+      agent_info <- do.call("set_agent_info_impl", agent_args, quote = TRUE)
       agent_info$overwrite <- TRUE
     }
 
