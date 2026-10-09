@@ -3815,9 +3815,9 @@ iterate_forecast_system_prompt <- function(agent_info,
   fm_suffix <- get_foundation_model_suffix()
 
   # Model lists with conditional foundation models
-  models_rule_10a <- paste0("arima---meanf---snaive---stlm-arima---tbats---xgboost", fm_suffix)
-  models_rule_10b <- paste0("arima---ets---meanf---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", fm_suffix)
-  models_rule_10c <- paste0("arima---croston---ets---meanf---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", fm_suffix)
+  models_rule_10a <- paste0("arima---meanf---naive---snaive---stlm-arima---tbats---xgboost", fm_suffix)
+  models_rule_10b <- paste0("arima---ets---meanf---naive---nnetar---prophet---snaive---stlm-arima---tbats---theta---cubist---glmnet---xgboost", fm_suffix)
+  models_rule_10c <- paste0("arima---croston---ets---meanf---naive---nnetar---prophet---snaive---stlm-arima---stlm-ets---tbats---theta---cubist---mars---glmnet---svm-poly---svm-rbf---xgboost", fm_suffix)
 
   # create final prompt
   if (is.null(combo)) {

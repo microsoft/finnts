@@ -106,6 +106,38 @@ test_that("back test best MAPE is as expected", {
 
 rm(finn_forecast)
 
+# * naive forecast ----
+
+test_that("naive model forecasts the last observed value", {
+  naive_input <- inp_data %>%
+    dplyr::filter(id == "M750")
+
+  naive_forecast <- forecast_time_series(
+    input_data = naive_input,
+    combo_variables = "id",
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 3,
+    back_test_scenarios = 2,
+    models_to_run = "naive",
+    run_global_models = FALSE,
+    run_ensemble_models = FALSE,
+    average_models = FALSE
+  )
+
+  last_value <- naive_input %>%
+    dplyr::filter(Date == max(Date)) %>%
+    dplyr::pull(value)
+
+  future_values <- naive_forecast$final_fcst %>%
+    dplyr::filter(Type == "Forecast", Model == "Best-Model") %>%
+    dplyr::pull(value)
+
+  testthat::expect_equal(unique(naive_forecast$back_test_best_MAPE$Model), "naive--local--R1")
+  testthat::expect_length(future_values, 3)
+  testthat::expect_equal(future_values, rep(last_value, 3))
+})
+
 # * standard HTS forecast ----
 
 # Basic forecast to test various parts

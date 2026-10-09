@@ -1848,9 +1848,9 @@ reconcile_agent_forecast <- function(agent_info,
 #'
 #' Creates simple forecasts for new time series that were not present in
 #' the previous agent run, and any existing time series that failed during
-#' the global or local model update process. Uses default local model inputs
-#' (matching the first-iteration defaults from iterate_forecast) without
-#' LLM involvement.
+#' the global or local model update process. Uses a fixed default set of local
+#' model inputs without LLM involvement. The default model list is maintained
+#' separately from the first-iteration rules in iterate_forecast.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param new_combos Character vector of new combo hashes to forecast.
@@ -1908,11 +1908,11 @@ forecast_new_combos <- function(agent_info,
   # get metadata
   project_info <- agent_info$project_info
 
-  # build default local model inputs (matching reason_inputs first-iteration defaults)
+  # build fixed default local model inputs; see .github/agent-guides/adding-a-model.md
   fm_suffix <- get_foundation_model_suffix()
 
   default_inputs <- list(
-    models_to_run = strsplit(paste0("arima---ets---tbats---stlm-arima---xgboost---glmnet", fm_suffix), "---")[[1]],
+    models_to_run = strsplit(paste0("arima---ets---naive---snaive---tbats---stlm-arima---xgboost---glmnet", fm_suffix), "---")[[1]],
     external_regressors = "NULL",
     clean_missing_values = TRUE,
     clean_outliers = FALSE,

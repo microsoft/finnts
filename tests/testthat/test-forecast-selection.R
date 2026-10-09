@@ -112,10 +112,10 @@ test_that("catalogue benchmark covers supported recipes and every pair and tripl
     }
   )
   catalogue <- selection_benchmark_catalogue()
-  expect_equal(nrow(catalogue), 41L)
+  expect_equal(nrow(catalogue), 42L)
   expect_false(anyDuplicated(catalogue$Model_ID) > 0)
   expect_setequal(catalogue$Model_Name[catalogue$Recipe_ID == "R2"], list_r2_models())
-  expect_equal(choose(nrow(catalogue), 2) + choose(nrow(catalogue), 3), 11480)
+  expect_equal(choose(nrow(catalogue), 2) + choose(nrow(catalogue), 3), 12341)
   category <- ifelse(catalogue$Recipe_ID == "ensemble", "ensemble",
     ifelse(catalogue$Model_Type == "global", "global", catalogue$Recipe_ID))
   small_catalogue <- catalogue[match(c("R1", "R2", "global", "ensemble"), category), ]
