@@ -218,19 +218,41 @@ copilot_auth_env <- function(timeout) {
         cleanup_tree = TRUE
       ),
       error = function(error) {
-        abort_copilot_transport("Could not read GitHub CLI credentials. Run `gh auth login` or set COPILOT_GITHUB_TOKEN.")
+        abort_copilot_transport(paste0(
+          "Could not read GitHub CLI credentials. ", copilot_auth_help()
+        ))
       }
     )
     if (result$status == 0 && nzchar(trimws(result$stdout))) {
       return(c(COPILOT_GITHUB_TOKEN = trimws(result$stdout)))
     }
   }
-  abort_copilot_transport(
+  abort_copilot_transport(paste0(
+    "No Copilot authentication is available. ", copilot_auth_help()
+  ))
+}
+
+#' Copilot sign-in steps for authentication errors
+#'
+#' Builds the user-facing setup instructions appended to Copilot
+#' authentication errors, so users without a working GitHub CLI login know
+#' how to fix it.
+#'
+#' @return A single string with numbered setup steps and a guide link.
+#' @noRd
+copilot_auth_help <- function() {
+  paste(
+    "To set up Copilot authentication:",
+    "1. Install the GitHub CLI: https://cli.github.com/",
+    "2. Run `gh auth login`.",
+    "3. Sign in with an account that has Copilot access.",
+    "4. Retry your Finn request.",
     paste0(
-      "No Copilot authentication is available. Set COPILOT_GITHUB_TOKEN ",
-      "(or GH_TOKEN/GITHUB_TOKEN), or run `gh auth login`. ",
-      "The account needs Copilot access; cached Copilot-only logins are not reused."
-    )
+      "Alternatively, set COPILOT_GITHUB_TOKEN (or GH_TOKEN/GITHUB_TOKEN). ",
+      "Signing in only inside the Copilot CLI is not reused."
+    ),
+    "Authentication guide: https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli",
+    sep = "\n"
   )
 }
 

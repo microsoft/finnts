@@ -407,6 +407,21 @@ test_that("gh authentication fallback is private and host-aware", {
   expect_identical(captured, c("auth", "token", "--hostname", "github.example.invalid"))
   status <- 1L
   expect_error(copilot_auth_env(10), "No Copilot authentication")
+  expect_error(copilot_auth_env(10), "Install the GitHub CLI: https://cli.github.com/", fixed = TRUE)
+})
+
+test_that("Copilot authentication errors list setup steps", {
+  help <- copilot_auth_help()
+  steps <- c(
+    "1. Install the GitHub CLI: https://cli.github.com/",
+    "2. Run `gh auth login`.",
+    "3. Sign in with an account that has Copilot access.",
+    "4. Retry your Finn request.",
+    "COPILOT_GITHUB_TOKEN",
+    "https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli"
+  )
+  for (step in steps) expect_true(grepl(step, help, fixed = TRUE), info = step)
+  expect_error(abort_copilot_transport(help), "Retry your Finn request", class = "finnts_copilot_transport_error")
 })
 
 test_that("piped transport handles large UTF-8 input and drains both outputs", {

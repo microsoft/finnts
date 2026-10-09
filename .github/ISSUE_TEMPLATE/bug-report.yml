@@ -1,0 +1,86 @@
+name: Bug report
+description: Report a problem with the finnts R package.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. If a coding agent ran Finn for you with the Finn skill, use the **Finn skill problem** form instead.
+
+        **Do not share confidential data.** Use a small sample or simulated data, for example `timetk::m4_monthly`.
+  - type: input
+    id: finnts-version
+    attributes:
+      label: finnts version
+      description: Output of `packageVersion("finnts")`.
+      placeholder: "0.7.0"
+    validations:
+      required: true
+  - type: input
+    id: r-version
+    attributes:
+      label: R version
+      description: Output of `R.version.string`.
+      placeholder: "R version 4.4.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Standard forecast (forecast_time_series and related functions)
+        - Agent forecast (iterate_forecast or update_forecast)
+        - Data preparation or feature engineering
+        - Model training or selection
+        - Hierarchical forecasting
+        - Storage or run logging (local, Azure, Spark)
+        - Installation
+        - Documentation
+        - Other
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you ran and what went wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: reprex
+    attributes:
+      label: Reproducible example
+      description: The smallest code that shows the problem, using non-confidential data.
+      render: r
+  - type: textarea
+    id: error
+    attributes:
+      label: Error message or traceback
+      description: Paste the full error. Run `traceback()` right after the error to get the traceback.
+      render: text
+  - type: textarea
+    id: session-info
+    attributes:
+      label: Session info
+      description: Output of `sessionInfo()`.
+      render: text
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I reviewed what I am sharing and it contains no confidential data.
+          required: true

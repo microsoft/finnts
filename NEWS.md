@@ -5,14 +5,24 @@
 - Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Copilot saves CLI-local session state under R's temporary directory.
-- Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks and optional preprocessing-compatible inactive-series cleanup. Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
+  - Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.
+- Added `detect_hierarchy()` for explicit, read-only standard/grouped hierarchy selection using nesting checks.
+  - Optional preprocessing-compatible cleanup removes inactive series before detection.
+  - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 
 ## Bug Fixes
 
-- Hierarchical external-regressor mapping requires one observed value per source grain/date instead of relying on distinct-count reduction, including validated composite grains when single columns are insufficient. Additive level drivers are summed once per source entity within each node's actual membership; conflicting bottom values and ambiguous source grains fail explicitly. Standard intermediate nodes no longer inherit grand-total driver values. Newly prepared regressor values may change; existing saved runs are not migrated.
-- New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction. EDA and iteration prompts reflect the input scope.
-  - Existing-version resumes preserve the saved forecast approach and uploaded inputs while still rejecting changed logged settings. New versions use current detection; updates across outer-approach changes still require fresh iteration.
+- Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
+  - Validated composite grains are used when single columns are insufficient.
+  - Additive level drivers are summed once per source entity within each node's actual membership.
+  - Conflicting bottom values and ambiguous source grains fail explicitly.
+  - Standard intermediate nodes no longer inherit grand-total driver values.
+  - Newly prepared regressor values may change; existing saved runs are not migrated.
+- New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction.
+  - EDA and iteration prompts reflect the input scope.
+  - Existing-version resumes preserve the saved forecast approach and uploaded inputs, still rejecting changed logged settings.
+  - New versions use current detection; updates across outer-approach changes still require fresh iteration.
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
   -   Preserves saved model selections; older runs reuse saved models, averaging when needed.

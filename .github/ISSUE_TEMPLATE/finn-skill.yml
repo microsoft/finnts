@@ -1,0 +1,81 @@
+name: Finn skill problem
+description: Report a problem when a coding agent runs Finn for you with the Finn skill (skills/finn).
+title: "[Finn skill] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form only for problems when a coding agent runs Finn for you. For finnts package bugs, use the **Bug report** form.
+
+        Thanks for reporting a problem. The quickest way to fill this in is to ask your coding agent:
+        **"Create a Finn support report for my last run."** It writes a Markdown file under your project's `support` folder.
+
+        **Do not share confidential data.** The support report has no data values, and it masks home folders,
+        user names, e-mail addresses, and keys. Read it before attaching, and remove any series or column names you cannot share.
+  - type: input
+    id: skill-version
+    attributes:
+      label: Skill version
+      description: Shown at the top of the support report, or ask your agent "What Finn skill version do I have?"
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: finnts-version
+    attributes:
+      label: finnts version
+      placeholder: "0.7.0.9011"
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: agent
+    attributes:
+      label: Coding agent
+      options:
+        - GitHub Copilot (VS Code)
+        - GitHub Copilot CLI
+        - Claude Code
+        - Codex
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: run-type
+    attributes:
+      label: Run type
+      options:
+        - Standard forecast
+        - Agent forecast (iterate)
+        - Agent forecast (update)
+        - Not a forecast run (install, update, setup, export)
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you asked the agent to do and what went wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: report
+    attributes:
+      label: Support report
+      description: Attach the finn_support_*.md file or paste its contents.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I reviewed what I am sharing and it contains no confidential data.
+          required: true

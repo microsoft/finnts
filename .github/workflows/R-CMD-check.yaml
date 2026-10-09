@@ -28,6 +28,23 @@ jobs:
       - name: Validate agent guidance
         run: Rscript tools/validate-agent-guidance.R
 
+  finn-skill:
+    runs-on: ubuntu-22.04
+    name: finn skill scripts
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          use-public-rspm: true
+
+      - name: Install script dependencies
+        run: Rscript -e 'install.packages(c("jsonlite", "digest", "ps"))'
+
+      - name: Test Finn skill scripts
+        run: Rscript skills/finn/tests/test_skill.R
+
   R-CMD-check:
     runs-on: ${{ matrix.config.os }}
 

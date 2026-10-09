@@ -18,3 +18,4 @@ cran-comments.md
 ^\.cursor$
 ^AGENTS\.md$
 ^CLAUDE\.md$
+^skills$

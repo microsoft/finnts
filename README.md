@@ -17,6 +17,14 @@ The Microsoft Finance Time Series Forecasting Framework, aka finnts or Finn, is 
 -   Supports daily, weekly, monthly, quarterly, and yearly forecasts.
 -   Handles external regressors, either purely historical or historical+future values.
 
+## Use Finn with a coding agent
+
+Don't want to write R code? The [Finn skill](https://github.com/microsoft/finnts/tree/main/skills/finn) lets a coding agent such as GitHub Copilot, Claude Code, Codex, or Cursor install R and finnts, run forecasts, and explain the results for you. Paste this into your agent:
+
+```
+Install the Finn skill from https://github.com/microsoft/finnts/tree/main/skills/finn and help me forecast my data.
+```
+
 ## Installation
 
 ### CRAN version
