@@ -10,6 +10,7 @@
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
+- `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
 
 ## Bug Fixes
 

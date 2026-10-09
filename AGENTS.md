@@ -50,6 +50,8 @@ On Windows, when `R` or `Rscript` is not on `PATH`, use `./tools/run-r.ps1 -Expr
 
 For model selection, start with the [architecture map](.github/agent-guides/architecture-map.md#model-selection), then the [selection walkthrough](vignettes/best-model-selection.Rmd). The map distinguishes within-run model choice, Agent search context, saved-winner promotion, update acceptance, and reconciliation, with source and test pointers.
 
+To add, rename, or remove a forecasting model, follow the [new-model checklist](.github/agent-guides/adding-a-model.md) so every registry, Agent, update, documentation, and test location is updated.
+
 ## Working Method
 
 1. Start from the named file, symbol, failure, or closest owning implementation.

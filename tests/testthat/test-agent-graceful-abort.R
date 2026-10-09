@@ -1006,7 +1006,7 @@ test_that("available agent models respect scope and foundation availability", {
   expect_false("naive" %in% global_with_foundation)
 })
 
-test_that("local agent prompt includes naive from the first iteration", {
+test_that("local agent prompt includes naive in every iteration model rule", {
   local_mocked_bindings(
     load_eda_results = function(...) "No EDA",
     get_foundation_model_suffix = function() ""
@@ -1027,11 +1027,15 @@ test_that("local agent prompt includes naive from the first iteration", {
   prompt <- iterate_forecast_system_prompt(agent_info, combo = "combo-hash", weighted_mape_goal = 0.05)
   rule_models <- regmatches(
     prompt,
-    regexpr("9-A\\.\\s+IF run_count == 0 -> models_to_run = \"[^\"]+\"", prompt)
-  )
+    gregexpr("9-[ABC]\\.\\s+[^\\n]*?models_to_run = \"[^\"]+\"", prompt, perl = TRUE)
+  )[[1]]
 
-  expect_length(rule_models, 1)
-  expect_true("naive" %in% strsplit(sub(".*models_to_run = \"([^\"]+)\"", "\\1", rule_models), "---")[[1]])
+  expect_length(rule_models, 3)
+  expect_equal(substr(rule_models, 1, 3), c("9-A", "9-B", "9-C"))
+  for (rule in rule_models) {
+    models <- strsplit(sub(".*models_to_run = \"([^\"]+)\"", "\\1", rule), "---")[[1]]
+    expect_true("naive" %in% models, info = rule)
+  }
 })
 
 test_that("reasoning retries reuse supplied history without storage reads", {
