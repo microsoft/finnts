@@ -5,7 +5,7 @@
 list_models <- function() {
   list <- c(
     "arima", "arima-boost", "arimax", "chronos-bolt-base", "chronos-bolt-tiny", "chronos2", "cubist", "croston", "ets", "glmnet", "mars", "meanf",
-    "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
+        "naive", "nnetar", "nnetar-xregs", "prophet", "prophet-boost", "prophet-xregs", "snaive",
     "stlm-arima", "stlm-ets", "svm-poly", "svm-rbf", "tbats", "theta", "timesfm", "timegpt", "xgboost"
   )
 
@@ -901,6 +901,32 @@ meanf <- function(train_data,
   )
 
   return(wflw_spec_meanf)
+}
+
+#' Naive model
+#'
+#' Non-seasonal benchmark that repeats the last observed target value across
+#' the forecast horizon, using modeltime's `naive_reg()` with the `"naive"`
+#' engine. It uses only the Date/Target recipe, so it is a local, R1-only
+#' model with no tunable hyperparameters.
+#'
+#' @param train_data input data
+#'
+#' @return Get Naive Forecast Model workflow (untrained)
+#' @noRd
+naive <- function(train_data) {
+  recipe_spec_naive <- train_data %>%
+    get_recipe_simple()
+
+  model_spec_naive <- modeltime::naive_reg() %>%
+    parsnip::set_engine("naive")
+
+  wflw_spec_naive <- get_workflow_simple(
+    model_spec_naive,
+    recipe_spec_naive
+  )
+
+  return(wflw_spec_naive)
 }
 
 #' nnetar model

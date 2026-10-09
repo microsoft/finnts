@@ -1002,6 +1002,36 @@ test_that("available agent models respect scope and foundation availability", {
   expect_false("chronos-bolt-base" %in% global_with_foundation)
   expect_true("xgboost" %in% global_with_foundation)
   expect_false("arima" %in% global_with_foundation)
+  expect_true("naive" %in% local_without_foundation)
+  expect_false("naive" %in% global_with_foundation)
+})
+
+test_that("local agent prompt includes naive from the first iteration", {
+  local_mocked_bindings(
+    load_eda_results = function(...) "No EDA",
+    get_foundation_model_suffix = function() ""
+  )
+  agent_info <- list(
+    project_info = list(
+      combo_variables = "id",
+      date_type = "month",
+      target_variable = "value"
+    ),
+    external_regressors = "NULL",
+    forecast_horizon = 3,
+    hist_end_date = "2024-12-01",
+    agent_version = 1,
+    global_forecast_approaches = "bottoms_up"
+  )
+
+  prompt <- iterate_forecast_system_prompt(agent_info, combo = "combo-hash", weighted_mape_goal = 0.05)
+  rule_models <- regmatches(
+    prompt,
+    regexpr("9-A\\.\\s+IF run_count == 0 -> models_to_run = \"[^\"]+\"", prompt)
+  )
+
+  expect_length(rule_models, 1)
+  expect_true("naive" %in% strsplit(sub(".*models_to_run = \"([^\"]+)\"", "\\1", rule_models), "---")[[1]])
 })
 
 test_that("reasoning retries reuse supplied history without storage reads", {
