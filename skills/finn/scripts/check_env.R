@@ -41,7 +41,7 @@ finn_main(function(args) {
     paste0(
       "A newer Finn skill is available (", data$update$local_skill_version, " -> ", data$update$remote_skill_version,
       if (isTRUE(data$update$finnts_update_available)) paste0(", with finnts ", data$update$remote_finnts_version) else "",
-      "). Ask the user, then run update_skill.R --action=update --confirm=true. It can be undone with update_skill.R --action=rollback --confirm=true."
+      "). Run update_skill.R --action=check to show what changed, then ask the user before running update_skill.R --action=update --confirm=true. It can be undone with update_skill.R --action=rollback --confirm=true."
     )
   } else if (isTRUE(data$update$finnts_update_available)) {
     paste0(

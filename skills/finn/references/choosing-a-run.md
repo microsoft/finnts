@@ -13,7 +13,7 @@ trade-off, offer the suggested settings, and keep the user's choice if they insi
 
 Plain-language explanation for the user:
 
-- **Standard** trains Finn's model library once, scores every model on back tests, and
+- **Standard** trains the selected models once, scores them on back tests, and
   picks the best per series. Fast and predictable.
 - **Agent** uses an AI model to look at the data, try different settings over several
   iterations, and keep what improves accuracy per series. Slower, uses Copilot
@@ -28,6 +28,21 @@ and then sending poorly forecast or key series to the Agent in a separate projec
 forecasts are harder to explain, compare, and maintain. If the user asks for that split
 themselves, explain these drawbacks and follow their choice.
 
+## Ensemble policy for standard runs
+
+For all new standard runs, explicitly set `run_ensemble_models = false` in the
+proposed settings and include it in the user's approval. Do not leave it null:
+package defaults may enable ensemble training. Enable it only when the user
+explicitly asks for ensemble models; do not proactively suggest turning it on.
+Verify the setting before launch, including sample tests and later standard
+refreshes. This skill policy does not change package defaults or Agent-run settings.
+
+Simple model averaging (`average_models`) is separate and remains unchanged.
+For an unfinished run, preserve saved settings on resume; if ensemble training
+was enabled without a known user request, explain the conflict and ask whether
+to resume unchanged or start a fresh run with it off. Never silently rewrite
+the running or saved run.
+
 ## Size tiers
 
 `validate_config.R` returns `data.recommendations` and adds lines to the settings card.
@@ -35,7 +50,7 @@ Tiers by series count:
 
 | Tier | Series | What the skill suggests |
 |---|---|---|
-| small | up to 100 | Finn defaults; standard or Agent both work well |
+| small | up to 100 | Finn defaults except ensemble training off for standard; standard or Agent both work well |
 | large | 101-1,000 | Test on a 50-series sample first; spaced back tests; global models on weekly/daily data; mention the Agent's longer run time and Copilot use |
 | very_large | over 1,000 | Test on a sample first; spaced back tests; global xgboost only, no local models or feature selection; standard instead of Agent; move off OneDrive |
 

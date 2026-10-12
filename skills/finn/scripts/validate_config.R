@@ -1,6 +1,7 @@
 # Validate a Finn run config against its data and show a settings card.
 # Usage:
 #   Rscript validate_config.R --project=<name> [--config=<config.json>] [--save=true]
+#       [--batch_size=<planned concurrent runs>] [--num_cores=<worker ceiling>]
 # With --config, the file is merged over defaults; --save=true stores the
 # result as <project>/config.json, which run_forecast.R uses by default.
 
@@ -73,13 +74,16 @@ finn_main(function(args) {
   global <- cfg$run_global_models %||% finn_default_global_models(cfg$date_type)
   claimed <- finn_claimed_resources(paths$root, exclude_project = paths$name)
   sizing <- finn_plan_with_others(checked$facts$n_series, finn_data_gb(checked$data), global, claimed,
-    sequential = identical(cfg$parallel, "none")
+    sequential = identical(cfg$parallel, "none"),
+    batch_size = suppressWarnings(as.numeric(finn_arg(args, "batch_size", "1"))),
+    num_cores = if (is.null(args$num_cores)) NULL else suppressWarnings(as.numeric(args$num_cores))
   )
   plan <- sizing$plan
   if (!sizing$fits) {
     plan$reason <- paste(plan$reason, "Other Finn runs are using this computer now, so this run cannot start until one finishes.")
   }
   data$parallel <- plan
+  data$warnings <- c(data$warnings, plan$warnings)
   rec <- finn_recommend_settings(cfg, checked$facts, root = paths$root, workers = plan$num_cores)
   data$recommendations <- rec
   data$settings_card <- c(validate_settings_card(cfg, checked$facts, plan), validate_recommendation_lines(rec))

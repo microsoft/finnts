@@ -2,13 +2,48 @@
 
 The skill and finnts ship together from the GitHub repository. A skill update also
 reinstalls finnts from the same commit when that commit's `DESCRIPTION` version is
-newer than the installed one, so both always match.
+newer than the installed one. Skill and package versions are independent; an
+unchanged or already newer package is left alone.
+
+## For finance users
+
+Ask "Check for Finn updates and tell me what changed." Show the installed and
+available versions of both the skill and finnts, then summarize the new skill
+entries in [version.json](../version.json). Ask before installing anything.
+For a newer skill, use the combined update; for finnts alone, use the installer
+preview and confirmation below. After updating, start a new chat and check the
+environment again. "Undo my last update" uses the existing backup/rollback flow.
+
+`version.json` is the skill's release-change history, not this machine's installation
+log or the R package's [release notes](../../../NEWS.md). It contains all recorded
+skill versions, newest first. The current branch may contain changes not yet
+published. Older installed skill builds may not include this file.
+The format has top-level `version`, `released`, and `changelog` fields. Each
+changelog entry contains `version`, `date`, and a `changes` array. The top-level
+values match the first (newest) entry. The initial branch version is 0.1.0 with
+one combined entry; the recorded date does not imply GitHub publication.
+
+For maintainers, keep entries NEWS-style: summarize user-visible changes and
+leave procedures and implementation details in the reference guides. Offline
+tests enforce at most **5 bullets per version**, **200 characters per bullet**,
+and **800 characters total** across that version's bullets (including spaces
+and punctuation). Limits apply to each version, not the entire growing history.
+These are authoring checks, not runtime restrictions on reading older histories.
+
+`--action=changes` reads installed history without network access or settings writes.
+`--action=changes --remote=true` reads GitHub history at a resolved commit;
+`changes_since_installed` contains only entries newer than the running skill.
+`--action=check` and the update approval preview include those entries from the
+exact commit used in that comparison. Missing notes are explicitly reported in
+`release_notes.error` but do not block updates or forecasts. Do not claim that
+missing notes mean there were no changes. Version history is distinct from
+`--action=history`, which shows local install/rollback events and backups.
 
 ## Automatic check
 
 `check_env.R` checks GitHub at most once a week (the result is cached in
 `update_check.json` in the settings folder). When `data$update.update_available` is true,
-it adds a next action: tell the user the new version and ask whether to update. A failed
+it adds a next action: run the explicit check to show changes, then ask whether to update. A failed
 check (offline, proxy) never blocks Finn.
 
 Turn the check off with any of:
@@ -24,6 +59,8 @@ Turn the check off with any of:
 | Goal | Command |
 |---|---|
 | Check now | `update_skill.R --action=check` |
+| Show installed skill version history (offline) | `update_skill.R --action=changes` |
+| Show the latest GitHub skill history | `update_skill.R --action=changes --remote=true` |
 | Update (after the user agrees) | `update_skill.R --action=update --confirm=true` |
 | Undo the last update | `update_skill.R --action=rollback --confirm=true` |
 | Restore an older backup | `update_skill.R --action=history`, then `--action=rollback --to=<backup id> --confirm=true` |

@@ -4,6 +4,7 @@
 #   Rscript update_skill.R --action=update --confirm=true [--ref=main]
 #   Rscript update_skill.R --action=rollback --confirm=true [--to=<backup id>] [--package_only=true]
 #   Rscript update_skill.R --action=history
+#   Rscript update_skill.R --action=changes [--remote=true] [--ref=main]
 #   Rscript update_skill.R --action=settings --auto_check=true|false
 # The skill and finnts ship together from GitHub. An update replaces the skill
 # files and, when GitHub has a newer finnts version, reinstalls finnts from the
@@ -23,6 +24,80 @@ local({
 finn_skill_dir <- function(args = list()) {
   dir <- finn_arg(args, "skill_dir") %||% file.path(finn_script_dir(), "..")
   normalizePath(dir, winslash = "/", mustWork = FALSE)
+}
+
+#' Read the skill's published change descriptions without installing anything
+#'
+#' Local history works offline. Remote history is read from the same exact
+#' commit as the update comparison. Missing or damaged notes are reported
+#' explicitly but do not block software updates or older skill versions.
+#'
+#' @param args Parsed arguments, including optional `--skill_dir` and `--ref`.
+#' @param sha Exact remote commit, or NULL to read the installed history.
+#' @param fetch Function `(url, timeout)` returning text; injectable for tests.
+#' @return List with `available`, `source`, `entries`, `changes_since_installed`,
+#'   and an optional `error`. Entries retain the version.json changelog shape:
+#'   `version`, `date`, and a list of plain-language `changes`, newest first.
+#'   The top-level version and released date must match the newest entry.
+finn_skill_changes <- function(args = list(), sha = NULL, fetch = finn_http_get) {
+  source <- if (is.null(sha)) file.path(finn_skill_dir(args), "version.json") else {
+    paste0("https://raw.githubusercontent.com/", finn_skill_repo(), "/", sha, "/skills/finn/version.json")
+  }
+  result <- list(available = FALSE, source = source, entries = list(), changes_since_installed = list())
+  text <- tryCatch({
+    if (is.null(sha)) {
+      if (!file.exists(source)) stop("This installed skill has no version history. Update it to receive the history.", call. = FALSE)
+      paste(readLines(source, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+    } else {
+      fetch(source, 10)
+    }
+  }, error = function(e) e)
+  if (inherits(text, "error")) {
+    result$error <- paste("Could not read skill version history:", conditionMessage(text))
+    return(result)
+  }
+  if (!is.character(text) || length(text) != 1L || is.na(text) || !nzchar(text)) {
+    result$error <- "The skill version history is empty or unreadable."
+    return(result)
+  }
+  history <- tryCatch(jsonlite::fromJSON(text, simplifyVector = FALSE), error = function(e) e)
+  if (inherits(history, "error")) {
+    result$error <- paste("The skill version history is not valid JSON:", conditionMessage(history))
+    return(result)
+  }
+  # Validate scalar fields and every changelog entry before comparing versions.
+  scalar <- function(x, pattern) is.character(x) && length(x) == 1L && !is.na(x) && grepl(pattern, x)
+  valid_date <- function(x) scalar(x, "^[0-9]{4}-[0-9]{2}-[0-9]{2}$") &&
+    !is.na(as.Date(x, format = "%Y-%m-%d")) &&
+    identical(format(as.Date(x, format = "%Y-%m-%d"), "%Y-%m-%d"), x)
+  entries <- if (is.list(history)) history$changelog else NULL
+  valid_entry <- function(e) is.list(e) &&
+    scalar(e$version, "^[0-9]+(\\.[0-9]+)+$") && valid_date(e$date) &&
+    is.list(e$changes) && length(e$changes) > 0L &&
+    all(vapply(e$changes, function(change) scalar(change, "\\S"), logical(1)))
+  if (!is.list(history) || !scalar(history$version, "^[0-9]+(\\.[0-9]+)+$") ||
+      !valid_date(history$released) || !is.list(entries) || !length(entries) ||
+      !all(vapply(entries, valid_entry, logical(1)))) {
+    result$error <- "The skill version history must have version, released, and a nonempty changelog with version, date, and changes in each entry."
+    return(result)
+  }
+  versions <- vapply(entries, function(e) e$version, character(1))
+  if (anyDuplicated(versions)) {
+    result$error <- "The skill version history contains duplicate versions."
+    return(result)
+  }
+  if (!identical(history$version, versions[[1]]) || !identical(history$released, entries[[1]]$date) ||
+      (length(versions) > 1L && !all(vapply(seq.int(2L, length(versions)),
+        function(i) finn_version_newer(versions[[i - 1L]], versions[[i]]), logical(1))))) {
+    result$error <- "The skill version history must be newest first, with version and released matching its first entry."
+    return(result)
+  }
+  result$available <- TRUE
+  result$version <- history$version
+  result$released <- history$released
+  result$entries <- entries
+  result$changes_since_installed <- Filter(function(e) finn_version_newer(e$version, finn_skill_version), entries)
+  result
 }
 
 #' Whether a folder sits inside a git checkout
@@ -251,6 +326,7 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
     local_skill_version = finn_skill_version, remote_skill_version = remote$skill_version,
     local_finnts_version = local_finnts$version, remote_finnts_version = remote$finnts_version
   )
+  data$release_notes <- finn_skill_changes(args, sha = remote$sha, fetch = fetch)
   skill_newer <- finn_version_newer(remote$skill_version, finn_skill_version)
   finnts_newer <- is.null(local_finnts$version) || finn_version_newer(remote$finnts_version, local_finnts$version)
   if (!skill_newer && !force) {
@@ -261,7 +337,8 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
     return(finn_result(FALSE, "needs_confirmation",
       paste0("Update the Finn skill ", finn_skill_version, " -> ", remote$skill_version %||% "?",
         if (finnts_newer) paste0(" and finnts ", local_finnts$version %||% "(none)", " -> ", remote$finnts_version %||% "?") else "", "?"),
-      data, "Ask the user to approve, then rerun with --confirm=true."))
+      data, c("Show the version comparison and changes_since_installed in release_notes (or its error if unavailable). Ask the user to approve, then rerun with --confirm=true.",
+        "The current skill is backed up first. Updates do not replace project data or forecasts; rollback is available.")))
   }
 
   files <- finn_remote_skill_files(remote$sha, fetch)
@@ -430,6 +507,15 @@ if (sys.nframe() == 0L) {
 
   finn_main(function(args) {
     action <- finn_arg(args, "action", "check")
+    if (action == "changes") {
+      remote <- finn_bool(finn_arg(args, "remote"))
+      sha <- if (remote) finn_remote_versions(finn_arg(args, "ref", "main"))$sha
+      notes <- finn_skill_changes(args, sha = sha)
+      return(finn_result(notes$available, if (notes$available) "ok" else "unavailable",
+        if (notes$available) "Finn skill version history." else notes$error,
+        c(list(skill_version = finn_skill_version), notes),
+        "Summarize each version in plain language. This is skill history, not finnts package release history; nothing was installed."))
+    }
     if (action == "check") {
       res <- finn_update_check(force = finn_bool(finn_arg(args, "force"), TRUE), ref = finn_arg(args, "ref", "main"))
       if (!is.null(res$error)) {
@@ -437,8 +523,9 @@ if (sys.nframe() == 0L) {
           "Check the internet connection or proxy. Updates are optional; Finn keeps working."))
       }
       finnts_only <- !res$update_available && isTRUE(res$finnts_update_available)
+      if (isTRUE(res$update_available)) res$release_notes <- finn_skill_changes(args, sha = res$sha)
       acts <- if (res$update_available) {
-        "Ask the user whether to update, then run update_skill.R --action=update --confirm=true."
+        "Show release_notes$changes_since_installed (or explain why notes are unavailable), then ask the user whether to update. Run update_skill.R --action=update --confirm=true only after approval."
       } else if (finnts_only) {
         "Ask the user whether to install it, then run install_finnts.R --confirm=true. It can be undone with update_skill.R --action=rollback --package_only=true --confirm=true."
       } else {
@@ -471,17 +558,17 @@ if (sys.nframe() == 0L) {
       return(finn_result(TRUE, "ok", paste("Automatic update checks are", if (settings$auto_update_check) "on." else "off."),
         list(auto_update_check = settings$auto_update_check)))
     }
-    if (!action %in% c("update", "rollback")) stop("Unknown --action. Use check, update, rollback, history, or settings.", call. = FALSE)
+    if (!action %in% c("update", "rollback")) stop("Unknown --action. Use check, changes, update, rollback, history, or settings.", call. = FALSE)
 
     skill_dir <- finn_skill_dir(args)
     if (finn_in_git_checkout(skill_dir) && !finn_bool(finn_arg(args, "force"))) {
       return(finn_result(FALSE, "blocked", "This skill runs from a git clone of the repository.", list(skill_dir = skill_dir),
         "Update with git pull (or git checkout for a rollback) in that clone, then run install_finnts.R --confirm=true."))
     }
-    active <- finn_all_active_runs(finn_resolve_root(args))
+    active <- finn_software_active_runs(finn_resolve_root(args))
     if (length(active) > 0) {
       return(finn_result(FALSE, "blocked", "A forecast is running. Changing Finn now could break it.",
-        list(active_runs = lapply(active, function(s) list(project = s$project, run_id = s$run_id))),
+        list(active_runs = lapply(active, function(s) list(root = s$root, project = s$project, run_id = s$run_id))),
         "Wait for the run to finish (run_status.R) or cancel it with the user's OK (run_cancel.R), then try again."))
     }
     if (action == "update") finn_do_update(args) else finn_do_rollback(args)

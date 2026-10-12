@@ -159,8 +159,8 @@ with(common, {
   check("missing columns are errors", any(grepl("Columns not found", finn_check_config(modifyList(base, list(target_variable = "Sales")), prep$data)$errors)))
 
   # ---- Parallel strategy --------------------------------------------------------
-  res <- function(cores, free_gb) list(cores = cores, free_gb = free_gb)
-  big <- res(16, 34) # safe workers = min(15, floor(32 / 1)) = 15
+  res <- function(cores, free_gb, total_gb = free_gb) list(cores = cores, free_gb = free_gb, total_gb = total_gb)
+  big <- res(16, 34)
   check("global models default by date type", finn_default_global_models("month") && !finn_default_global_models("day"))
   s1 <- finn_choose_parallel(200, 0, FALSE, big)
   check("many series use local_machine", identical(s1$parallel_processing, "local_machine") && !s1$inner_parallel && s1$num_cores == 15)
@@ -174,21 +174,40 @@ with(common, {
   s5 <- finn_choose_parallel(200, 0, FALSE, big, step_down = 3)
   check("step_down 3 is sequential", is.null(s5$parallel_processing) && !s5$inner_parallel)
   check("few cores are sequential", !finn_choose_parallel(200, 0, FALSE, res(2, 64))$inner_parallel)
-  check("low memory is sequential", !finn_choose_parallel(200, 0, FALSE, res(16, 3))$inner_parallel)
-  check("unknown memory assumes 8 GB", finn_choose_parallel(200, 0, FALSE, res(16, NA))$safe_workers == 6)
-  check("large data reduces workers", finn_choose_parallel(200, 1, FALSE, big)$safe_workers == 8)
+  check("80 percent total memory determines workers", finn_choose_parallel(200, 0, FALSE, res(16, 3))$safe_workers == 8)
+  check("unknown total memory is reported and sequential", finn_choose_parallel(200, 0, FALSE, res(16, NA))$safe_workers == 1 &&
+    length(finn_choose_parallel(200, 0, FALSE, res(16, NA))$warnings) > 0)
+  check("flat worker estimate ignores input size", finn_choose_parallel(200, 100, FALSE, big)$safe_workers == 15)
+  check("low available memory warns without lowering budget", finn_choose_parallel(200, 1, FALSE, res(22, 2.85, 31.65))$num_cores == 21 &&
+    length(finn_choose_parallel(200, 1, FALSE, res(22, 2.85, 31.65))$warnings) > 0)
+  check("failed CPU detection is reported and sequential", finn_choose_parallel(200, 0, FALSE, res(NA, 32))$safe_workers == 1 &&
+    !finn_choose_parallel(200, 0, FALSE, res(NA, 32))$inner_parallel)
+  check("one processor is sequential", is.null(finn_choose_parallel(200, 0, FALSE, res(1, 32))$num_cores))
+  check("batch shares full machine budget", finn_plan_with_others(200, 0, FALSE, list(cores = 0L, gb = 0, runs = list()),
+    res(22, 2.85, 31.65), batch_size = 3)$plan$num_cores == 7)
+  check("invalid batch size rejected", errors_with(finn_plan_with_others(200, 0, FALSE, list(cores = 0L, gb = 0, runs = list()),
+    big, batch_size = 0), "batch_size must be a positive whole"))
+  check("requested worker ceiling honored", finn_plan_with_others(200, 0, FALSE, list(cores = 0L, gb = 0, runs = list()),
+    big, num_cores = 4)$plan$num_cores == 4)
+  check("invalid requested workers rejected", errors_with(finn_plan_with_others(200, 0, FALSE,
+    list(cores = 0L, gb = 0, runs = list()), big, num_cores = 1.5), "num_cores must be a positive whole"))
+  check("oversized requested workers capped with warning", finn_plan_with_others(200, 0, FALSE,
+    list(cores = 0L, gb = 0, runs = list()), big, num_cores = 99)$plan$num_cores == 15 &&
+    any(grepl("Requested workers exceed", finn_plan_with_others(200, 0, FALSE,
+      list(cores = 0L, gb = 0, runs = list()), big, num_cores = 99)$plan$warnings)))
   check("never both parallel modes", all(vapply(list(s1, s2, s3, s4, s5), function(s) !(identical(s$parallel_processing, "local_machine") && s$inner_parallel), logical(1))))
 
   # ---- Sharing the computer across projects -----------------------------------
-  check("worker memory estimate", finn_worker_gb(0) == 1 && finn_worker_gb(1) == 4 && finn_worker_gb(NULL) == 1)
+  check("worker memory estimate", finn_worker_gb(0) == 0.3 && finn_worker_gb(1) == 0.3 && finn_worker_gb(NULL) == 0.3)
   cl <- finn_plan_claim(s1, 1)
-  check("claim records workers and memory", cl$claimed_cores == 15 && cl$claimed_gb == 60)
+  check("claim records workers and memory", cl$claimed_cores == 15 && cl$claimed_gb == 4.5)
   check("sequential plan claims one core", finn_plan_claim(s5, 0)$claimed_cores == 1)
   none <- list(cores = 0L, gb = 0, runs = list())
   two <- list(cores = 8L, gb = 20, runs = list(list(), list()))
   rem <- finn_remaining_resources(list(cores = 16, free_gb = 30, total_gb = 32), two)
-  check("remaining subtracts claims", rem$cores == 8 && rem$free_gb == 12)
-  check("remaining with unknown memory", finn_remaining_resources(list(cores = 16, free_gb = NA, total_gb = NA), list(cores = 2L, gb = 3, runs = list(1)))$free_gb == 5)
+  check("remaining subtracts shared budgets once", rem$cpu_budget == 7 && abs(rem$ram_budget_gb - 5.6) < 1e-9 && rem$free_gb == 30)
+  check("remaining with unknown memory stays conservative", finn_remaining_resources(list(cores = 16, free_gb = NA, total_gb = NA),
+    list(cores = 2L, gb = 3, runs = list(1)))$cpu_budget == 0)
   alone <- finn_plan_with_others(200, 0, FALSE, none, big)
   check("no other runs: plan unchanged", alone$fits && !alone$shared && alone$plan$num_cores == s1$num_cores && identical(alone$plan$parallel_processing, "local_machine"))
   check("lone run never refused, even with little memory", finn_plan_with_others(200, 0, FALSE, none, res(2, 1))$fits)
@@ -197,7 +216,7 @@ with(common, {
   full <- finn_plan_with_others(200, 0, FALSE, list(cores = 16L, gb = 10, runs = list(list())), list(cores = 16, free_gb = 30, total_gb = 32))
   check("no cores left refuses", !full$fits)
   check("no memory left refuses", !finn_plan_with_others(200, 2, FALSE, list(cores = 2L, gb = 28, runs = list(list())), list(cores = 16, free_gb = 30, total_gb = 32))$fits)
-  check("tight share falls back to sequential", is.null(finn_plan_with_others(200, 0, FALSE, list(cores = 13L, gb = 4, runs = list(list())), big)$plan$num_cores))
+  check("last core permits only sequential", is.null(finn_plan_with_others(200, 0, FALSE, list(cores = 14L, gb = 4.2, runs = list(list())), big)$plan$num_cores))
   check("config-forced sequential still claims one core", finn_plan_with_others(200, 0, FALSE, none, big, sequential = TRUE)$plan$claimed_cores == 1)
 
   # ---- Data shape detection and reshaping ----------------------------------------
@@ -374,6 +393,14 @@ with(dx, {
     "invalid type for input name 'forecast_horizon'" = "config_value"
   )
   for (txt in names(cases)) check(paste("diagnose:", cases[[txt]]), identical(cat_of(txt), cases[[txt]]))
+  config_fix <- paste(diagnose_match("invalid type for input name 'forecast_horizon'")$fix, collapse = " ")
+  check("diagnose: config fixes require a confirmed fresh run",
+    grepl("--new=true --confirm=true", config_fix, fixed = TRUE) &&
+      grepl("--mode=<same mode>", config_fix, fixed = TRUE) &&
+      grepl("original saved settings", config_fix, fixed = TRUE) &&
+      !grepl("resumes reread", config_fix, fixed = TRUE))
+  check("diagnose: temporary file lock still recommends resume",
+    any(grepl("then resume", diagnose_match("Permission denied")$fix, fixed = TRUE)))
   check("diagnose: no match returns NULL", is.null(diagnose_match("all good")) && is.null(diagnose_match("")))
   check("diagnose: every pattern is a valid regex", all(vapply(diagnose_patterns(), function(p) {
     !inherits(try(grepl(p$pattern, "x", perl = TRUE), silent = TRUE), "try-error") && length(p$fix) > 0
@@ -523,6 +550,185 @@ with(launch, {
   check("machine_busy: never cancels others", any(grepl("Never cancel", mb$next_actions)))
   check("shared note: none when alone", length(launch_shared_note(list(runs = list()), "iterate")) == 0)
   check("shared note: Agent runs mention premium usage", any(grepl("premium", launch_shared_note(led, "iterate"))) && !any(grepl("premium", launch_shared_note(led, "standard"))))
+
+  local({
+    old_settings <- Sys.getenv("FINN_SETTINGS_DIR")
+    Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "machine-registry-tests"))
+    on.exit(Sys.setenv(FINN_SETTINGS_DIR = old_settings))
+    root_a <- file.path(tmp, "registry-a")
+    root_b <- file.path(tmp, "registry-b")
+    a <- finn_project_paths(root_a, "SameName")
+    b <- finn_project_paths(root_b, "SameName")
+    for (p in list(a, b)) {
+      finn_ensure_project_dirs(p)
+      finn_write_project(p, list(name = p$name))
+    }
+    ar <- finn_run_paths(a, "run-a")
+    br <- finn_run_paths(b, "run-b")
+    finn_update_state(ar, run_id = ar$id, status = "queued", host = Sys.info()[["nodename"]],
+      parallel = list(num_cores = 7L, claimed_cores = 7L, claimed_gb = 2.1))
+    finn_register_allocation(a, ar, finn_claimed_resources(root_a, "SameName"))
+    first <- finn_claimed_resources(root_b, "SameName")
+    check("registry sees other roots with identical project names", first$cores == 7 && length(first$runs) == 1)
+    finn_update_state(br, run_id = br$id, status = "queued", host = Sys.info()[["nodename"]],
+      parallel = list(num_cores = 7L, claimed_cores = 7L, claimed_gb = 2.1))
+    finn_register_allocation(b, br, first)
+    saved_registry <- finn_read_json(file.path(finn_settings_dir(), "machine-runs.json"))
+    check("registry contains bookkeeping only", all(vapply(saved_registry$runs, function(s) {
+      !any(c("config", "results", "data_md5", "error") %in% names(s))
+    }, logical(1))))
+    both <- finn_claimed_resources(root_b)
+    check("registry and discovery do not double-count", both$cores == 14 && length(both$runs) == 2)
+    check("software changes guarded across roots without duplicates", length(finn_software_active_runs(root_b)) == 2)
+    status_functions <- load_functions("run_status.R", common)
+    across <- status_functions$status_all(list(root = root_b))
+    check("all-status reports both storage roots", length(across$data$active) == 2 &&
+      setequal(vapply(across$data$active, function(s) s$root, ""), c(finn_norm(root_a), finn_norm(root_b))))
+    third <- finn_plan_with_others(200, 0, FALSE, both, res(22, 1, 32), batch_size = 3)
+    check("third batch project gets seven workers", third$fits && third$plan$num_cores == 7)
+    finn_update_state(ar, status = "running", pid = NULL)
+    check("running allocation with missing process identity stays reserved", finn_claimed_resources(root_b)$cores == 14 &&
+      any(vapply(finn_claimed_resources(root_b)$runs, function(s) s$allocation_uncertain, logical(1))))
+    finn_update_state(ar, status = "queued")
+    full <- finn_plan_with_others(200, 0, FALSE, list(cores = 21L, gb = 6.3, runs = both$runs), res(22, 1, 32))
+    check("exhausted shared CPU budget refuses even sequential", !full$fits)
+    finn_update_state(ar, status = "completed", pid = NULL)
+    check("completed allocation releases capacity", finn_claimed_resources(root_b)$cores == 7)
+    if (requireNamespace("ps", quietly = TRUE)) {
+      finn_update_state(br, status = "cancelled", pid = Sys.getpid(),
+        pid_create_time = as.numeric(ps::ps_create_time(ps::ps_handle())))
+      check("cancelled live worker retains capacity", finn_claimed_resources(root_b)$cores == 7)
+      finn_update_state(br, pid = 2147483647L)
+      check("confirmed exited worker releases capacity", finn_claimed_resources(root_b)$cores == 0)
+    }
+    file.rename(br$state, paste0(br$state, ".saved"))
+    missing <- finn_claimed_resources(root_b)
+    check("missing registered state conservatively retains claim", missing$cores == 7 && missing$runs[[1]]$allocation_uncertain)
+    writeLines("{broken", br$state)
+    damaged <- finn_claimed_resources(root_b)
+    check("unreadable registered state retains claim", damaged$cores == 7 && damaged$runs[[1]]$allocation_uncertain)
+    file.rename(paste0(br$state, ".saved"), br$state)
+    legacy_bad <- finn_run_paths(b, "legacy-unreadable")
+    dir.create(legacy_bad$dir)
+    writeLines("{broken", legacy_bad$state)
+    check("unreadable legacy state is an explicit error", errors_with(finn_claimed_resources(root_b), "Cannot determine resource claims"))
+    finn_write_json(list(run_id = legacy_bad$id, status = "completed"), legacy_bad$state)
+    token <- finn_machine_lock_acquire(timeout = 0)
+    check("atomic machine lock admits one owner", !is.null(token) && is.null(finn_machine_lock_acquire(timeout = 0)))
+    check("wrong owner cannot release machine lock", !finn_machine_lock_release("wrong-token"))
+    check("owner releases machine lock", finn_machine_lock_release(token))
+    next_token <- finn_machine_lock_acquire(timeout = 0)
+    check("released machine lock can be acquired again", !is.null(next_token))
+    finn_machine_lock_release(next_token)
+    if (requireNamespace("ps", quietly = TRUE)) {
+      lock_dir <- file.path(finn_settings_dir(), "machine-launch-lock")
+      dir.create(lock_dir)
+      finn_write_json(list(token = "exited-owner", pid = 2147483647L),
+        file.path(lock_dir, "owner.json"))
+      recovered <- finn_machine_lock_acquire(timeout = 0)
+      check("dead machine lock owner can be recovered", !is.null(recovered))
+      finn_machine_lock_release(recovered)
+      local({
+        original_alive <- common$finn_pid_alive
+        on.exit(common$finn_pid_alive <- original_alive)
+        common$finn_pid_alive <- function(pid, create_time = NULL) if (is.null(pid)) FALSE else NA
+        finn_update_state(ar, status = "running", pid = 2147483647L)
+        uncertain <- finn_claimed_resources(root_b)
+        check("unknown liveness never releases resource claims", uncertain$cores >= 7 &&
+          any(vapply(uncertain$runs, function(s) s$allocation_uncertain, logical(1))))
+        held <- finn_machine_lock_acquire(timeout = 0)
+        check("unknown lock owner never stolen", is.null(finn_machine_lock_acquire(timeout = 0)))
+        finn_machine_lock_release(held)
+        finn_update_state(ar, status = "completed", pid = NULL)
+      })
+    }
+    if (requireNamespace("processx", quietly = TRUE) && requireNamespace("ps", quietly = TRUE)) {
+      race_script <- file.path(tmp, "allocation-race.R")
+      writeLines(c(
+        "args <- commandArgs(TRUE)",
+        "source(args[1])",
+        "local({",
+        "  token <- finn_machine_lock_acquire(timeout = 10)",
+        "  if (is.null(token)) stop('lock timeout')",
+        "  on.exit(finn_machine_lock_release(token))",
+        "  paths <- finn_project_paths(args[2], args[3])",
+        "  finn_ensure_project_dirs(paths)",
+        "  finn_write_project(paths, list(name = paths$name))",
+        "  claims <- finn_claimed_resources(paths$root, paths$name)",
+        "  sizing <- finn_plan_with_others(200, 0, FALSE, claims, list(cores = 8L, total_gb = 32, free_gb = 1))",
+        "  if (sizing$fits) {",
+        "    rp <- finn_run_paths(paths, 'race-run')",
+        "    finn_update_state(rp, run_id = rp$id, status = 'queued', host = Sys.info()[['nodename']], parallel = sizing$plan)",
+        "    finn_register_allocation(paths, rp, claims)",
+        "  }",
+        "  cat(finn_to_json(list(fits = sizing$fits, workers = sizing$plan$claimed_cores)))",
+        "})"
+      ), race_script)
+      children <- lapply(c("a", "b"), function(id) processx::process$new(finn_rscript(),
+        c(race_script, file.path(scripts_dir, "finn_common.R"), file.path(tmp, paste0("race-root-", id)), id),
+        stdout = "|", stderr = "|"))
+      on.exit(for (child in children) if (child$is_alive()) child$kill(), add = TRUE)
+      for (child in children) child$wait(timeout = 30000)
+      check("concurrent launch processes exit successfully", all(vapply(children,
+        function(child) identical(child$get_exit_status(), 0L), logical(1))))
+      outcomes <- lapply(children, function(child) jsonlite::fromJSON(child$read_all_output()))
+      check("concurrent cross-root launches never double allocate", sum(vapply(outcomes, function(o) o$fits, logical(1))) == 1 &&
+        sum(vapply(outcomes, function(o) if (o$fits) o$workers else 0, numeric(1))) == 7)
+    }
+  })
+
+  local({
+    old_settings <- Sys.getenv("FINN_SETTINGS_DIR")
+    Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "entrypoint-tests"))
+    on.exit(Sys.setenv(FINN_SETTINGS_DIR = old_settings))
+    entry_root <- file.path(tmp, "entry-root")
+    entry <- new.env(parent = launch)
+    for (name in c("First", "Second")) {
+      paths <- finn_project_paths(entry_root, name)
+      finn_ensure_project_dirs(paths)
+      finn_write_project(paths, list(name = name))
+      config <- finn_default_config()
+      config$project_name <- name
+      config$data$file <- data_file
+      finn_save_project_config(paths, config)
+    }
+    checked <- function(config, root = NULL) list(config = config, errors = character(), warnings = character(),
+      facts = list(n_series = 200, n_rows = 2400, date_min = "2024-01-01", date_max = "2024-12-01"),
+      data = data.frame(value = 1))
+    entry$finn_load_checked <- checked
+    entry$finn_plan_with_others <- function(...) common$finn_plan_with_others(...,
+      resources = list(cores = 22L, total_gb = 31.65, free_gb = 2.85))
+    entry$finn_versions <- function() list(finnts_version = "offline", r_version = "offline")
+    starts <- 0L
+    entry$launch_worker <- function(paths, run_paths, wait = FALSE) {
+      starts <<- starts + 1L
+      list(pid = Sys.getpid(), pid_create_time = if (requireNamespace("ps", quietly = TRUE))
+        as.numeric(ps::ps_create_time(ps::ps_handle())))
+    }
+    main_expr <- tail(as.list(parse(file.path(scripts_dir, "run_forecast.R"))), 1)[[1]]
+    entry$finn_main <- function(fn) fn(list(root = entry_root, project = "First", mode = "standard"))
+    first <- eval(main_expr, entry)
+    check("launcher wires detected budget and pressure warning", first$ok && first$data$parallel$num_cores == 21 &&
+      any(grepl("Available RAM is below", first$data$warnings)))
+    entry$finn_main <- function(fn) fn(list(root = entry_root, project = "Second", mode = "standard"))
+    blocked <- eval(main_expr, entry)
+    check("launcher refuses excess capacity without starting a worker", !blocked$ok &&
+      identical(blocked$status, "machine_busy") && starts == 1L)
+    first_paths <- finn_project_paths(entry_root, "First")
+    finn_update_state(finn_run_paths(first_paths, first$data$run_id), status = "completed")
+    entry$finn_main <- function(fn) fn(list(root = entry_root, project = "First", mode = "standard"))
+    still_exiting <- eval(main_expr, entry)
+    check("same-project terminal worker retains capacity until exit", !still_exiting$ok &&
+      identical(still_exiting$status, "machine_busy") && starts == 1L)
+    preview <- load_functions("validate_config.R", common)
+    preview$finn_load_checked <- checked
+    preview$finn_plan_with_others <- entry$finn_plan_with_others
+    preview$finn_main <- function(fn) fn(list(root = entry_root, project = "First", batch_size = "3"))
+    preview_expr <- tail(as.list(parse(file.path(scripts_dir, "validate_config.R"))), 1)[[1]]
+    card <- eval(preview_expr, preview)
+    check("preview wires batch share without false pressure warning", card$ok && card$data$parallel$num_cores == 7 &&
+      !any(grepl("Available RAM is below", card$data$warnings)))
+  })
 
   if (requireNamespace("processx", quietly = TRUE) && requireNamespace("ps", quietly = TRUE)) {
     kpaths <- finn_project_paths(file.path(tmp, "root"), "KillResume")
@@ -715,6 +921,115 @@ with(inst, {
 
 up <- load_functions("update_skill.R", parent = common)
 with(up, {
+  #' Build an offline version.json fixture with newest-first versions.
+  #' @param versions Version strings; first is the top-level version.
+  #' @return JSON text with the same schema as the installed history.
+  history_json <- function(versions) {
+    jsonlite::toJSON(list(version = versions[[1]], released = "2026-10-12",
+      changelog = lapply(versions, function(version) list(
+        version = version, date = "2026-10-12", changes = list("Simpler setup.")))),
+      auto_unbox = TRUE)
+  }
+  #' Check the per-version NEWS-style authoring budget without restricting runtime reads.
+  #' @param changes List of nonempty change strings for one version.
+  #' @return TRUE for 1-5 bullets, each at most 200 characters and at most 800 total.
+  concise_changes <- function(changes) {
+    sizes <- nchar(unlist(changes, use.names = FALSE), type = "chars")
+    length(sizes) >= 1L && length(sizes) <= 5L &&
+      all(sizes >= 1L & sizes <= 200L) && sum(sizes) <= 800L
+  }
+  check("history budget accepts exact bullet and total limits", concise_changes(
+    as.list(c(strrep("x", 200), rep(strrep("x", 150), 4)))))
+  check("history budget rejects six short bullets", !concise_changes(as.list(rep("Short.", 6))))
+  check("history budget rejects a 201-character bullet", !concise_changes(list(strrep("x", 201))))
+  check("history budget rejects 801 total characters", !concise_changes(
+    as.list(c(rep(strrep("x", 200), 4), "x"))))
+  check("history budget rejects missing or empty bullets", !concise_changes(list()) && !concise_changes(list("")))
+  check("history budget counts Unicode characters, not bytes", concise_changes(
+    list(strrep("\u00e9", 200))))
+  notes <- finn_skill_changes(list(skill_dir = skill_dir),
+    fetch = function(...) stop("Local history must not contact the network"))
+  check("installed history works offline", notes$available && length(notes$entries) >= 1)
+  check("latest history matches runtime skill version", identical(notes$entries[[1]]$version, finn_skill_version))
+  check("history retains one initial 0.1.0 entry", sum(
+    vapply(notes$entries, function(e) identical(e$version, "0.1.0"), logical(1))) == 1L)
+  for (entry in notes$entries) {
+    check(paste("version history stays concise:", entry$version), concise_changes(entry$changes))
+  }
+  check("history matches internal JSON schema", identical(names(jsonlite::fromJSON(
+    file.path(skill_dir, "version.json"), simplifyVector = FALSE)), c("version", "released", "changelog")) &&
+    identical(names(notes$entries[[1]]), c("version", "date", "changes")) &&
+    identical(notes$released, notes$entries[[1]]$date) &&
+    is.list(notes$entries[[1]]$changes))
+  check("current history has no newer installed entries", length(notes$changes_since_installed) == 0)
+  missing_notes <- finn_skill_changes(list(skill_dir = file.path(tmp, "no-history")))
+  check("older skill without history reports unavailable", !missing_notes$available && grepl("no version history", missing_notes$error))
+  remote_notes <- finn_skill_changes(sha = "pinned123", fetch = function(url, timeout) {
+    check("release notes pinned to compared commit", grepl("/pinned123/skills/finn/version.json$", url))
+    history_json(c("0.2.0", "0.1.0"))
+  })
+  check("remote history filters changes since installed version", remote_notes$available &&
+    length(remote_notes$changes_since_installed) == 1 &&
+    identical(remote_notes$changes_since_installed[[1]]$version, "0.2.0"))
+  check("remote history keeps older versions", length(remote_notes$entries) == 2)
+  unavailable <- finn_skill_changes(sha = "old", fetch = function(...) stop("offline"))
+  check("missing remote notes do not masquerade as success", !unavailable$available && grepl("offline", unavailable$error))
+  check("invalid history reported", !finn_skill_changes(sha = "x", fetch = function(...) "no version headers")$available)
+  check("duplicate history versions reported", !finn_skill_changes(sha = "x", fetch = function(...) history_json(c("0.1.0", "0.1.0")))$available)
+  check("empty history reported", !finn_skill_changes(sha = "x", fetch = function(...) "")$available)
+  check("version with no notes reported", !finn_skill_changes(sha = "x", fetch = function(...)
+    '{"version":"0.1.0","released":"2026-10-12","changelog":[{"version":"0.1.0","date":"2026-10-12","changes":[]}]}')$available)
+  check("out-of-order history rejected", !finn_skill_changes(sha = "x", fetch = function(...) history_json(c("0.1.0", "0.2.0")))$available)
+  check("mismatched top-level version rejected", !finn_skill_changes(sha = "x", fetch = function(...)
+    sub('"version":"0.2.0"', '"version":"0.3.0"', history_json(c("0.2.0", "0.1.0")), fixed = TRUE))$available)
+  check("mismatched released date rejected", !finn_skill_changes(sha = "x", fetch = function(...)
+    sub('"released":"2026-10-12"', '"released":"2026-10-11"', history_json("0.1.0"), fixed = TRUE))$available)
+  check("invalid date rejected", !finn_skill_changes(sha = "x", fetch = function(...)
+    gsub("2026-10-12", "2026-02-30", history_json("0.1.0"), fixed = TRUE))$available)
+  check("scalar changes instead of array rejected", !finn_skill_changes(sha = "x", fetch = function(...)
+    '{"version":"0.1.0","released":"2026-10-12","changelog":[{"version":"0.1.0","date":"2026-10-12","changes":"Wrong shape"}]}')$available)
+
+  # Exercise read-only dispatch with fake network responses and no settings writes.
+  entry <- new.env(parent = up)
+  entry_args <- list(action = "changes", skill_dir = skill_dir)
+  entry$finn_main <- function(fn) fn(entry_args)
+  entry$finn_remote_versions <- function(...) stop("Local history must stay offline")
+  entry$finn_update_check <- function(...) list(
+    update_available = TRUE, finnts_update_available = FALSE, sha = "preview123",
+    local_skill_version = finn_skill_version, remote_skill_version = "0.2.0")
+  entry$finn_http_get <- function(url, timeout) {
+    check("check dispatcher fetches notes at compared SHA", grepl("/preview123/skills/finn/version.json$", url))
+    history_json("0.2.0")
+  }
+  # Rebind the history function so its default fetch uses the isolated seam.
+  entry$finn_skill_changes <- finn_skill_changes
+  environment(entry$finn_skill_changes) <- entry
+  main_expr <- tail(as.list(parse(file.path(scripts_dir, "update_skill.R"))), 1)[[1]]
+  handler <- tail(as.list(main_expr[[3]]), 1)[[1]]
+  local_result <- eval(handler, entry)
+  check("changes action reads offline installed history", identical(local_result$status, "ok") &&
+    local_result$data$available && identical(local_result$data$skill_version, finn_skill_version))
+  entry_args <- list(action = "check")
+  check_result <- eval(handler, entry)
+  check("check action includes release notes without installing", identical(check_result$status, "update_available") &&
+    identical(check_result$data$release_notes$changes_since_installed[[1]]$version, "0.2.0"))
+  entry$finn_update_check <- function(...) list(
+    update_available = FALSE, finnts_update_available = TRUE,
+    local_skill_version = finn_skill_version, remote_finnts_version = "99.0.0")
+  entry$finn_http_get <- function(...) stop("Package-only check does not fetch skill notes")
+  package_result <- eval(handler, entry)
+  check("package-only check preserves its install route", identical(package_result$status, "finnts_update_available") &&
+    is.null(package_result$data$release_notes))
+  entry_args <- list(action = "changes", remote = "true", ref = "release")
+  entry$finn_remote_versions <- function(ref) {
+    check("remote history honors selected ref", identical(ref, "release"))
+    list(sha = "preview123")
+  }
+  entry$finn_http_get <- function(...) history_json("0.2.0")
+  online_result <- eval(handler, entry)
+  check("remote changes action returns pinned history", identical(online_result$status, "ok") &&
+    grepl("/preview123/", online_result$data$source) && length(online_result$data$changes_since_installed) == 1)
+
   # A fake installed skill and a fake newer skill on "GitHub".
   Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "settings-update"))
   installed <- file.path(tmp, "installed-skill")
@@ -725,12 +1040,14 @@ with(up, {
   writeLines("user note", file.path(installed, "old_only.txt"))
 
   remote_files <- list(
+    "version.json" = history_json(c("9.0.0", "0.1.0")),
     "SKILL.md" = "# Finn 9.0.0",
     "scripts/finn_common.R" = "finn_skill_version <- \"9.0.0\"",
     "scripts/update_skill.R" = "x <- 2",
     "scripts/new_script.R" = "y <- 3"
   )
   fetch <- function(url, timeout) {
+    if (grepl("version.json$", url)) return(remote_files[["version.json"]])
     if (grepl("/commits/", url)) {
       return("{\"sha\":\"abc123\"}")
     }
@@ -796,10 +1113,21 @@ with(up, {
   r0 <- finn_do_update(args, fetch = fetch, download = download, installer = good_installer, verify = verify)
   check("update asks for confirmation first", identical(r0$status, "needs_confirmation") && length(installs) == 0 &&
     identical(readLines(file.path(installed, "SKILL.md")), "# Finn 0.1.0"))
+  check("update preview shows newer version changes", r0$data$release_notes$available &&
+    identical(r0$data$release_notes$changes_since_installed[[1]]$version, "9.0.0"))
+  old_fetch <- function(url, timeout) {
+    if (grepl("version.json$", url)) stop("history not present at old commit")
+    fetch(url, timeout)
+  }
+  without_notes <- finn_do_update(args, fetch = old_fetch, installer = good_installer, verify = verify)
+  check("missing release notes do not block update approval", identical(without_notes$status, "needs_confirmation") &&
+    !without_notes$data$release_notes$available && grepl("old commit", without_notes$data$release_notes$error) && length(installs) == 0)
 
   r1 <- finn_do_update(c(args, confirm = "true"), fetch = fetch, download = download, installer = good_installer, verify = verify)
   check("update succeeds", identical(r1$status, "updated") && isTRUE(r1$data$finnts_updated))
   check("update writes the new skill", identical(readLines(file.path(installed, "SKILL.md")), "# Finn 9.0.0") && file.exists(file.path(installed, "scripts", "new_script.R")))
+  check("update includes version history file", identical(readLines(file.path(installed, "version.json")),
+    strsplit(as.character(remote_files[["version.json"]]), "\n", fixed = TRUE)[[1]]))
   check("update keeps unknown files and reports them", file.exists(file.path(installed, "old_only.txt")) && "old_only.txt" %in% unlist(r1$data$stale_files))
   check("update installs finnts from the same commit", identical(installs[[1]], c("--source=github", "--ref=abc123")))
   check("update backs up the old skill", {
@@ -1015,10 +1343,33 @@ with(dx, {
   check("report: includes settings", any(grepl("forecast_horizon", txt)))
   check("report: includes the log", any(grepl("LOGLINE-MARKER", txt)))
   check("report: token in log is masked", !any(grepl("ghp_abcdefghijklmnop", txt)))
-  check("report: no data values", !any(grepl("987654", txt)))
+  check("report: does not copy input table values", !any(grepl("987654", txt)))
+  check("report: warns that business values may appear",
+    any(grepl("does not include input tables", txt, fixed = TRUE)) &&
+      any(grepl("may contain business values", txt, fixed = TRUE)) &&
+      any(grepl("masked where recognized", txt, fixed = TRUE)) &&
+      !any(grepl("has no data values", txt, fixed = TRUE)))
   file2 <- diagnose_write_report(res, lp, include_log = FALSE)
   txt2 <- readLines(file2, warn = FALSE)
   check("report: include_log=false leaves the log out", file2 != file && !any(grepl("LOGLINE-MARKER", txt2)))
+
+  finn_update_state(rpp, error = "invalid value for input name: Revenue 12345.67; ghp_abcdefghijklmnopqrstuvwx")
+  writeLines("Error: invalid value for input name: Revenue 76543.21; ghp_abcdefghijklmnopqrstuvwx", rpp$log)
+  value_res <- diagnose_run(list(run_id = "r1"), lp)
+  with_values <- readLines(diagnose_write_report(value_res, lp), warn = FALSE)
+  without_log <- readLines(diagnose_write_report(value_res, lp, include_log = FALSE), warn = FALSE)
+  check("report: errors and logs may retain business values but mask recognized secrets",
+    any(grepl("12345.67", with_values, fixed = TRUE)) &&
+      any(grepl("76543.21", with_values, fixed = TRUE)) &&
+      !any(grepl("ghp_abcdefghijklmnopqrstuvwx", with_values, fixed = TRUE)))
+  check("report: excluding log still includes saved error and privacy warning",
+    any(grepl("12345.67", without_log, fixed = TRUE)) &&
+      !any(grepl("76543.21", without_log, fixed = TRUE)) &&
+      any(grepl("even when the run log is left out", without_log, fixed = TRUE)) &&
+      !any(grepl("ghp_abcdefghijklmnopqrstuvwx", without_log, fixed = TRUE)))
+  check("report: saved configuration-fix advice matches fresh-run guidance",
+    any(grepl("--new=true --confirm=true", without_log, fixed = TRUE)) &&
+      !any(grepl("resumes reread", without_log, fixed = TRUE)))
 
   ep <- finn_project_paths(rp_root, "Empty")
   finn_ensure_project_dirs(ep)

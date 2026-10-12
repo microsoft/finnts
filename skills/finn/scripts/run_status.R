@@ -187,7 +187,7 @@ status_conflict_note <- function(paths) {
   )
 }
 
-#' Status of active runs across every project
+#' Status of local allocations across projects and registered storage roots
 #'
 #' @param args Parsed arguments (uses `--root`).
 #' @return finn_result list.
@@ -197,10 +197,12 @@ status_all <- function(args) {
     return(finn_result(FALSE, "needs_setup", "No Finn folder is set.", NULL,
       "Run setup_project.R --action=status and confirm a location with the user."))
   }
-  active <- finn_all_active_runs(root)
+  active <- finn_claimed_resources(root)$states
   summaries <- lapply(active, function(s) {
-    out <- status_summary(s, finn_project_paths(root, s$project))
+    out <- status_summary(s, finn_project_paths(s$root, s$project))
     out$project <- s$project
+    out$root <- s$root
+    out$allocation_uncertain <- isTRUE(s$allocation_uncertain)
     out
   })
   msg <- if (length(summaries)) {
@@ -212,7 +214,7 @@ status_all <- function(args) {
   }
   finn_result(TRUE, if (length(summaries)) "running" else "idle", msg,
     list(root = root, active = summaries),
-    if (length(summaries)) "Use run_status.R --project=<name> --run_id=<id> for details on one run.")
+    if (length(summaries)) "Use run_status.R --root=<root> --project=<name> --run_id=<id> for details on one run. Uncertain allocations keep their resource claims until process exit can be confirmed.")
 }
 
 finn_main(function(args) {

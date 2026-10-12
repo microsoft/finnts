@@ -76,7 +76,17 @@ off or the run died there, the user can confirm and launch with
    Secrets are redacted from the log text it returns.
 3. Explain the cause to the user in finance terms, propose the fix, and get approval for
    anything that changes settings, data, installs, or creates a new Agent version.
-4. Apply the fix, then resume with the same `run_forecast.R --mode=...` command.
+4. For a temporary failure without changed settings or input data, apply the fix
+   and resume with the same `run_forecast.R --mode=...` command. A resume keeps
+   the original saved settings and data. For configuration or data corrections,
+   get approval and start fresh with `--new=true --confirm=true` instead.
+   Launch-time parallel settings can change on resume for memory recovery.
+
+Support reports do not include input tables, but errors, settings, and log lines
+may contain business values or names. Masking is best-effort for recognized
+credentials and identifying details. Ask the user to review and remove confidential
+content before sharing, even with `--include_log=false`: the diagnosis still
+includes the saved error.
 
 Other `diagnose_run` statuses: `running` (healthy), `possibly_stuck` (log quiet for over
 an hour; large training can be quiet, so check CPU before cancelling), `completed`,

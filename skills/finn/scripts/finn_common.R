@@ -694,7 +694,7 @@ finn_pid_alive <- function(pid, create_time = NULL) {
       }
       abs(as.numeric(ps::ps_create_time(h)) - as.numeric(create_time)) < 3
     },
-    error = function(e) FALSE
+    error = function(e) if (inherits(e, "no_such_process")) FALSE else NA
   )
 }
 
@@ -734,14 +734,16 @@ finn_effective_status <- function(state, grace_secs = 120) {
 #' folder's modification time.
 #'
 #' @param paths Project paths.
+#' @param exclude_states Exact state paths already read by the caller.
 #' @return List of state lists, each with `effective_status`.
-finn_list_runs <- function(paths) {
+finn_list_runs <- function(paths, exclude_states = character()) {
   if (!dir.exists(paths$runs)) {
     return(list())
   }
   dirs <- list.dirs(paths$runs, recursive = FALSE, full.names = FALSE)
   states <- lapply(dirs, function(d) {
     rp <- finn_run_paths(paths, d)
+    if (rp$state %in% exclude_states) return(NULL)
     s <- tryCatch(finn_read_json(rp$state, retry_wait = 0.2), error = function(e) e)
     if (inherits(s, "error")) {
       return(list(
@@ -1113,10 +1115,33 @@ finn_system_resources <- function() {
     tryCatch(ps::ps_system_memory(), error = function(e) NULL)
   }
   list(
-    cores = if (is.na(cores)) 1L else as.integer(cores),
+    cores = as.integer(cores),
     free_gb = if (is.null(mem)) NA_real_ else round(mem$avail / 1024^3, 1),
     total_gb = if (is.null(mem)) NA_real_ else round(mem$total / 1024^3, 1)
   )
+}
+
+#' Machine-wide CPU and memory planning budgets
+#'
+#' Leaves one logical processor available and estimates 300 MB per worker
+#' within 80 percent of total RAM. Unknown resources allow only sequential
+#' work and are explicitly reported; available RAM is a warning signal.
+#'
+#' @param resources List from [finn_system_resources()].
+#' @return List with `cpu_budget`, `ram_budget_gb`, and `warnings`.
+finn_resource_budget <- function(resources) {
+  valid <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x > 0
+  warnings <- character()
+  cpu <- if (valid(resources$cores)) max(1L, floor(resources$cores) - 1L) else {
+    warnings <- c(warnings, "Could not detect the logical processor count; using sequential processing.")
+    1L
+  }
+  ram <- if (valid(resources$total_gb)) resources$total_gb * 0.8 else {
+    warnings <- c(warnings, "Could not detect total RAM; using sequential processing.")
+    cpu <- min(cpu, 1L)
+    0.3
+  }
+  list(cpu_budget = as.integer(cpu), ram_budget_gb = ram, warnings = warnings)
 }
 
 #' Whether global models run by default for a date type
@@ -1143,22 +1168,32 @@ finn_default_global_models <- function(date_type) {
 #' @param step_down Fallback level after memory failures: 0 normal, 1 halve
 #'   workers, 2 inner parallel only, 3 sequential.
 #' @return List with `parallel_processing`, `inner_parallel`, `num_cores`,
-#'   `safe_workers`, and `reason`.
+#'   `safe_workers`, `warnings`, and `reason`.
 finn_choose_parallel <- function(n_series, data_gb, global_models,
                                  resources = finn_system_resources(), step_down = 0L) {
-  cores <- resources$cores
-  free_gb <- resources$free_gb
-  if (is.null(free_gb) || is.na(free_gb)) free_gb <- 8
-  per_worker_gb <- finn_worker_gb(data_gb)
-  safe <- min(cores - 1L, floor((free_gb - 2) / per_worker_gb))
+  budget <- finn_resource_budget(resources)
+  cpu <- resources$cpu_budget %||% budget$cpu_budget
+  ram <- resources$ram_budget_gb %||% budget$ram_budget_gb
+  safe <- min(cpu, floor((ram + 1e-9) / finn_worker_gb(data_gb)))
   safe <- max(as.integer(safe), 0L)
 
   plan <- function(pp, inner, n, reason) {
-    list(parallel_processing = pp, inner_parallel = inner, num_cores = n, safe_workers = safe, reason = reason)
+    workers <- n %||% 1L
+    warnings <- budget$warnings
+    free <- resources$free_gb
+    if (is.null(free) || length(free) != 1L || !is.finite(free)) {
+      warnings <- c(warnings, "Available RAM could not be detected; actual worker memory may exceed the 300 MB estimate.")
+    } else if (workers * 0.3 > free) {
+      warnings <- c(warnings, "Available RAM is below the estimated worker memory. Windows or your operating system may reclaim or page memory, slowing Finn and other applications.")
+    }
+    list(parallel_processing = pp, inner_parallel = inner, num_cores = n, safe_workers = safe,
+      detected_cores = resources$cores, total_gb = resources$total_gb,
+      ram_budget_gb = ram, warnings = warnings,
+      reason = paste0(reason, " Uses ", workers, " worker(s); 300 MB per worker is an estimate, not a memory limit."))
   }
 
-  if (step_down >= 3L || cores < 4L || safe < 2L) {
-    return(plan(NULL, FALSE, NULL, "Sequential: limited cores or free memory, or earlier memory failures."))
+  if (step_down >= 3L || safe < 2L) {
+    return(plan(NULL, FALSE, NULL, "Sequential: limited CPU/RAM budget, or earlier memory failures."))
   }
   inner_plan <- plan(NULL, TRUE, safe, "Inner parallel: few series or global models, so models train in parallel within each series.")
   if (step_down >= 2L || n_series <= 1L) {
@@ -1168,7 +1203,7 @@ finn_choose_parallel <- function(n_series, data_gb, global_models,
     return(inner_plan)
   }
   if (n_series >= 2L * safe) {
-    workers <- if (step_down >= 1L) max(2L, safe %/% 2L) else safe
+    workers <- min(n_series, if (step_down >= 1L) max(2L, safe %/% 2L) else safe)
     return(plan("local_machine", FALSE, workers, "Local machine: many series, so series train in parallel worker processes."))
   }
   inner_plan
@@ -1176,10 +1211,10 @@ finn_choose_parallel <- function(n_series, data_gb, global_models,
 
 #' Approximate memory one Finn worker process needs
 #'
-#' @param data_gb Approximate in-memory input size in GB.
+#' @param data_gb Input size, retained for compatibility; not used in sizing.
 #' @return GB per worker, the same estimate [finn_choose_parallel()] uses.
 finn_worker_gb <- function(data_gb) {
-  1 + 3 * max(data_gb %||% 0, 0)
+  0.3
 }
 
 #' Record the cores and memory a parallel plan may use
@@ -1199,53 +1234,202 @@ finn_plan_claim <- function(plan, data_gb) {
 
 #' Cores and memory claimed by active runs on this computer
 #'
-#' Sums the claims of queued or running runs started on this computer in
-#' other projects. Runs saved before claims were recorded count their
-#' `num_cores` (or one core when sequential) at 2 GB each.
+#' Reads registered state files across storage roots and discovers legacy runs
+#' in known roots. Missing or unreadable registered states retain their claims.
+#' Terminal runs retain claims until their recorded process has exited.
+#' Older claims are preserved; runs without memory claims count at 2 GB/core.
 #'
 #' @param root Finn storage root.
-#' @param exclude_project Project folder name to skip, usually the one being
-#'   launched (it already allows only one active run).
-#' @return List with `cores`, `gb`, and `runs` (one entry per counted run).
+#' @param exclude_project Project folder name to skip for a settings preview
+#'   in the selected root. Launches count even a terminal run until it exits.
+#' @return List with `cores`, `gb`, `runs` (compact claims), and `states`.
 finn_claimed_resources <- function(root, exclude_project = NULL) {
-  runs <- Filter(function(s) {
-    !finn_other_host(s) && !identical(s$project, exclude_project)
-  }, finn_all_active_runs(root))
+  registry <- finn_read_json(file.path(finn_settings_dir(), "machine-runs.json"), list(roots = list(), runs = list()))
+  runs <- registry$runs %||% list()
+  known <- vapply(runs, function(s) s$state_file, character(1))
+  roots <- unique(c(unlist(registry$roots), root))
+  for (r in roots) {
+    if (!dir.exists(r)) next
+    for (d in list.dirs(r, recursive = FALSE, full.names = FALSE)) {
+      paths <- finn_project_paths(r, d)
+      if (!file.exists(paths$project_json)) next
+      for (s in finn_list_runs(paths, exclude_states = known)) {
+        if (identical(s$effective_status, "unreadable")) {
+          stop("Cannot determine resource claims for ", d, ": ", s$error, call. = FALSE)
+        }
+        if (s$effective_status %in% c("queued", "running") && !finn_other_host(s)) {
+          s$root <- finn_norm(r)
+          s$project <- d
+          s$state_file <- finn_run_paths(paths, s$run_id)$state
+          if (!any(vapply(runs, function(x) identical(x$state_file, s$state_file), logical(1)))) {
+            runs[[length(runs) + 1L]] <- s
+          }
+        }
+      }
+    }
+  }
+  runs <- Filter(Negate(is.null), lapply(runs, function(saved) {
+    s <- tryCatch(finn_read_json(saved$state_file), finn_json_error = function(e) {
+      finn_log("Retaining resource claim: ", conditionMessage(e))
+      NULL
+    })
+    if (is.null(s)) {
+      finn_log("Cannot read registered run state; retaining its resource claim: ", saved$state_file)
+      s <- saved
+      s$allocation_uncertain <- TRUE
+    }
+    s$state_file <- saved$state_file
+    s$root <- saved$root
+    s$project <- saved$project
+    s$launcher_pid <- saved$launcher_pid
+    s$launcher_create_time <- saved$launcher_create_time
+    if (finn_other_host(s)) return(NULL)
+    if (!isTRUE(s$allocation_uncertain)) {
+      alive <- finn_pid_alive(s$pid, s$pid_create_time)
+      uncertain <- is.na(alive)
+      if (is.null(s$pid) && !s$status %in% c("queued", "completed", "failed", "cancelled", "interrupted")) {
+        alive <- NA
+        uncertain <- TRUE
+      }
+      if (isFALSE(alive)) {
+        if (!identical(s$status, "queued") || !is.null(s$pid)) return(NULL)
+        launching <- finn_pid_alive(s$launcher_pid, s$launcher_create_time)
+        if (isFALSE(launching) && !identical(finn_effective_status(s), "queued")) return(NULL)
+        uncertain <- is.na(launching)
+      }
+      s$allocation_uncertain <- uncertain
+    }
+    if (!is.null(exclude_project) && identical(s$project, exclude_project) &&
+        identical(finn_norm(s$root), finn_norm(root))) return(NULL)
+    s$effective_status <- finn_effective_status(s)
+    s
+  }))
   claims <- lapply(runs, function(s) {
     p <- s$parallel %||% list()
     cores <- as.integer(p$claimed_cores %||% max(1L, as.integer(p$num_cores %||% 1L)))
     gb <- as.numeric(p$claimed_gb %||% (cores * 2))
-    list(project = s$project, run_id = s$run_id, mode = s$mode, status = s$effective_status,
-      stage = s$stage, claimed_cores = cores, claimed_gb = gb)
+    if (length(cores) != 1L || !is.finite(cores) || cores < 1L ||
+        length(gb) != 1L || !is.finite(gb) || gb <= 0) {
+      stop("Invalid resource claim for ", s$project, "/", s$run_id, ". Check its run state before launching more forecasts.", call. = FALSE)
+    }
+    list(project = s$project, root = s$root, state_file = s$state_file,
+      run_id = s$run_id, mode = s$mode, status = s$effective_status,
+      stage = s$stage, claimed_cores = cores, claimed_gb = gb,
+      allocation_uncertain = isTRUE(s$allocation_uncertain))
   })
   list(
     cores = sum(vapply(claims, function(x) x$claimed_cores, integer(1))),
     gb = sum(vapply(claims, function(x) x$claimed_gb, numeric(1))),
-    runs = claims
+    runs = claims, states = runs
   )
+}
+
+#' Register a queued run in the local cross-root allocation registry
+#'
+#' Called while holding the machine launch lock, before starting the worker.
+#' Reconciliation discards only confirmed exited allocations. Forecast files
+#' are untouched; the registry contains bookkeeping and exact state paths.
+#'
+#' @param paths Project paths.
+#' @param run_paths Run paths.
+#' @param claimed Reconciled claims from [finn_claimed_resources()].
+#' @return Invisible registry path.
+finn_register_allocation <- function(paths, run_paths, claimed) {
+  file <- file.path(finn_settings_dir(), "machine-runs.json")
+  registry <- finn_read_json(file, list(roots = list()))
+  state <- finn_read_state(run_paths)
+  state$root <- finn_norm(paths$root)
+  state$project <- paths$name
+  state$state_file <- run_paths$state
+  state$launcher_pid <- Sys.getpid()
+  state$launcher_create_time <- if (requireNamespace("ps", quietly = TRUE)) as.numeric(ps::ps_create_time(ps::ps_handle()))
+  states <- Filter(function(s) !identical(s$state_file, run_paths$state), claimed$states %||% list())
+  states[[length(states) + 1L]] <- state
+  fields <- c("root", "project", "state_file", "run_id", "mode", "status",
+    "host", "parallel", "updated_at", "pid", "pid_create_time", "launcher_pid", "launcher_create_time")
+  states <- lapply(states, function(s) s[intersect(fields, names(s))])
+  finn_write_json(list(roots = as.list(unique(c(unlist(registry$roots), state$root))), runs = states), file)
+}
+
+#' Acquire the machine allocation lock using an atomic directory creation
+#'
+#' Unlike a read/write lock file, directory creation admits only one launcher.
+#' Released directories are renamed and kept, never deleted. A dead owner can
+#' be recovered; unknown liveness is never treated as an abandoned lock.
+#'
+#' @param timeout Seconds to wait for another launcher.
+#' @return Owner token, or NULL when busy.
+finn_machine_lock_acquire <- function(timeout = 30) {
+  path <- file.path(finn_settings_dir(), "machine-launch-lock")
+  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
+  token <- paste0(Sys.getpid(), "-", format(Sys.time(), "%Y%m%d%H%M%OS6"), "-", sample.int(999999, 1))
+  deadline <- Sys.time() + timeout
+  repeat {
+    if (dir.create(path, showWarnings = FALSE)) {
+      created <- if (requireNamespace("ps", quietly = TRUE)) as.numeric(ps::ps_create_time(ps::ps_handle()))
+      finn_write_json(list(token = token, pid = Sys.getpid(), create_time = created), file.path(path, "owner.json"))
+      return(token)
+    }
+    owner <- finn_read_json(file.path(path, "owner.json"))
+    age <- as.numeric(difftime(Sys.time(), file.mtime(path), units = "secs"))
+    dead <- !is.null(owner) && isFALSE(finn_pid_alive(owner$pid, owner$create_time))
+    if (dead) {
+      if (file.rename(path, paste0(path, ".abandoned-", owner$token))) next
+    }
+    if (is.null(owner) && is.finite(age) && age > 120) {
+      stop("Finn's machine launch lock has no recorded owner. Check that no launch is active before moving the lock directory aside: ",
+        path, call. = FALSE)
+    }
+    if (Sys.time() >= deadline) return(NULL)
+    Sys.sleep(0.2)
+  }
+}
+
+#' Runs that must finish before changing the installed software
+#'
+#' Includes local allocations across roots and remote runs in the selected
+#' synced root. Uncertain allocations block updates conservatively.
+#'
+#' @param root Selected storage root, or NULL.
+#' @return List of run states, deduplicated by root, project and run id.
+finn_software_active_runs <- function(root) {
+  selected <- finn_all_active_runs(root)
+  selected <- lapply(selected, function(s) {
+    s$root <- finn_norm(root)
+    s
+  })
+  runs <- c(selected, finn_claimed_resources(root)$states)
+  keys <- vapply(runs, function(s) paste(s$root, s$project, s$run_id, sep = "\n"), character(1))
+  runs[!duplicated(keys)]
+}
+
+#' Release the machine allocation lock without deleting files
+#'
+#' @param token Token from [finn_machine_lock_acquire()].
+#' @return Invisible logical indicating release.
+finn_machine_lock_release <- function(token) {
+  if (is.null(token)) return(invisible(FALSE))
+  path <- file.path(finn_settings_dir(), "machine-launch-lock")
+  owner <- finn_read_json(file.path(path, "owner.json"))
+  if (is.null(owner) || !identical(owner$token, token)) return(invisible(FALSE))
+  released <- file.rename(path, paste0(path, ".released-", token))
+  if (!released) stop("Could not release the Finn machine launch lock.", call. = FALSE)
+  invisible(TRUE)
 }
 
 #' Machine resources left after other active runs
 #'
-#' Free memory is the lower of what the system reports now and total memory
-#' minus other runs' claims, because a run that just launched may not have
-#' started its workers yet. Unknown free memory assumes 8 GB, as in
-#' [finn_choose_parallel()].
+#' Subtracts claims from the machine-wide CPU and 80-percent-total-RAM
+#' budgets. Available memory is kept unchanged for pressure warnings.
 #'
 #' @param resources List from [finn_system_resources()].
 #' @param claimed List from [finn_claimed_resources()].
-#' @return Resources list with reduced `cores` and `free_gb`.
+#' @return Resources list with remaining `cpu_budget` and `ram_budget_gb`.
 finn_remaining_resources <- function(resources, claimed) {
-  free <- resources$free_gb
-  if (is.null(free) || is.na(free)) free <- 8 - claimed$gb
-  if (!is.null(resources$total_gb) && !is.na(resources$total_gb)) {
-    free <- min(free, resources$total_gb - claimed$gb)
-  }
-  list(
-    cores = as.integer(resources$cores - claimed$cores),
-    free_gb = round(free, 1),
-    total_gb = resources$total_gb
-  )
+  budget <- finn_resource_budget(resources)
+  resources$cpu_budget <- max(0L, budget$cpu_budget - claimed$cores)
+  resources$ram_budget_gb <- max(0, budget$ram_budget_gb - claimed$gb)
+  resources
 }
 
 #' Plan a run's parallel setup around other runs on this computer
@@ -1262,18 +1446,39 @@ finn_remaining_resources <- function(resources, claimed) {
 #' @param resources List from [finn_system_resources()].
 #' @param step_down Fallback level after memory failures.
 #' @param sequential Whether the config forces sequential processing.
+#' @param batch_size Number of concurrent submissions planned together.
+#'   Each receives at most an equal share of the full machine budget.
+#' @param num_cores Optional requested worker ceiling within the shared budget.
 #' @return List with `fits` (logical), `plan` (with claims recorded), `shared`
 #'   (whether other runs reduced the plan), and `remaining` resources.
 finn_plan_with_others <- function(n_series, data_gb, global_models, claimed,
                                   resources = finn_system_resources(), step_down = 0L,
-                                  sequential = FALSE) {
-  remaining <- if (length(claimed$runs)) finn_remaining_resources(resources, claimed) else resources
-  fits <- length(claimed$runs) == 0 ||
-    (remaining$cores >= 1L && remaining$free_gb >= finn_worker_gb(data_gb))
-  plan <- if (sequential) {
-    list(parallel_processing = NULL, inner_parallel = FALSE, num_cores = NULL, reason = "Sequential (set by config).")
-  } else {
-    finn_choose_parallel(n_series, data_gb, global_models, remaining, step_down = step_down)
+                                  sequential = FALSE, batch_size = 1L, num_cores = NULL) {
+  if (!is.numeric(batch_size) || length(batch_size) != 1L || !is.finite(batch_size) ||
+      batch_size < 1 || batch_size != floor(batch_size)) {
+    stop("batch_size must be a positive whole number.", call. = FALSE)
+  }
+  budget <- finn_resource_budget(resources)
+  remaining <- finn_remaining_resources(resources, claimed)
+  remaining$cpu_budget <- min(remaining$cpu_budget, floor(budget$cpu_budget / batch_size))
+  remaining$ram_budget_gb <- min(remaining$ram_budget_gb, budget$ram_budget_gb / batch_size)
+  if (!is.null(num_cores)) {
+    if (!is.numeric(num_cores) || length(num_cores) != 1L || !is.finite(num_cores) ||
+        num_cores < 1 || num_cores != floor(num_cores)) {
+      stop("num_cores must be a positive whole number.", call. = FALSE)
+    }
+    remaining$cpu_budget <- min(remaining$cpu_budget, num_cores)
+  }
+  fits <- remaining$cpu_budget >= 1L && remaining$ram_budget_gb + 1e-9 >= 0.3
+  plan <- finn_choose_parallel(n_series, data_gb, global_models, remaining,
+    step_down = if (sequential) 3L else step_down)
+  if (sequential) plan$reason <- paste("Sequential (set by config).", plan$reason)
+  if (batch_size > 1L) plan$reason <- paste(plan$reason, "Equal budget share for", batch_size, "planned concurrent runs.")
+  if (!is.null(num_cores) && plan$safe_workers < num_cores) {
+    plan$warnings <- c(plan$warnings, "Requested workers exceed the shared CPU/RAM or batch budget; the allocation was reduced to fit.")
+  }
+  if (any(vapply(claimed$runs, function(s) isTRUE(s$allocation_uncertain), logical(1)))) {
+    plan$warnings <- c(plan$warnings, "Some existing runs have uncertain state or process liveness; their resource claims have been retained.")
   }
   if (length(claimed$runs) && !sequential) {
     plan$reason <- paste0(plan$reason, " Shares this computer with ", length(claimed$runs), " other active Finn run(s).")

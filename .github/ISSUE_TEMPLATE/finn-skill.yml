@@ -10,8 +10,10 @@ body:
         Thanks for reporting a problem. The quickest way to fill this in is to ask your coding agent:
         **"Create a Finn support report for my last run."** It writes a Markdown file under your project's `support` folder.
 
-        **Do not share confidential data.** The support report has no data values, and it masks home folders,
-        user names, e-mail addresses, and keys. Read it before attaching, and remove any series or column names you cannot share.
+        **Do not share confidential data.** The report does not include input tables, but errors, settings,
+        and log lines may contain business values, series names, or column names. Credentials and identifying
+        details are masked where recognized. Review and remove confidential content before attaching, even
+        if you left out the log: the saved error is still included.
   - type: input
     id: skill-version
     attributes:

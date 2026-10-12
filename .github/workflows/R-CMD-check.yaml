@@ -40,7 +40,7 @@ jobs:
           use-public-rspm: true
 
       - name: Install script dependencies
-        run: Rscript -e 'install.packages(c("jsonlite", "digest", "ps"))'
+        run: Rscript -e 'install.packages(c("jsonlite", "digest", "ps", "processx"))'
 
       - name: Test Finn skill scripts
         run: Rscript skills/finn/tests/test_skill.R

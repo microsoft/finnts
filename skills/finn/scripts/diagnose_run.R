@@ -9,9 +9,9 @@
 # user's OK. With --report=true it also writes one support report,
 # <project>/support/finn_support_<time>.md, for attaching to a GitHub issue.
 # The report holds versions, the diagnosis, the settings, and (unless
-# --include_log=false) the end of the run log. It never holds data values;
-# home folders, the user name, OneDrive organization names, e-mail
-# addresses, and secrets are masked.
+# --include_log=false) the end of the run log. Input tables are not read, but
+# errors, settings, and logs may contain business values. Recognized credentials
+# and identifying details are masked; review before sharing.
 
 local({
   args <- commandArgs(trailingOnly = FALSE)
@@ -113,7 +113,7 @@ diagnose_patterns <- function() {
       "config_value",
       "A setting in the project config has the wrong type or an unsupported value.",
       c("Run validate_config.R to see which setting is wrong and the allowed values.",
-        "Fix config.json with the user's OK, then resume; resumes reread the config."))
+        "Fix config.json with the user's OK, then start a fresh run with run_forecast.R --project=<name> --mode=<same mode> --new=true --confirm=true. Resuming uses the original saved settings, not the fixes."))
   )
 }
 
@@ -175,7 +175,9 @@ diagnose_mask <- function(x, homes = c(Sys.getenv("USERPROFILE"), Sys.getenv("HO
 #' Build the text of a support report
 #'
 #' Holds versions, the diagnosis, the project settings, and optionally the end
-#' of the run log. It never reads the input data, so no data values appear.
+#' of the run log. It never reads input tables, but settings, errors, and log
+#' lines may contain business values or names. Masking recognizes credentials
+#' and personal details, not arbitrary confidential content; review is required.
 #'
 #' @param result Diagnosis result from [diagnose_run()].
 #' @param paths Project paths.
@@ -197,9 +199,11 @@ diagnose_report_lines <- function(result, paths, include_log = TRUE, log_lines =
   lines <- c(
     "# Finn skill support report",
     "",
-    "> Review before sharing. This report has no data values, and home folders, user",
-    "> and computer names, e-mail addresses, and keys are masked. Series names and",
-    "> column names from your settings or log can still appear; edit them out if needed.",
+    "> Review before sharing. This report does not include input tables. Errors,",
+    "> settings, and log lines may contain business values, series names, or column names.",
+    "> Credentials, home folders, user and computer names, organization names, and",
+    "> e-mail addresses are masked where recognized. Remove confidential content",
+    "> before sharing, even when the run log is left out.",
     "",
     "## Versions",
     kv("Skill", finn_skill_version),

@@ -60,6 +60,24 @@ copying, start a new chat (or reload the agent) so it is picked up. The reposito
 
 ## Update
 
+Ask your coding agent:
+
+- "What versions of the Finn skill and finnts do I have?"
+- "What changed since my installed Finn skill version?"
+- "Update my Finn skill and finnts to the latest versions."
+- "Update only finnts." / "Undo my last update."
+
+The agent shows both version numbers and summarizes available changes before
+asking permission to install. [version.json](version.json) keeps the skill's full
+version history, including previous releases. Read it offline with
+`update_skill.R --action=changes`; add `--remote=true` to read the GitHub history.
+Skill versions are separate from finnts package versions. This history documents
+local changes too; they become available to other users only when published.
+Its `version` and `released` fields describe the newest entry in `changelog`,
+whose entries contain `version`, `date`, and plain-language `changes`.
+This branch starts with one initial **0.1.0** entry; its date records preparation
+of that version, not proof that it has been published.
+
 Your projects, settings, and forecasts live outside this folder, so updating is safe.
 The skill and finnts ship together from this repository:
 
@@ -115,14 +133,23 @@ definitions of terms like WMAPE and back test are in
   `FINN_SKILL_NO_UPDATE_CHECK=true`.
 - **API keys** are read from environment variables, never saved, and hidden in logs and
   support reports.
+- **Local resource bookkeeping** is kept under `~/.finn`: a registry records run
+  locations, process identity, and worker allocations across your storage folders.
+  It does not copy input rows or forecasts. Finn budgets 80% of total RAM at an
+  estimated 300 MB per worker, capped at logical processors minus one. Available
+  RAM affects warnings, not that budget; actual memory use can exceed the estimate.
+  See [parallel processing](references/parallelism.md) for shared and batch runs.
 
 ## Report a problem
 
 Ask the agent: "Create a support report so I can report a problem." It runs
 `diagnose_run.R --report=true`, which writes a Markdown file to the project's `support/`
 folder with versions, the diagnosis, settings, and the last log lines (you can leave
-the log out). Home folders, user and computer names, e-mail addresses, organization
-names, and keys are masked, but read the file before sharing. Then open a
+the log out). It does not include input tables, but errors, settings, and log lines
+may contain business values, series names, or column names. Home folders, user and
+computer names, e-mail addresses, organization names, and keys are masked where
+recognized. Review and remove confidential content before sharing, even with the
+log left out: the saved error is still included. Then open a
 [Finn skill problem](https://github.com/microsoft/finnts/issues/new?template=finn-skill.yml) issue and
 paste it in. Do not include confidential data.
 

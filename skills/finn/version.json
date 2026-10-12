@@ -1,0 +1,17 @@
+{
+  "version": "0.1.0",
+  "released": "2026-10-12",
+  "changelog": [
+    {
+      "version": "0.1.0",
+      "date": "2026-10-12",
+      "changes": [
+        "Initial local skill for GitHub Copilot and Codex, with guided setup, finnts installation, and standard or Agent forecasts without writing R code.",
+        "Choose project storage, prepare data, and manage background forecasts with progress checks, cancellation, saved-progress resumes, and exports.",
+        "Share a same-user machine budget across projects using detected CPU capacity and 80% of total RAM at an estimated 300 MB per worker.",
+        "Includes a tutorial, data template, settings recommendations, privacy guidance, diagnostics, and masked support reports.",
+        "Review version history, approve skill or finnts updates, and undo updates with backups. Active runs block software changes."
+      ]
+    }
+  ]
+}

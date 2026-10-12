@@ -131,9 +131,9 @@ finn_main(function(args) {
       c("Nothing to install. To reinstall the same build anyway (for example to repair a broken install), ask the user, then rerun with --force=true --confirm=true.", skill_acts)))
   }
 
-  active <- finn_all_active_runs(finn_resolve_root(args))
+  active <- finn_software_active_runs(finn_resolve_root(args))
   if (length(active) > 0) {
-    plan$active_runs <- lapply(active, function(s) list(project = s$project, run_id = s$run_id))
+    plan$active_runs <- lapply(active, function(s) list(root = s$root, project = s$project, run_id = s$run_id))
     return(finn_result(
       FALSE, "blocked",
       "A forecast is running. Changing finnts now could break it.",

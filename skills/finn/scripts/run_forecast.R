@@ -2,6 +2,7 @@
 # Usage:
 #   Rscript run_forecast.R --project=<name> [--mode=standard|iterate|update]
 #       [--new=true] [--confirm=true] [--force=true] [--takeover=true] [--wait=true]
+#       [--batch_size=<planned concurrent runs>] [--num_cores=<worker ceiling>]
 #
 # Default behavior picks up where the last unfinished run of the same mode
 # left off: same run id, same Agent request id, same saved settings, and no
@@ -198,8 +199,9 @@ launch_machine_busy <- function(claimed, remaining, data_gb) {
       n, paste(projects, collapse = ", ")),
     list(
       active_runs = claimed$runs,
-      remaining_cores = remaining$cores,
+      remaining_cores = remaining$cpu_budget %||% remaining$cores,
       remaining_free_gb = remaining$free_gb,
+      remaining_budget_gb = remaining$ram_budget_gb,
       needed_gb = round(finn_worker_gb(data_gb), 1)
     ),
     c(
@@ -515,19 +517,21 @@ finn_main(function(args) {
 
   # A machine-wide lock keeps launches in different projects from claiming
   # the same cores and memory at once. Always taken after the project lock.
-  machine_lock_path <- file.path(finn_settings_dir(), "launch.lock")
-  machine_lock <- finn_lock_acquire(machine_lock_path, timeout = 30, stale = 120)
+  batch_size <- suppressWarnings(as.numeric(finn_arg(args, "batch_size", "1")))
+  machine_lock <- finn_machine_lock_acquire()
   if (is.null(machine_lock)) {
     return(finn_result(FALSE, "busy", "Another Finn run is being started on this computer right now.", NULL,
       c("Wait a few seconds, then try again; nothing was started.")))
   }
-  on.exit(finn_lock_release(machine_lock_path, machine_lock), add = TRUE)
+  on.exit(finn_machine_lock_release(machine_lock), add = TRUE)
 
   global <- run_cfg$run_global_models %||% finn_default_global_models(run_cfg$date_type)
   data_gb <- finn_data_gb(checked$data)
-  claimed <- finn_claimed_resources(paths$root, exclude_project = paths$name)
+  claimed <- finn_claimed_resources(paths$root)
   sizing <- finn_plan_with_others(facts$n_series, data_gb, global, claimed,
-    step_down = step_down, sequential = identical(run_cfg$parallel, "none")
+    step_down = step_down, sequential = identical(run_cfg$parallel, "none"),
+    batch_size = batch_size,
+    num_cores = if (is.null(args$num_cores)) NULL else suppressWarnings(as.numeric(args$num_cores))
   )
   if (!sizing$fits) {
     return(launch_machine_busy(claimed, sizing$remaining, data_gb))
@@ -561,13 +565,17 @@ finn_main(function(args) {
   )
   if (identical(decision$action, "new")) base$created_at <- finn_now()
   do.call(finn_update_state, c(list(run_paths), base))
+  finn_register_allocation(paths, run_paths, claimed)
   # The queued state now blocks other launches and records this run's claim,
   # so the locks can go before a possibly long --wait run.
-  finn_lock_release(machine_lock_path, machine_lock)
+  finn_machine_lock_release(machine_lock)
   finn_lock_release(lock_path, lock)
 
   wait <- finn_bool(finn_arg(args, "wait"))
-  started <- launch_worker(paths, run_paths, wait = wait)
+  started <- tryCatch(launch_worker(paths, run_paths, wait = wait), error = function(e) {
+    finn_update_state(run_paths, status = "failed", error = finn_redact(conditionMessage(e)), finished_at = finn_now())
+    stop(e)
+  })
   if (!wait) {
     finn_update_state(run_paths, pid = started$pid, pid_create_time = started$pid_create_time)
   }
@@ -578,7 +586,7 @@ finn_main(function(args) {
   state <- finn_read_state(run_paths)
   data <- list(run_id = run_paths$id, mode = mode, resumed = identical(decision$action, "resume"),
     request_id = request_id, parallel = plan, log = run_paths$log, output = run_paths$output,
-    estimated_runtime = estimate$text, warnings = checked$warnings)
+    estimated_runtime = estimate$text, warnings = c(checked$warnings, plan$warnings))
   if (wait) {
     data$status <- finn_effective_status(state)
     return(finn_result(identical(state$status, "completed"), state$status %||% "unknown",

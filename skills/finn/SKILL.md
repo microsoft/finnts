@@ -31,6 +31,14 @@ Speak in plain finance language (series, horizon, accuracy, back test), not R ja
 6. **Every script prints one JSON object** with `ok`, `status`, `message`, `data`, and
    `next_actions`. Read `status` and follow `next_actions`; relay `message` in plain words.
 7. Never print, store, or commit API keys. LLM keys come from environment variables only.
+8. **Standard runs keep ensemble training off.** For every new standard run,
+   explicitly propose `run_ensemble_models = false`; never leave it null or enable
+   it unless the user explicitly asks for ensemble models. Include this in the
+   settings approval and verify it before launch. This applies to tutorials,
+   sample tests, first forecasts, and later standard refreshes. Do not proactively
+   offer ensemble training. Simple averaging (`average_models`) is separate and
+   unchanged. Do not rewrite an unfinished run's saved settings on resume; explain
+   any conflict and ask before a fresh run. Agent-run settings are unaffected.
 
 ## Running scripts
 
@@ -52,7 +60,8 @@ Runs launch in the background and return immediately; do not block the chat wait
 | Pick a run type, or forecast hundreds or thousands of series | [references/choosing-a-run.md](references/choosing-a-run.md); suggestions come from `validate_config.R` |
 | Test on a sample of series first | `prepare_data.R --file=<file> --sample_series=50 --combo_variables=<cols> --out_dir=<folder>`, then a separate test project |
 | Install R packages | Ask, then `install_finnts.R --confirm=true` (finnts from GitHub) |
-| Update Finn (skill + finnts) | When `check_env.R` reports an update, ask, then `update_skill.R --action=update --confirm=true` ([references/updates.md](references/updates.md)) |
+| Update Finn (skill + finnts) | `update_skill.R --action=check`, show versions and changes, ask, then `update_skill.R --action=update --confirm=true` ([references/updates.md](references/updates.md)) |
+| What changed between Finn skill versions | `update_skill.R --action=changes` for offline installed history; `--remote=true` for the latest GitHub history. Summarize [version.json](version.json) in plain finance language |
 | Latest finnts (skill already current) | Run `install_finnts.R`, show the comparison, ask, then `--confirm=true` |
 | Undo an update | Ask, then `update_skill.R --action=rollback --confirm=true` (`--package_only=true` for finnts only) |
 | Choose where projects live | `setup_project.R --action=status`, then `--action=set_root --root=... --confirm=true` ([references/storage.md](references/storage.md)) |
@@ -76,9 +85,41 @@ Runs launch in the background and return immediately; do not block the chat wait
 | List, rename, archive projects, or uninstall | `setup_project.R --action=list`; others in [references/data-and-settings.md](references/data-and-settings.md) |
 | Exclude series, add a driver file, totals that add up, switch the AI model, explain ranges or Agent choices | [references/data-and-settings.md](references/data-and-settings.md) |
 | European dates or numbers, odd file encodings | [references/data-and-settings.md](references/data-and-settings.md) "International data" |
-| Several forecasts at once | One background launch per project, then `run_status.R --all=true`; on `machine_busy` wait, never cancel others unasked ([references/parallelism.md](references/parallelism.md)) |
+| Several forecasts at once | For N planned concurrent projects, preview and launch each once with `--batch_size=N`, then `run_status.R --all=true`; on `machine_busy` wait, never cancel others unasked ([references/parallelism.md](references/parallelism.md)) |
 | Speed or memory questions | [references/parallelism.md](references/parallelism.md) |
 | Anything else failing | [references/troubleshooting.md](references/troubleshooting.md) |
+
+## Updating and explaining versions
+
+When users ask to update Finn, run `update_skill.R --action=check` first. Show
+the installed and available skill and finnts versions, and summarize
+`data.release_notes.changes_since_installed` when present. If release notes are
+unavailable, say so; do not invent changes or treat a network failure as proof
+that everything is current.
+
+Ask for approval before installing. If the skill has an update, use
+`update_skill.R --action=update --confirm=true`; it also installs finnts from
+the compared commit when its version is newer. If only finnts is newer, use
+`install_finnts.R` to preview its comparison, ask, then add `--confirm=true`.
+Offer the same package-only path when explicitly asked for the latest finnts
+build even if version numbers are unchanged. Never overwrite a Git worktree
+with the downloaded updater; explain its Git-checkout guidance instead.
+
+Explain that active runs must finish first and backups allow rollback. After a
+skill update, ask the user to start a new chat and run `check_env.R`. For
+"what changed over time", show the full `--action=changes` history; `--action=history`
+is instead this machine's installation/rollback log and saved backups.
+
+When maintaining this skill, bump `finn_skill_version` and add a matching newest
+entry to [version.json](version.json) for each user-visible skill version change.
+Keep `version` and `released` aligned with the newest `changelog` entry's
+`version` and `date`; each entry has a `changes` array. Keep older entries below
+the newest one. This branch's initial release is a single 0.1.0 entry.
+Write NEWS-style summaries of user-visible changes, not setup instructions or
+implementation details. Each version allows at most 5 change bullets, 200
+characters per bullet, and 800 characters total across its bullets; offline
+tests enforce these limits for every entry. Put details in the reference guides.
+Do not change the finnts package version for a skill-only change.
 
 ## First-time flow
 

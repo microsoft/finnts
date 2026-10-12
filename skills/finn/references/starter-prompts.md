@@ -7,6 +7,7 @@ real names. Users can phrase things any way they like.
 ## Getting started
 
 - "Use the Finn skill to give me the Finn tutorial."
+- "Give me a simple first forecast with ARIMA, ETS, and GLMNET, with ensemble models off."
 - "What does my data need to look like for Finn?"
 - "Give me a data template I can fill in."
 - "Use the Finn skill to forecast `<file>` 12 months ahead."
@@ -35,6 +36,8 @@ real names. Users can phrase things any way they like.
 
 - "List my Finn projects." / "How much disk space is Finn using?"
 - "Is there a newer version of the Finn skill?" / "Undo the last update."
+- "What changed since my Finn skill version?" / "Show the Finn skill version history."
+- "Update the Finn skill and finnts to the latest versions." / "Update only finnts."
 - "My run failed. What went wrong?"
 - "Create a support report so I can report a problem."
 - "What data leaves my computer when I use Finn?"

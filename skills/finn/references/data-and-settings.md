@@ -20,7 +20,8 @@ Change settings only through `validate_config.R` and the user's approval. Key se
 | `external_regressors` | driver columns; need values for every forecast period |
 | `back_test_scenarios`, `back_test_spacing` | how many past periods are used to score models |
 | `models_to_run`, `models_not_to_run` | model choices; null = Finn's defaults |
-| `run_global_models`, `run_local_models`, `run_ensemble_models` | model families |
+| `run_global_models`, `run_local_models` | local/global model families |
+| `run_ensemble_models` | explicitly false for standard runs unless the user asks to enable ensemble training; separate from simple averaging |
 | `forecast_approach` | `bottoms_up`, `standard_hierarchy`, or `grouped_hierarchy` |
 | `clean_outliers`, `clean_missing_values`, `negative_forecast` | data cleaning and sign rules |
 | `parallel` | `auto` (skill picks local or inner parallelism) or `none` |
@@ -28,6 +29,9 @@ Change settings only through `validate_config.R` and the user's approval. Key se
 | `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches and its accuracy target |
 
 ## Choosing settings by size
+
+Follow the [standard-run ensemble policy](choosing-a-run.md#ensemble-policy-for-standard-runs)
+at every data size. This is skill guidance; do not silently alter saved run settings.
 
 `validate_config.R` suggests faster settings for more than 100 series: spaced back tests
 that still cover the last year, global models, and for over 1,000 series a single global

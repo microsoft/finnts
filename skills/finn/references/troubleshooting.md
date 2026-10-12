@@ -2,7 +2,12 @@
 
 `diagnose_run.R` returns one of these categories. Always explain the cause in plain
 language and ask before changing settings, data, packages, or Agent versions. After any
-fix, resume with the same `run_forecast.R --mode=...` command; saved progress is kept.
+temporary fix (for example a file lock or connectivity issue), resume with the same
+`run_forecast.R --mode=...` command; saved progress is kept. Resumes use the original
+saved settings and input data. To apply corrected settings or changed input data,
+get approval and start fresh with `--new=true --confirm=true`; do not confirm a
+resume expecting it to pick up the changes. The launch-time `parallel` setting is
+an exception: it can change on resume for memory recovery.
 
 | category | likely cause | fix |
 |---|---|---|
@@ -23,7 +28,7 @@ fix, resume with the same `run_forecast.R --mode=...` command; saved progress is
 | `file_locked` | OneDrive sync or an open Excel file locked a file | close the file, pause sync, resume; suggest `move_root` if it repeats |
 | `disk_space` | the drive is (nearly) full | free space or `move_root` to a drive with room (storage.md); delete nothing yourself; resume |
 | `date_format` | dates unreadable or wrong `date_type` | `profile_data.R`; confirm date column and type; set `date_format` for day/month dates (data-and-settings.md) |
-| `config_value` | a setting has the wrong type or value | `validate_config.R`; fix `config.json` with approval; resume rereads it |
+| `config_value` | a setting has the wrong type or value | `validate_config.R`; fix `config.json` with approval, then start a fresh run with `--new=true --confirm=true`; resuming keeps the original settings |
 | `interrupted` | stopped without error (sleep, restart, closed terminal) | keep the computer awake and plugged in; resume |
 | `unknown` | not a known pattern | read `error_lines` and the log; explain and propose a fix |
 
