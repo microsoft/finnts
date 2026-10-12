@@ -1,4 +1,4 @@
-# finnts 0.7.0.9011 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9012 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -6,10 +6,12 @@
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Copilot saves CLI-local session state under R's temporary directory.
   - Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.
-- Added `detect_hierarchy()` for explicit, read-only standard/grouped hierarchy selection using nesting checks.
-  - Optional preprocessing-compatible cleanup removes inactive series before detection.
+- Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
+  - Optionally cleans inactive series compatibly with preprocessing.
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
+- Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
+- `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
 
 ## Bug Fixes
 
@@ -19,9 +21,10 @@
   - Conflicting bottom values and ambiguous source grains fail explicitly.
   - Standard intermediate nodes no longer inherit grand-total driver values.
   - Newly prepared regressor values may change; existing saved runs are not migrated.
-- New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction.
-  - EDA and iteration prompts reflect the input scope.
-  - Existing-version resumes preserve the saved forecast approach and uploaded inputs, still rejecting changed logged settings.
+- New Agent versions with multiple combo columns but only one retained series use bottoms-up forecasting.
+  - This avoids invalid hierarchical construction; EDA and iteration prompts reflect the input scope.
+  - Existing-version resumes preserve the saved forecast approach and uploaded inputs.
+  - Resumes still reject changed logged settings.
   - New versions use current detection; updates across outer-approach changes still require fresh iteration.
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
