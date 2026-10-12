@@ -5,6 +5,7 @@
 - Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Copilot saves CLI-local session state under R's temporary directory.
+  - Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.
 - Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
   - Optionally cleans inactive series compatibly with preprocessing.
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.

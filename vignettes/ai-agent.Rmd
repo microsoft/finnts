@@ -153,7 +153,16 @@ Copilot subscription and any required organization policy enabled.
 Authenticate using `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, or `GITHUB_TOKEN`
 (in that order), or run `gh auth login` before starting R. Finn privately
 retrieves the existing GitHub CLI token when no environment token is present.
-It never saves a token in the LLM template. A cached Copilot-only login is not
+If you have not set up the GitHub CLI yet:
+
+1. Install the GitHub CLI from <https://cli.github.com/>.
+2. Run `gh auth login`.
+3. Sign in with an account that has Copilot access.
+4. Start R and retry your Finn request.
+
+See GitHub's [Copilot CLI authentication guide](https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli)
+for token and enterprise-host options.
+Finn never saves a token in the LLM template. A cached Copilot-only login is not
 copied into the isolated CLI home. Do not put tokens in scripts, shared files,
 or the `command` argument.
 
