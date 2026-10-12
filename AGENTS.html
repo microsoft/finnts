@@ -161,6 +161,8 @@
 <code>NEWS.md</code>: user-visible changes and releases.</li>
 <li>
 <code>docs/</code>: generated pkgdown site; do not use it for internal agent guidance.</li>
+<li>
+<code>skills/finn/</code>: user-facing skill that lets coding agents install and run finnts for finance users; excluded from the package build. Test with <code>Rscript skills/finn/tests/test_skill.R</code> after changing its scripts.</li>
 </ul><p>For model selection, start with the <a href="agent-guides/architecture-map.html#model-selection">architecture map</a>, then the <a href="vignettes/best-model-selection.Rmd">selection walkthrough</a>. The map distinguishes within-run model choice, Agent search context, saved-winner promotion, update acceptance, and reconciliation, with source and test pointers.</p>
 <p>To add, rename, or remove a forecasting model, follow the <a href="agent-guides/adding-a-model.html">new-model checklist</a> so every registry, Agent, update, documentation, and test location is updated.</p>
 </div>

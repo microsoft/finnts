@@ -334,10 +334,18 @@ enabled. Authenticate using <code>COPILOT_GITHUB_TOKEN</code>,
 <code>GH_TOKEN</code>, or <code>GITHUB_TOKEN</code> (in that order), or
 run <code>gh auth login</code> before starting R. Finn privately
 retrieves the existing GitHub CLI token when no environment token is
-present. It never saves a token in the LLM template. A cached
-Copilot-only login is not copied into the isolated CLI home. Do not put
-tokens in scripts, shared files, or the <code>command</code>
-argument.</p>
+present. If you have not set up the GitHub CLI yet:</p>
+<ol style="list-style-type: decimal">
+<li>Install the GitHub CLI from <a href="https://cli.github.com/" class="external-link uri">https://cli.github.com/</a>.</li>
+<li>Run <code>gh auth login</code>.</li>
+<li>Sign in with an account that has Copilot access.</li>
+<li>Start R and retry your Finn request.</li>
+</ol>
+<p>See GitHub’s <a href="https://docs.github.com/en/copilot/how-tos/copilot-cli/set-up-copilot-cli/authenticate-copilot-cli" class="external-link">Copilot
+CLI authentication guide</a> for token and enterprise-host options. Finn
+never saves a token in the LLM template. A cached Copilot-only login is
+not copied into the isolated CLI home. Do not put tokens in scripts,
+shared files, or the <code>command</code> argument.</p>
 <p>Pass this <code>llm</code> to the same <code><a href="../reference/set_agent_info.html">set_agent_info()</a></code>
 call below. Ellmer is not required for a Copilot-backed Agent
 workflow.</p>
