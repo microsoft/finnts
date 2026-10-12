@@ -88,6 +88,9 @@ finn_compare_finnts <- function(installed, target) {
 }
 
 finn_main(function(args) {
+  software <- finn_software_guard(args)
+  if (!is.null(software$result)) return(software$result)
+  if (software$owned) on.exit(finn_machine_lock_release(software$token), add = TRUE)
   source_type <- finn_arg(args, "source", "github")
   if (!source_type %in% c("github", "cran")) stop("--source must be github or cran.", call. = FALSE)
   ref <- finn_arg(args, "ref", "main")
@@ -129,17 +132,6 @@ finn_main(function(args) {
   if (identical(comparison$status, "same_commit") && !force && length(missing_helpers) == 0) {
     return(finn_result(TRUE, "up_to_date", comparison$message, plan,
       c("Nothing to install. To reinstall the same build anyway (for example to repair a broken install), ask the user, then rerun with --force=true --confirm=true.", skill_acts)))
-  }
-
-  active <- finn_software_active_runs(finn_resolve_root(args))
-  if (length(active) > 0) {
-    plan$active_runs <- lapply(active, function(s) list(root = s$root, project = s$project, run_id = s$run_id))
-    return(finn_result(
-      FALSE, "blocked",
-      "A forecast is running. Changing finnts now could break it.",
-      plan,
-      c("Wait for the run to finish (run_status.R) or cancel it with the user's OK (run_cancel.R), then install again.")
-    ))
   }
 
   if (!finn_bool(finn_arg(args, "confirm"))) {

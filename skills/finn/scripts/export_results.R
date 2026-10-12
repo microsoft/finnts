@@ -128,6 +128,10 @@ finn_main(function(args) {
   with_int <- finn_bool(finn_arg(args, "include_intervals"), FALSE)
   if (!layout %in% c("wide", "long")) stop("--layout must be wide or long.", call. = FALSE)
   if (!fmt %in% c("csv", "xlsx")) stop("--format must be csv or xlsx.", call. = FALSE)
+  if (with_int && identical(layout, "wide")) {
+    return(finn_result(FALSE, "unsupported_layout", "Prediction intervals require the long export layout.",
+      next_actions = "Rerun with --layout=long --include_intervals=true, or leave intervals out for a wide export. No export was written."))
+  }
   if (identical(fmt, "xlsx") && !requireNamespace("writexl", quietly = TRUE)) {
     return(finn_result(FALSE, "needs_package", "Excel export needs the small 'writexl' package.",
       next_actions = c("Ask the user before installing: install.packages('writexl').", "Or export with --format=csv, which opens in Excel.")))

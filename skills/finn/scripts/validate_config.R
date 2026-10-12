@@ -28,6 +28,10 @@ validate_settings_card <- function(cfg, facts, plan) {
       if (length(cfg$models_to_run)) fmt(cfg$models_to_run) else "Finn defaults",
       if (is.null(cfg$run_global_models)) "auto" else cfg$run_global_models,
       cfg$run_local_models),
+    if (identical(cfg$mode, "standard")) sprintf("Ensemble training: %s; simple averaging: %s",
+      if (is.null(cfg$run_ensemble_models)) "auto (may enable ensembles; explicitly set false unless requested)" else
+        if (isTRUE(cfg$run_ensemble_models)) "on" else "off",
+      fmt(cfg$average_models)),
     sprintf("Back testing: %s scenarios, spacing %s", fmt(cfg$back_test_scenarios), fmt(cfg$back_test_spacing)),
     sprintf("Negative forecasts allowed: %s; outlier cleaning: %s", cfg$negative_forecast, cfg$clean_outliers),
     sprintf("Reading the file: dates %s; decimal mark '%s'; fiscal year starts in month %s",

@@ -108,8 +108,9 @@ setup_set_root <- function(args) {
 #' Create a project and copy its input data
 #'
 #' @param args Parsed arguments.
+#' @param copy File-copy function, injectable for offline failure tests.
 #' @return Finn result.
-setup_create <- function(args) {
+setup_create <- function(args, copy = file.copy) {
   root <- finn_resolve_root(args)
   if (is.null(root)) stop("No Finn folder is set. Run --action=status first.", call. = FALSE)
   name <- finn_arg(args, "project")
@@ -135,9 +136,19 @@ setup_create <- function(args) {
                 "If it is a different forecast, create a new project with another --project name instead.")))
           }
           dest <- file.path(paths$input, paste0(tools::file_path_sans_ext(basename(src)), "_", finn_stamp(), ".", tools::file_ext(src)))
+          stem <- tools::file_path_sans_ext(dest)
+          i <- 1L
+          while (file.exists(dest)) {
+            dest <- paste0(stem, "_", i, ".", tools::file_ext(src))
+            i <- i + 1L
+          }
         }
       }
-      if (!file.exists(dest)) file.copy(src, dest, copy.date = TRUE)
+      if (!file.exists(dest) && !isTRUE(copy(src, dest, copy.date = TRUE))) {
+        stop("Could not copy the input file to ", dest,
+          ". Check folder permissions, free disk space, and OneDrive sync, then retry. Project metadata was not changed.",
+          call. = FALSE)
+      }
     }
     copied <- finn_project_relpath(paths, dest)
   }

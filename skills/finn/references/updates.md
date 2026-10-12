@@ -83,7 +83,7 @@ can also ask for the latest finnts at any time.
 | Status | Meaning |
 |---|---|
 | `not_installed` | finnts is not installed yet |
-| `newer_version` | GitHub has a higher version number |
+| `newer_available` | GitHub has a higher version number |
 | `new_commit` | same version number, different code |
 | `older_than_installed` | GitHub is older; the message warns this is a downgrade |
 | `same_commit` | already installed; returns `up_to_date` without changes unless `--force=true` |
@@ -99,14 +99,20 @@ previous build.
 
 1. Refuses while any forecast is running (`blocked`), or when the skill runs from a git
    clone (use `git pull` there, then `install_finnts.R --confirm=true`).
+   Installs, updates, and rollbacks hold the same machine lock used by launches,
+   so a new forecast cannot start during a software change.
 2. Backs up the current skill and records the installed finnts build in
    `skill_backups/<stamp>_skill-<version>/` in the settings folder.
 3. Downloads the new skill files, checks every script parses, and copies them in.
    Files no longer in the new version are kept and listed in `data$stale_files`.
 4. If finnts is newer, installs it from the same commit and verifies a fresh R session
    loads the expected version.
-5. If any step fails, restores the backed-up skill and the previous finnts build and
-   returns `error` with `data$restored = true`. Tell the user nothing changed.
+5. If copying or installation fails, attempts to restore the backed-up skill and
+   previous finnts build. `error` with `data$restored = true` means the previous
+   software versions were verified, not that every file is unchanged: extra staged
+   files may remain. If the old install is not reproducible or recovery fails,
+   `data$restored = false` and `data$restoration_errors` explain the incomplete recovery.
+   Do not start forecasts until the user has repaired that installation.
 
 Every update, failure, and rollback is logged in `update_history.json`. Nothing is ever
 deleted; old backups can be removed by the user by hand.

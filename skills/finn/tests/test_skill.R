@@ -300,6 +300,16 @@ with(setup, {
     !identical(finn_read_project(paths)$data_file, "input/sales.csv"))
   du <- setup_disk_usage(list(root = root, project = "Setup"))
   check("setup: disk_usage is read-only and reports size", isTRUE(du$ok) && length(list.files(paths$input)) == 2)
+  copy_args <- list(root = root, project = "CopyFail", data = f)
+  check("setup: failed copy never writes project metadata",
+    errors_with(setup_create(copy_args, copy = function(...) FALSE), "Could not copy") &&
+      is.null(finn_read_project(finn_project_paths(root, "CopyFail"))))
+  before <- finn_read_project(paths)
+  writeLines("different input", f)
+  check("setup: failed replacement preserves existing project metadata",
+    errors_with(setup_create(list(root = root, project = "Setup", data = f, replace_data = "true"),
+      copy = function(...) FALSE), "Could not copy") &&
+      identical(finn_read_project(paths), before))
 })
 
 # ---- Data preparation script ---------------------------------------------------------
@@ -361,6 +371,20 @@ with(common, {
   lines <- vc$validate_recommendation_lines(big)
   check("validate: card shows size, suggestions, and run type advice",
     any(grepl("very large", lines)) && any(grepl("models_to_run = xgboost", lines)) && any(grepl("Run type advice", lines)))
+  local({
+    config <- finn_merge_config(list(mode = "standard", run_ensemble_models = FALSE))
+    card <- function(config) vc$validate_settings_card(config, list(), list(reason = "offline"))
+    check("approval card shows ensembles off separately from averaging",
+      any(grepl("Ensemble training: off; simple averaging:", card(config), fixed = TRUE)))
+    check("approval card shows explicitly requested ensembles on",
+      any(grepl("Ensemble training: on", card(modifyList(config, list(run_ensemble_models = TRUE))), fixed = TRUE)))
+    config$run_ensemble_models <- NULL
+    check("approval card warns about automatic ensembles",
+      any(grepl("auto (may enable ensembles", card(config), fixed = TRUE)))
+    config$mode <- "agent"
+    check("approval card does not imply standard ensemble setting affects Agent",
+      !any(grepl("Ensemble training", card(config), fixed = TRUE)))
+  })
 })
 
 # ---- Run status ---------------------------------------------------------------------
@@ -460,6 +484,12 @@ with(launch, {
     launch_config_hash(modifyList(base_cfg, list(data = list(file = "D:/b/data.csv"))))
   ))
   check("hash tracks horizon", !identical(h, launch_config_hash(modifyList(base_cfg, list(forecast_horizon = 12)))))
+  agent_cfg <- modifyList(base_cfg, list(mode = "agent"))
+  for (change in list(list(model = "other"), list(provider = "openai"),
+      list(command = "other-cli"), list(timeout = 99), list(api_key_env = "OTHER_KEY"))) {
+    check(paste("Agent hash tracks LLM", names(change)),
+      !identical(launch_config_hash(agent_cfg), launch_config_hash(modifyList(agent_cfg, list(agent = list(llm = change))))))
+  }
   check("config mode mapping", identical(launch_config_mode("standard"), "standard") && identical(launch_config_mode("update"), "agent"))
 
   paths <- finn_project_paths(file.path(tmp, "root"), "Launch")
@@ -485,6 +515,26 @@ with(launch, {
   check("confirmed resume keeps old run", identical(launch_decide(paths, "standard", modifyList(cfg, list(forecast_horizon = 12)), list(), list(confirm = "true"))$action, "resume"))
   check("--new starts fresh", identical(launch_decide(paths, "standard", cfg, list(), list(new = "true"))$action, "new"))
   check("parallel change still resumes", identical(launch_decide(paths, "standard", modifyList(cfg, list(parallel = "none")), list(), list())$action, "resume"))
+  local({
+    agent_paths <- finn_project_paths(file.path(tmp, "root"), "LlmDrift")
+    finn_ensure_project_dirs(agent_paths)
+    saved <- modifyList(cfg, list(mode = "agent", project_name = "LlmDrift"))
+    agent_run <- finn_run_paths(agent_paths, "agent-old")
+    finn_update_state(agent_run, run_id = agent_run$id, mode = "iterate", status = "failed",
+      created_at = finn_now(), config = saved, config_hash = "old-fingerprint-excluding-llm",
+      data_md5 = launch_data_md5(data_file))
+    check("legacy Agent snapshot resumes unchanged despite older hash",
+      identical(launch_decide(agent_paths, "iterate", saved, list(), list())$action, "resume"))
+    changed <- modifyList(saved, list(agent = list(llm = list(provider = "openai"))))
+    decision <- launch_decide(agent_paths, "iterate", changed, list(), list())
+    check("Agent provider drift requires confirmation",
+      identical(decision$result$status, "needs_confirmation") && "settings" %in% decision$result$data$changed)
+    confirmed <- launch_decide(agent_paths, "iterate", changed, list(), list(confirm = "true"))
+    check("confirmed Agent resume retains original LLM snapshot",
+      identical(confirmed$action, "resume") && identical(confirmed$prior$config$agent$llm, saved$agent$llm))
+    check("fresh Agent run accepts changed LLM after confirmation",
+      identical(launch_decide(agent_paths, "iterate", changed, list(), list(new = "true", confirm = "true"))$action, "new"))
+  })
 
   check("versions: no recorded versions is not a change", length(launch_version_changes(list())) == 0)
   check("versions: finnts change reported", identical(
@@ -669,6 +719,7 @@ with(launch, {
         stdout = "|", stderr = "|"))
       on.exit(for (child in children) if (child$is_alive()) child$kill(), add = TRUE)
       for (child in children) child$wait(timeout = 30000)
+      for (child in children) if (!identical(child$get_exit_status(), 0L)) cat(child$read_all_error(), "\n")
       check("concurrent launch processes exit successfully", all(vapply(children,
         function(child) identical(child$get_exit_status(), 0L), logical(1))))
       outcomes <- lapply(children, function(child) jsonlite::fromJSON(child$read_all_output()))
@@ -1163,6 +1214,33 @@ with(up, {
   check("update restores when a new session loads the wrong finnts", identical(r3$status, "error") &&
     identical(readLines(file.path(installed, "SKILL.md")), "# Finn 0.1.0"))
 
+  for (previous in list(list(installed = FALSE), list(version = "1.0.0", source = "local"))) {
+    fake_finnts <- previous
+    incomplete <- finn_do_update(c(args, confirm = "true"), fetch = fetch, download = download,
+      installer = bad_installer, verify = verify)
+    check(paste("unreproducible prior install reports incomplete recovery", previous$source %||% "absent"),
+      identical(incomplete$status, "error") && identical(incomplete$data$restored, FALSE) &&
+        length(incomplete$data$restoration_errors) > 0 && !any(grepl("nothing changed", incomplete$next_actions)))
+  }
+  fake_finnts <- list(version = "1.0.0", source = "github", sha = "old111", ref = "main")
+  broken_recovery <- finn_do_update(c(args, confirm = "true"), fetch = fetch, download = download,
+    installer = function(skill_dir, install_args) {
+      fake_finnts <<- list(version = "98.0.0", source = "github", sha = "half")
+      list(ok = FALSE, message = "installer unavailable")
+    }, verify = verify)
+  check("failed recovery installer is never reported as restored",
+    identical(broken_recovery$data$restored, FALSE) && any(grepl("restoration failed", unlist(broken_recovery$data$restoration_errors))))
+  history <- finn_read_json(file.path(finn_settings_dir(), "update_history.json"))
+  check("failed history records incomplete restoration accurately",
+    identical(history[[length(history)]]$restored, FALSE) && length(history[[length(history)]]$restoration_errors) > 0)
+  fake_finnts <- list(version = "1.0.0", source = "github", sha = "old111", ref = "main")
+  verification_error <- finn_do_update(c(args, confirm = "true"), fetch = fetch, download = download,
+    installer = good_installer, verify = function() stop("verification unavailable"))
+  check("verification errors trigger recovery and explicit failure",
+    identical(verification_error$data$restored, FALSE) &&
+      any(grepl("Recovery verification failed", unlist(verification_error$data$restoration_errors))))
+  fake_finnts <- list(version = "1.0.0", source = "github", sha = "old111", ref = "main")
+
   old_version <- finn_skill_version
   finn_skill_version <- "9.0.0"
   r4 <- finn_do_update(args, fetch = fetch, download = download, installer = good_installer, verify = verify)
@@ -1207,9 +1285,98 @@ with(common, {
   check("lock: second caller times out", is.null(finn_lock_acquire(lp, timeout = 0.3)))
   check("lock: only the owner can release", !finn_lock_release(lp, "someone-else") && finn_lock_release(lp, t1))
   check("lock: free again after release", !is.null(t2 <- finn_lock_acquire(lp, timeout = 1)))
-  Sys.setFileTime(lp, Sys.time() - 600)
-  check("lock: abandoned lock is taken over", !is.null(finn_lock_acquire(lp, timeout = 1, stale = 120)))
-  check("lock: release never deletes the file", file.exists(lp))
+  Sys.setFileTime(paste0(lp, ".d"), Sys.time() - 600)
+  check("lock: old live owner is never stolen", is.null(finn_lock_acquire(lp, timeout = 0, stale = 120)))
+  finn_lock_release(lp, t2)
+  check("lock: release archives ownership without deleting", length(list.files(dirname(lp), pattern = "released", all.files = TRUE)) == 2)
+  local({
+    old_settings <- Sys.getenv("FINN_SETTINGS_DIR")
+    Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "software-exclusion"))
+    on.exit(Sys.setenv(FINN_SETTINGS_DIR = old_settings))
+    guard <- finn_software_guard(list(root = file.path(tmp, "no-software-runs")))
+    check("software transaction excludes competing launches", is.null(finn_machine_lock_acquire(timeout = 0)))
+    nested <- finn_software_guard(list(root = file.path(tmp, "no-software-runs"), software_lock = guard$token))
+    check("nested installer reuses verified software lock", identical(nested$owned, FALSE) && identical(nested$token, guard$token))
+    check("invalid installer handoff is rejected",
+      errors_with(finn_software_guard(list(software_lock = "wrong")), "no longer held"))
+    if (requireNamespace("processx", quietly = TRUE)) {
+      handoff_script <- file.path(tmp, "software-handoff.R")
+      writeLines(c(
+        "args <- commandArgs(TRUE)", "source(args[1])",
+        "guard <- finn_software_guard(list(software_lock = args[2], root = args[3]))",
+        "stopifnot(identical(guard$owned, FALSE), identical(guard$token, args[2]))",
+        "stopifnot(is.null(finn_machine_lock_acquire(timeout = 0)))"
+      ), handoff_script)
+      child <- processx::process$new(finn_rscript(), c(handoff_script,
+        file.path(scripts_dir, "finn_common.R"), guard$token, file.path(tmp, "no-software-runs")),
+        stdout = "|", stderr = "|")
+      child$wait(timeout = 10000)
+      check("child installer shares updater lock without deadlock or releasing exclusion",
+        identical(child$get_exit_status(), 0L) && is.null(finn_machine_lock_acquire(timeout = 0)))
+      if (child$is_alive()) child$kill()
+    }
+    finn_machine_lock_release(guard$token)
+    check("software transaction releases exclusion on completion", !is.null(token <- finn_machine_lock_acquire(timeout = 0)))
+    finn_machine_lock_release(token)
+    software_root <- file.path(tmp, "software-root")
+    software_paths <- finn_project_paths(software_root, "Running")
+    finn_ensure_project_dirs(software_paths)
+    finn_write_project(software_paths, list(name = "Running"))
+    finn_update_state(finn_run_paths(software_paths, "active"), run_id = "active", status = "queued",
+      host = Sys.info()[["nodename"]], created_at = finn_now())
+    stopped <- finn_software_guard(list(root = software_root))
+    check("software transaction refuses active forecasts", identical(stopped$result$status, "blocked"))
+    check("update and rollback entry functions block before any software changes",
+      identical(up$finn_do_update(list(root = software_root),
+        fetch = function(...) stop("must not fetch"))$status, "blocked") &&
+        identical(up$finn_do_rollback(list(root = software_root))$status, "blocked"))
+    entry <- new.env(parent = inst)
+    entry$finn_main <- function(fn) fn(list(root = software_root, confirm = "true"))
+    installer_expr <- tail(as.list(parse(file.path(scripts_dir, "install_finnts.R"))), 1)[[1]]
+    check("standalone installer blocks before network or package changes",
+      identical(eval(installer_expr, entry)$status, "blocked"))
+    check("blocked software operation releases its lock", !is.null(token <- finn_machine_lock_acquire(timeout = 0)))
+    finn_machine_lock_release(token)
+  })
+  local({
+    rp <- finn_run_paths(finn_project_paths(tmp, "LockedState"), "run")
+    finn_update_state(rp, status = "failed", marker = "unchanged")
+    sandbox <- new.env(parent = common)
+    sandbox$finn_lock_acquire <- function(...) NULL
+    locked_update <- finn_update_state
+    environment(locked_update) <- sandbox
+    before <- readLines(rp$state)
+    check("state: lock timeout cannot bypass exclusive ownership",
+      errors_with(locked_update(rp, marker = "lost"), "Could not lock run state") &&
+        identical(readLines(rp$state), before))
+  })
+  if (requireNamespace("processx", quietly = TRUE)) {
+    race_script <- file.path(tmp, "state-lock-race.R")
+    writeLines(c(
+      "args <- commandArgs(TRUE)", "source(args[1])",
+      "for (i in seq_len(12)) local({",
+      "  token <- finn_lock_acquire(args[2], timeout = 20)",
+      "  if (is.null(token)) stop('lock timeout')",
+      "  on.exit(finn_lock_release(args[2], token))",
+      "  n <- as.integer(readLines(args[3]))", "  Sys.sleep(0.02)",
+      "  writeLines(as.character(n + 1L), args[3])", "})"
+    ), race_script)
+    count_file <- file.path(tmp, "state-count.txt")
+    writeLines("0", count_file)
+    if (requireNamespace("ps", quietly = TRUE)) {
+      dir.create(paste0(lp, ".d"))
+      finn_write_json(list(token = "dead-owner", pid = 2147483647L,
+        host = Sys.info()[["nodename"]]), file.path(paste0(lp, ".d"), "owner.json"))
+    }
+    children <- lapply(seq_len(3), function(i) processx::process$new(finn_rscript(),
+      c(race_script, file.path(scripts_dir, "finn_common.R"), lp, count_file), stdout = "|", stderr = "|"))
+    for (child in children) child$wait(timeout = 30000)
+    for (child in children) if (!identical(child$get_exit_status(), 0L)) cat(child$read_all_error(), "\n")
+    check("lock: concurrent processes preserve every read-modify-write",
+      all(vapply(children, function(child) identical(child$get_exit_status(), 0L), logical(1))) &&
+        identical(readLines(count_file), "36"))
+    for (child in children) if (child$is_alive()) child$kill()
+  }
 
   bad <- file.path(tmp, "bad.json")
   writeLines("{\"status\": \"runn", bad)
@@ -1405,6 +1572,40 @@ with(ex, {
   check("export: CSV uses Windows line endings", grepl("\r\n", rawToChar(raw_bytes[-(1:3)]), fixed = TRUE))
   back <- utils::read.csv(out, fileEncoding = "UTF-8-BOM", check.names = FALSE)
   check("export: CSV round-trips non-ASCII text", identical(names(back), c("Region", "Value")) && identical(back$Region, "M\u00fcnchen"))
+  local({
+    paths <- finn_project_paths(file.path(tmp, "export-root"), "Export")
+    finn_ensure_project_dirs(paths)
+    finn_write_project(paths, list(name = "Export"))
+    rp <- finn_run_paths(paths, "finished")
+    df <- data.frame(Combo = "A", Date = c("2025-01-01", "2025-02-01"), Forecast = c(10, 20),
+      lo_95 = c(8, 18), hi_95 = c(12, 22), Run_Type = "Future_Forecast", Best_Model = "Yes")
+    src <- file.path(rp$output, "all_forecasts.csv")
+    dir.create(rp$output, recursive = TRUE, showWarnings = FALSE)
+    utils::write.csv(df, src, row.names = FALSE)
+    finn_update_state(rp, run_id = rp$id, status = "completed", results = list(all_forecasts = src),
+      config = list(combo_variables = character()))
+    entry <- new.env(parent = ex)
+    args <- list(root = paths$root, project = paths$name, run_id = rp$id, include_intervals = "true")
+    entry$finn_main <- function(fn) fn(args)
+    expr <- tail(as.list(parse(file.path(scripts_dir, "export_results.R"))), 1)[[1]]
+    refused <- eval(expr, entry)
+    check("export: wide intervals rejected before any output is written",
+      identical(refused$status, "unsupported_layout") &&
+        !dir.exists(file.path(rp$output, "exports")) && any(grepl("--layout=long", refused$next_actions, fixed = TRUE)))
+    args$layout <- "long"
+    long <- eval(expr, entry)
+    exported <- utils::read.csv(long$data$files$forecast,
+      fileEncoding = "UTF-8-BOM")
+    check("export: long layout preserves requested intervals",
+      long$ok && isTRUE(all.equal(exported$lo_95, df$lo_95)) && isTRUE(all.equal(exported$hi_95, df$hi_95)))
+    args$layout <- "wide"
+    args$include_intervals <- "false"
+    wide <- eval(expr, entry)
+    exported <- utils::read.csv(wide$data$files$forecast,
+      fileEncoding = "UTF-8-BOM", check.names = FALSE)
+    check("export: wide forecasts retain date columns without intervals",
+      wide$ok && all(df$Date %in% names(exported)) && !any(grepl("^(lo|hi)_", names(exported))))
+  })
 })
 
 cat(sprintf("\n%d passed, %d failed\n", passes, length(failures)))

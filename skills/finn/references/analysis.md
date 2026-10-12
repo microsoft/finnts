@@ -20,6 +20,11 @@ the analyst, and your script should compute the answer directly from saved data.
 
 ## Running a script
 
+For exports with prediction intervals, use
+`export_results.R --layout=long --include_intervals=true`. Wide exports do not
+support intervals and return `unsupported_layout` rather than silently dropping
+them. Wide exports without intervals retain their existing layout.
+
 Set `FINN_SKILL_SCRIPTS` to this skill's `scripts` folder and run with the Rscript from
 `find_rscript`:
 

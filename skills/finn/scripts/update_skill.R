@@ -304,7 +304,9 @@ finn_same_finnts <- function(a, b) {
 #' @param install_args Arguments such as `--source=github --ref=<sha>`.
 #' @return Parsed installer result.
 finn_default_installer <- function(skill_dir, install_args) {
-  finn_run_script(file.path(skill_dir, "scripts", "install_finnts.R"), c(install_args, "--confirm=true"))
+  owner <- finn_read_json(file.path(finn_settings_dir(), "machine-launch-lock", "owner.json"))
+  handoff <- if (!is.null(owner) && identical(owner$pid, Sys.getpid())) paste0("--software_lock=", owner$token)
+  finn_run_script(file.path(skill_dir, "scripts", "install_finnts.R"), c(install_args, "--confirm=true", handoff))
 }
 
 #' Install the newest skill (and finnts when its version is newer)
@@ -316,6 +318,9 @@ finn_default_installer <- function(skill_dir, install_args) {
 #' @return Result list from [finn_result()].
 finn_do_update <- function(args, fetch = finn_http_get, download = finn_download_file,
                            installer = finn_default_installer, verify = finn_fresh_finnts_version) {
+  software <- finn_software_guard(args)
+  if (!is.null(software$result)) return(software$result)
+  if (software$owned) on.exit(finn_machine_lock_release(software$token), add = TRUE)
   skill_dir <- finn_skill_dir(args)
   force <- finn_bool(finn_arg(args, "force"))
   ref <- finn_arg(args, "ref", "main")
@@ -351,15 +356,41 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
 
   restore <- function(why) {
     finn_log("Update failed (", why, "). Restoring the previous skill from ", backup$id)
-    finn_copy_tree(file.path(backup$path, "skill"), skill_dir)
-    now <- finn_installed_finnts()
-    if (!finn_same_finnts(now, local_finnts) && !is.null(finn_reinstall_args(local_finnts))) {
-      installer(skill_dir, finn_reinstall_args(local_finnts))
+    skill_restore <- tryCatch({
+      finn_copy_tree(file.path(backup$path, "skill"), skill_dir)
+      NULL
+    }, error = function(e) conditionMessage(e))
+    recovery_error <- skill_restore
+    if (!finn_same_finnts(finn_installed_finnts(), local_finnts)) {
+      reinstall <- finn_reinstall_args(local_finnts)
+      if (is.null(reinstall)) {
+        recovery_error <- c(recovery_error, "The previous finnts install cannot be reproduced automatically.")
+      } else {
+        recovered <- tryCatch(installer(skill_dir, reinstall),
+          error = function(e) list(ok = FALSE, message = conditionMessage(e)))
+        if (!isTRUE(recovered$ok)) {
+          recovery_error <- c(recovery_error, paste("finnts restoration failed:", recovered$message %||% "unknown error"))
+        }
+      }
     }
-    finn_append_history(list(type = "skill_update_failed", from = finn_skill_version, to = remote$skill_version, sha = remote$sha, backup_id = backup$id, error = why))
-    data$restored <- TRUE
-    finn_result(FALSE, "error", paste("The update failed and the previous version was restored:", why), data,
-      "Tell the user nothing changed. Share the error; they can retry later or report it on GitHub.")
+    verified <- tryCatch(verify(), error = function(e) e)
+    if (inherits(verified, "error")) {
+      recovery_error <- c(recovery_error, paste("Recovery verification failed:", conditionMessage(verified)))
+    }
+    if (!finn_same_finnts(finn_installed_finnts(), local_finnts) ||
+        (!is.null(local_finnts$version) && !identical(verified, local_finnts$version))) {
+      recovery_error <- c(recovery_error, "The previous finnts build was not verified after recovery.")
+    }
+    data$restored <- !length(recovery_error)
+    data$restoration_errors <- as.list(recovery_error)
+    finn_append_history(list(type = "skill_update_failed", from = finn_skill_version, to = remote$skill_version,
+      sha = remote$sha, backup_id = backup$id, error = why, restored = data$restored,
+      restoration_errors = data$restoration_errors))
+    finn_result(FALSE, "error", paste(
+      if (data$restored) "The update failed and the previous software versions were restored:" else
+        "The update failed and restoration is incomplete:", why), data,
+      if (data$restored) "Share the failure and explain that previous software versions were verified; extra staged skill files may remain." else
+        "Do not start forecasts. Show restoration_errors and the backup id; help the user repair the installation before retrying.")
   }
 
   copied <- tryCatch(finn_copy_tree(stage, skill_dir), error = function(e) e)
@@ -372,7 +403,8 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
     if (!isTRUE(res$ok)) {
       return(restore(paste("finnts install failed:", res$message %||% "unknown error")))
     }
-    loaded <- verify()
+    loaded <- tryCatch(verify(), error = function(e) e)
+    if (inherits(loaded, "error")) return(restore(paste("Could not verify finnts:", conditionMessage(loaded))))
     if (is.null(loaded) || !identical(loaded, remote$finnts_version)) {
       return(restore(paste0("a new R session loads finnts ", loaded %||% "(none)", ", expected ", remote$finnts_version)))
     }
@@ -402,6 +434,9 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
 #' @param verify Function returning the finnts version a new process loads.
 #' @return Result list from [finn_result()].
 finn_do_rollback <- function(args, installer = finn_default_installer, verify = finn_fresh_finnts_version) {
+  software <- finn_software_guard(args)
+  if (!is.null(software$result)) return(software$result)
+  if (software$owned) on.exit(finn_machine_lock_release(software$token), add = TRUE)
   skill_dir <- finn_skill_dir(args)
   package_only <- finn_bool(finn_arg(args, "package_only"))
   current <- finn_installed_finnts()
@@ -564,12 +599,6 @@ if (sys.nframe() == 0L) {
     if (finn_in_git_checkout(skill_dir) && !finn_bool(finn_arg(args, "force"))) {
       return(finn_result(FALSE, "blocked", "This skill runs from a git clone of the repository.", list(skill_dir = skill_dir),
         "Update with git pull (or git checkout for a rollback) in that clone, then run install_finnts.R --confirm=true."))
-    }
-    active <- finn_software_active_runs(finn_resolve_root(args))
-    if (length(active) > 0) {
-      return(finn_result(FALSE, "blocked", "A forecast is running. Changing Finn now could break it.",
-        list(active_runs = lapply(active, function(s) list(root = s$root, project = s$project, run_id = s$run_id))),
-        "Wait for the run to finish (run_status.R) or cancel it with the user's OK (run_cancel.R), then try again."))
     }
     if (action == "update") finn_do_update(args) else finn_do_rollback(args)
   })

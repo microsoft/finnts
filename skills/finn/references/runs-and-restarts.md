@@ -29,6 +29,13 @@ If the settings or input data changed since that run started, the script returns
 - resume with the original settings and data: rerun with `--confirm=true`, or
 - start fresh with the new ones: rerun with `--new=true` (Agent modes also `--confirm=true`).
 
+Agent LLM changes (provider, model, command, timeout, or credential-variable names)
+also count as settings drift. Confirmed resumes keep the original LLM snapshot;
+choose a fresh run to apply those changes. Environment-variable values are not
+saved or fingerprinted, so repairing credentials for the same provider can still
+resume. Older runs with saved configuration are compared using that configuration,
+not just their older fingerprint. Parallel settings remain adjustable on resume.
+
 The same question comes up when the run started with a different finnts or R version
 (`version_changes`): finishing it with the installed software can mix results from two
 versions. Run state and `project.json` record `finnts_version` and `r_version` for this

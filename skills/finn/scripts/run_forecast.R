@@ -64,7 +64,8 @@ launch_active_guard <- function(paths, args) {
 #' Fingerprint of the settings that change forecast results
 #'
 #' Excludes fields that only affect speed or bookkeeping, so changing the
-#' parallel setting or LLM model does not block a resume.
+#' parallel setting does not block a resume. Agent LLM settings do participate:
+#' changing them requires confirmation because resumes use the saved snapshot.
 #'
 #' @param cfg Merged config.
 #' @return Hash string.
@@ -73,7 +74,7 @@ launch_config_hash <- function(cfg) {
   keep$parallel <- NULL
   keep$project_name <- NULL
   keep$data$file <- basename(keep$data$file %||% "")
-  keep$agent$llm <- NULL
+  if (identical(keep$mode, "standard")) keep$agent$llm <- NULL
   finn_hash(finn_to_json(keep))
 }
 
@@ -366,8 +367,9 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
   }
 
   if (!want_new && !is.null(latest) && latest$effective_status %in% launch_resumable_statuses()) {
+    saved_config <- latest[["config", exact = TRUE]]
     changed <- c(
-      if (!identical(latest$config_hash, cur_hash)) "settings",
+      if (!identical(if (!is.null(saved_config)) launch_config_hash(saved_config) else latest$config_hash, cur_hash)) "settings",
       if (!identical(latest$data_md5, cur_md5)) "input data"
     )
     if (length(changed) && !confirmed) {
@@ -457,6 +459,12 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
 }
 
 finn_main(function(args) {
+  machine_lock <- finn_machine_lock_acquire()
+  if (is.null(machine_lock)) {
+    return(finn_result(FALSE, "busy", "Another Finn launch or software change is in progress.",
+      next_actions = "Wait for it to finish, then retry; nothing was started."))
+  }
+  on.exit(finn_machine_lock_release(machine_lock), add = TRUE)
   paths <- finn_project_from_args(args)
   cfg <- finn_read_project_config(paths)
   mode <- finn_arg(args, "mode") %||% (if (identical(cfg$mode, "agent")) "iterate" else "standard")
@@ -515,15 +523,9 @@ finn_main(function(args) {
     resumed <- 0L
   }
 
-  # A machine-wide lock keeps launches in different projects from claiming
-  # the same cores and memory at once. Always taken after the project lock.
+  # The machine lock covers validation through registration, excluding software
+  # changes and competing allocations. Always taken before the project lock.
   batch_size <- suppressWarnings(as.numeric(finn_arg(args, "batch_size", "1")))
-  machine_lock <- finn_machine_lock_acquire()
-  if (is.null(machine_lock)) {
-    return(finn_result(FALSE, "busy", "Another Finn run is being started on this computer right now.", NULL,
-      c("Wait a few seconds, then try again; nothing was started.")))
-  }
-  on.exit(finn_machine_lock_release(machine_lock), add = TRUE)
 
   global <- run_cfg$run_global_models %||% finn_default_global_models(run_cfg$date_type)
   data_gb <- finn_data_gb(checked$data)

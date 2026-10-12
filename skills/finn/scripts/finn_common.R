@@ -231,59 +231,34 @@ finn_read_json <- function(path, default = NULL, retry_wait = 1) {
   )))
 }
 
-#' Acquire a simple cross-process lock file
+#' Acquire an exclusive cross-process lock
 #'
-#' Locks are plain files holding an owner token. A lock is free when the file
-#' is missing, says "released", or has not been touched for `stale` seconds
-#' (its owner crashed). The token is written with an atomic rename and read
-#' back to confirm ownership. Locks are released by overwriting, never by
-#' deleting.
+#' Atomic directory creation admits one owner. A sidecar directory preserves
+#' compatibility with legacy token files, which block acquisition until released
+#' or stale. Released directories are archived, never deleted.
 #'
 #' @param path Lock file path.
 #' @param timeout Seconds to keep trying.
 #' @param stale Seconds after which a held lock counts as abandoned.
 #' @return Owner token, or NULL when the lock could not be acquired in time.
 finn_lock_acquire <- function(path, timeout = 15, stale = 120) {
-  dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
-  token <- paste0(Sys.info()[["nodename"]], ":", Sys.getpid(), ":", sprintf("%06d", sample.int(999999, 1)))
-  read_lock <- function() tryCatch(readLines(path, n = 1, warn = FALSE), error = function(e) character())
-  deadline <- Sys.time() + timeout
-  repeat {
-    cur <- if (file.exists(path)) read_lock() else character()
-    age <- if (file.exists(path)) as.numeric(difftime(Sys.time(), file.mtime(path), units = "secs")) else Inf
-    if (length(cur) == 0 || identical(cur, "released") || !nzchar(cur) || age > stale) {
-      tmp <- paste0(path, ".", Sys.getpid(), ".tmp")
-      writeLines(token, tmp)
-      if (!isTRUE(file.rename(tmp, path))) writeLines(token, path)
-      Sys.sleep(0.05)
-      if (identical(read_lock(), token)) {
-        return(token)
-      }
-    }
-    if (Sys.time() > deadline) {
-      return(NULL)
-    }
-    Sys.sleep(0.2)
+  if (file.exists(path)) {
+    cur <- readLines(path, n = 1, warn = FALSE)
+    age <- as.numeric(difftime(Sys.time(), file.mtime(path), units = "secs"))
+    if (length(cur) && !identical(cur, "released") && nzchar(cur) && age <= stale) return(NULL)
   }
+  finn_directory_lock_acquire(paste0(path, ".d"), timeout, stale)
 }
 
 #' Release a lock acquired with [finn_lock_acquire()]
 #'
-#' Only the owner releases it; the file is overwritten with "released".
+#' Only the owner releases it; the directory is archived.
 #'
 #' @param path Lock file path.
 #' @param token Owner token returned by [finn_lock_acquire()].
 #' @return Invisible logical, TRUE when released.
 finn_lock_release <- function(path, token) {
-  if (is.null(token) || !file.exists(path)) {
-    return(invisible(FALSE))
-  }
-  cur <- tryCatch(readLines(path, n = 1, warn = FALSE), error = function(e) character())
-  if (!identical(cur, token)) {
-    return(invisible(FALSE))
-  }
-  writeLines("released", path)
-  invisible(TRUE)
+  finn_directory_lock_release(paste0(path, ".d"), token)
 }
 
 #' Write a JSON file atomically
@@ -631,10 +606,9 @@ finn_read_state <- function(run_paths) finn_read_json(run_paths$state)
 
 #' Merge fields into a run's state file
 #'
-#' The read-modify-write runs under a lock file so the launcher, the worker,
-#' and the cancel script cannot overwrite each other's fields. When the lock
-#' cannot be acquired in time the update still happens, because losing a
-#' status change is worse than a rare race. A damaged state file is renamed
+#' The read-modify-write runs under an exclusive lock so the launcher, worker,
+#' and cancel script cannot overwrite each other's fields. A lock timeout raises
+#' an actionable error without writing state. A damaged state file is renamed
 #' to `state.json.corrupt-<stamp>` (kept for diagnosis) and a fresh state is
 #' written from the new fields.
 #'
@@ -644,6 +618,8 @@ finn_read_state <- function(run_paths) finn_read_json(run_paths$state)
 finn_update_state <- function(run_paths, ...) {
   lock <- paste0(run_paths$state, ".lock")
   token <- finn_lock_acquire(lock, timeout = 10, stale = 60)
+  if (is.null(token)) stop("Could not lock run state. Another process is updating it; retry shortly: ",
+    run_paths$state, call. = FALSE)
   on.exit(finn_lock_release(lock, token), add = TRUE)
   state <- tryCatch(finn_read_json(run_paths$state, retry_wait = 0.5), finn_json_error = function(e) {
     file.rename(run_paths$state, paste0(run_paths$state, ".corrupt-", finn_stamp()))
@@ -1360,24 +1336,46 @@ finn_register_allocation <- function(paths, run_paths, claimed) {
 #' @param timeout Seconds to wait for another launcher.
 #' @return Owner token, or NULL when busy.
 finn_machine_lock_acquire <- function(timeout = 30) {
-  path <- file.path(finn_settings_dir(), "machine-launch-lock")
+  finn_directory_lock_acquire(file.path(finn_settings_dir(), "machine-launch-lock"), timeout)
+}
+
+#' Acquire an atomic directory lock, recovering only confirmed dead local owners
+#'
+#' @param path Directory to create exclusively.
+#' @param timeout Seconds to wait.
+#' @param stale Seconds before an ownerless directory requires manual recovery.
+#' @return Owner token or NULL when busy; unreadable ownership raises an error.
+finn_directory_lock_acquire <- function(path, timeout = 30, stale = 120) {
   dir.create(dirname(path), recursive = TRUE, showWarnings = FALSE)
   token <- paste0(Sys.getpid(), "-", format(Sys.time(), "%Y%m%d%H%M%OS6"), "-", sample.int(999999, 1))
   deadline <- Sys.time() + timeout
   repeat {
     if (dir.create(path, showWarnings = FALSE)) {
       created <- if (requireNamespace("ps", quietly = TRUE)) as.numeric(ps::ps_create_time(ps::ps_handle()))
-      finn_write_json(list(token = token, pid = Sys.getpid(), create_time = created), file.path(path, "owner.json"))
+      finn_write_json(list(token = token, pid = Sys.getpid(), create_time = created,
+        host = Sys.info()[["nodename"]]), file.path(path, "owner.json"))
       return(token)
     }
-    owner <- finn_read_json(file.path(path, "owner.json"))
+    owner_file <- file.path(path, "owner.json")
+    owner <- tryCatch(finn_read_json(owner_file), finn_json_error = function(e) {
+      if (!file.exists(owner_file)) return(NULL)
+      stop(e)
+    })
     age <- as.numeric(difftime(Sys.time(), file.mtime(path), units = "secs"))
-    dead <- !is.null(owner) && isFALSE(finn_pid_alive(owner$pid, owner$create_time))
+    dead <- !is.null(owner) && (is.null(owner$host) || identical(owner$host, Sys.info()[["nodename"]])) &&
+      isFALSE(finn_pid_alive(owner$pid, owner$create_time))
     if (dead) {
-      if (file.rename(path, paste0(path, ".abandoned-", owner$token))) next
+      # Only one contender may recover this owner; a late observer must never
+      # rename a newly acquired live lock in place of the dead one.
+      recovery <- paste0(path, ".recovery-", owner$token)
+      if (dir.create(recovery, showWarnings = FALSE)) {
+        current <- finn_read_json(file.path(path, "owner.json"))
+        if (!is.null(current) && identical(current$token, owner$token) &&
+            file.rename(path, paste0(path, ".abandoned-", owner$token))) next
+      }
     }
-    if (is.null(owner) && is.finite(age) && age > 120) {
-      stop("Finn's machine launch lock has no recorded owner. Check that no launch is active before moving the lock directory aside: ",
+    if (is.null(owner) && is.finite(age) && age > stale) {
+      stop("Finn's lock has no recorded owner. Check that no operation is active before moving the lock directory aside: ",
         path, call. = FALSE)
     }
     if (Sys.time() >= deadline) return(NULL)
@@ -1408,12 +1406,56 @@ finn_software_active_runs <- function(root) {
 #' @param token Token from [finn_machine_lock_acquire()].
 #' @return Invisible logical indicating release.
 finn_machine_lock_release <- function(token) {
+  finn_directory_lock_release(file.path(finn_settings_dir(), "machine-launch-lock"), token)
+}
+
+#' Exclude forecasts while changing software, allowing a verified installer handoff
+#'
+#' The updater passes its held token to its child installer, avoiding recursive
+#' acquisition. Standalone operations acquire the launch lock themselves.
+#'
+#' @param args Parsed arguments with optional internal `software_lock` token.
+#' @return List with token, owned flag, and an optional blocked result.
+finn_software_guard <- function(args) {
+  token <- finn_arg(args, "software_lock")
+  owned <- is.null(token)
+  if (owned) {
+    token <- finn_machine_lock_acquire()
+  } else {
+    owner <- finn_read_json(file.path(finn_settings_dir(), "machine-launch-lock", "owner.json"))
+    if (is.null(owner) || !identical(owner$token, token) ||
+        !isTRUE(finn_pid_alive(owner$pid, owner$create_time))) {
+      stop("The updater's software lock is no longer held. Retry the update.", call. = FALSE)
+    }
+  }
+  if (is.null(token)) {
+    return(list(result = finn_result(FALSE, "busy", "Another Finn launch or software change is in progress.",
+      next_actions = "Wait for it to finish, then retry.")))
+  }
+  active <- tryCatch(finn_software_active_runs(finn_resolve_root(args)), error = function(e) {
+    if (owned) finn_machine_lock_release(token)
+    stop(e)
+  })
+  if (length(active)) {
+    if (owned) finn_machine_lock_release(token)
+    return(list(result = finn_result(FALSE, "blocked", "A forecast is running. Changing Finn now could break it.",
+      list(active_runs = lapply(active, function(s) list(root = s$root, project = s$project, run_id = s$run_id))),
+      "Wait for forecasts to finish, or cancel with the user's OK, then retry.")))
+  }
+  list(token = token, owned = owned)
+}
+
+#' Archive an owned directory lock without deleting files
+#'
+#' @param path Held directory.
+#' @param token Owner token.
+#' @return Invisible logical indicating release; failed renames raise an error.
+finn_directory_lock_release <- function(path, token) {
   if (is.null(token)) return(invisible(FALSE))
-  path <- file.path(finn_settings_dir(), "machine-launch-lock")
   owner <- finn_read_json(file.path(path, "owner.json"))
   if (is.null(owner) || !identical(owner$token, token)) return(invisible(FALSE))
   released <- file.rename(path, paste0(path, ".released-", token))
-  if (!released) stop("Could not release the Finn machine launch lock.", call. = FALSE)
+  if (!released) stop("Could not release the Finn lock: ", path, call. = FALSE)
   invisible(TRUE)
 }
 

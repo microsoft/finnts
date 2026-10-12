@@ -51,7 +51,9 @@ Typical and maximum horizons by date type (beyond the maximum, Finn warns but st
 `validate_config.R` returns these as errors; fix them with the user before running:
 
 - Two rows for the same series and date (duplicates). Ask whether to sum them or which one
-  to keep; `prepare_data.R` can aggregate.
+  to keep. With approval, create a separate cleaned copy using analysis code that
+  aggregates or removes the agreed rows; `prepare_data.R` does not aggregate duplicates.
+  Keep the original unchanged and validate the cleaned copy before launching.
 - A configured column that is not in the file (often a renamed header).
 - The date column listed as a series column.
 - A date type other than `day`, `week`, `month`, `quarter`, or `year`.
