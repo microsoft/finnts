@@ -1,6 +1,6 @@
 ---
 name: finn
-description: "Use when a user wants to forecast financial time series with Finn (the finnts R package) on their own computer without writing code: install R and finnts, set up a forecast project, check data, run standard or Agent forecasts, check run status, cancel or resume runs, debug failures, export results, and analyze inputs or forecasts."
+description: "Use when a user wants to forecast financial time series with Finn (the finnts R package) on their own computer without writing code: install R and finnts, set up a forecast project, check data, run standard or Agent forecasts, check run status, cancel or resume runs, debug failures, create support reports or submit GitHub issues, export results, and analyze inputs or forecasts."
 argument-hint: "Describe what you want to forecast or ask about an existing Finn project"
 user-invocable: true
 disable-model-invocation: false
@@ -39,6 +39,11 @@ Speak in plain finance language (series, horizon, accuracy, back test), not R ja
    offer ensemble training. Simple averaging (`average_models`) is separate and
    unchanged. Do not rewrite an unfinished run's saved settings on resume; explain
    any conflict and ask before a fresh run. Agent-run settings are unaffected.
+9. **Ask before publishing a support issue.** A local support report is not permission
+   to share it. Draft a sanitized title and body, show the exact preview, warn that
+   `microsoft/finnts` issues are public, and obtain explicit approval before submission.
+   Use the user's authenticated GitHub tooling, not R scripts or stored credentials.
+   Follow [references/status-and-debugging.md](references/status-and-debugging.md#reporting-a-problem-on-github).
 
 ## Running scripts
 
@@ -79,7 +84,7 @@ Runs launch in the background and return immediately; do not block the chat wait
 | Check progress | `run_status.R --project=<name>` (stage and % complete); `--all=true` for every active run on this computer |
 | Stop a run | Ask, then `run_cancel.R --project=<name> --run_id=<id> --confirm=true` |
 | Fix a failed run | `diagnose_run.R --project=<name>` ([references/status-and-debugging.md](references/status-and-debugging.md)) |
-| Report a problem to the Finn team | Ask whether to include log lines, then `diagnose_run.R --project=<name> --report=true` (add `--include_log=false` if not); have the user review the masked report file before pasting it into the GitHub issue form |
+| Create a support report / submit a problem to the Finn team | `diagnose_run.R --project=<name> --report=true` for local evidence; draft a sanitized issue, show the public-sharing warning and exact preview, ask, then submit with authenticated GitHub tooling and return the URL; otherwise offer a prefilled issue link ([references/status-and-debugging.md](references/status-and-debugging.md#reporting-a-problem-on-github)) |
 | Get a spreadsheet | `export_results.R --project=<name>` (`--format=xlsx` needs writexl) |
 | Ask questions about data or results | Free-form R ([references/analysis.md](references/analysis.md)) |
 | List, rename, archive projects, or uninstall | `setup_project.R --action=list`; others in [references/data-and-settings.md](references/data-and-settings.md) |

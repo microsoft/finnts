@@ -149,9 +149,16 @@ the log out). It does not include input tables, but errors, settings, and log li
 may contain business values, series names, or column names. Home folders, user and
 computer names, e-mail addresses, organization names, and keys are masked where
 recognized. Review and remove confidential content before sharing, even with the
-log left out: the saved error is still included. Then open a
-[Finn skill problem](https://github.com/microsoft/finnts/issues/new?template=finn-skill.yml) issue and
-paste it in. Do not include confidential data.
+log left out: the saved error is still included.
+
+You can also ask: "Report this Finn problem on GitHub for me." The agent drafts a
+sanitized issue, shows you the exact title and body, and asks before publishing.
+Issues on `microsoft/finnts` are public. After you approve, it can submit using
+your authenticated GitHub account and give you the issue link. Creating a local
+support report does not publish anything. If authenticated submission is unavailable,
+the agent offers a prefilled link for you to review and submit, or the
+[Finn skill problem form](https://github.com/microsoft/finnts/issues/new?template=finn-skill.yml)
+with the sanitized draft. Never share confidential data.
 
 ## Requirements
 

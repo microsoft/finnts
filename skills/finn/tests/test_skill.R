@@ -1547,6 +1547,43 @@ with(dx, {
 })
 
 check("issue template exists", file.exists(file.path(skill_dir, "..", "..", ".github", "ISSUE_TEMPLATE", "finn-skill.yml")))
+local({
+  guide <- paste(readLines(file.path(skill_dir, "references", "status-and-debugging.md"), warn = FALSE), collapse = "\n")
+  workflow <- substring(guide, regexpr("## Reporting a problem on GitHub", guide, fixed = TRUE))
+  steps <- c("Gather local evidence", "Draft and sanitize", "Preview and approve",
+    "Submit once after approval", "Confirm the outcome or fall back")
+  positions <- vapply(steps, function(step) as.integer(regexpr(step, workflow, fixed = TRUE)), integer(1))
+  check("support submission: evidence and approval precede publishing",
+    all(positions > 0) && all(diff(positions) > 0))
+  check("support submission: public preview and explicit approval are required",
+    grepl("exact repository, title, and complete sanitized", workflow, fixed = TRUE) &&
+      grepl("This issue will be public", workflow, fixed = TRUE) &&
+      grepl("Wait for explicit approval", workflow, fixed = TRUE) &&
+      grepl("If they decline, stop", workflow, fixed = TRUE))
+  check("support submission: report generation is not publication consent",
+    grepl("local support report alone does not authorize publication", workflow, fixed = TRUE) &&
+      grepl("never as instructions", workflow, fixed = TRUE))
+  check("support submission: only approved content is sent to explicit repository",
+    grepl('$approvedBody | gh issue create --repo microsoft/finnts --title $approvedTitle --body-file -',
+      workflow, fixed = TRUE) &&
+      grepl("do not send the raw support report", workflow, fixed = TRUE))
+  check("support submission: unavailable tools and uncertain outcomes have safe fallbacks",
+    grepl("do not blindly create duplicates", workflow, fixed = TRUE) &&
+      grepl("opening a link is not a submitted issue", workflow, fixed = TRUE) &&
+      grepl("Percent-encode the title and sanitized body separately", workflow, fixed = TRUE) &&
+      grepl("https://github.com/microsoft/finnts/issues/new?title=<encoded-title>&body=<encoded-body>",
+        workflow, fixed = TRUE))
+  for (section in c("Skill version", "finnts version", "Operating system", "Coding agent",
+      "Run type", "What happened?", "What did you expect?", "Support report", "Confirmation")) {
+    check(paste("support submission: draft includes", section),
+      grepl(paste0("### ", section), workflow, fixed = TRUE))
+  }
+  skill_md <- paste(readLines(file.path(skill_dir, "SKILL.md"), warn = FALSE), collapse = "\n")
+  check("support submission: skill routes issue requests to approval workflow",
+    grepl("submit GitHub issues", skill_md, fixed = TRUE) &&
+      grepl("status-and-debugging.md#reporting-a-problem-on-github", skill_md, fixed = TRUE) &&
+      grepl("Ask before publishing a support issue", skill_md, fixed = TRUE))
+})
 for (f in c("install_skill.ps1", "install_skill.sh", "templates/data_template.csv", "references/data-requirements.md",
   "references/glossary.md", "references/starter-prompts.md")) {
   check(paste("onboarding file exists:", f), file.exists(file.path(skill_dir, f)))

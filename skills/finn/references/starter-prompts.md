@@ -40,4 +40,5 @@ real names. Users can phrase things any way they like.
 - "Update the Finn skill and finnts to the latest versions." / "Update only finnts."
 - "My run failed. What went wrong?"
 - "Create a support report so I can report a problem."
+- "Report this Finn problem on GitHub for me; show me the draft before submitting."
 - "What data leaves my computer when I use Finn?"

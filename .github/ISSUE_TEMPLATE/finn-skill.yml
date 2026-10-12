@@ -9,6 +9,10 @@ body:
 
         Thanks for reporting a problem. The quickest way to fill this in is to ask your coding agent:
         **"Create a Finn support report for my last run."** It writes a Markdown file under your project's `support` folder.
+        Or ask **"Report this Finn problem on GitHub for me."** Your agent can draft a sanitized issue,
+        show you the exact content, and submit through your authenticated GitHub account only after
+        you approve. If submission is unavailable, it can offer a prefilled issue link.
+        Creating a support report alone does not publish anything. Issues in this repository are public.
 
         **Do not share confidential data.** The report does not include input tables, but errors, settings,
         and log lines may contain business values, series names, or column names. Credentials and identifying
