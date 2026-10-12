@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9011</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9012</span>
       </span>
     </div>
 
@@ -100,21 +100,36 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9011" id="finnts-0709011-development-version">finnts 0.7.0.9011 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709011-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9012" id="finnts-0709012-development-version">finnts 0.7.0.9012 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709012-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9011">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9011"></a></h3>
+<h3 id="improvements-0-7-0-9012">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9012"></a></h3>
 <ul><li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
 <ul><li>Defaults to automatic model selection, with isolated conversations and tool-disabled requests.</li>
 <li>Copilot saves CLI-local session state under R’s temporary directory.</li>
 </ul></li>
-<li>Added <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> for explicit, read-only standard/grouped selection using nesting checks and optional preprocessing-compatible inactive-series cleanup. Agent detection shares this structural analysis; explicit <code><a href="../reference/prep_data.html">prep_data()</a></code> choices are unchanged.</li>
+<li>Added <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> for explicit, read-only standard/grouped selection using nesting checks.
+<ul><li>Optionally cleans inactive series compatibly with preprocessing.</li>
+<li>Agent detection shares this structural analysis; explicit <code><a href="../reference/prep_data.html">prep_data()</a></code> choices are unchanged.</li>
+</ul></li>
 <li>Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.</li>
+<li>Added the local <code>naive</code> model, repeating the last observed value, to default standard runs and every Agent iteration.</li>
+<li>
+<code><a href="../reference/update_forecast.html">update_forecast()</a></code> now includes <code>naive</code> and <code>snaive</code> in default models for new or failed series.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9011">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9011"></a></h3>
-<ul><li>Hierarchical external-regressor mapping requires one observed value per source grain/date instead of relying on distinct-count reduction, including validated composite grains when single columns are insufficient. Additive level drivers are summed once per source entity within each node’s actual membership; conflicting bottom values and ambiguous source grains fail explicitly. Standard intermediate nodes no longer inherit grand-total driver values. Newly prepared regressor values may change; existing saved runs are not migrated.</li>
-<li>New Agent versions with multiple combo columns but only one retained series use bottoms-up instead of attempting invalid hierarchical construction. EDA and iteration prompts reflect the input scope.
-<ul><li>Existing-version resumes preserve the saved forecast approach and uploaded inputs while still rejecting changed logged settings. New versions use current detection; updates across outer-approach changes still require fresh iteration.</li>
+<h3 id="bug-fixes-0-7-0-9012">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9012"></a></h3>
+<ul><li>Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
+<ul><li>Validated composite grains are used when single columns are insufficient.</li>
+<li>Additive level drivers are summed once per source entity within each node’s actual membership.</li>
+<li>Conflicting bottom values and ambiguous source grains fail explicitly.</li>
+<li>Standard intermediate nodes no longer inherit grand-total driver values.</li>
+<li>Newly prepared regressor values may change; existing saved runs are not migrated.</li>
+</ul></li>
+<li>New Agent versions with multiple combo columns but only one retained series use bottoms-up forecasting.
+<ul><li>This avoids invalid hierarchical construction; EDA and iteration prompts reflect the input scope.</li>
+<li>Existing-version resumes preserve the saved forecast approach and uploaded inputs.</li>
+<li>Resumes still reject changed logged settings.</li>
+<li>New versions use current detection; updates across outer-approach changes still require fresh iteration.</li>
 </ul></li>
 <li>Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.</li>
 <li>Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.</li>
