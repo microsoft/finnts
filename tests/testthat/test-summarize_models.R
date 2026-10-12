@@ -67,7 +67,7 @@ prep_models(
   run_info = run_info_univariate,
   back_test_scenarios = 2,
   models_to_run = c(
-    "arima", "ets", "croston", "meanf", "snaive",
+    "arima", "ets", "croston", "meanf", "naive", "snaive",
     "theta", "stlm-arima", "stlm-ets", "tbats",
     "nnetar", "prophet", "arimax", "arima-boost",
     "prophet-boost", "prophet-xregs", "nnetar-xregs",
@@ -109,6 +109,18 @@ test_that("summarize meanf without xregs", {
   result <- summarize_model_meanf(wf)
   validate_summary_output(result, "meanf")
   expect_true("model_arg" %in% result$section)
+})
+
+test_that("summarize naive without xregs", {
+  wf <- get_model_workflow(trained_univariate, "naive")
+  result <- summarize_model_naive(wf)
+  validate_summary_output(result, "naive")
+  engine_params <- result %>% dplyr::filter(section == "engine_param")
+  expect_true(all(c("nobs", "last_value") %in% engine_params$name))
+  expect_error(
+    summarize_model_naive(get_model_workflow(trained_univariate, "snaive")),
+    "set_engine\\('naive'\\)"
+  )
 })
 
 test_that("summarize snaive without xregs", {

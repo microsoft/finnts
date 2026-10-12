@@ -308,6 +308,7 @@ test_that("a missing predecessor and a new series both produce default results",
     submit_fcst_run = function(agent_info, inputs, combo, timestamp, ...) {
       expect_true(isTRUE(agent_info$default_reforecast))
       expect_identical(inputs$forecast_approach, "bottoms_up")
+      expect_true(all(c("naive", "snaive") %in% inputs$models_to_run))
       expect_identical(timestamp, "default")
       submitted <<- c(submitted, combo)
       info <- fixture$updated

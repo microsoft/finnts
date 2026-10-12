@@ -12,6 +12,8 @@ Use this map to find the code that owns behavior. Confirm details in the impleme
 
 Start with `tests/testthat/test-prep_data.R`, `tests/testthat/test-prep_models.R`, and `tests/testthat/test-forecast_time_series.R` for regression coverage near this flow.
 
+To add, rename, or remove a model, follow the [new-model checklist](adding-a-model.md); model names are registered in standard, Agent, update, documentation, and test locations.
+
 `R/run_info.R` is also consumed by Agent workflows. Follow the Agent runtime rule when changing fields or defaults used by Agent reasoning, replay, or run comparison.
 
 ## Agent Forecasting Flow

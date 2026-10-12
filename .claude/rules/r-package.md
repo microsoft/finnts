@@ -23,6 +23,7 @@ paths:
 - Keep errors actionable and consistent. Use `stop()` for user-facing errors, `warning()` for recoverable conditions, and `message()` for informational output.
 - Avoid unnecessary copies in tight loops; vectorize when it improves clarity or performance.
 - Never add code that deletes files.
+- When adding, renaming, or removing a forecasting model, follow the [new-model checklist](../../.github/agent-guides/adding-a-model.md); model names are registered in many independent places.
 
 ## Function Documentation
 
