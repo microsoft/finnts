@@ -30,17 +30,16 @@ custom_model_current_definition <- function(definition) {
   definition
 }
 
-# Validate a plain schema-v1 reference before deriving any storage path. Only
+# Validate a plain name/version_id reference before deriving any storage path. Only
 # safe model names and full lowercase digests are accepted; caller-controlled
 # paths, approvals, consent and extra attributes/fields are rejected. Returns
 # the unchanged passive reference, which identifies content but authorizes none.
 custom_model_reference <- function(reference) {
-  fields <- c("registry_schema_version", "name", "version_id")
+  fields <- c("name", "version_id")
   if (typeof(reference) != "list" ||
     any(!names(attributes(reference)) %in% "names") ||
-    length(reference) != length(fields) || !setequal(names(reference), fields) ||
-    !identical(reference$registry_schema_version, 1L)) {
-    stop("Custom model reference requires registry schema 1L, name and version_id only.", call. = FALSE)
+    length(reference) != length(fields) || !setequal(names(reference), fields)) {
+    stop("Custom model reference requires name and version_id only.", call. = FALSE)
   }
   for (field in c("name", "version_id")) {
     value <- reference[[field]]
@@ -107,13 +106,13 @@ custom_model_read_record <- function(reference, location, allow_missing = FALSE)
     path <- destination
   }
   record <- read_exact_artifact(info, path, return_type = "object")
-  fields <- c("registry_schema_version", "name", "version_id", "definition")
+  fields <- c("name", "version_id", "definition")
   if (typeof(record) != "list" || any(!names(attributes(record)) %in% "names") ||
     length(record) != length(fields) || !setequal(names(record), fields)) {
     stop("Malformed custom model registry record.", call. = FALSE)
   }
-  stored <- custom_model_reference(record[c("registry_schema_version", "name", "version_id")])
-  if (!identical(stored, reference[c("registry_schema_version", "name", "version_id")])) {
+  stored <- custom_model_reference(record[c("name", "version_id")])
+  if (!identical(stored, reference[c("name", "version_id")])) {
     stop("Custom model registry record does not match its reference.", call. = FALSE)
   }
   definition <- custom_model_current_definition(record$definition)
@@ -125,14 +124,14 @@ custom_model_read_record <- function(reference, location, allow_missing = FALSE)
 }
 
 # Persist a current passive M1 definition in fixed-format registry storage.
-# Returns its exact schema/name/version reference. One optional exact read avoids
+# Returns its exact name/version_id reference. One optional exact read avoids
 # rewriting existing valid content; an absent artifact is written once through
 # write_data and verified by one required read-back. Corrupt existing artifacts
 # error untouched. Sequential idempotence is not a cross-provider transaction,
 # cryptographic authorization, user approval or permission to execute source.
 write_custom_model_definition <- function(definition, run_info) {
   definition <- custom_model_current_definition(definition)
-  reference <- custom_model_reference(list(registry_schema_version = 1L,
+  reference <- custom_model_reference(list(
     name = definition$name, version_id = definition$version_id))
   location <- custom_model_registry_location(reference, run_info)
   existing <- custom_model_read_record(reference, location, allow_missing = TRUE)
@@ -159,7 +158,7 @@ read_custom_model_definition <- function(reference, run_info) {
 # Explicit flat model names override exclusions and retain requested order;
 # NULL selects the existing built-in catalog minus exclusions, never customs.
 # custom_models is a uniquely named list of passive, current M1 definitions or
-# schema-v1 references. All entries are validated, but only selected references
+# name/version_id references. All entries are validated, but only selected references
 # are fetched using run_info. Unique selections and matching aliases guarantee
 # at most one read per reference per call, with no persistent cache.
 # Returns selected names, built-in names, named custom definitions/capabilities,
@@ -188,7 +187,7 @@ resolve_custom_model_pool <- function(models_to_run = NULL,
   references <- character()
   for (alias in aliases) {
     entry <- custom_models[[alias]]
-    if (is.list(entry) && "registry_schema_version" %in% names(entry)) {
+    if (is.list(entry) && setequal(names(entry), c("name", "version_id"))) {
       entry <- custom_model_reference(entry)
       references <- c(references, alias)
     } else {

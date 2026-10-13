@@ -92,9 +92,9 @@ custom_model_context <- function(definition, context, allow_code) {
 # complete-cohort prediction. Group columns must be explicit nonidentity drivers.
 # Returns the same contract or raises before fitting on unknown/ambiguous fields.
 custom_model_runtime <- function(runtime, predictors, model_type) {
-  fields <- c("version", "prediction_scope", "cohort", "group_columns")
+  fields <- c("prediction_scope", "cohort", "group_columns")
   if (!is.list(runtime) || length(runtime) != length(fields) || anyDuplicated(names(runtime)) ||
-    !setequal(names(runtime), fields) || !identical(runtime$version, 2L) ||
+    !setequal(names(runtime), fields) ||
     !identical(runtime$prediction_scope, "complete_horizon")) {
     stop("Unsupported custom-model development runtime; recreate the model with complete_horizon and cohort requirements.", call. = FALSE)
   }

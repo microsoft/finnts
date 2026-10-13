@@ -1,6 +1,6 @@
 # Resolve an internal Agent contract from trusted run metadata and
 # explicitly selected M3b envelopes. Returns NULL for inactive custom enrollment.
-# Active contracts bind a compatible original-scale R1 profile and enabled modes;
+# Active contracts bind the untransformed C1 custom recipe profile and enabled modes;
 # no source, workflow, provider, credential lookup or artifact I/O is executed.
 # Only selected envelopes and whitelisted metadata survive in the returned list.
 # Standalone hierarchy capabilities do not authorize Agent hierarchy execution.
@@ -42,7 +42,7 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
   regressors <- custom_model_pool_names(agent_info$external_regressors, "external_regressors", empty = TRUE)
   if (is.null(regressors)) regressors <- character()
   profile <- custom_run_context(project, list(forecast_approach = agent_info$forecast_approach,
-    recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
+    recipes_to_run = "C1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, multistep_horizon = FALSE, date_type = date_type,
     forecast_horizon = horizon), FALSE)
   context <- c(profile, list(run_local_models = agent_info$run_local_models,
@@ -58,7 +58,7 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
     modes <- intersect(definition$model_type, c("local", "global")[c(agent_info$run_local_models, agent_info$run_global_models)])
     if (!length(modes)) stop("Selected custom model has no enabled compatible mode: ", alias, ".", call. = FALSE)
     for (mode in modes) {
-      custom_model_context(definition, list(model_type = mode, recipe_id = "R1", date_type = date_type,
+      custom_model_context(definition, list(model_type = mode, recipe_id = "C1", date_type = date_type,
         forecast_horizon = as.numeric(horizon), target_scale = "original"), FALSE)
     }
     required <- definition$requirements$predictors
@@ -72,24 +72,24 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
     custom <- names(pool$custom)[vapply(pool$custom, function(definition) mode %in% definition$model_type, logical(1))]
     mode_models[[mode]] <- pool$selected[pool$selected %in% c(built_in, custom)]
   }
-  identity <- list(schema_version = 1L, selected = pool$selected, pool_id = pool$pool_id,
+  identity <- list(selected = pool$selected, pool_id = pool$pool_id,
     references = lapply(pool$custom, function(definition) list(name = definition$name, version_id = definition$version_id)),
     evidence = lapply(pool$envelopes, function(model) model[c("validation", "approval")]), context = context)
-  list(schema_version = 1L, selected = pool$selected, envelopes = pool$envelopes,
+  list(selected = pool$selected, envelopes = pool$envelopes,
     context = context, mode_models = mode_models, pool_id = pool$pool_id,
     contract_id = custom_run_digest(identity))
 }
 
 # Reconstruct a passive contract from its approved envelopes and pinned metadata.
-# Return the original object unchanged when schema, context, membership and hashes
+# Return the original object unchanged when fields, context, membership and hashes
 # agree, requiring plain character name vectors but permitting equivalent map/set
 # order. Stale or malformed contracts are
 # hard configuration errors, never retriable LLM proposals or refreshed approval.
 validate_agent_custom_models <- function(contract) {
-  fields <- c("schema_version", "selected", "envelopes", "context", "mode_models", "pool_id", "contract_id")
+  fields <- c("selected", "envelopes", "context", "mode_models", "pool_id", "contract_id")
   if (typeof(contract) != "list" || any(!names(attributes(contract)) %in% "names") ||
     length(contract) != length(fields) || anyDuplicated(names(contract)) ||
-    !setequal(names(contract), fields) || !identical(contract$schema_version, 1L) ||
+    !setequal(names(contract), fields) ||
     !is.character(contract$selected) || !is.null(attributes(contract$selected))) {
     stop("Invalid custom Agent contract schema.", call. = FALSE)
   }
@@ -153,7 +153,7 @@ agent_custom_candidates <- function(contract, combo = NULL, foundation_suffix = 
     list(name = definition$name, interpretation = definition$interpretation, model_type = mode,
       version_id = definition$version_id, predictors = definition$requirements$predictors,
       date_type = context$date_type, forecast_horizon = context$forecast_horizon,
-      target_scale = "original", recipe_id = "R1")
+      target_scale = "original", recipe_id = "C1")
   })
   list(models = models, custom = custom, model_type = mode, contract_id = contract$contract_id)
 }
@@ -161,7 +161,8 @@ agent_custom_candidates <- function(contract, combo = NULL, foundation_suffix = 
 # Validate one complete serialized reasoning proposal without supplying defaults.
 # Reuse existing Agent parsers/typed errors, then enforce the pinned pool, required
 # selected-custom drivers and original-scale profile even for built-in-only
-# subsets. Negative-forecast permission comes only from the trusted contract.
+# subsets; selected custom models expand recipes_to_run to R1 plus C1.
+# Negative-forecast permission comes only from the trusted contract.
 # Return parsed settings; malformed proposals are typed correction failures,
 # whereas contract/availability errors remain hard errors before proposal parsing.
 validate_agent_custom_proposal <- function(input_list, contract, combo = NULL, foundation_suffix = "") {
@@ -199,6 +200,9 @@ validate_agent_custom_proposal <- function(input_list, contract, combo = NULL, f
         paste0("include the required predictors for ", alias, "."))
     }
   }
+  # The LLM pins built-in preparation to R1; selected custom models add their raw C1
+  # recipe here so child prep, logs, duplicate detection and history share one value.
+  if (any(result$models_to_run %in% names(contract$envelopes))) result$recipes_to_run <- c("R1", "C1")
   result$negative_forecast <- context$negative_forecast
   result
 }
@@ -230,10 +234,10 @@ read_agent_custom_record <- function(agent_info, required = FALSE) {
     allow_missing = !required)
   if (!length(paths)) return(NULL)
   record <- read_exact_artifact(info, paths, return_type = "object")
-  fields <- c("schema_version", "project_name", "agent_run_id", "agent_version", "contract")
+  fields <- c("project_name", "agent_run_id", "agent_version", "contract")
   if (typeof(record) != "list" || any(!names(attributes(record)) %in% "names") ||
     length(record) != length(fields) || anyDuplicated(names(record)) || !setequal(names(record), fields) ||
-    !identical(record$schema_version, 1L) || !identical(record$project_name, info$project_name) ||
+    !identical(record$project_name, info$project_name) ||
     !identical(record$agent_run_id, agent_info$run_id) ||
     !identical(record$agent_version, as.numeric(agent_info$agent_version))) {
     stop("Invalid custom Agent parent record identity.", call. = FALSE)
@@ -252,7 +256,7 @@ write_agent_custom_record <- function(agent_info, contract) {
     return(invisible(contract))
   }
   info <- agent_custom_parent_info(agent_info)
-  record <- list(schema_version = 1L, project_name = info$project_name,
+  record <- list(project_name = info$project_name,
     agent_run_id = agent_info$run_id, agent_version = as.numeric(agent_info$agent_version), contract = contract)
   write_data(record, NULL, info, "object", "logs", "-agent-custom-models")
   if (!identical(agent_custom_marker(read_agent_custom_record(agent_info, TRUE)), marker)) {
@@ -338,7 +342,7 @@ agent_custom_prompt <- function(agent_info, combo, weighted_mape_goal) {
     agent_info$custom_foundation_suffix %||% "")
   paste("Select a nonempty subset of these approved candidates, or ABORT when no valid new proposal remains.",
     "Never generate source, change parameters/approval, add models or change the confirmed business rule.",
-    "Use original-scale R1, bottoms_up, stationary=FALSE, clean_missing_values=FALSE, clean_outliers=FALSE,",
+    "Use recipes_to_run=R1 (selected custom models automatically add their raw C1 recipe), bottoms_up, stationary=FALSE, clean_missing_values=FALSE, clean_outliers=FALSE,",
     "feature_selection=FALSE and multistep_horizon=FALSE. Include each selected custom model's required predictors.",
     "Return one JSON object with exactly: models_to_run, external_regressors, clean_missing_values, clean_outliers,",
     "forecast_approach, stationary, feature_selection, multistep_horizon, seasonal_period, recipes_to_run,",
@@ -354,19 +358,26 @@ agent_custom_prompt <- function(agent_info, combo, weighted_mape_goal) {
 
 # Revalidate parsed submission settings through the same complete proposal gate.
 # negative_forecast must equal the trusted contract value and is removed only for
-# serialization; all other extra fields are rejected. No coercion can widen
-# enrollment or approval.
+# serialization; all other extra fields are rejected. The C1 recipe added by the
+# gate is stripped before revalidation, and the regenerated recipes must equal
+# the submitted ones, so no coercion can widen enrollment, recipes or approval.
 agent_custom_submission <- function(inputs, agent_info, combo) {
   if (!identical(inputs$negative_forecast, agent_info$custom_agent_contract$context$negative_forecast)) {
     stop("Custom Agent submission negative_forecast must match the pinned contract.", call. = FALSE)
   }
   proposal <- inputs
   proposal$negative_forecast <- NULL
+  proposal$recipes_to_run <- setdiff(proposal$recipes_to_run, "C1")
   for (field in c("models_to_run", "external_regressors", "recipes_to_run", "seasonal_period", "lag_periods", "rolling_window_periods")) {
     if (!is.null(proposal[[field]])) proposal[[field]] <- paste(proposal[[field]], collapse = "---")
   }
-  validate_agent_custom_proposal(proposal, agent_info$custom_agent_contract, combo,
+  result <- validate_agent_custom_proposal(proposal, agent_info$custom_agent_contract, combo,
     agent_info$custom_foundation_suffix %||% "")
+  if (!identical(result$recipes_to_run, as.character(inputs$recipes_to_run))) {
+    abort_invalid_agent_proposal("recipes_to_run", inputs$recipes_to_run,
+      "use R1, plus C1 only when a custom model is selected.")
+  }
+  result
 }
 
 # Audit a chosen child subset before custom restart/publication. Reuse M3b
@@ -392,8 +403,9 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
   if (!length(selected) || anyDuplicated(selected) || any(!selected %in% allowed)) {
     stop("Custom Agent child selection is outside the pinned parent pool.", call. = FALSE)
   }
-  context <- custom_run_context(run_info, log, FALSE)
   pool <- resolve_custom_model_pool(selected, custom_models = lapply(contract$envelopes, function(model) model$definition))
+  # built-in-only subsets run on R1 alone, so C1 is required only with custom selections
+  context <- custom_run_context(run_info, if (length(pool$custom)) log else log[setdiff(names(log), "recipes_to_run")], FALSE)
   custom <- custom_run_load(run_info, log)
   if (length(pool$custom)) {
     evidence <- lapply(contract$envelopes[names(pool$custom)], function(model) model[c("validation", "approval")])
@@ -480,10 +492,10 @@ read_agent_custom_update <- function(agent_info, required = FALSE) {
   if (!length(paths)) return(NULL)
   record <- read_exact_artifact(info, paths, return_type = "object")
   custom_run_passive(record)
-  fields <- c("schema_version", "selected", "project_name", "run_id", "agent_version", "contract_id",
+  fields <- c("selected", "project_name", "run_id", "agent_version", "contract_id",
     "controls", "inputs", "predecessor", "winners", "manifest_id")
   if (!is.list(record) || !setequal(names(record), fields) || length(record) != length(fields) ||
-    !identical(record$schema_version, 1L) || !identical(record$manifest_id, custom_run_digest(record)) ||
+    !identical(record$manifest_id, custom_run_digest(record)) ||
     !identical(record$project_name, info$project_name) || !identical(record$run_id, agent_info$run_id) ||
     !identical(record$agent_version, as.numeric(agent_info$agent_version)) ||
     !identical(record$contract_id, agent_info$custom_agent_contract_id)) {
@@ -584,7 +596,7 @@ prepare_agent_custom_update <- function(agent_info, seed) {
         weighted_mape = as.numeric(row$weighted_mape), models_to_run = paste(sort(unique(aliases)), collapse = "---"),
         selected_id = selected, components = components)
     }), as.character(best$combo))
-    record <- c(list(schema_version = 1L, selected = agent_info$custom_agent_contract$selected,
+    record <- c(list(selected = agent_info$custom_agent_contract$selected,
       project_name = info$project_name, run_id = agent_info$run_id, agent_version = as.numeric(agent_info$agent_version),
       contract_id = agent_info$custom_agent_contract_id), context,
       list(predecessor = list(run_id = previous$run_id, agent_version = as.numeric(previous$agent_version)), winners = winners))
@@ -717,7 +729,7 @@ validate_agent_custom_update_workflows <- function(models, custom) {
     }
     definition <- custom$pool$custom[[row$Model_Name]]
     arguments <- lapply(spec$eng_args, rlang::get_expr)
-    context <- list(model_type = row$Model_Type, recipe_id = "R1", date_type = custom$manifest$context$date_type,
+    context <- list(model_type = row$Model_Type, recipe_id = "C1", date_type = custom$manifest$context$date_type,
       forecast_horizon = custom$manifest$context$forecast_horizon, target_scale = "original")
     if (!inherits(spec, "finnts_custom") || !identical(spec$engine, "finnts") ||
       !identical(arguments$definition, definition) || !identical(arguments$context, context) ||

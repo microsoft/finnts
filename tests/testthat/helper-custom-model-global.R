@@ -26,7 +26,7 @@ custom_global_panel <- function(series = 3L, months = 72L, seed = 9241L, cutoff 
   data$Portfolio_Total <- series * 200
   list(history = data[data$Date <= cutoff, ], future = data[data$Date > cutoff, setdiff(names(data), "Target")], context = list(
     model_type = "global",
-    recipe_id = "R1", date_type = "month", forecast_horizon = horizon, target_scale = "original"
+    recipe_id = "C1", date_type = "month", forecast_horizon = horizon, target_scale = "original"
   ))
 }
 
@@ -204,9 +204,9 @@ custom_global_definition <- function(rule = "pooled_mean") {
   ))
   new_custom_model_definition(paste0("test_", rule), "Apply the fixed independent global test rule.", "Share historical information across every included series.",
     "global", source, list(
-      predictors = c("Date", "Combo", custom_global_drivers()[[rule]]), recipes = "R1", target_scale = "original",
+      predictors = c("Date", "Combo", custom_global_drivers()[[rule]]), recipes = "C1", target_scale = "original",
       date_types = "month", forecast_horizon = 1:12, missing_data = "error", runtime = list(
-        version = 2L, prediction_scope = "complete_horizon",
+        prediction_scope = "complete_horizon",
         cohort = if (rule == "allocation") "all" else "series", group_columns = character()
       )
     ),

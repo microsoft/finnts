@@ -39,10 +39,12 @@ Ensemble model outputs are written to disk
 Create ensemble model forecasts
 }
 \details{
-Experimental custom runs require \code{run_ensemble_models = FALSE} during
-\code{\link[=prep_models]{prep_models()}}. Their pinned enrollment and existing artifact identities
-are validated before the disabled-ensemble shortcut; no learned ensemble
-or fallback model is introduced. Built-in-only runs retain existing behavior.
+Custom-model runs validate their pinned enrollment and existing
+artifact identities before ensembling. Custom forecasts from the raw C1
+recipe join the ensemble inputs when they pass the same backtest screening
+as built-in models. When C1 forecasts are present, ensembles train against
+original-scale actuals so raw custom and cleaned built-in targets are never
+averaged. Built-in-only runs retain existing behavior.
 }
 \examples{
 \donttest{

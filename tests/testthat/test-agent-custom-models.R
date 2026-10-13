@@ -4,12 +4,12 @@ agent_custom_fixture <- function(name = "business_mean", modes = c("local", "glo
   definition <- finnts:::new_custom_model_definition(name, "Use the analysis mean.", "Use the historical mean without transformations.",
     modes,
     source = c(fit = "function(data, context, parameters) stop('source execution sentinel')", predict = "function(object, new_data, context) stop('source execution sentinel')"),
-    requirements = list(predictors = predictors, recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = c(
+    requirements = list(predictors = predictors, recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = c(
       1,
       2
     ), missing_data = "error"), fixed_parameters = list(offset = 0)
   )
-  model <- structure(list(schema_version = 1L, definition = definition, validation = list(
+  model <- structure(list(definition = definition, validation = list(
     version_id = definition$version_id,
     technical_passed = TRUE, checks = list(arithmetic = "Synthetic fixture only")
   ), approval = list(
@@ -29,7 +29,6 @@ test_that("approved custom candidates form a passive Agent contract", {
   fixture <- agent_custom_fixture()
   original <- fixture
   contract <- resolve_agent_custom_models(fixture$info, "business_mean", list(business_mean = fixture$model))
-  expect_identical(contract$schema_version, 1L)
   expect_identical(contract$selected, "business_mean")
   expect_identical(contract$mode_models, list(local = "business_mean", global = "business_mean"))
   expect_identical(contract$envelopes$business_mean, fixture$model)
@@ -83,7 +82,7 @@ test_that("Agent contracts preserve selection and reject invalid envelopes", {
   expect_null(resolve_agent_custom_models(fixture$info, "meanf", models))
   expect_error(resolve_agent_custom_models(fixture$info, "unknown", models), "Unknown")
   expect_error(resolve_agent_custom_models(fixture$info, "business_mean", list(other = fixture$model)), "alias")
-  for (invalid in list(fixture$model$definition, list(registry_schema_version = 1L), stats::lm(mpg ~ wt, mtcars))) {
+  for (invalid in list(fixture$model$definition, list(name = "business_mean", version_id = fixture$model$definition$version_id), stats::lm(mpg ~ wt, mtcars))) {
     expect_error(resolve_agent_custom_models(fixture$info, "business_mean", list(business_mean = invalid)), "envelopes")
   }
   invalid <- fixture$model
@@ -281,6 +280,42 @@ test_that("custom Agent proposals use existing parsing and preserve the pinned r
     validate_agent_custom_proposal(agent_custom_proposal(external_regressors = "Driver"), contract)$models_to_run,
     "business_mean"
   )
+})
+
+test_that("custom Agent recipes add C1 only for selected custom models and survive submission", {
+  fixture <- agent_custom_fixture(predictors = "Driver")
+  contract <- resolve_agent_custom_models(fixture$info, c("business_mean", "arima"), list(business_mean = fixture$model))
+  info <- list(custom_agent_contract = contract)
+  mixed <- validate_agent_custom_proposal(agent_custom_proposal(
+    models_to_run = "business_mean---arima", external_regressors = "Driver"
+  ), contract, "combo-hash")
+  expect_identical(mixed$recipes_to_run, c("R1", "C1"))
+  builtin <- validate_agent_custom_proposal(agent_custom_proposal(models_to_run = "arima"), contract, "combo-hash")
+  expect_identical(builtin$recipes_to_run, "R1")
+  expect_identical(agent_custom_submission(mixed, info, "combo-hash")$recipes_to_run, c("R1", "C1"))
+  expect_identical(agent_custom_submission(builtin, info, "combo-hash")$recipes_to_run, "R1")
+  expect_identical(agent_custom_submission(mixed, info, "combo-hash"), mixed)
+  for (recipes in list("R1", c("R1", "C1", "C1"), c("C1", "R1"), "C1")) {
+    changed <- mixed
+    changed$recipes_to_run <- recipes
+    expect_error(agent_custom_submission(changed, info, "combo-hash"), class = "finnts_reason_proposal_invalid", info = paste(recipes, collapse = ","))
+  }
+  for (recipes in list(c("R1", "C1"), "C1")) {
+    changed <- builtin
+    changed$recipes_to_run <- recipes
+    expect_error(agent_custom_submission(changed, info, "combo-hash"), class = "finnts_reason_proposal_invalid", info = paste(recipes, collapse = ","))
+  }
+  changed <- mixed
+  changed$recipes_to_run <- c("R2", "C1")
+  expect_error(agent_custom_submission(changed, info, "combo-hash"), class = "finnts_reason_proposal_invalid")
+  for (recipes in c("C1", "R1---C1")) {
+    expect_error(validate_agent_custom_proposal(agent_custom_proposal(
+      external_regressors = "Driver", recipes_to_run = recipes
+    ), contract, "combo-hash"), class = "finnts_reason_proposal_invalid", info = recipes)
+  }
+  changed <- mixed
+  changed$negative_forecast <- !mixed$negative_forecast
+  expect_error(agent_custom_submission(changed, info, "combo-hash"), "negative_forecast")
 })
 
 test_that("custom Agent proposal errors cannot change source, enrollment or preprocessing", {

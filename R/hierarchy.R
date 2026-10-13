@@ -508,16 +508,38 @@ reconciliation_weights <- function(residuals, negative_forecast) {
   weights
 }
 
-# Check all enrolled candidate/node/fold keys before custom reconciliation can
-# fill gaps or publish partial coverage. The selected mixture is checked without
-# imposing a winner quota. Reuse FinnTS date-key validation; no I/O occurs.
+#' Check custom hierarchy candidate coverage before reconciliation
+#'
+#' Every enrolled candidate, any reconciled ensemble and the selected mixture
+#' must cover every node/fold key before reconciliation can fill gaps or publish
+#' partial coverage. Custom candidates must be present on C1; each selected
+#' built-in must be present under at least one R recipe, and every built-in
+#' recipe variant that is present must be complete. Simple averages are validated by membership only, because
+#' hierarchy reconciles their components rather than the average rows. No
+#' winner quota is imposed and no I/O occurs.
+#'
+#' @param forecasts Unreconciled forecast rows from single, global, average and
+#'   ensemble artifacts.
+#' @param metadata Hierarchy metadata with `hts_combos`.
+#' @param splits Train/test split table.
+#' @param custom_run Loaded custom run.
+#'
+#' @return Invisibly NULL; errors on any coverage or identity gap.
+#' @noRd
 custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_run) {
   required <- c("Combo", "Date", "Train_Test_ID", "Forecast", "Target", "Best_Model")
   if (!is.data.frame(forecasts) || !all(required %in% names(forecasts)) || !nrow(forecasts)) {
     stop("Custom hierarchy requires complete candidate coverage.", call. = FALSE)
   }
   candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
-  custom_run_membership(forecasts, custom_run, candidates, required_custom = TRUE)
+  identities <- unique(forecasts[, c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")])
+  custom_run_membership(identities, custom_run, candidates, averages = TRUE, required_custom = TRUE, ensembles = TRUE)
+  present <- candidates$Model_ID %in% identities$Model_ID
+  builtin_key <- paste(candidates$Model_Name, candidates$Model_Type)
+  builtin_key[candidates$Recipe_ID == "C1"] <- NA_character_
+  missing_builtin <- setdiff(stats::na.omit(builtin_key), builtin_key[present])
+  required_ids <- candidates$Model_ID[candidates$Recipe_ID == "C1" | present]
+  reconciled_ids <- unique(c(required_ids, identities$Model_ID[identities$Recipe_ID %in% "ensemble"]))
   selected_splits <- splits[splits$Run_Type %in% c("Back_Test", "Future_Forecast"), , drop = FALSE]
   if (!all(c("Back_Test", "Future_Forecast") %in% selected_splits$Run_Type) || anyDuplicated(selected_splits$Train_Test_ID)) {
     stop("Custom hierarchy requires complete backtest and future coverage.", call. = FALSE)
@@ -528,10 +550,11 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
   rows <- forecasts[forecasts$Train_Test_ID %in% selected_splits$Train_Test_ID, , drop = FALSE]
   if (!is.numeric(rows$Forecast) || any(!is.finite(rows$Forecast)) || anyNA(rows$Combo) ||
     anyNA(rows$Best_Model) || any(!rows$Best_Model %in% c("Yes", "No")) ||
-    !setequal(unique(rows$Combo), metadata$hts_combos) || !setequal(unique(rows$Model_ID), candidates$Model_ID)) {
+    !setequal(unique(rows$Combo), metadata$hts_combos) || !all(required_ids %in% rows$Model_ID) ||
+    length(missing_builtin)) {
     stop("Custom hierarchy requires complete finite candidate coverage.", call. = FALSE)
   }
-  for (candidate in c(candidates$Model_ID, "Best-Model")) {
+  for (candidate in c(reconciled_ids, "Best-Model")) {
     model <- if (candidate == "Best-Model") rows[rows$Best_Model == "Yes", , drop = FALSE] else
       rows[rows$Model_ID == candidate, , drop = FALSE]
     for (combo in metadata$hts_combos) {
@@ -572,7 +595,7 @@ reconcile_hierarchical_data <- function(run_info,
   if (!is.null(custom_run)) {
     custom_run_eligibility(custom_run$pool, custom_run$manifest$context)
     custom_run_hierarchy_controls(custom_run$manifest$context, weekly_to_daily = weekly_to_daily)
-    custom_run_training_controls(custom_run, TRUE, FALSE, "R1", FALSE, negative_forecast, parallel_processing, FALSE)
+    custom_run_training_controls(custom_run, TRUE, FALSE, negative_forecast)
   }
   # get run splits
   model_train_test_tbl <- read_file(run_info,

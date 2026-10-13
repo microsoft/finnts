@@ -15,8 +15,11 @@
 #'   occurs. Custom `Model_Name` retains its alias; `Model_ID` begins with
 #'   `custom-` and the full version hash, followed by model type and recipe.
 #'   Saved workflows, fits and forecasts must match the pinned pool before reuse.
-#'   The initial profile requires `feature_selection = FALSE`,
-#'   `inner_parallel = FALSE` and sequential or `local_machine` execution.
+#'   Custom models train on the untransformed `C1` recipe, so stationary and
+#'   Box-Cox inverse steps are skipped for them and feature selection applies
+#'   only to built-in models. Global custom models always use `C1` regardless
+#'   of `global_model_recipes`. Sequential, `local_machine`, `spark` and
+#'   `inner_parallel` execution are supported.
 #'   `negative_forecast = FALSE` floors custom forecasts at zero, as for
 #'   built-in models. Existing built-in-only behavior is unchanged.
 #'   Temporal custom definitions evaluate complete horizons from existing
@@ -150,8 +153,7 @@ train_models <- function(run_info,
   }
 
   # get model prep info
-  custom_run_training_controls(custom_run, run_local_models, run_global_models, global_model_recipes,
-    feature_selection, negative_forecast, parallel_processing, inner_parallel)
+  custom_run_training_controls(custom_run, run_local_models, run_global_models, negative_forecast)
   model_train_test_tbl <- read_file(run_info,
     path = paste0(
       "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
@@ -244,13 +246,7 @@ train_models <- function(run_info,
     }
   } else {
     # Multi combo mode - get all combos from prep_data
-    recipe_file_list <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*R*.", run_info$data_output
-      )
-    )
+    recipe_file_list <- recipe_artifact_files(run_info, include_custom = !is.null(custom_run))
     all_combo_list <- recipe_file_list %>%
       tibble::tibble(
         Path = .,
@@ -276,8 +272,7 @@ train_models <- function(run_info,
   }
 
   # define columns to check for input changes
-  custom_run_training_controls(custom_run, run_local_models, run_global_models, global_model_recipes,
-    feature_selection, negative_forecast, parallel_processing, inner_parallel)
+  custom_run_training_controls(custom_run, run_local_models, run_global_models, negative_forecast)
   custom_run_audit(run_info, custom_run, run_local_models, run_global_models, all_combo_list,
     complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)))
   cols_check_list <- c(
@@ -379,6 +374,8 @@ train_models <- function(run_info,
 
   # submit tasks
   prepared_custom_workflows <- if (!is.null(custom_run)) model_workflow_tbl else NULL
+  # global custom models always train on C1, independent of global_model_recipes
+  training_global_recipes <- unique(c(global_model_recipes, if (!is.null(custom_run)) "C1"))
   train_models_tbl <- foreach::foreach(
     x = current_combo_list_final,
     .combine = "rbind",
@@ -404,7 +401,7 @@ train_models <- function(run_info,
       model_recipe_tbl <- get_recipe_data(run_info,
         combo = x,
         recipes = if (identical(x, "All-Data")) {
-          intersect(model_workflow_tbl$Model_Recipe, global_model_recipes)
+          intersect(model_workflow_tbl$Model_Recipe, training_global_recipes)
         } else {
           unique(model_workflow_tbl$Model_Recipe)
         },
@@ -415,7 +412,7 @@ train_models <- function(run_info,
         model_workflow_tbl <- model_workflow_tbl %>%
           dplyr::filter(
             Model_Name %in% global_model_list,
-            Model_Recipe %in% global_model_recipes
+            Model_Recipe %in% training_global_recipes
           )
       }
 
@@ -619,7 +616,10 @@ train_models <- function(run_info,
           dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
           tidyr::unnest(Hyperparameters)
 
-        if (stationary & (!(model %in% multivariate_model_list) || model %in% foundation_model_list)) {
+        # C1 data is never transformed, so custom rows skip stationary/Box-Cox undo steps
+        transformed_recipe <- data_prep_recipe != "C1"
+
+        if (transformed_recipe & stationary & (!(model %in% multivariate_model_list) || model %in% foundation_model_list)) {
           # undifference the data for a univariate model or foundation model
 
           hist_end_date <- model_train_test_tbl %>%
@@ -753,7 +753,7 @@ train_models <- function(run_info,
         }
 
         # undo differencing transformation
-        if (stationary & model %in% multivariate_model_list & !(model %in% foundation_model_list)) {
+        if (transformed_recipe & stationary & model %in% multivariate_model_list & !(model %in% foundation_model_list)) {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%
@@ -780,7 +780,7 @@ train_models <- function(run_info,
         }
 
         # undo box-cox transformation
-        if (box_cox) {
+        if (transformed_recipe & box_cox) {
           if (combo_hash == "All-Data") {
             final_fcst <- final_fcst %>%
               dplyr::group_by(Combo) %>%
@@ -821,7 +821,7 @@ train_models <- function(run_info,
                   Forecast = timetk::box_cox_inv_vec(Forecast, lambda = lambda),
                   Target = timetk::box_cox_inv_vec(Target, lambda = lambda)
                 )
-              if ("Target_Original" %in% colnames(x)) {
+              if ("Target_Original" %in% colnames(final_fcst)) {
                 final_fcst <- final_fcst %>%
                   dplyr::mutate(
                     Target_Original = timetk::box_cox_inv_vec(Target_Original, lambda = lambda)

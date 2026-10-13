@@ -18,10 +18,9 @@ new_custom_model_definition <- function(name,
                                         parent_version = NULL,
                                         created_at = NULL) {
   if (is.list(requirements) && is.null(requirements$runtime)) requirements$runtime <- list(
-    version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character()
+    prediction_scope = "complete_horizon", cohort = "series", group_columns = character()
   )
   definition <- list(
-    schema_version = 3L,
     name = name,
     origin = "human_defined",
     instructions = instructions,
@@ -66,9 +65,9 @@ custom_model_allowed_packages <- function() {
 # are checked against the declared FinnTS/base/recommended boundary, not installed
 # availability. Returns invisible TRUE or an actionable error. The stored digest
 # is shape-checked, not authenticated: this is neither safety nor approval.
-# Chronological original-scale R1 and complete-horizon execution are mandatory.
+# Chronological original-scale C1 and complete-horizon execution are mandatory.
 # Optional hierarchy metadata requires explicit local per-node reconciliation
-# and univariate logic; format tags reject obsolete development artifacts.
+# and univariate logic; exact field sets reject obsolete development artifacts.
 validate_custom_model_definition <- function(definition) {
   # Recursively reject executable or attributed values before S3 dispatch is
   # possible. Plain names are allowed, must be unique, and cannot be blank.
@@ -120,7 +119,7 @@ validate_custom_model_definition <- function(definition) {
   definition <- unclass(definition)
   check_passive(definition, "definition")
   required <- c(
-    "schema_version", "name", "origin", "instructions", "interpretation",
+    "name", "origin", "instructions", "interpretation",
     "model_type", "source", "requirements", "fixed_parameters", "packages",
     "parent_version", "created_at"
   )
@@ -137,7 +136,6 @@ validate_custom_model_definition <- function(definition) {
       call. = FALSE
     )
   }
-  if (!identical(definition$schema_version, 3L)) stop("Unsupported custom-model development format; recreate the model.", call. = FALSE)
   for (field in c("name", "origin", "instructions", "interpretation")) {
     check_text(definition[[field]], field, scalar = TRUE)
   }
@@ -183,7 +181,7 @@ validate_custom_model_definition <- function(definition) {
   }
   check_text(requirements$predictors, "requirements$predictors", empty = TRUE)
   check_text(requirements$recipes, "requirements$recipes")
-  if (!identical(unname(requirements$recipes), "R1")) stop("Custom model requirements$recipes must use R1.", call. = FALSE)
+  if (!identical(unname(requirements$recipes), "C1")) stop("Custom model requirements$recipes must use C1.", call. = FALSE)
   check_text(requirements$target_scale, "requirements$target_scale", scalar = TRUE)
   if (!identical(requirements$target_scale, "original")) stop("Custom model requirements$target_scale must be original.", call. = FALSE)
   check_text(requirements$date_types, "requirements$date_types")
@@ -209,9 +207,9 @@ validate_custom_model_definition <- function(definition) {
       !identical(hierarchy$reconciliation, "finnts_reconciliation")) {
       stop("Custom model hierarchy requires per-node base forecasts and explicit FinnTS reconciliation.", call. = FALSE)
     }
-    if (!identical(unname(definition$model_type), "local") || !identical(unname(requirements$recipes), "R1") ||
+    if (!identical(unname(definition$model_type), "local") || !identical(unname(requirements$recipes), "C1") ||
       !identical(requirements$target_scale, "original") || length(setdiff(requirements$predictors, c("Date", "Combo")))) {
-      stop("Custom model hierarchy requires local original-scale R1 without business predictors.", call. = FALSE)
+      stop("Custom model hierarchy requires local original-scale C1 without business predictors.", call. = FALSE)
     }
   }
   if (!is.list(definition$fixed_parameters) ||

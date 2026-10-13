@@ -17,7 +17,7 @@
 #'   `relative_calendar`. Default none; choose only properties required by the rule.
 #' @param forecast_approach NULL inherits a prepared run, or uses `"bottoms_up"`
 #'   for raw data. Other choices are `"standard_hierarchy"` and
-#'   `"grouped_hierarchy"`; both require local, univariate original-scale R1 rules
+#'   `"grouped_hierarchy"`; both require local, univariate rules on the raw C1 recipe
 #'   and a mixed custom/FinnTS pool with reconciliation during forecast execution.
 #' @param draft_path Optional local directory for durable draft/audit state.
 #'   Controls persistence only; it does not force deferred manual review.
@@ -167,7 +167,7 @@ custom_author_provider_error <- function(error, phase, prompt_bytes, elapsed_sec
     error <- error$parent
   }
   diagnostic <- validate_custom_author_provider(list(
-    schema_version = 1L, kind = kind, http_status = status, phase = phase,
+    kind = kind, http_status = status, phase = phase,
     prompt_bytes = as.numeric(prompt_bytes), elapsed_seconds = as.numeric(max(0, elapsed_seconds))
   ))
   condition <- list(
@@ -180,8 +180,8 @@ custom_author_provider_error <- function(error, phase, prompt_bytes, elapsed_sec
 # Validate passive provider metadata before feedback/persistence; no free-form
 # provider values are accepted, and missing status is not inferred from prose.
 validate_custom_author_provider <- function(value) {
-  custom_author_fields(value, c("schema_version", "kind", "http_status", "phase", "prompt_bytes", "elapsed_seconds"), "diagnostics")
-  if (!identical(value$schema_version, 1L) || !custom_author_text(value$kind) || !value$kind %in% c(
+  custom_author_fields(value, c("kind", "http_status", "phase", "prompt_bytes", "elapsed_seconds"), "diagnostics")
+  if (!custom_author_text(value$kind) || !value$kind %in% c(
     "unknown", "rate_limit",
     "authentication", "server", "request", "timeout", "transport", "structured_output"
   ) || !custom_author_text(value$phase) ||
@@ -215,7 +215,7 @@ custom_author_package_policy <- function(metadata, mode) {
 # Supplied examples bypass scaffolding, never the typed/error validation contract.
 custom_author_protocol <- function(metadata, model_type, predictors, package_policy, supplied_examples) {
   list(
-    version = 6L, package_policy = custom_author_package_policy(metadata, package_policy), predictors = unname(predictors),
+    package_policy = custom_author_package_policy(metadata, package_policy), predictors = unname(predictors),
     scaffold = if (supplied_examples) NULL else custom_author_example_scaffold(metadata, model_type %||% "local", predictors),
     missing_data = "error", predictor_types = custom_author_predictor_types(metadata, predictors)
   )
@@ -275,10 +275,10 @@ custom_author_example_type <- function(protocol) {
 # scaffold reconstruction is pure calendar arithmetic, not oracle generation.
 validate_custom_author_protocol <- function(protocol, metadata, model_type, supplied_examples) {
   custom_author_fields(
-    protocol, c("version", "package_policy", "predictors", "scaffold", "missing_data", "predictor_types"),
+    protocol, c("package_policy", "predictors", "scaffold", "missing_data", "predictor_types"),
     "protocol"
   )
-  if (!identical(protocol$version, 6L) || !is.character(protocol$predictors) || anyNA(protocol$predictors) || anyDuplicated(protocol$predictors)) {
+  if (!is.character(protocol$predictors) || anyNA(protocol$predictors) || anyDuplicated(protocol$predictors)) {
     custom_author_abort("protocol", "Unsupported development authoring contract; recreate the model.")
   }
   if (!identical(protocol$missing_data, "error") || !identical(protocol$predictor_types, custom_author_predictor_types(
@@ -364,7 +364,7 @@ custom_author_dependency <- function(references, allowed) {
   allowed <- sort(unique(allowed), method = "radix")
   valid_allowed <- vapply(allowed, custom_author_dependency_token, logical(1), package = TRUE)
   result <- list(
-    schema_version = 1L, references = kept, allowed_packages = unname(head(allowed[valid_allowed], 32L)),
+    references = kept, allowed_packages = unname(head(allowed[valid_allowed], 32L)),
     omitted_references = as.integer(length(references) - length(kept)), omitted_packages = as.integer(length(allowed) -
       min(sum(valid_allowed), 32L))
   )
@@ -375,11 +375,11 @@ custom_author_dependency <- function(references, allowed) {
 # reuse. Unknown reason codes, duplicate rows and records over eight KiB fail.
 validate_custom_author_dependency <- function(dependency) {
   custom_author_fields(
-    dependency, c("schema_version", "references", "allowed_packages", "omitted_references", "omitted_packages"),
+    dependency, c("references", "allowed_packages", "omitted_references", "omitted_packages"),
     "dependency"
   )
   counts <- dependency[c("omitted_references", "omitted_packages")]
-  if (!identical(dependency$schema_version, 1L) || !is.list(dependency$references) || length(dependency$references) > 8L ||
+  if (!is.list(dependency$references) || length(dependency$references) > 8L ||
     anyDuplicated(dependency$references) || !is.character(dependency$allowed_packages) || length(dependency$allowed_packages) >
     32L || anyNA(dependency$allowed_packages) || anyDuplicated(dependency$allowed_packages) || !all(vapply(dependency$allowed_packages,
     custom_author_dependency_token, logical(1),
@@ -698,7 +698,7 @@ custom_author_failure <- function(
   if (!custom_author_text(reason) || !reason %in% names(messages))
     reason <- "candidate_error"
   failure <- list(
-    schema_version = 1L, version_id = definition$version_id, phase = phase, reason = reason, message = messages[[reason]],
+    version_id = definition$version_id, phase = phase, reason = reason, message = messages[[reason]],
     example_index = example_index, model_type = model_type, source_message = if (is.null(error) || identical(
       reason,
       "unbound_symbol"
@@ -728,7 +728,7 @@ custom_author_failure <- function(
 # must already be in sanitized form.
 validate_custom_author_failure <- function(failure, definition = NULL) {
   custom_author_fields(failure, c(
-    "schema_version", "version_id", "phase", "reason", "message", "example_index", "model_type",
+    "version_id", "phase", "reason", "message", "example_index", "model_type",
     "source_message", "comparisons", if ("dependency" %in% names(failure)) "dependency", if ("bindings" %in% names(failure)) "bindings",
     if ("rule_error" %in% names(failure)) "rule_error", if ("property" %in% names(failure)) "property", if ("unbound_symbol" %in%
       names(failure)) "unbound_symbol", if ("provider_explanation" %in% names(failure)) "provider_explanation"
@@ -775,7 +775,7 @@ validate_custom_author_failure <- function(failure, definition = NULL) {
     "validation_budget"
   )
   messages <- custom_author_failure_messages()
-  if (!identical(failure$schema_version, 1L) || !custom_author_text(failure$phase) || !failure$phase %in% phases || !custom_author_text(failure$reason) ||
+  if (!custom_author_text(failure$phase) || !failure$phase %in% phases || !custom_author_text(failure$reason) ||
     !failure$reason %in% names(messages) || !identical(failure$message, messages[[failure$reason]]) || (!is.null(failure$version_id) &&
     (!custom_author_text(failure$version_id) || !grepl("^[a-f0-9]{64}$", failure$version_id))) || (!is.null(definition) &&
     !identical(failure$version_id, definition$version_id)) || (!is.null(failure$example_index) && (!is.integer(failure$example_index) ||
@@ -830,8 +830,8 @@ custom_author_local_bindings <- function(expression, state_check = FALSE) {
 # Only protocol entrypoints and protocol-state names are permitted; old failure
 # records omit this field. Truncation counts preserve omitted-reference evidence.
 validate_custom_author_bindings <- function(bindings) {
-  custom_author_fields(bindings, c("schema_version", "references", "omitted"), "diagnostics")
-  if (!identical(bindings$schema_version, 1L) || !is.list(bindings$references) || length(bindings$references) > 8L || anyDuplicated(bindings$references) ||
+  custom_author_fields(bindings, c("references", "omitted"), "diagnostics")
+  if (!is.list(bindings$references) || length(bindings$references) > 8L || anyDuplicated(bindings$references) ||
     !is.integer(bindings$omitted) || length(bindings$omitted) != 1L || is.na(bindings$omitted) || bindings$omitted <
     0L)
     custom_author_abort("diagnostics", "Invalid source binding evidence.")
@@ -925,7 +925,7 @@ custom_author_source_bindings <- function(source) {
   }
   references <- unique(references)
   if (length(references)) {
-    bindings <- list(schema_version = 1L, references = head(references, 8L), omitted = as.integer(max(0L, length(references) -
+    bindings <- list(references = head(references, 8L), omitted = as.integer(max(0L, length(references) -
       8L)))
     custom_author_abort("source", paste("Unbound protocol-state reference:", paste(vapply(bindings$references, function(reference) paste0(
       reference$function_name,
@@ -1092,14 +1092,14 @@ custom_author_automatic_policy <- function(
   else model_type
   supplied <- c(if (!is.null(model_type)) "model_type", if (length(predictors)) "external_regressors", if (forecast_approach !=
     "bottoms_up") "forecast_approach", if (!is.null(name)) "name", if (!is.null(examples)) "worked_examples")
-  list(catalog_version = 2L, catalog = custom_author_defaults(), supplied = supplied, defaulted = c(
+  list(catalog = custom_author_defaults(), supplied = supplied, defaulted = c(
     if (is.null(model_type)) "model_type",
     if (!length(predictors)) "external_regressors", if (forecast_approach == "bottoms_up") "forecast_approach", if (is.null(name)) "name",
     if (is.null(examples)) "worked_examples"
   ), effective = list(
     model_type = modes, predictors = predictors, forecast_approach = forecast_approach,
     hist_start_date = input$hist_start_date %||% data$metadata$date_start, hist_end_date = input$hist_end_date %||% data$metadata$date_end,
-    date_type = data$metadata$date_type, forecast_horizon = data$metadata$forecast_horizon, recipe_id = "R1", target_scale = "original",
+    date_type = data$metadata$date_type, forecast_horizon = data$metadata$forecast_horizon, recipe_id = "C1", target_scale = "original",
     max_attempts = as.integer(max_attempts), validation_timeout = as.numeric(timeout), sampled_series = data$metadata$sampled_series,
     sampled_rows = data$metadata$sampled_rows, total_series = data$metadata$total_series,
     sampling = if ("global" %in% modes) "representative_hash" else "first_three_hash", max_historical_rows = 10000L,
@@ -1128,7 +1128,7 @@ custom_author_assumptions <- function(proposal, policy) {
     custom_author_abort("contract", "Automatic model modes or drivers conflict with explicit metadata; supply compatible settings.")
   }
   keys <- sort(unique(c(policy$defaulted, used)), method = "radix")
-  list(catalog_version = policy$catalog_version, defaults_used = policy$catalog[keys], effective = policy$effective)
+  list(defaults_used = policy$catalog[keys], effective = policy$effective)
 }
 
 # Print a bounded, wrapped summary value without dumping nested review state.
@@ -1178,7 +1178,7 @@ custom_author_review <- function(review, details = FALSE) {
   else 600L)
   custom_author_line("Scope", c(
     definition$model_type, definition$requirements$hierarchy$forecast_approach %||% "bottoms_up",
-    "R1", "original target scale"
+    "C1", "original target scale"
   ))
   custom_author_line("Forecast", paste(definition$requirements$forecast_horizon, definition$requirements$date_types, "period(s)"))
   custom_author_line("Predictors", if (length(definition$requirements$predictors))
@@ -1377,7 +1377,7 @@ custom_author_response <- function(request, response) {
 #'   empty-history clone. Approval and details do not need a new provider call.
 #' @param input_data Local data frame containing a column named `Date` of class
 #'   Date, the target, series keys and declared drivers. Supply this or `run_info`.
-#' @param run_info Compatible prepared original-scale R1 run, read without changes.
+#' @param run_info Compatible prepared run that includes the raw C1 recipe, read without changes.
 #'   Its metadata is inherited; explicitly supplied metadata must agree with it.
 #' @param combo_variables Series-key column names. For raw input, omission is
 #'   allowed only with unique dates and no varying undeclared non-driver columns.
@@ -1425,8 +1425,8 @@ custom_author_response <- function(request, response) {
 #' on supplied values; historical plan vintages/publication lags are not verified.
 #'
 #' Raw input is privately prepared; existing runs and Chat templates are unchanged.
-#' Original-scale R1 requires differencing, Box-Cox, missing-value cleaning,
-#' outlier cleaning and multistep disabled. Local sampling retains up to three
+#' Prepared runs must include the raw C1 recipe; built-in transformations such
+#' as differencing, Box-Cox, outlier cleaning and multistep never alter C1. Local sampling retains up to three
 #' series or raw hierarchy leaves. Explicit global calls validate a deterministic
 #' representative sample of at most 100 series: extreme-scale, zero-heavy, negative, flattest and
 #' shortest series are always kept, multi-variable combo levels are covered when
@@ -1951,7 +1951,6 @@ custom_author_prompt_examples <- function(stage, payload) {
         list(metadata = metadata), modes, predictors, metadata$forecast_approach,
         request$name, request$validation_examples, 3L, 60
       )
-      policy$catalog_version <- payload$automatic_policy$catalog_version %||% 2L
       policy$catalog <- custom_author_defaults()
       request$automatic_policy <- policy
       response$defaults_used <- character()
@@ -2001,7 +2000,7 @@ custom_author_prompt_examples <- function(stage, payload) {
     list(request = source_request, response = source, execution = list(
       history = sample$history, parameters = parameters,
       context = list(
-        model_type = sample$model_type, recipe_id = "R1", date_type = metadata$date_type, forecast_horizon = 2,
+        model_type = sample$model_type, recipe_id = "C1", date_type = metadata$date_type, forecast_horizon = 2,
         target_scale = "original", cutoff = scaffold$cutoff
       ), fitted_state = state, new_data = sample$new_data[order, ,
         drop = FALSE
@@ -2112,7 +2111,7 @@ custom_author_request <- function(session, stage, payload) {
     )
     if (automatic) {
       policy <- payload$automatic_policy
-      if (!is.list(policy) || !identical(policy$catalog_version, 2L) || !identical(policy$catalog, custom_author_defaults())) {
+      if (!is.list(policy) || !identical(policy$catalog, custom_author_defaults())) {
         custom_author_abort("draft", "Automatic defaults policy changed; start a new draft.")
       }
       choices <- setdiff(names(policy$catalog), policy$supplied)
@@ -2145,7 +2144,7 @@ custom_author_request <- function(session, stage, payload) {
       if (automatic)
         "Use only supplied catalog defaults and return defaults_used. Unresolved essential choices produce questions and a typed error, never a manual prompt."
       else "Ask clarification questions for unresolved business assumptions. If model_type is requested, declare only compatible local/global capabilities.",
-      "If questions remain, use empty placeholders for other required fields. Preserve original-scale R1 and the explicit bottom-up or local-per-node hierarchy approach.",
+      "If questions remain, use empty placeholders for other required fields. Preserve the raw original-scale C1 recipe and the explicit bottom-up or local-per-node hierarchy approach.",
       if (!is.null(protocol$scaffold))
         paste(
           "examples is a native array of objects, not JSON text. Include exactly the scaffold scenarios for accepted modes, including basic and edge cases.",
@@ -2357,14 +2356,14 @@ custom_author_contract <- function(proposal, instructions, metadata, name, model
   }
   modes <- strings(modes)
   requirements <- list(
-    predictors = protocol$predictors, recipes = "R1", target_scale = "original", date_types = metadata$date_type,
+    predictors = protocol$predictors, recipes = "C1", target_scale = "original", date_types = metadata$date_type,
     forecast_horizon = metadata$forecast_horizon, missing_data = protocol$missing_data
   )
-  requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   if ("global" %in% model_type) {
     custom_author_fields(prediction_cohort, c("scope", "group_columns"), "contract")
     requirements$runtime <- list(
-      version = 2L, prediction_scope = "complete_horizon", cohort = prediction_cohort$scope,
+      prediction_scope = "complete_horizon", cohort = prediction_cohort$scope,
       group_columns = strings(prediction_cohort$group_columns)
     )
   }
@@ -2400,7 +2399,6 @@ custom_author_contract <- function(proposal, instructions, metadata, name, model
     model_type = definition$model_type, requirements = definition$requirements, fixed_parameters = definition$fixed_parameters,
     packages = definition$packages, examples = examples
   )
-  contract$authoring_protocol <- protocol$version
   contract$package_policy <- protocol$package_policy
   contract["example_scaffold"] <- list(protocol$scaffold)
   contract$history_requirements <- history_requirements

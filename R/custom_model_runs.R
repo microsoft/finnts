@@ -1,6 +1,7 @@
-# Reject executable/attributed nested metadata before interpreting attestations
-# or manifests. Plain lists and finite atomic values are accepted, with unique
-# nonblank names and bounded depth. Returns invisibly or errors without dispatch.
+#' Reject executable/attributed nested metadata before interpreting attestations
+#' or manifests. Plain lists and finite atomic values are accepted, with unique
+#' nonblank names and bounded depth. Returns invisibly or errors without dispatch.
+#' @noRd
 custom_run_passive <- function(value, depth = 0L) {
   if (depth > 64L || !typeof(value) %in% c("NULL", "list", "character", "logical", "integer", "double") || any(!names(attributes(value)) %in%
     "names")) {
@@ -16,18 +17,19 @@ custom_run_passive <- function(value, depth = 0L) {
   invisible(TRUE)
 }
 
-# Validate the experimental trusted-caller envelope, never infer approval from
-# registry presence. Returns the unchanged envelope after checking exact M1
-# identity and technical validation. Manual approval requires intent_confirmed
-# TRUE; explicit automatic approval requires FALSE plus mode "automatic". Both
-# require allow_code TRUE and the exact version; unknown fields/policies fail.
-# This is not authenticated human identity, a sandbox or a public authoring API.
+#' Validate the experimental trusted-caller envelope, never infer approval from
+#' registry presence. Returns the unchanged envelope after checking exact M1
+#' identity and technical validation. Manual approval requires intent_confirmed
+#' TRUE; explicit automatic approval requires FALSE plus mode "automatic". Both
+#' require allow_code TRUE and the current version_id; unknown fields/policies fail.
+#' This is not authenticated human identity, a sandbox or a public authoring API.
+#' @noRd
 custom_run_envelope <- function(model) {
   if (typeof(model) != "list" || !identical(attr(model, "class"), "finnts_custom_model") || any(!names(attributes(model)) %in%
-    c("class", "names")) || length(model) != 4L || !setequal(names(model), c(
-    "schema_version", "definition", "validation",
+    c("class", "names")) || length(model) != 3L || !setequal(names(model), c(
+    "definition", "validation",
     "approval"
-  )) || !identical(model$schema_version, 1L)) {
+  ))) {
     stop("custom_models requires approved finnts_custom_model envelopes, not raw definitions or references.", call. = FALSE)
   }
   definition <- custom_model_current_definition(model$definition)
@@ -60,10 +62,11 @@ custom_run_envelope <- function(model) {
   model
 }
 
-# Resolve enrollment through M3a after checking every supplied envelope. Returns
-# the passive pool plus only selected attestations; never executes source or
-# enrolls unselected customs. Legacy NULL/empty custom input returns NULL so
-# existing built-in selection semantics remain with their original owner.
+#' Resolve enrollment through M3a after checking every supplied envelope. Returns
+#' the passive pool plus only selected attestations; never executes source or
+#' enrolls unselected customs. Legacy NULL/empty custom input returns NULL so
+#' existing built-in selection semantics remain with their original owner.
+#' @noRd
 custom_run_pool <- function(models_to_run, models_not_to_run, custom_models) {
   if (is.null(custom_models) || identical(custom_models, list()))
     return(NULL)
@@ -79,13 +82,23 @@ custom_run_pool <- function(models_to_run, models_not_to_run, custom_models) {
   pool
 }
 
-# Validate an original-scale R1 representation from scalar saved preparation
-# settings and caller storage. Returns a canonical context used for restart
-# identity. Pool eligibility is separate so isolated authoring can inspect a
-# hierarchy. No settings are changed; incompatible transforms/backends error.
-# The legacy default rejects hierarchy; reviewed callers opt in explicitly and
-# still validate definition capabilities/enrollment separately before execution.
-custom_run_context <- function(run_info, settings, run_ensemble_models, allow_hierarchy = FALSE) {
+#' Validate the custom-model C1 run profile
+#'
+#' Custom models always read the original-scale C1 recipe, so built-in
+#' transformations (stationary, Box-Cox, outlier cleaning, multistep, other
+#' recipes) may be enabled freely for built-in models. When `settings` records
+#' `recipes_to_run` (saved run logs), C1 must be among the prepared recipes.
+#' The default rejects hierarchy; reviewed callers opt in explicitly and still
+#' validate definition capabilities/enrollment separately before execution.
+#'
+#' @param run_info Run info list with storage and output formats.
+#' @param settings Saved run settings (log row or list) with forecast_approach,
+#'   date_type, forecast_horizon and optionally recipes_to_run.
+#' @param allow_hierarchy Logical; permit non-bottoms_up approaches.
+#'
+#' @return Canonical context list used for restart identity. No I/O.
+#' @noRd
+custom_run_context <- function(run_info, settings, allow_hierarchy = FALSE) {
   if (!is.null(run_info$storage_object) || !identical(run_info$object_output, "rds") || !run_info$data_output %in% c(
     "csv",
     "rds", "parquet"
@@ -102,26 +115,25 @@ custom_run_context <- function(run_info, settings, run_ensemble_models, allow_hi
   if (approach != "bottoms_up" && !isTRUE(allow_hierarchy)) {
     stop("Custom runs require forecast_approach = bottoms_up without explicit reviewed hierarchy validation.", call. = FALSE)
   }
-  required <- list(
-    forecast_approach = approach, recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
-    clean_outliers = FALSE, multistep_horizon = FALSE
-  )
-  for (field in names(required)) {
-    if (!identical(settings[[field]], required[[field]])) {
-      stop("Custom runs require ", field, " = ", as.character(required[[field]]), ".", call. = FALSE)
+  if ("recipes_to_run" %in% names(settings)) {
+    recipes <- settings$recipes_to_run
+    if (is.character(recipes) && length(recipes) == 1L && !is.na(recipes)) {
+      recipes <- strsplit(recipes, "---", fixed = TRUE)[[1]]
+    }
+    if (!"C1" %in% expand_recipes_to_run(recipes, as.character(settings$date_type))) {
+      stop("custom models need C1; rerun prep_data with C1 in recipes_to_run in a new run.", call. = FALSE)
     }
   }
-  if (!identical(run_ensemble_models, FALSE))
-    stop("Custom runs require run_ensemble_models = FALSE.", call. = FALSE)
-  c(required, list(
-    date_type = as.character(settings$date_type), forecast_horizon = as.numeric(settings$forecast_horizon),
-    run_ensemble_models = FALSE
-  ))
+  list(
+    forecast_approach = approach, recipe_id = "C1", date_type = as.character(settings$date_type),
+    forecast_horizon = as.numeric(settings$forecast_horizon)
+  )
 }
 
-# Match reviewed capabilities to the requested representation before forecast
-# writes. Hierarchy uses a shared explicitly mixed pool, never winner counts.
-# This does not enroll supplied-but-unselected models or execute their source.
+#' Match reviewed capabilities to the requested representation before forecast
+#' writes. Hierarchy uses a shared explicitly mixed pool, never winner counts.
+#' This does not enroll supplied-but-unselected models or execute their source.
+#' @noRd
 custom_run_eligibility <- function(pool, context) {
   hierarchical <- context$forecast_approach != "bottoms_up"
   for (definition in pool$custom) {
@@ -135,7 +147,7 @@ custom_run_eligibility <- function(pool, context) {
       stop("Custom model has hierarchy-only approval; use a separately approved bottoms_up definition.", call. = FALSE)
     }
     custom_model_context(definition, list(
-      model_type = definition$model_type[[1]], recipe_id = "R1", date_type = context$date_type,
+      model_type = definition$model_type[[1]], recipe_id = "C1", date_type = context$date_type,
       forecast_horizon = context$forecast_horizon, target_scale = "original"
     ), FALSE)
   }
@@ -147,13 +159,14 @@ custom_run_eligibility <- function(pool, context) {
   invisible(NULL)
 }
 
-# Check selected built-ins through their existing inert workflow constructors
-# and parsnip dependency declarations. Synthetic rows disclose no caller data;
-# no fit, provider request or installation occurs. Foundation-model execution
-# is not qualified for this profile and cannot serve as a token competitor.
+#' Check selected built-ins through their existing inert workflow constructors
+#' and parsnip dependency declarations. Synthetic rows disclose no caller data;
+#' no fit, provider request or installation occurs. Foundation-model execution
+#' is not qualified for this profile and cannot serve as a token competitor.
+#' @noRd
 custom_run_hierarchy_builtins <- function(models, context) {
   if (any(models %in% list_foundation_models())) {
-    stop("Custom hierarchy foundation-model execution is not qualified; select a supported local R1 FinnTS competitor.",
+    stop("Custom hierarchy foundation-model execution is not qualified; select a supported local FinnTS competitor.",
       call. = FALSE
     )
   }
@@ -181,25 +194,32 @@ custom_run_hierarchy_builtins <- function(models, context) {
   invisible(NULL)
 }
 
-# Reject unsupported hierarchy-level publication controls without changing them.
-# These restrictions apply only to the new custom hierarchy profile, not legacy
-# bottom-up averaging or built-in hierarchy workflows. No I/O is performed.
-custom_run_hierarchy_controls <- function(context, external_regressors = NULL, average_models = FALSE, weekly_to_daily = FALSE) {
+#' Reject unsupported custom hierarchy publication controls
+#'
+#' Applies only to the custom hierarchy profile. Model averages are allowed;
+#' external regressors and weekly-to-daily conversion are not. No I/O.
+#'
+#' @param context Context from `custom_run_context()`.
+#' @param external_regressors Declared regressors or NULL.
+#' @param weekly_to_daily Logical weekly-to-daily setting.
+#'
+#' @return Invisibly NULL; errors on unsupported controls.
+#' @noRd
+custom_run_hierarchy_controls <- function(context, external_regressors = NULL, weekly_to_daily = FALSE) {
   if (context$forecast_approach == "bottoms_up")
     return(invisible(NULL))
   if (length(external_regressors))
     stop("Custom hierarchy requires external_regressors = NULL.", call. = FALSE)
-  if (!identical(average_models, FALSE))
-    stop("Custom hierarchy requires average_models = FALSE.", call. = FALSE)
   if (context$date_type == "week" && !identical(weekly_to_daily, FALSE)) {
     stop("Custom hierarchy requires weekly_to_daily = FALSE.", call. = FALSE)
   }
   invisible(NULL)
 }
 
-# Validate a native-cadence historical panel before hierarchy preparation can
-# fill missing leaf cells with zero. Return normalized historical rows without
-# changing caller data or writing artifacts; missing/duplicate cells are errors.
+#' Validate a native-cadence historical panel before hierarchy preparation can
+#' fill missing leaf cells with zero. Return normalized historical rows without
+#' changing caller data or writing artifacts; missing/duplicate cells are errors.
+#' @noRd
 custom_run_hierarchy_panel <- function(data, combo_variables, target_variable, date_type, hist_start_date = NULL, hist_end_date = NULL) {
   if (!is.data.frame(data) || !nrow(data) || !length(combo_variables) || !all(c("Date", combo_variables, target_variable) %in%
     names(data)) || !inherits(data$Date, "Date") || anyNA(data$Date) || !is.numeric(data[[target_variable]])) {
@@ -238,13 +258,14 @@ custom_run_hierarchy_panel <- function(data, combo_variables, target_variable, d
   history
 }
 
-# Bind existing local hierarchy topology and input bytes to the run context.
-# Initial enrollment also validates leaf/node histories; reuse rehashes the same
-# exact files without repreparing or rereading every table. No directory listing
-# or storage write occurs, and incomplete topology/artifacts are hard errors.
-# return_data retains validated historical node rows for bounded authoring, with
-# max_rows checked before combining them. The returned source hashes cover the
-# same read interval; no caller needs to read those tables again.
+#' Bind existing local hierarchy topology and input bytes to the run context.
+#' Initial enrollment also validates leaf/node histories; reuse rehashes the same
+#' exact files without repreparing or rereading every table. No directory listing
+#' or storage write occurs, and incomplete topology/artifacts are hard errors.
+#' return_data retains validated historical node rows for bounded authoring, with
+#' max_rows checked before combining them. The returned source hashes cover the
+#' same read interval; no caller needs to read those tables again.
+#' @noRd
 custom_run_hierarchy_context <- function(run_info, context, settings, validate_data = TRUE, return_data = FALSE, max_rows = Inf) {
   if (context$forecast_approach == "bottoms_up")
     return(context)
@@ -262,7 +283,7 @@ custom_run_hierarchy_context <- function(run_info, context, settings, validate_d
       stop("Custom hierarchy has invalid topology identities.", call. = FALSE)
     }
   }
-  paths <- local_artifact_path(run_info, "prep_data", "-R1", vapply(metadata$hts_combos, hash_data, character(1)))
+  paths <- local_artifact_path(run_info, "prep_data", "-C1", vapply(metadata$hts_combos, hash_data, character(1)))
   paths <- local_artifact_files(c(metadata_path, input_path, paths))
   hashes <- vapply(as.character(paths), function(path) digest::digest(file = path, algo = "sha256"), character(1))
   if (!identical(unname(hashes[match(metadata_path, as.character(paths))]), metadata_hash)) {
@@ -280,7 +301,7 @@ custom_run_hierarchy_context <- function(run_info, context, settings, validate_d
       stop("Custom hierarchy leaf data does not match its topology.", call. = FALSE)
     }
     for (combo in metadata$hts_combos) {
-      rows <- read_exact_artifact(run_info, local_artifact_path(run_info, "prep_data", "-R1", hash_data(combo)))
+      rows <- read_exact_artifact(run_info, local_artifact_path(run_info, "prep_data", "-C1", hash_data(combo)))
       history <- custom_run_hierarchy_panel(
         rows, "Combo", "Target", context$date_type, as.Date(settings$hist_start_date),
         as.Date(settings$hist_end_date)
@@ -306,14 +327,16 @@ custom_run_hierarchy_context <- function(run_info, context, settings, validate_d
   context
 }
 
-# Derive the exact run-scoped manifest path in fixed RDS format. No I/O occurs.
+#' Derive the exact run-scoped manifest path in fixed RDS format. No I/O occurs.
+#' @noRd
 custom_run_path <- function(run_info) {
   local_artifact_path(run_info, "prep_models", "-custom-model-pool", extension = "rds")
 }
 
-# Compute a canonical passive manifest digest, sorting named maps recursively
-# and effective selected names; sequence-valued check data remains ordered.
-# The stored manifest_id is excluded. No source execution or storage access.
+#' Compute a canonical passive manifest digest, sorting named maps recursively
+#' and effective selected names; sequence-valued check data remains ordered.
+#' The stored manifest_id is excluded. No source execution or storage access.
+#' @noRd
 custom_run_digest <- function(manifest) {
   manifest$manifest_id <- NULL
   manifest$selected <- sort(manifest$selected, method = "radix")
@@ -329,20 +352,19 @@ custom_run_digest <- function(manifest) {
   digest::digest(normalize(manifest), algo = "sha256", serializeVersion = 2)
 }
 
-# Read a present manifest strictly, distinguishing RDS NULL from absence, then
-# validate its passive record, attestations and exact registered definitions.
-# Returns NULL only for a genuinely absent optional file. No listing or rewrite.
+#' Read a present manifest strictly, distinguishing RDS NULL from absence, then
+#' validate its passive record, attestations and exact registered definitions.
+#' Returns NULL only for a genuinely absent optional file. No listing or rewrite.
+#' @noRd
 custom_run_read <- function(run_info, required = FALSE) {
   paths <- local_artifact_files(custom_run_path(run_info), allow_missing = !required)
   if (!length(paths))
     return(NULL)
   manifest <- read_exact_artifact(run_info, paths, return_type = "object")
   custom_run_passive(manifest)
-  fields <- c("schema_version", "selected", "references", "evidence", "context", "pool_id", "manifest_id")
-  if (!is.list(manifest) || length(manifest) != length(fields) || !setequal(names(manifest), fields) || !identical(
-    manifest$schema_version,
-    1L
-  ) || !identical(manifest$manifest_id, custom_run_digest(manifest))) {
+  fields <- c("selected", "references", "evidence", "context", "pool_id", "manifest_id")
+  if (!is.list(manifest) || length(manifest) != length(fields) || !setequal(names(manifest), fields) ||
+    !identical(manifest$manifest_id, custom_run_digest(manifest))) {
     stop("Invalid custom run manifest identity.", call. = FALSE)
   }
   pool <- resolve_custom_model_pool(manifest$selected, custom_models = manifest$references, run_info = run_info)
@@ -350,17 +372,27 @@ custom_run_read <- function(run_info, required = FALSE) {
     stop("Invalid custom run pool identity.", call. = FALSE)
   for (alias in names(pool$custom)) {
     evidence <- manifest$evidence[[alias]]
-    custom_run_envelope(structure(c(list(schema_version = 1L, definition = pool$custom[[alias]]), evidence), class = "finnts_custom_model"))
+    custom_run_envelope(structure(c(list(definition = pool$custom[[alias]]), evidence), class = "finnts_custom_model"))
   }
   list(manifest = manifest, pool = pool)
 }
 
-# Pin selected definitions/attestations before workflow completion is logged.
-# Existing same-run content is immutable; omission, changed selection/context or
-# stale evidence errors. No custom pool leaves legacy runs untouched, except a
-# known custom marker/manifest cannot be silently reused as a built-in-only run.
-# Hierarchy eligibility is checked before any registration or manifest write.
-custom_run_prepare <- function(run_info, pool, log_df, run_ensemble_models) {
+#' Pin the selected custom pool for a prepared run
+#'
+#' Writes the definitions and manifest before workflow completion is logged.
+#' Existing same-run content is immutable; omission, changed selection/context
+#' or stale evidence errors. No custom pool leaves built-in runs untouched,
+#' except a known custom marker/manifest cannot be reused as a built-in-only
+#' run. Hierarchy eligibility and the built-in R-recipe requirement are checked
+#' before any registration or write.
+#'
+#' @param run_info Run info list.
+#' @param pool Resolved pool from `custom_run_pool()` or NULL.
+#' @param log_df Run log row with saved preparation settings.
+#'
+#' @return NULL for built-in runs, otherwise list(manifest, pool).
+#' @noRd
+custom_run_prepare <- function(run_info, pool, log_df) {
   marked <- "custom_pool_id" %in% names(log_df) && !is.na(log_df$custom_pool_id[[1]])
   if (is.null(pool) && !marked) {
     if (!is.null(run_info$storage_object))
@@ -370,7 +402,8 @@ custom_run_prepare <- function(run_info, pool, log_df, run_ensemble_models) {
   }
   if (is.null(pool))
     stop("This custom run requires the same approved custom_models; start a new run for another pool.", call. = FALSE)
-  context <- custom_run_context(run_info, log_df, run_ensemble_models, allow_hierarchy = TRUE)
+  context <- custom_run_context(run_info, log_df, allow_hierarchy = TRUE)
+  check_builtin_recipes(setdiff(pool$selected, names(pool$custom)), logged_recipe_ids(log_df))
   custom_run_eligibility(pool, context)
   custom_run_hierarchy_controls(context, if (is.null(log_df$external_regressors) || all(is.na(log_df$external_regressors)))
     NULL
@@ -378,16 +411,16 @@ custom_run_prepare <- function(run_info, pool, log_df, run_ensemble_models) {
   context <- custom_run_hierarchy_context(run_info, context, log_df, validate_data = !marked)
   for (definition in pool$custom) {
     custom_model_context(definition, list(
-      model_type = definition$model_type[[1]], recipe_id = "R1", date_type = context$date_type,
+      model_type = definition$model_type[[1]], recipe_id = "C1", date_type = context$date_type,
       forecast_horizon = context$forecast_horizon, target_scale = "original"
     ), TRUE)
   }
   references <- lapply(pool$custom, function(definition) {
-    list(registry_schema_version = 1L, name = definition$name, version_id = definition$version_id)
+    list(name = definition$name, version_id = definition$version_id)
   })
   evidence <- lapply(pool$envelopes, function(model) model[c("validation", "approval")])
   manifest <- list(
-    schema_version = 1L, selected = sort(pool$selected, method = "radix"), references = references, evidence = evidence,
+    selected = sort(pool$selected, method = "radix"), references = references, evidence = evidence,
     context = context, pool_id = pool$pool_id
   )
   manifest$manifest_id <- custom_run_digest(manifest)
@@ -411,17 +444,19 @@ custom_run_prepare <- function(run_info, pool, log_df, run_ensemble_models) {
   list(manifest = manifest, pool = pool)
 }
 
-# Return stable identity columns plus caller-declared predictors in first-seen
-# order. Authoring metadata and workflow recipes share this rule; prepared
-# features are not implicit inputs. Target is supplied separately for fitting.
-# Callers own declaration/value validation; this helper performs no I/O.
+#' Return stable identity columns plus caller-declared predictors in first-seen
+#' order. Authoring metadata and workflow recipes share this rule; prepared
+#' features are not implicit inputs. Target is supplied separately for fitting.
+#' Callers own declaration/value validation; this helper performs no I/O.
+#' @noRd
 custom_model_predictor_columns <- function(predictors) {
   unique(c("Date", "Combo", predictors))
 }
 
-# Validate required predictors on each actual prepared dataset, not just the
-# first recipe sample. Returns the declared identity/predictor names; missing,
-# nonfinite, unsupported or outcome/assessment input values error without I/O.
+#' Validate required predictors on each actual prepared dataset, not just the
+#' first recipe sample. Returns the declared identity/predictor names; missing,
+#' nonfinite, unsupported or outcome/assessment input values error without I/O.
+#' @noRd
 custom_run_predictors <- function(definition, data) {
   predictors <- custom_model_predictor_columns(definition$requirements$predictors)
   forbidden <- c("Target", "Target_Original", "Train_Test_ID", "Run_Type", "Horizon", "Origin", ".finnts_row", ".row")
@@ -438,25 +473,27 @@ custom_run_predictors <- function(definition, data) {
   predictors
 }
 
-# Build inert mode-specific workflows using only declared predictors and stable
-# Date/Combo identity. Returns workflow rows, never fitted state. The base-parented
-# dot formula supports opaque column names without capturing preparation state.
+#' Build inert mode-specific workflows using only declared predictors and stable
+#' Date/Combo identity. Returns workflow rows, never fitted state. The base-parented
+#' dot formula supports opaque column names without capturing preparation state.
+#' @noRd
 custom_run_workflows <- function(definition, data, context) {
   predictors <- custom_run_predictors(definition, data)
   recipe <- recipes::recipe(stats::as.formula("Target ~ .", env = baseenv()), data = data[c("Target", predictors)])
   rows <- lapply(definition$model_type, function(mode) {
-    workflow <- custom_model_workflow(definition, recipe, mode, "R1", context$date_type, context$forecast_horizon, "original",
+    workflow <- custom_model_workflow(definition, recipe, mode, "C1", context$date_type, context$forecast_horizon, "original",
       allow_code = TRUE
     )
-    tibble::tibble(Model_Name = definition$name, Model_Recipe = "R1", Model_Type = mode, Model_Workflow = list(workflow))
+    tibble::tibble(Model_Name = definition$name, Model_Recipe = "C1", Model_Type = mode, Model_Workflow = list(workflow))
   })
   dplyr::bind_rows(rows)
 }
 
-# Load and validate recorded enrollment before standard-stage shortcuts. Legacy
-# logs return NULL without registry reads. Custom markers require the exact
-# manifest/context; subsequent callers receive one portable, call-local pool.
-# Saved hierarchy enrollment must still satisfy the shared mixed-pool policy.
+#' Load and validate recorded enrollment before standard-stage shortcuts. Legacy
+#' logs return NULL without registry reads. Custom markers require the exact
+#' manifest/context; subsequent callers receive one portable, call-local pool.
+#' Saved hierarchy enrollment must still satisfy the shared mixed-pool policy.
+#' @noRd
 custom_run_load <- function(run_info, log_df) {
   if (!"custom_pool_id" %in% names(log_df) || is.na(log_df$custom_pool_id[[1]])) {
     if (is.null(run_info$storage_object) && length(local_artifact_files(custom_run_path(run_info), allow_missing = TRUE))) {
@@ -467,7 +504,7 @@ custom_run_load <- function(run_info, log_df) {
     return(NULL)
   }
   custom <- custom_run_read(run_info, required = TRUE)
-  context <- custom_run_context(run_info, log_df, log_df$run_ensemble_models, allow_hierarchy = TRUE)
+  context <- custom_run_context(run_info, log_df, allow_hierarchy = TRUE)
   custom_run_eligibility(custom$pool, context)
   custom_run_hierarchy_controls(context, if (is.null(log_df$external_regressors) || all(is.na(log_df$external_regressors)))
     NULL
@@ -480,31 +517,36 @@ custom_run_load <- function(run_info, log_df) {
   custom
 }
 
-# Validate enabled execution controls and declaration availability without source
-# execution or installation. Enforces at least one enabled mode per selected
-# custom; called again after actual series routing has resolved global behavior.
-# Explicit hierarchy context additionally requires local-only execution.
-# negative_forecast may be TRUE or FALSE; FALSE floors finished custom and
-# built-in forecasts at zero after prediction, exactly as for built-in runs.
-custom_run_training_controls <- function(
-    custom, local, global, recipes, feature_selection, negative_forecast, parallel_processing,
-    inner_parallel) {
+#' Validate execution controls for a custom run
+#'
+#' Checks enabled modes and declared package availability without source
+#' execution or installation. Every selected custom needs at least one enabled
+#' mode; global custom models always run on C1, which train_models() adds to
+#' the global recipes. Explicit
+#' hierarchy context requires local-only execution. Feature selection, Spark,
+#' local-machine and inner parallel execution are allowed: custom models skip
+#' feature selection and refit sequentially inside each worker like snaive.
+#' negative_forecast may be TRUE or FALSE; FALSE floors finished forecasts at 0.
+#'
+#' @param custom Loaded custom run or NULL.
+#' @param local,global Logical model-scope switches.
+#' @param negative_forecast Logical negative forecast flag.
+#'
+#' @return Invisible NULL; errors on incompatible controls.
+#' @noRd
+custom_run_training_controls <- function(custom, local, global, negative_forecast) {
   if (is.null(custom))
     return(invisible(NULL))
   approach <- custom$manifest$context$forecast_approach
   if (!is.null(approach) && approach != "bottoms_up" && (!identical(local, TRUE) || !identical(global, FALSE))) {
     stop("Custom hierarchy requires run_local_models = TRUE and run_global_models = FALSE.", call. = FALSE)
   }
-  if (!identical(feature_selection, FALSE) || !(identical(negative_forecast, TRUE) || identical(negative_forecast, FALSE)) ||
-    !identical(inner_parallel, FALSE) || !(is.null(parallel_processing) || identical(parallel_processing, "local_machine"))) {
-    stop("Custom runs require feature_selection = FALSE, logical negative_forecast, inner_parallel = FALSE and sequential/local_machine execution.",
-      call. = FALSE
-    )
+  if (!(identical(negative_forecast, TRUE) || identical(negative_forecast, FALSE))) {
+    stop("Custom runs require logical negative_forecast.", call. = FALSE)
   }
   enabled <- c(if (isTRUE(local)) "local", if (isTRUE(global)) "global")
   for (definition in custom$pool$custom) {
-    if (!length(intersect(enabled, definition$model_type)) || ("global" %in% intersect(enabled, definition$model_type) &&
-      !identical(unname(unlist(recipes)), "R1"))) {
+    if (!length(intersect(enabled, definition$model_type))) {
       stop("Custom model ", definition$name, " has no compatible enabled mode/recipe.", call. = FALSE)
     }
     for (package in definition$packages) {
@@ -515,9 +557,10 @@ custom_run_training_controls <- function(
   invisible(NULL)
 }
 
-# Validate every prepared custom row against its pinned definition, mode and
-# representation before fitting or reuse. Built-in rows may not carry custom
-# engines. No source evaluation; returns the table unchanged or errors.
+#' Validate every prepared custom row against its pinned definition, mode and
+#' representation before fitting or reuse. Built-in rows may not carry custom
+#' engines. No source evaluation; returns the table unchanged or errors.
+#' @noRd
 custom_run_check_workflows <- function(table, custom) {
   if (is.null(custom))
     return(table)
@@ -528,7 +571,7 @@ custom_run_check_workflows <- function(table, custom) {
   for (alias in names(custom$pool$custom)) {
     definition <- custom$pool$custom[[alias]]
     rows <- table[table$Model_Name == alias, ]
-    if (!setequal(rows$Model_Type, definition$model_type) || any(rows$Model_Recipe != "R1")) {
+    if (!setequal(rows$Model_Type, definition$model_type) || any(rows$Model_Recipe != "C1")) {
       stop("Prepared custom workflow modes do not match the pinned definition.", call. = FALSE)
     }
     for (index in seq_len(nrow(rows))) {
@@ -538,7 +581,7 @@ custom_run_check_workflows <- function(table, custom) {
         arguments$definition$version_id,
         definition$version_id
       ) || !identical(arguments$context, list(
-        model_type = rows$Model_Type[[index]], recipe_id = "R1",
+        model_type = rows$Model_Type[[index]], recipe_id = "C1",
         date_type = custom$manifest$context$date_type, forecast_horizon = custom$manifest$context$forecast_horizon,
         target_scale = "original"
       )) || !identical(arguments$allow_code, TRUE)) {
@@ -560,8 +603,9 @@ custom_run_check_workflows <- function(table, custom) {
   table
 }
 
-# Replace only custom ID prefixes with their full content version. Built-in IDs
-# and readable Model_Name remain unchanged, including underscores in aliases.
+#' Replace only custom ID prefixes with their full content version. Built-in IDs
+#' and readable Model_Name remain unchanged, including underscores in aliases.
+#' @noRd
 custom_run_model_ids <- function(table, custom) {
   if (is.null(custom))
     return(table)
@@ -575,9 +619,10 @@ custom_run_model_ids <- function(table, custom) {
   table
 }
 
-# Expand custom resampling execution to complete horizons and required fitted cohort peers using existing predictor rows.
-# Preserve analysis indices and targets, validate complete execution, then return only original scoring rows.
-# Missing coverage fails before fitting; no imputation, provider request or artifact I/O occurs.
+#' Expand custom resampling execution to complete horizons and required fitted cohort peers using existing predictor rows.
+#' Preserve analysis indices and targets, validate complete execution, then return only original scoring rows.
+#' Missing coverage fails before fitting; no imputation, provider request or artifact I/O occurs.
+#' @noRd
 custom_run_fit_resamples <- function(workflow, data, splits, control) {
   arguments <- lapply(workflows::extract_spec_parsnip(workflow)$eng_args, rlang::eval_tidy)
   execution <- splits
@@ -611,9 +656,10 @@ custom_run_fit_resamples <- function(workflow, data, splits, control) {
   predictions
 }
 
-# Check complete custom fold/series coverage after fit_resamples. Missing folds
-# cannot turn a failed custom into a successful built-in fallback. Expected keys
-# come from the same chronological split assessments, never generated source.
+#' Check complete custom fold/series coverage after fit_resamples. Missing folds
+#' cannot turn a failed custom into a successful built-in fallback. Expected keys
+#' come from the same chronological split assessments, never generated source.
+#' @noRd
 custom_run_check_predictions <- function(predictions, data, splits) {
   expected <- dplyr::bind_rows(lapply(seq_len(nrow(splits)), function(index) {
     assessment <- rsample::assessment(splits$splits[[index]])
@@ -629,31 +675,55 @@ custom_run_check_predictions <- function(predictions, data, splits) {
   invisible(NULL)
 }
 
-# Build the exact enabled individual candidate identity table for validation.
-# Built-ins retain legacy IDs; custom IDs use full versions. No artifacts read.
+#' Build the enabled individual candidate identity table
+#'
+#' Custom models always run on the C1 recipe; built-in models may run on any
+#' prepared R recipe (R1 or R2), so both are valid built-in identities.
+#' Custom IDs embed the full version_id. No artifacts are read.
+#'
+#' @param custom Loaded custom run with `pool`.
+#' @param local,global Logical model-scope switches.
+#'
+#' @return Tibble with Model_Name, Model_Type, Recipe_ID and Model_ID.
+#' @noRd
 custom_run_candidates <- function(custom, local, global) {
   rows <- list()
   for (alias in custom$pool$selected) {
-    modes <- if (alias %in% names(custom$pool$custom))
+    is_custom <- alias %in% names(custom$pool$custom)
+    modes <- if (is_custom)
       custom$pool$custom[[alias]]$model_type
     else c("local", if (alias %in% list_global_models()) "global")
     modes <- intersect(modes, c(if (isTRUE(local)) "local", if (isTRUE(global)) "global"))
     if (!length(modes))
       next
-    rows[[alias]] <- tibble::tibble(Model_Name = alias, Model_Type = modes, Recipe_ID = "R1", Model_ID = paste(alias,
-      modes, "R1",
-      sep = "--"
-    ))
+    recipes <- if (is_custom) "C1" else c("R1", "R2")
+    grid <- expand.grid(Model_Type = modes, Recipe_ID = recipes, stringsAsFactors = FALSE)
+    rows[[alias]] <- tibble::tibble(
+      Model_Name = alias, Model_Type = grid$Model_Type, Recipe_ID = grid$Recipe_ID,
+      Model_ID = paste(alias, grid$Model_Type, grid$Recipe_ID, sep = "--")
+    )
   }
   custom_run_model_ids(dplyr::bind_rows(rows), custom)
 }
 
-# Reject foreign/stale individual IDs and invalid average components, including
-# alias/type/recipe mismatches. Fitted custom workflows additionally bind their
-# engine definition/context and consent to the pinned version. required_custom
-# requires every applicable custom ID; optional averages need only valid members.
-# Returns invisibly; malformed or incomplete membership raises an error.
-custom_run_membership <- function(rows, custom, candidates, averages = FALSE, required_custom = FALSE) {
+#' Reject foreign/stale individual IDs and invalid average components, including
+#' alias/type/recipe mismatches. Fitted custom workflows additionally bind their
+#' engine definition/context and consent to the pinned version. required_custom
+#' requires every applicable custom ID; optional averages need only valid members.
+#' Average components may also be FinnTS ensemble IDs, which stack C1 custom
+#' forecasts with built-ins. Returns invisibly; malformed or incomplete
+#' membership raises an error.
+#'
+#' @param rows Saved rows with Model_ID, Model_Name, Model_Type and Recipe_ID.
+#' @param custom Loaded custom run with `pool` and `manifest`.
+#' @param candidates Expected individual identities from `custom_run_candidates()`.
+#' @param averages Logical; accept simple-average rows with valid components.
+#' @param required_custom Logical; require every applicable custom ID.
+#' @param ensembles Logical; accept well-formed FinnTS ensemble rows.
+#'
+#' @return Invisibly NULL; errors on foreign or invalid identities.
+#' @noRd
+custom_run_membership <- function(rows, custom, candidates, averages = FALSE, required_custom = FALSE, ensembles = FALSE) {
   if (is.null(rows))
     return(invisible(NULL))
   fields <- c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")
@@ -667,8 +737,14 @@ custom_run_membership <- function(rows, custom, candidates, averages = FALSE, re
     row <- rows[index, ]
     if (isTRUE(row$Recipe_ID == "simple_average") && averages) {
       components <- strsplit(row$Model_ID, "_", fixed = TRUE)[[1]]
-      if (length(components) < 2L || anyDuplicated(components) || any(!components %in% candidates$Model_ID)) {
+      if (length(components) < 2L || anyDuplicated(components) || any(!components %in% c(candidates$Model_ID, custom_run_ensemble_ids()))) {
         stop("Saved average contains an invalid custom pool component identity.", call. = FALSE)
+      }
+      next
+    }
+    if (isTRUE(row$Recipe_ID == "ensemble") && ensembles) {
+      if (!isTRUE(row$Model_ID %in% custom_run_ensemble_ids()) || !identical(row$Model_ID, paste(row$Model_Name, row$Model_Type, row$Recipe_ID, sep = "--"))) {
+        stop("Saved ensemble artifact has an invalid model identity.", call. = FALSE)
       }
       next
     }
@@ -685,7 +761,7 @@ custom_run_membership <- function(rows, custom, candidates, averages = FALSE, re
         "model_type", "recipe_id",
         "date_type", "forecast_horizon", "target_scale"
       )], list(
-        model_type = row$Model_Type, recipe_id = "R1", date_type = custom$manifest$context$date_type,
+        model_type = row$Model_Type, recipe_id = "C1", date_type = custom$manifest$context$date_type,
         forecast_horizon = custom$manifest$context$forecast_horizon, target_scale = "original"
       )) || !identical(
         fit$allow_code,
@@ -703,11 +779,22 @@ custom_run_membership <- function(rows, custom, candidates, averages = FALSE, re
   invisible(NULL)
 }
 
-# Audit present saved artifacts before any completed-run shortcut, using one
-# coordinating discovery only when series names are unknown. Known paths are
-# read exactly once; returns per-combo forecast tables for final selection reuse.
-# Missing required completed artifacts, empty required payloads and mismatched
-# identities error rather than being repaired or treated as fallback candidates.
+#' FinnTS ensemble model identities
+#'
+#' Ensembles are always local and use the `ensemble` recipe. No I/O.
+#'
+#' @return Character vector of valid ensemble Model_IDs.
+#' @noRd
+custom_run_ensemble_ids <- function() {
+  paste(list_ensemble_models(), "local", "ensemble", sep = "--")
+}
+
+#' Audit present saved artifacts before any completed-run shortcut, using one
+#' coordinating discovery only when series names are unknown. Known paths are
+#' read exactly once; returns per-combo forecast tables for final selection reuse.
+#' Missing required completed artifacts, empty required payloads and mismatched
+#' identities error rather than being repaired or treated as fallback candidates.
+#' @noRd
 custom_run_audit <- function(run_info, custom, local, global, combos = NULL, complete = FALSE) {
   if (is.null(custom))
     return(NULL)
@@ -716,9 +803,9 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     if (length(run_info$combo))
       combos <- run_info$combo
     else {
-      files <- local_artifact_inventory(run_info, "prep_data", "-*-R1")
+      files <- local_artifact_inventory(run_info, "prep_data", "-*-C1")
       prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-")
-      combos <- sub(paste0("-R1\\.", run_info$data_output, "$"), "", substring(basename(files), nchar(prefix) + 1L))
+      combos <- sub(paste0("-C1\\.", run_info$data_output, "$"), "", substring(basename(files), nchar(prefix) + 1L))
     }
   }
   read_rows <- function(folder, suffix, combo, required, object = FALSE) {
@@ -734,16 +821,22 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     if (is.null(rows) || !is.data.frame(rows) || (required && !nrow(rows)))
       stop("Invalid required custom run artifact.", call. = FALSE)
     averages <- identical(suffix, "-average_models")
+    if (identical(suffix, "-ensemble_models")) {
+      fields <- c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")
+      if (!all(fields %in% names(rows)) || any(rows$Recipe_ID != "ensemble") ||
+        any(!rows$Model_Name %in% list_ensemble_models()) ||
+        any(rows$Model_ID != paste(rows$Model_Name, rows$Model_Type, rows$Recipe_ID, sep = "--"))) {
+        stop("Saved ensemble artifact has an invalid model identity.", call. = FALSE)
+      }
+      return(rows)
+    }
     mode <- if (identical(suffix, "-global_models") || (object && identical(combo, hash_data("All-Data"))))
       "global"
     else "local"
     allowed <- if (averages)
       candidates
     else candidates[candidates$Model_Type == mode, ]
-    custom_run_membership(rows, custom, allowed, averages = averages, required_custom = !averages && !identical(
-      suffix,
-      "-ensemble_models"
-    ))
+    custom_run_membership(rows, custom, allowed, averages = averages, required_custom = !averages)
     rows
   }
   saved <- list()
@@ -755,8 +848,6 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
       "forecasts", "-average_models", combo,
       FALSE
     ), ensemble = read_rows("forecasts", "-ensemble_models", combo, FALSE))
-    if (!is.null(saved[[combo]]$ensemble) && nrow(saved[[combo]]$ensemble))
-      stop("Learned ensemble artifact is outside the custom run pool.", call. = FALSE)
     read_rows("models", "-single_models", combo, complete && isTRUE(local), object = TRUE)
   }
   read_rows("models", "-single_models", hash_data("All-Data"), complete && isTRUE(global), object = TRUE)

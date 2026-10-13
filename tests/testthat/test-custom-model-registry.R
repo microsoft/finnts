@@ -5,7 +5,7 @@ registry_definition <- function(name = "business-growth", value = 1) {
     name = name, instructions = "Use the supplied business growth rule.", interpretation = "Apply the fixed growth parameter to historical values.",
     model_type = c("local", "global"), source = c(fit = "function(...) stop('Registry executed fit source')", predict = "function(...) stop('Registry executed predict source')"),
     requirements = list(
-      predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1:12,
+      predictors = character(), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1:12,
       missing_data = "error"
     ), fixed_parameters = list(growth = value)
   )
@@ -110,7 +110,7 @@ test_that("passive definitions persist once and reload exact versions across run
   definition <- registry_definition()
   tracker <- registry_spies()
   reference <- finnts:::write_custom_model_definition(definition, run_info)
-  expect_identical(names(reference), c("registry_schema_version", "name", "version_id"))
+  expect_identical(names(reference), c("name", "version_id"))
   expect_identical(reference$version_id, definition$version_id)
   expect_identical(tracker$optional, c(TRUE, FALSE))
   expect_identical(tracker$writes, 1L)
@@ -158,11 +158,11 @@ test_that("only selected references are read and no cache outlives resolution", 
 
 test_that("references and caller settings are validated before storage access", {
   definition <- registry_definition()
-  reference <- list(registry_schema_version = 1L, name = definition$name, version_id = definition$version_id)
+  reference <- list(name = definition$name, version_id = definition$version_id)
   run_info <- registry_run(withr::local_tempdir())
   tracker <- registry_spies()
   malformed <- list(
-    modifyList(reference, list(registry_schema_version = 2L)), modifyList(reference, list(name = "../unsafe")),
+    c(reference, list(registry_schema_version = 1L)), modifyList(reference, list(name = "../unsafe")),
     modifyList(reference, list(name = "arima")), modifyList(reference, list(name = "bad--name")), modifyList(
       reference,
       list(version_id = "latest")
@@ -198,7 +198,7 @@ test_that("corrupt and conflicting existing records cannot be overwritten", {
   wrong_definition <- valid
   wrong_definition$definition <- registry_definition("different")
   bad_records <- list(
-    NULL, list(), "not a record", stale, wrong_definition, modifyList(valid, list(registry_schema_version = 2L)),
+    NULL, list(), "not a record", stale, wrong_definition, c(valid, list(registry_schema_version = 1L)),
     modifyList(valid, list(name = "different")), modifyList(valid, list(version_id = paste(rep("a", 64), collapse = ""))),
     c(valid, list(approved = TRUE))
   )

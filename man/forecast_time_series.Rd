@@ -125,7 +125,8 @@ chooses these values based on date type.}
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types, and also for global models to prevent memory issues.
 A value of "all" runs all recipes, regardless of date type or if it's a local/global model. A list like c("R1") or c("R2")
-would only run models with the R1 or R2 recipe.}
+would only run models with the R1 or R2 recipe. "C1" is the raw recipe for custom models and is added automatically
+when custom models are selected; c("C1") alone runs only custom models.}
 
 \item{pca}{If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
@@ -170,11 +171,14 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 
 \item{custom_models}{Named list of experimental approved custom-model envelopes,
 enrolled only through \code{models_to_run}. See \code{\link[=prep_models]{prep_models()}} for the envelope
-contract and supported profile. Incompatible explicit custom settings error
-before data preparation. Use \code{\link[=create_custom_model]{create_custom_model()}} for reviewed authoring.}
+contract and supported profile. Selected custom models add the raw C1
+recipe to \code{recipes_to_run} and may run alone or alongside built-in models.
+Incompatible explicit custom settings error before data preparation. Use
+\code{\link[=create_custom_model]{create_custom_model()}} for reviewed authoring.}
 
 \item{stationary}{Apply differencing during preparation; retains the existing
-TRUE default. Selected original-scale custom models require FALSE.}
+TRUE default. Applies only to built-in R1/R2 recipes; custom models always
+use the raw, original-scale C1 recipe.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -193,7 +197,8 @@ reconciliation solver. Reconciled future outputs are not evaluated to choose
 a replacement set or trigger additional model fitting.
 
 Reviewed custom hierarchy models require a shared explicitly mixed
-custom/FinnTS pool, local-only R1 execution and no averaging or regressors.
+custom/FinnTS pool, local-only C1 execution and no external regressors.
+Model averages and ensembles may include custom forecasts.
 Eligibility uses requested candidates, not the eventual winning models.
 Custom-only forecasts require a compatible bottom-up definition instead;
 no model is automatically added and no requested approach is changed.

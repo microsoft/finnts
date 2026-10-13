@@ -79,8 +79,11 @@ must remain available. No source regeneration or dependency installation
 occurs. Custom \code{Model_Name} retains its alias; \code{Model_ID} begins with
 \verb{custom-} and the full version hash, followed by model type and recipe.
 Saved workflows, fits and forecasts must match the pinned pool before reuse.
-The initial profile requires \code{feature_selection = FALSE},
-\code{inner_parallel = FALSE} and sequential or \code{local_machine} execution.
+Custom models train on the untransformed \code{C1} recipe, so stationary and
+Box-Cox inverse steps are skipped for them and feature selection applies
+only to built-in models. Global custom models always use \code{C1} regardless
+of \code{global_model_recipes}. Sequential, \code{local_machine}, \code{spark} and
+\code{inner_parallel} execution are supported.
 \code{negative_forecast = FALSE} floors custom forecasts at zero, as for
 built-in models. Existing built-in-only behavior is unchanged.
 Temporal custom definitions evaluate complete horizons from existing

@@ -162,7 +162,7 @@ custom_author_example_scaffold <- function(metadata, model_type, predictors = ch
       "local") "example_a" else c("example_a", "example_b"))
   })), recursive = FALSE)
   list(
-    schema_version = 1L, date_type = metadata$date_type, forecast_horizon = as.integer(metadata$forecast_horizon), cutoff = switch(metadata$date_type,
+    date_type = metadata$date_type, forecast_horizon = as.integer(metadata$forecast_horizon), cutoff = switch(metadata$date_type,
       day = "2020-02-28",
       week = "2020-12-28",
       month = "2020-12-01",
@@ -185,7 +185,7 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
     })
   }
   custom_author_fields(
-    scaffold, c("schema_version", "date_type", "forecast_horizon", "cutoff", "predictors", "scenarios"),
+    scaffold, c("date_type", "forecast_horizon", "cutoff", "predictors", "scenarios"),
     "examples"
   )
   available_modes <- unique(vapply(scaffold$scenarios, `[[`, character(1), "model_type"))
@@ -806,7 +806,7 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 
 # Read or prepare one bounded representative sample without changing caller
 # objects, options, RNG or an existing run. Unknown series are discovered once;
-# exact selected R1 artifacts are reused across all authoring/repair attempts.
+# exact selected C1 artifacts are reused across all authoring/repair attempts.
 # Raw preparation writes only a unique temporary root. Returns local rows plus
 # provider-safe schema/cadence/count metadata; no business values enter metadata.
 # Effective driver names and historical bounds come from arguments/already-read
@@ -915,18 +915,18 @@ custom_author_data <- function(
     )
     prep_data(info, sampled, combo_variables, target_variable, date_type, forecast_horizon,
       external_regressors = NULL,
-      hist_start_date = hist_start_date, hist_end_date = hist_end_date, recipes_to_run = "R1", stationary = FALSE,
+      hist_start_date = hist_start_date, hist_end_date = hist_end_date, recipes_to_run = "C1", stationary = FALSE,
       box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE, multistep_horizon = FALSE, forecast_approach = forecast_approach
     )
-    paths <- local_artifact_path(info, "prep_data", "-R1", vapply(selected, hash_data, character(1)))
+    paths <- local_artifact_path(info, "prep_data", "-C1", vapply(selected, hash_data, character(1)))
     total_series <- length(labels)
     if (hierarchical) {
       log <- read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
-      hierarchy_data <- custom_run_hierarchy_context(info, custom_run_context(info, log, FALSE, allow_hierarchy = TRUE),
+      hierarchy_data <- custom_run_hierarchy_context(info, custom_run_context(info, log, allow_hierarchy = TRUE),
         log,
         return_data = TRUE, max_rows = 10000
       )
-      paths <- local_artifact_path(info, "prep_data", "-R1", vapply(
+      paths <- local_artifact_path(info, "prep_data", "-C1", vapply(
         hierarchy_data$topology$hts_combos, hash_data,
         character(1)
       ))
@@ -942,7 +942,7 @@ custom_author_data <- function(
     log <- if (is.null(prepared_log))
       read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
     else prepared_log
-    context <- custom_run_context(info, log, FALSE, allow_hierarchy = hierarchical)
+    context <- custom_run_context(info, log, allow_hierarchy = hierarchical)
     if (!identical(context$forecast_approach, forecast_approach))
       custom_author_abort("input", "forecast_approach conflicts with the prepared run.")
     actual <- list(
@@ -969,15 +969,15 @@ custom_author_data <- function(
         custom_author_abort("input", "Hierarchy authoring requires the complete prepared run, not a combo subset.")
       custom_run_hierarchy_controls(context, actual$external_regressors)
       hierarchy_data <- custom_run_hierarchy_context(info, context, log, return_data = TRUE, max_rows = 10000)
-      paths <- local_artifact_path(info, "prep_data", "-R1", vapply(
+      paths <- local_artifact_path(info, "prep_data", "-C1", vapply(
         hierarchy_data$topology$hts_combos, hash_data,
         character(1)
       ))
       total_series <- length(hierarchy_data$topology$original_combos)
     } else {
       if (length(info$combo))
-        paths <- local_artifact_path(info, "prep_data", "-R1", info$combo)
-      else paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-R1")), method = "radix")
+        paths <- local_artifact_path(info, "prep_data", "-C1", info$combo)
+      else paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-C1")), method = "radix")
       total_series <- length(paths)
       if (length(actual$external_regressors) || global_sample) {
         if (capture_context) {
@@ -1027,7 +1027,7 @@ custom_author_data <- function(
     }
   }
   if (!length(paths))
-    custom_author_abort("data", "No prepared R1 series are available.")
+    custom_author_abort("data", "No prepared C1 series are available.")
   sources <- checked_sources
   if (capture_context && is.null(input_data) && is.null(sources)) {
     if (hierarchical) {
@@ -1046,7 +1046,7 @@ custom_author_data <- function(
     dplyr::bind_rows(prepared_sample)
   else read_exact_artifact(info, paths)
   if (!all(c("Date", "Combo", "Target") %in% names(data)) || !inherits(data$Date, "Date"))
-    custom_author_abort("data", "Prepared R1 data has invalid identity columns.")
+    custom_author_abort("data", "Prepared C1 data has invalid identity columns.")
   data <- as.data.frame(data[data$Date <= hist_end_date, ], stringsAsFactors = FALSE)
   if (nrow(data) > 10000L)
     custom_author_abort("data", "Selected complete histories exceed 10000 rows; supply a smaller subset.")
@@ -1378,7 +1378,7 @@ custom_author_child <- function(definition, examples, data, contract = NULL) {
           started
       )
       report$verification <- list(
-        schema_version = 2L, provenance = contract$expectation_provenance, properties = verified,
+        provenance = contract$expectation_provenance, properties = verified,
         expected_errors = as.integer(sum(vapply(examples, function(example) !is.null(example$expected_error), logical(1))))
       )
       report$verification$required_properties <- contract$required_properties
@@ -1502,13 +1502,13 @@ custom_author_checks <- function(
     elapsed = paste("Validation seconds", round(report$elapsed, 3))
   )
   verification <- report$verification
-  custom_author_fields(verification, c("schema_version", "provenance", "properties", "expected_errors", c(
+  custom_author_fields(verification, c("provenance", "properties", "expected_errors", c(
     "required_properties",
     "diagnostics", NULL
   )), "validation")
   expected_properties <- c("row_order", contract$validation_properties)
   count <- sum(vapply(examples, function(example) !is.null(example$expected_error), logical(1)))
-  if (!identical(verification$schema_version, 2L) || !identical(verification$provenance, contract$expectation_provenance) ||
+  if (!identical(verification$provenance, contract$expectation_provenance) ||
     !setequal(names(verification$properties), expected_properties) || !all(vapply(verification$properties, function(value) is.integer(value) &&
     length(value) == 1L && !is.na(value) && value >= (0L), logical(1))) || !identical(verification$expected_errors, as.integer(count)))
     custom_author_abort("validation", "Measured behavioral evidence is incomplete or changed.")
@@ -1552,10 +1552,7 @@ custom_author_checks <- function(
     checks$driver_conditioning <- "Holdout metrics are conditional on supplied driver values; historical plan vintages and publication lags are not verified."
   }
   if (approval_mode == "automatic") {
-    custom_author_fields(automatic_defaults, c("catalog_version", "defaults_used", "effective"), "validation")
-    if (!identical(automatic_defaults$catalog_version, 2L)) {
-      custom_author_abort("validation", "Unknown automatic defaults catalog.")
-    }
+    custom_author_fields(automatic_defaults, c("defaults_used", "effective"), "validation")
     checks$automatic_defaults <- jsonlite::toJSON(automatic_defaults, auto_unbox = TRUE, null = "null")
     checks$automatic_defaults <- as.character(checks$automatic_defaults)
   }

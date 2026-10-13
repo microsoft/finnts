@@ -101,17 +101,18 @@ If only one individual remains eligible, the schema-correct empty optional
 average represents no average and remains readable during publication and
 restart. Empty required artifacts and malformed optional averages are errors.
 
-Experimental custom runs validate pinned versions, fitted context and saved
-candidate membership before selection or completion reuse. Foreign versions,
-excluded models and averages containing foreign components are errors.
-Custom aliases remain in \code{Model_Name}; full version hashes identify custom
-\code{Model_ID} components without conflicting with average separators. Simple
-averages may contain only selected complete eligible components. Ranking,
+Experimental custom runs validate the pinned approved pool, fitted context
+and saved candidate membership before selection or completion reuse.
+Foreign custom models, excluded models and averages containing foreign
+components are errors. Custom aliases remain in \code{Model_Name}; content
+hashes identify custom \code{Model_ID} components without conflicting with
+average separators. Simple averages may combine complete eligible custom,
+built-in and ensemble components. Ranking,
 accuracy allowances and plausibility policy are unchanged; custom enrollment
 does not guarantee that a candidate will be selected.
 
-Explicitly reviewed custom hierarchy runs require \code{average_models = FALSE}
-and native weekly output (\code{weekly_to_daily = FALSE} for weekly data).
+Explicitly reviewed custom hierarchy runs allow \code{average_models} and require
+native weekly output (\code{weekly_to_daily = FALSE} for weekly data).
 Every enrolled candidate must have complete finite node/fold/date coverage
 before reconciliation. No missing-node substitution or silent candidate
 omission is permitted. Existing hts weighting and selection remain unchanged;

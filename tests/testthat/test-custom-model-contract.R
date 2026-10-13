@@ -5,7 +5,7 @@ custom_model_contract_args <- function() {
     name = "seasonal_growth", instructions = "Apply the prescribed seasonal growth rule.", interpretation = "Use prior-season values with fixed historical growth.",
     model_type = "local", source = c(fit = "function(data, context, parameters) { stop('must not execute') }", predict = "function(object, new_data, context) { stop('must not execute') }"),
     requirements = list(
-      predictors = c("Date", "Combo"), recipes = "R1", target_scale = "original", date_types = "month",
+      predictors = c("Date", "Combo"), recipes = "C1", target_scale = "original", date_types = "month",
       forecast_horizon = 1:12, missing_data = "Reject missing required history."
     ), fixed_parameters = list(window = 3L),
     packages = "stats"
@@ -26,20 +26,15 @@ test_that("custom definitions describe local and global logic without execution"
 
 test_that("custom definitions reject invalid schema and authoring metadata", {
   definition <- do.call(new_custom_model_definition, custom_model_contract_args())
-  for (field in c("schema_version", "name", "source", "requirements")) {
+  for (field in c("name", "source", "requirements")) {
     invalid <- definition
     invalid[[field]] <- NULL
     expect_error(validate_custom_model_definition(invalid), "Custom model", info = field)
   }
-  for (field in c("scope", "status", "approved", "tuning", "refinement", "llm")) {
+  for (field in c("schema_version", "scope", "status", "approved", "tuning", "refinement", "llm")) {
     invalid <- definition
     invalid[[field]] <- "unsupported"
     expect_error(validate_custom_model_definition(invalid), "unsupported fields", info = field)
-  }
-  for (version in list(2L, NA_integer_, "1", c(1L, 1L))) {
-    invalid <- definition
-    invalid$schema_version <- version
-    expect_error(validate_custom_model_definition(invalid), "schema_version|recreate")
   }
   for (origin in c("ml_defined", "agent_refined")) {
     invalid <- definition
@@ -82,8 +77,8 @@ test_that("custom names and lineage cannot collide with built-ins or artifact id
 test_that("data requirements are explicit and finite", {
   args <- custom_model_contract_args()
   cases <- list(predictors = list(c("Date", "Date"), c("Date", NA_character_)), recipes = list(character(), "R3", c(
-    "R1",
-    "R1"
+    "C1",
+    "C1"
   )), target_scale = list("unknown", c("original", "prepared")), date_types = list("hour", character()), forecast_horizon = list(
     0,
     -1, 1.5, Inf, NA_real_, c(1, 1)
@@ -98,8 +93,10 @@ test_that("data requirements are explicit and finite", {
   args$requirements$predictors <- character()
   args$requirements$recipes <- c("R1", "R2")
   args$requirements$date_types <- c("year", "quarter", "month", "week", "day")
-  expect_error(do.call(new_custom_model_definition, args), "must use R1")
+  expect_error(do.call(new_custom_model_definition, args), "must use C1")
   args$requirements$recipes <- "R1"
+  expect_error(do.call(new_custom_model_definition, args), "must use C1")
+  args$requirements$recipes <- "C1"
   expect_no_error(do.call(new_custom_model_definition, args))
   args$requirements$extra <- TRUE
   expect_error(do.call(new_custom_model_definition, args), "requirements")

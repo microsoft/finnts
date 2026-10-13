@@ -4,12 +4,12 @@ custom_agent_model <- function(name = "business_mean", modes = c("local", "globa
   definition <- finnts:::new_custom_model_definition(
     name, "Use the historical mean.", "Use the analysis mean without transformations; {literal_contract_text} is descriptive text.",
     modes, c(fit = "function(data, context, parameters) { mean(data$Target) }", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row,.pred=rep(object,nrow(new_data)))"),
-    list(predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = c(
+    list(predictors = character(), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = c(
       1,
       2
     ), missing_data = "error")
   )
-  structure(list(schema_version = 1L, definition = definition, validation = list(
+  structure(list(definition = definition, validation = list(
     version_id = definition$version_id, technical_passed = TRUE,
     checks = list(arithmetic = "Independent synthetic mean fixture")
   ), approval = list(
@@ -159,7 +159,7 @@ test_that("custom Agent submission uses the real pinned standard runtime", {
   forecasts <- get_forecast_data(run)
   expect_true(nrow(forecasts) > 0)
   expect_equal(unique(forecasts$Forecast), 100)
-  allowed <- c(paste0("custom-", args$custom_models$business_mean$definition$version_id, "--local--R1"), "meanf--local--R1")
+  allowed <- c(paste0("custom-", args$custom_models$business_mean$definition$version_id, "--local--C1"), "meanf--local--R1")
   expect_true(all(unlist(strsplit(unique(forecasts$Model_ID), "_", fixed = TRUE)) %in% allowed))
   expect_true(any(forecasts$Recipe_ID == "simple_average"))
   log <- read_selection_file(run, "logs")
@@ -411,7 +411,7 @@ test_that("installed custom Agent forecasts dispatch to two independent real wor
   ))
   expect_identical(unique(forecast$Model_ID), paste0(
     "custom-", args$custom_models$business_mean$definition$version_id,
-    "--local--R1"
+    "--local--C1"
   ))
   sessions <- lapply(list.files(observations, full.names = TRUE), readRDS)
   expect_length(sessions, 2L)

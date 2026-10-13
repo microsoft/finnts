@@ -2,7 +2,7 @@ test_that("explicit per-node hierarchy capabilities are version-bound and inert"
   for (approach in c("standard_hierarchy", "grouped_hierarchy")) {
     args <- hierarchy_definition_args(approach)
     definition <- do.call(new_custom_model_definition, args)
-    expect_identical(definition$schema_version, 3L)
+    expect_false("schema_version" %in% names(definition))
     expect_identical(definition$requirements$hierarchy, args$requirements$hierarchy)
     expect_identical(definition$source, args$source)
     expect_identical(custom_model_current_definition(definition), definition)
@@ -11,8 +11,9 @@ test_that("explicit per-node hierarchy capabilities are version-bound and inert"
 
 test_that("current bottom-up definitions do not acquire hierarchy permission", {
   definition <- do.call(new_custom_model_definition, hierarchy_definition_args(NULL))
-  expect_identical(definition$schema_version, 3L)
-  expect_identical(definition$version_id, "156c582ca8bc8feb20c2dd119967def3f6c9412310a33a87ba669e1ec1be7add")
+  expect_false("schema_version" %in% names(definition))
+  expect_match(definition$version_id, "^[a-f0-9]{64}$")
+  expect_identical(definition$version_id, custom_model_definition_digest(definition))
   expect_null(definition$requirements$hierarchy)
   expect_identical(custom_model_current_definition(definition), definition)
 })
@@ -41,7 +42,7 @@ test_that("hierarchy declarations are canonical and cannot widen capabilities", 
     expect_error(
       do.call(new_custom_model_definition, invalid),
       switch(field,
-        recipes = "must use R1",
+        recipes = "must use C1",
         target_scale = "must be original",
         "hierarchy requires local"
       )
@@ -49,7 +50,7 @@ test_that("hierarchy declarations are canonical and cannot widen capabilities", 
   }
   invalid <- definition
   invalid$schema_version <- 1L
-  expect_error(validate_custom_model_definition(invalid), "recreate")
+  expect_error(validate_custom_model_definition(invalid), "unsupported fields")
 })
 
 test_that("hierarchy definitions round-trip through the unchanged passive registry", {
@@ -59,7 +60,7 @@ test_that("hierarchy definitions round-trip through the unchanged passive regist
   )
   definition <- do.call(new_custom_model_definition, hierarchy_definition_args())
   reference <- write_custom_model_definition(definition, info)
-  expect_identical(reference$registry_schema_version, 1L)
+  expect_identical(names(reference), c("name", "version_id"))
   expect_identical(read_custom_model_definition(reference, info), definition)
   expect_identical(write_custom_model_definition(definition, info), reference)
 })
@@ -73,7 +74,7 @@ test_that("hierarchy preflight requires an explicitly mixed shared pool before w
   )
   args <- list(
     run_info = info, input_data = hierarchy_input(), combo_variables = c("Region", "Product"), target_variable = "value",
-    date_type = "month", forecast_horizon = 2, forecast_approach = "standard_hierarchy", recipes_to_run = "R1", stationary = FALSE,
+    date_type = "month", forecast_horizon = 2, forecast_approach = "standard_hierarchy", recipes_to_run = c("R1", "C1"), stationary = FALSE,
     clean_missing_values = FALSE, clean_outliers = FALSE, negative_forecast = TRUE, run_global_models = FALSE, run_local_models = TRUE,
     run_ensemble_models = FALSE, average_models = FALSE, weekly_to_daily = FALSE, models_to_run = c("node_rule", "meanf"),
     custom_models = list(node_rule = hierarchy_model())
@@ -112,16 +113,16 @@ test_that("staged hierarchy rejection cannot register a custom-only pool", {
     data_output = "csv", object_output = "rds"
   )
   settings <- list(
-    forecast_approach = "standard_hierarchy", recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE,
+    forecast_approach = "standard_hierarchy", recipes_to_run = "R1---C1", stationary = FALSE, box_cox = FALSE,
     clean_missing_values = FALSE, clean_outliers = FALSE, multistep_horizon = FALSE, date_type = "month", forecast_horizon = 2,
     external_regressors = NA_character_
   )
   pool <- custom_run_pool("node_rule", NULL, list(node_rule = hierarchy_model()))
-  expect_error(custom_run_prepare(info, pool, settings, FALSE), "mixed.*bottoms_up")
+  expect_error(custom_run_prepare(info, pool, settings), "mixed.*bottoms_up")
   expect_length(list.files(info$path, recursive = TRUE), 0L)
   pool <- custom_run_pool(c("node_rule", "meanf"), NULL, list(node_rule = hierarchy_model()))
   settings$forecast_approach <- "bottoms_up"
-  expect_error(custom_run_prepare(info, pool, settings, FALSE), "hierarchy-only")
+  expect_error(custom_run_prepare(info, pool, settings), "hierarchy-only")
   expect_length(list.files(info$path, recursive = TRUE), 0L)
 })
 
@@ -135,7 +136,7 @@ hierarchy_prepare <- function(path, approach = "standard_hierarchy", date_type =
   info$data_output <- data_output
   prep_data(info, hierarchy_input(approach, date_type), c("Region", "Product"), "value", date_type, 2,
     forecast_approach = approach,
-    recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE,
+    recipes_to_run = c("R1", "C1"), stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE,
     multistep_horizon = FALSE
   )
   info
@@ -176,7 +177,7 @@ test_that("hierarchy contexts preserve RDS and Parquet data without discovery on
     )
     log <- read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
     loaded <- custom_run_load(info, log)
-    captured <- custom_run_hierarchy_context(info, custom_run_context(info, log, FALSE, allow_hierarchy = TRUE), log,
+    captured <- custom_run_hierarchy_context(info, custom_run_context(info, log, allow_hierarchy = TRUE), log,
       return_data = TRUE, max_rows = 10000
     )
     expect_identical(loaded$manifest$context$hierarchy_id, captured$context$hierarchy_id)
@@ -201,10 +202,10 @@ hierarchy_reconciliation_fixture <- function(approach = "standard_hierarchy", da
     manifest = list(context = list(forecast_approach = approach, date_type = date_type, forecast_horizon = 6))
   )
   custom <- fixture$forecasts$Model_ID == "accurate"
-  fixture$forecasts$Model_ID <- ifelse(custom, paste0("custom-", definition$version_id, "--local--R1"), "meanf--local--R1")
+  fixture$forecasts$Model_ID <- ifelse(custom, paste0("custom-", definition$version_id, "--local--C1"), "meanf--local--R1")
   fixture$forecasts$Model_Name <- ifelse(custom, "node_rule", "meanf")
   fixture$forecasts$Model_Type <- "local"
-  fixture$forecasts$Recipe_ID <- "R1"
+  fixture$forecasts$Recipe_ID <- ifelse(custom, "C1", "R1")
   fixture$forecasts$Run_Type <- NULL
   fixture$project_info$path <- tempdir()
   fixture
@@ -257,6 +258,30 @@ test_that("custom reconciliation rejects incomplete candidates before publicatio
   written <- new.env(parent = emptyenv())
   local_mocked_bindings(combinef = function(...) stop("Deliberate reconciliation failure"), .package = "hts")
   expect_error(hierarchy_reconcile(fixture, written = written), "Deliberate reconciliation failure")
+  expect_length(as.list(written), 0L)
+})
+
+test_that("custom reconciliation needs each built-in once and complete present recipe variants", {
+  fixture <- hierarchy_reconciliation_fixture()
+  builtin <- fixture$forecasts[fixture$forecasts$Model_Name == "meanf", ]
+  builtin$Model_ID <- "meanf--local--R2"
+  builtin$Recipe_ID <- "R2"
+  builtin$Best_Model <- "No"
+  both <- rbind(fixture$forecasts, builtin)
+  written <- hierarchy_reconcile(fixture, both)
+  expect_true(all(c("meanf--local--R1", "meanf--local--R2", "Best-Model") %in% names(written)))
+  r2_only <- rbind(fixture$forecasts[fixture$forecasts$Model_Name != "meanf", ], builtin)
+  r2_only$Best_Model[r2_only$Model_Name == "node_rule"] <- "Yes"
+  written <- hierarchy_reconcile(fixture, r2_only)
+  expect_true("meanf--local--R2" %in% names(written))
+  expect_false("meanf--local--R1" %in% names(written))
+  partial <- both[-which(both$Model_ID == "meanf--local--R2" & both$Train_Test_ID != 1)[[1]], ]
+  written <- new.env(parent = emptyenv())
+  expect_error(hierarchy_reconcile(fixture, partial, written), "coverage")
+  expect_length(as.list(written), 0L)
+  no_custom <- both[both$Model_Name != "node_rule", ]
+  written <- new.env(parent = emptyenv())
+  expect_error(hierarchy_reconcile(fixture, no_custom, written), "coverage|identity|pool")
   expect_length(as.list(written), 0L)
 })
 

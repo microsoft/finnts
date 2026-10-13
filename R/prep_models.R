@@ -4,40 +4,41 @@
 #'   splits, creating hyperparameters, etc.
 #'
 #' @details Experimental custom enrollment requires named `finnts_custom_model`
-#'   envelopes with schema version 1, an exact passive definition, and technical
-#'   validation and approval bound to its content version. Validation contains
+#'   envelopes holding an exact passive definition plus technical validation and
+#'   approval bound to its content hash (`version_id`). Validation contains
 #'   `version_id`, `technical_passed = TRUE`, and a nonempty list of check-summary
 #'   strings. Manual approval contains the same `version_id`,
 #'   `intent_confirmed = TRUE` and `allow_code = TRUE`. Explicit automatic approval
-#'   has `intent_confirmed = FALSE`, `allow_code = TRUE` and `mode = "automatic"`,
-#'   bound to the same version. Unknown fields or modes fail. Older FinnTS versions
-#'   may reject automatic approval records. These are trusted-caller attestations, not
+#'   has `intent_confirmed = FALSE`, `allow_code = TRUE` and `mode = "automatic"`.
+#'   Unknown fields or modes fail. These are trusted-caller attestations, not
 #'   authenticated human identity, a sandbox or an approval inferred from storage.
 #'   Use [create_custom_model()] for manual or explicitly automatic authoring.
 #'
-#'   Only explicit `models_to_run` selects custom models. The initial profile
-#'   requires `bottoms_up`, explicit R1, original-scale targets, and preparation
-#'   with `stationary`, `box_cox`, `clean_missing_values`, `clean_outliers` and
-#'   `multistep_horizon` all FALSE. Set `run_ensemble_models = FALSE`; training
-#'   additionally requires `feature_selection = FALSE` and
-#'   `inner_parallel = FALSE`; `negative_forecast = FALSE` floors custom output
-#'   at zero like built-ins. Local/mounted storage, CSV/RDS/Parquet data,
-#'   RDS model objects and sequential/local-machine execution are supported.
-#'   Custom recipes retain only Date, Combo and declared predictors; no implicit
-#'   PCA, feature selection or target transformation is applied. Missing required
-#'   values and incompatible settings error rather than changing model semantics.
+#'   Only explicit `models_to_run` selects custom models. Custom models train on
+#'   the original-scale `C1` recipe, which must be in the `recipes_to_run` given
+#'   to [prep_data()]; otherwise preparation errors. Built-in models selected in
+#'   the same run use R1/R2 with any supported settings (stationary, Box-Cox,
+#'   outlier cleaning, multistep, feature selection, ensembles). Built-in models
+#'   on a C1-only run error, and a prepared C1 recipe without custom models is
+#'   ignored with a warning. Custom forecasts can feed simple averages and
+#'   ensembles; `negative_forecast = FALSE` floors custom output at zero like
+#'   built-ins. Local/mounted storage, CSV/RDS/Parquet data and RDS model
+#'   objects are required; sequential, local-machine and Spark execution and
+#'   `inner_parallel` are supported. Custom recipes retain only Date, Combo and
+#'   declared predictors; no implicit PCA, feature selection or target
+#'   transformation is applied.
 #'
-#'   A separate reviewed schema-2 definition permits `standard_hierarchy` or
-#'   `grouped_hierarchy` with local univariate original-scale R1 logic. Every
+#'   A definition with reviewed hierarchy capability permits `standard_hierarchy`
+#'   or `grouped_hierarchy` with local univariate original-scale C1 logic. Every
 #'   prepared node receives the same explicitly selected mixed custom/FinnTS
 #'   pool. Custom-only hierarchy requests fail; no built-in is silently added.
-#'   Forecast use requires local-only training, no averaging or regressors, and
-#'   no weekly-to-daily expansion. Topology and exact input artifacts are pinned
-#'   before enrollment. Existing schema-1 approvals do not authorize hierarchy.
+#'   Forecast use requires local-only custom training, no regressors, and no
+#'   weekly-to-daily expansion. Topology and exact input artifacts are pinned
+#'   before enrollment.
 #'
 #'   Definitions and attestations are pinned in a run manifest before workflow
 #'   completion. Reentry requires the same approved effective pool; changed
-#'   versions or preparation context require a new run. Supplying definitions
+#'   definitions or preparation context require a new run. Supplying definitions
 #'   without selecting them leaves built-in defaults unchanged. Registry presence
 #'   alone grants neither enrollment nor execution consent. No source is evaluated
 #'   during preparation and no packages are installed.
@@ -131,8 +132,7 @@ prep_models <- function(run_info,
     pca,
     seasonal_period,
     seed,
-    custom_pool,
-    run_ensemble_models
+    custom_pool
   )
 
   # create model hyperparameters
@@ -392,13 +392,8 @@ train_test_split <- function(run_info,
 
   # pull out first recipe data
   if ("combo" %in% names(run_info)) {
-    # determine first recipe
-    if (is.na(log_df$recipes_to_run)) {
-      first_recipe <- "R1"
-    } else {
-      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
-      first_recipe <- recipes[1]
-    }
+    # R recipes come first; a custom-only run uses C1 for date splits
+    first_recipe <- logged_recipe_ids(log_df)[1]
 
     # get combo value from run info
     combo_value <- run_info$combo
@@ -566,6 +561,61 @@ train_test_split <- function(run_info,
   }
 }
 
+#' Locate one combo's prepared recipe files for workflow building
+#'
+#' Uses the run's own combo when set, otherwise discovers one sample combo
+#' from a single listing of R recipe files (C1 files on a custom-only run).
+#' Paths for every logged recipe are then derived from that sample path, so
+#' no further listing is needed. C1 is returned only when `include_custom`.
+#'
+#' @param run_info Run info list.
+#' @param log_df Run log row with `recipes_to_run` and `date_type`.
+#' @param include_custom Logical; include the C1 recipe path.
+#'
+#' @return Tibble with Path and Recipe columns, one row per recipe.
+#' @noRd
+model_recipe_files <- function(run_info, log_df, include_custom = FALSE) {
+  recipes <- logged_recipe_ids(log_df)
+  if (!include_custom) {
+    recipes <- setdiff(recipes, "C1")
+  }
+  extension <- run_info$data_output
+  if ("combo" %in% names(run_info)) {
+    sample_path <- paste0(
+      run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-", run_info$combo, "-", recipes[[1]], ".", extension
+    ) %>% fs::path_tidy()
+  } else {
+    sample_files <- if (is.null(run_info$storage_object) &&
+      extension %in% c("csv", "parquet", "rds")) {
+      preparation_recipe_files(run_info)
+    } else {
+      prefix <- paste0(
+        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name)
+      )
+      files <- list_files(run_info$storage_object, paste0(prefix, "*R*.", extension))
+      if (!length(files)) {
+        files <- list_files(run_info$storage_object, paste0(prefix, "-*-C1.", extension))
+      }
+      files
+    }
+    sample_files <- as.character(unlist(sample_files))
+    if (!length(sample_files)) {
+      stop("No prepared recipe files were found; run prep_data first.", call. = FALSE)
+    }
+    sample_path <- sort(sample_files, method = "radix")[[1]]
+  }
+  sample_recipe <- sub(".*-([^-.]+)\\.[^.]+$", "\\1", fs::path_file(sample_path))
+  pattern <- paste0("-", sample_recipe, ".", extension, "$")
+  tibble::tibble(
+    Path = vapply(recipes, function(recipe) {
+      sub(pattern, paste0("-", recipe, ".", extension), sample_path)
+    }, character(1), USE.NAMES = FALSE),
+    Recipe = recipes
+  )
+}
+
 #' Gets model workflows
 #'
 #' @param run_info run info
@@ -574,10 +624,13 @@ train_test_split <- function(run_info,
 #' @param pca pca
 #' @param seasonal_period seasonal period
 #' @param seed Set seed for random number generator. Numeric value.
-#' @param custom_pool Internal resolved enrollment, or NULL for legacy calls.
-#' @param run_ensemble_models Requested ensemble flag checked for custom runs.
+#' @param custom_pool Internal resolved enrollment, or NULL for built-in runs.
 #'
-#' @return Returns table of model workflows
+#' @details Custom models get workflows only on C1; built-in models only on
+#'   R1/R2. Errors when built-ins are selected without an R recipe; warns when
+#'   C1 was prepared without custom models.
+#'
+#' @return Writes the model workflow table and updated run log.
 #' @noRd
 model_workflows <- function(run_info,
                             models_to_run = NULL,
@@ -585,8 +638,7 @@ model_workflows <- function(run_info,
                             pca = NULL,
                             seasonal_period = NULL,
                             seed = 123,
-                            custom_pool = NULL,
-                            run_ensemble_models = TRUE) {
+                            custom_pool = NULL) {
   cli::cli_progress_step("Creating Model Workflows")
 
   set.seed(seed)
@@ -596,7 +648,7 @@ model_workflows <- function(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
   )
-  custom_run <- custom_run_prepare(run_info, custom_pool, log_df, run_ensemble_models)
+  custom_run <- custom_run_prepare(run_info, custom_pool, log_df)
 
   date_type <- log_df$date_type
   forecast_approach <- log_df$forecast_approach
@@ -669,56 +721,10 @@ model_workflows <- function(run_info,
   # pull out recipe data for a single combo
   input_tbl <- tibble::tibble()
 
-  if ("combo" %in% names(run_info)) {
-    # determine recipes
-    if (is.na(log_df$recipes_to_run)) {
-      if (date_type %in% c("month", "quarter", "year")) {
-        recipes <- c("R1", "R2")
-      } else {
-        recipes <- "R1"
-      }
-    } else {
-      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
-    }
-
-    # get combo value from run info
-    combo_value <- run_info$combo
-
-    # create file name table based on recipes
-    file_name_tbl <- tibble::tibble()
-
-    for (recipe in recipes) {
-      temp_file_name_tbl <- tibble::tibble(
-        Path = paste0(
-          run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
-          hash_data(run_info$run_name), "-", combo_value, "-", recipe, ".",
-          run_info$data_output
-        ) %>% fs::path_tidy(),
-        Recipe = recipe
-      )
-
-      file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
-    }
-  } else {
-    recipe_files <- if (is.null(run_info$storage_object) &&
-      run_info$data_output %in% c("csv", "parquet", "rds")) {
-      preparation_recipe_files(run_info)
-    } else list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*R*.", run_info$data_output
-      )
-    )
-    file_name_tbl <- recipe_files %>%
-      tibble::tibble(
-        Path = .,
-        File = fs::path_file(.)
-      ) %>%
-      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-      dplyr::filter(Combo == .$Combo[[1]]) %>%
-      dplyr::mutate(Recipe = substr(Recipe, 1, 2))
-  }
+  file_name_tbl <- model_recipe_files(run_info, log_df, include_custom = !is.null(custom_run))
+  logged_recipes <- logged_recipe_ids(log_df)
+  file_name_tbl <- file_name_tbl[file_name_tbl$Recipe != "C1" | !is.null(custom_run), , drop = FALSE]
+  custom_names <- if (is.null(custom_run)) character() else names(custom_run$pool$custom)
 
   for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
@@ -771,15 +777,19 @@ model_workflows <- function(run_info,
 
   r2_models <- list_r2_models()
 
+  builtin_models <- setdiff(ml_models, custom_names)
+  check_builtin_recipes(builtin_models, file_name_tbl$Recipe)
+  if (is.null(custom_run) && "C1" %in% logged_recipes) {
+    warning("Recipe C1 was prepared but no custom models were selected; C1 is ignored.", call. = FALSE)
+  }
+
   iter_tbl <- tibble::tibble()
 
   for (recipe in unique(input_tbl$Recipe)) {
+    recipe_models <- if (recipe == "C1") intersect(ml_models, custom_names) else builtin_models
     iter_tbl <- rbind(
       iter_tbl,
-      tibble::tibble(
-        Model = ml_models,
-        Recipe = recipe
-      )
+      tibble::tibble(Model = recipe_models, Recipe = rep(recipe, length(recipe_models)))
     )
   }
 
@@ -945,59 +955,22 @@ model_hyperparameters <- function(run_info,
     }
   }
 
+  # get model workflow info
+  model_workflow_tbl <- read_file(run_info,
+    path = paste0(
+      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
+      "-model_workflows.", run_info$object_output
+    ),
+    return_type = "df"
+  )
+
   # get recipe input data
   input_tbl <- tibble::tibble()
 
-  if ("combo" %in% names(run_info)) {
-    # determine recipes
-    if (is.na(log_df$recipes_to_run)) {
-      if (date_type %in% c("month", "quarter", "year")) {
-        recipes <- c("R1", "R2")
-      } else {
-        recipes <- "R1"
-      }
-    } else {
-      recipes <- unlist(strsplit(log_df$recipes_to_run, split = "---"))
-    }
-
-    # get combo value from run info
-    combo_value <- run_info$combo
-
-    # create file name table based on recipes
-    file_name_tbl <- tibble::tibble()
-
-    for (recipe in recipes) {
-      temp_file_name_tbl <- tibble::tibble(
-        Path = paste0(
-          run_info$path, "/prep_data/", hash_data(run_info$project_name), "-",
-          hash_data(run_info$run_name), "-", combo_value, "-", recipe, ".",
-          run_info$data_output
-        ) %>% fs::path_tidy(),
-        Recipe = recipe
-      )
-
-      file_name_tbl <- rbind(file_name_tbl, temp_file_name_tbl)
-    }
-  } else {
-    recipe_files <- if (is.null(run_info$storage_object) &&
-      run_info$data_output %in% c("csv", "parquet", "rds")) {
-      preparation_recipe_files(run_info)
-    } else list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*R*.", run_info$data_output
-      )
-    )
-    file_name_tbl <- recipe_files %>%
-      tibble::tibble(
-        Path = .,
-        File = fs::path_file(.)
-      ) %>%
-      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-      dplyr::filter(Combo == .$Combo[[1]]) %>%
-      dplyr::mutate(Recipe = substr(Recipe, 1, 2))
-  }
+  file_name_tbl <- model_recipe_files(run_info, log_df,
+    include_custom = "C1" %in% model_workflow_tbl$Model_Recipe
+  )
+  file_name_tbl <- file_name_tbl[file_name_tbl$Recipe %in% model_workflow_tbl$Model_Recipe, , drop = FALSE]
 
   for (recipe in file_name_tbl$Recipe) {
     temp_path <- file_name_tbl %>%
@@ -1022,15 +995,6 @@ model_hyperparameters <- function(run_info,
 
     input_tbl <- rbind(input_tbl, temp_final_tbl)
   }
-
-  # get model workflow info
-  model_workflow_tbl <- read_file(run_info,
-    path = paste0(
-      "/prep_models/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-      "-model_workflows.", run_info$object_output
-    ),
-    return_type = "df"
-  )
 
   iter_tbl <- model_workflow_tbl %>%
     dplyr::select(Model_Name, Model_Recipe) %>%

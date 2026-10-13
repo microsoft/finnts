@@ -130,7 +130,7 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   whole-set fallback, or extra refitting.
 #'
 #'   Custom pools enrolled by [set_agent_info()] constrain every proposal to
-#'   approved versions and original-scale R1 settings. Missing proposal fields
+#'   approved models and original-scale R1 settings, plus the raw C1 recipe. Missing proposal fields
 #'   do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
 #'   sequential or local-machine execution and `inner_parallel = FALSE` are
 #'   required. Global-only pools require at least two series. Saved parent and

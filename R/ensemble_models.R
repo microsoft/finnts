@@ -2,10 +2,12 @@
 #'
 #' Create ensemble model forecasts
 #'
-#' @details Experimental custom runs require `run_ensemble_models = FALSE` during
-#'   [prep_models()]. Their pinned enrollment and existing artifact identities
-#'   are validated before the disabled-ensemble shortcut; no learned ensemble
-#'   or fallback model is introduced. Built-in-only runs retain existing behavior.
+#' @details Custom-model runs validate their pinned enrollment and existing
+#'   artifact identities before ensembling. Custom forecasts from the raw C1
+#'   recipe join the ensemble inputs when they pass the same backtest screening
+#'   as built-in models. When C1 forecasts are present, ensembles train against
+#'   original-scale actuals so raw custom and cleaned built-in targets are never
+#'   averaged. Built-in-only runs retain existing behavior.
 #'
 #' @param run_info run info using the [set_run_info()] function
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -246,6 +248,7 @@ ensemble_models <- function(run_info,
         dplyr::group_by(Combo, Date, Train_Test_ID) %>%
         dplyr::summarise(Target = mean(Target, na.rm = TRUE), .groups = "drop") %>%
         dplyr::mutate(Target = ifelse(is.nan(Target), NA_real_, Target))
+      target_tbl <- ensemble_target_scale(target_tbl, initial_results_final_tbl, series_data)
 
       prep_ensemble_tbl <- initial_results_final_tbl %>%
         dplyr::select(-Target) %>%
@@ -550,4 +553,28 @@ ensemble_models <- function(run_info,
     ))
     cli::cli_progress_update()
   }
+}
+
+#' Align Ensemble Training Targets
+#'
+#' Internal helper. Built-in recipes may hold outlier-cleaned targets while the
+#' raw C1 custom recipe does not, so averaging row targets would mix scales.
+#'
+#' @param target_tbl Data frame with Combo, Date, Train_Test_ID and
+#'   Target, consolidated from screened prediction rows.
+#' @param predictions Screened prediction rows with a Recipe_ID column.
+#' @param series_data Result of `read_series_history()` whose history holds
+#'   original-scale Date and Target actuals.
+#'
+#' @return `target_tbl` unchanged when no C1 predictions are present; otherwise
+#'   with Target replaced by original-scale actuals by date, and NA for
+#'   dates after the historical cutoff.
+#' @noRd
+ensemble_target_scale <- function(target_tbl, predictions, series_data) {
+  if (!"C1" %in% predictions$Recipe_ID) {
+    return(target_tbl)
+  }
+  history <- series_data$history
+  target_tbl$Target <- history$Target[match(as.Date(target_tbl$Date), as.Date(history$Date))]
+  target_tbl
 }

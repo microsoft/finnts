@@ -64,40 +64,41 @@ splits, creating hyperparameters, etc.
 }
 \details{
 Experimental custom enrollment requires named \code{finnts_custom_model}
-envelopes with schema version 1, an exact passive definition, and technical
-validation and approval bound to its content version. Validation contains
+envelopes holding an exact passive definition plus technical validation and
+approval bound to its content hash (\code{version_id}). Validation contains
 \code{version_id}, \code{technical_passed = TRUE}, and a nonempty list of check-summary
 strings. Manual approval contains the same \code{version_id},
 \code{intent_confirmed = TRUE} and \code{allow_code = TRUE}. Explicit automatic approval
-has \code{intent_confirmed = FALSE}, \code{allow_code = TRUE} and \code{mode = "automatic"},
-bound to the same version. Unknown fields or modes fail. Older FinnTS versions
-may reject automatic approval records. These are trusted-caller attestations, not
+has \code{intent_confirmed = FALSE}, \code{allow_code = TRUE} and \code{mode = "automatic"}.
+Unknown fields or modes fail. These are trusted-caller attestations, not
 authenticated human identity, a sandbox or an approval inferred from storage.
 Use \code{\link[=create_custom_model]{create_custom_model()}} for manual or explicitly automatic authoring.
 
-Only explicit \code{models_to_run} selects custom models. The initial profile
-requires \code{bottoms_up}, explicit R1, original-scale targets, and preparation
-with \code{stationary}, \code{box_cox}, \code{clean_missing_values}, \code{clean_outliers} and
-\code{multistep_horizon} all FALSE. Set \code{run_ensemble_models = FALSE}; training
-additionally requires \code{feature_selection = FALSE} and
-\code{inner_parallel = FALSE}; \code{negative_forecast = FALSE} floors custom output
-at zero like built-ins. Local/mounted storage, CSV/RDS/Parquet data,
-RDS model objects and sequential/local-machine execution are supported.
-Custom recipes retain only Date, Combo and declared predictors; no implicit
-PCA, feature selection or target transformation is applied. Missing required
-values and incompatible settings error rather than changing model semantics.
+Only explicit \code{models_to_run} selects custom models. Custom models train on
+the original-scale \code{C1} recipe, which must be in the \code{recipes_to_run} given
+to \code{\link[=prep_data]{prep_data()}}; otherwise preparation errors. Built-in models selected in
+the same run use R1/R2 with any supported settings (stationary, Box-Cox,
+outlier cleaning, multistep, feature selection, ensembles). Built-in models
+on a C1-only run error, and a prepared C1 recipe without custom models is
+ignored with a warning. Custom forecasts can feed simple averages and
+ensembles; \code{negative_forecast = FALSE} floors custom output at zero like
+built-ins. Local/mounted storage, CSV/RDS/Parquet data and RDS model
+objects are required; sequential, local-machine and Spark execution and
+\code{inner_parallel} are supported. Custom recipes retain only Date, Combo and
+declared predictors; no implicit PCA, feature selection or target
+transformation is applied.
 
-A separate reviewed schema-2 definition permits \code{standard_hierarchy} or
-\code{grouped_hierarchy} with local univariate original-scale R1 logic. Every
+A definition with reviewed hierarchy capability permits \code{standard_hierarchy}
+or \code{grouped_hierarchy} with local univariate original-scale C1 logic. Every
 prepared node receives the same explicitly selected mixed custom/FinnTS
 pool. Custom-only hierarchy requests fail; no built-in is silently added.
-Forecast use requires local-only training, no averaging or regressors, and
-no weekly-to-daily expansion. Topology and exact input artifacts are pinned
-before enrollment. Existing schema-1 approvals do not authorize hierarchy.
+Forecast use requires local-only custom training, no regressors, and no
+weekly-to-daily expansion. Topology and exact input artifacts are pinned
+before enrollment.
 
 Definitions and attestations are pinned in a run manifest before workflow
 completion. Reentry requires the same approved effective pool; changed
-versions or preparation context require a new run. Supplying definitions
+definitions or preparation context require a new run. Supplying definitions
 without selecting them leaves built-in defaults unchanged. Registry presence
 alone grants neither enrollment nor execution consent. No source is evaluated
 during preparation and no packages are installed.

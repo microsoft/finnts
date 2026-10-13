@@ -452,7 +452,7 @@ requirements fail instead of silently widening capabilities.
 | Required history/predictors | Reject empty, missing or nonfinite values and duplicate series/date keys; no dropping or imputation. Unsupported cleaning fails. |
 | Zero/negative values | Valid observations; no implicit clipping or rounding. |
 | Undefined division | Error, with no invented epsilon, cap or rate. Zero-denominator holdout WMAPE remains unavailable. |
-| Trend, seasonality, transforms, tuning | None implicitly added; use original-scale R1. |
+| Trend, seasonality, transforms, tuning | None implicitly added; custom models train on the original-scale C1 recipe. |
 | Dependencies | Freeze installed FinnTS eligibility, or explicit `base_only`; derive actual dependencies from syntax. No installation. |
 | Worked examples | New calls scaffold basic/edge examples per mode; the provider supplies independent values/answers. Generated tolerance is `1e-8`. |
 | Caller-provided examples | Preserve expected values and tolerances; never relax them during repair. |
@@ -844,28 +844,25 @@ behavior. No packages are installed and authoring does not register the result o
 publish a forecast. Select its alias explicitly through `models_to_run` when
 supplying `custom_models = list(business_mean = custom)` to standard preparation.
 
-The original bottom-up profile requires these explicit settings:
+Custom models train on a dedicated raw recipe, `C1`. Add it to `recipes_to_run`
+(for example `c("R1", "C1")`, or `"C1"` for a custom-only run). `prep_data()`
+writes the C1 files alongside any R1/R2 files, so built-in and custom models can
+share one run without sharing a representation:
 
-| Setting | Required Value |
-| --- | --- |
-| `forecast_approach` | `"bottoms_up"` |
-| `recipes_to_run` | `"R1"` |
-| Target scale | Original, with `stationary = FALSE` and `box_cox = FALSE` |
-| Target cleaning | `clean_missing_values = FALSE`, `clean_outliers = FALSE` |
-| `multistep_horizon` | `FALSE` |
-| `run_ensemble_models`, `feature_selection`, `inner_parallel` | `FALSE` |
-| `negative_forecast` | Either; `FALSE` floors finished custom forecasts at zero, as for built-ins, while authoring validation checks unclipped output |
-| Storage | Local or mounted paths with `storage_object = NULL` |
-| Formats | CSV/RDS/Parquet data and RDS model objects |
-| Execution | Sequential or `parallel_processing = "local_machine"` |
+| Setting | Effect on custom models (C1) | Effect on built-in models (R1/R2) |
+| --- | --- | --- |
+| `recipes_to_run` | Must include `"C1"`, otherwise preparation errors | Need at least one R recipe; built-ins on a C1-only run error |
+| `stationary`, `box_cox`, `multistep_horizon`, `feature_selection` | Not applied; C1 stays on the original target scale | Applied as usual |
+| `clean_missing_values` | Imputes missing or non-finite original-scale targets and regressors before the custom fit | Applied as usual |
+| `clean_outliers` | Not applied; C1 keeps observed outliers | Applied as usual |
+| `average_models`, `run_ensemble_models` | Custom forecasts can join simple averages and ensembles when they have enough back tests | Unchanged |
+| `negative_forecast` | `FALSE` floors finished custom forecasts at zero, as for built-ins; authoring validation checks unclipped output | Unchanged |
+| `parallel_processing`, `inner_parallel` | Sequential, `"local_machine"` and `"spark"` are supported, with or without `inner_parallel` | Unchanged |
+| Storage and formats | Local or mounted paths with `storage_object = NULL`; CSV/RDS/Parquet data and RDS model objects | Unchanged |
 
-`forecast_time_series()` now exposes `stationary`, retaining its existing `TRUE`
-default for ordinary calls. The other unsupported transformations are not
-silently disabled. Staged calls validate saved preparation settings and later
-training controls; the high-level wrapper rejects incompatible explicit settings
-before preparing data. The public `set_run_info()` constructor continues to
-advertise CSV/Parquet data output; existing RDS-compatible run settings remain
-supported by the internal storage path.
+A prepared C1 recipe with no selected custom model is ignored with a warning.
+`forecast_time_series()` exposes `stationary`, retaining its existing `TRUE`
+default for ordinary calls.
 
 Custom workflows preserve Date and Combo plus explicitly declared predictors.
 They do not acquire implicit PCA, feature selection, target transforms or hidden
@@ -876,22 +873,21 @@ fixed parameters, without tuning, source regeneration or package installation.
 Custom source or incomplete-prediction failures cannot be silently dropped to
 make a mixed run appear successful.
 
-A run manifest pins the effective pool, exact source versions, attestations and
+A run manifest pins the effective pool, exact source content, attestations and
 preparation context. Reordered equivalent selections can reuse it; changed
-versions, approvals or context require a new run. Custom `Model_Name` values keep
+definitions, approvals or context require a new run. Custom `Model_Name` values keep
 their readable aliases, including underscores. Custom `Model_ID` values use
-`custom-<full version hash>--<local|global>--R1`, avoiding ambiguity with existing
+`custom-<full content hash>--<local|global>--C1`, avoiding ambiguity with existing
 average-component separators. Saved workflows, fits, predictions and averages
-are checked before completion shortcuts; stale versions and foreign components
+are checked before completion shortcuts; stale definitions and foreign components
 raise errors instead of being silently repaired.
 
 The ordinary accuracy and plausibility policy still selects the best eligible
-candidate. With `average_models = TRUE`, a custom-only run may select an average
-of its eligible custom components, but never an unrequested built-in or learned
-ensemble. Enrollment does not guarantee selection. Exact single-rule workflows
-must explicitly disable averaging; `bottoms_up` alone does not do that. R2,
-transformed targets, learned ensembles, Spark and remote standard execution
-remain outside this profile.
+candidate. With `average_models = TRUE`, custom forecasts can be averaged with
+other selected models, and learned ensembles can use custom back-test forecasts.
+Enrollment does not guarantee selection. Exact single-rule workflows must
+explicitly disable averaging; `bottoms_up` alone does not do that. Remote
+`storage_object` execution remains outside this profile.
 
 ### Reviewed Hierarchy Rules
 
@@ -908,8 +904,9 @@ during authoring does not require a competitor and does not enroll a forecast.
 Different winners at different nodes, including custom winners everywhere, are
 valid outcomes of an eligible mixed pool.
 
-This profile is local, univariate, original-scale R1 with no averaging, cleaning,
-transforms, learned ensembles or inner parallelism. Every candidate must cover
+This profile is local and univariate; custom nodes train on original-scale C1,
+while built-ins keep their usual settings. Simple averages and learned ensembles
+are allowed. Every candidate must cover
 every required node and forecast key. Missing coverage cannot be replaced by
 `snaive`, zero-filled or silently omitted. Existing hts mathematics and quality
 selection are reused. Per-series routing, pooled/global hierarchy and Agent
@@ -919,7 +916,7 @@ for explicit controls and the compatibility evidence matrix.
 Initial Agent iteration also accepts approved pools through `set_agent_info()`.
 Only explicit `models_to_run` enrolls candidates. The Agent retains the same
 ranking and average-model accuracy policy, but proposals cannot expand the pool
-or change its original-scale R1 representation. Parent and child identities are
+or change its pinned representation (built-ins on R1, custom models on C1). Parent and child identities are
 checked before same-run reuse and publication. This initial Agent profile is
 limited to local/mounted CSV data and RDS objects, sequential or local-machine
 execution, with no inner parallelism. Compatible custom updates require a new

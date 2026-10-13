@@ -10,7 +10,7 @@ validation_fixture <- function(wrong = FALSE) {
       predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row, .pred=rep(object,nrow(new_data)))"
     ),
     list(
-      predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1,
+      predictors = character(), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1,
       missing_data = "error"
     )
   )
@@ -337,7 +337,7 @@ test_that("typed fixtures preserve fractional future drivers and reject lossy in
     "discount_rule", "Ten times one minus discount.", "Use the supplied fractional discount.",
     "local", c(fit = "function(data, context, parameters) list()", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row, .pred=10*(1-new_data$Discount_Rate))"),
     list(
-      predictors = "Discount_Rate", recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1,
+      predictors = "Discount_Rate", recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1,
       missing_data = "error"
     )
   )
@@ -345,7 +345,6 @@ test_that("typed fixtures preserve fractional future drivers and reject lossy in
   fitted <- generics::fit(workflow, normalized[[1]]$history)
   expect_equal(predict(fitted, normalized[[1]]$new_data)$.pred, 9)
   failure <- custom_author_child(definition, legacy, list(metadata = metadata), contract = list(
-    authoring_protocol = 5L,
     validation_properties = character()
   ))
   expect_false(failure$passed)
@@ -575,8 +574,7 @@ test_that("multiple declared errors fit bounded generated scenarios", {
 test_that("generated numerical mismatches are advisory while caller answers stay mandatory", {
   fixture <- validation_error_contract()
   contract <- fixture$contract
-  contract$authoring_protocol <- 6L
-  contract$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  contract$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   contract$required_properties <- character()
   contract$examples[[1]]$expected$.pred <- contract$examples[[1]]$expected$.pred + 1
   before <- serialize(contract, NULL)
@@ -610,14 +608,13 @@ test_that("generated numerical mismatches are advisory while caller answers stay
 test_that("new property authority distinguishes suggestions from caller requirements", {
   fixture <- validation_error_contract()
   contract <- fixture$contract
-  contract$authoring_protocol <- 6L
-  contract$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  contract$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   contract$validation_properties <- "target_scale_equivariant"
   contract$required_properties <- character()
   definition <- custom_author_definition(contract, fixture$source)
   report <- custom_author_validate(definition, contract$examples, fixture$data, 60, contract = contract)
   expect_true(report$passed)
-  expect_identical(report$verification$schema_version, 2L)
+  expect_false("schema_version" %in% names(report$verification))
   expect_identical(report$verification$properties$target_scale_equivariant, 0L)
   expect_identical(report$verification$diagnostics[[1]]$property, "target_scale_equivariant")
   checks <- custom_author_checks(report, definition, "fixed_contract", contract$examples, contract = contract)
@@ -784,7 +781,7 @@ test_that("six-month fit-window median repairs declarations without changing ans
   expect_equal(requests[[3]]$payload$contract$examples, examples)
   expect_identical(serialize(bad, NULL), original)
   expect_false(grepl("PRIVATE_MEDIAN", jsonlite::toJSON(requests), fixed = TRUE))
-  workflow <- custom_model_workflow(model$definition, recipes::recipe(Target ~ Date + Combo, data = data), "local", "R1",
+  workflow <- custom_model_workflow(model$definition, recipes::recipe(Target ~ Date + Combo, data = data), "local", "C1",
     "month", 3, "original",
     allow_code = TRUE
   )
@@ -932,7 +929,6 @@ test_that("new protocol fits and serialized forecasts reuse only pinned dependen
     "name", "instructions", "interpretation", "model_type", "requirements", "fixed_parameters",
     "packages"
   )]
-  contract$authoring_protocol <- 2L
   contract$package_policy <- list(mode = "installed_finnts", available = c("base", "dplyr"))
   definition <- custom_author_definition(contract, list(
     fit_body = "mean(dplyr::pull(data, 'Target'))", predict_body = "rep(object, nrow(new_data))",
@@ -955,7 +951,7 @@ test_that("new protocol fits and serialized forecasts reuse only pinned dependen
     .package = "finnts"
   )
   training <- fixture$data$data
-  workflow <- custom_model_workflow(definition, recipes::recipe(Target ~ Date + Combo, data = training), "global", "R1",
+  workflow <- custom_model_workflow(definition, recipes::recipe(Target ~ Date + Combo, data = training), "global", "C1",
     "month", 1, "original",
     allow_code = TRUE
   )
@@ -1055,7 +1051,7 @@ test_that("automatic percentage growth records its default and reuses pinned for
       requests[[length(requests) + 1L]] <<- list(stage = stage, payload = payload)
       if (stage == "source")
         return(fixture$source)
-      expect_identical(payload$automatic_policy$catalog_version, 2L)
+      expect_false("catalog_version" %in% names(payload$automatic_policy))
       expect_match(payload$automatic_policy$catalog$growth_basis, "percentage", fixed = TRUE)
       c(fixture$proposal, list(defaults_used = c("growth_basis", "averaging_weights")))
     }, .package = "finnts"
@@ -1079,7 +1075,7 @@ test_that("automatic percentage growth records its default and reuses pinned for
   expect_false(model$approval$intent_confirmed)
   expect_true(any(grepl("growth_basis", output, fixed = TRUE)))
   evidence <- jsonlite::fromJSON(model$validation$checks$automatic_defaults, simplifyVector = FALSE)
-  expect_equal(evidence$catalog_version, 2)
+  expect_identical(sort(names(evidence)), c("defaults_used", "effective"))
   expect_identical(evidence$defaults_used$growth_basis, custom_author_defaults()$growth_basis)
   expect_false(grepl("PRIVATE_PERCENTAGE_SERIES", jsonlite::toJSON(requests), fixed = TRUE))
   pointer <- file.path(list.dirs(root, recursive = FALSE), "current.rds")
@@ -1093,13 +1089,13 @@ test_that("automatic percentage growth records its default and reuses pinned for
     automatic_defaults = defaults, contract = state$contract
   )
   expect_identical(checks$automatic_defaults, as.character(jsonlite::toJSON(defaults, auto_unbox = TRUE, null = "null")))
-  for (version in list(1L, 0L, 3L, "2", c(2L, 2L))) {
+  for (extra in list(1L, "2", c(2L, 2L))) {
     defaults <- contract$automatic_defaults
-    defaults$catalog_version <- version
+    defaults$catalog_version <- extra
     expect_error(custom_author_checks(state$report, state$definition, state$contract_id, state$contract$examples,
       approval_mode = "automatic",
       automatic_defaults = defaults, contract = state$contract
-    ), "catalog|fields", class = "finnts_custom_model_authoring_error")
+    ), "fields", class = "finnts_custom_model_authoring_error")
   }
   defaults <- contract$automatic_defaults
   defaults$catalog_version <- NA_integer_
@@ -1114,7 +1110,7 @@ test_that("automatic percentage growth records its default and reuses pinned for
   )
   training <- fixture$data$data
   workflow <- custom_model_workflow(model$definition, recipes::recipe(Target ~ Date + Combo, data = training), "local",
-    "R1", "month", 3, "original",
+    "C1", "month", 3, "original",
     allow_code = TRUE
   )
   fitted <- generics::fit(workflow, data = training)
@@ -1215,7 +1211,7 @@ validation_seasonal_failure_fixture <- function(correct = FALSE) {
   )
   definition <- new_custom_model_definition("seasonal_lookup", "Use the prior yearly seasonal value.", "Use the same calendar month one year earlier; lag is measured in months.",
     "local", source, list(
-      predictors = character(), recipes = "R1", target_scale = "original", date_types = "month",
+      predictors = character(), recipes = "C1", target_scale = "original", date_types = "month",
       forecast_horizon = 3, missing_data = "error"
     ),
     fixed_parameters = list(lag = 12)
@@ -1412,7 +1408,7 @@ test_that("ordinary R business rule matrix passes real numerical and holdout val
     edge$edge_case <- TRUE
     definition <- new_custom_model_definition(name, "Use the specified fixed business rule.", "Keep the explicit calculation and parameters unchanged.",
       "local", c(fit = rule$fit, predict = rule$predict), list(
-        predictors = rule$predictors %||% character(), recipes = "R1",
+        predictors = rule$predictors %||% character(), recipes = "C1",
         target_scale = "original", date_types = "month", forecast_horizon = 3, missing_data = "error"
       ),
       fixed_parameters = rule$parameters %||%
@@ -1547,10 +1543,10 @@ test_that("prepared driver preflight covers unsampled series and reuses exact re
   )), 4), Driver = seq_len(60))
   info <- set_run_info(project_name = "prepared-driver-preflight", path = withr::local_tempdir(), add_unique_id = FALSE)
   prep_data(info, raw, "id", "value", "month", 3,
-    external_regressors = "Driver", hist_end_date = dates[[12]], recipes_to_run = "R1",
+    external_regressors = "Driver", hist_end_date = dates[[12]], recipes_to_run = "C1",
     stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE, multistep_horizon = FALSE
   )
-  paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-R1")))
+  paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-C1")))
   expect_length(paths, 4L)
   read <- read_exact_artifact
   reads <- character()
@@ -1602,7 +1598,7 @@ test_that("raw authoring retains declared raw drivers without exposing future ro
   expect_false(grepl("private-a|private-b", jsonlite::toJSON(sampled$metadata)))
   info <- set_run_info(project_name = "authoring-drivers", path = withr::local_tempdir(), add_unique_id = FALSE)
   prep_data(info, raw, "id", "value", "month", 3,
-    external_regressors = predictors, hist_end_date = cutoff, recipes_to_run = "R1",
+    external_regressors = predictors, hist_end_date = cutoff, recipes_to_run = "C1",
     stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE, multistep_horizon = FALSE
   )
   prepared <- custom_author_data(NULL, info, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
@@ -1670,7 +1666,7 @@ test_that("raw driver models can be authored before a forecast run exists", {
   )
   expect_s3_class(model, "finnts_custom_model")
   expect_true(model$validation$technical_passed)
-  expect_identical(requests[[1]]$payload$protocol$version, 6L)
+  expect_identical(names(requests[[1]]$payload$protocol), c("package_policy", "predictors", "scaffold", "missing_data", "predictor_types"))
   expect_identical(model$definition$requirements$predictors, "Units")
   expect_match(model$validation$checks$driver_conditioning, "conditional on supplied driver values", fixed = TRUE)
   expect_match(model$validation$checks$authoring_cutoff, "2022-12-01 (inferred)", fixed = TRUE)
@@ -1696,7 +1692,7 @@ test_that("raw driver models can be authored before a forecast run exists", {
     request <- data.frame(Date = seq(max(training$Date), by = "month", length.out = 4)[-1], Combo = "later-series", Units = months +
       1:3)
     workflow <- custom_model_workflow(model$definition, recipes::recipe(Target ~ Date + Combo + Units, data = training),
-      "local", "R1", "month", 3, "original",
+      "local", "C1", "month", 3, "original",
       allow_code = TRUE
     )
     fitted <- generics::fit(workflow, training)
@@ -1717,7 +1713,7 @@ test_that("raw and prepared authoring data preserve inputs and existing artifact
   expect_false(grepl("private-id", jsonlite::toJSON(sampled$metadata), fixed = TRUE))
   info <- set_run_info(project_name = "authoring-data", path = withr::local_tempdir(), add_unique_id = FALSE)
   prep_data(info, raw, "id", "value", "month", 1,
-    recipes_to_run = "R1", stationary = FALSE, clean_missing_values = FALSE,
+    recipes_to_run = "C1", stationary = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE
   )
   files <- list.files(info$path, recursive = TRUE, full.names = TRUE)
@@ -1758,7 +1754,8 @@ test_that("raw and prepared authoring data preserve inputs and existing artifact
     control = custom_model_control(draft_path = withr::local_tempdir())
   )
   expect_setequal(names(request$metadata$schema), c("Date", "Combo", "Target"))
-  expect_true("Date_index.num" %in% names(known$metadata$schema))
+  expect_true(all(c("Date", "Combo", "Target") %in% names(known$metadata$schema)))
+  expect_false("Date_index.num" %in% names(known$metadata$schema))
   expect_identical(draft$metadata$schema, known$metadata$schema)
   expect_identical(draft$pending$stage, "clarify")
   expect_identical(tools::md5sum(files), hashes)

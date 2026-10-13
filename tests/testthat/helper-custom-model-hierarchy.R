@@ -2,7 +2,7 @@
 # NULL approach grants no hierarchy permission; construction never executes source.
 hierarchy_definition_args <- function(approach = "standard_hierarchy") {
   requirements <- list(
-    predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1:3,
+    predictors = character(), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1:3,
     missing_data = "error"
   )
   if (!is.null(approach))
@@ -28,7 +28,7 @@ hierarchy_model <- function(approach = "standard_hierarchy", executable = FALSE)
       predict = "function(object, new_data, context) { stopifnot(!'Target' %in% names(new_data)); data.frame(.finnts_row = new_data$.finnts_row, .pred = rep(object$value, nrow(new_data))) }"
     )
   definition <- do.call(new_custom_model_definition, args)
-  structure(list(schema_version = 1L, definition = definition, validation = list(
+  structure(list(definition = definition, validation = list(
     version_id = definition$version_id, technical_passed = TRUE,
     checks = list(arithmetic = "Synthetic passive fixture")
   ), approval = list(
@@ -58,9 +58,9 @@ hierarchy_forecast_args <- function(path, approach = "standard_hierarchy") {
   list(
     run_info = info, input_data = hierarchy_input(approach), combo_variables = c("Region", "Product"), target_variable = "value",
     date_type = "month", forecast_horizon = 2, forecast_approach = approach, models_to_run = c("node_rule", "meanf"),
-    custom_models = list(node_rule = hierarchy_model(approach, TRUE)), recipes_to_run = "R1", stationary = FALSE, clean_missing_values = FALSE,
+    custom_models = list(node_rule = hierarchy_model(approach, TRUE)), recipes_to_run = c("R1", "C1"), stationary = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, run_global_models = FALSE, run_local_models = TRUE, run_ensemble_models = FALSE, negative_forecast = TRUE,
-    average_models = FALSE, weekly_to_daily = FALSE, back_test_scenarios = 1, num_cores = 1, return_data = FALSE
+    average_models = identical(approach, "standard_hierarchy"), weekly_to_daily = FALSE, back_test_scenarios = 1, num_cores = 1, return_data = FALSE
   )
 }
 
@@ -73,7 +73,7 @@ hierarchy_expect_forecast <- function(approach) {
   result <- get_forecast_data(info)
   version <- args$custom_models$node_rule$definition$version_id
   expect_true("node_rule" %in% result$Model_Name, info = approach)
-  expect_true(paste0("custom-", version, "--local--R1") %in% result$Model_ID)
+  expect_true(paste0("custom-", version, "--local--C1") %in% result$Model_ID)
   expect_true(all(is.finite(result$Forecast)))
   expect_equal(length(unique(result$Combo[result$Best_Model == "Yes"])), 4L)
   metadata <- read_exact_artifact(info, local_artifact_path(info, "prep_data", "-hts_info", extension = "rds"), return_type = "object")
@@ -85,7 +85,16 @@ hierarchy_expect_forecast <- function(approach) {
   expect_setequal(unique(base$Combo[base$Model_Name == "node_rule"]), metadata$hts_combos)
   files <- list.files(file.path(info$path, "forecasts"), full.names = TRUE)
   before <- tools::md5sum(files)
-  expect_error(final_models(info, average_models = TRUE), "average_models = FALSE")
+  if (args$average_models) {
+    averages <- read_exact_artifact(info, local_artifact_path(info, "forecasts", "-average_models", vapply(
+      metadata$hts_combos,
+      hash_data, character(1)
+    )))
+    custom_id <- paste0("custom-", version, "--local--C1")
+    expect_true(any(vapply(strsplit(unique(averages$Model_ID), "_", fixed = TRUE), function(x) custom_id %in% x, logical(1))))
+    expect_true(all(is.finite(averages$Forecast)))
+  }
+  expect_error(final_models(info, average_models = !args$average_models), "Inputs have recently changed")
   expect_identical(tools::md5sum(files), before)
   local({
     local_mocked_bindings(custom_model_functions = function(...) stop("Unexpected source execution on restart"), .package = "finnts")

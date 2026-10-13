@@ -184,7 +184,6 @@ test_that("reference JSON preserves typed arrays, policies and retry payloads", 
         list(metadata = metadata), "local", names(metadata$schema), "bottoms_up",
         "actual_name", NULL, 3L, 60
       )
-      policy$catalog_version <- as.integer(catalog)
       policy$catalog <- custom_author_defaults()
       payload <- list(
         name = "actual_name", model_type = "local", metadata = metadata, protocol = protocol, approval_mode = "automatic",
@@ -209,7 +208,6 @@ test_that("reference JSON preserves typed arrays, policies and retry payloads", 
         expect_length(references, 2L)
         expect_false(grepl("PRIVATE_", sections[[1]], fixed = TRUE))
         expect_identical(serialize(payload, NULL), original)
-        expect_identical(references[[1]]$request$automatic_policy$catalog_version, as.integer(catalog))
         expect_equal(references[[1]]$request$automatic_policy$effective$forecast_horizon, 2)
         if (stage == "contract") {
           expect_setequal(names(references[[1]]$response), custom_author_contract_fields(
@@ -267,7 +265,7 @@ test_that("missing-variable source guidance retains the actual bounded evidence"
 test_that("authoring has one current protocol and a shared package boundary", {
   metadata <- list(date_type = "month", forecast_horizon = 1, available_packages = "base", schema = list())
   protocol <- custom_author_protocol(metadata, "local", character(), "base_only", TRUE)
-  expect_named(protocol, c("version", "package_policy", "predictors", "scaffold", "missing_data", "predictor_types"))
+  expect_named(protocol, c("package_policy", "predictors", "scaffold", "missing_data", "predictor_types"))
   expect_identical(validate_custom_author_protocol(protocol, metadata, "local", TRUE), protocol)
   expect_identical(custom_author_protocol(metadata, "global", character(), "base_only", TRUE), protocol)
   for (field in c("date_helpers", "global_support", "example_comparison")) {
@@ -275,11 +273,9 @@ test_that("authoring has one current protocol and a shared package boundary", {
     old[[field]] <- "obsolete"
     expect_error(validate_custom_author_protocol(old, metadata, "local", TRUE), "Unexpected or missing")
   }
-  for (version in 1:5) {
-    old <- protocol
-    old$version <- version
-    expect_error(validate_custom_author_protocol(old, metadata, "local", TRUE), "recreate")
-  }
+  old <- protocol
+  old$version <- 6L
+  expect_error(validate_custom_author_protocol(old, metadata, "local", TRUE), "Unexpected or missing")
   expect_error(custom_author_protocol(metadata, "local", character(), "base_only", TRUE, version = 5L), "unused argument")
   metadata$available_packages <- c("base", "stats", "not_a_finnts_dependency")
   expect_identical(custom_author_package_policy(metadata, "installed_finnts")$available, c("base", "stats"))
@@ -351,7 +347,7 @@ test_that("protocol-state binding checks are passive and conservative", {
 test_that("protocol-four contracts require history coverage before binding-checked source", {
   metadata <- list(date_type = "month", forecast_horizon = 3)
   protocol <- custom_author_protocol(metadata, "local", character(), "base_only", FALSE)
-  expect_identical(protocol$version, 6L)
+  expect_false("version" %in% names(protocol))
   values <- lapply(protocol$scaffold$scenarios, function(scenario) list(
     id = scenario$id, rationale = "A constant series has zero annual change.",
     series = list(list(combo = "example_a", history = list(Target = rep(100, 7)), future = list(), expected = rep(
@@ -402,7 +398,7 @@ test_that("contract JSON errors identify the field without leaking parser text",
 test_that("new contracts accept typed examples and own missing data policy", {
   metadata <- list(date_type = "month", forecast_horizon = 3)
   protocol <- custom_author_protocol(metadata, "local", character(), "base_only", FALSE)
-  expect_identical(protocol$version, 6L)
+  expect_false("version" %in% names(protocol))
   expect_identical(protocol$missing_data, "error")
   values <- lapply(protocol$scaffold$scenarios, function(scenario) list(
     id = scenario$id, rationale = "The mean of two and four is three.",
@@ -471,8 +467,7 @@ test_that("complete provider functions normalize to the same canonical body sour
     fit_body = "function(data, context, parameters) { mean(data$Target) }", predict_body = "function(object, new_data, context) { return(rep(object, nrow(new_data))) }",
     helpers = list(), status = "candidate", conflict = ""
   )
-  for (protocol in 6L) {
-    contract$authoring_protocol <- as.integer(protocol)
+  local({
     body_model <- custom_author_definition(contract, bodies)
     full_model <- custom_author_definition(contract, complete)
     expect_identical(full_model$source, body_model$source)
@@ -481,7 +476,7 @@ test_that("complete provider functions normalize to the same canonical body sour
     fitted <- functions$fit(data.frame(Target = c(2, 4)), list(), list())
     expect_identical(fitted, 3)
     expect_identical(functions$finntsPredictBody(3, data.frame(.finnts_row = c(9L, 2L)), list()), c(3, 3))
-  }
+  })
 })
 
 test_that("complete-function normalization rejects ambiguous entrypoints without execution", {
@@ -536,8 +531,7 @@ test_that("canonical saved source is never normalized on replay", {
     source, contract$requirements, contract$fixed_parameters, contract$packages
   )
   local_mocked_bindings(custom_model_package_available = function(...) stop("Unexpected package load"), .package = "finnts")
-  for (protocol in 6L) {
-    contract$authoring_protocol <- as.integer(protocol)
+  local({
     replayed <- custom_author_definition(contract, historical, assembled = TRUE)
     expect_identical(replayed$source, definition$source)
     expect_identical(replayed$version_id, definition$version_id)
@@ -545,7 +539,7 @@ test_that("canonical saved source is never normalized on replay", {
     expect_identical(corrected$version_id, replayed$version_id)
     normalized <- custom_author_assemble(complete[c("fit_body", "predict_body", "helpers")])
     expect_identical(custom_author_assemble(normalized, assembled = TRUE), normalized)
-  }
+  })
   tampered <- historical
   tampered$source[[2L]]$code <- "function(object, new_data, context) rep(1, nrow(new_data))"
   expect_error(custom_author_definition(contract, tampered, assembled = TRUE), "wrapper")
@@ -559,7 +553,6 @@ test_that("body-only source has fixed signatures and protected row identities", 
       character(), "base_only", TRUE
     )
   )
-  contract$authoring_protocol <- 2L
   contract$package_policy <- list(mode = "base_only", available = "base")
   proposal <- list(
     fit_body = "mean(data$Target)", predict_body = "return(rep(object, nrow(new_data)))", helpers = list(),
@@ -970,7 +963,7 @@ test_that("automatic defaults are closed and cannot override explicit capabiliti
     list(metadata = metadata), "global", NULL, "bottoms_up", "fixed_name", author_examples(),
     2, 45
   )
-  expect_identical(policy$catalog_version, 2L)
+  expect_false("catalog_version" %in% names(policy))
   expect_true("growth_basis" %in% names(policy$catalog))
   if ("growth_basis" %in% names(policy$catalog)) {
     expect_match(policy$catalog$growth_basis, "percentage", fixed = TRUE)
@@ -1067,14 +1060,14 @@ test_that("deferred hierarchy authoring reviews all derived nodes without foreca
     "saved inputs"
   )
   source <- draft
-  expect_identical(source$definition$schema_version, 3L)
+  expect_false("schema_version" %in% names(source$definition))
   expect_identical(source$pending$stage, "review_create")
   info <- set_run_info(
     project_name = "prepared-authoring-hierarchy", path = withr::local_tempdir(), data_output = "csv",
     object_output = "rds", add_unique_id = FALSE
   )
   prep_data(info, raw, c("Region", "Product"), "value", "month", 1,
-    forecast_approach = "standard_hierarchy", recipes_to_run = "R1",
+    forecast_approach = "standard_hierarchy", recipes_to_run = "C1",
     stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE, multistep_horizon = FALSE
   )
   files <- list.files(info$path, recursive = TRUE, full.names = TRUE)
@@ -1093,7 +1086,7 @@ test_that("deferred hierarchy authoring reviews all derived nodes without foreca
   expect_true(any(grepl("-hts_data[.]csv$", names(prepared$context$sources))))
   expect_identical(tools::md5sum(files), before)
   log <- read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
-  expect_error(custom_run_hierarchy_context(info, custom_run_context(info, log, FALSE, allow_hierarchy = TRUE), log,
+  expect_error(custom_run_hierarchy_context(info, custom_run_context(info, log, allow_hierarchy = TRUE), log,
     return_data = TRUE,
     max_rows = 1
   ), "row limit")
@@ -1117,7 +1110,7 @@ test_that("confirmed contracts and source reject unexpected or altered fields", 
   expect_identical(definition$name, "human_mean")
   expect_identical(definition$fixed_parameters, list())
   expect_equal(contract$examples[[1]]$expected$.pred, 15)
-  expect_true(custom_run_envelope(structure(list(schema_version = 1L, definition = definition, validation = list(
+  expect_true(custom_run_envelope(structure(list(definition = definition, validation = list(
     version_id = definition$version_id,
     technical_passed = TRUE, checks = list(test = "synthetic")
   ), approval = list(
@@ -1164,7 +1157,6 @@ test_that("hierarchy evidence must cover every captured node", {
       rows = 1L, training_rows = 2L, cutoff = "2020-02-01", mae = 1, wmape = 0.01
     )), serialization = TRUE, r_version = as.character(getRversion()),
     package_version = "synthetic", elapsed = 1, verification = list(
-      schema_version = 2L,
       provenance = contract$expectation_provenance, properties = list(row_order = 2L), expected_errors = 0L,
       required_properties = character(), diagnostics = list()
     )
@@ -1216,7 +1208,7 @@ test_that("same-session authoring and deferred approval feed a staged standard f
   expect_identical(validations, 1L)
   info <- set_run_info(project_name = "same-session-authoring", path = withr::local_tempdir(), add_unique_id = FALSE)
   prep_data(info, raw, "id", "value", "month", 1,
-    recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
+    recipes_to_run = c("R1", "C1"), stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, multistep_horizon = FALSE
   )
   draft <- create_custom_model("Use each series' historical mean.", chat,
@@ -1274,7 +1266,7 @@ test_that("installed hierarchy authoring resumes real validation and produces a 
   )
   prep_data(prepared_info, raw, c("Region", "Product"), "value", "month", 1,
     forecast_approach = "standard_hierarchy",
-    recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE,
+    recipes_to_run = "C1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE,
     multistep_horizon = FALSE
   )
   files <- list.files(prepared_info$path, recursive = TRUE, full.names = TRUE)
@@ -1332,7 +1324,7 @@ test_that("installed hierarchy authoring resumes real validation and produces a 
   arguments <- list(
     run_info = info, input_data = raw, combo_variables = c("Region", "Product"), target_variable = "value",
     date_type = "month", forecast_horizon = 1, forecast_approach = "standard_hierarchy", custom_models = list(human_mean = model),
-    models_to_run = c("human_mean", "meanf"), recipes_to_run = "R1", stationary = FALSE, clean_missing_values = FALSE,
+    models_to_run = c("human_mean", "meanf"), recipes_to_run = c("R1", "C1"), stationary = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, run_global_models = FALSE, run_ensemble_models = FALSE, negative_forecast = TRUE, average_models = FALSE,
     weekly_to_daily = FALSE, back_test_scenarios = 1, return_data = FALSE
   )
@@ -1381,7 +1373,7 @@ author_harness <- function(replies = list(author_proposal(), author_source()), .
           rows = 1L, training_rows = 2L, cutoff = "2020-02-01", mae = 1, wmape = 0.01
         )), serialization = TRUE, r_version = as.character(getRversion()),
         package_version = "synthetic", elapsed = 1, verification = list(
-          schema_version = 2L, provenance = contract$expectation_provenance,
+          provenance = contract$expectation_provenance,
           properties = list(row_order = as.integer(length(examples))), expected_errors = 0L, required_properties = character(),
           diagnostics = list()
         )
@@ -1862,7 +1854,7 @@ test_that("generated automatic examples use fixed tolerance before source genera
   expect_true(contract$examples[[2]]$edge_case)
   expect_identical(tracker$validations, 1L)
   evidence <- jsonlite::fromJSON(model$validation$checks$automatic_defaults, simplifyVector = FALSE)
-  expect_equal(evidence$catalog_version, 2)
+  expect_null(evidence$catalog_version)
   expect_identical(evidence$effective$model_type, "local")
   expect_identical(evidence$defaults_used$worked_examples, custom_author_defaults()$worked_examples)
   expect_false(grepl("PRIVATE_AUTHOR_SERIES|100", model$validation$checks$contract))
@@ -1969,7 +1961,7 @@ test_that("only explicit candidate approval can produce an enrolled envelope", {
   expect_identical(tracker$validations, 1L)
   expect_identical(result$definition$version_id, result$approval$version_id)
   expect_identical(result, unserialize(serialize(result, NULL)))
-  expect_identical(names(result), c("schema_version", "definition", "validation", "approval"))
+  expect_identical(names(result), c("definition", "validation", "approval"))
 })
 
 test_that("declined and stale replies never validate or approve source", {
@@ -2191,7 +2183,6 @@ test_that("structured authoring disables inherited tools before offline transpor
   expect_false(grepl("Ask questions for every unresolved assumption", automatic, fixed = TRUE))
   expect_null(request$body$data$tools)
   legacy_policy <- automatic_policy
-  legacy_policy$catalog_version <- 1L
   legacy_policy$catalog$growth_basis <- NULL
   protocol <- custom_author_protocol(list(date_type = "month", forecast_horizon = 1), "local", character(), "base_only", TRUE)
   expect_error(custom_author_request(session, "contract", list(
@@ -2206,10 +2197,7 @@ test_that("structured authoring disables inherited tools before offline transpor
   expect_true(grepl("Explicit absolute differences, percentage-point changes, CAGR", prompt, fixed = TRUE))
   expect_true(grepl("omit it for explicit growth bases and non-growth rules", prompt, fixed = TRUE))
   expect_true(grepl("Other unresolved or contradictory essential business choices still require questions", prompt, fixed = TRUE))
-  for (invalid in list(NULL, list(catalog_version = 3L, catalog = automatic_policy$catalog), list(
-    catalog_version = 1L,
-    catalog = automatic_policy$catalog
-  ), list(catalog_version = 2L, catalog = legacy_policy$catalog))) {
+  for (invalid in list(NULL, list(catalog = legacy_policy$catalog), list(catalog = custom_author_defaults()[-1L]))) {
     request <- NULL
     expect_error(custom_author_request(session, "contract", list(approval_mode = "automatic", automatic_policy = invalid)),
       "catalog|policy",
@@ -2330,7 +2318,7 @@ test_that("installed authoring returns a reusable model without exposing private
   info <- set_run_info(path = withr::local_tempdir(), project_name = "authored-run", add_unique_id = FALSE)
   forecast_time_series(info, raw, "id", "value", "month", 1,
     custom_models = list(human_mean = model), models_to_run = "human_mean",
-    stationary = FALSE, clean_missing_values = FALSE, recipes_to_run = "R1", run_ensemble_models = FALSE, run_global_models = FALSE,
+    stationary = FALSE, clean_missing_values = FALSE, recipes_to_run = "C1", run_ensemble_models = FALSE, run_global_models = FALSE,
     negative_forecast = TRUE, average_models = FALSE, back_test_scenarios = 1, return_data = FALSE
   )
   result <- get_forecast_data(info)
@@ -2421,7 +2409,6 @@ test_that("measured comparisons must cover the exact confirmed examples", {
       rows = 1L, training_rows = 2L, cutoff = "2020-02-01", mae = 1, wmape = 0.01
     )), serialization = TRUE, r_version = "test",
     package_version = "test", elapsed = 1, verification = list(
-      schema_version = 2L,
       provenance = contract$expectation_provenance, properties = list(row_order = 2L), expected_errors = 0L,
       required_properties = character(), diagnostics = list()
     )

@@ -16,7 +16,8 @@ test_that("PSOCK workers read independent exact recipe paths without enumeration
   definitions <- NULL
   if (!file.exists(file.path(package_path, "Meta", "package.rds"))) {
     symbols <- c("get_recipe_data", "read_local_artifacts", "local_artifact_files",
-      "local_artifact_path", "read_file", "hash_data", "get_recipes_to_run")
+      "local_artifact_path", "read_file", "hash_data", "get_recipes_to_run",
+      "expand_recipes_to_run", "logged_recipe_ids")
     definitions <- setNames(lapply(symbols, function(symbol) {
       definition <- getFromNamespace(symbol, "finnts")
       environment(definition) <- baseenv()

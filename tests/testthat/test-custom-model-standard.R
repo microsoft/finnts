@@ -12,11 +12,11 @@ standard_custom_model <- function(name = "business_mean", modes = c("local", "gl
       ".finnts_row = new_data$.finnts_row, .pred = rep(object, nrow(new_data))) }"
     )), requirements = list(
       predictors = character(),
-      recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1:3, missing_data = "error"
+      recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1:3, missing_data = "error"
     ),
     fixed_parameters = list(offset = offset)
   )
-  structure(list(schema_version = 1L, definition = definition, validation = list(
+  structure(list(definition = definition, validation = list(
     version_id = definition$version_id, technical_passed = TRUE,
     checks = list(arithmetic = "Synthetic fixture checked independently")
   ), approval = list(
@@ -35,7 +35,7 @@ standard_template <- set_run_info(
 )
 prep_data(standard_template, standard_input,
   combo_variables = "id", target_variable = "value",
-  date_type = "month", forecast_horizon = 2, recipes_to_run = "R1", stationary = FALSE,
+  date_type = "month", forecast_horizon = 2, recipes_to_run = c("R1", "C1"), stationary = FALSE,
   box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE
 )
 
@@ -88,9 +88,13 @@ test_that("approval and supported preparation settings fail before enrollment", 
   for (field in c("stationary", "box_cox", "clean_missing_values", "clean_outliers", "multistep_horizon")) {
     changed <- log
     changed[[field]] <- TRUE
-    expect_error(finnts:::custom_run_context(info, changed, FALSE), field)
+    expect_identical(finnts:::custom_run_context(info, changed)$recipe_id, "C1")
   }
-  expect_error(finnts:::custom_run_context(info, log, TRUE), "run_ensemble_models")
+  changed <- log
+  changed$recipes_to_run <- "R1"
+  expect_error(finnts:::custom_run_context(info, changed), "need C1")
+  changed$recipes_to_run <- "R1---C1"
+  expect_identical(finnts:::custom_run_context(info, changed)$recipe_id, "C1")
 })
 
 test_that("automatic envelopes are strict and keep source and model identity unchanged", {
@@ -150,7 +154,7 @@ test_that("automatic forecasts round-trip authorization without authoring or fal
   forecast <- get_forecast_data(info)
   expect_identical(unique(forecast$Model_Name), "business_mean")
   expect_equal(forecast$Forecast, ifelse(forecast$Combo == "A", 100, 200))
-  expect_identical(unique(forecast$Model_ID), paste0("custom-", model$definition$version_id, "--local--R1"))
+  expect_identical(unique(forecast$Model_ID), paste0("custom-", model$definition$version_id, "--local--C1"))
   expect_identical(custom_run_read(info, TRUE)$manifest$evidence$business_mean$approval, model$approval)
 })
 
@@ -170,14 +174,14 @@ test_that("local and global custom training retain arithmetic and version identi
   custom <- local[local$Model_Name == "business_mean", ]
   expect_setequal(custom$Combo, c("A", "B"))
   expect_equal(custom$Forecast, ifelse(custom$Combo == "A", 100, 200))
-  expect_identical(unique(custom$Model_ID), paste0("custom-", model$definition$version_id, "--local--R1"))
+  expect_identical(unique(custom$Model_ID), paste0("custom-", model$definition$version_id, "--local--C1"))
   expect_true("meanf" %in% local$Model_Name)
   global <- finnts:::read_exact_artifact(info, finnts:::local_artifact_path(info, "forecasts", "-global_models", combo = vapply(c(
     "A",
     "B"
   ), finnts:::hash_data, character(1)), extension = "csv"))
   expect_equal(global$Forecast, rep(150, nrow(global)))
-  expect_identical(unique(global$Model_ID), paste0("custom-", model$definition$version_id, "--global--R1"))
+  expect_identical(unique(global$Model_ID), paste0("custom-", model$definition$version_id, "--global--C1"))
   final_models(info, average_models = FALSE)
   forecast <- get_forecast_data(info)
   expect_true(any(forecast$Best_Model == "Yes"))
@@ -197,7 +201,7 @@ test_that("local and global custom training retain arithmetic and version identi
   ), "changed|new run")
   expect_error(prep_models(info, models_to_run = "meanf", run_ensemble_models = FALSE), "same approved")
   stale <- finnts:::read_exact_artifact(info, paths[[1]])
-  stale$Model_ID[stale$Model_Name == "business_mean"] <- paste0("custom-", changed$definition$version_id, "--local--R1")
+  stale$Model_ID[stale$Model_Name == "business_mean"] <- paste0("custom-", changed$definition$version_id, "--local--C1")
   finnts:::write_data(stale, "A", info, "data", "forecasts", "-single_models")
   expect_error(train_models(info, run_global_models = TRUE, negative_forecast = TRUE), "identity|pool")
   expect_error(final_models(info, average_models = FALSE), "identity|pool")
@@ -211,7 +215,7 @@ test_that("local and global custom training retain arithmetic and version identi
   expect_error(finnts:::custom_run_membership(fitted, pinned, candidates), "context|identity")
 })
 
-test_that("high-level custom-only forecasts preserve aliases and reject implicit transforms", {
+test_that("high-level custom-only forecasts preserve aliases and leave C1 untransformed", {
   model <- standard_custom_model(modes = "local")
   info <- set_run_info(
     project_name = "custom-wrapper", run_name = "test", path = withr::local_tempdir(), data_output = "csv",
@@ -219,15 +223,15 @@ test_that("high-level custom-only forecasts preserve aliases and reject implicit
   )
   args <- list(
     run_info = info, input_data = standard_input, combo_variables = "id", target_variable = "value", date_type = "month",
-    forecast_horizon = 2, models_to_run = "business_mean", custom_models = list(business_mean = model), recipes_to_run = "R1",
+    forecast_horizon = 2, models_to_run = "business_mean", custom_models = list(business_mean = model), recipes_to_run = "C1",
     stationary = FALSE, clean_missing_values = FALSE, run_ensemble_models = FALSE, negative_forecast = TRUE, run_global_models = FALSE,
     back_test_scenarios = 1, average_models = FALSE, return_data = FALSE
   )
-  invalid <- args
-  invalid$stationary <- TRUE
-  expect_error(do.call(forecast_time_series, invalid), "stationary")
-  expect_length(list.files(fs::path(info$path, "prep_data")), 0L)
+  args$stationary <- TRUE
   do.call(forecast_time_series, args)
+  prepared <- setdiff(list.files(fs::path(info$path, "prep_data")), grep("orig_combo_info", list.files(fs::path(info$path, "prep_data")), value = TRUE))
+  expect_gt(length(prepared), 0L)
+  expect_true(all(grepl("-C1\\.csv$", prepared)))
   result <- get_forecast_data(info)
   expect_identical(unique(result$Model_Name), "business_mean")
   expect_true(all(result$Best_Model == "Yes"))
@@ -251,7 +255,7 @@ test_that("custom-only averages retain exact components and reject foreign saved
   expect_gt(nrow(average), 0L)
   expect_true(all(average$Best_Model == "Yes"))
   expect_equal(average$Forecast, ifelse(average$Combo == "A", 100, 200))
-  expect_setequal(result$Model_Name[result$Recipe_ID == "R1"], names(models))
+  expect_setequal(result$Model_Name[result$Recipe_ID == "C1"], names(models))
   before <- result
   final_models(info)
   expect_equal(get_forecast_data(info), before)
@@ -300,25 +304,18 @@ test_that("malformed manifests and unsupported controls fail without execution",
     back_test_scenarios = 1, num_hyperparameters = 1
   )
   custom <- finnts:::custom_run_read(info, TRUE)
-  for (change in list(list(feature_selection = TRUE), list(negative_forecast = NA), list(inner_parallel = TRUE), list(parallel_processing = "spark"))) {
-    args <- modifyList(list(
-      custom = custom, local = TRUE, global = TRUE, recipes = "R1", feature_selection = FALSE,
-      negative_forecast = TRUE, parallel_processing = NULL, inner_parallel = FALSE
-    ), change)
-    expect_error(do.call(finnts:::custom_run_training_controls, args), "Custom runs require")
-  }
-  expect_no_error(finnts:::custom_run_training_controls(
-    custom, TRUE, TRUE, "R1", FALSE, FALSE, NULL, FALSE
-  ))
+  expect_error(finnts:::custom_run_training_controls(custom, TRUE, TRUE, NA), "logical negative_forecast")
+  expect_no_error(finnts:::custom_run_training_controls(custom, TRUE, TRUE, FALSE))
+  expect_error(finnts:::custom_run_training_controls(custom, FALSE, FALSE, TRUE), "no compatible enabled mode")
   for (change in list(list(forecast_approach = "standard_hierarchy"), list(recipes_to_run = "R2"))) {
-    expect_error(finnts:::custom_run_context(info, modifyList(custom$manifest$context, change), FALSE), names(change))
+    expect_error(finnts:::custom_run_context(info, modifyList(custom$manifest$context, change)), names(change))
   }
   invalid <- info
   invalid$object_output <- "qs2"
-  expect_error(finnts:::custom_run_context(invalid, custom$manifest$context, FALSE), "RDS")
+  expect_error(finnts:::custom_run_context(invalid, custom$manifest$context), "RDS")
   invalid$object_output <- "rds"
   invalid$storage_object <- structure(list(), class = "blob_container")
-  expect_error(finnts:::custom_run_context(invalid, custom$manifest$context, FALSE), "local/mounted")
+  expect_error(finnts:::custom_run_context(invalid, custom$manifest$context), "local/mounted")
   original <- finnts:::custom_model_package_available
   testthat::local_mocked_bindings(custom_model_package_available = function(package) {
     if (package == "stats")
@@ -326,7 +323,7 @@ test_that("malformed manifests and unsupported controls fail without execution",
     else original(package)
   }, .package = "finnts")
   custom$pool$custom[[1]]$packages <- "stats"
-  expect_error(finnts:::custom_run_training_controls(custom, TRUE, TRUE, "R1", FALSE, TRUE, NULL, FALSE), "unavailable package")
+  expect_error(finnts:::custom_run_training_controls(custom, TRUE, TRUE, TRUE), "unavailable package")
   missing <- info
   missing$path <- withr::local_tempdir()
   fs::dir_copy(fs::path(info$path, "logs"), fs::path(missing$path, "logs"))
@@ -408,18 +405,18 @@ test_that("each actual series validates required drivers before source execution
   model$definition$version_id <- finnts:::custom_model_definition_digest(model$definition)
   model$validation$version_id <- model$approval$version_id <- model$definition$version_id
   for (combo in c("A", "B")) {
-    path <- finnts:::local_artifact_path(info, "prep_data", "-R1", finnts:::hash_data(combo))
+    path <- finnts:::local_artifact_path(info, "prep_data", "-C1", finnts:::hash_data(combo))
     rows <- finnts:::read_exact_artifact(info, path)
     rows$Driver <- 1
-    finnts:::write_data(rows, combo, info, "data", "prep_data", "-R1")
+    finnts:::write_data(rows, combo, info, "data", "prep_data", "-C1")
   }
   prep_models(info,
     models_to_run = "business_mean", custom_models = list(business_mean = model), run_ensemble_models = FALSE,
     back_test_scenarios = 1, num_hyperparameters = 1
   )
-  path <- finnts:::local_artifact_path(info, "prep_data", "-R1", finnts:::hash_data("B"))
+  path <- finnts:::local_artifact_path(info, "prep_data", "-C1", finnts:::hash_data("B"))
   rows <- finnts:::read_exact_artifact(info, path)
   rows$Driver[[1]] <- NA_real_
-  finnts:::write_data(rows, "B", info, "data", "prep_data", "-R1")
+  finnts:::write_data(rows, "B", info, "data", "prep_data", "-C1")
   expect_error(train_models(info, negative_forecast = TRUE), "complete supported predictor values: Driver")
 })

@@ -295,7 +295,7 @@ get_prepped_data <- function(run_info,
                              return_type = "df") {
   # check input values
   check_input_type("run_info", run_info, "list")
-  check_input_type("recipe", recipe, "character", c("R1", "R2"))
+  check_input_type("recipe", recipe, "character", c("R1", "R2", "C1"))
   check_input_type("return_type", return_type, "character", c("df", "sdf"))
   local_reads <- is.null(run_info$storage_object) && identical(return_type, "df") &&
     run_info$data_output %in% c("csv", "parquet", "rds")
@@ -927,14 +927,56 @@ local_artifact_inventory <- function(run_info, folder, suffix = "*",
   list_files(NULL, fs::path(fs::path_dir(pattern), paste0("*", fs::path_file(pattern))))
 }
 
+#' List the run's built-in recipe files once per prep_models call
+#'
+#' Returns R1/R2 prep_data files. On a custom-only run (no R files) it falls
+#' back to the C1 files so date-based back-test splits can still be built.
+#' The result is cached in `run_info$recipe_inventory` when present.
+#'
+#' @param run_info Run info list with local storage.
+#'
+#' @return Character vector of recipe file paths.
+#' @noRd
 preparation_recipe_files <- function(run_info) {
   inventory <- run_info$recipe_inventory
   if (!is.null(inventory) && exists("files", envir = inventory, inherits = FALSE)) {
     return(inventory$files)
   }
   files <- local_artifact_inventory(run_info, "prep_data", "-*R*")
+  if (!length(files)) {
+    files <- local_artifact_inventory(run_info, "prep_data", "-*-C1")
+  }
   if (!is.null(inventory)) inventory$files <- files
   files
+}
+
+#' List prep_data recipe files for training
+#'
+#' Lists R recipe files and, when custom models run, the C1 files as well, so
+#' combo discovery and global All-Data assembly see every recipe. The `*R*`
+#' pattern never matches C1 files because run and combo hashes are lowercase.
+#'
+#' @param run_info Run info list.
+#' @param include_custom Logical; also list C1 files.
+#'
+#' @return Character vector of recipe file paths.
+#' @noRd
+recipe_artifact_files <- function(run_info, include_custom = FALSE) {
+  prefix <- paste0(
+    run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name)
+  )
+  files <- list_files(
+    run_info$storage_object,
+    paste0(prefix, "*R*.", run_info$data_output)
+  )
+  if (include_custom) {
+    files <- c(files, list_files(
+      run_info$storage_object,
+      paste0(prefix, "-*-C1.", run_info$data_output)
+    ))
+  }
+  unique(as.character(unlist(files)))
 }
 
 local_model_artifact_files <- function(run_info, folder,
@@ -1038,13 +1080,7 @@ get_recipe_data <- function(run_info,
       log_df <- read_local_artifacts(run_info,
         local_artifact_path(run_info, "logs", extension = "csv")
       )
-      configured <- log_df$recipes_to_run
-      configured <- if (length(configured) == 0L || is.na(configured[[1]])) {
-        NULL
-      } else {
-        strsplit(configured[[1]], "---", fixed = TRUE)[[1]]
-      }
-      recipes <- get_recipes_to_run(configured, log_df$date_type)
+      recipes <- logged_recipe_ids(log_df)
     }
     recipes <- sort(unique(recipes))
     file_name_tbl <- tibble::tibble(
@@ -1053,23 +1089,22 @@ get_recipe_data <- function(run_info,
     )
   } else {
     if (is.null(file_list) || !local_reads) {
+      list_root <- if (local_reads && is.null(run_info$path)) tempdir() else run_info$path
+      list_prefix <- paste0(
+        list_root, "/prep_data/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name)
+      )
       file_list <- list_files(
         run_info$storage_object,
-        if (local_reads) {
-          fs::path(
-            if (is.null(run_info$path)) tempdir() else run_info$path,
-            "prep_data", paste0(
-              "*", hash_data(run_info$project_name), "-", hash_data(run_info$run_name),
-              "-*R*.", run_info$data_output
-            )
-          )
-        } else {
-          paste0(
-            run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-            hash_data(run_info$run_name), "*R*.", run_info$data_output
-          )
-        }
+        paste0(list_prefix, "*R*.", run_info$data_output)
       )
+      if ("C1" %in% recipes) {
+        file_list <- c(file_list, list_files(
+          run_info$storage_object,
+          paste0(list_prefix, "-*-C1.", run_info$data_output)
+        ))
+      }
+      file_list <- unique(as.character(unlist(file_list)))
     }
     file_name_tbl <- tibble::tibble(Path = file_list, File = fs::path_file(file_list)) %>%
       tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
@@ -1077,9 +1112,10 @@ get_recipe_data <- function(run_info,
       dplyr::mutate(Recipe = substr(Recipe, 1, 2))
   }
 
-  if (local_reads && !is.null(recipes)) {
-    file_name_tbl <- dplyr::filter(file_name_tbl, Recipe %in% recipes)
-  }
+  file_name_tbl <- dplyr::filter(
+    file_name_tbl,
+    Recipe %in% (if (is.null(recipes)) c("R1", "R2") else recipes)
+  )
 
   for (recipe in unique(file_name_tbl$Recipe)) {
     temp_path <- file_name_tbl %>%

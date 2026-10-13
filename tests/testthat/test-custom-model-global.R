@@ -125,7 +125,7 @@ test_that("global fitted features retain category labels origin and column order
     }
     workflow <- custom_model_workflow(definition, recipes::recipe(Target ~ ., panel$history),
       model_type = "global",
-      recipe_id = "R1", date_type = "month", forecast_horizon = 3, target_scale = "original", allow_code = TRUE
+      recipe_id = "C1", date_type = "month", forecast_horizon = 3, target_scale = "original", allow_code = TRUE
     )
     trained <- generics::fit(workflow, panel$history)
     expect_equal(predict(trained, panel$future)$.pred, expected, tolerance = 1e-09)
@@ -226,7 +226,7 @@ test_that("versioned global cohorts reject missing peers before source execution
   for (scope in c("series", "groups", "all")) {
     panel <- custom_global_case("shrinkage", custom_global_panel(series = 6L))
     definition <- custom_global_definition("shrinkage")
-    definition$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = scope, group_columns = if (scope ==
+    definition$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = scope, group_columns = if (scope ==
       "groups") "Region" else character())
     definition$version_id <- custom_model_definition_digest(definition)
     fitted <- custom_global_fit(definition, panel)
@@ -269,7 +269,7 @@ test_that("versioned global cohorts reject missing peers before source execution
 test_that("global resampling expands cohort execution without changing scoring rows", {
   panel <- custom_global_case("allocation")
   definition <- custom_global_definition("allocation")
-  definition$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "all", group_columns = character())
+  definition$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "all", group_columns = character())
   definition$version_id <- custom_model_definition_digest(definition)
   future <- panel$future
   future$Target <- 1e+10 + seq_len(nrow(future))
@@ -279,7 +279,7 @@ test_that("global resampling expands cohort execution without changing scoring r
   splits <- rsample::manual_rset(list(split), "global_short")
   unchanged <- serialize(splits, NULL)
   workflow <- custom_model_workflow(definition, recipes::recipe(Target ~ ., data),
-    model_type = "global", recipe_id = "R1",
+    model_type = "global", recipe_id = "C1",
     date_type = "month", forecast_horizon = 3, target_scale = "original", allow_code = TRUE
   )
   result <- custom_run_fit_resamples(workflow, data, splits, tune::control_resamples(save_pred = TRUE, allow_par = FALSE))
@@ -367,7 +367,7 @@ test_that("global calendar and allocation state survives installed worker replay
   cases <- lapply(rules, custom_global_case)
   fitted <- Map(function(rule, panel) {
     definition <- custom_global_definition(rule)
-    definition$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = if (rule ==
+    definition$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = if (rule ==
       "allocation") "all" else "series", group_columns = character())
     entries <- custom_author_date_helpers()
     definition$source[["finntsRowsDate"]] <- entries[[4L]]$code

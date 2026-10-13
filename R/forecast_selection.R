@@ -86,7 +86,7 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
     recipe <- "R1"
   } else {
     recipe_list <- strsplit(recipes, "---", fixed = TRUE)[[1]]
-    recipe <- if ("R1" %in% recipe_list) "R1" else "R2"
+    recipe <- if ("R1" %in% recipe_list) "R1" else if ("C1" %in% recipe_list && !"R2" %in% recipe_list) "C1" else "R2"
   }
   prepared <- read_exact_artifact(run_info, file_list = fs::path(
     run_info$path, "prep_data", paste0(prefix, "-", hash_data(combo), "-", recipe, ".", run_info$data_output)
@@ -95,8 +95,9 @@ read_series_history <- function(run_info, combo, run_log = NULL, cache = NULL) {
   if ("Combo" %in% names(prepared) && any(is.na(prepared$Combo) | as.character(prepared$Combo) != combo)) {
     stop("Prepared history does not match the requested series.", call. = FALSE)
   }
-  stationary <- isTRUE(as.logical(run_log[["stationary"]]))
-  box_cox <- isTRUE(as.logical(run_log[["box_cox"]]))
+  # C1 holds raw custom-model history, so built-in transformations never apply.
+  stationary <- recipe != "C1" && isTRUE(as.logical(run_log[["stationary"]]))
+  box_cox <- recipe != "C1" && isTRUE(as.logical(run_log[["box_cox"]]))
   combo_info <- NULL
   if (stationary || box_cox) {
     metadata_key <- paste0(prefix, "-orig_combo_info")

@@ -110,7 +110,7 @@ Approved custom pools require explicit \code{allow_iterate_forecast = FALSE},
 \code{overwrite = TRUE}, identical enrollment and approval evidence, cadence,
 horizon, regressors, enabled modes and series membership. New observations,
 historical cutoffs and backtest settings are allowed in the new parent.
-Original-scale R1, local/mounted CSV data, RDS objects and no inner parallelism
+The raw C1 recipe, local/mounted CSV data, RDS objects and no inner parallelism
 remain required. The completed predecessor, exact selected components,
 current input signatures and replay controls are pinned before child fitting.
 Replay retains full custom version IDs and per-series global subsets. Custom

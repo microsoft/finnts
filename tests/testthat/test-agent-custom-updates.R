@@ -5,12 +5,12 @@ custom_update_model <- function(name = "replay_mean") {
   definition <- finnts:::new_custom_model_definition(
     name, "Use the historical mean.", "Use the analysis mean; {literal_update_text} is descriptive text.",
     c("local", "global"), c(fit = "function(data, context, parameters) mean(data$Target)", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row,.pred=rep(object,nrow(new_data)))"),
-    list(predictors = character(), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = c(
+    list(predictors = character(), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = c(
       1,
       2
     ), missing_data = "error")
   )
-  structure(list(schema_version = 1L, definition = definition, validation = list(
+  structure(list(definition = definition, validation = list(
     version_id = definition$version_id, technical_passed = TRUE,
     checks = list(arithmetic = "Independent synthetic mean fixture")
   ), approval = list(
@@ -80,7 +80,7 @@ test_that("public custom update replays the exact approved version on new data",
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)
   forecast <- get_agent_forecast(current)
   expect_equal(unique(forecast$Forecast[forecast$Train_Test_ID == 1]), 101)
-  expect_identical(unique(forecast$Model_ID), paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--R1"))
+  expect_identical(unique(forecast$Model_ID), paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--C1"))
   expect_identical(read_agent_custom_record(current, TRUE)$envelopes, previous$custom_agent_contract$envelopes)
   expect_length(args$llm$turns, 0L)
   local({
@@ -236,7 +236,7 @@ test_that("global custom replay preserves saved component subsets from one share
   child <- previous$project_info
   child$project_name <- paste0(child$project_name, "_", hash_data("all"))
   child$run_name <- best$best_run_name[[1]]
-  ids <- paste0("custom-", vapply(args$custom_models, function(model) model$definition$version_id, character(1)), "--global--R1")
+  ids <- paste0("custom-", vapply(args$custom_models, function(model) model$definition$version_id, character(1)), "--global--C1")
   for (combo in c("first", "second")) {
     rows <- read_selection_file(child, "forecasts", "-global_models", combo)
     rows$Best_Model <- if (combo == "first")
@@ -313,7 +313,7 @@ test_that("installed mixed custom updates preserve choices on two real workers",
   custom_update_eda(previous)
   iterate_forecast(previous, max_iter = 1, weighted_mape_goal = 1, num_cores = 1)
   best <- get_best_agent_run(previous)
-  custom_id <- paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--R1")
+  custom_id <- paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--C1")
   average_id <- paste(sort(c(custom_id, "meanf--local--R1")), collapse = "_")
   for (combo in c("first", "second")) {
     child <- previous$project_info

@@ -101,10 +101,10 @@ forecast_time_series(
   forecast_approach = "standard_hierarchy",
   custom_models = list(business_mean = custom),
   models_to_run = c("business_mean", "meanf"),
-  recipes_to_run = "R1", stationary = FALSE,
+  recipes_to_run = c("R1", "C1"), stationary = FALSE,
   clean_missing_values = FALSE, clean_outliers = FALSE,
   run_local_models = TRUE, run_global_models = FALSE,
-  run_ensemble_models = FALSE, average_models = FALSE,
+  run_ensemble_models = FALSE, average_models = TRUE,
   feature_selection = FALSE, inner_parallel = FALSE,
   negative_forecast = TRUE, weekly_to_daily = FALSE
 )

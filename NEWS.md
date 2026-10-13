@@ -3,7 +3,7 @@
 ## Improvements
 
 - `create_custom_model()` creates reusable local/global forecasting models from business rules, with worked examples, validation, review, and resumable drafts.
-- Custom models require compatible original-scale R1 settings; generated code needs authorization, is not sandboxed, and has no hard timeout.
+- Custom models train on a new raw `C1` recipe selected through `recipes_to_run`, so they can run alone or beside built-in models that use stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles and Spark or inner parallelism. Generated code needs authorization, is not sandboxed, and has no hard timeout.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Improved averaging, forecast updates, and run recovery.
 

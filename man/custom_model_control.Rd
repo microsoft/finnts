@@ -31,7 +31,7 @@ base/recommended allowance; \code{"base_only"} permits base R. No installation.}
 
 \item{forecast_approach}{NULL inherits a prepared run, or uses \code{"bottoms_up"}
 for raw data. Other choices are \code{"standard_hierarchy"} and
-\code{"grouped_hierarchy"}; both require local, univariate original-scale R1 rules
+\code{"grouped_hierarchy"}; both require local, univariate rules on the raw C1 recipe
 and a mixed custom/FinnTS pool with reconciliation during forecast execution.}
 
 \item{draft_path}{Optional local directory for durable draft/audit state.

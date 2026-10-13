@@ -84,9 +84,11 @@ iterate_forecast(agent_info, max_iter = 3, inner_parallel = FALSE)
 get_summarized_models(agent_info)
 ```
 
-The first custom Agent profile uses original-scale R1, local/mounted storage,
+The first custom Agent profile keeps built-in models on original-scale R1 and
+trains custom models on the raw C1 recipe, with local/mounted storage,
 CSV data and RDS objects. Target cleaning, differencing, Box-Cox, feature selection
-and multistep are disabled. Sequential and `local_machine` execution are supported;
+and multistep are disabled in this Agent profile; standard forecasting supports
+them for built-ins beside custom models. Sequential and `local_machine` execution are supported;
 Spark and inner parallelism are not. Each model must support the requested cadence,
 horizon, drivers and enabled local/global mode. A global-only run needs two series.
 The ordinary accuracy/plausibility rules still decide the winning eligible model;
@@ -99,7 +101,7 @@ approval payloads. Ordinary EDA and forecast reasoning retain their existing dat
 disclosures. Generated R is trusted code under your account, not sandboxed code;
 authoring review and version-specific consent remain separate from forecasting.
 
-Parent and child records pin source versions, approval evidence and context.
+Parent and child records pin source content, approval evidence and context.
 Reentering `set_agent_info()` requires the same explicit approved pool; equivalent
 ordering is accepted, while missing or changed enrollment requires a new run.
 Calling `iterate_forecast()` again on the same saved Agent object reuses valid

@@ -32,7 +32,7 @@
 #' @param custom_models Named approved custom-model envelopes from [create_custom_model()].
 #' @param models_to_run Explicit custom or mixed candidate names. Must select at
 #'   least one supplied custom model; NULL retains ordinary Agent behavior.
-#' @details Custom Agent runs require original-scale R1, CSV data, RDS objects,
+#' @details Custom Agent runs add the raw `C1` recipe and require CSV data, RDS objects,
 #'   local/mounted storage and no hierarchy. `negative_forecast = FALSE` floors
 #'   finished custom forecasts at zero, as for built-in models. The exact
 #'   approved pool is pinned before the parent run log. Existing-run setup requires

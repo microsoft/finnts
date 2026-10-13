@@ -94,7 +94,10 @@ chooses these values based on date_type.}
 
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
-of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.}
+of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe. Add "C1" to also write
+the custom-model recipe used by custom models: the padded history and future frame on the original scale, with
+missing values imputed only when \code{clean_missing_values} is TRUE and no outlier cleaning, Box-Cox, differencing or
+engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.}
 
 \item{multistep_horizon}{Use a multistep horizon approach when training multivariate models with R1 recipe.}
 }

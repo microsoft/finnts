@@ -61,7 +61,7 @@
 #'   `overwrite = TRUE`, identical enrollment and approval evidence, cadence,
 #'   horizon, regressors, enabled modes and series membership. New observations,
 #'   historical cutoffs and backtest settings are allowed in the new parent.
-#'   Original-scale R1, local/mounted CSV data, RDS objects and no inner parallelism
+#'   The raw C1 recipe, local/mounted CSV data, RDS objects and no inner parallelism
 #'   remain required. The completed predecessor, exact selected components,
 #'   current input signatures and replay controls are pinned before child fitting.
 #'   Replay retains full custom version IDs and per-series global subsets. Custom
@@ -794,8 +794,10 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
     rlang::abort("Update completion requires the saved run log and train/test splits.",
       class = "finnts_update_artifact_error")
   }
-  recipe <- if (is.null(recipes) || is.na(recipes) || recipes == "all" ||
-    "R1" %in% strsplit(recipes, "---", fixed = TRUE)[[1]]) "R1" else "R2"
+  # Calendar comes from the first prepared recipe; R1 and C1 hold one row per date.
+  saved_recipes <- if (is.null(recipes) || is.na(recipes)) character() else strsplit(recipes, "---", fixed = TRUE)[[1]]
+  recipe <- if (!length(saved_recipes) || "all" %in% saved_recipes || "R1" %in% saved_recipes) "R1" else
+    if ("C1" %in% saved_recipes && !"R2" %in% saved_recipes) "C1" else "R2"
   prepared <- read_update_artifact(info, local_artifact_path(info, "prep_data", paste0("-", recipe), hash_data(combo)))
   if (is.data.frame(prepared) && recipe == "R2" && "Horizon" %in% names(prepared)) {
     prepared <- prepared[!is.na(prepared$Horizon) & prepared$Horizon == 1, , drop = FALSE]
@@ -2672,6 +2674,20 @@ fit_models <- function(run_info,
       adjust_combo_column()
   }
 
+  # custom winners refit on their raw C1 recipe
+  if ("C1" %in% unique(trained_models_tbl$Recipe_ID)) {
+    c1_tbl <- if (combo == "All-Data") {
+      get_prepped_data(run_info = run_info, recipe = "C1")
+    } else {
+      read_file(
+        run_info = run_info,
+        file_list = local_artifact_path(run_info, "prep_data", "-C1", hash_data(combo)),
+        return_type = "df"
+      )
+    }
+    c1_tbl <- adjust_combo_column(c1_tbl)
+  }
+
   # train each model
   par_info <- par_start(
     run_info = run_info,
@@ -2706,7 +2722,8 @@ fit_models <- function(run_info,
 
     prep_data <- switch(data_prep_recipe,
       "R1" = r1_tbl,
-      "R2" = r2_tbl
+      "R2" = r2_tbl,
+      "C1" = c1_tbl
     )
 
     workflow <- model_run$Model_Fit[[1]]

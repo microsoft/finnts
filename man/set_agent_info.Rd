@@ -79,7 +79,7 @@ including input data, forecast horizon, and other parameters.
 It checks for existing runs and allows for overwriting if specified.
 }
 \details{
-Custom Agent runs require original-scale R1, CSV data, RDS objects,
+Custom Agent runs add the raw \code{C1} recipe and require CSV data, RDS objects,
 local/mounted storage and no hierarchy. \code{negative_forecast = FALSE} floors
 finished custom forecasts at zero, as for built-in models. The exact
 approved pool is pinned before the parent run log. Existing-run setup requires

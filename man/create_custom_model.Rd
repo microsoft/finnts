@@ -34,7 +34,7 @@ empty-history clone. Approval and details do not need a new provider call.}
 \item{input_data}{Local data frame containing a column named \code{Date} of class
 Date, the target, series keys and declared drivers. Supply this or \code{run_info}.}
 
-\item{run_info}{Compatible prepared original-scale R1 run, read without changes.
+\item{run_info}{Compatible prepared run that includes the raw C1 recipe, read without changes.
 Its metadata is inherited; explicitly supplied metadata must agree with it.}
 
 \item{combo_variables}{Series-key column names. For raw input, omission is
@@ -104,8 +104,8 @@ partial actuals, plans or prior forecasts. Driver holdout scores are conditional
 on supplied values; historical plan vintages/publication lags are not verified.
 
 Raw input is privately prepared; existing runs and Chat templates are unchanged.
-Original-scale R1 requires differencing, Box-Cox, missing-value cleaning,
-outlier cleaning and multistep disabled. Local sampling retains up to three
+Prepared runs must include the raw C1 recipe; built-in transformations such
+as differencing, Box-Cox, outlier cleaning and multistep never alter C1. Local sampling retains up to three
 series or raw hierarchy leaves. Explicit global calls validate a deterministic
 representative sample of at most 100 series: extreme-scale, zero-heavy, negative, flattest and
 shortest series are always kept, multi-variable combo levels are covered when

@@ -44,7 +44,10 @@
 #'   chooses these values based on date_type.
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
-#'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.
+#'   of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe. Add "C1" to also write
+#'   the custom-model recipe used by custom models: the padded history and future frame on the original scale, with
+#'   missing values imputed only when `clean_missing_values` is TRUE and no outlier cleaning, Box-Cox, differencing or
+#'   engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.
 #' @param multistep_horizon Use a multistep horizon approach when training multivariate models with R1 recipe.
 #'
 #' @return No return object. Feature engineered data is written to disk based on the output locations provided in
@@ -130,8 +133,9 @@ prep_data <- function(run_info,
   check_input_type("fourier_periods", fourier_periods, c("list", "numeric", "NULL"))
   check_input_type("lag_periods", lag_periods, c("list", "numeric", "NULL"))
   check_input_type("rolling_window_periods", rolling_window_periods, c("list", "numeric", "NULL"))
-  check_input_type("recipes_to_run", recipes_to_run, c("list", "character", "NULL"), c("R1", "R2"))
+  check_recipes_to_run(recipes_to_run)
   check_input_type("multistep_horizon", multistep_horizon, "logical")
+  recipe_ids <- expand_recipes_to_run(recipes_to_run, date_type)
 
   input_data <- normalize_combo_values(
     input_data = input_data,
@@ -276,23 +280,7 @@ prep_data <- function(run_info,
     combo_diff <- current_combo_list %>%
       dplyr::pull(Combo_Hash)
   } else {
-    prev_combo_list <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*R*.", run_info$data_output
-      )
-    ) %>%
-      tibble::tibble(
-        Path = .
-      ) %>%
-      dplyr::rowwise() %>%
-      dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-      dplyr::ungroup() %>%
-      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-      dplyr::pull(Combo) %>%
-      unique() %>%
-      suppressWarnings()
+    prev_combo_list <- prepared_recipe_combos(run_info, recipe_ids)
 
     combo_diff <- setdiff(
       current_combo_list %>%
@@ -409,7 +397,27 @@ prep_data <- function(run_info,
           dplyr::ungroup() %>%
           dplyr::left_join(xregs_future_tbl,
             by = c("Combo", "Date")
-          ) %>% # join xregs that contain future values given by user
+          ) # join xregs that contain future values given by user
+
+        if ("C1" %in% recipe_ids) {
+          write_data(
+            x = custom_view_build(
+              initial_tbl,
+              external_regressors,
+              global_xregs_future_list,
+              clean_missing_values,
+              date_type,
+              hist_end_date
+            ),
+            combo = combo,
+            run_info = run_info,
+            output_type = "data",
+            folder = "prep_data",
+            suffix = "-C1"
+          )
+        }
+
+        initial_tbl <- initial_tbl %>%
           clean_outliers_missing_values(
             clean_outliers,
             clean_missing_values,
@@ -475,15 +483,7 @@ prep_data <- function(run_info,
           cbind(date_features)
 
         # Run Recipes
-        if (is.null(recipes_to_run)) {
-          run_all_recipes_override <- FALSE
-        } else if ("all" %in% recipes_to_run) {
-          run_all_recipes_override <- TRUE
-        } else {
-          run_all_recipes_override <- FALSE
-        }
-
-        if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+        if ("R1" %in% recipe_ids) {
           R1 <- initial_tbl %>%
             multivariate_prep_recipe_1(external_regressors,
               xregs_future_values_list = global_xregs_future_list,
@@ -509,7 +509,7 @@ prep_data <- function(run_info,
           )
         }
 
-        if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+        if ("R2" %in% recipe_ids) {
           R2 <- initial_tbl %>%
             multivariate_prep_recipe_2(external_regressors,
               xregs_future_values_list = global_xregs_future_list,
@@ -591,7 +591,27 @@ prep_data <- function(run_info,
             dplyr::ungroup() %>%
             dplyr::left_join(xregs_future_tbl,
               by = c("Combo", "Date")
-            ) %>% # join xregs that contain values given by user
+            ) # join xregs that contain values given by user
+
+          if ("C1" %in% recipe_ids) {
+            write_data(
+              x = custom_view_build(
+                initial_tbl,
+                external_regressors,
+                global_xregs_future_list,
+                clean_missing_values,
+                date_type,
+                hist_end_date
+              ),
+              combo = combo,
+              run_info = run_info,
+              output_type = "data",
+              folder = "prep_data",
+              suffix = "-C1"
+            )
+          }
+
+          initial_tbl <- initial_tbl %>%
             clean_outliers_missing_values(
               clean_outliers,
               clean_missing_values,
@@ -657,15 +677,7 @@ prep_data <- function(run_info,
             cbind(date_features)
 
           # Run Recipes
-          if (is.null(recipes_to_run)) {
-            run_all_recipes_override <- FALSE
-          } else if (recipes_to_run == "all") {
-            run_all_recipes_override <- TRUE
-          } else {
-            run_all_recipes_override <- FALSE
-          }
-
-          if (is.null(recipes_to_run) | "R1" %in% recipes_to_run | run_all_recipes_override) {
+          if ("R1" %in% recipe_ids) {
             R1 <- initial_tbl %>%
               multivariate_prep_recipe_1(external_regressors,
                 xregs_future_values_list = global_xregs_future_list,
@@ -691,7 +703,7 @@ prep_data <- function(run_info,
             )
           }
 
-          if ((is.null(recipes_to_run) & date_type %in% c("month", "quarter", "year")) | "R2" %in% recipes_to_run | run_all_recipes_override) {
+          if ("R2" %in% recipe_ids) {
             R2 <- initial_tbl %>%
               multivariate_prep_recipe_2(external_regressors,
                 xregs_future_values_list = global_xregs_future_list,
@@ -734,6 +746,8 @@ prep_data <- function(run_info,
           fiscal_year_start = fiscal_year_start,
           get_date_regex = get_date_regex,
           recipes_to_run = recipes_to_run,
+          recipe_ids = recipe_ids,
+          custom_view_build = custom_view_build,
           multivariate_prep_recipe_1 = multivariate_prep_recipe_1,
           multivariate_prep_recipe_2 = multivariate_prep_recipe_2,
           run_info = run_info,
@@ -757,24 +771,8 @@ prep_data <- function(run_info,
 
   # check if all time series combos ran correctly
   if (!"combo" %in% names(run_info)) {
-    successful_combos <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*R*.", run_info$data_output
-      )
-    ) %>%
-      tibble::tibble(
-        Path = .
-      ) %>%
-      dplyr::rowwise() %>%
-      dplyr::mutate(File = ifelse(is.null(Path), "NA", fs::path_file(Path))) %>%
-      dplyr::ungroup() %>%
-      tidyr::separate(File, into = c("Project", "Run", "Combo", "Recipe"), sep = "-", remove = TRUE) %>%
-      dplyr::pull(Combo) %>%
-      unique() %>%
-      length() %>%
-      suppressWarnings()
+    successful_combos <- prepared_recipe_combos(run_info, recipe_ids) %>%
+      length()
 
     total_combos <- current_combo_list %>%
       dplyr::pull(Combo_Hash) %>%
@@ -909,6 +907,209 @@ get_xregs_future_values_tbl <- function(data_tbl,
       Date,
       tidyselect::all_of(xregs_future_values_list)
     )
+}
+
+#' Build the custom-model C1 view of one prepared series
+#'
+#' C1 is the custom-model-only recipe. It keeps the padded history and future
+#' frame on the original (scoring) scale: no outlier cleaning, Box-Cox,
+#' differencing or engineered features. Non-finite values are treated as
+#' missing. Missing values are imputed only when `clean_missing_values` is TRUE,
+#' using the same imputation as built-in recipes. Remaining missing history
+#' values become zero. Future rows keep
+#' NA for regressors without supplied future values, so custom models that
+#' declare them fail predictor validation instead of forecasting from zeros.
+#'
+#' @param df Padded series table with Combo, Date, Target and joined regressors,
+#'   taken before outlier cleaning or transformations.
+#' @param external_regressors Character vector of declared regressors, or NULL.
+#' @param future_regressors Regressors that carry user-supplied future values.
+#' @param clean_missing_values Logical; impute missing history values.
+#' @param date_type Date type used for the imputation period.
+#' @param hist_end_date Last historical date; later Target values become NA.
+#'
+#' @return Tibble with Combo, Date, Target and the declared regressors. No I/O.
+#' @noRd
+custom_view_build <- function(df,
+                              external_regressors,
+                              future_regressors,
+                              clean_missing_values,
+                              date_type,
+                              hist_end_date) {
+  external_regressors <- as.character(unlist(external_regressors))
+  future_regressors <- as.character(unlist(future_regressors))
+  view <- df %>%
+    dplyr::select(Combo, Date, Target, tidyselect::all_of(external_regressors)) %>%
+    dplyr::mutate(dplyr::across(
+      (where(is.numeric) & tidyselect::all_of(c("Target", external_regressors))),
+      function(values) replace(values, !is.finite(values), NA)
+    )) %>%
+    clean_outliers_missing_values(
+      FALSE,
+      clean_missing_values,
+      get_frequency_number(date_type),
+      external_regressors
+    )
+  history <- view$Date <= hist_end_date
+  for (column in c("Target", external_regressors)) {
+    values <- view[[column]]
+    if (!is.numeric(values)) {
+      next
+    }
+    values[!is.finite(values)] <- NA
+    fill <- history | column %in% future_regressors
+    values[fill & is.na(values)] <- 0
+    view[[column]] <- values
+  }
+  view$Target[!history] <- NA
+  view
+}
+
+#' Expand requested recipe identifiers into concrete recipe files
+#'
+#' `NULL` keeps the date-type defaults and `"all"` means R1 plus R2. C1 is
+#' included only when explicitly requested. Used for restart, completion and
+#' artifact discovery so every stage agrees on the expected files.
+#'
+#' @param recipes_to_run Requested recipes: NULL or values from R1, R2, C1, all.
+#' @param date_type Date type used for the NULL defaults.
+#'
+#' @return Unique character vector of recipe ids, R recipes first.
+#' @noRd
+expand_recipes_to_run <- function(recipes_to_run, date_type) {
+  recipes <- as.character(unlist(recipes_to_run))
+  if (!length(recipes) || all(is.na(recipes))) {
+    return(get_recipes_to_run(NULL, date_type))
+  }
+  standard <- setdiff(recipes, c("all", "C1"))
+  if ("all" %in% recipes) {
+    standard <- c("R1", "R2")
+  } else if (!length(standard) && !"C1" %in% recipes) {
+    standard <- get_recipes_to_run(NULL, date_type)
+  }
+  unique(c(intersect(c("R1", "R2"), standard), if ("C1" %in% recipes) "C1"))
+}
+
+#' Add the custom-model C1 recipe to a recipe request
+#'
+#' Used by [forecast_time_series()] and the Agent when custom models are
+#' selected. Keeps the requested R recipes (date-type defaults for NULL, R1
+#' plus R2 for "all") and appends C1 when missing.
+#'
+#' @param recipes_to_run Requested recipes: NULL or values from R1, R2, C1, all.
+#' @param date_type Date type used for the NULL defaults.
+#'
+#' @return Character vector of concrete recipe ids including C1.
+#' @noRd
+add_custom_recipe <- function(recipes_to_run, date_type) {
+  recipes <- as.character(unlist(recipes_to_run))
+  standard <- if (!length(recipes) || all(recipes == "C1")) {
+    if (length(recipes)) character() else get_recipes_to_run(NULL, date_type)
+  } else {
+    setdiff(expand_recipes_to_run(recipes, date_type), "C1")
+  }
+  c(standard, "C1")
+}
+
+#' Expand the recipes recorded in a run log
+#'
+#' Splits the logged `recipes_to_run` ("---" separated, or NA) and expands it
+#' with `expand_recipes_to_run()` for the logged date type.
+#'
+#' @param log_df Run log data frame with `recipes_to_run` and `date_type`.
+#'
+#' @return Character vector of prepared recipe ids.
+#' @noRd
+logged_recipe_ids <- function(log_df) {
+  configured <- log_df$recipes_to_run
+  configured <- if (length(configured) == 0L || is.na(configured[[1]])) {
+    NULL
+  } else {
+    strsplit(as.character(configured[[1]]), "---", fixed = TRUE)[[1]]
+  }
+  expand_recipes_to_run(configured, log_df$date_type[[1]])
+}
+
+#' Require an R recipe when built-in models are selected
+#'
+#' Built-in models train only on R1/R2. C1-only runs may therefore select only
+#' custom models. Called before any custom manifest write and again when
+#' workflows are built, so a rejected request leaves no pinned artifacts.
+#'
+#' @param builtin_models Character vector of selected built-in model names.
+#' @param recipes Character vector of prepared recipe ids.
+#'
+#' @return Invisible NULL; errors when built-ins have no R recipe.
+#' @noRd
+check_builtin_recipes <- function(builtin_models, recipes) {
+  if (length(builtin_models) && !any(recipes %in% c("R1", "R2"))) {
+    stop(
+      "Built-in models need recipe R1 (or R2), but this run prepared only C1. ",
+      "Rerun prep_data with R1 in recipes_to_run in a new run, or select only custom models.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+#' Validate the requested recipe identifiers
+#'
+#' Accepts NULL or a vector/list of distinct values from R1, R2, C1 and all.
+#' Rejects unknown, missing or duplicated values with an actionable error.
+#'
+#' @param recipes_to_run Requested recipes.
+#'
+#' @return Invisibly NULL; errors on invalid input.
+#' @noRd
+check_recipes_to_run <- function(recipes_to_run) {
+  if (is.null(recipes_to_run)) {
+    return(invisible(NULL))
+  }
+  recipes <- unlist(recipes_to_run)
+  allowed <- c("R1", "R2", "C1", "all")
+  if (!is.character(recipes) || !length(recipes) || anyNA(recipes) || any(!recipes %in% allowed) || anyDuplicated(recipes)) {
+    stop(
+      "invalid value for input name 'recipes_to_run', values need to be distinct and from ",
+      paste(allowed, collapse = ", "),
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
+#' Find combos with every requested recipe file prepared
+#'
+#' Lists the run's prep_data recipe files once and keeps combos that have a
+#' file for each recipe in `recipe_ids`. Used for restart and completion checks
+#' so a combo with only some recipes (for example R1 without C1) is redone.
+#'
+#' @param run_info Run info list.
+#' @param recipe_ids Expected recipe ids from `expand_recipes_to_run()`.
+#'
+#' @return Character vector of combo hashes with all recipes prepared.
+#' @noRd
+prepared_recipe_combos <- function(run_info, recipe_ids) {
+  paths <- list_files(
+    run_info$storage_object,
+    paste0(
+      run_info$path, "/prep_data/*", hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "-*.", run_info$data_output
+    )
+  )
+  paths <- as.character(unlist(paths))
+  if (!length(paths)) {
+    return(character())
+  }
+  parts <- strsplit(fs::path_ext_remove(fs::path_file(paths)), "-", fixed = TRUE)
+  files <- tibble::tibble(
+    Combo = vapply(parts, function(x) if (length(x) == 4) x[[3]] else NA_character_, character(1)),
+    Recipe = vapply(parts, function(x) if (length(x) == 4) x[[4]] else NA_character_, character(1))
+  ) %>%
+    dplyr::filter(!is.na(Combo), Recipe %in% recipe_ids) %>%
+    dplyr::distinct(Combo, Recipe) %>%
+    dplyr::count(Combo) %>%
+    dplyr::filter(n == length(recipe_ids))
+  unique(files$Combo)
 }
 
 #' Function to replace outliers and fill in missing values

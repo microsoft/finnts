@@ -9,7 +9,7 @@ runtime_definition <- function(model_type = "local") {
     )), requirements = list(predictors = c(
       "Date",
       "Combo"
-    ), recipes = "R1", target_scale = "original", date_types = "month", forecast_horizon = 1:12, missing_data = "Reject missing required observations."),
+    ), recipes = "C1", target_scale = "original", date_types = "month", forecast_horizon = 1:12, missing_data = "Reject missing required observations."),
     packages = "stats"
   )
 }
@@ -22,7 +22,7 @@ runtime_history <- function() {
 # Build a trusted fixture workflow with explicit representation metadata. This
 # helper belongs to this test file so installed-worker tests are standalone.
 runtime_workflow <- function(definition = runtime_definition(), history = runtime_history(), recipe = recipes::recipe(Target ~
-                               ., data = history), model_type = "local", recipe_id = "R1", allow_code = TRUE) {
+                               ., data = history), model_type = "local", recipe_id = "C1", allow_code = TRUE) {
   custom_model_workflow(definition, recipe,
     model_type = model_type, recipe_id = recipe_id, date_type = "month", forecast_horizon = 2,
     target_scale = "original", allow_code = allow_code
@@ -102,9 +102,8 @@ test_that("current helper source is frozen and saved wrappers are verified", {
 # expectations below remain independent of this source's lookup calculation.
 runtime_date_definition <- function() {
   contract <- runtime_definition(c("local", "global"))
-  contract$authoring_protocol <- 6L
   contract$package_policy <- list(mode = "base_only", available = "base")
-  contract$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  contract$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   custom_author_definition(contract, list(status = "candidate", conflict = "", fit_body = "data", predict_body = paste0(
     "indices <- lapply(c(-12, -24, -36), function(offset) ",
     "finntsMatchDate(finntsShiftDate(new_data$Date, offset, 'month'), object$Date, new_data$Combo, object$Combo)); ",
@@ -172,7 +171,7 @@ test_that("workflow construction is inert and leaves built-in models unchanged",
   catalog <- list_models()
   workflow <- custom_model_workflow(definition, recipes::recipe(Target ~ Date + Combo, data = history),
     model_type = "local",
-    recipe_id = "R1", date_type = "month", forecast_horizon = 2, target_scale = "original"
+    recipe_id = "C1", date_type = "month", forecast_horizon = 2, target_scale = "original"
   )
   expect_s3_class(workflow, "workflow")
   expect_identical(list_models(), catalog)
@@ -205,7 +204,7 @@ test_that("trusted fitting and prediction use the analysis data only", {
 test_that("versioned temporal runtime owns ordering and horizon indices", {
   legacy <- runtime_definition(c("local", "global"))
   requirements <- legacy$requirements
-  requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   definition <- new_custom_model_definition(
     "temporal_rule", "Extend each series using its dated forecast steps.", "Use the last actual plus the horizon index.",
     c("local", "global"), c(fit = paste0(
@@ -233,7 +232,7 @@ test_that("versioned temporal runtime owns ordering and horizon indices", {
   path <- withr::local_tempfile(fileext = ".rds")
   saveRDS(fitted, path)
   expect_identical(predict(readRDS(path), future), predict(fitted, future))
-  expect_identical(legacy$schema_version, 3L)
+  expect_false("schema_version" %in% names(legacy))
   expect_identical(legacy$requirements$runtime, requirements$runtime)
 })
 
@@ -241,7 +240,7 @@ test_that("temporal runtime handles cadence boundaries and later refits", {
   for (cadence in c("day", "week", "month", "quarter", "year")) {
     requirements <- runtime_definition()$requirements
     requirements$date_types <- cadence
-    requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+    requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
     definition <- new_custom_model_definition(
       "cadence_steps", "Use dated steps from the current fit.", "Return the future step index.",
       "local", c(fit = "function(data, context, parameters) list(cutoff = context$cutoff)", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row, .pred=as.numeric(context$forecast_step))"),
@@ -254,7 +253,7 @@ test_that("temporal runtime handles cadence boundaries and later refits", {
     for (origin in origins) {
       dates <- seq(as.Date(origin), by = cadence, length.out = 8L)
       history <- data.frame(Date = dates[1:5], Combo = "series", Target = seq_len(5))
-      context <- list(model_type = "local", recipe_id = "R1", date_type = cadence, forecast_horizon = 3, target_scale = "original")
+      context <- list(model_type = "local", recipe_id = "C1", date_type = cadence, forecast_horizon = 3, target_scale = "original")
       fit <- custom_model_fit_impl(history[c("Date", "Combo")], history$Target, definition, context, TRUE)
       request <- data.frame(Date = dates[c(8, 6, 7)], Combo = "series")
       expect_identical(custom_model_predict_impl(fit, request), c(3, 1, 2))
@@ -267,7 +266,7 @@ test_that("temporal runtime handles cadence boundaries and later refits", {
 test_that("temporal execution supports recursive date-dependent driver rules", {
   requirements <- runtime_definition()$requirements
   requirements$predictors <- c("Date", "Combo", "Adjustment")
-  requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   definition <- new_custom_model_definition(
     "recursive_calendar", "Double January balances before adding the adjustment; otherwise subtract it with a zero floor.",
     "Carry the previous prediction into the next month.", "local", c(
@@ -284,7 +283,7 @@ test_that("temporal execution supports recursive date-dependent driver rules", {
     2,
     90
   ))
-  context <- list(model_type = "local", recipe_id = "R1", date_type = "month", forecast_horizon = 3, target_scale = "original")
+  context <- list(model_type = "local", recipe_id = "C1", date_type = "month", forecast_horizon = 3, target_scale = "original")
   fit <- custom_model_fit_impl(history[c("Date", "Combo", "Adjustment")], history$Target, definition, context, TRUE)
   request <- data.frame(Date = as.Date(c("2024-02-01", "2023-12-01", "2024-01-01")), Combo = "series", Adjustment = c(
     20,
@@ -320,7 +319,7 @@ test_that("representation metadata and protected recipe fields are enforced", {
   history <- runtime_history()
   recipe <- recipes::recipe(Target ~ ., data = history)
   args <- list(
-    definition = definition, recipe = recipe, model_type = "local", recipe_id = "R1", date_type = "month", forecast_horizon = 2,
+    definition = definition, recipe = recipe, model_type = "local", recipe_id = "C1", date_type = "month", forecast_horizon = 2,
     target_scale = "original", allow_code = TRUE
   )
   for (change in list(
@@ -456,8 +455,7 @@ test_that("temporal resampling executes complete horizons but preserves scoring 
   history$Driver <- seq_len(nrow(history))
   history$Target[23:24] <- c(1e+09, -1e+09)
   definition <- runtime_definition()
-  definition$schema_version <- 3L
-  definition$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  definition$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   definition$requirements$predictors <- c("Date", "Combo", "Driver")
   definition$source[["predict"]] <- paste0(
     "function(object, new_data, context) { stopifnot(!'Target' %in% names(new_data)); ",
@@ -477,7 +475,7 @@ test_that("temporal resampling executes complete horizons but preserves scoring 
   expect_error(custom_run_fit_resamples(workflow, history[-24, ], splits, control), "complete forecast horizon")
 })
 
-test_that("required driver preprocessing works only in the current R1 profile", {
+test_that("required driver preprocessing works only in the current C1 profile", {
   history <- runtime_history()
   history$Driver <- seq_len(nrow(history))
   definition <- runtime_definition()
@@ -492,9 +490,9 @@ test_that("required driver preprocessing works only in the current R1 profile", 
   broken <- future
   obsolete <- definition
   obsolete$requirements$recipes <- "R2"
-  expect_error(runtime_rehash(obsolete), "must use R1")
+  expect_error(runtime_rehash(obsolete), "must use C1")
   expect_error(runtime_workflow(definition, history, recipes::step_rm(recipes::recipe(Target ~ ., data = history), Driver),
-    recipe_id = "R1"
+    recipe_id = "C1"
   ), "required")
   model <- workflows::extract_fit_parsnip(fitted)$fit
   broken$Driver <- NULL
@@ -549,7 +547,7 @@ test_that("fit hooks reject invalid outcomes and source is not evaluated before 
   definition$source[["fit"]] <- "function(...) { options(finnts_runtime_executed = TRUE); stop('executed') }"
   definition <- runtime_rehash(definition)
   withr::local_options(list(finnts_runtime_executed = FALSE))
-  context <- list(model_type = "local", recipe_id = "R1", date_type = "month", forecast_horizon = 2, target_scale = "original")
+  context <- list(model_type = "local", recipe_id = "C1", date_type = "month", forecast_horizon = 2, target_scale = "original")
   data <- runtime_history()
   predictors <- data[c("Date", "Combo")]
   expect_error(custom_model_fit_impl(predictors, data$Target, definition, context), "allow_code")
@@ -563,8 +561,7 @@ test_that("installed temporal models reuse source in a fresh process", {
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace_path, "Meta", "package.rds")), "Temporal reuse is checked from an installed namespace")
   definition <- runtime_definition()
-  definition$schema_version <- 3L
-  definition$requirements$runtime <- list(version = 2L, prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  definition$requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   definition$source[["predict"]] <- "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row, .pred=object + context$forecast_step)"
   definition <- runtime_rehash(definition)
   workflow <- runtime_workflow(definition)

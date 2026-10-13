@@ -53,17 +53,18 @@
 #'   average represents no average and remains readable during publication and
 #'   restart. Empty required artifacts and malformed optional averages are errors.
 #'
-#'   Experimental custom runs validate pinned versions, fitted context and saved
-#'   candidate membership before selection or completion reuse. Foreign versions,
-#'   excluded models and averages containing foreign components are errors.
-#'   Custom aliases remain in `Model_Name`; full version hashes identify custom
-#'   `Model_ID` components without conflicting with average separators. Simple
-#'   averages may contain only selected complete eligible components. Ranking,
+#'   Experimental custom runs validate the pinned approved pool, fitted context
+#'   and saved candidate membership before selection or completion reuse.
+#'   Foreign custom models, excluded models and averages containing foreign
+#'   components are errors. Custom aliases remain in `Model_Name`; content
+#'   hashes identify custom `Model_ID` components without conflicting with
+#'   average separators. Simple averages may combine complete eligible custom,
+#'   built-in and ensemble components. Ranking,
 #'   accuracy allowances and plausibility policy are unchanged; custom enrollment
 #'   does not guarantee that a candidate will be selected.
 #'
-#'   Explicitly reviewed custom hierarchy runs require `average_models = FALSE`
-#'   and native weekly output (`weekly_to_daily = FALSE` for weekly data).
+#'   Explicitly reviewed custom hierarchy runs allow `average_models` and require
+#'   native weekly output (`weekly_to_daily = FALSE` for weekly data).
 #'   Every enrolled candidate must have complete finite node/fold/date coverage
 #'   before reconciliation. No missing-node substitution or silent candidate
 #'   omission is permitted. Existing hts weighting and selection remain unchanged;
@@ -164,9 +165,9 @@ final_models <- function(run_info,
   )
   custom_run <- custom_run_load(run_info, prev_log_df)
   if (!is.null(custom_run)) {
-    custom_run_hierarchy_controls(custom_run$manifest$context, average_models = average_models, weekly_to_daily = weekly_to_daily)
+    custom_run_hierarchy_controls(custom_run$manifest$context, weekly_to_daily = weekly_to_daily)
     custom_run_training_controls(custom_run, prev_log_df$run_local_models, prev_log_df$run_global_models,
-      "R1", prev_log_df$feature_selection, prev_log_df$negative_forecast, parallel_processing, inner_parallel)
+      prev_log_df$negative_forecast)
   }
   custom_saved <- custom_run_audit(run_info, custom_run,
     prev_log_df$run_local_models, prev_log_df$run_global_models, complete = TRUE)

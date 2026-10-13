@@ -113,7 +113,7 @@ test_that("global implementation difficulty preserves cohort examples and source
       expect_identical(requests[[3L]]$failure$provider_explanation, "Need helper decomposition.")
       state <- custom_draft_load(file.path(list.dirs(root, recursive = FALSE), "current.rds"))$state
       expect_identical(state$contract$requirements$runtime, list(
-        version = 2L, prediction_scope = "complete_horizon",
+        prediction_scope = "complete_horizon",
         cohort = "all", group_columns = character()
       ))
       expect_true("finntsRowsDate" %in% names(state$definition$source))
@@ -373,8 +373,8 @@ test_that("current drafts freeze deterministic authoring and replay without disc
     llm = list(), input_data = data.frame(), name = "frozen_mean",
     model_type = "local", control = custom_model_control(package_policy = "installed_finnts", draft_path = withr::local_tempdir())
   )
-  expect_identical(draft$settings$authoring_protocol$version, 6L)
-  expect_identical(draft$contract$authoring_protocol, 6L)
+  expect_identical(sort(names(draft$settings$authoring_protocol)), c("missing_data", "package_policy", "predictor_types", "predictors", "scaffold"))
+  expect_false("authoring_protocol" %in% names(draft$contract))
   expect_identical(draft$definition$packages, "lubridate")
   expect_length(requests, 2)
   expect_identical(draft$attempts, list(contract = 1L, source = 1L))
@@ -386,9 +386,9 @@ test_that("current drafts freeze deterministic authoring and replay without disc
     "policy"
   )
   altered <- draft
-  altered$settings$authoring_protocol$version <- 99L
+  altered$settings$authoring_protocol$version <- 6L
   altered$state_digest <- custom_draft_digest(altered)
-  expect_error(validate_custom_model_draft(altered), "recreate")
+  expect_error(validate_custom_model_draft(altered), "fields", class = "finnts_custom_model_authoring_error")
   altered <- draft
   altered$settings$authoring_protocol$package_policy$available <- c("base", "foreignpkg", "lubridate")
   altered$state_digest <- custom_draft_digest(altered)
@@ -743,7 +743,7 @@ test_that("protocol corrections preserve explicit settings and property authorit
     name = "protocol_ratio", model_type = "local", approval = "automatic", control = custom_model_control(draft_path = root)
   )
   expect_s3_class(model, "finnts_custom_model")
-  expect_identical(model$definition$schema_version, 3L)
+  expect_false("schema_version" %in% names(model$definition))
   expect_length(requests, 4L)
   expect_identical(requests[[2]]$payload$feedback$code, "protocol_clarification")
   expect_match(requests[[2]]$payload$feedback$facts$history_layout, "consecutive", fixed = TRUE)
@@ -871,7 +871,7 @@ test_that("typed draft repair stops unchanged failures and preserves approved re
     input_data = data.frame(), external_regressors = "Price",
     name = "typed_ratio", model_type = "local", control = custom_model_control(draft_path = withr::local_tempdir())
   )
-  expect_identical(draft$settings$authoring_protocol$version, 6L)
+  expect_false("version" %in% names(draft$settings$authoring_protocol))
   original_contract <- draft$contract
   repair <- create_custom_model(draft = draft, llm = list(), responses = list(request_id = draft$pending$request_id, answer = "yes"))
   expect_identical(repair$contract, original_contract)
@@ -963,9 +963,9 @@ test_that("deferred authoring returns a passive review before any source executi
   expect_false(inherits(draft, "finnts_custom_model"))
   expect_identical(draft$status, "review_required")
   expect_identical(draft$pending$stage, "review_create")
-  expect_identical(draft$schema_version, 2L)
+  expect_false("schema_version" %in% names(draft))
   expect_identical(validations, 0L)
-  expect_identical(draft$settings$authoring_protocol$version, 6L)
+  expect_false("version" %in% names(draft$settings$authoring_protocol))
   expect_error(
     create_custom_model(draft = draft, control = custom_model_control(package_policy = "base_only")),
     "policy"
@@ -1037,7 +1037,7 @@ draft_harness <- function(question = FALSE, repair = FALSE, .env = parent.frame(
           rows = 1L, training_rows = 3L, cutoff = "2020-03-01", mae = 1, wmape = 0.01
         )), serialization = TRUE, r_version = as.character(getRversion()),
         package_version = "synthetic", elapsed = 1, verification = list(
-          schema_version = 2L, provenance = contract$expectation_provenance,
+          provenance = contract$expectation_provenance,
           properties = list(row_order = as.integer(length(examples))), expected_errors = 0L, required_properties = character(),
           diagnostics = list()
         )
@@ -1158,7 +1158,7 @@ test_that("UX feedback is passive bounded and never changes approval or retry st
   expect_null(success$attempts$limit_per_phase)
   expect_identical(success$version_id, model$definition$version_id)
   expect_identical(custom_model_feedback(unserialize(serialize(model, NULL))), success)
-  expect_identical(names(model), c("schema_version", "definition", "validation", "approval"))
+  expect_identical(names(model), c("definition", "validation", "approval"))
   failure <- tryCatch(create_custom_model("", list(), input_data = data.frame()), error = identity)
   expect_s3_class(failure, "finnts_custom_model_authoring_error")
   expect_identical(failure$feedback, custom_model_feedback(failure))
@@ -1176,7 +1176,7 @@ test_that("UX feedback is passive bounded and never changes approval or retry st
   foreign$feedback <- list(status = "approved", private = "PRIVATE_PROVIDER_SECRET")
   safe <- custom_model_feedback(foreign)
   expect_identical(safe$status, "failed")
-  expect_identical(safe$schema_version, 1L)
+  expect_false("schema_version" %in% names(safe))
   expect_false(grepl("PRIVATE_PROVIDER_SECRET", jsonlite::toJSON(safe), fixed = TRUE))
   expect_identical(foreign$feedback$status, "approved")
   changed <- failure
@@ -1330,7 +1330,7 @@ test_that("history and binding failures repair before exact candidate authorizat
       input_data = data.frame(), name = "history_rule",
       model_type = "local", approval = approval, control = custom_model_control(draft_path = withr::local_tempdir())
     )
-    expect_identical(requests[[1]]$protocol$version, 6L)
+    expect_identical(sort(names(requests[[1]]$protocol)), c("missing_data", "package_policy", "predictor_types", "predictors", "scaffold"))
     expect_identical(requests[[2]]$feedback$code, "insufficient_example_history")
     expect_identical(requests[[2]]$feedback$field, "examples.history")
     expect_identical(requests[[4]]$failure$reason, "source_binding")
@@ -1402,7 +1402,7 @@ test_that("typed drafts retry native examples and validate both approval policie
       input_data = data.frame(), name = "typed_mean", model_type = "local",
       approval = approval, control = custom_model_control(draft_path = withr::local_tempdir())
     )
-    expect_identical(requests[[1]]$protocol$version, 6L)
+    expect_identical(sort(names(requests[[1]]$protocol)), c("missing_data", "package_policy", "predictor_types", "predictors", "scaffold"))
     expect_identical(requests[[2]]$feedback$field, "examples.series")
     expect_identical(requests[[2]]$feedback$code, "invalid_examples_shape")
     expect_length(requests, 3)
@@ -1648,7 +1648,9 @@ test_that("isolated-execution drafts cannot reuse consent for the current sessio
   legacy <- source
   legacy$schema_version <- 1L
   legacy$state_digest <- custom_draft_digest(legacy)
-  expect_error(create_custom_model(draft = legacy), "obsolete approval workflow; start a new draft")
+  expect_error(create_custom_model(draft = legacy), "Invalid draft schema or identity",
+    class = "finnts_custom_model_authoring_error"
+  )
 })
 
 test_that("wrong responses and missing LLM leave valid revisions untouched", {
@@ -2026,54 +2028,39 @@ test_that("automatic repairs preserve fixed examples and exact policy on replay"
 # Transport and numeric reports use the existing synthetic harness; persisted
 # source, receipts and replay are real, and replay must not regenerate anything.
 test_that("the current automatic catalog replays exactly and rejects policy tampering", {
-  policy_builder <- custom_author_automatic_policy
-  for (version in 2L) local({
-    tracker <- draft_harness()
-    local_mocked_bindings(custom_author_automatic_policy = function(...) {
-      policy <- policy_builder(...)
-      policy$catalog_version <- version
-      policy$catalog <- custom_author_defaults()
-      policy
-    }, .package = "finnts")
-    root <- withr::local_tempdir()
-    model <- create_custom_model("Use the historical mean.", list(),
-      input_data = data.frame(), validation_examples = draft_examples(),
-      approval = "automatic", control = custom_model_control(draft_path = root)
-    )
-    pointer <- file.path(list.dirs(root, recursive = FALSE), "current.rds")
-    state <- custom_draft_load(pointer)$state
-    original <- serialize(state, NULL)
-    expect_identical(state$settings$automatic_policy$catalog_version, version)
-    expect_identical(state$settings$automatic_policy$catalog, custom_author_defaults())
-    expect_identical(state$contract$automatic_defaults$catalog_version, version)
-    expect_null(state$contract$automatic_defaults$defaults_used$growth_basis)
-    evidence <- jsonlite::fromJSON(model$validation$checks$automatic_defaults, simplifyVector = FALSE)
-    expect_equal(evidence$catalog_version, version)
-    expect_null(evidence$defaults_used$growth_basis)
-    expect_identical(tracker$requests, 2L)
-    expect_identical(tracker$validations, 1L)
-    for (changed_version in c(3L - version, 3L)) {
-      altered <- state
-      altered$settings$automatic_policy$catalog_version <- changed_version
-      altered$state_digest <- custom_draft_digest(altered)
-      expect_error(validate_custom_model_draft(altered), "defaults policy changed")
-    }
-    altered <- state
-    altered$settings$automatic_policy$catalog$growth_basis <- "Use absolute differences instead."
-    altered$state_digest <- custom_draft_digest(altered)
-    expect_error(validate_custom_model_draft(altered), "defaults policy changed")
-    local_mocked_bindings(
-      custom_author_request = function(...) stop("Unexpected authoring"), custom_author_automatic_policy = function(...) stop("Unexpected policy rebuild"),
-      custom_author_validate = function(...) stop("Unexpected revalidation"), .package = "finnts"
-    )
-    expect_identical(create_custom_model(draft = pointer), model)
-    expect_identical(create_custom_model(draft = unserialize(original)), model)
-    reloaded <- custom_draft_load(pointer)$state
-    expect_identical(serialize(reloaded, NULL), original)
-    expect_identical(reloaded$receipts, state$receipts)
-    expect_identical(reloaded$definition$source, model$definition$source)
-    expect_identical(reloaded$definition$version_id, model$definition$version_id)
-  })
+  tracker <- draft_harness()
+  root <- withr::local_tempdir()
+  model <- create_custom_model("Use the historical mean.", list(),
+    input_data = data.frame(), validation_examples = draft_examples(),
+    approval = "automatic", control = custom_model_control(draft_path = root)
+  )
+  pointer <- file.path(list.dirs(root, recursive = FALSE), "current.rds")
+  state <- custom_draft_load(pointer)$state
+  original <- serialize(state, NULL)
+  expect_identical(state$settings$automatic_policy$catalog, custom_author_defaults())
+  expect_false("catalog_version" %in% names(state$settings$automatic_policy))
+  expect_false("catalog_version" %in% names(state$contract$automatic_defaults))
+  expect_null(state$contract$automatic_defaults$defaults_used$growth_basis)
+  evidence <- jsonlite::fromJSON(model$validation$checks$automatic_defaults, simplifyVector = FALSE)
+  expect_null(evidence$catalog_version)
+  expect_null(evidence$defaults_used$growth_basis)
+  expect_identical(tracker$requests, 2L)
+  expect_identical(tracker$validations, 1L)
+  altered <- state
+  altered$settings$automatic_policy$catalog$growth_basis <- "Use absolute differences instead."
+  altered$state_digest <- custom_draft_digest(altered)
+  expect_error(validate_custom_model_draft(altered), "defaults policy changed")
+  local_mocked_bindings(
+    custom_author_request = function(...) stop("Unexpected authoring"), custom_author_automatic_policy = function(...) stop("Unexpected policy rebuild"),
+    custom_author_validate = function(...) stop("Unexpected revalidation"), .package = "finnts"
+  )
+  expect_identical(create_custom_model(draft = pointer), model)
+  expect_identical(create_custom_model(draft = unserialize(original)), model)
+  reloaded <- custom_draft_load(pointer)$state
+  expect_identical(serialize(reloaded, NULL), original)
+  expect_identical(reloaded$receipts, state$receipts)
+  expect_identical(reloaded$definition$source, model$definition$source)
+  expect_identical(reloaded$definition$version_id, model$definition$version_id)
 })
 
 test_that("automatic cannot ask questions, exceed budgets or promote manual drafts", {
@@ -2150,7 +2137,7 @@ test_that("prepared draft resumes use exact references without changing the orig
   raw <- data.frame(Date = seq(as.Date("2020-01-01"), by = "month", length.out = 12), id = "private-id", value = 100)
   info <- set_run_info(project_name = "draft-prepared", path = withr::local_tempdir(), add_unique_id = FALSE)
   prep_data(info, raw, "id", "value", "month", 1,
-    recipes_to_run = "R1", stationary = FALSE, clean_missing_values = FALSE,
+    recipes_to_run = "C1", stationary = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE
   )
   files <- list.files(info$path, recursive = TRUE, full.names = TRUE)
@@ -2180,7 +2167,7 @@ test_that("prepared draft resumes use exact references without changing the orig
   invisible(capture.output(source <- create_custom_model(draft = draft, responses = draft_reply(draft, "details"))))
   expect_identical(source$stage, "review_create")
   expect_identical(tools::md5sum(files), before)
-  path <- names(source$context$sources)[grepl("-R1\\.csv$", names(source$context$sources))][[1]]
+  path <- names(source$context$sources)[grepl("-C1\\.csv$", names(source$context$sources))][[1]]
   rows <- utils::read.csv(path, colClasses = c(Combo = "character"))
   rows$Target[[1]] <- 101
   utils::write.csv(rows, path, row.names = FALSE)
@@ -2246,7 +2233,7 @@ test_that("durable drafts resume validation and approval in exact fresh installe
   info <- set_run_info(project_name = "resumed-draft", path = withr::local_tempdir(), add_unique_id = FALSE)
   forecast_time_series(info, raw, "id", "value", "month", 1,
     custom_models = list(draft_mean = model), models_to_run = "draft_mean",
-    stationary = FALSE, clean_missing_values = FALSE, recipes_to_run = "R1", run_ensemble_models = FALSE, run_global_models = FALSE,
+    stationary = FALSE, clean_missing_values = FALSE, recipes_to_run = "C1", run_ensemble_models = FALSE, run_global_models = FALSE,
     negative_forecast = TRUE, average_models = FALSE, back_test_scenarios = 1, return_data = FALSE
   )
   expect_equal(unique(get_forecast_data(info)$Forecast), 12345)

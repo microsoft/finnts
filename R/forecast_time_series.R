@@ -35,10 +35,13 @@
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data
 #' @param custom_models Named list of experimental approved custom-model envelopes,
 #'   enrolled only through `models_to_run`. See [prep_models()] for the envelope
-#'   contract and supported profile. Incompatible explicit custom settings error
-#'   before data preparation. Use [create_custom_model()] for reviewed authoring.
+#'   contract and supported profile. Selected custom models add the raw C1
+#'   recipe to `recipes_to_run` and may run alone or alongside built-in models.
+#'   Incompatible explicit custom settings error before data preparation. Use
+#'   [create_custom_model()] for reviewed authoring.
 #' @param stationary Apply differencing during preparation; retains the existing
-#'   TRUE default. Selected original-scale custom models require FALSE.
+#'   TRUE default. Applies only to built-in R1/R2 recipes; custom models always
+#'   use the raw, original-scale C1 recipe.
 #' @param back_test_scenarios Number of specific back test folds to run when determining the best model.
 #'   Default of NULL will automatically choose the number of back tests to run based on historical data size,
 #'   which tries to always use a minimum of 80% of the data when training a model.
@@ -70,7 +73,8 @@
 #' @param recipes_to_run List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 #'   all recipes, but only runs the R1 recipe for weekly and daily date types, and also for global models to prevent memory issues.
 #'   A value of "all" runs all recipes, regardless of date type or if it's a local/global model. A list like c("R1") or c("R2")
-#'   would only run models with the R1 or R2 recipe.
+#'   would only run models with the R1 or R2 recipe. "C1" is the raw recipe for custom models and is added automatically
+#'   when custom models are selected; c("C1") alone runs only custom models.
 #' @param pca If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 #'   PCA on day and week date types across all local multivariate models, and also for global models across all date types.
 #' @param models_to_run List of models to run. Default of NULL runs all models.
@@ -123,7 +127,8 @@
 #' models_tbl <- get_trained_models(run_info)
 #' }
 #' @details Reviewed custom hierarchy models require a shared explicitly mixed
-#'   custom/FinnTS pool, local-only R1 execution and no averaging or regressors.
+#'   custom/FinnTS pool, local-only C1 execution and no external regressors.
+#'   Model averages and ensembles may include custom forecasts.
 #'   Eligibility uses requested candidates, not the eventual winning models.
 #'   Custom-only forecasts require a compatible bottom-up definition instead;
 #'   no model is automatically added and no requested approach is changed.
@@ -180,15 +185,17 @@ forecast_time_series <- function(run_info = NULL,
 
   custom_pool <- custom_run_pool(models_to_run, models_not_to_run, custom_models)
   if (!is.null(custom_pool)) {
-    custom_context <- custom_run_context(run_info, list(forecast_approach = forecast_approach, recipes_to_run = recipes_to_run,
-      stationary = stationary, box_cox = FALSE, clean_missing_values = clean_missing_values,
-      clean_outliers = clean_outliers, multistep_horizon = FALSE, date_type = date_type,
-      forecast_horizon = forecast_horizon), run_ensemble_models, allow_hierarchy = TRUE)
+    check_recipes_to_run(recipes_to_run)
+    recipes_to_run <- add_custom_recipe(recipes_to_run, date_type)
+    custom_context <- custom_run_context(run_info, list(
+      forecast_approach = forecast_approach, recipes_to_run = recipes_to_run,
+      date_type = date_type, forecast_horizon = forecast_horizon
+    ), allow_hierarchy = TRUE)
     custom_run_eligibility(custom_pool, custom_context)
-    custom_run_hierarchy_controls(custom_context, external_regressors, average_models, weekly_to_daily)
+    custom_run_hierarchy_controls(custom_context, external_regressors, weekly_to_daily)
     effective_global <- if (is.null(run_global_models)) !date_type %in% c("day", "week") else run_global_models
-    custom_run_training_controls(list(pool = custom_pool, manifest = list(context = custom_context)), run_local_models, effective_global, "R1",
-      feature_selection, negative_forecast, parallel_processing, inner_parallel)
+    custom_run_training_controls(list(pool = custom_pool, manifest = list(context = custom_context)),
+      run_local_models, effective_global, negative_forecast)
     if (forecast_approach != "bottoms_up") {
       custom_run_hierarchy_panel(input_data, combo_variables, target_variable, date_type, hist_start_date, hist_end_date)
     }
