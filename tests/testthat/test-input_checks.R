@@ -142,6 +142,195 @@ test_that("check_input_data rejects date-formatted combo variable", {
   )
 })
 
+# * Missing combo / target / external regressor columns ----
+
+test_that("check_input_data rejects combo variables missing from input data", {
+  expect_error(
+    check_input_data(
+      input_data = valid_data,
+      combo_variables = c("missing_combo"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "combo variables do not match column headers.*Missing columns: missing_combo"
+  )
+})
+
+test_that("check_input_data rejects a target variable missing from input data", {
+  expect_error(
+    check_input_data(
+      input_data = valid_data,
+      combo_variables = c("id"),
+      target_variable = "missing_target",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "target variable 'missing_target' does not match a column header"
+  )
+})
+
+test_that("check_input_data rejects external regressors missing from input data", {
+  expect_error(
+    check_input_data(
+      input_data = valid_data,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = c("missing_xreg"),
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "external regressors do not match column headers.*Missing columns: missing_xreg"
+  )
+})
+
+# * Non-numeric target variable ----
+
+test_that("check_input_data rejects a non-numeric target variable", {
+  data_char_target <- valid_data
+  data_char_target$value <- as.character(data_char_target$value)
+  expect_error(
+    check_input_data(
+      input_data = data_char_target,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "Target variable in input data needs to be numeric"
+  )
+})
+
+# * Date column presence and formatting ----
+
+test_that("check_input_data requires a column named 'Date'", {
+  data_no_date <- valid_data
+  names(data_no_date)[names(data_no_date) == "Date"] <- "when"
+  expect_error(
+    check_input_data(
+      input_data = data_no_date,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "date column in input data needs to be named as 'Date'"
+  )
+})
+
+test_that("check_input_data requires the 'Date' column to be date-formatted", {
+  data_bad_date <- valid_data
+  data_bad_date$Date <- as.character(data_bad_date$Date)
+  expect_error(
+    check_input_data(
+      input_data = data_bad_date,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "date column in input data needs to be formatted as a date value"
+  )
+})
+
+# * Even day-of-month spacing for month/quarter/year data ----
+
+test_that("check_input_data rejects uneven day-of-month spacing for month data", {
+  data_uneven <- valid_data
+  data_uneven$Date <- as.Date(c(
+    "2020-01-01", "2020-02-02", "2020-03-03", "2020-04-04",
+    "2020-05-05", "2020-06-06", "2020-07-07", "2020-08-08",
+    "2020-09-09", "2020-10-10", "2020-11-11", "2020-12-12"
+  ))
+  expect_error(
+    check_input_data(
+      input_data = data_uneven,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "historical date values are not evenly spaced.*day of the month"
+  )
+})
+
+test_that("check_input_data does not apply day-of-month spacing check to week data", {
+  data_uneven <- valid_data
+  data_uneven$Date <- seq.Date(as.Date("2020-01-01"), by = "week", length.out = 12)
+  expect_no_error(
+    check_input_data(
+      input_data = data_uneven,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "week",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    )
+  )
+})
+
+# * fiscal_year_start range ----
+
+test_that("check_input_data rejects fiscal_year_start outside 1-12", {
+  expect_error(
+    check_input_data(
+      input_data = valid_data,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 13,
+      parallel_processing = NULL
+    ),
+    "fiscal year start should be a number from 1 to 12"
+  )
+
+  expect_error(
+    check_input_data(
+      input_data = valid_data,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 0,
+      parallel_processing = NULL
+    ),
+    "fiscal year start should be a number from 1 to 12"
+  )
+})
+
+# * Duplicate combo-Date rows ----
+
+test_that("check_input_data rejects duplicate combo-Date rows", {
+  data_dup <- rbind(valid_data, valid_data[1, ])
+  expect_error(
+    check_input_data(
+      input_data = data_dup,
+      combo_variables = c("id"),
+      target_variable = "value",
+      external_regressors = NULL,
+      date_type = "month",
+      fiscal_year_start = 1,
+      parallel_processing = NULL
+    ),
+    "duplicate rows have been detected in the input data"
+  )
+})
+
 # * Test set_run_info input change detection ----
 
 test_that("set_run_info error lists changed inputs", {
