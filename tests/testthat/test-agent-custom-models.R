@@ -107,7 +107,7 @@ test_that("Agent contracts validate metadata and declared modes without I/O", {
   contract <- resolve_agent_custom_models(fixture$info, "business_mean", models)
   expect_identical(contract$mode_models, list(local = "business_mean", global = character()))
   invalid_contexts <- list(
-    list(run_local_models = FALSE), list(negative_forecast = FALSE), list(allow_hierarchical_forecast = TRUE),
+    list(run_local_models = FALSE), list(negative_forecast = NA), list(allow_hierarchical_forecast = TRUE),
     list(forecast_approach = "standard_hierarchy"), list(forecast_horizon = 3), list(forecast_horizon = 1.5), list(forecast_horizon = NA_real_),
     list(forecast_horizon = Inf), list(external_regressors = character()), list(run_global_models = NA), list(run_global_models = c(
       TRUE,

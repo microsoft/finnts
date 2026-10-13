@@ -277,6 +277,21 @@ test_that("global-only custom forecasts preserve negative arithmetic", {
   expect_identical(unique(rows$Model_Type), "global")
 })
 
+test_that("custom forecasts floor negative output at zero when negative_forecast is FALSE", {
+  info <- standard_run(withr::local_tempdir())
+  model <- standard_custom_model(modes = "global", offset = -300)
+  prep_models(info,
+    models_to_run = "business_mean", custom_models = list(business_mean = model), run_ensemble_models = FALSE,
+    back_test_scenarios = 1, num_hyperparameters = 1
+  )
+  train_models(info, run_local_models = FALSE, run_global_models = TRUE, negative_forecast = FALSE)
+  paths <- finnts:::local_artifact_path(info, "forecasts", "-global_models", vapply(c("A", "B"), finnts:::hash_data, character(1)))
+  rows <- finnts:::read_exact_artifact(info, paths)
+  expect_gt(nrow(rows), 0L)
+  expect_equal(rows$Forecast, rep(0, nrow(rows)))
+  expect_identical(unique(rows$Model_Type), "global")
+})
+
 test_that("malformed manifests and unsupported controls fail without execution", {
   info <- standard_run(withr::local_tempdir())
   model <- standard_custom_model()
@@ -285,13 +300,16 @@ test_that("malformed manifests and unsupported controls fail without execution",
     back_test_scenarios = 1, num_hyperparameters = 1
   )
   custom <- finnts:::custom_run_read(info, TRUE)
-  for (change in list(list(feature_selection = TRUE), list(negative_forecast = FALSE), list(inner_parallel = TRUE), list(parallel_processing = "spark"))) {
+  for (change in list(list(feature_selection = TRUE), list(negative_forecast = NA), list(inner_parallel = TRUE), list(parallel_processing = "spark"))) {
     args <- modifyList(list(
       custom = custom, local = TRUE, global = TRUE, recipes = "R1", feature_selection = FALSE,
       negative_forecast = TRUE, parallel_processing = NULL, inner_parallel = FALSE
     ), change)
     expect_error(do.call(finnts:::custom_run_training_controls, args), "Custom runs require")
   }
+  expect_no_error(finnts:::custom_run_training_controls(
+    custom, TRUE, TRUE, "R1", FALSE, FALSE, NULL, FALSE
+  ))
   for (change in list(list(forecast_approach = "standard_hierarchy"), list(recipes_to_run = "R2"))) {
     expect_error(finnts:::custom_run_context(info, modifyList(custom$manifest$context, change), FALSE), names(change))
   }

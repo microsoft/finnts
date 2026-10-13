@@ -117,10 +117,17 @@ validate_custom_model_control <- function(control) {
 # Never include arbitrary provider/child output, credentials or caller data.
 # Explicit user-facing clarification may include sanitized, bounded question
 # fields, labelled as provider statements rather than verified input failures.
-custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, field = NULL, bindings = NULL) {
-  condition <- list(message = paste0("Custom model ", stage, ": ", reason), call = NULL, stage = stage)
+# Optional explanation is a provider statement already passed through
+# custom_author_provider_explanation(); it is appended and labelled as such.
+custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, field = NULL, bindings = NULL, explanation = NULL) {
+  explanation <- custom_author_provider_explanation(explanation)
+  condition <- list(message = paste0("Custom model ", stage, ": ", reason, if (!is.null(explanation))
+    paste0(" Provider explanation: ", explanation)
+  else ""), call = NULL, stage = stage)
   if (!is.null(code))
     condition$code <- code
+  if (!is.null(explanation))
+    condition$explanation <- explanation
   if (!is.null(dependency))
     condition$dependency <- validate_custom_author_dependency(dependency)
   if (!is.null(field))
@@ -473,6 +480,47 @@ custom_author_text <- function(value) {
 
 # Return only short nonnumeric source-literal messages without secret/path-like
 # content. Unknown exception text is never echoed, even when a candidate embeds it.
+#' Sanitize a provider's explanation for a declined source candidate
+#'
+#' Converts the free-text reason a provider gives for `implementation_difficulty`
+#' or `contract_conflict` into a bounded, printable diagnostic. The text is a
+#' provider statement, not verified evidence, and never executes.
+#'
+#' @param text Candidate explanation; any value other than one non-empty string
+#'   yields `NULL`.
+#' @return `NULL` when absent, empty, or containing credential-like words;
+#'   otherwise a single printable-ASCII string of at most 600 bytes with
+#'   whitespace collapsed and long opaque tokens replaced by `[redacted]`.
+#'   Typographic quotes, dashes, and ellipses become their ASCII equivalents;
+#'   other non-ASCII characters become `?`. Applying the function to its own
+#'   output returns the same string.
+#' @noRd
+custom_author_provider_explanation <- function(text) {
+  if (!custom_author_text(text))
+    return(NULL)
+  text <- enc2utf8(text)
+  text <- gsub("[\u2018\u2019\u201a\u2032]", "'", text, perl = TRUE)
+  text <- gsub("[\u201c\u201d\u201e\u2033]", "\"", text, perl = TRUE)
+  text <- gsub("[\u2010-\u2015\u2212]", "-", text, perl = TRUE)
+  text <- gsub("\u2026", "...", text, fixed = TRUE)
+  text <- gsub("[\u00a0\u2007\u202f]", " ", text, perl = TRUE)
+  text <- iconv(text, "UTF-8", "ASCII", sub = "?")
+  if (is.na(text))
+    return(NULL)
+  text <- gsub("[^ -~]", " ", text)
+  text <- gsub("[A-Za-z0-9+/=_-]{32,}", "[redacted]", text)
+  text <- trimws(gsub("\\s+", " ", text))
+  if (!nzchar(text) || grepl("secret|token|password|credential|authorization|bearer|cookie|private|api.key|connection.string",
+    text,
+    ignore.case = TRUE
+  )) {
+    return(NULL)
+  }
+  if (nchar(text, type = "bytes") > 600L)
+    text <- paste0(trimws(substr(text, 1L, 597L)), "...")
+  text
+}
+
 custom_author_safe_message <- function(text) {
   custom_author_text(text) && nchar(text, type = "bytes") <= 240L && grepl("^[A-Za-z][A-Za-z ,.;():!?-]*$", text) && !grepl("secret|token|password|credential|authorization|bearer|cookie|private|api.key|connection.string",
     text,
@@ -640,9 +688,12 @@ custom_author_failure_messages <- function() {
 # Optional property identifies a closed behavioral check, never caller data.
 # Optional unbound_symbol contains only a validated source-referenced identifier;
 # its runtime condition text is never copied into the failure record.
+# Optional explanation is a sanitized provider statement, kept only for declined
+# source_contract responses (implementation_difficulty or contract_conflict).
 custom_author_failure <- function(
     definition, phase, reason = "candidate_error", example_index = NULL, model_type = NULL,
-    error = NULL, comparisons = list(), dependency = NULL, bindings = NULL, rule_error = NULL, property = NULL, unbound_symbol = NULL) {
+    error = NULL, comparisons = list(), dependency = NULL, bindings = NULL, rule_error = NULL, property = NULL, unbound_symbol = NULL,
+    explanation = NULL) {
   messages <- custom_author_failure_messages()
   if (!custom_author_text(reason) || !reason %in% names(messages))
     reason <- "candidate_error"
@@ -663,6 +714,9 @@ custom_author_failure <- function(
     failure$property <- property
   if (!is.null(unbound_symbol))
     failure$unbound_symbol <- validate_custom_author_unbound_symbol(unbound_symbol, definition$source)
+  explanation <- custom_author_provider_explanation(explanation)
+  if (!is.null(explanation))
+    failure$provider_explanation <- explanation
   validate_custom_author_failure(failure, definition)
 }
 
@@ -670,13 +724,22 @@ custom_author_failure <- function(
 # Reject executable values, unknown messages and excessive example comparisons.
 # Missing-variable evidence is optional for legacy records, paired with its
 # reason, and rechecked against source whenever the definition is available.
+# Provider explanations are allowed only on declined source_contract records and
+# must already be in sanitized form.
 validate_custom_author_failure <- function(failure, definition = NULL) {
   custom_author_fields(failure, c(
     "schema_version", "version_id", "phase", "reason", "message", "example_index", "model_type",
     "source_message", "comparisons", if ("dependency" %in% names(failure)) "dependency", if ("bindings" %in% names(failure)) "bindings",
     if ("rule_error" %in% names(failure)) "rule_error", if ("property" %in% names(failure)) "property", if ("unbound_symbol" %in%
-      names(failure)) "unbound_symbol"
+      names(failure)) "unbound_symbol", if ("provider_explanation" %in% names(failure)) "provider_explanation"
   ), "diagnostics")
+  if ("provider_explanation" %in% names(failure) && (!identical(failure$phase, "source_contract") || !custom_author_text(failure$reason) ||
+    !failure$reason %in% c("implementation_difficulty", "contract_conflict") || !identical(
+    custom_author_provider_explanation(failure$provider_explanation),
+    failure$provider_explanation
+  ))) {
+    custom_author_abort("diagnostics", "Invalid provider explanation.")
+  }
   if ("unbound_symbol" %in% names(failure) || identical(failure$reason, "unbound_symbol")) {
     if (!identical(failure$reason, "unbound_symbol") || !is.null(failure$source_message) || !custom_author_text(failure$phase) ||
       !failure$phase %in% c(
@@ -1038,7 +1101,9 @@ custom_author_automatic_policy <- function(
     hist_start_date = input$hist_start_date %||% data$metadata$date_start, hist_end_date = input$hist_end_date %||% data$metadata$date_end,
     date_type = data$metadata$date_type, forecast_horizon = data$metadata$forecast_horizon, recipe_id = "R1", target_scale = "original",
     max_attempts = as.integer(max_attempts), validation_timeout = as.numeric(timeout), sampled_series = data$metadata$sampled_series,
-    sampled_rows = data$metadata$sampled_rows, max_sampled_leaves = if ("global" %in% modes) 10000L else 3L, max_historical_rows = 10000L
+    sampled_rows = data$metadata$sampled_rows, total_series = data$metadata$total_series,
+    sampling = if ("global" %in% modes) "representative_hash" else "first_three_hash", max_historical_rows = 10000L,
+    max_sampled_series = if ("global" %in% modes) 100L else 3L
   ))
 }
 
@@ -1362,9 +1427,12 @@ custom_author_response <- function(request, response) {
 #' Raw input is privately prepared; existing runs and Chat templates are unchanged.
 #' Original-scale R1 requires differencing, Box-Cox, missing-value cleaning,
 #' outlier cleaning and multistep disabled. Local sampling retains up to three
-#' series or raw hierarchy leaves. New explicit global calls retain the complete
-#' supplied cohort; oversized cohorts fail rather than dropping peers/categories.
-#' All paths retain at most 10000 historical node rows. Prepared
+#' series or raw hierarchy leaves. Explicit global calls validate a deterministic
+#' representative sample of at most 100 series: extreme-scale, zero-heavy, negative, flattest and
+#' shortest series are always kept, multi-variable combo levels are covered when
+#' they fit, and remaining series fill in hash order. Every series still passes
+#' the full-panel input checks, and forecasting fits the authored model on the
+#' complete cohort. All paths retain at most 10000 historical node rows. Prepared
 #' hierarchies retain all nodes. Hierarchy rules must be local and univariate;
 #' forecast execution requires a mixed custom/FinnTS pool and reconciliation.
 #' New global contracts separately declare per-series, per-group or full-cohort
@@ -1532,7 +1600,7 @@ create_custom_model <- function(
       invisible(utils::capture.output(data <- suppressMessages(custom_author_data(input_data, run_info, combo_variables,
         target_variable, date_type, forecast_horizon, external_regressors, hist_start_date, hist_end_date,
         capture_context = persist,
-        forecast_approach = forecast_approach, complete_global = "global" %in% model_type
+        forecast_approach = forecast_approach, global_sample = "global" %in% model_type
       ))))
       forecast_approach <- forecast_approach %||% data$metadata$forecast_approach %||% "bottoms_up"
       if (forecast_approach != "bottoms_up" && !is.null(model_type) && !identical(model_type, "local")) {
@@ -1996,7 +2064,8 @@ custom_author_questions <- function(questions) {
 # Unwrap a protocol-six candidate or stop on a reported fixed-contract conflict.
 # Marked global protocols distinguish retryable implementation difficulty from
 # business contradictions without interpreting arbitrary prose. No code executes
-# and no rule, oracle, approval or retry limit changes at this boundary.
+# and no rule, oracle, approval or retry limit changes at this boundary. A declined
+# response's sanitized explanation rides on the condition for diagnostics only.
 custom_author_source_response <- function(proposal) {
   custom_author_fields(proposal, c("status", "conflict", "fit_body", "predict_body", "helpers"), "source")
   statuses <- c("candidate", "contract_conflict", "implementation_difficulty")
@@ -2012,9 +2081,12 @@ custom_author_source_response <- function(proposal) {
       custom_author_abort("source", "A conflict response must omit executable candidate content.", code = "source_contract")
     }
     if (proposal$status == "implementation_difficulty")
-      custom_author_abort("source", custom_author_failure_messages()$implementation_difficulty, code = "implementation_difficulty")
+      custom_author_abort("source", custom_author_failure_messages()$implementation_difficulty,
+        code = "implementation_difficulty",
+        explanation = proposal$conflict
+      )
     custom_author_abort("contract", "Provider reported a conflict in the fixed contract; no candidate was executed. Start a new authoring version to resolve it.",
-      code = "contract_conflict"
+      code = "contract_conflict", explanation = proposal$conflict
     )
   }
   if (nzchar(proposal$conflict))

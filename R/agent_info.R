@@ -33,7 +33,8 @@
 #' @param models_to_run Explicit custom or mixed candidate names. Must select at
 #'   least one supplied custom model; NULL retains ordinary Agent behavior.
 #' @details Custom Agent runs require original-scale R1, CSV data, RDS objects,
-#'   local/mounted storage, no hierarchy and `negative_forecast = TRUE`. The exact
+#'   local/mounted storage and no hierarchy. `negative_forecast = FALSE` floors
+#'   finished custom forecasts at zero, as for built-in models. The exact
 #'   approved pool is pinned before the parent run log. Existing-run setup requires
 #'   equivalent explicit enrollment; changed or omitted approval requires a new
 #'   run. Source is trusted R, not sandboxed. For compatible new-data updates,

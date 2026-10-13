@@ -724,6 +724,86 @@ custom_author_input_metadata <- function(
   list(input_data = input_data, combo_variables = combo_variables, date_type = date_type)
 }
 
+# Summarize one series' observed history for representative global sampling.
+# Takes the series label and its historical targets (every row counts toward
+# the budget; non-finite values are ignored in statistics); returns a one-row
+# data frame of row count, mean absolute scale, zero share, negative flag and
+# standard deviation. Summaries stay local and never enter provider metadata.
+custom_author_series_summary <- function(label, target) {
+  rows <- length(target)
+  target <- target[is.finite(target)]
+  if (!length(target)) target <- 0
+  data.frame(
+    label = label, key = hash_data(label), rows = rows, scale = mean(abs(target)),
+    zero_share = mean(target == 0), negative = any(target < 0),
+    spread = if (length(target) > 1L) stats::sd(target) else 0, stringsAsFactors = FALSE
+  )
+}
+
+# Choose a deterministic representative global authoring sample under a total
+# historical row budget and a series budget. `summary` has one row per series
+# from custom_author_series_summary(); `levels` optionally holds aligned combo
+# variable values (used only when there are two or more variables, since a
+# single variable's levels are the series themselves). `budget` caps total
+# history rows; `series_budget` caps sampled series so authoring preparation,
+# whose cost grows roughly linearly with series count, stays near 30-45 seconds.
+# Edge series are mandatory: largest/smallest scale, most zeros, any negatives,
+# flattest and shortest, ties broken by hash (at most six, below any valid
+# series budget). Level coverage is then best-effort in hash order, and the rest
+# of both budgets fills in hash order. Mandatory rows above the row budget abort
+# with counts. Returns selected labels in hash order plus count-only disclosure.
+custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L, series_budget = 100L) {
+  order_by <- function(value) order(value, summary$key, method = "radix")
+  edges <- list(
+    largest_scale = order_by(-summary$scale)[1L], smallest_scale = order_by(summary$scale)[1L],
+    most_zeros = if (any(summary$zero_share > 0)) order_by(-summary$zero_share)[1L],
+    negative = if (any(summary$negative)) order_by(!summary$negative)[1L],
+    flattest = order_by(summary$spread)[1L], shortest = order_by(summary$rows)[1L]
+  )
+  edges <- edges[lengths(edges) > 0L]
+  chosen <- unique(unlist(edges, use.names = FALSE))
+  used <- sum(summary$rows[chosen])
+  if (used > budget) {
+    custom_author_abort("input", sprintf(
+      "Representative global edge series need %d historical rows, above the %d-row authoring budget; shorten history with hist_start_date.",
+      as.integer(used), as.integer(budget)
+    ))
+  }
+  hash_order <- order(summary$key, method = "radix")
+  level_series <- integer()
+  uncovered <- 0L
+  if (is.data.frame(levels) && ncol(levels) > 1L) {
+    seen <- lapply(levels, function(values) unique(values[chosen]))
+    for (index in setdiff(hash_order, chosen)) {
+      new_level <- any(vapply(names(levels), function(column) !levels[[column]][[index]] %in% seen[[column]], logical(1)))
+      if (new_level && length(chosen) < series_budget && used + summary$rows[[index]] <= budget) {
+        chosen <- c(chosen, index)
+        level_series <- c(level_series, index)
+        used <- used + summary$rows[[index]]
+        for (column in names(levels)) seen[[column]] <- union(seen[[column]], levels[[column]][[index]])
+      }
+    }
+    uncovered <- sum(vapply(names(levels), function(column) length(setdiff(unique(levels[[column]]), seen[[column]])), integer(1)))
+  }
+  fill <- integer()
+  for (index in setdiff(hash_order, chosen)) {
+    if (length(chosen) + length(fill) >= series_budget) break
+    if (used + summary$rows[[index]] <= budget) {
+      fill <- c(fill, index)
+      used <- used + summary$rows[[index]]
+    }
+  }
+  chosen <- c(chosen, fill)
+  list(
+    selected = summary$label[chosen[order(summary$key[chosen], method = "radix")]],
+    disclosure = list(
+      strategy = "representative_hash", row_budget = as.integer(budget), series_budget = as.integer(series_budget), edge_series = length(unique(unlist(edges))),
+      edge_reasons = names(edges), level_series = length(level_series), uncovered_levels = as.integer(uncovered),
+      hash_fill_series = length(fill)
+    )
+  )
+}
+
 # Read or prepare one bounded representative sample without changing caller
 # objects, options, RNG or an existing run. Unknown series are discovered once;
 # exact selected R1 artifacts are reused across all authoring/repair attempts.
@@ -746,12 +826,15 @@ custom_author_input_metadata <- function(
 # prepared inputs cannot establish whether prior preparation filled raw gaps.
 # Omitted raw grouping/cadence uses deterministic metadata resolution. Prepared
 # forecast approach may be inherited by reusing its exact log read once.
-# New explicit global calls retain the entire supplied cohort under the unchanged
-# 10000-history-row cap. They never certify pooled behavior on arbitrary first
-# series or silently discard categories. Legacy/local sampling is unchanged.
+# Explicit global calls choose a deterministic representative sample under the
+# same 10000-history-row budget and at most 100 series: edge series (scale, zeros, negatives, flat,
+# shortest) are mandatory, multi-variable combo levels are covered when they
+# fit, and the rest fills in hash order. Full-panel preflight still covers every
+# series; count-only sampling disclosure enters metadata. Local sampling keeps
+# the first three series in hash order.
 custom_author_data <- function(
     input_data, run_info, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
-    hist_start_date, hist_end_date, capture_context = FALSE, forecast_approach = "bottoms_up", complete_global = FALSE) {
+    hist_start_date, hist_end_date, capture_context = FALSE, forecast_approach = "bottoms_up", global_sample = FALSE) {
   original_options <- options()
   on.exit(options(original_options), add = TRUE)
   withr::local_preserve_seed()
@@ -774,6 +857,7 @@ custom_author_data <- function(
   log_hash <- NULL
   driver_data <- NULL
   prepared_sample <- NULL
+  sample_disclosure <- NULL
   checked_sources <- NULL
   if (!is.null(input_data)) {
     resolved <- custom_author_input_metadata(
@@ -805,10 +889,18 @@ custom_author_data <- function(
     combos <- preflight$combos
     labels <- unique(combos)
     keys <- vapply(labels, hash_data, character(1))
-    selected <- labels[if (complete_global)
-      order(keys, method = "radix")
-    else head(order(keys, method = "radix"), 3L)]
-    selected_rows <- combos %in% selected & input_data$Date >= hist_start_date & input_data$Date <= hist_end_date
+    in_history <- input_data$Date >= hist_start_date & input_data$Date <= hist_end_date
+    if (global_sample) {
+      history_target <- split(input_data[[target_variable]][in_history], factor(combos[in_history], levels = labels))
+      summary <- do.call(rbind, Map(custom_author_series_summary, labels, history_target))
+      first_rows <- match(labels, combos)
+      sample <- custom_author_global_sample(summary, input_data[first_rows, combo_variables, drop = FALSE])
+      selected <- sample$selected
+      sample_disclosure <- sample$disclosure
+    } else {
+      selected <- labels[head(order(keys, method = "radix"), 3L)]
+    }
+    selected_rows <- combos %in% selected & in_history
     sampled <- input_data[selected_rows, , drop = FALSE]
     if (nrow(sampled) > 10000L)
       custom_author_abort("input", "Selected complete histories exceed 10000 rows; supply a smaller subset.")
@@ -887,12 +979,13 @@ custom_author_data <- function(
         paths <- local_artifact_path(info, "prep_data", "-R1", info$combo)
       else paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-R1")), method = "radix")
       total_series <- length(paths)
-      if (length(actual$external_regressors) || complete_global) {
+      if (length(actual$external_regressors) || global_sample) {
         if (capture_context) {
           log_path <- local_artifact_path(info, "logs", extension = "csv")
           checked_sources <- stats::setNames(list(digest::digest(file = log_path, algo = "sha256")), log_path)
         }
         prepared_sample <- list()
+        summaries <- list()
         sampled_rows <- 0L
         for (index in seq_along(paths)) {
           path <- as.character(paths[[index]])
@@ -906,15 +999,30 @@ custom_author_data <- function(
             panel, "Combo", "Target", date_type, forecast_horizon, actual$external_regressors,
             actual$hist_start_date, hist_end_date
           )
-          if (complete_global || index <= 3L) {
+          if (global_sample) {
+            prepared_sample[[index]] <- panel
+            summaries[[index]] <- custom_author_series_summary(panel$Combo[[1L]], panel$Target[panel$Date <= hist_end_date])
+          } else if (index <= 3L) {
             sampled_rows <- sampled_rows + sum(panel$Date <= hist_end_date)
             if (sampled_rows > 10000L)
               custom_author_abort("input", "Selected complete histories exceed 10000 rows; supply a smaller explicit cohort.")
             prepared_sample[[index]] <- panel
           }
         }
+        if (global_sample) {
+          summary <- do.call(rbind, summaries)
+          parts <- strsplit(summary$label, "--", fixed = TRUE)
+          levels <- if (length(actual$combo_variables) > 1L && all(lengths(parts) == length(actual$combo_variables))) {
+            stats::setNames(as.data.frame(do.call(rbind, parts), stringsAsFactors = FALSE), actual$combo_variables)
+          }
+          sample <- custom_author_global_sample(summary, levels)
+          sample_disclosure <- sample$disclosure
+          keep <- match(sample$selected, summary$label)
+          prepared_sample <- prepared_sample[keep]
+          paths <- paths[keep]
+        }
       }
-      if (!complete_global)
+      if (!global_sample)
         paths <- head(paths, 3L)
     }
   }
@@ -973,6 +1081,8 @@ custom_author_data <- function(
     sampled_series = length(unique(data$Combo)), total_series = total_series, sampled_rows = nrow(data), date_start = as.character(min(data$Date)),
     date_end = as.character(max(data$Date)), available_packages = sort(packages, method = "radix")
   ))
+  if (!is.null(sample_disclosure))
+    result$metadata$global_sample <- sample_disclosure
   if (hierarchical) {
     result$metadata$forecast_approach <- forecast_approach
     result$metadata$hierarchy <- list(

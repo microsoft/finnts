@@ -16,8 +16,9 @@
 #'   `custom-` and the full version hash, followed by model type and recipe.
 #'   Saved workflows, fits and forecasts must match the pinned pool before reuse.
 #'   The initial profile requires `feature_selection = FALSE`,
-#'   `negative_forecast = TRUE`, `inner_parallel = FALSE` and sequential or
-#'   `local_machine` execution. Existing built-in-only behavior is unchanged.
+#'   `inner_parallel = FALSE` and sequential or `local_machine` execution.
+#'   `negative_forecast = FALSE` floors custom forecasts at zero, as for
+#'   built-in models. Existing built-in-only behavior is unchanged.
 #'   Temporal custom definitions evaluate complete horizons from existing
 #'   predictor rows during resampling, then retain only the original scoring
 #'   rows. Analysis cutoffs, scored targets and selection rules do not change.

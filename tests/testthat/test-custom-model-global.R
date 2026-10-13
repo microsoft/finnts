@@ -292,7 +292,7 @@ test_that("global resampling expands cohort execution without changing scoring r
   )), "complete forecast horizon")
 })
 
-test_that("global authoring retains the supplied cohort within the existing row cap", {
+test_that("global authoring samples a representative cohort within the row budget", {
   panel <- custom_global_panel(series = 6L, months = 12L)
   columns <- c("Date", "Combo", "Target", "Region", "Units")
   future <- panel$future
@@ -300,24 +300,64 @@ test_that("global authoring retains the supplied cohort within the existing row 
   raw <- rbind(panel$history[columns], future[columns])
   before <- serialize(raw, NULL)
   global <- custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(panel$history$Date),
-    complete_global = TRUE
+    global_sample = TRUE
   )
   expect_identical(global$metadata$sampled_series, 6L)
   expect_identical(global$metadata$total_series, 6L)
+  expect_identical(global$metadata$global_sample$hash_fill_series + global$metadata$global_sample$edge_series, 6L)
   expect_equal(nrow(global$data), nrow(panel$history))
-  expect_setequal(global$data$Region, panel$history$Region)
   expect_setequal(global$data$Combo, panel$history$Combo)
   expect_identical(serialize(raw, NULL), before)
-  legacy <- custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(panel$history$Date))
-  expect_identical(legacy$metadata$sampled_series, 3L)
+  local <- custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(panel$history$Date))
+  expect_identical(local$metadata$sampled_series, 3L)
+  expect_null(local$metadata$global_sample)
+
   large <- custom_global_panel(series = 140L, months = 72L)
+  history <- large$history
+  history$Target[history$Combo == history$Combo[[1L]]] <- 0
+  negative <- unique(history$Combo)[[50L]]
+  history$Target[history$Combo == negative][1:3] <- -5
   future <- large$future
   future$Target <- NA_real_
-  raw <- rbind(large$history[columns], future[columns])
-  local_mocked_bindings(prep_data = function(...) stop("Unexpected preparation before row-cap rejection"), .package = "finnts")
-  expect_error(custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(large$history$Date),
-    complete_global = TRUE
-  ), "10000 rows")
+  raw <- rbind(history[columns], future[columns])
+  sampled <- custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(history$Date),
+    global_sample = TRUE
+  )
+  expect_lte(nrow(sampled$data), 10000L)
+  expect_identical(sampled$metadata$sampled_series, 100L)
+  expect_identical(sampled$metadata$global_sample$series_budget, 100L)
+  expect_identical(sampled$metadata$total_series, 140L)
+  expect_true(all(c(history$Combo[[1L]], negative) %in% sampled$data$Combo))
+  expect_true(all(c("most_zeros", "negative", "largest_scale") %in% sampled$metadata$global_sample$edge_reasons))
+  expect_false(any(unique(history$Combo) %in% unlist(sampled$metadata$global_sample)))
+  again <- custom_author_data(raw, NULL, "Combo", "Target", "month", 3, c("Region", "Units"), NULL, max(history$Date),
+    global_sample = TRUE
+  )
+  expect_identical(again$data, sampled$data)
+  expect_identical(again$metadata, sampled$metadata)
+})
+
+test_that("global sampler covers multi-variable levels and rejects oversized edges", {
+  labels <- sprintf("s%02d", 1:12)
+  summary <- do.call(rbind, Map(custom_author_series_summary, labels, lapply(1:12, function(index) rep(index, 10L))))
+  levels <- data.frame(Region = rep(c("A", "B", "C"), each = 4L), Product = rep(c("x", "y"), 6L), stringsAsFactors = FALSE)
+  sample <- custom_author_global_sample(summary, levels, budget = 50L)
+  expect_lte(length(sample$selected), 5L)
+  chosen <- match(sample$selected, labels)
+  expect_setequal(levels$Region[chosen], c("A", "B", "C"))
+  expect_setequal(levels$Product[chosen], c("x", "y"))
+  expect_identical(sample$disclosure$uncovered_levels, 0L)
+  expect_identical(custom_author_global_sample(summary, levels, budget = 50L), sample)
+  single <- custom_author_global_sample(summary, levels["Region"], budget = 50L)
+  expect_identical(single$disclosure$level_series, 0L)
+  expect_error(custom_author_global_sample(summary, budget = 15L), "15-row authoring budget")
+
+  capped <- custom_author_global_sample(summary, levels, budget = 1000L, series_budget = 4L)
+  expect_length(capped$selected, 4L)
+  expect_identical(capped$disclosure$series_budget, 4L)
+  expect_true(all(c("s01", "s12") %in% capped$selected))
+  expect_identical(custom_author_global_sample(summary, levels, budget = 1000L, series_budget = 4L), capped)
+  expect_length(custom_author_global_sample(summary, budget = 1000L)$selected, 12L)
 })
 
 test_that("global calendar and allocation state survives installed worker replay", {

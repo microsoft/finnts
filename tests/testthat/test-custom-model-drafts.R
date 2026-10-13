@@ -101,6 +101,7 @@ test_that("global implementation difficulty preserves cohort examples and source
     if (limit == 1L) {
       expect_s3_class(result, "finnts_custom_model_authoring_error")
       expect_identical(result$code, "implementation_difficulty")
+      expect_match(conditionMessage(result), "Provider explanation: Need helper decomposition.", fixed = TRUE)
       expect_identical(sources, 1L)
       expect_identical(validations, 0L)
     } else {
@@ -109,6 +110,7 @@ test_that("global implementation difficulty preserves cohort examples and source
       expect_identical(validations, 1L)
       expect_identical(requests[[2L]]$contract, requests[[3L]]$contract)
       expect_identical(requests[[3L]]$failure$reason, "implementation_difficulty")
+      expect_identical(requests[[3L]]$failure$provider_explanation, "Need helper decomposition.")
       state <- custom_draft_load(file.path(list.dirs(root, recursive = FALSE), "current.rds"))$state
       expect_identical(state$contract$requirements$runtime, list(
         version = 2L, prediction_scope = "complete_horizon",

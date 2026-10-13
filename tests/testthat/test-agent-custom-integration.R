@@ -336,6 +336,14 @@ test_that("missing parent records and custom predecessors cannot enter update re
   expect_error(reject_agent_custom_update(marker_only))
 })
 
+test_that("custom Agent setup pins negative_forecast = FALSE into the contract", {
+  args <- custom_agent_inputs(withr::local_tempdir())
+  args$negative_forecast <- FALSE
+  info <- do.call(set_agent_info, args)
+  expect_false(info$custom_agent_contract$context$negative_forecast)
+  expect_identical(load_agent_custom_state(info)$custom_agent_contract_id, info$custom_agent_contract_id)
+})
+
 test_that("invalid custom setup fails before writing and metadata ownership stays exact", {
   args <- custom_agent_inputs(withr::local_tempdir())
   files <- list.files(args$project_info$path, recursive = TRUE, full.names = TRUE)
@@ -344,7 +352,7 @@ test_that("invalid custom setup fails before writing and metadata ownership stay
   builtin$models_to_run <- "meanf"
   expect_error(do.call(set_agent_info, builtin), "at least one approved custom")
   wrong <- args
-  wrong$negative_forecast <- FALSE
+  wrong$negative_forecast <- NA
   expect_error(do.call(set_agent_info, wrong), "negative_forecast")
   wrong <- args
   wrong$project_info$data_output <- "parquet"

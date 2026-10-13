@@ -106,9 +106,12 @@ on supplied values; historical plan vintages/publication lags are not verified.
 Raw input is privately prepared; existing runs and Chat templates are unchanged.
 Original-scale R1 requires differencing, Box-Cox, missing-value cleaning,
 outlier cleaning and multistep disabled. Local sampling retains up to three
-series or raw hierarchy leaves. New explicit global calls retain the complete
-supplied cohort; oversized cohorts fail rather than dropping peers/categories.
-All paths retain at most 10000 historical node rows. Prepared
+series or raw hierarchy leaves. Explicit global calls validate a deterministic
+representative sample of at most 100 series: extreme-scale, zero-heavy, negative, flattest and
+shortest series are always kept, multi-variable combo levels are covered when
+they fit, and remaining series fill in hash order. Every series still passes
+the full-panel input checks, and forecasting fits the authored model on the
+complete cohort. All paths retain at most 10000 historical node rows. Prepared
 hierarchies retain all nodes. Hierarchy rules must be local and univariate;
 forecast execution requires a mixed custom/FinnTS pool and reconciliation.
 New global contracts separately declare per-series, per-group or full-cohort

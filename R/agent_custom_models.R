@@ -22,8 +22,8 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
   if (!agent_info$run_local_models && !agent_info$run_global_models) {
     stop("Custom Agent requires an enabled local or global mode.", call. = FALSE)
   }
-  if (!agent_info$negative_forecast || agent_info$allow_hierarchical_forecast) {
-    stop("Custom Agent requires negative_forecast = TRUE and allow_hierarchical_forecast = FALSE.", call. = FALSE)
+  if (agent_info$allow_hierarchical_forecast) {
+    stop("Custom Agent requires allow_hierarchical_forecast = FALSE.", call. = FALSE)
   }
   if (!identical(agent_info$forecast_approach, "bottoms_up")) {
     stop("Custom Agent requires forecast_approach = bottoms_up.", call. = FALSE)
@@ -46,7 +46,7 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
     clean_outliers = FALSE, multistep_horizon = FALSE, date_type = date_type,
     forecast_horizon = horizon), FALSE)
   context <- c(profile, list(run_local_models = agent_info$run_local_models,
-    run_global_models = agent_info$run_global_models, negative_forecast = TRUE,
+    run_global_models = agent_info$run_global_models, negative_forecast = agent_info$negative_forecast,
     allow_hierarchical_forecast = FALSE, feature_selection = FALSE, inner_parallel = FALSE,
     external_regressors = sort(regressors, method = "radix"),
     data_output = project$data_output, object_output = project$object_output))
@@ -353,10 +353,13 @@ agent_custom_prompt <- function(agent_info, combo, weighted_mape_goal) {
 }
 
 # Revalidate parsed submission settings through the same complete proposal gate.
-# Only the trusted negative_forecast field is removed for serialization; all
-# other extra fields are rejected. No coercion can widen enrollment or approval.
+# negative_forecast must equal the trusted contract value and is removed only for
+# serialization; all other extra fields are rejected. No coercion can widen
+# enrollment or approval.
 agent_custom_submission <- function(inputs, agent_info, combo) {
-  if (!identical(inputs$negative_forecast, TRUE)) stop("Custom Agent submission requires negative_forecast = TRUE.", call. = FALSE)
+  if (!identical(inputs$negative_forecast, agent_info$custom_agent_contract$context$negative_forecast)) {
+    stop("Custom Agent submission negative_forecast must match the pinned contract.", call. = FALSE)
+  }
   proposal <- inputs
   proposal$negative_forecast <- NULL
   for (field in c("models_to_run", "external_regressors", "recipes_to_run", "seasonal_period", "lag_periods", "rolling_window_periods")) {
@@ -377,11 +380,11 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
   if (!identical(log$custom_agent_contract_id, agent_custom_marker(contract))) {
     stop("Custom Agent child parent identity is missing or inconsistent.", call. = FALSE)
   }
-  if (!identical(log$negative_forecast, TRUE) || !identical(log$feature_selection, FALSE) ||
+  if (!identical(log$negative_forecast, contract$context$negative_forecast) || !identical(log$feature_selection, FALSE) ||
     !is.logical(log$run_local_models) || length(log$run_local_models) != 1L || is.na(log$run_local_models) ||
     !is.logical(log$run_global_models) || length(log$run_global_models) != 1L || is.na(log$run_global_models) ||
     identical(log$run_local_models, log$run_global_models)) {
-    stop("Custom Agent child controls require negative_forecast = TRUE, no feature selection and one execution mode.", call. = FALSE)
+    stop("Custom Agent child controls require the pinned negative_forecast, no feature selection and one execution mode.", call. = FALSE)
   }
   selected <- strsplit(as.character(log$models_to_run), "---", fixed = TRUE)[[1]]
   allowed <- c(if (isTRUE(log$run_local_models)) contract$mode_models$local,

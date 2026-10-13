@@ -80,8 +80,9 @@ occurs. Custom \code{Model_Name} retains its alias; \code{Model_ID} begins with
 \verb{custom-} and the full version hash, followed by model type and recipe.
 Saved workflows, fits and forecasts must match the pinned pool before reuse.
 The initial profile requires \code{feature_selection = FALSE},
-\code{negative_forecast = TRUE}, \code{inner_parallel = FALSE} and sequential or
-\code{local_machine} execution. Existing built-in-only behavior is unchanged.
+\code{inner_parallel = FALSE} and sequential or \code{local_machine} execution.
+\code{negative_forecast = FALSE} floors custom forecasts at zero, as for
+built-in models. Existing built-in-only behavior is unchanged.
 Temporal custom definitions evaluate complete horizons from existing
 predictor rows during resampling, then retain only the original scoring
 rows. Analysis cutoffs, scored targets and selection rules do not change.

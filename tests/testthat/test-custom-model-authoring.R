@@ -2069,8 +2069,30 @@ test_that("current global guidance and demonstrations genuinely pool series", {
   )
   error <- tryCatch(custom_author_source_response(proposal), error = identity)
   expect_identical(error$code, "implementation_difficulty")
+  expect_identical(error$explanation, "Need several helpers.")
+  expect_match(conditionMessage(error), "Provider explanation: Need several helpers.", fixed = TRUE)
   expect_error(custom_author_source_response(proposal), "Implementation difficulty")
+  failure <- custom_author_failure(NULL, "source_contract", "implementation_difficulty", explanation = error$explanation)
+  expect_identical(failure$provider_explanation, "Need several helpers.")
+  expect_null(custom_author_failure(NULL, "source_contract", "implementation_difficulty")$provider_explanation)
+  long <- custom_author_provider_explanation(paste(c("Needs\nloop\u00e9", rep("word", 400L), strrep("a", 40L)), collapse = " "))
+  expect_lte(nchar(long, type = "bytes"), 600L)
+  expect_match(long, "^Needs loop\\?+ word")
+  expect_identical(custom_author_provider_explanation(long), long)
+  expect_identical(custom_author_provider_explanation(paste("id", strrep("Ab1", 12L), "end")), "id [redacted] end")
+  expect_null(custom_author_provider_explanation("Requires the API token to proceed."))
+  expect_null(custom_author_provider_explanation(" \n "))
+  expect_identical(
+    custom_author_provider_explanation("The prompt says \u201cexactly where the source\u2019s rule applies\u201d \u2014 unknown\u2026"),
+    "The prompt says \"exactly where the source's rule applies\" - unknown..."
+  )
+  expect_error(validate_custom_author_failure(utils::modifyList(failure, list(provider_explanation = "bad\nline"))), "provider explanation")
+  wrong_phase <- custom_author_failure(NULL, "source_contract", "source_contract")
+  wrong_phase$provider_explanation <- "Text."
+  expect_error(validate_custom_author_failure(wrong_phase), "provider explanation")
   proposal$status <- "contract_conflict"
+  conflict <- tryCatch(custom_author_source_response(proposal), error = identity)
+  expect_identical(conflict$explanation, "Need several helpers.")
   expect_error(custom_author_source_response(proposal), "conflict in the fixed contract")
   prompt <- NULL
   session <- list(chat_structured = function(prompt, ...) {

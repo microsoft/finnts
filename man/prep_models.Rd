@@ -79,8 +79,9 @@ Only explicit \code{models_to_run} selects custom models. The initial profile
 requires \code{bottoms_up}, explicit R1, original-scale targets, and preparation
 with \code{stationary}, \code{box_cox}, \code{clean_missing_values}, \code{clean_outliers} and
 \code{multistep_horizon} all FALSE. Set \code{run_ensemble_models = FALSE}; training
-additionally requires \code{feature_selection = FALSE}, \code{negative_forecast = TRUE}
-and \code{inner_parallel = FALSE}. Local/mounted storage, CSV/RDS/Parquet data,
+additionally requires \code{feature_selection = FALSE} and
+\code{inner_parallel = FALSE}; \code{negative_forecast = FALSE} floors custom output
+at zero like built-ins. Local/mounted storage, CSV/RDS/Parquet data,
 RDS model objects and sequential/local-machine execution are supported.
 Custom recipes retain only Date, Combo and declared predictors; no implicit
 PCA, feature selection or target transformation is applied. Missing required

@@ -19,8 +19,9 @@
 #'   requires `bottoms_up`, explicit R1, original-scale targets, and preparation
 #'   with `stationary`, `box_cox`, `clean_missing_values`, `clean_outliers` and
 #'   `multistep_horizon` all FALSE. Set `run_ensemble_models = FALSE`; training
-#'   additionally requires `feature_selection = FALSE`, `negative_forecast = TRUE`
-#'   and `inner_parallel = FALSE`. Local/mounted storage, CSV/RDS/Parquet data,
+#'   additionally requires `feature_selection = FALSE` and
+#'   `inner_parallel = FALSE`; `negative_forecast = FALSE` floors custom output
+#'   at zero like built-ins. Local/mounted storage, CSV/RDS/Parquet data,
 #'   RDS model objects and sequential/local-machine execution are supported.
 #'   Custom recipes retain only Date, Combo and declared predictors; no implicit
 #'   PCA, feature selection or target transformation is applied. Missing required

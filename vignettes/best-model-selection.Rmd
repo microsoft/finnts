@@ -622,9 +622,13 @@ code runs. Resampling expands execution to required peers and dates while
 retaining the original analysis rows and scoring only original assessment rows.
 Local models use series scope; global models declare the scope their rule needs.
 
-New explicit global authoring validates the complete supplied cohort under the
-existing 10000 historical-row cap. Oversized inputs fail with subset guidance;
-FinnTS does not silently drop peers or categories to fit the cap. Regression
+Explicit global authoring checks every supplied series, then validates generated
+code on a deterministic representative sample of at most 100 series within
+10000 historical rows, which keeps authoring preparation fast on large cohorts.
+The sample always includes edge series (largest and smallest scale, most zeros,
+negatives, flattest, shortest), covers multi-variable combo levels when they fit,
+and fills the rest in hash order. Its counts, never series labels, are disclosed
+to the provider; forecasting later fits the approved model on every series. Regression
 guidance asks generated code to retain feature order, category levels, contrasts,
 scaling and time origin in portable fitted state. These mechanics do not choose
 formulas: the LLM still writes the actual model, transformations and allocation.
@@ -817,7 +821,7 @@ The current draft format records the combined decision. Unsupported development
 formats require a new call and fresh review; no compatibility implementation is
 retained for them.
 Local authoring prepares at most three deterministic series; explicit global
-authoring retains the complete supplied cohort. Both enforce at most 10000 total
+authoring prepares a representative sample of at most 100 series. Both enforce at most 10000 total
 historical rows, using a separate temporary root for raw data. Existing prepared
 runs are read without writes. Explicit hierarchy authoring samples up to three
 raw leaf series and retains every derived node; a prepared hierarchy is read
@@ -850,7 +854,7 @@ The original bottom-up profile requires these explicit settings:
 | Target cleaning | `clean_missing_values = FALSE`, `clean_outliers = FALSE` |
 | `multistep_horizon` | `FALSE` |
 | `run_ensemble_models`, `feature_selection`, `inner_parallel` | `FALSE` |
-| `negative_forecast` | `TRUE`, so prescribed output is not clipped |
+| `negative_forecast` | Either; `FALSE` floors finished custom forecasts at zero, as for built-ins, while authoring validation checks unclipped output |
 | Storage | Local or mounted paths with `storage_object = NULL` |
 | Formats | CSV/RDS/Parquet data and RDS model objects |
 | Execution | Sequential or `parallel_processing = "local_machine"` |

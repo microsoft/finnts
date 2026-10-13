@@ -1051,6 +1051,8 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
                 "", custom_author_dependency_summary(failure$dependency), custom_author_binding_summary(failure$bindings),
               if (!is.null(failure$unbound_symbol))
                 paste("Missing variable:", validate_custom_author_unbound_symbol(failure$unbound_symbol))
+              else "", if (!is.null(failure$provider_explanation))
+                paste("Provider explanation:", failure$provider_explanation)
               else ""
             )
             feedback <- list(code = failure$reason)
@@ -1272,13 +1274,17 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
         inspected <- tryCatch(custom_author_source_response(proposal), error = identity)
         if (inherits(inspected, "finnts_custom_model_authoring_error") && identical(inspected$code, "implementation_difficulty")) {
           state$diagnostic <- "implementation_difficulty"
-          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "source_contract", "implementation_difficulty"))
+          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "source_contract", "implementation_difficulty",
+            explanation = inspected$explanation
+          ))
           state <- custom_draft_save(state)
           next
         }
         if (inherits(inspected, "finnts_custom_model_authoring_error") && identical(inspected$code, "contract_conflict")) {
           state$diagnostic <- "contract_conflict"
-          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "source_contract", "contract_conflict"))
+          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "source_contract", "contract_conflict",
+            explanation = inspected$explanation
+          ))
           state <- custom_draft_save(state)
           stop(inspected)
         }

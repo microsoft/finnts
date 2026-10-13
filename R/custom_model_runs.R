@@ -484,6 +484,8 @@ custom_run_load <- function(run_info, log_df) {
 # execution or installation. Enforces at least one enabled mode per selected
 # custom; called again after actual series routing has resolved global behavior.
 # Explicit hierarchy context additionally requires local-only execution.
+# negative_forecast may be TRUE or FALSE; FALSE floors finished custom and
+# built-in forecasts at zero after prediction, exactly as for built-in runs.
 custom_run_training_controls <- function(
     custom, local, global, recipes, feature_selection, negative_forecast, parallel_processing,
     inner_parallel) {
@@ -493,9 +495,9 @@ custom_run_training_controls <- function(
   if (!is.null(approach) && approach != "bottoms_up" && (!identical(local, TRUE) || !identical(global, FALSE))) {
     stop("Custom hierarchy requires run_local_models = TRUE and run_global_models = FALSE.", call. = FALSE)
   }
-  if (!identical(feature_selection, FALSE) || !identical(negative_forecast, TRUE) || !identical(inner_parallel, FALSE) ||
-    !(is.null(parallel_processing) || identical(parallel_processing, "local_machine"))) {
-    stop("Custom runs require feature_selection = FALSE, negative_forecast = TRUE, inner_parallel = FALSE and sequential/local_machine execution.",
+  if (!identical(feature_selection, FALSE) || !(identical(negative_forecast, TRUE) || identical(negative_forecast, FALSE)) ||
+    !identical(inner_parallel, FALSE) || !(is.null(parallel_processing) || identical(parallel_processing, "local_machine"))) {
+    stop("Custom runs require feature_selection = FALSE, logical negative_forecast, inner_parallel = FALSE and sequential/local_machine execution.",
       call. = FALSE
     )
   }
