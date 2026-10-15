@@ -274,12 +274,27 @@ test_that("custom Agent proposals use existing parsing and preserve the pinned r
   expect_identical(contract, before)
   expect_identical(
     validate_agent_custom_proposal(agent_custom_proposal(models_to_run = "arima"), contract, "combo-hash")$models_to_run,
-    "arima"
+    c("business_mean", "arima")
   )
   expect_identical(
     validate_agent_custom_proposal(agent_custom_proposal(external_regressors = "Driver"), contract)$models_to_run,
     "business_mean"
   )
+})
+
+test_that("custom candidates are mandatory without constraining built-in preprocessing", {
+  fixture <- agent_custom_fixture(predictors = "Driver")
+  contract <- resolve_agent_custom_models(fixture$info,
+    c("business_mean", "arima"), list(business_mean = fixture$model))
+  proposal <- agent_custom_proposal(models_to_run = "arima",
+    external_regressors = "NULL", stationary = TRUE, clean_missing_values = TRUE)
+  result <- validate_agent_custom_proposal(proposal, contract, "combo-hash")
+  expect_setequal(result$models_to_run, c("business_mean", "arima"))
+  expect_identical(result$models_to_run[[1]], "business_mean")
+  expect_identical(result$external_regressors, "NULL")
+  expect_setequal(result$recipes_to_run, c("R1", "C1"))
+  expect_true(result$stationary)
+  expect_true(result$clean_missing_values)
 })
 
 test_that("custom Agent recipes add C1 only for selected custom models and survive submission", {
@@ -291,16 +306,16 @@ test_that("custom Agent recipes add C1 only for selected custom models and survi
   ), contract, "combo-hash")
   expect_identical(mixed$recipes_to_run, c("R1", "C1"))
   builtin <- validate_agent_custom_proposal(agent_custom_proposal(models_to_run = "arima"), contract, "combo-hash")
-  expect_identical(builtin$recipes_to_run, "R1")
+  expect_identical(builtin$recipes_to_run, c("R1", "C1"))
   expect_identical(agent_custom_submission(mixed, info, "combo-hash")$recipes_to_run, c("R1", "C1"))
-  expect_identical(agent_custom_submission(builtin, info, "combo-hash")$recipes_to_run, "R1")
+  expect_identical(agent_custom_submission(builtin, info, "combo-hash")$recipes_to_run, c("R1", "C1"))
   expect_identical(agent_custom_submission(mixed, info, "combo-hash"), mixed)
   for (recipes in list("R1", c("R1", "C1", "C1"), c("C1", "R1"), "C1")) {
     changed <- mixed
     changed$recipes_to_run <- recipes
     expect_error(agent_custom_submission(changed, info, "combo-hash"), class = "finnts_reason_proposal_invalid", info = paste(recipes, collapse = ","))
   }
-  for (recipes in list(c("R1", "C1"), "C1")) {
+  for (recipes in list("R1", "C1")) {
     changed <- builtin
     changed$recipes_to_run <- recipes
     expect_error(agent_custom_submission(changed, info, "combo-hash"), class = "finnts_reason_proposal_invalid", info = paste(recipes, collapse = ","))
@@ -322,8 +337,8 @@ test_that("custom Agent proposal errors cannot change source, enrollment or prep
   fixture <- agent_custom_fixture(modes = "local", predictors = "Driver")
   contract <- resolve_agent_custom_models(fixture$info, "business_mean", list(business_mean = fixture$model))
   invalid <- list(
-    models_to_run = "arima", external_regressors = "NULL", clean_missing_values = TRUE, clean_outliers = TRUE,
-    forecast_approach = "standard_hierarchy", stationary = TRUE, feature_selection = TRUE, multistep_horizon = TRUE,
+    models_to_run = "arima", external_regressors = "undeclared_driver",
+    forecast_approach = "standard_hierarchy",
     recipes_to_run = "R2", lag_periods = "Inf", source = "function(...) 0", approval = "APPROVE", negative_forecast = TRUE,
     contract_id = contract$contract_id
   )
@@ -373,4 +388,20 @@ test_that("installed passive Agent contracts validate in an exact fresh namespac
   expect_identical(result$contract, contract)
   expect_identical(result$candidates$models, "business_mean")
   expect_identical(result$candidates$contract_id, contract$contract_id)
+})
+test_that("predecessor metadata decodes regressors without warning on absent optional hierarchy flags", {
+  row <- tibble::tibble(
+    agent_version = 1, run_id = "previous", external_regressors = "Driver, Other",
+    forecast_approach = "bottoms_up", forecast_horizon = 1, negative_forecast = TRUE,
+    hist_end_date = NA_character_, back_test_scenarios = 1, back_test_spacing = 1,
+    combo_cleanup_date = NA_character_, run_global_models = FALSE, run_local_models = TRUE
+  )
+  info <- list(project_info = list(storage_object = NULL, path = tempdir()), llm = NULL, overwrite = TRUE)
+  expect_warning(previous <- build_previous_agent_info(info, row), NA)
+  expect_identical(previous$external_regressors, c("Driver", "Other"))
+  expect_true(previous$negative_forecast)
+  expect_null(previous$allow_hierarchical_forecast)
+  row$negative_forecast <- NULL
+  expect_warning(previous <- build_previous_agent_info(info, row), NA)
+  expect_null(previous$negative_forecast)
 })

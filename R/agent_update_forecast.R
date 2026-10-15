@@ -59,19 +59,22 @@
 #'   writers or guarantee that another attempt cannot overwrite a checked file.
 #'   Approved custom pools require explicit `allow_iterate_forecast = FALSE`,
 #'   `overwrite = TRUE`, identical enrollment and approval evidence, cadence,
-#'   horizon, regressors, enabled modes and series membership. New observations,
+#'   horizon, regressors and enabled modes. New observations,
 #'   historical cutoffs and backtest settings are allowed in the new parent.
-#'   The raw C1 recipe, local/mounted CSV data, RDS objects and no inner parallelism
+#'   The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 #'   remain required. The completed predecessor, exact selected components,
 #'   current input signatures and replay controls are pinned before child fitting.
 #'   Replay retains full custom version IDs and per-series global subsets. Custom
 #'   logic is never regenerated or tuned; mixed retuning reuses fixed custom
 #'   results while retuning selected built-ins only. Temporal custom resampling
 #'   evaluates complete horizons from existing predictors but preserves the
-#'   original analysis cutoffs and scoring rows. No implicit iteration, new
-#'   series, default fallback or custom repair is permitted. Any required quality
-#'   rejection, source error, identity mismatch or damaged saved result is a hard
-#'   error. Complete outputs can resume missing completion logging without refits
+#'   original analysis cutoffs and scoring rows. New series and recoverable
+#'   built-in fitting or forecast-quality failures use the existing default-local
+#'   fallback with every compatible current-version custom model included first.
+#'   A changed global cohort cannot reuse its former pooled fit. Source, provider,
+#'   enrollment, identity and required-artifact failures remain hard errors;
+#'   custom logic is never repaired or silently dropped. Complete outputs can
+#'   resume missing completion logging without refits
 #'   or forecast writes; conflicting or incomplete fitted outputs fail untouched.
 #'   A completed compatible custom update can be the next update's predecessor.
 #'   Ordinary EDA post-processing may still call its isolated LLM; approved source
@@ -347,7 +350,7 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if forecast iteration should be ran again
-        if (perc_worse >= 40 && allow_iterate_forecast) {
+        if (isTRUE(perc_worse >= 40) && allow_iterate_forecast) {
           cli::cli_alert_info("Poor performance detected: Running iterate_forecast() to improve results.")
           return(list(ctx = ctx, `next` = "iterate_forecast"))
         } else if (forecast_approach != "bottoms_up") {
@@ -446,7 +449,11 @@ update_fcst_agent_workflow <- function(agent_info,
 
   if (!is.null(agent_info$custom_agent_contract)) {
     workflow$start$fn <- "initial_agent_custom_update"
-    workflow$check_update_failures$`next` <- "save_best_agent_run"
+    # Preserve completed replay; submit defaults only for routed recovery.
+    workflow$check_update_failures$branch <- function(ctx) {
+      pending <- c(ctx$results$initial_checks$new_combos, ctx$results$check_update_failures)
+      list(ctx = ctx, `next` = if (length(pending)) "forecast_new_combos" else "save_best_agent_run")
+    }
     init_ctx$custom_agent_info <- agent_info
     init_ctx$custom_eda_info <- agent_info[setdiff(names(agent_info), c("custom_agent_contract", "custom_agent_contract_id",
       "custom_agent_update", "custom_agent_update_id"))]
@@ -466,8 +473,14 @@ update_fcst_agent_workflow <- function(agent_info,
   run_graph(workflow_llm, workflow, init_ctx)
 }
 
+# Rebuild predecessor metadata from its saved version row, decoding the logged
+# regressor list. Preserve its execution permissions rather than the current
+# version's flags; an absent optional hierarchy flag remains NULL until custom
+# enrollment supplies its trusted restriction. Malformed enrollment is rejected.
 build_previous_agent_info <- function(agent_info, agent_run_tbl) {
   project_info <- agent_info$project_info
+  regressors <- agent_run_tbl$external_regressors[1]
+  regressors <- if (!length(regressors) || is.na(regressors)) NULL else strsplit(regressors, ", ", fixed = TRUE)[[1]]
 
   list(
     agent_version = agent_run_tbl$agent_version[1],
@@ -478,7 +491,9 @@ build_previous_agent_info <- function(agent_info, agent_run_tbl) {
     forecast_approach = agent_run_tbl$forecast_approach[1],
     llm = agent_info$llm,
     forecast_horizon = agent_run_tbl$forecast_horizon[1],
-    external_regressors = agent_run_tbl$external_regressors[1],
+    external_regressors = regressors,
+    negative_forecast = agent_run_tbl[["negative_forecast"]][1],
+    allow_hierarchical_forecast = agent_run_tbl[["allow_hierarchical_forecast"]][1],
     hist_end_date = agent_run_tbl$hist_end_date[1],
     back_test_scenarios = agent_run_tbl$back_test_scenarios[1],
     back_test_spacing = agent_run_tbl$back_test_spacing[1],
@@ -1215,7 +1230,8 @@ initial_checks <- function(agent_info) {
 #' components. Fitting failures use the existing local fallback; current-artifact
 #' access failures propagate and must not be reinterpreted as model failures.
 #' Active custom replay restores enrollment and propagates every failure without
-#' default fallback; its pinned group retains one global child identity.
+#' default fallback; its pinned group retains one global child identity. Dispatch
+#' carries only enrollment/replay references and restores both inside the worker.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame containing the previous best run information.
@@ -1233,7 +1249,7 @@ update_global_models <- function(agent_info,
                                  inner_parallel,
                                  num_cores,
                                  seed) {
-  agent_info <- load_agent_custom_state(agent_info)
+  agent_info <- load_agent_custom_update_state(agent_info)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -1247,6 +1263,7 @@ update_global_models <- function(agent_info,
   }
 
   validate_global_iteration(previous_best_run_global_tbl)
+  agent_info_lean <- agent_custom_worker_info(agent_info)
 
   # start forecast update process
   global_error <- tryCatch(
@@ -1276,13 +1293,13 @@ update_global_models <- function(agent_info,
               seed = seed
             )
           },
-          args = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+          args = list(agent_info_lean, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
           libpath = .libPaths(),
           stdout = "|", stderr = "|", show = TRUE, supervise = TRUE
         )
       } else {
         update_forecast_combo(
-          agent_info = agent_info,
+          agent_info = agent_info_lean,
           prev_best_run_tbl = previous_best_run_global_tbl,
           parallel_processing = parallel_processing,
           num_cores = num_cores,
@@ -1302,8 +1319,9 @@ update_global_models <- function(agent_info,
   try(foreach::registerDoSEQ(), silent = TRUE)
 
   if (inherits(global_error, "condition")) {
-    if (!is.null(agent_info$custom_agent_contract)) stop(global_error)
     if (inherits(global_error, "finnts_update_artifact_error")) stop(global_error)
+    if (!is.null(agent_info$custom_agent_contract) &&
+      !inherits(global_error, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(global_error)
     # extract individual combos that were covered by the global model
     failed_global_combos <- unique(previous_best_run_global_tbl$combo)
     failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
@@ -1328,8 +1346,9 @@ update_global_models <- function(agent_info,
 #' completion metadata cannot override the work list. Storage failures propagate,
 #' including required predecessor metadata failures with their original cause,
 #' while ordinary fitting and quality failures keep their existing fallback.
-#' Custom replay restores saved enrollment before lean dispatch and propagates
-#' worker conditions. No fitted objects, forecasts or Chat are added to workers.
+#' Custom replay validates enrollment before reference-only dispatch, restores
+#' enrollment and replay inside each worker, and propagates worker conditions.
+#' No untrained custom objects, fitted objects, forecasts or Chat are dispatched.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame containing the previous best run information.
@@ -1347,7 +1366,7 @@ update_local_models <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 seed) {
-  agent_info <- load_agent_custom_state(agent_info)
+  agent_info <- load_agent_custom_update_state(agent_info)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -1373,8 +1392,7 @@ update_local_models <- function(agent_info,
     unique()
 
   # agent adjustments to prevent serialization issues
-  agent_info_lean <- agent_info
-  agent_info_lean$llm <- NULL
+  agent_info_lean <- agent_custom_worker_info(agent_info)
 
   # start forecast update process
   par_info <- par_start(
@@ -1446,8 +1464,9 @@ update_local_models <- function(agent_info,
   quality_rejected_combos <- character()
   for (i in seq_along(combo_results)) {
     result <- combo_results[[i]]
-    if (!is.null(agent_info$custom_agent_contract) && inherits(result, "condition")) stop(result)
     if (inherits(result, "finnts_update_artifact_error")) stop(result)
+    if (!is.null(agent_info$custom_agent_contract) && inherits(result, "condition") &&
+      !inherits(result, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(result)
     if (inherits(result, "finnts_forecast_selection_rejected")) {
       quality_rejected_combos <- c(quality_rejected_combos, hash_data(local_combo_list[[i]]))
       next
@@ -1511,9 +1530,6 @@ check_update_failures <- function(agent_info,
   )
 
   quality_rejected <- intersect(unique(c(global_quality_rejected, local_quality_rejected)), current_run_combos)
-  if (!is.null(agent_info$custom_agent_contract) && length(c(failed_combos, quality_rejected))) {
-    stop("Custom update rejected; no fallback or model search is permitted.", call. = FALSE)
-  }
   if (length(failed_combos) == 0 && length(quality_rejected) == 0) {
     return(character(0))
   }
@@ -1551,12 +1567,15 @@ check_update_failures <- function(agent_info,
 #'
 #' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
 #' Agent-log run IDs remain character while versions and accuracy retain numeric
-#' types. Missing completed predecessors, absent common series, and storage/read
-#' failures remain errors; the comparison does not write artifacts.
+#' types. Missing completed predecessors and storage/read failures remain errors.
+#' When every current custom-enrolled series is new, report the absent comparison
+#' explicitly and return NA rather than fabricate an accuracy percentage. Ordinary
+#' runs retain their absent-common-series error. No artifacts are written here.
 #'
 #' @param agent_info A list containing the agent information.
 #'
-#' @return A numeric value representing the percentage of time series that had poor performance.
+#' @return The percentage of comparable series with poor performance, or
+#'   NA_real_ for a custom-enrolled update with no retained series to compare.
 #' @noRd
 analyze_results <- function(agent_info) {
   # get metadata
@@ -1620,6 +1639,10 @@ analyze_results <- function(agent_info) {
     unique(previous_best_run_tbl$combo)
   )
 
+  if (length(common_combos) == 0 && !is.null(agent_info$custom_agent_contract)) {
+    cli::cli_alert_info("All current custom Agent series are new; there is no previous accuracy comparison.")
+    return(NA_real_)
+  }
   if (length(common_combos) == 0) {
     stop("Error in analyze_results(). No common combos found between current and previous agent runs.",
       call. = FALSE
@@ -1807,6 +1830,7 @@ forecast_new_combos <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 seed) {
+  agent_info <- load_agent_custom_state(agent_info)
   # merge new and failed combos
   all_combos <- unique(c(new_combos, failed_combos))
 
@@ -1853,10 +1877,17 @@ forecast_new_combos <- function(agent_info,
     lag_periods = "NULL",
     rolling_window_periods = "NULL"
   )
+  if (!is.null(agent_info$custom_agent_contract)) {
+    proposal <- default_inputs
+    proposal$negative_forecast <- NULL
+    proposal$models_to_run <- paste(proposal$models_to_run, collapse = "---")
+    proposal$reasoning <- "Use default built-in inputs and every compatible enrolled custom model."
+    default_inputs <- validate_agent_custom_proposal(proposal, agent_info$custom_agent_contract,
+      "local", fm_suffix)
+  }
 
   # agent adjustments to prevent serialization issues
-  agent_info_lean <- agent_info
-  agent_info_lean$llm <- NULL
+  agent_info_lean <- agent_custom_worker_info(agent_info)
   agent_info_lean$default_reforecast <- TRUE
 
   # parallel setup
@@ -1885,6 +1916,8 @@ forecast_new_combos <- function(agent_info,
         .multicombine = TRUE
       ) %op%
         {
+          agent_info_lean$custom_enrollment_cache <- new.env(parent = emptyenv())
+          worker_info <- load_agent_custom_update_state(agent_info_lean)
           # check if combo already ran (in case of restart)
           metadata_reader <- if (combo_hash %in% agent_info_lean$quality_rejected_combos) {
             read_file
@@ -1902,7 +1935,7 @@ forecast_new_combos <- function(agent_info,
           accepted_default <- identical(as.character(agent_best_run_tbl[["default_reforecast_status"]]), "accepted")
           current_complete <- nrow(agent_best_run_tbl) > 0 &&
             (!combo_hash %in% agent_info_lean$quality_rejected_combos || accepted_default) &&
-            nrow(completed_update_runs(agent_info_lean, agent_best_run_tbl)) > 0
+            nrow(completed_update_runs(worker_info, agent_best_run_tbl)) > 0
           if (current_complete) {
             return(data.frame(Combo = combo_hash))
           }
@@ -1933,7 +1966,7 @@ forecast_new_combos <- function(agent_info,
 
           # log the best run
           log_best_run(
-            agent_info = agent_info_lean,
+            agent_info = worker_info,
             run_info = run_info,
             weighted_mape = weighted_mape,
             check_best_run = FALSE,
@@ -2019,7 +2052,8 @@ update_forecast_combo <- function(agent_info,
                                   num_cores,
                                   inner_parallel,
                                   seed) {
-  agent_info <- load_agent_custom_state(agent_info)
+  agent_info$custom_enrollment_cache <- new.env(parent = emptyenv())
+  agent_info <- load_agent_custom_update_state(agent_info)
   custom_contract <- agent_info$custom_agent_contract
   if (!is.null(custom_contract)) agent_custom_update_child(agent_info, prev_best_run_tbl, seed)
   # get metadata
@@ -2596,6 +2630,17 @@ update_forecast_combo <- function(agent_info,
   return(list(status = "done", quality_rejected_combos = quality_rejected))
 }
 
+# Evaluate one fitting/resampling call after artifact and workflow validation.
+# Only built-in, non-provider numerical execution may enter default recovery.
+# Custom source, missing packages and typed artifact failures retain their cause.
+update_model_execution <- function(expression, model, recoverable) {
+  tryCatch(force(expression), error = function(error) {
+    if (!recoverable || inherits(error, c("finnts_update_artifact_error", "packageNotFoundError"))) stop(error)
+    rlang::abort(paste0("Model '", model, "' update execution failed: ", conditionMessage(error)),
+      class = unique(c("finnts_update_model_error", class(error))), parent = error)
+  })
+}
+
 #' Fit models based on previous run information and hyperparameters
 #'
 #' This function fits models based on the provided run information, combo, and previous run log. It handles model adjustments, feature selection, and hyperparameter tuning if necessary.
@@ -2603,6 +2648,8 @@ update_forecast_combo <- function(agent_info,
 #' must match exactly. Missing predictors and incomplete fold predictions error;
 #' no predictor substitution, parameter tuning or source regeneration occurs.
 #' `custom_fixed_results` reuses the first custom fit during mixed built-in retuning.
+#' Recoverable built-in execution errors retain a typed cause for default recovery;
+#' custom source, provider, configuration and artifact errors remain hard.
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
@@ -2703,11 +2750,12 @@ fit_models <- function(run_info,
   inner_cl <- par_info$cl
   inner_packages <- par_info$packages
 
-  model_tbl <- foreach::foreach(
+  trained_models_tbl <- trained_models_tbl %>%
+    dplyr::arrange(!(Model_Name %in% names(custom$pool$custom)))
+  model_results <- foreach::foreach(
     model_run = trained_models_tbl %>%
       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-    .combine = "rbind",
-    .errorhandling = "stop",
+    .errorhandling = "pass",
     .verbose = FALSE,
     .inorder = FALSE,
     .multicombine = TRUE,
@@ -2728,6 +2776,7 @@ fit_models <- function(run_info,
 
     workflow <- model_run$Model_Fit[[1]]
     is_custom <- !is.null(custom) && model %in% names(custom$pool$custom)
+    recoverable <- !is_custom && !model %in% list_foundation_models()
     if (is_custom && retune_hyperparameters && !is.null(run_info$custom_fixed_results)) {
       fixed <- run_info$custom_fixed_results[run_info$custom_fixed_results$Model_Name == model, , drop = FALSE]
       if (nrow(fixed) != 1L) stop("Custom fixed replay results are missing or ambiguous.", call. = FALSE)
@@ -2921,7 +2970,7 @@ fit_models <- function(run_info,
     if (retune_hyperparameters && !is_custom) {
       set.seed(seed)
 
-      tune_results <- tune::tune_grid(
+      tune_results <- update_model_execution(tune::tune_grid(
         object = workflow,
         resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
         grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
@@ -2930,11 +2979,12 @@ fit_models <- function(run_info,
           pkgs = c(inner_packages, "finnts"),
           parallel_over = "everything"
         )
-      ) %>%
+      ), model, recoverable) %>%
         base::suppressMessages() %>%
         base::suppressWarnings()
 
-      best_param <- tune::select_best(tune_results, metric = "rmse")
+      best_param <- update_model_execution(tune::select_best(tune_results, metric = "rmse"),
+        model, recoverable)
 
       if (length(colnames(best_param)) == 1) {
         hyperparameter_id <- 1
@@ -2955,7 +3005,9 @@ fit_models <- function(run_info,
     # fit model on entire input data
     set.seed(seed)
 
-    wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
+    wflow_fit <- update_model_execution(
+      generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)),
+      model, recoverable) %>%
       base::suppressMessages()
 
     # refit on all train test splits
@@ -2967,7 +3019,7 @@ fit_models <- function(run_info,
         tune::control_resamples(allow_par = inner_parallel, save_pred = TRUE,
           pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
         base::suppressMessages() %>% base::suppressWarnings()
-    } else tune::fit_resamples(
+    } else update_model_execution(tune::fit_resamples(
       object = finalized_workflow,
       resamples = create_splits(prep_data, model_train_test_tbl),
       metrics = NULL,
@@ -2977,8 +3029,7 @@ fit_models <- function(run_info,
         pkgs = c(inner_packages, "finnts"),
         parallel_over = "everything"
       )
-    ) %>%
-      tune::collect_predictions() %>%
+    ) %>% tune::collect_predictions(), model, recoverable) %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
 
@@ -3111,6 +3162,10 @@ fit_models <- function(run_info,
   par_end(inner_cl)
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   foreach::registerDoSEQ()
+
+  failures <- Filter(function(result) inherits(result, "condition"), model_results)
+  if (length(failures)) stop(failures[[1]])
+  model_tbl <- dplyr::bind_rows(model_results)
 
   # ensure at least one model ran successfully
   if (is.null(model_tbl)) {

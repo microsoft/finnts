@@ -10,7 +10,10 @@
 #'   and trailing whitespace in character combo-variable values is removed
 #'   before Finn creates internal series identifiers and writes input artifacts.
 #' @param forecast_horizon The number of periods to forecast
-#' @param external_regressors Optional character vector of external regressors
+#' @param external_regressors Optional character vector of candidate external
+#'   regressors for built-in models. Custom models always use their declared
+#'   drivers from eligible original input columns, independently of this list
+#'   or the Agent's per-iteration choices.
 #' @param hist_end_date Optional Date object indicating the end of the historical data
 #' @param hist_start_date Optional Date object indicating the start of the historical data
 #' @param back_test_scenarios Optional character vector of back test scenarios
@@ -30,24 +33,35 @@
 #'   local models. Default is TRUE.
 #' @param overwrite Logical indicating whether to overwrite existing agent run info
 #' @param custom_models Named approved custom-model envelopes from [create_custom_model()].
-#' @param models_to_run Explicit custom or mixed candidate names. Must select at
-#'   least one supplied custom model; NULL retains ordinary Agent behavior.
+#'   All supplied models are enrolled automatically alongside built-in candidates.
+#'   The returned object retains names only; approved objects are saved once in
+#'   an Agent-version bundle in `prep_models`.
 #' @details Custom Agent runs add the raw `C1` recipe and require CSV data, RDS objects,
-#'   local/mounted storage and no hierarchy. `negative_forecast = FALSE` floors
+#'   supported local/mounted, Blob or M365 storage and no hierarchy. `negative_forecast = FALSE` floors
 #'   finished custom forecasts at zero, as for built-in models. The exact
 #'   approved pool is pinned before the parent run log. Existing-run setup requires
 #'   equivalent explicit enrollment; changed or omitted approval requires a new
 #'   run. Source is trusted R, not sandboxed. For compatible new-data updates,
 #'   create a new parent with `overwrite = TRUE`, the same explicit enrollment,
-#'   horizon, regressors, modes and series, then call [update_forecast()] with
+#'   horizon, regressors and modes, then call [update_forecast()] with
 #'   explicit `allow_iterate_forecast = FALSE`. Changed enrollment needs iteration.
-#'   Supplying definitions alone does not enroll them. Explicit built-in-only
-#'   narrowing is not supported by this Agent argument. Mixed pools may select
-#'   built-in subsets, but retain the fixed representation. Global-only custom
+#'   New series are routed to defaults within the existing new-series limit.
+#'   The setup API has no
+#'   `models_to_run` argument: Finn includes every compatible enrolled custom
+#'   model from the first iteration onward, outside LLM control. Built-in
+#'   candidate choices and supported preprocessing remain independent of raw C1.
+#'   Custom driver values must be supplied through the forecast horizon; Finn
+#'   does not forecast missing future custom drivers. The same driver declarations
+#'   apply during saved-winner updates and default recovery. Changed source data
+#'   requires a new Agent version (`overwrite = TRUE`), not an in-place restart.
+#'   Global-only custom
 #'   runs need at least two series. Each selected custom model must support an
 #'   enabled mode and the project's cadence, horizon and required predictors.
-#'   The return adds `custom_agent_contract` and `custom_agent_contract_id` only
-#'   for active enrollment. Saved approval is trusted-caller evidence, not
+#'   The return keeps only custom-model names, not untrained models or approval
+#'   payloads. The Agent-version CSV always contains one `custom_models` names
+#'   field (`NA` without enrollment); the complete immutable bundle lives in
+#'   `prep_models`, under the existing project/run/version identity.
+#'   Saved approval is trusted-caller evidence, not
 #'   authenticated identity; forecasting never calls the authoring LLM again.
 #'
 #' @return A list containing the agent run information
@@ -94,8 +108,7 @@ set_agent_info <- function(project_info,
                            run_global_models = NULL,
                            run_local_models = TRUE,
                            overwrite = FALSE,
-                           custom_models = NULL,
-                           models_to_run = NULL) {
+                           custom_models = NULL) {
   # get metadata
   combo_variables <- project_info$combo_variables
   target_variable <- project_info$target_variable
@@ -145,14 +158,19 @@ set_agent_info <- function(project_info,
     stop("At least one of 'run_global_models' or 'run_local_models' must be TRUE.", call. = FALSE)
   }
 
+  c1_columns <- if (length(custom_models)) custom_input_columns(input_data, target_variable) else character()
+  c1_source_id <- if (length(custom_models)) custom_source_identity(input_data %>%
+    tidyr::unite("Combo", tidyselect::all_of(combo_variables), sep = "--", remove = FALSE) %>%
+    dplyr::rename("Target" = tidyselect::all_of(target_variable)) %>%
+    dplyr::select(Combo, Date, Target, tidyselect::all_of(c1_columns))) else NULL
   custom_contract <- resolve_agent_custom_models(list(project_info = project_info,
+    c1_predictors = c1_columns, c1_source_id = c1_source_id,
     forecast_horizon = forecast_horizon, external_regressors = external_regressors,
     run_global_models = run_global_models, run_local_models = run_local_models,
     negative_forecast = negative_forecast, allow_hierarchical_forecast = allow_hierarchical_forecast,
-    forecast_approach = "bottoms_up"), models_to_run, custom_models)
-  if (!is.null(models_to_run) && is.null(custom_contract)) {
-    stop("Agent models_to_run must select at least one approved custom model.", call. = FALSE)
-  }
+    forecast_approach = "bottoms_up"),
+    if (length(custom_models)) unique(c(list_models(), names(custom_models))) else NULL,
+    custom_models)
   if (!is.null(custom_contract) && !identical(project_info$data_output, "csv")) {
     stop("Custom Agent runs currently require CSV data artifacts.", call. = FALSE)
   }
@@ -190,7 +208,7 @@ set_agent_info <- function(project_info,
     dplyr::select(c(
       "Combo",
       tidyselect::all_of(combo_variables),
-      tidyselect::all_of(external_regressors),
+      tidyselect::all_of(unique(c(external_regressors, c1_columns))),
       "Date", "Target"
     )) %>%
     combo_cleanup_fn(
@@ -199,7 +217,7 @@ set_agent_info <- function(project_info,
     )
 
   # check if a hierarchy exists in the data and should be applied
-  if (!is.null(custom_contract) && !length(custom_contract$mode_models$local) &&
+  if (!is.null(custom_contract) && !run_local_models &&
     length(unique(final_input_data$Combo)) < 2L) {
     stop("Global-only custom Agent runs require at least two series.", call. = FALSE)
   }
@@ -237,13 +255,14 @@ set_agent_info <- function(project_info,
   if (nrow(agent_runs_tbl) > 0 & overwrite == FALSE) {
     previous_info <- list(project_info = project_info, run_id = as.character(agent_runs_tbl$run_id),
       agent_version = as.numeric(agent_runs_tbl$agent_version))
-    previous_marker <- agent_runs_tbl[["custom_agent_contract_id"]]
-    marked <- length(previous_marker) == 1L && !is.na(previous_marker) && nzchar(previous_marker)
+    previous_names <- agent_runs_tbl[["custom_models"]]
+    marked <- length(previous_names) == 1L && !is.na(previous_names) && nzchar(previous_names)
     previous_contract <- read_agent_custom_record(previous_info, required = marked)
     if (!is.null(custom_contract) || !is.null(previous_contract) || marked) {
       if (is.null(custom_contract) || is.null(previous_contract) || !marked ||
-        !identical(as.character(previous_marker), agent_custom_marker(previous_contract)) ||
-        !identical(agent_custom_marker(custom_contract), agent_custom_marker(previous_contract))) {
+        !identical(as.character(previous_names), paste(sort(names(previous_contract$envelopes)), collapse = "---")) ||
+        !identical(agent_custom_marker(custom_contract), agent_custom_marker(previous_contract)) ||
+        !identical(custom_contract$context$c1_source_id, previous_contract$context$c1_source_id)) {
         stop("Custom Agent enrollment changed or was omitted; start a new run with overwrite = TRUE.", call. = FALSE)
       }
     }
@@ -448,7 +467,8 @@ set_agent_info <- function(project_info,
     )
 
     # write run info to disc
-    if (!is.null(custom_contract)) output_tbl$custom_agent_contract_id <- agent_custom_marker(custom_contract)
+    output_tbl$custom_models <- if (is.null(custom_contract)) NA_character_ else
+      paste(sort(names(custom_contract$envelopes)), collapse = "---")
     write_data(
       x = output_tbl,
       combo = NULL,
@@ -499,7 +519,7 @@ set_agent_info <- function(project_info,
 #' @param request_id A unique identifier for the agent run request
 #' @param agent_action A character string indicating the action: "iterate_forecast" or
 #' "update_forecast"
-#' @param custom_models,models_to_run Optional approved enrollment forwarded
+#' @param custom_models Optional approved enrollment forwarded
 #'   unchanged to [set_agent_info()]; request identity does not grant approval.
 #'
 #' @return A list containing the agent run information
@@ -521,8 +541,7 @@ set_agent_info_custom <- function(project_info,
                                   overwrite = FALSE,
                                   request_id,
                                   agent_action,
-                                  custom_models = NULL,
-                                  models_to_run = NULL) {
+                                  custom_models = NULL) {
   request_id_value <- request_id
 
   # check inputs
@@ -549,8 +568,7 @@ set_agent_info_custom <- function(project_info,
     run_global_models = run_global_models,
     run_local_models = run_local_models,
     overwrite = overwrite,
-    custom_models = custom_models,
-    models_to_run = models_to_run
+    custom_models = custom_models
   )
 
   # see if previous agent run exists with same request_id

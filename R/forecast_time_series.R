@@ -37,6 +37,8 @@
 #'   enrolled only through `models_to_run`. See [prep_models()] for the envelope
 #'   contract and supported profile. Selected custom models add the raw C1
 #'   recipe to `recipes_to_run` and may run alone or alongside built-in models.
+#'   Their declared drivers come from eligible original input columns, not just
+#'   `external_regressors`. Supply required future values through the horizon.
 #'   Incompatible explicit custom settings error before data preparation. Use
 #'   [create_custom_model()] for reviewed authoring.
 #' @param stationary Apply differencing during preparation; retains the existing

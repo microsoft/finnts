@@ -173,6 +173,8 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 enrolled only through \code{models_to_run}. See \code{\link[=prep_models]{prep_models()}} for the envelope
 contract and supported profile. Selected custom models add the raw C1
 recipe to \code{recipes_to_run} and may run alone or alongside built-in models.
+Their declared drivers come from eligible original input columns, not just
+\code{external_regressors}. Supply required future values through the horizon.
 Incompatible explicit custom settings error before data preparation. Use
 \code{\link[=create_custom_model]{create_custom_model()}} for reviewed authoring.}
 

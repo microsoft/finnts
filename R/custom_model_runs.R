@@ -90,6 +90,8 @@ custom_run_pool <- function(models_to_run, models_not_to_run, custom_models) {
 #' `recipes_to_run` (saved run logs), C1 must be among the prepared recipes.
 #' The default rejects hierarchy; reviewed callers opt in explicitly and still
 #' validate definition capabilities/enrollment separately before execution.
+#' Local/mounted paths and supported Blob/M365 storage use the same identity;
+#' RDS model objects and supported data formats remain mandatory.
 #'
 #' @param run_info Run info list with storage and output formats.
 #' @param settings Saved run settings (log row or list) with forecast_approach,
@@ -99,11 +101,13 @@ custom_run_pool <- function(models_to_run, models_not_to_run, custom_models) {
 #' @return Canonical context list used for restart identity. No I/O.
 #' @noRd
 custom_run_context <- function(run_info, settings, allow_hierarchy = FALSE) {
-  if (!is.null(run_info$storage_object) || !identical(run_info$object_output, "rds") || !run_info$data_output %in% c(
+  if ((!is.null(run_info$storage_object) &&
+    !inherits(run_info$storage_object, c("blob_container", "ms_drive"))) ||
+    !identical(run_info$object_output, "rds") || !run_info$data_output %in% c(
     "csv",
     "rds", "parquet"
   )) {
-    stop("Custom runs require local/mounted storage, RDS model objects and CSV/RDS/Parquet data.", call. = FALSE)
+    stop("Custom runs require local/mounted or supported Finn storage, RDS model objects and CSV/RDS/Parquet data.", call. = FALSE)
   }
   approach <- settings$forecast_approach
   if (!is.character(approach) || length(approach) != 1L || is.na(approach) || !approach %in% c(
@@ -327,10 +331,11 @@ custom_run_hierarchy_context <- function(run_info, context, settings, validate_d
   context
 }
 
-#' Derive the exact run-scoped manifest path in fixed RDS format. No I/O occurs.
+#' Derive the normal prepared-workflow RDS path carrying custom attestation.
+#' No separate standard enrollment artifact is created; no I/O occurs.
 #' @noRd
 custom_run_path <- function(run_info) {
-  local_artifact_path(run_info, "prep_models", "-custom-model-pool", extension = "rds")
+  local_artifact_path(run_info, "prep_models", "-model_workflows", extension = "rds")
 }
 
 #' Compute a canonical passive manifest digest, sorting named maps recursively
@@ -352,39 +357,70 @@ custom_run_digest <- function(manifest) {
   digest::digest(normalize(manifest), algo = "sha256", serializeVersion = 2)
 }
 
-#' Read a present manifest strictly, distinguishing RDS NULL from absence, then
-#' validate its passive record, attestations and exact registered definitions.
-#' Returns NULL only for a genuinely absent optional file. No listing or rewrite.
+#' Read custom attestation from the normal prepared-workflow artifact and
+#' reconstruct its pool from the workflows' pinned definitions, without registry
+#' reads. Required missing/malformed enrollment errors; optional ordinary
+#' workflows return NULL. Validate every workflow, approval and identity.
+#' No source execution, directory listing or artifact rewrite occurs.
 #' @noRd
 custom_run_read <- function(run_info, required = FALSE) {
-  paths <- local_artifact_files(custom_run_path(run_info), allow_missing = !required)
+  paths <- custom_run_path(run_info)
+  if (is.null(run_info$storage_object))
+    paths <- local_artifact_files(paths, allow_missing = !required)
   if (!length(paths))
     return(NULL)
-  manifest <- read_exact_artifact(run_info, paths, return_type = "object")
+  table <- read_exact_artifact(run_info, paths,
+    return_type = "object", allow_missing = !required)
+  if (is.null(table) && !required)
+    return(NULL)
+  manifest <- attr(table, "finnts_custom_manifest", exact = TRUE)
+  if (is.null(manifest) && !required && is.data.frame(table) &&
+      all(c("Model_Name", "Model_Workflow") %in% names(table)) &&
+      !any(vapply(table$Model_Workflow, function(workflow) {
+        inherits(workflows::extract_spec_parsnip(workflow), "finnts_custom")
+      }, logical(1))))
+    return(NULL)
   custom_run_passive(manifest)
   fields <- c("selected", "references", "evidence", "context", "pool_id", "manifest_id")
   if (!is.list(manifest) || length(manifest) != length(fields) || !setequal(names(manifest), fields) ||
     !identical(manifest$manifest_id, custom_run_digest(manifest))) {
     stop("Invalid custom run manifest identity.", call. = FALSE)
   }
-  pool <- resolve_custom_model_pool(manifest$selected, custom_models = manifest$references, run_info = run_info)
+  if (!is.data.frame(table) || !all(c("Model_Name", "Model_Workflow") %in% names(table)))
+    stop("Invalid prepared workflows for custom run manifest.", call. = FALSE)
+  definitions <- lapply(names(manifest$references), function(alias) {
+    rows <- which(table$Model_Name == alias)
+    if (!length(rows))
+      stop("Prepared workflows are missing a custom run manifest candidate.", call. = FALSE)
+    spec <- workflows::extract_spec_parsnip(table$Model_Workflow[[rows[[1]]]])
+    if (!inherits(spec, "finnts_custom"))
+      stop("Prepared custom run manifest candidate has a foreign engine.", call. = FALSE)
+    definition <- rlang::eval_tidy(spec$eng_args$definition)
+    if (!identical(manifest$references[[alias]], list(name = definition$name, version_id = definition$version_id)))
+      stop("Prepared definition does not match its custom run manifest reference.", call. = FALSE)
+    definition
+  })
+  names(definitions) <- names(manifest$references)
+  pool <- resolve_custom_model_pool(manifest$selected, custom_models = definitions)
   if (!length(pool$custom) || !identical(pool$pool_id, manifest$pool_id) || !setequal(names(manifest$evidence), names(pool$custom)))
     stop("Invalid custom run pool identity.", call. = FALSE)
   for (alias in names(pool$custom)) {
     evidence <- manifest$evidence[[alias]]
     custom_run_envelope(structure(c(list(definition = pool$custom[[alias]]), evidence), class = "finnts_custom_model"))
   }
-  list(manifest = manifest, pool = pool)
+  custom <- list(manifest = manifest, pool = pool)
+  custom_run_check_workflows(table, custom)
+  custom
 }
 
 #' Pin the selected custom pool for a prepared run
 #'
-#' Writes the definitions and manifest before workflow completion is logged.
+#' Builds attestation for the normal workflow artifact before completion is logged.
 #' Existing same-run content is immutable; omission, changed selection/context
 #' or stale evidence errors. No custom pool leaves built-in runs untouched,
 #' except a known custom marker/manifest cannot be reused as a built-in-only
 #' run. Hierarchy eligibility and the built-in R-recipe requirement are checked
-#' before any registration or write.
+#' before any write. No registry or separate manifest file is written.
 #'
 #' @param run_info Run info list.
 #' @param pool Resolved pool from `custom_run_pool()` or NULL.
@@ -397,7 +433,7 @@ custom_run_prepare <- function(run_info, pool, log_df) {
   if (is.null(pool) && !marked) {
     if (!is.null(run_info$storage_object))
       return(NULL)
-    if (!length(local_artifact_files(custom_run_path(run_info), allow_missing = TRUE)))
+    if (is.null(custom_run_read(run_info)))
       return(NULL)
   }
   if (is.null(pool))
@@ -435,11 +471,6 @@ custom_run_prepare <- function(run_info, pool, log_df) {
   } else {
     if ("models_to_run" %in% names(log_df))
       stop("Cannot enroll custom models into an existing prepared run.", call. = FALSE)
-    for (definition in pool$custom) write_custom_model_definition(definition, run_info)
-    write_data(manifest, NULL, run_info, "object", "prep_models", "-custom-model-pool")
-    previous <- custom_run_read(run_info, required = TRUE)
-    if (!identical(previous$manifest$manifest_id, manifest$manifest_id))
-      stop("Custom manifest read-back failed.", call. = FALSE)
   }
   list(manifest = manifest, pool = pool)
 }
@@ -461,13 +492,19 @@ custom_run_predictors <- function(definition, data) {
   predictors <- custom_model_predictor_columns(definition$requirements$predictors)
   forbidden <- c("Target", "Target_Original", "Train_Test_ID", "Run_Type", "Horizon", "Origin", ".finnts_row", ".row")
   if (any(predictors %in% forbidden) || !all(c("Target", predictors) %in% names(data))) {
-    stop("Custom model has missing required predictors or outcome/assessment leakage columns.", call. = FALSE)
+    stop("Custom model ", definition$name, " has missing required predictors or outcome/assessment leakage columns: ",
+      paste(unique(c(setdiff(c("Target", predictors), names(data)), intersect(predictors, forbidden))), collapse = ", "),
+      ".", call. = FALSE)
   }
   for (field in predictors) {
     values <- data[[field]]
     if (anyNA(values) || (is.numeric(values) && any(!is.finite(values))) || !(is.numeric(values) || is.character(values) ||
       is.factor(values) || is.logical(values) || inherits(values, "Date"))) {
-      stop("Custom model requires complete supported predictor values: ", field, ".", call. = FALSE)
+      invalid <- is.na(values) | if (is.numeric(values)) !is.finite(values) else FALSE
+      rows <- which(invalid)
+      detail <- if (length(rows)) paste0(" for series ", as.character(data$Combo[[rows[[1]]]]),
+        " at ", as.character(data$Date[[rows[[1]]]])) else ""
+      stop("Custom model ", definition$name, " requires complete supported predictor values: ", field, detail, ".", call. = FALSE)
     }
   }
   predictors
@@ -496,7 +533,7 @@ custom_run_workflows <- function(definition, data, context) {
 #' @noRd
 custom_run_load <- function(run_info, log_df) {
   if (!"custom_pool_id" %in% names(log_df) || is.na(log_df$custom_pool_id[[1]])) {
-    if (is.null(run_info$storage_object) && length(local_artifact_files(custom_run_path(run_info), allow_missing = TRUE))) {
+    if (is.null(run_info$storage_object) && !is.null(custom_run_read(run_info))) {
       stop("Custom manifest exists without completed preparation metadata; rerun prep_models with the same approved pool.",
         call. = FALSE
       )

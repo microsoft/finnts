@@ -716,12 +716,14 @@ test_that("absent or damaged current run logs request refitting", {
   expect_identical(list(missing, damaged), list(FALSE, FALSE))
 })
 
-test_that("local dispatch serializes only its existing free-variable context", {
+test_that("local dispatch serializes only reference-only free-variable context", {
   agent <- make_update_agent_info()
   previous <- make_update_run_metadata("run-4", c("east", "west"))
   previous$models_to_run <- "lm"
   lean <- agent
   lean$llm <- NULL
+  lean[c("custom_agent_contract", "custom_agent_update", "selection_cache",
+    "custom_enrollment_cache")] <- list(NULL, NULL, NULL, NULL)
   captured <- NULL
   local_mocked_bindings(
     par_start = function(...) list(cl = NULL, packages = character(),
@@ -739,6 +741,7 @@ test_that("local dispatch serializes only its existing free-variable context", {
   expected <- list(agent_info_lean = lean, project_info = agent$project_info,
     prev_run_id = "run-4", num_cores = 1, inner_parallel = FALSE, seed = 123)
   expect_setequal(names(captured$globals), names(expected))
+  expect_identical(captured$globals$agent_info_lean, lean)
   expect_equal(length(serialize(captured[c("expression", "globals")], NULL)),
     length(serialize(list(expression = captured$expression,
       globals = expected[names(captured$globals)]), NULL)))
@@ -772,6 +775,8 @@ test_that("mixed update dispatch keeps grouped globals and lean local workers", 
   expect_identical(calls[[1]]$combos, c("north", "south"))
   lean <- agent
   lean$llm <- NULL
+  lean[c("custom_agent_contract", "custom_agent_update", "selection_cache",
+    "custom_enrollment_cache")] <- list(NULL, NULL, NULL, NULL)
   for (index in 2:3) {
     expect_length(calls[[index]]$combos, 1L)
     expect_identical(calls[[index]]$context, names(lean))

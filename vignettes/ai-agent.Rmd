@@ -53,11 +53,11 @@ Use these helpers to retrieve outputs:
 ## Approved Custom Models
 
 `create_custom_model()` produces reviewed, version-bound definitions before an
-Agent forecast begins. Supply those envelopes to `set_agent_info()` and select
-their names explicitly through `models_to_run`; supplying `custom_models` alone
-leaves ordinary Agent behavior unchanged. This Agent selection argument must
-include at least one approved custom model. Mixed custom/built-in pools are
-supported, but explicit built-in-only narrowing is not part of this interface.
+Agent forecast begins. Supply those envelopes through `custom_models` in
+`set_agent_info()`. Every compatible enrolled custom model is mandatory from the
+first iteration onward, alongside the built-in candidates. Setup has no
+`models_to_run` argument; the Agent chooses built-in candidates without dropping
+custom models or changing their approved logic.
 
 Authoring can now pause and resume at human review gates through
 `create_custom_model(draft = ..., responses = ...)`. Use `approval = "deferred"`
@@ -75,7 +75,6 @@ agent_info <- set_agent_info(
   input_data = hist_data,
   forecast_horizon = 3,
   custom_models = list(business_mean = custom),
-  models_to_run = c("business_mean", "meanf"),
   negative_forecast = TRUE,
   allow_hierarchical_forecast = FALSE,
   run_global_models = FALSE
@@ -84,18 +83,16 @@ iterate_forecast(agent_info, max_iter = 3, inner_parallel = FALSE)
 get_summarized_models(agent_info)
 ```
 
-The first custom Agent profile keeps built-in models on original-scale R1 and
-trains custom models on the raw C1 recipe, with local/mounted storage,
-CSV data and RDS objects. Target cleaning, differencing, Box-Cox, feature selection
-and multistep are disabled in this Agent profile; standard forecasting supports
-them for built-ins beside custom models. Sequential and `local_machine` execution are supported;
-Spark and inner parallelism are not. Each model must support the requested cadence,
+Custom Agent runs train custom models on the raw C1 recipe, with supported
+local/mounted, Blob or M365 storage, CSV data and RDS objects. Built-in models
+retain their supported preprocessing and R recipes. Sequential, `local_machine`
+and Spark execution are supported; custom Agent inner parallelism is not.
+Each model must support the requested cadence,
 horizon, drivers and enabled local/global mode. A global-only run needs two series.
 The ordinary accuracy/plausibility rules still decide the winning eligible model;
-enrollment does not guarantee selection. Even built-in-only subsets of a mixed
-pool retain the fixed representation. No unrequested models are fallback candidates.
+enrollment does not guarantee selection.
 
-The Agent may select subsets but never regenerate source or calibrate the human's
+The Agent may select built-in subsets but never regenerate source or calibrate the human's
 fixed rule. It receives descriptive candidate metadata, not custom source or
 approval payloads. Ordinary EDA and forecast reasoning retain their existing data
 disclosures. Generated R is trusted code under your account, not sandboxed code;
@@ -109,6 +106,16 @@ completed results without authoring or refitting. Corrupt or inconsistent requir
 identity fails rather than silently substituting another version. These checks
 are not transactional protection against concurrent writers.
 
+`external_regressors` lists candidate drivers for built-in models only. C1 keeps
+eligible original numeric, character, factor, logical and Date columns from the
+input, even when a first iteration uses no built-in xregs. Each custom workflow
+receives only its declared predictors plus Date and Combo. Those declarations
+also apply during updates and simple default recovery. Supply required drivers
+through the forecast horizon: missing future values are not forecast or
+zero-filled, including when built-in missing-value cleaning is enabled.
+Changing eligible source data requires a new Agent version (`overwrite = TRUE`),
+not an in-place restart.
+
 Custom model summaries include exact version, interpretation and representation,
 without fitted-state introspection or invented variable importance. They work
 without `vip`.
@@ -116,7 +123,7 @@ without `vip`.
 ### Updating Approved Choices
 
 Create a new parent for new observations using the same explicit approved pool,
-cadence, forecast horizon, regressor set, enabled modes and series membership.
+cadence, forecast horizon, built-in candidate regressor set and enabled modes.
 Historical cutoffs and backtest settings may change in this new parent. Explicitly
 set `allow_iterate_forecast = FALSE`; omitting it is not custom replay consent.
 
@@ -127,7 +134,6 @@ updated_agent <- set_agent_info(
   input_data = updated_hist_data,
   forecast_horizon = 3,
   custom_models = list(business_mean = custom),
-  models_to_run = c("business_mean", "meanf"),
   negative_forecast = TRUE,
   allow_hierarchical_forecast = FALSE,
   run_global_models = FALSE,
@@ -148,8 +154,11 @@ Calling the same update again reuses complete valid results; an interrupted
 completion-log write can finish without fitting or rewriting forecasts. Missing,
 corrupt or conflicting required identities and incomplete fitted outputs are hard
 errors, not automatic repair. Source failures and quality rejection never trigger
-default built-ins or implicit iteration. New or removed series, changed enrollment
-or a changed horizon require a new initial `iterate_forecast()` run. An ordinary
+implicit iteration. New series and recoverable built-in execution or quality
+failures use default local settings with every compatible enrolled custom model,
+within the existing recovery limits. Source, enrollment, provider and required
+artifact errors remain hard failures. Changed enrollment or a changed horizon
+requires a new initial `iterate_forecast()` run. An ordinary
 built-in parent cannot infer custom enrollment from a predecessor.
 
 Normal EDA post-processing still uses its isolated LLM when needed, without the

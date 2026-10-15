@@ -13,6 +13,9 @@
 #'   day, week, month, quarter, year.
 #' @param forecast_horizon Number of periods to forecast into the future.
 #' @param external_regressors List of column headers within input data to be used as features in multivariate models.
+#'   Controls built-in R1/R2 recipes only. C1 retains eligible original numeric,
+#'   character, factor, logical and Date columns independently of this list.
+#'   Each custom workflow uses only its declared predictors plus Date and Combo.
 #' @param hist_start_date Date value of when your input_data starts. Default of NULL uses earliest date value in
 #'   input_data.
 #' @param hist_end_date Date value of when your input_data ends. Default of NULL uses the latest date value in
@@ -48,6 +51,11 @@
 #'   the custom-model recipe used by custom models: the padded history and future frame on the original scale, with
 #'   missing values imputed only when `clean_missing_values` is TRUE and no outlier cleaning, Box-Cox, differencing or
 #'   engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.
+#'   Reserved outcome/assessment columns and unsupported column types are excluded.
+#'   Supply every required custom driver through the forecast horizon; missing
+#'   future values error rather than being forecast or replaced with zero.
+#'   C1 source identity is pinned before preparation, including interrupted runs.
+#'   Changing eligible source data requires a new [set_run_info()] run.
 #' @param multistep_horizon Use a multistep horizon approach when training multivariate models with R1 recipe.
 #'
 #' @return No return object. Feature engineered data is written to disk based on the output locations provided in
@@ -136,6 +144,7 @@ prep_data <- function(run_info,
   check_recipes_to_run(recipes_to_run)
   check_input_type("multistep_horizon", multistep_horizon, "logical")
   recipe_ids <- expand_recipes_to_run(recipes_to_run, date_type)
+  c1_columns <- if ("C1" %in% recipe_ids) custom_input_columns(input_data, target_variable) else character()
 
   input_data <- normalize_combo_values(
     input_data = input_data,
@@ -190,7 +199,7 @@ prep_data <- function(run_info,
     dplyr::select(c(
       "Combo",
       tidyselect::all_of(combo_variables),
-      tidyselect::all_of(external_regressors),
+      tidyselect::all_of(unique(c(external_regressors, c1_columns))),
       "Date", "Target"
     )) %>%
     combo_cleanup_fn(
@@ -215,10 +224,11 @@ prep_data <- function(run_info,
   )
 
   # read previous log
-  prev_log_df <- read_file(run_info,
+  previous_source <- read_file(run_info,
     path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
     return_type = "df"
-  ) %>%
+  )
+  prev_log_df <- previous_source %>%
     dplyr::select(tidyselect::any_of(cols_check_list))
 
   # create current log
@@ -241,6 +251,19 @@ prep_data <- function(run_info,
     recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---"))
   ) %>%
     data.frame()
+  if ("C1" %in% recipe_ids) {
+    current_log_df$c1_source_id <- custom_source_identity(initial_prep_tbl)
+    if (!is.null(previous_source) && nrow(previous_source) &&
+      ("c1_source_id" %in% names(previous_source) ||
+        ("recipes_to_run" %in% names(previous_source) &&
+          any(grepl("C1", previous_source$recipes_to_run, fixed = TRUE)))) &&
+      (!"c1_source_id" %in% names(previous_source) ||
+        !identical(as.character(previous_source$c1_source_id), current_log_df$c1_source_id))) {
+      stop("C1 custom source data changed; start a new run with set_run_info().", call. = FALSE)
+    }
+    if ("c1_source_id" %in% names(previous_source)) prev_log_df$c1_source_id <- previous_source[["c1_source_id"]]
+    cols_check_list <- c(cols_check_list, "c1_source_id")
+  }
 
   # check if run has already been completed
   if (length(cols_check_list) == length(colnames(prev_log_df))) {
@@ -281,6 +304,10 @@ prep_data <- function(run_info,
       dplyr::pull(Combo_Hash)
   } else {
     prev_combo_list <- prepared_recipe_combos(run_info, recipe_ids)
+    if ("C1" %in% recipe_ids && length(prev_combo_list) &&
+      !"c1_source_id" %in% names(previous_source)) {
+      stop("C1 custom source identity is missing; start a new run with set_run_info().", call. = FALSE)
+    }
 
     combo_diff <- setdiff(
       current_combo_list %>%
@@ -294,6 +321,12 @@ prep_data <- function(run_info,
   if (length(combo_diff) == 0 & length(prev_combo_list) > 0) {
     cli::cli_alert_info("Data Already Prepped")
     return(cli::cli_progress_done())
+  }
+
+  # Pin source identity before the first recipe write, including partial runs.
+  if ("C1" %in% recipe_ids && !"c1_source_id" %in% names(previous_source)) {
+    previous_source$c1_source_id <- current_log_df$c1_source_id
+    write_data(previous_source, NULL, run_info, "log", "logs")
   }
 
   # filter to only combos that need to be processed
@@ -402,9 +435,9 @@ prep_data <- function(run_info,
         if ("C1" %in% recipe_ids) {
           write_data(
             x = custom_view_build(
-              initial_tbl,
-              external_regressors,
-              global_xregs_future_list,
+              custom_source_join(initial_tbl, initial_prep_combo_tbl, c1_columns),
+              c1_columns,
+              character(),
               clean_missing_values,
               date_type,
               hist_end_date
@@ -596,9 +629,9 @@ prep_data <- function(run_info,
           if ("C1" %in% recipe_ids) {
             write_data(
               x = custom_view_build(
-                initial_tbl,
-                external_regressors,
-                global_xregs_future_list,
+                custom_source_join(initial_tbl, df, c1_columns),
+                c1_columns,
+                character(),
                 clean_missing_values,
                 date_type,
                 hist_end_date
@@ -748,6 +781,8 @@ prep_data <- function(run_info,
           recipes_to_run = recipes_to_run,
           recipe_ids = recipe_ids,
           custom_view_build = custom_view_build,
+          custom_source_join = custom_source_join,
+          c1_columns = c1_columns,
           multivariate_prep_recipe_1 = multivariate_prep_recipe_1,
           multivariate_prep_recipe_2 = multivariate_prep_recipe_2,
           run_info = run_info,
@@ -819,6 +854,7 @@ prep_data <- function(run_info,
       recipes_to_run = ifelse(is.null(recipes_to_run), NA, paste(recipes_to_run, collapse = "---")),
       multistep_horizon = multistep_horizon
     )
+  if ("C1" %in% recipe_ids) log_df$c1_source_id <- current_log_df$c1_source_id
 
   write_data(
     x = log_df,
@@ -909,6 +945,52 @@ get_xregs_future_values_tbl <- function(data_tbl,
     )
 }
 
+# Select eligible original input columns for C1 without changing built-in xregs.
+# Zero-row collection obtains Spark schema without materializing its input.
+# Reserved outcomes/assessment metadata and unsupported vector types are excluded.
+custom_input_columns <- function(data, target_variable) {
+  schema <- dplyr::collect(utils::head(data, 0))
+  supported <- vapply(schema, function(value) is.numeric(value) || is.character(value) ||
+    is.factor(value) || is.logical(value) || inherits(value, "Date"), logical(1))
+  setdiff(names(schema)[supported], c(target_variable, "Target", "Date", "Combo",
+    "Target_Original", "Train_Test_ID", "Run_Type", "Horizon", "Origin", ".finnts_row", ".row", ".pred"))
+}
+
+# Hash original C1 input deterministically before any completed-run shortcut.
+# Both backends hash the same per-series map; Spark collects only that small map.
+# Sorted rows/columns make input ordering irrelevant; no artifacts are written.
+custom_source_identity <- function(data) {
+  hash_panel <- function(data) {
+    data <- as.data.frame(data)[, sort(names(data)), drop = FALSE]
+    keys <- intersect(c("Combo", "Date"), names(data))
+    data <- data[do.call(order, data[keys]), , drop = FALSE]
+    rownames(data) <- NULL
+    digest::digest(data, algo = "sha256")
+  }
+  environment(hash_panel) <- baseenv()
+  if (inherits(data, "tbl_spark")) {
+    hash_group <- function(df, context) {
+      data.frame(Combo = unique(df$Combo), source_id = context$hash_panel(df))
+    }
+    environment(hash_group) <- baseenv()
+    hashes <- sparklyr::spark_apply(data, hash_group,
+      group_by = "Combo", context = list(hash_panel = hash_panel)) %>% dplyr::collect()
+  } else {
+    hashes <- dplyr::bind_rows(lapply(split(as.data.frame(data), data$Combo), function(panel) {
+      data.frame(Combo = unique(panel$Combo), source_id = hash_panel(panel))
+    }))
+  }
+  hash_panel(hashes)
+}
+
+# Project each padded original-scale timeline onto raw C1 source columns.
+# Original source values, including incomplete future cells, are never replaced
+# by the built-in recipe's forecasted or selected regressors. No I/O.
+custom_source_join <- function(timeline, source, columns) {
+  dplyr::left_join(dplyr::select(timeline, Combo, Date, Target),
+    dplyr::select(source, Combo, Date, tidyselect::all_of(columns)), by = c("Combo", "Date"))
+}
+
 #' Build the custom-model C1 view of one prepared series
 #'
 #' C1 is the custom-model-only recipe. It keeps the padded history and future
@@ -919,6 +1001,8 @@ get_xregs_future_values_tbl <- function(data_tbl,
 #' values become zero. Future rows keep
 #' NA for regressors without supplied future values, so custom models that
 #' declare them fail predictor validation instead of forecasting from zeros.
+#' Future source cells outside `future_regressors` are restored after cleaning,
+#' preventing history imputation from inventing required future inputs.
 #'
 #' @param df Padded series table with Combo, Date, Target and joined regressors,
 #'   taken before outlier cleaning or transformations.
@@ -951,6 +1035,9 @@ custom_view_build <- function(df,
       external_regressors
     )
   history <- view$Date <= hist_end_date
+  for (column in setdiff(external_regressors, future_regressors)) {
+    view[[column]][!history] <- df[[column]][!history]
+  }
   for (column in c("Target", external_regressors)) {
     values <- view[[column]]
     if (!is.numeric(values)) {

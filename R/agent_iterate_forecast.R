@@ -411,6 +411,7 @@ iterate_forecast <- function(agent_info,
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
+    agent_info_lean <- agent_custom_worker_info(agent_info, keep_llm = TRUE)
 
     # foreach over each combo file
     local_models <- foreach::foreach(
@@ -435,14 +436,14 @@ iterate_forecast <- function(agent_info,
           load_eda_results <- load_eda_results
           make_pipe_table <- make_pipe_table
           load_run_results <- load_run_results
-          agent_info <- agent_info
+          agent_info_lean <- agent_info_lean
           safe_dir_ls <- safe_dir_ls
           list_files <- list_files
         }
 
         # adjust max iterations based on previous runs
         previous_runs <- load_run_results(
-          agent_info = agent_info,
+          agent_info = agent_info_lean,
           combo = hash_data(x)
         )
 
@@ -450,7 +451,7 @@ iterate_forecast <- function(agent_info,
           max_iter_adj <- max_iter
         } else {
           prev_run_count <- previous_runs %>%
-            dplyr::filter(agent_version == agent_info$agent_version) %>%
+            dplyr::filter(agent_version == agent_info_lean$agent_version) %>%
             nrow()
 
           max_iter_adj <- max_iter - prev_run_count
@@ -463,7 +464,7 @@ iterate_forecast <- function(agent_info,
 
           # run the local model workflow
           fcst_results <- fcst_agent_workflow(
-            agent_info = agent_info,
+            agent_info = agent_info_lean,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
             parallel_processing = NULL,
@@ -1059,7 +1060,9 @@ save_best_agent_run <- function(agent_info) {
 #' @param eda_results Consolidated EDA results used to resolve the legal global
 #'   forecast approaches before reasoning. Not used by local workflows.
 #' @details Custom contracts constrain mode/representation and preserve existing
-#'   session isolation. They never fall through to an unselected local pool.
+#'   session isolation. Workers receive names and identity references, then load
+#'   the authoritative version-owned enrollment before reasoning. They never
+#'   fall through to an unselected local pool.
 #'
 #' @return A list containing the results of the workflow.
 #' @noRd
@@ -1074,6 +1077,8 @@ fcst_agent_workflow <- function(agent_info,
                                 previous_run_results = NULL,
                                 fallback_available = FALSE,
                                 eda_results = NULL) {
+  agent_info$custom_enrollment_cache <- new.env(parent = emptyenv())
+  agent_info <- load_agent_custom_state(agent_info)
   agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
   agent_info$allow_quality_rejection <- TRUE
   if (is.null(agent_info$selection_cache)) agent_info$selection_cache <- new.env(parent = emptyenv())
@@ -2153,6 +2158,8 @@ reason_inputs <- function(agent_info,
 #'   identities remain text, and known recipe settings are reused for coverage.
 #'   Custom submissions verify parent identity and complete fixed-rule settings,
 #'   then pass exact approved envelopes into ordinary standard preparation.
+#'   Default replacements also retain the current update marker, so accepted
+#'   results can be audited independently from predecessor replay choices.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2344,6 +2351,14 @@ submit_fcst_run <- function(agent_info,
   if (!is.null(custom_contract)) {
     child_log <- read_exact_artifact(run_info, local_artifact_path(run_info, "logs", extension = "csv"))
     child_log$custom_agent_contract_id <- agent_info$custom_agent_contract_id
+    if (isTRUE(agent_info$default_reforecast)) {
+      record <- read_agent_custom_update(agent_info, TRUE)
+      if (is.null(combo) || !combo %in% names(record$inputs) ||
+        !identical(run_info$run_name, agent_custom_default_run(record, combo))) {
+        stop("Custom update default child identity changed.", call. = FALSE)
+      }
+      child_log$custom_agent_update_id <- paste0("custom-update-", record$manifest_id)
+    }
     write_data(child_log, NULL, run_info, "log", "logs")
   }
   prep_models(

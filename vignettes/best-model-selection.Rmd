@@ -852,13 +852,14 @@ share one run without sharing a representation:
 | Setting | Effect on custom models (C1) | Effect on built-in models (R1/R2) |
 | --- | --- | --- |
 | `recipes_to_run` | Must include `"C1"`, otherwise preparation errors | Need at least one R recipe; built-ins on a C1-only run error |
+| `external_regressors` | Does not restrict C1 availability; each custom model uses its declared drivers from eligible original input columns | Selects drivers for R1/R2 |
 | `stationary`, `box_cox`, `multistep_horizon`, `feature_selection` | Not applied; C1 stays on the original target scale | Applied as usual |
-| `clean_missing_values` | Imputes missing or non-finite original-scale targets and regressors before the custom fit | Applied as usual |
+| `clean_missing_values` | Cleans historical original-scale values; missing required future drivers still error | Applied as usual |
 | `clean_outliers` | Not applied; C1 keeps observed outliers | Applied as usual |
 | `average_models`, `run_ensemble_models` | Custom forecasts can join simple averages and ensembles when they have enough back tests | Unchanged |
 | `negative_forecast` | `FALSE` floors finished custom forecasts at zero, as for built-ins; authoring validation checks unclipped output | Unchanged |
 | `parallel_processing`, `inner_parallel` | Sequential, `"local_machine"` and `"spark"` are supported, with or without `inner_parallel` | Unchanged |
-| Storage and formats | Local or mounted paths with `storage_object = NULL`; CSV/RDS/Parquet data and RDS model objects | Unchanged |
+| Storage and formats | Local/mounted paths or supported Blob/M365 `storage_object`; CSV/RDS/Parquet data and RDS model objects | Unchanged |
 
 A prepared C1 recipe with no selected custom model is ignored with a warning.
 `forecast_time_series()` exposes `stationary`, retaining its existing `TRUE`
@@ -873,8 +874,19 @@ fixed parameters, without tuning, source regeneration or package installation.
 Custom source or incomplete-prediction failures cannot be silently dropped to
 make a mixed run appear successful.
 
-A run manifest pins the effective pool, exact source content, attestations and
-preparation context. Reordered equivalent selections can reuse it; changed
+C1 retains eligible original numeric, character, factor, logical and Date
+columns; reserved outcome/assessment columns and unsupported types are excluded.
+Supply each declared driver's future values through the forecast horizon.
+Finn neither forecasts those future drivers nor replaces missing values with
+zero. This remains true when built-ins use other xregs, the Agent's first
+iteration uses none, or update recovery uses simple defaults. C1 source identity
+is pinned before recipe writes, including partial preparation: changing eligible
+source values requires a new standard run or Agent version, not a restart.
+
+A manifest attached to the normal `-model_workflows.rds` artifact pins the
+effective pool, exact source content, attestations and preparation context.
+Standard preparation needs no separate custom registry or pool-manifest file.
+Reordered equivalent selections can reuse it; changed
 definitions, approvals or context require a new run. Custom `Model_Name` values keep
 their readable aliases, including underscores. Custom `Model_ID` values use
 `custom-<full content hash>--<local|global>--C1`, avoiding ambiguity with existing
@@ -886,8 +898,8 @@ The ordinary accuracy and plausibility policy still selects the best eligible
 candidate. With `average_models = TRUE`, custom forecasts can be averaged with
 other selected models, and learned ensembles can use custom back-test forecasts.
 Enrollment does not guarantee selection. Exact single-rule workflows must
-explicitly disable averaging; `bottoms_up` alone does not do that. Remote
-`storage_object` execution remains outside this profile.
+explicitly disable averaging; `bottoms_up` alone does not do that. Supported
+storage backends retain their ordinary access and package requirements.
 
 ### Reviewed Hierarchy Rules
 
@@ -913,21 +925,45 @@ selection are reused. Per-series routing, pooled/global hierarchy and Agent
 hierarchy remain later work. See the [hierarchy walkthrough](hierarchical-forecasting.html#reviewed-custom-rules)
 for explicit controls and the compatibility evidence matrix.
 
-Initial Agent iteration also accepts approved pools through `set_agent_info()`.
-Only explicit `models_to_run` enrolls candidates. The Agent retains the same
-ranking and average-model accuracy policy, but proposals cannot expand the pool
-or change its pinned representation (built-ins on R1, custom models on C1). Parent and child identities are
-checked before same-run reuse and publication. This initial Agent profile is
-limited to local/mounted CSV data and RDS objects, sequential or local-machine
-execution, with no inner parallelism. Compatible custom updates require a new
-identically enrolled parent and explicit `allow_iterate_forecast = FALSE`. They
-pin and replay the exact saved choices with unchanged horizon, regressors, modes
-and series membership. Existing update acceptance rules still apply, but rejection
-or damage raises an error instead of default recovery. Custom rules are never
-retuned; mixed retuning reuses their fixed results. Valid update restarts preserve
-completed outputs. A built-in-only parent cannot adopt a custom predecessor.
-See the [Agent walkthrough](ai-agent.html#approved-custom-models) for the bounded
-update workflow and unsupported recovery cases.
+### Custom models in Agent iterations and updates
+
+Supply approved objects with `set_agent_info(custom_models =
+list(business_mean = custom))`. The setup `models_to_run` argument is removed:
+built-in candidate search remains the Agent's responsibility, while every
+mode-compatible enrolled custom model is mandatory from the first iteration
+onward and executes before built-ins. The LLM cannot omit these models or alter
+their approved logic. Required drivers and raw C1 are retained; ordinary
+built-in transformations, ranking and average-model accuracy signals remain intact.
+Custom-only forecasting without built-in search belongs in a standard run.
+
+Each version's existing CSV log always contains one `custom_models` names column,
+using `NA` when none are enrolled. Setup saves one complete, immutable enrollment
+bundle at `prep_models/<project-hash>-<hash-of-agent-run-id>-custom-models.rds`.
+The returned Agent object and dispatched worker metadata contain names/references,
+not untrained custom workflows or source/approval payloads. Workers load the exact
+version-owned bundle after dispatch. Sequential, local-machine and Spark dispatch
+are supported with CSV data, RDS model objects and no inner parallelism for this
+Agent profile. Spark still requires its ordinary mounted-storage and worker-package
+setup; permitting dispatch is not evidence of a live-cluster test.
+
+Compatible updates require an identically enrolled new parent, unchanged cadence,
+horizon, regressors and enabled modes, and explicit `allow_iterate_forecast = FALSE`.
+Successful series replay their saved winners and component subsets. New series
+and recoverable built-in fitting or forecast-quality failures use Finn's existing
+default-local fallback, with all compatible current-version custom models added
+first. Changed global cohorts do not reuse a pooled fit from different membership;
+their current series follow default recovery. Required custom drivers remain
+mandatory. Custom rules are never retuned or regenerated; mixed retuning reuses
+their fixed results.
+
+Storage/authentication failures, missing or malformed required artifacts,
+enrollment/identity mismatches and custom-source failures remain hard errors.
+Fallback cannot silently drop a custom model or fabricate successful output.
+Accepted defaults retain provenance and completed restarts do not refit them.
+Update replay provenance uses a separate `logs/...-agent-custom-update.rds`
+record: it identifies the predecessor and saved choices, not another copy of
+the untrained enrollment bundle. Older unreleased custom artifact layouts must
+be recreated with the current setup/preparation functions; they are not migrated.
 
 ## Future-forecast checks
 

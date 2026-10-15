@@ -890,17 +890,18 @@ download_exact_artifact <- function(storage_object, path, destination, allow_mis
 #' @param file_list Exact artifact paths to read.
 #' @param return_type Requested output format passed to read_file().
 #' @param allow_missing Whether confirmed missing optional artifacts are allowed.
+#' @param missing_value Value returned for confirmed missing optional artifacts.
 #' @param character_columns Optional CSV identifier columns parsed as text.
 #' @return The requested output, or NULL when all optional paths are absent.
 #'   Remote paths are staged once per distinct path in temporary directories.
 #'   Provider and strict read errors propagate; stored artifacts are not changed.
 #' @noRd
 read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_missing = FALSE,
-                                 character_columns = NULL) {
+                                 character_columns = NULL, missing_value = NULL) {
   if (is.null(run_info$storage_object)) {
     if (allow_missing) {
       file_list <- local_artifact_files(file_list, allow_missing = TRUE)
-      if (!length(file_list)) return(NULL)
+      if (!length(file_list)) return(missing_value)
     }
     return(read_file(run_info, file_list = file_list, return_type = return_type, strict = TRUE,
       character_columns = character_columns))
@@ -914,7 +915,7 @@ read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_m
       staged <- c(staged, destination)
     }
   }
-  if (!length(staged) && allow_missing) return(NULL)
+  if (!length(staged) && allow_missing) return(missing_value)
   local_info <- run_info
   local_info$storage_object <- NULL
   read_local_artifacts(local_info, staged, return_type = return_type,

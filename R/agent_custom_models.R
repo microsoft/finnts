@@ -41,6 +41,10 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
   }
   regressors <- custom_model_pool_names(agent_info$external_regressors, "external_regressors", empty = TRUE)
   if (is.null(regressors)) regressors <- character()
+  available <- agent_info[["c1_predictors"]]
+  if (is.null(available)) available <- regressors
+  available <- custom_model_pool_names(available, "C1 available predictors", empty = TRUE)
+  if (is.null(available)) available <- character()
   profile <- custom_run_context(project, list(forecast_approach = agent_info$forecast_approach,
     recipes_to_run = "C1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, multistep_horizon = FALSE, date_type = date_type,
@@ -49,6 +53,8 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
     run_global_models = agent_info$run_global_models, negative_forecast = agent_info$negative_forecast,
     allow_hierarchical_forecast = FALSE, feature_selection = FALSE, inner_parallel = FALSE,
     external_regressors = sort(regressors, method = "radix"),
+    c1_predictors = sort(available, method = "radix"),
+    c1_source_id = agent_info[["c1_source_id"]],
     data_output = project$data_output, object_output = project$object_output))
   custom_run_passive(context)
   mode_models <- list(local = character(), global = character())
@@ -62,19 +68,23 @@ resolve_agent_custom_models <- function(agent_info, models_to_run = NULL, custom
         forecast_horizon = as.numeric(horizon), target_scale = "original"), FALSE)
     }
     required <- definition$requirements$predictors
-    if (any(required %in% forbidden) || !all(setdiff(required, c("Date", "Combo")) %in% regressors)) {
-      stop("Custom Agent has missing or forbidden required predictors for ", alias, ".", call. = FALSE)
+    if (any(required %in% forbidden) || !all(setdiff(required, c("Date", "Combo")) %in% available)) {
+      invalid <- unique(c(intersect(required, forbidden), setdiff(setdiff(required, c("Date", "Combo")), available)))
+      stop("Custom Agent has missing or forbidden required predictors for ", alias,
+        ": ", paste(invalid, collapse = ", "), ".", call. = FALSE)
     }
   }
   for (mode in names(mode_models)) {
-    if (!agent_info[[paste0("run_", mode, "_models")]]) next
     built_in <- if (mode == "global") intersect(pool$built_in, list_global_models()) else pool$built_in
     custom <- names(pool$custom)[vapply(pool$custom, function(definition) mode %in% definition$model_type, logical(1))]
     mode_models[[mode]] <- pool$selected[pool$selected %in% c(built_in, custom)]
   }
+  # Enrollment identity spans Agent versions; source values are version-specific
+  # restart metadata, checked separately rather than preventing forecast updates.
   identity <- list(selected = pool$selected, pool_id = pool$pool_id,
     references = lapply(pool$custom, function(definition) list(name = definition$name, version_id = definition$version_id)),
-    evidence = lapply(pool$envelopes, function(model) model[c("validation", "approval")]), context = context)
+    evidence = lapply(pool$envelopes, function(model) model[c("validation", "approval")]),
+    context = context[setdiff(names(context), "c1_source_id")])
   list(selected = pool$selected, envelopes = pool$envelopes,
     context = context, mode_models = mode_models, pool_id = pool$pool_id,
     contract_id = custom_run_digest(identity))
@@ -99,7 +109,7 @@ validate_agent_custom_models <- function(contract) {
     stop("Invalid custom Agent contract context or modes.", call. = FALSE)
   }
   context <- contract$context
-  info <- context[c("forecast_horizon", "external_regressors", "run_local_models", "run_global_models",
+  info <- context[c("forecast_horizon", "external_regressors", "c1_predictors", "c1_source_id", "run_local_models", "run_global_models",
     "negative_forecast", "allow_hierarchical_forecast", "forecast_approach")]
   info$project_info <- context[c("date_type", "data_output", "object_output")]
   current <- resolve_agent_custom_models(info, contract$selected, contract$envelopes)
@@ -186,20 +196,14 @@ validate_agent_custom_proposal <- function(input_list, contract, combo = NULL, f
   metadata <- list(external_regressors = context$external_regressors, global_forecast_approaches = "bottoms_up")
   result <- validate_agent_proposal(input_list, metadata, combo, candidates$models)
   for (field in c("models_to_run", "external_regressors", "recipes_to_run")) result[[field]] <- unique(result[[field]])
-  required <- list(recipes_to_run = "R1", forecast_approach = "bottoms_up", stationary = FALSE,
-    clean_missing_values = FALSE, clean_outliers = FALSE, feature_selection = FALSE, multistep_horizon = FALSE)
+  required <- list(recipes_to_run = "R1", forecast_approach = "bottoms_up")
   for (field in names(required)) {
     if (!identical(result[[field]], required[[field]])) {
       abort_invalid_agent_proposal(field, result[[field]], paste0("the pinned custom profile requires ", required[[field]], "."))
     }
   }
-  for (alias in intersect(result$models_to_run, names(contract$envelopes))) {
-    drivers <- setdiff(contract$envelopes[[alias]]$definition$requirements$predictors, c("Date", "Combo"))
-    if (!all(drivers %in% result$external_regressors)) {
-      abort_invalid_agent_proposal("external_regressors", result$external_regressors,
-        paste0("include the required predictors for ", alias, "."))
-    }
-  }
+  mandatory <- intersect(candidates$models, names(contract$envelopes))
+  result$models_to_run <- unique(c(mandatory, result$models_to_run))
   # The LLM pins built-in preparation to R1; selected custom models add their raw C1
   # recipe here so child prep, logs, duplicate detection and history share one value.
   if (any(result$models_to_run %in% names(contract$envelopes))) result$recipes_to_run <- c("R1", "C1")
@@ -226,14 +230,11 @@ agent_custom_marker <- function(contract) {
 # No source executes and no approval is inferred beyond the saved attestations.
 read_agent_custom_record <- function(agent_info, required = FALSE) {
   info <- agent_custom_parent_info(agent_info)
-  if (!is.null(info$storage_object)) {
-    if (required) stop("Custom Agent runs require local/mounted storage.", call. = FALSE)
-    return(NULL)
-  }
-  paths <- local_artifact_files(local_artifact_path(info, "logs", "-agent-custom-models", extension = "rds"),
-    allow_missing = !required)
-  if (!length(paths)) return(NULL)
-  record <- read_exact_artifact(info, paths, return_type = "object")
+  path <- local_artifact_path(info, "prep_models", "-custom-models", extension = "rds")
+  missing <- new.env(parent = emptyenv())
+  record <- read_exact_artifact(info, path, return_type = "object", allow_missing = !required,
+    missing_value = missing)
+  if (identical(record, missing)) return(NULL)
   fields <- c("project_name", "agent_run_id", "agent_version", "contract")
   if (typeof(record) != "list" || any(!names(attributes(record)) %in% "names") ||
     length(record) != length(fields) || anyDuplicated(names(record)) || !setequal(names(record), fields) ||
@@ -252,13 +253,16 @@ write_agent_custom_record <- function(agent_info, contract) {
   marker <- agent_custom_marker(contract)
   previous <- read_agent_custom_record(agent_info)
   if (!is.null(previous)) {
-    if (!identical(agent_custom_marker(previous), marker)) stop("Custom Agent enrollment changed; start a new run.", call. = FALSE)
+    if (!identical(agent_custom_marker(previous), marker) ||
+      !identical(previous$context$c1_source_id, contract$context$c1_source_id)) {
+      stop("Custom Agent enrollment or C1 source changed; start a new run.", call. = FALSE)
+    }
     return(invisible(contract))
   }
   info <- agent_custom_parent_info(agent_info)
   record <- list(project_name = info$project_name,
     agent_run_id = agent_info$run_id, agent_version = as.numeric(agent_info$agent_version), contract = contract)
-  write_data(record, NULL, info, "object", "logs", "-agent-custom-models")
+  write_data(record, NULL, info, "object", "prep_models", "-custom-models")
   if (!identical(agent_custom_marker(read_agent_custom_record(agent_info, TRUE)), marker)) {
     stop("Custom Agent parent record verification failed.", call. = FALSE)
   }
@@ -269,33 +273,49 @@ write_agent_custom_record <- function(agent_info, contract) {
 # calls are unchanged. The explicit hierarchy flag supports exact reconstruction.
 attach_agent_custom_contract <- function(agent_info, contract) {
   if (is.null(contract)) return(agent_info)
-  agent_info$custom_agent_contract <- validate_agent_custom_models(contract)
-  agent_info$custom_agent_contract_id <- agent_custom_marker(contract)
+  contract <- validate_agent_custom_models(contract)
+  agent_info$custom_models <- sort(names(contract$envelopes))
   agent_info$allow_hierarchical_forecast <- FALSE
+  agent_info$c1_predictors <- contract$context$c1_predictors
+  agent_info["c1_source_id"] <- list(contract$context$c1_source_id)
   agent_info
 }
 
-# Reconcile exact saved parent state at coordinating entry boundaries. Legacy
+# Build reference-only dispatch metadata. Keep the immutable Chat template only
+# for reasoning workers; fixed update/default/summary workers need no Chat.
+# Enrollment, replay and invocation-local caches are restored after dispatch.
+# Explicit NULL keys prevent partial matching against the retained identity keys.
+agent_custom_worker_info <- function(agent_info, keep_llm = FALSE) {
+  fields <- c("custom_agent_contract", "custom_agent_update", "selection_cache", "custom_enrollment_cache")
+  agent_info[fields] <- rep(list(NULL), length(fields))
+  if (!keep_llm) agent_info$llm <- NULL
+  agent_info
+}
+
+# Reconcile exact saved parent state at coordinating and worker entry boundaries. Legacy
 # absence returns unchanged metadata; any marker/record requires the matching log
 # and valid approval. Rebuild against caller context so stripped custom fields
 # cannot bypass saved enrollment. No listings, source execution or artifact writes.
-load_agent_custom_state <- function(agent_info) {
+# Optional worker-owned cache reuses immutable enrollment only for the exact
+# project/path/version owner within one invocation; current context still validates.
+load_agent_custom_state <- function(agent_info, cache = agent_info[["custom_enrollment_cache"]]) {
   supplied <- agent_info$custom_agent_contract
   marker <- agent_info$custom_agent_contract_id
-  requested <- !is.null(supplied) || !is.null(marker)
+  requested <- !is.null(supplied) || !is.null(marker) || length(agent_info$custom_models) > 0L
   info <- agent_custom_parent_info(agent_info)
-  if (!is.null(info$storage_object)) {
-    if (requested) stop("Custom Agent runs require local/mounted storage.", call. = FALSE)
-    return(agent_info)
-  }
-  logs <- local_artifact_files(local_artifact_path(info, "logs", "-agent_run", extension = "csv"), allow_missing = TRUE)
-  log <- if (length(logs)) read_exact_artifact(info, logs, character_columns = c("run_id", "custom_agent_contract_id")) else NULL
-  stored_marker <- if (!is.null(log)) log[["custom_agent_contract_id"]] else NULL
-  marked <- length(stored_marker) == 1L && !is.na(stored_marker) && nzchar(stored_marker)
-  saved <- read_agent_custom_record(agent_info, required = requested || marked)
+  owner <- list(info = info, agent_version = agent_info$agent_version)
+  reused <- is.environment(cache) && identical(cache$owner, owner) && is.list(cache$state)
+  log <- if (reused) cache$state$log else
+    read_exact_artifact(info, local_artifact_path(info, "logs", "-agent_run", extension = "csv"),
+      character_columns = c("run_id", "custom_models"), allow_missing = TRUE)
+  stored_names <- if (!is.null(log)) log[["custom_models"]] else NULL
+  marked <- length(stored_names) == 1L && !is.na(stored_names) && nzchar(stored_names)
+  if (!requested && !marked) return(agent_info)
+  saved <- if (reused) cache$state$saved else read_agent_custom_record(agent_info, required = requested || marked)
   if (is.null(saved)) return(agent_info)
   expected <- agent_custom_marker(saved)
-  if (is.null(log) || nrow(log) != 1L || !marked || !identical(as.character(stored_marker), expected) ||
+  if (is.null(log) || nrow(log) != 1L || !marked ||
+    !identical(as.character(stored_names), paste(sort(names(saved$envelopes)), collapse = "---")) ||
     !identical(as.character(log$run_id), agent_info$run_id) ||
     !identical(as.numeric(log$agent_version), as.numeric(agent_info$agent_version))) {
     stop("Custom Agent parent log identity is missing or inconsistent.", call. = FALSE)
@@ -305,8 +325,39 @@ load_agent_custom_state <- function(agent_info) {
     stop("Custom Agent supplied enrollment differs from the saved parent contract.", call. = FALSE)
   }
   current <- resolve_agent_custom_models(agent_info, saved$selected, saved$envelopes)
-  if (!identical(agent_custom_marker(current), expected)) stop("Custom Agent context changed; start a new run.", call. = FALSE)
-  attach_agent_custom_contract(agent_info, saved)
+  if (!identical(agent_custom_marker(current), expected) ||
+    !identical(current$context$c1_source_id, saved$context$c1_source_id)) {
+    stop("Custom Agent context or C1 source changed; start a new run.", call. = FALSE)
+  }
+  agent_info <- attach_agent_custom_contract(agent_info, saved)
+  agent_info$custom_agent_contract <- saved
+  agent_info$custom_agent_contract_id <- expected
+  if (is.environment(cache) && !reused) {
+    cache$owner <- owner
+    cache$state <- list(log = log, saved = saved)
+  }
+  agent_info
+}
+
+# Load authoritative enrollment and any referenced replay after update dispatch.
+# Supplied replay must match the exact saved artifact; provider classes and the
+# original parent survive hard artifact errors. Nothing is defaulted or retried.
+load_agent_custom_update_state <- function(agent_info) {
+  tryCatch({
+    agent_info <- load_agent_custom_state(agent_info)
+    if (!is.null(agent_info$custom_agent_contract) && !is.null(agent_info$custom_agent_update_id)) {
+      saved <- read_agent_custom_update(agent_info, TRUE)
+      if (!identical(agent_info$custom_agent_update_id, paste0("custom-update-", saved$manifest_id)) ||
+        (!is.null(agent_info$custom_agent_update) && !identical(agent_info$custom_agent_update, saved))) {
+        stop("Custom update worker provenance mismatch.", call. = FALSE)
+      }
+      agent_info$custom_agent_update <- saved
+    }
+    agent_info
+  }, error = function(error) {
+    rlang::abort(paste0("Cannot load update enrollment: ", conditionMessage(error)),
+      class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+  })
 }
 
 # Reject unsupported custom execution controls before EDA, provider work or fits.
@@ -315,8 +366,8 @@ agent_custom_preflight <- function(agent_info, parallel_processing = NULL, inner
   if (is.null(agent_info$custom_agent_contract)) return(invisible(NULL))
   validate_agent_custom_models(agent_info$custom_agent_contract)
   if (!identical(agent_info$project_info$data_output, "csv")) stop("Custom Agent requires CSV data artifacts.", call. = FALSE)
-  if (!is.null(parallel_processing) && !identical(parallel_processing, "local_machine")) {
-    stop("Custom Agent requires sequential or local_machine execution.", call. = FALSE)
+  if (!is.null(parallel_processing) && !parallel_processing %in% c("local_machine", "spark")) {
+    stop("Custom Agent requires sequential, local_machine or spark execution.", call. = FALSE)
   }
   if (!identical(inner_parallel, FALSE)) stop("Custom Agent requires inner_parallel = FALSE.", call. = FALSE)
   invisible(NULL)
@@ -340,10 +391,11 @@ agent_custom_foundations <- function(contract) {
 agent_custom_prompt <- function(agent_info, combo, weighted_mape_goal) {
   candidates <- agent_custom_candidates(agent_info$custom_agent_contract, combo,
     agent_info$custom_foundation_suffix %||% "")
-  paste("Select a nonempty subset of these approved candidates, or ABORT when no valid new proposal remains.",
+  paste("Select built-in candidates from this approved pool, or ABORT when no valid new proposal remains.",
+    "Finn always includes every compatible custom candidate, even if omitted from your proposal.",
     "Never generate source, change parameters/approval, add models or change the confirmed business rule.",
-    "Use recipes_to_run=R1 (selected custom models automatically add their raw C1 recipe), bottoms_up, stationary=FALSE, clean_missing_values=FALSE, clean_outliers=FALSE,",
-    "feature_selection=FALSE and multistep_horizon=FALSE. Include each selected custom model's required predictors.",
+    "Use recipes_to_run=R1 and bottoms_up. Finn adds raw C1 and required predictors for custom models.",
+    "Choose supported preprocessing for built-in models independently; it does not transform custom C1 inputs.",
     "Return one JSON object with exactly: models_to_run, external_regressors, clean_missing_values, clean_outliers,",
     "forecast_approach, stationary, feature_selection, multistep_horizon, seasonal_period, recipes_to_run,",
     "lag_periods, rolling_window_periods, reasoning. Use --- separated text sets and NULL strings for unused options.",
@@ -380,9 +432,10 @@ agent_custom_submission <- function(inputs, agent_info, combo) {
   result
 }
 
-# Audit a chosen child subset before custom restart/publication. Reuse M3b
-# membership/fit checks, including built-in-only subsets of a mixed parent pool.
-# Logs and required artifacts are read exactly; mismatches are hard errors.
+# Audit a chosen child subset before custom restart/publication. Replay children
+# use pinned predecessor components; accepted default children instead retain
+# normal pool/fit checks and the current update identity. Required artifacts and
+# ownership are read exactly; mismatches remain hard errors.
 audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, complete = TRUE) {
   contract <- agent_info$custom_agent_contract
   if (is.null(contract)) return(NULL)
@@ -391,11 +444,11 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
   if (!identical(log$custom_agent_contract_id, agent_custom_marker(contract))) {
     stop("Custom Agent child parent identity is missing or inconsistent.", call. = FALSE)
   }
-  if (!identical(log$negative_forecast, contract$context$negative_forecast) || !identical(log$feature_selection, FALSE) ||
+  if (!identical(log$negative_forecast, contract$context$negative_forecast) ||
     !is.logical(log$run_local_models) || length(log$run_local_models) != 1L || is.na(log$run_local_models) ||
     !is.logical(log$run_global_models) || length(log$run_global_models) != 1L || is.na(log$run_global_models) ||
     identical(log$run_local_models, log$run_global_models)) {
-    stop("Custom Agent child controls require the pinned negative_forecast, no feature selection and one execution mode.", call. = FALSE)
+    stop("Custom Agent child controls require the pinned negative_forecast and one execution mode.", call. = FALSE)
   }
   selected <- strsplit(as.character(log$models_to_run), "---", fixed = TRUE)[[1]]
   allowed <- c(if (isTRUE(log$run_local_models)) contract$mode_models$local,
@@ -416,7 +469,19 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
     }
   } else custom <- list(pool = pool, manifest = list(context = context))
   if (!is.null(log[["custom_agent_update_id"]])) {
-    return(audit_agent_custom_update_result(agent_info, run_info, log, custom))
+    record <- read_agent_custom_update(agent_info, TRUE)
+    default <- length(combos) == 1L &&
+      identical(run_info$run_name, agent_custom_default_run(record, combos))
+    if (default) {
+      if (!identical(log[["custom_agent_update_id"]], paste0("custom-update-", record$manifest_id)) ||
+        !combos %in% names(record$inputs) || !isTRUE(log$run_local_models) ||
+        !all(intersect(names(contract$envelopes), contract$mode_models$local) %in% selected) ||
+        (complete && !identical(log[["default_reforecast_status"]], "accepted"))) {
+        stop("Custom update default provenance or acceptance changed.", call. = FALSE)
+      }
+    } else {
+      return(audit_agent_custom_update_result(agent_info, run_info, log, custom))
+    }
   }
   saved <- custom_run_audit(run_info, custom, log$run_local_models, log$run_global_models, combos, complete)
   if (!is.null(agent_info$custom_agent_update_audit)) {
@@ -430,7 +495,9 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
 }
 
 # Audit saved winner ownership and each distinct child once before reuse or
-# publication. Known combo paths avoid discovery; selection scores are unchanged.
+# publication. Accepted deterministic defaults may replace a replay winner or
+# cover a new series, but cannot masquerade as another child. Known combo paths
+# avoid discovery; selection scores and replay component mappings are unchanged.
 audit_agent_custom_best <- function(agent_info, best_runs) {
   if (is.null(agent_info$custom_agent_contract) || !nrow(best_runs)) return(invisible(NULL))
   marker <- best_runs[["custom_agent_contract_id"]]
@@ -448,8 +515,15 @@ audit_agent_custom_best <- function(agent_info, best_runs) {
   if (!is.null(replay)) for (index in seq_len(nrow(best_runs))) {
     row <- best_runs[index, ]
     expected <- replay$winners[[row$combo]]
-    if (is.null(expected) || !identical(row$best_run_name, agent_custom_update_run(replay, expected)) ||
-      !identical(row$model_type, expected$model_type)) stop("Saved custom update winner choice changed.", call. = FALSE)
+    default <- identical(row$best_run_name, agent_custom_default_run(replay, hash_data(row$combo)))
+    valid <- if (default) {
+      hash_data(row$combo) %in% names(replay$inputs) &&
+        identical(row$model_type, "local") && identical(row[["default_reforecast_status"]], "accepted")
+    } else {
+      !is.null(expected) && identical(row$best_run_name, agent_custom_update_run(replay, expected)) &&
+        identical(row$model_type, expected$model_type)
+    }
+    if (!valid) stop("Saved custom update winner choice changed.", call. = FALSE)
   }
   for (run_name in unique(best_runs$best_run_name)) {
     rows <- best_runs[best_runs$best_run_name == run_name, , drop = FALSE]
@@ -483,14 +557,18 @@ reject_agent_custom_update <- function(agent_info) {
   invisible(NULL)
 }
 
-# Read a passive exact-path replay record, checking content and current ownership.
+# Read a passive exact-path replay record on the configured storage backend,
+# checking content and current ownership. Only an absent optional record is NULL;
+# malformed content and provider/access failures remain errors.
 # Missing is optional only before first enrollment; corrupt records never heal.
 read_agent_custom_update <- function(agent_info, required = FALSE) {
+  if (is.null(agent_info$custom_agent_contract)) agent_info <- load_agent_custom_state(agent_info)
   info <- agent_custom_parent_info(agent_info)
-  paths <- local_artifact_files(local_artifact_path(info, "logs", "-agent-custom-update", extension = "rds"),
-    allow_missing = !required)
-  if (!length(paths)) return(NULL)
-  record <- read_exact_artifact(info, paths, return_type = "object")
+  path <- local_artifact_path(info, "logs", "-agent-custom-update", extension = "rds")
+  missing <- new.env(parent = emptyenv())
+  record <- read_exact_artifact(info, path, return_type = "object", allow_missing = !required,
+    missing_value = missing)
+  if (identical(record, missing)) return(NULL)
   custom_run_passive(record)
   fields <- c("selected", "project_name", "run_id", "agent_version", "contract_id",
     "controls", "inputs", "predecessor", "winners", "manifest_id")
@@ -506,8 +584,8 @@ read_agent_custom_update <- function(agent_info, required = FALSE) {
     !is.character(record$predecessor$run_id) || length(record$predecessor$run_id) != 1L ||
     !nzchar(record$predecessor$run_id) || !is.numeric(record$predecessor$agent_version) ||
     length(record$predecessor$agent_version) != 1L || record$predecessor$agent_version >= record$agent_version ||
-    !is.list(record$winners) || !length(record$winners) || !is.list(record$inputs) ||
-    !setequal(names(record$inputs), vapply(names(record$winners), hash_data, character(1)))) {
+    !is.list(record$winners) || !is.list(record$inputs) ||
+    !all(vapply(names(record$winners), hash_data, character(1)) %in% names(record$inputs))) {
     stop("Invalid custom update predecessor or series provenance.", call. = FALSE)
   }
   for (combo in names(record$winners)) {
@@ -544,10 +622,12 @@ agent_custom_update_context <- function(agent_info, combos, seed) {
 }
 
 # Pin the latest completed compatible predecessor and its exact saved choices.
-# Reentry uses the saved predecessor, not discovery. Only identical enrollment,
-# series and controls are accepted; one record and parent marker are written
-# before child execution. This is immutable reentry checking, not a transaction.
+# Reentry uses the saved predecessor, not discovery. Enrollment and controls
+# must match; current series may change within the established new-series limit.
+# One record and parent marker are written before child execution. This is
+# immutable reentry checking, not a transaction.
 prepare_agent_custom_update <- function(agent_info, seed) {
+  agent_info <- load_agent_custom_state(agent_info)
   if (!isTRUE(agent_info$overwrite)) stop("Custom Agent updates require overwrite = TRUE.", call. = FALSE)
   info <- agent_custom_parent_info(agent_info)
   log <- read_exact_artifact(info, local_artifact_path(info, "logs", "-agent_run", extension = "csv"),
@@ -570,15 +650,23 @@ prepare_agent_custom_update <- function(agent_info, seed) {
     completed <- find_completed_previous_agent_runs(agent_info, runs, max_runs = 1L)
     if (!length(completed)) stop("Custom update requires a completed predecessor.", call. = FALSE)
     previous <- completed[[1]]$agent_info
-    previous <- attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE))
+    previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
     previous$custom_agent_update_audit <- TRUE
-    if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id) ||
-      !setequal(get_total_combos(previous), combos)) {
-      stop("Custom update requires the same enrollment, context and series membership.", call. = FALSE)
+    if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) {
+      stop("Custom update requires the same enrollment and context.", call. = FALSE)
     }
     best <- completed[[1]]$best_runs_tbl
-    if (!setequal(vapply(best$combo, hash_data, character(1)), combos)) stop("Custom predecessor does not cover the current series.", call. = FALSE)
+    previous_combos <- get_total_combos(previous)
+    if (!setequal(vapply(best$combo, hash_data, character(1)), previous_combos)) stop("Custom predecessor does not cover its saved series.", call. = FALSE)
+    new_combos <- setdiff(combos, previous_combos)
+    new_limit <- max(10L, ceiling(length(previous_combos) * 0.20))
+    if (length(new_combos) > new_limit) {
+      stop("Error in update_forecast(). ", length(new_combos),
+        " new time series detected, which exceeds the limit of ", new_limit,
+        ". Please use iterate_forecast() instead, or reduce the number of new series.", call. = FALSE)
+    }
     audit_agent_custom_best(previous, best)
+    best <- best[vapply(best$combo, hash_data, character(1)) %in% combos, , drop = FALSE]
     winners <- stats::setNames(lapply(seq_len(nrow(best)), function(index) {
       row <- best[index, ]
       child <- previous$project_info
@@ -612,8 +700,10 @@ prepare_agent_custom_update <- function(agent_info, seed) {
   agent_info
 }
 
-# Build the existing dispatch metadata from pinned choices. Completed outputs
-# are audited before excluding them; no new-series/default route is possible.
+# Build replay work and default-recovery hashes from pinned choices and inputs.
+# Replay work retains its typed schema even when every predecessor series was
+# removed. Changed global cohorts use defaults rather than replaying a partial
+# global fit. Audit completed outputs before excluding them; damage is an error.
 initial_agent_custom_update <- function(agent_info) {
   record <- read_agent_custom_update(agent_info, TRUE)
   if (!identical(record, agent_info$custom_agent_update)) stop("Custom update provenance changed before dispatch.", call. = FALSE)
@@ -621,9 +711,19 @@ initial_agent_custom_update <- function(agent_info) {
   previous$run_id <- record$predecessor$run_id
   previous$agent_version <- record$predecessor$agent_version
   previous$custom_agent_update <- previous$custom_agent_update_id <- NULL
-  previous <- attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE))
+  previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
   if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) stop("Custom predecessor enrollment changed.", call. = FALSE)
-  best <- dplyr::bind_rows(lapply(record$winners, function(row) row[setdiff(names(row), c("components", "selected_id"))]))
+  best <- if (length(record$winners)) {
+    dplyr::bind_rows(lapply(record$winners, function(row) row[setdiff(names(row), c("components", "selected_id"))]))
+  } else {
+    tibble::tibble(combo = character(), agent_run_id = character(), best_run_name = character(),
+      model_type = character(), weighted_mape = numeric(), models_to_run = character())
+  }
+  defaults <- setdiff(names(record$inputs), vapply(names(record$winners), hash_data, character(1)))
+  if (!setequal(get_total_combos(previous), names(record$inputs)) && nrow(best)) {
+    defaults <- union(defaults, vapply(best$combo[best$model_type == "global"], hash_data, character(1)))
+    best <- best[best$model_type != "global", , drop = FALSE]
+  }
   current <- load_update_runs(agent_info)
   if (nrow(current)) {
     audit_agent_custom_best(agent_info, current)
@@ -632,9 +732,10 @@ initial_agent_custom_update <- function(agent_info) {
     unfinished <- !best$combo %in% completed$combo
     if (any(unfinished & best$model_type == "global")) unfinished <- unfinished | best$model_type == "global"
     best <- best[unfinished, , drop = FALSE]
+    defaults <- setdiff(defaults, vapply(completed$combo, hash_data, character(1)))
   }
-  if (!nrow(best)) return("no updates required")
-  list(prev_best_runs_tbl = best, current_run_combos = names(record$inputs), new_combos = character())
+  if (!nrow(best) && !length(defaults)) return("no updates required")
+  list(prev_best_runs_tbl = best, current_run_combos = names(record$inputs), new_combos = defaults)
 }
 
 # Validate direct worker enrollment and pinned source choice before any write.
@@ -655,7 +756,7 @@ agent_custom_update_child <- function(agent_info, rows, seed) {
   previous$run_id <- record$predecessor$run_id
   previous$agent_version <- record$predecessor$agent_version
   previous$custom_agent_update <- previous$custom_agent_update_id <- NULL
-  previous <- attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE))
+  previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
   previous$custom_agent_update_audit <- TRUE
   if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) stop("Custom predecessor enrollment changed.", call. = FALSE)
   for (index in seq_len(nrow(rows))) {
@@ -681,6 +782,12 @@ agent_custom_update_run <- function(record, winner) {
   global <- winner$model_type == "global"
   paste0("agent_", record$run_id, "_", hash_data(if (global) "all" else winner$combo),
     if (global) paste0("_", hash_data(winner$best_run_name)) else "")
+}
+
+# Derive the one local default child identity from current provenance and the
+# already-normalized series hash. No source choice or storage discovery is used.
+agent_custom_default_run <- function(record, combo_hash) {
+  paste0("agent_", record$run_id, "_", combo_hash, "_default")
 }
 
 # Audit replay outputs using the exact per-series component mapping, not the

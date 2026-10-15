@@ -87,6 +87,9 @@ objects are required; sequential, local-machine and Spark execution and
 \code{inner_parallel} are supported. Custom recipes retain only Date, Combo and
 declared predictors; no implicit PCA, feature selection or target
 transformation is applied.
+C1 driver availability is independent of \code{external_regressors} in
+\code{\link[=prep_data]{prep_data()}}. Required predictors must exist with complete supported
+values, including supplied future values, or preparation errors.
 
 A definition with reviewed hierarchy capability permits \code{standard_hierarchy}
 or \code{grouped_hierarchy} with local univariate original-scale C1 logic. Every
@@ -96,8 +99,9 @@ Forecast use requires local-only custom training, no regressors, and no
 weekly-to-daily expansion. Topology and exact input artifacts are pinned
 before enrollment.
 
-Definitions and attestations are pinned in a run manifest before workflow
-completion. Reentry requires the same approved effective pool; changed
+Definitions are pinned in the normal prepared workflows, with passive
+attestations attached to that same artifact; no separate standard registry
+or pool-manifest copy is required. Reentry requires the same approved effective pool; changed
 definitions or preparation context require a new run. Supplying definitions
 without selecting them leaves built-in defaults unchanged. Registry presence
 alone grants neither enrollment nor execution consent. No source is evaluated

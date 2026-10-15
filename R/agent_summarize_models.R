@@ -101,6 +101,8 @@ summarize_model_custom <- function(workflow, model, mode) {
 #' omitted and all other supported summary sections are retained.
 #' Custom parent/child identity is audited before reads. Generic custom summaries
 #' never fit, predict, execute model source or call optional importance engines.
+#' Workers receive enrollment references, then read the authoritative bundle
+#' locally rather than serializing untrained objects in every dispatched task.
 #'
 #' @param agent_info Agent info from [set_agent_info()]
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -188,6 +190,7 @@ summarize_models <- function(agent_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
+  agent_info_lean <- agent_custom_worker_info(agent_info)
 
   # Step 2 & 3: Process each time series combo
   summary_tbl <- foreach::foreach(
@@ -203,6 +206,7 @@ summarize_models <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
+      worker_contract <- load_agent_custom_state(agent_info_lean)$custom_agent_contract
       # set metadata
       combo <- x$combo[1]
       model_type <- x$model_type[1]
@@ -220,7 +224,7 @@ summarize_models <- function(agent_info,
 
       # Create run info metadata
       project_name <- paste0(
-        agent_info$project_info$project_name,
+        agent_info_lean$project_info$project_name,
         "_",
         hash_combo
       )
@@ -392,8 +396,8 @@ summarize_models <- function(agent_info,
         # Get the appropriate summarize function
         summarize_fn <- model_summarize_map[[model_name]]
 
-        if (!is.null(custom_contract) && model_name %in% names(custom_contract$envelopes)) {
-          summary_df <- summarize_model_custom(workflow, custom_contract$envelopes[[model_name]], model_type)
+        if (!is.null(worker_contract) && model_name %in% names(worker_contract$envelopes)) {
+          summary_df <- summarize_model_custom(workflow, worker_contract$envelopes[[model_name]], model_type)
         } else if (is.null(summarize_fn)) {
           # Model type not supported for summarization
           summary_df <- tibble::tibble(

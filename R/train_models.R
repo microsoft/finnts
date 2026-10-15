@@ -8,7 +8,8 @@
 #'
 #'   Selected experimental custom models use the pinned enrollment from
 #'   [prep_models()]. They run only in declared enabled local/global modes,
-#'   bypass tuning, and retain chronological analysis-fold isolation. Custom
+#'   execute before built-in candidates within each mode, bypass tuning, and
+#'   retain chronological analysis-fold isolation. Custom
 #'   source/dependency failures and missing fold predictions are hard errors,
 #'   including in mixed pools. Required predictors and finite historical targets
 #'   must remain available. No source regeneration or dependency installation
@@ -180,6 +181,10 @@ train_models <- function(run_info,
 
   # adjust based on models planned to run
   model_workflow_tbl <- custom_run_check_workflows(model_workflow_tbl, custom_run)
+  if (!is.null(custom_run)) {
+    model_workflow_tbl <- model_workflow_tbl %>%
+      dplyr::arrange(!(Model_Name %in% names(custom_run$pool$custom)))
+  }
   model_workflow_list <- model_workflow_tbl %>%
     dplyr::pull(Model_Name) %>%
     unique()

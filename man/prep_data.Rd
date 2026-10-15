@@ -47,7 +47,10 @@ day, week, month, quarter, year.}
 
 \item{forecast_horizon}{Number of periods to forecast into the future.}
 
-\item{external_regressors}{List of column headers within input data to be used as features in multivariate models.}
+\item{external_regressors}{List of column headers within input data to be used as features in multivariate models.
+Controls built-in R1/R2 recipes only. C1 retains eligible original numeric,
+character, factor, logical and Date columns independently of this list.
+Each custom workflow uses only its declared predictors plus Date and Combo.}
 
 \item{hist_start_date}{Date value of when your input_data starts. Default of NULL uses earliest date value in
 input_data.}
@@ -97,7 +100,12 @@ all recipes, but only runs the R1 recipe for weekly and daily date types. A valu
 of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe. Add "C1" to also write
 the custom-model recipe used by custom models: the padded history and future frame on the original scale, with
 missing values imputed only when \code{clean_missing_values} is TRUE and no outlier cleaning, Box-Cox, differencing or
-engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.}
+engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.
+Reserved outcome/assessment columns and unsupported column types are excluded.
+Supply every required custom driver through the forecast horizon; missing
+future values error rather than being forecast or replaced with zero.
+C1 source identity is pinned before preparation, including interrupted runs.
+Changing eligible source data requires a new \code{\link[=set_run_info]{set_run_info()}} run.}
 
 \item{multistep_horizon}{Use a multistep horizon approach when training multivariate models with R1 recipe.}
 }

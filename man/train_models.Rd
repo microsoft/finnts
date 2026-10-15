@@ -72,7 +72,8 @@ saved in the run log.
 
 Selected experimental custom models use the pinned enrollment from
 \code{\link[=prep_models]{prep_models()}}. They run only in declared enabled local/global modes,
-bypass tuning, and retain chronological analysis-fold isolation. Custom
+execute before built-in candidates within each mode, bypass tuning, and
+retain chronological analysis-fold isolation. Custom
 source/dependency failures and missing fold predictions are hard errors,
 including in mixed pools. Required predictors and finite historical targets
 must remain available. No source regeneration or dependency installation

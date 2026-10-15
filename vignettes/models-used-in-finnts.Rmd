@@ -68,6 +68,14 @@ reactable::reactable(
 
 -   **Multivariate models** leverage many features when producing a forecast, provided as input data before model training. These features can be automatically created using internal feature engineering techniques within the package, or provided as external regressors. Most common machine learning models today, like xgboost and cubist, are multivariate models. An important thing to note is that multivariate models provided in the package can leverage different recipes of feature engineering, that contain different techniques of creating features. These can be identified by seeing the letter "R" followed by a number like "1" or "2". More info can be found in the feature engineering vignette.
 
+Approved custom models use the separate original-scale `C1` recipe, not R1/R2.
+C1 retains eligible original input columns independently of built-in
+`external_regressors`, but each custom workflow receives only its declared
+predictors plus Date and Combo. Required custom drivers must include supplied
+future values through the horizon, even if built-ins use different xregs or none.
+The same declarations apply in Agent iterations, updates and default recovery.
+See the [custom-model walkthrough](best-model-selection.html#experimental-custom-models).
+
 ### Adaptive Daily ARIMA
 
 Users select ARIMA with `models_to_run = "arima"` for every date type. Daily workflows use the `arima_fast` engine under the hood. The engine compares a bounded set of frequency-one ARIMA candidates over an internal holdout: nonseasonal levels and differences, weekly differences, 364- and 365-day differences, and Fourier regressors with ARIMA errors. It chooses the simplest strategy within 2% of the best validation accuracy and refits it on the supplied history. Candidate search is capped, and candidate failures fall through to another successful strategy or a deterministic drift fallback. It never creates a period-365 seasonal state-space model.

@@ -27,6 +27,9 @@
 #'   `inner_parallel` are supported. Custom recipes retain only Date, Combo and
 #'   declared predictors; no implicit PCA, feature selection or target
 #'   transformation is applied.
+#'   C1 driver availability is independent of `external_regressors` in
+#'   [prep_data()]. Required predictors must exist with complete supported
+#'   values, including supplied future values, or preparation errors.
 #'
 #'   A definition with reviewed hierarchy capability permits `standard_hierarchy`
 #'   or `grouped_hierarchy` with local univariate original-scale C1 logic. Every
@@ -36,8 +39,9 @@
 #'   weekly-to-daily expansion. Topology and exact input artifacts are pinned
 #'   before enrollment.
 #'
-#'   Definitions and attestations are pinned in a run manifest before workflow
-#'   completion. Reentry requires the same approved effective pool; changed
+#'   Definitions are pinned in the normal prepared workflows, with passive
+#'   attestations attached to that same artifact; no separate standard registry
+#'   or pool-manifest copy is required. Reentry requires the same approved effective pool; changed
 #'   definitions or preparation context require a new run. Supplying definitions
 #'   without selecting them leaves built-in defaults unchanged. Registry presence
 #'   alone grants neither enrollment nor execution consent. No source is evaluated
@@ -423,10 +427,13 @@ train_test_split <- function(run_info,
     ms_drive = fs::path("/prep_data/", file_name)
   )
 
+  # Fold planning needs dates only; arbitrary C1 predictors can otherwise
+  # collide with timetk metadata or data-masked loop variables such as id.
   temp_tbl <- read_file(run_info,
     path = source_path,
     return_type = "df"
-  )
+  ) %>%
+    dplyr::select(Date)
 
   # get back test info
   bt <- temp_tbl %>%
@@ -876,15 +883,22 @@ model_workflows <- function(run_info,
     model_workflow_tbl <- dplyr::bind_rows(model_workflow_tbl, workflow_tbl)
   }
 
+  model_workflow_tbl <- model_workflow_tbl %>% dplyr::arrange(Model_Name)
+  if (!is.null(custom_run))
+    attr(model_workflow_tbl, "finnts_custom_manifest") <- custom_run$manifest
+
   # write model workflow info
   write_data(
-    x = model_workflow_tbl %>% dplyr::arrange(Model_Name),
+    x = model_workflow_tbl,
     combo = NULL,
     run_info = run_info,
     output_type = "object",
     folder = "prep_models",
     suffix = "-model_workflows"
   )
+  if (!is.null(custom_run) &&
+      !identical(custom_run_read(run_info, required = TRUE)$manifest$manifest_id, custom_run$manifest$manifest_id))
+    stop("Custom manifest read-back failed.", call. = FALSE)
 
   # update logging file
   if (!is.null(custom_run)) {

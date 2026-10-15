@@ -108,19 +108,22 @@ access failures remain errors. These checks do not coordinate concurrent
 writers or guarantee that another attempt cannot overwrite a checked file.
 Approved custom pools require explicit \code{allow_iterate_forecast = FALSE},
 \code{overwrite = TRUE}, identical enrollment and approval evidence, cadence,
-horizon, regressors, enabled modes and series membership. New observations,
+horizon, regressors and enabled modes. New observations,
 historical cutoffs and backtest settings are allowed in the new parent.
-The raw C1 recipe, local/mounted CSV data, RDS objects and no inner parallelism
+The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 remain required. The completed predecessor, exact selected components,
 current input signatures and replay controls are pinned before child fitting.
 Replay retains full custom version IDs and per-series global subsets. Custom
 logic is never regenerated or tuned; mixed retuning reuses fixed custom
 results while retuning selected built-ins only. Temporal custom resampling
 evaluates complete horizons from existing predictors but preserves the
-original analysis cutoffs and scoring rows. No implicit iteration, new
-series, default fallback or custom repair is permitted. Any required quality
-rejection, source error, identity mismatch or damaged saved result is a hard
-error. Complete outputs can resume missing completion logging without refits
+original analysis cutoffs and scoring rows. New series and recoverable
+built-in fitting or forecast-quality failures use the existing default-local
+fallback with every compatible current-version custom model included first.
+A changed global cohort cannot reuse its former pooled fit. Source, provider,
+enrollment, identity and required-artifact failures remain hard errors;
+custom logic is never repaired or silently dropped. Complete outputs can
+resume missing completion logging without refits
 or forecast writes; conflicting or incomplete fitted outputs fail untouched.
 A completed compatible custom update can be the next update's predecessor.
 Ordinary EDA post-processing may still call its isolated LLM; approved source
