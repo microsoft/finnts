@@ -1,4 +1,4 @@
-# finnts 0.7.0.9012 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9013 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -15,6 +15,8 @@
 
 ## Bug Fixes
 
+- Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
+  - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
   - Validated composite grains are used when single columns are insufficient.
   - Additive level drivers are summed once per source entity within each node's actual membership.
