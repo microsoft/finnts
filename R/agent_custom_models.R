@@ -434,9 +434,13 @@ agent_custom_submission <- function(inputs, agent_info, combo) {
 
 # Audit a chosen child subset before custom restart/publication. Replay children
 # use pinned predecessor components; accepted default children instead retain
-# normal pool/fit checks and the current update identity. Required artifacts and
-# ownership are read exactly; mismatches remain hard errors.
-audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, complete = TRUE) {
+# normal pool/fit checks and the current update identity. A complete default is
+# accepted when its in-memory selection passes the default quality gate or the
+# caller has verified it is the saved winner (`saved_winner = TRUE`); no log
+# status is stored. Required artifacts and ownership are read exactly;
+# mismatches remain hard errors. Returns the saved custom audit, or the replay
+# audit for non-default update children.
+audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, complete = TRUE, saved_winner = FALSE) {
   contract <- agent_info$custom_agent_contract
   if (is.null(contract)) return(NULL)
   validate_agent_custom_models(contract)
@@ -473,10 +477,13 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
     default <- length(combos) == 1L &&
       identical(run_info$run_name, agent_custom_default_run(record, combos))
     if (default) {
+      accepted <- isTRUE(saved_winner) || (!is.null(run_info$forecast_selection) &&
+        isTRUE(agent_selection_summary(run_info$forecast_selection, check_quality = TRUE,
+          allow_plausibility_fallback = TRUE)$acceptable))
       if (!identical(log[["custom_agent_update_id"]], paste0("custom-update-", record$manifest_id)) ||
         !combos %in% names(record$inputs) || !isTRUE(log$run_local_models) ||
         !all(intersect(names(contract$envelopes), contract$mode_models$local) %in% selected) ||
-        (complete && !identical(log[["default_reforecast_status"]], "accepted"))) {
+        (complete && !accepted)) {
         stop("Custom update default provenance or acceptance changed.", call. = FALSE)
       }
     } else {
@@ -518,7 +525,7 @@ audit_agent_custom_best <- function(agent_info, best_runs) {
     default <- identical(row$best_run_name, agent_custom_default_run(replay, hash_data(row$combo)))
     valid <- if (default) {
       hash_data(row$combo) %in% names(replay$inputs) &&
-        identical(row$model_type, "local") && identical(row[["default_reforecast_status"]], "accepted")
+        identical(row$model_type, "local")
     } else {
       !is.null(expected) && identical(row$best_run_name, agent_custom_update_run(replay, expected)) &&
         identical(row$model_type, expected$model_type)
@@ -534,7 +541,7 @@ audit_agent_custom_best <- function(agent_info, best_runs) {
     info <- agent_info$project_info
     info$project_name <- paste0(info$project_name, "_", hash_data(if (rows$model_type[[1]] == "global") "all" else rows$combo[[1]]))
     info$run_name <- run_name
-    audit_agent_custom_child(agent_info, info, vapply(unique(rows$combo), hash_data, character(1)))
+    audit_agent_custom_child(agent_info, info, vapply(unique(rows$combo), hash_data, character(1)), saved_winner = TRUE)
   }
   invisible(NULL)
 }

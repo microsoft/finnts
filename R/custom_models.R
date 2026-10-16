@@ -53,7 +53,7 @@ custom_model_allowed_packages <- function() {
     "plyr", "purrr", "recipes", "rlang", "rsample", "rules", "snakecase", "stringr",
     "tibble", "tidyr", "tidyselect", "timetk", "tune", "vroom", "workflows",
     "arrow", "AzureStor", "Boruta", "caret", "corrr", "ellmer", "energy", "knitr",
-    "Microsoft365R", "nixtlar", "notebookutils", "qs2", "ranger", "reactable",
+    "Microsoft365R", "nixtlar", "notebookutils", "processx", "qs2", "ranger", "reactable",
     "rmarkdown", "sparklyr", "testthat", "tseries", "withr", "xgboost", "vip", "modeltime"
   )
 }

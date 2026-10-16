@@ -65,6 +65,6 @@ test_that("failed-series recovery dispatches C1 without enabling built-in xregs"
     "Observed failed-series dispatch")
   expect_identical(submitted$external_regressors, "NULL")
   expect_setequal(submitted$models_to_run,
-    c("driver_rule", "arima", "ets", "tbats", "stlm-arima", "xgboost", "glmnet"))
+    c("driver_rule", "arima", "ets", "naive", "snaive", "tbats", "stlm-arima", "xgboost", "glmnet"))
   expect_setequal(submitted$recipes_to_run, c("R1", "C1"))
 })

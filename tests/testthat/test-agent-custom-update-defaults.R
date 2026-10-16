@@ -28,7 +28,7 @@ test_that("a public update replays saved custom winners and genuinely fits new-s
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)
   expect_identical(names(submissions), hash_data("new-series"))
   expect_identical(submissions[[1]]$models_to_run,
-    c("replay_mean", "arima", "ets", "tbats", "stlm-arima", "xgboost", "glmnet"))
+    c("replay_mean", "arima", "ets", "naive", "snaive", "tbats", "stlm-arima", "xgboost", "glmnet"))
   expect_identical(submissions[[1]]$recipes_to_run, c("R1", "C1"))
   actual <- get_agent_forecast(current)
   custom_id <- paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--C1")

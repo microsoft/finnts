@@ -384,8 +384,9 @@ custom_run_digest <- function(manifest) {
 
 #' Read custom attestation from the normal prepared-workflow artifact and
 #' reconstruct its pool from the workflows' pinned definitions, without registry
-#' reads. Required missing/malformed enrollment errors; optional ordinary
-#' workflows return NULL. Validate every workflow, approval and identity.
+#' reads. Required missing/malformed enrollment errors; optional artifacts
+#' without a manifest return NULL unless they hold custom specs (stripped
+#' attestation). Validate every workflow, approval and identity.
 #' No source execution, directory listing or artifact rewrite occurs.
 #' @noRd
 custom_run_read <- function(run_info, required = FALSE) {
@@ -399,11 +400,11 @@ custom_run_read <- function(run_info, required = FALSE) {
   if (is.null(table) && !required)
     return(NULL)
   manifest <- attr(table, "finnts_custom_manifest", exact = TRUE)
-  if (is.null(manifest) && !required && is.data.frame(table) &&
+  if (is.null(manifest) && !required && !(is.data.frame(table) &&
       all(c("Model_Name", "Model_Workflow") %in% names(table)) &&
-      !any(vapply(table$Model_Workflow, function(workflow) {
+      any(vapply(table$Model_Workflow, function(workflow) {
         inherits(workflows::extract_spec_parsnip(workflow), "finnts_custom")
-      }, logical(1))))
+      }, logical(1)))))
     return(NULL)
   custom_run_passive(manifest)
   fields <- c("selected", "references", "evidence", "context", "pool_id", "manifest_id")

@@ -103,6 +103,9 @@ summarize_model_custom <- function(workflow, model, mode) {
 #' never fit, predict, execute model source or call optional importance engines.
 #' Workers receive enrollment references, then read the authoritative bundle
 #' locally rather than serializing untrained objects in every dispatched task.
+#' Zero-row forecast files (for example, header-only average files written by
+#' updates without averages) are skipped before combining, so their untyped
+#' columns cannot conflict with populated forecasts.
 #'
 #' @param agent_info Agent info from [set_agent_info()]
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -159,6 +162,7 @@ summarize_models <- function(agent_info,
     "glmnet" = summarize_model_glmnet,
     "mars" = summarize_model_mars,
     "meanf" = summarize_model_meanf,
+    "naive" = summarize_model_naive,
     "nnetar" = summarize_model_nnetar,
     "prophet" = summarize_model_prophet,
     "prophet-boost" = summarize_model_prophet_boost,
@@ -284,8 +288,9 @@ summarize_models <- function(agent_info,
         ) %>%
           suppressWarnings()
 
-        # Combine global and average forecast data
-        forecast_tbl <- dplyr::bind_rows(forecast_tbl, average_forecast_tbl)
+        # Combine global and average forecast data; skip empty files whose
+        # columns are untyped (e.g. header-only average files from updates)
+        forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(forecast_tbl, average_forecast_tbl)))
 
         # if no data, try reading a reconciled forecast file
         if (nrow(forecast_tbl) == 0) {
@@ -340,11 +345,11 @@ summarize_models <- function(agent_info,
         ) %>%
           suppressWarnings()
 
-        # Combine all forecast data
-        forecast_tbl <- dplyr::bind_rows(
+        # Combine all forecast data, skipping empty files with untyped columns
+        forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(
           local_forecast_tbl,
           average_forecast_tbl
-        )
+        )))
       }
 
       if (nrow(forecast_tbl) == 0) {
@@ -4913,6 +4918,67 @@ summarize_model_prophet_boost <- function(wf) {
     preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
     class(fit$fit)[1], engine,
     unquote_values = FALSE, digits = digits
+  )
+}
+
+#' Summarize a Naive Workflow
+#'
+#' Extracts and summarizes key information from a fitted non-seasonal naive
+#' workflow. The naive benchmark repeats the last observed target value, so
+#' the summary reports the number of training observations and that last value.
+#'
+#' @param wf A fitted tidymodels workflow containing a modeltime::naive_reg()
+#'   model with engine 'naive'.
+#'
+#' @return A tibble with columns: section, name, value containing model details.
+#'   Errors when `wf` is not a trained workflow using the 'naive' engine.
+#'
+#' @noRd
+summarize_model_naive <- function(wf) {
+  if (!inherits(wf, "workflow")) stop("summarize_model_naive() expects a tidymodels workflow.")
+  fit <- try(workflows::extract_fit_parsnip(wf), silent = TRUE)
+  if (inherits(fit, "try-error") || is.null(fit$fit)) stop("Workflow appears untrained. Fit it first.")
+
+  spec <- fit$spec
+  engine <- if (is.null(spec$engine)) "" else spec$engine
+  if (!identical(engine, "naive")) {
+    stop("summarize_model_naive() only supports modeltime::naive_reg() with set_engine('naive').")
+  }
+
+  mold <- try(workflows::extract_mold(wf), silent = TRUE)
+  preds_tbl <- .extract_predictors(mold)
+  outs_tbl <- .extract_outcomes(mold)
+
+  preproc <- try(workflows::extract_preprocessor(wf), silent = TRUE)
+  steps_tbl <- if (!inherits(preproc, "try-error")) {
+    .extract_recipe_steps(preproc)
+  } else {
+    tibble::tibble(section = character(), name = character(), value = character())
+  }
+
+  args_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+  eng_tbl <- tibble::tibble(section = character(), name = character(), value = character())
+
+  outcome <- if (!inherits(mold, "try-error") && !is.null(mold$outcomes) && ncol(mold$outcomes) > 0) {
+    mold$outcomes[[1]]
+  } else {
+    NULL
+  }
+
+  if (!is.null(outcome)) {
+    eng_tbl <- dplyr::bind_rows(eng_tbl, .kv("engine_param", "nobs", as.character(length(outcome))))
+    observed <- outcome[!is.na(outcome)]
+    if (length(observed) > 0) {
+      eng_tbl <- dplyr::bind_rows(
+        eng_tbl,
+        .kv("engine_param", "last_value", as.character(signif(utils::tail(observed, 1), 6)))
+      )
+    }
+  }
+
+  .assemble_output(preds_tbl, outs_tbl, steps_tbl, args_tbl, eng_tbl,
+    class(fit$fit)[1], engine,
+    unquote_values = TRUE, digits = 6
   )
 }
 

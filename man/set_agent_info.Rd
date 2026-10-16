@@ -26,11 +26,14 @@ set_agent_info(
 \arguments{
 \item{project_info}{A Finn project from \code{set_project_info()}}
 
-\item{llm}{A Chat LLM object used as the template for isolated agent sessions}
+\item{llm}{An ellmer Chat or \code{\link[=chat_copilot]{chat_copilot()}} object used as the template
+for isolated agent sessions.}
 
 \item{input_data}{A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed
-before Finn creates internal series identifiers and writes input artifacts.}
+before Finn creates internal series identifiers and writes input artifacts.
+Resuming a version uses previously uploaded inputs, not replacement values
+from this data frame. Create a new version to use revised data.}
 
 \item{forecast_horizon}{The number of periods to forecast}
 
@@ -108,6 +111,12 @@ field (\code{NA} without enrollment); the complete immutable bundle lives in
 \code{prep_models}, under the existing project/run/version identity.
 Saved approval is trusted-caller evidence, not
 authenticated identity; forecasting never calls the authoring LLM again.
+
+With \code{overwrite = FALSE}, an existing version retains its saved
+forecast approach even if hierarchy detection changes after a package upgrade.
+Logged user settings must still match. New versions use current detection;
+one retained series or one combo column uses bottoms-up. Updating a new
+version across an outer forecast-approach change requires fresh iteration.
 }
 \examples{
 \dontrun{

@@ -129,14 +129,16 @@ test_that("accepted custom defaults retain provenance and restart without refitt
     current$custom_agent_contract, "local")
   combo <- hash_data("new-series")
   child <- submit_fcst_run(current, inputs, combo, "default", num_cores = 1)
-  expect_identical(read_selection_file(child, "logs")[["default_reforecast_status"]], "accepted")
+  expect_false("default_reforecast_status" %in% names(read_selection_file(child, "logs")))
+  expect_true(agent_selection_summary(child$forecast_selection, check_quality = TRUE,
+    allow_plausibility_fallback = TRUE)$acceptable)
   log_best_run(current, child, calculate_fcst_metrics(child, get_fcst_output(child)),
     combo, check_best_run = FALSE)
   best <- load_best_agent_run(current)
   log <- read_selection_file(child, "logs")
   expect_identical(log[["custom_agent_update_id"]], current$custom_agent_update_id)
   expect_identical(best[["custom_agent_update_id"]], current$custom_agent_update_id)
-  expect_identical(best[["default_reforecast_status"]], "accepted")
+  expect_identical(best$best_run_name, child$run_name)
   forecasts <- get_fcst_output(child)
   expect_equal(unique(forecasts$Forecast[forecasts$Train_Test_ID == 1]), 101)
   expect_no_error(audit_agent_custom_best(current, best))

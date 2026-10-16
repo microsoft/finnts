@@ -12,6 +12,7 @@ paths:
 # R Package Rules
 
 - Keep exported functions stable. Ask before introducing a breaking API change, and document an approved breaking change in `NEWS.md`.
+- Follow [AGENTS.md's persisted-data approval gate](../../AGENTS.md#artifact-io) before changing saved columns or values; API approval alone does not authorize a storage-contract change.
 - Prefer small, composable functions and packages already declared in `Depends`, `Imports`, or `Suggests`.
 - Add a package dependency only for a concrete feature when existing dependencies and a small maintainable implementation are inadequate, unsafe, or would recreate substantial mature functionality. Do not add dependencies for bug fixes, documentation, formatting, developer convenience, or trivial helpers, and do not vendor third-party source.
 - A dependency-changing pull request must explain alternatives, necessity, maintenance/security/license implications, placement in `Imports` or `Suggests`, and version constraints. Full validation includes a clean-library installation and `devtools::check()`; targeted development follows [AGENTS.md's validation scope](../../AGENTS.md#validation-scope) and reports deferred release checks.
@@ -22,11 +23,13 @@ paths:
 - Keep errors actionable and consistent. Use `stop()` for user-facing errors, `warning()` for recoverable conditions, and `message()` for informational output.
 - Avoid unnecessary copies in tight loops; vectorize when it improves clarity or performance.
 - Never add code that deletes files.
+- When adding, renaming, or removing a forecasting model, follow the [new-model checklist](../../.github/agent-guides/adding-a-model.md); model names are registered in many independent places.
 
 ## Function Documentation
 
 - Document every function, including internal package functions, nested helpers, and test helpers. Internal visibility is not a reason to omit documentation. Add missing documentation when creating or modifying a function; keep unrelated repository-wide backfills as separately scoped work.
 - Exported functions need roxygen documentation covering purpose, parameters, return value, relevant errors and side effects, and examples when useful. Regenerate the public help with `devtools::document()` when roxygen changes.
+- Add every new public-facing function to the appropriate `reference` section in `_pkgdown.yml` so it appears in the GitHub Pages documentation website's function index. Verify existing selectors include the function, or add a matching entry alongside its related functions.
 - Internal functions need a concise contract immediately above the definition, using ordinary `#` comments or existing internal roxygen with `@noRd`. Explain why the helper exists, its inputs and returned value, and any non-obvious shape, units, missing-value, ordering, or identity assumptions. Describe storage writes, cache mutation, errors, and other side effects when applicable. Do not export a helper merely to document it.
 - Keep the amount of documentation proportional to complexity. A simple helper can use a short purpose/input/output block; a policy or orchestration function needs its decision boundary, invariants, and failure behavior. Document anonymous callbacks in the enclosing contract or immediately before the callback so their role and assumptions are clear.
 - Explain the rationale before non-obvious algorithm or policy blocks, especially thresholds, metric units, tie-breaking, transformation order, restart reuse, and artifact ownership. Do not narrate obvious assignments or add decorative separators.

@@ -860,6 +860,10 @@ load_eda_results <- function(agent_info,
     hierarchy_detect_prompt <-
       glue::glue("Hierarchy Detection Results:
                 - Hierarchy Type: {hierarchy_detect$hierarchy}
+                - 'none' means no additional hierarchy should be constructed for this input scope.
+                  One retained series has no aggregation hierarchy. A single combo column also
+                  uses the Agent's bottoms-up policy; it may represent already expanded ID nodes.
+                  Prepared hierarchy nodes still receive outer reconciliation when configured.
                 ")
   } else {
     hierarchy_detect_prompt <-
@@ -1721,7 +1725,11 @@ run_all_eda_per_combo <- function(agent_info,
 #' @param input_data optional input data frame to use instead of reading from disk
 #' @param write_data whether to write the hierarchy detection results to disk
 #'
-#' @return summary text of hierarchy detection
+#' @details Uses shared structural analysis on the supplied or saved population.
+#'   One retained series uses bottoms-up; one combo column retains the Agent's
+#'   no-hierarchy policy, including pre-expanded ID input. Existing cached
+#'   multi-column results are reused without rewriting their values.
+#' @return Summary text when writing, or a forecast approach when not writing.
 #' @noRd
 hierarchy_detect <- function(agent_info,
                              input_data = NULL,
@@ -1816,176 +1824,13 @@ hierarchy_detect <- function(agent_info,
     return("FAIL: combo column(s) missing in df.")
   }
 
-  if (length(combo_vars) == 1) {
-    hierarchy_type <- "none"
-  } else {
-    # helper: classify one ordered pair
-    pair_test <- function(a, b) {
-      df %>%
-        dplyr::distinct(!!rlang::sym(a), !!rlang::sym(b)) %>%
-        dplyr::count(!!rlang::sym(b), name = "n_parent") %>%
-        dplyr::pull(n_parent) %>%
-        {
-          function(x) if (any(x > 1)) "many-to-many" else "one-to-many"
-        }()
-    }
-
-    # build pair table
-    pair_df <- expand.grid(
-      from = combo_vars,
-      to = combo_vars,
-      stringsAsFactors = FALSE
-    ) %>%
-      dplyr::filter(from != to) %>%
-      dplyr::mutate(
-        test = purrr::map2_chr(from, to, ~ pair_test(.x, .y))
-      )
-
-    pair_tests <- rlang::set_names(
-      pair_df$test,
-      paste0(pair_df$from, "->", pair_df$to)
-    )
-
-    # detect hierarchy type using a graph-based approach.
-    # A "standard" hierarchy exists when combo vars can be ordered into a
-    # chain where each consecutive pair has a one-to-many relationship.
-
-    # pair_test(from=a, to=b) == "one-to-many" means b determines a.
-    # Two variables are "equivalent" (1:1) if both directions are otm.
-    # Two variables are "strictly nested" if one direction is otm and
-    # the other is mtm.
-
-    # Step 1: identify equivalence classes (1:1 groups)
-
-    # union-find for equivalence classes
-    parent <- stats::setNames(combo_vars, combo_vars)
-    find_root <- function(x) {
-      while (parent[[x]] != x) {
-        parent[[x]] <<- parent[[parent[[x]]]]
-        x <- parent[[x]]
-      }
-      x
-    }
-    union_vars <- function(a, b) {
-      ra <- find_root(a)
-      rb <- find_root(b)
-      if (ra != rb) parent[[ra]] <<- rb
-    }
-
-    for (i in seq_len(nrow(pair_df))) {
-      a <- pair_df$from[i]
-      b <- pair_df$to[i]
-      if (pair_df$test[i] == "one-to-many") {
-        rev_key <- paste0(b, "->", a)
-        if (pair_tests[rev_key] == "one-to-many") {
-          # bidirectional otm = 1:1 equivalence
-          union_vars(a, b)
-        }
-      }
-    }
-
-    # build equivalence groups
-    groups <- split(combo_vars, vapply(combo_vars, find_root, character(1)))
-    group_names <- names(groups)
-    n_groups <- length(groups)
-
-    if (n_groups == 1) {
-      # all variables are 1:1 equivalent — valid chain
-      hierarchy_type <- "standard"
-    } else {
-      # Step 2: build a DAG on the equivalence groups using strict
-      # nesting edges (otm in one direction, mtm in the other)
-      # Representative for each var
-      var_to_group <- stats::setNames(
-        vapply(combo_vars, find_root, character(1)), combo_vars
-      )
-
-      g_in_deg <- stats::setNames(rep(0L, n_groups), group_names)
-      g_out_deg <- stats::setNames(rep(0L, n_groups), group_names)
-      g_adj <- stats::setNames(
-        rep(list(character(0)), n_groups), group_names
-      )
-      seen_edges <- character(0)
-
-      for (i in seq_len(nrow(pair_df))) {
-        if (pair_df$test[i] == "one-to-many") {
-          a <- pair_df$from[i] # coarser (b determines a)
-          b <- pair_df$to[i] # finer
-          ga <- var_to_group[a]
-          gb <- var_to_group[b]
-          if (ga == gb) next # same equivalence class
-          rev_key <- paste0(b, "->", a)
-          if (pair_tests[rev_key] == "many-to-many") {
-            # strict nesting: gb (finer) -> ga (coarser)
-            edge_key <- paste0(gb, "->", ga)
-            if (!edge_key %in% seen_edges) {
-              seen_edges <- c(seen_edges, edge_key)
-              g_in_deg[ga] <- g_in_deg[ga] + 1L
-              g_out_deg[gb] <- g_out_deg[gb] + 1L
-              g_adj[[gb]] <- c(g_adj[[gb]], ga)
-            }
-          }
-        }
-      }
-
-      # Step 2b: transitive reduction — remove edge u→v when v is
-      # reachable from u through other edges (e.g. city→region is
-      # redundant when city→country→region exists)
-      edges_to_drop <- character(0)
-      for (u in group_names) {
-        for (v in g_adj[[u]]) {
-          # BFS from u's other neighbours looking for v
-          queue <- setdiff(g_adj[[u]], v)
-          visited <- character(0)
-          reachable <- FALSE
-          while (length(queue) > 0 && !reachable) {
-            cur <- queue[1L]
-            queue <- queue[-1L]
-            if (cur %in% visited) next
-            visited <- c(visited, cur)
-            if (cur == v) {
-              reachable <- TRUE
-            } else {
-              queue <- c(queue, g_adj[[cur]])
-            }
-          }
-          if (reachable) {
-            edges_to_drop <- c(edges_to_drop, paste0(u, "->", v))
-          }
-        }
-      }
-      for (edge in edges_to_drop) {
-        parts <- strsplit(edge, "->", fixed = TRUE)[[1]]
-        u <- parts[1]
-        v <- parts[2]
-        g_adj[[u]] <- setdiff(g_adj[[u]], v)
-        g_in_deg[v] <- g_in_deg[v] - 1L
-        g_out_deg[u] <- g_out_deg[u] - 1L
-        seen_edges <- setdiff(seen_edges, edge)
-      }
-
-      # Step 3: check if the group DAG forms a single chain
-      roots <- names(g_in_deg[g_in_deg == 0])
-      leaves <- names(g_out_deg[g_out_deg == 0])
-
-      if (length(roots) == 1 && length(leaves) == 1 &&
-        length(seen_edges) == n_groups - 1 &&
-        all(g_out_deg <= 1)) {
-        # walk the chain from root to verify all groups are connected
-        current <- roots
-        visited <- 0L
-        while (length(current) == 1 && visited < n_groups) {
-          visited <- visited + 1L
-          current <- g_adj[[current]]
-        }
-        chain_found <- (visited == n_groups)
-      } else {
-        chain_found <- FALSE
-      }
-
-      hierarchy_type <- if (chain_found) "standard" else "grouped"
-    }
-  }
+  analysis <- analyze_hierarchy(df, combo_vars, include_pair_tests = TRUE)
+  pair_tests <- analysis$pair_tests
+  hierarchy_type <- switch(analysis$forecast_approach,
+    bottoms_up = "none",
+    standard_hierarchy = "standard",
+    grouped_hierarchy = "grouped"
+  )
 
   if (write_data) {
     # human-readable summary

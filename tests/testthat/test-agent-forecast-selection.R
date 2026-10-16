@@ -99,6 +99,11 @@ for (date_type in c("month", "week")) test_that(
     forecast_approach = "standard_hierarchy", date_type = date_type, negative_forecast = FALSE,
     box_cox = FALSE, stationary = FALSE, feature_selection = FALSE, global_model_recipes = "R1",
     average_models = TRUE, max_model_average = 3L, weekly_to_daily = date_type == "week")
+  component_ids <- paste(fitted$Model_Name, fitted$Model_Type, fitted$Recipe_ID, sep = "--")
+  source_assessments <- as.vector(rbind(
+    paste0("assess_components:", fixture$metadata$hts_combos),
+    paste0("assess_averages:", fixture$metadata$hts_combos)
+  ))
   events <- character()
   settings <- list()
   writes <- list()
@@ -112,13 +117,13 @@ for (date_type in c("month", "week")) test_that(
     get_run_info = function(...) previous,
     validate_prev_run_log = function(log) log,
     list_files = function(...) "input.csv",
-    read_update_artifact = function(run_info, path) {
+    read_update_artifact = function(run_info, path, ...) {
       predecessor_path <- local_artifact_path(run_info, "models", "-single_models",
         hash_data("All-Data"), run_info$object_output)
       if (identical(run_info$run_name, "previous") && identical(path, predecessor_path)) {
         return(data.frame(Model_ID = c("xgboost--global--R1", "chronos2--global--R1")))
       }
-      original_update_reader(run_info, path)
+      original_update_reader(run_info, path, ...)
     },
     read_file = function(run_info, file_list = NULL, path = NULL, return_type = "df", ...) {
       if (return_type == "object") return(fixture$metadata)
@@ -141,13 +146,33 @@ for (date_type in c("month", "week")) test_that(
       }
       updated
     },
-    read_selection_file = function(...) previous[, names(previous) != "negative_forecast", drop = FALSE],
+    read_selection_file = function(run_info, folder, suffix = NULL, ...) {
+      if (identical(folder, "prep_data") && identical(suffix, "-hts_data")) return(fixture$history)
+      previous[, names(previous) != "negative_forecast", drop = FALSE]
+    },
+    # This fixture isolates assessment/solver order; chaining tests validate
+    # persisted publication. Reuse only outputs captured after this refit.
+    read_update_result = function(...) {
+      reconciled <- Filter(function(write) identical(write$suffix, "-reconciled"), writes)
+      models <- Filter(function(write) identical(write$suffix, "-single_models"), writes)
+      if (!length(reconciled) || !length(models)) return(NULL)
+      list(models = models[[1]]$data, forecasts = reconciled[[1]]$data)
+    },
     read_selection_hierarchy = function(...) fixture$metadata,
     read_candidate_forecasts = function(...) {
       adjust_forecast(fitted, fixture$project_info, "standard_hierarchy", FALSE)
     },
     read_series_history = function(run_info, combo, ...) contexts[[combo]],
-    select_series_forecasts = function(...) { events <<- c(events, "assess"); original_selector(...) },
+    # Track source identity and separate component/average eligibility passes.
+    select_series_forecasts = function(predictions, ...) {
+      expect_length(unique(predictions$Combo), 1L)
+      averages <- predictions$Recipe_ID == "simple_average"
+      expect_true(all(averages) || !any(averages))
+      stage <- if (all(averages)) "assess_averages" else "assess_components"
+      if (!any(averages)) expect_setequal(unique(predictions$Model_ID), component_ids)
+      events <<- c(events, paste0(stage, ":", unique(predictions$Combo)))
+      original_selector(predictions, ...)
+    },
     reconcile = function(initial_fcst, run_info, forecast_approach, negative_forecast) {
       events <<- c(events, "reconcile")
       settings[[length(settings) + 1L]] <<- negative_forecast
@@ -156,17 +181,23 @@ for (date_type in c("month", "week")) test_that(
     },
     write_data = function(x, combo, suffix, ...) { writes[[length(writes) + 1L]] <<- list(data = x, combo = combo, suffix = suffix) },
     validate_run_outputs = function(...) TRUE,
+    # Match the logger's publication confirmation without bypassing its caller's
+    # completeness guard; real persisted records are covered by publication tests.
     log_best_run = function(run_info, weighted_mape, ...) {
       logged <<- run_info$forecast_selection
       logged_metric <<- weighted_mape
+      events <<- c(events, "publish")
+      list(selected_combos = names(logged$selections))
     }
   )
   agent <- list(project_info = fixture$project_info, run_id = "updated", forecast_horizon = 6)
   selected <- data.frame(combo = fixture$metadata$original_combos, model_type = "global",
     best_run_name = "previous", weighted_mape = 0.01)
-  expect_no_error(update_forecast_combo(agent, selected, NULL, 1, FALSE, 123))
-  expect_identical(events, c("refit", rep("assess", length(contexts)), "reconcile",
-    "retune", rep("assess", length(contexts)), "reconcile"))
+  expect_no_error(updated <- update_forecast_combo(agent, selected, NULL, 1, FALSE, 123))
+  expect_identical(updated$status, "done")
+  expect_length(updated$quality_rejected_combos, 0L)
+  expect_identical(events, c("refit", source_assessments, "reconcile",
+    "retune", source_assessments, "reconcile", "publish"))
   expect_identical(settings, list(FALSE, FALSE))
   expect_setequal(names(logged$source_selections), fixture$metadata$hts_combos)
   expect_setequal(names(logged$selections), fixture$metadata$original_combos)
@@ -189,8 +220,12 @@ for (date_type in c("month", "week")) test_that(
   logged <- NULL
   invalid_retune <- TRUE
   rejected <- update_forecast_combo(agent, selected, NULL, 1, FALSE, 123)
-  expect_identical(events, c("refit", rep("assess", length(contexts)), "reconcile",
-    "retune", rep("assess", length(contexts))))
+  # Both refitted components become invalid at the first source on retune:
+  # no average may be assessed there, and nothing may reconcile or publish.
+  retune_assessments <- source_assessments[
+    source_assessments != paste0("assess_averages:", fixture$metadata$hts_combos[1])]
+  expect_identical(events, c("refit", source_assessments, "reconcile",
+    "retune", retune_assessments))
   expect_identical(settings, list(FALSE))
   expect_length(writes, 0L)
   expect_null(logged)
@@ -673,6 +708,7 @@ test_that("reconciliation storage errors never initiate model fitting", {
 test_that("a rejected default run cannot be fitted again on restart", {
   fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
   selection <- do.call(select_forecast_candidate, fixture)
+  selection$rankings$Violations <- 1L
   prepared <- 0L
   rejected_reads <- 0L
   local_mocked_bindings(
@@ -689,7 +725,12 @@ test_that("a rejected default run cannot be fitted again on restart", {
     set_run_info = function(...) list(project_name = "project", run_name = "default", path = tempdir()),
     read_selection_file = function(...) {
       rejected_reads <<- rejected_reads + 1L
-      data.frame(default_reforecast_status = "rejected")
+      data.frame(average_models = TRUE, forecast_approach = "bottoms_up")
+    },
+    read_update_result = function(...) list(forecasts = fixture$forecasts),
+    assess_agent_run = function(..., check_quality = FALSE) {
+      expect_true(check_quality)
+      list(selections = list(series = selection))
     },
     prep_data = function(...) { prepared <<- prepared + 1L },
     prep_models = function(...) NULL,
@@ -716,7 +757,8 @@ test_that("an accepted default is audited before a quality-rejected update is sk
   local_mocked_bindings(
     get_foundation_model_suffix = function() "",
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
-    read_file = function(...) data.frame(combo = "series", best_run_name = "default", default_reforecast_status = "accepted"),
+    read_file = function(...) data.frame(combo = "series",
+      best_run_name = paste0("agent_run_", hash_data("series"), "_default")),
     completed_update_runs = function(agent_info, metadata) {
       audits <<- audits + 1L
       metadata
@@ -735,6 +777,35 @@ test_that("an accepted default is audited before a quality-rejected update is sk
   expect_identical(result, "Finished Forecasting New Time Series")
   expect_identical(audits, 1L)
   expect_identical(submissions, 0L)
+})
+
+test_that("a different saved run cannot bypass a quality-rejected update replacement", {
+  fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
+  selection <- do.call(select_forecast_candidate, fixture)
+  for (saved_run in c("updated", paste0("agent_previous_", hash_data("series"), "_default"),
+    paste0("agent_run_", hash_data("another-series"), "_default"))) local({
+    submissions <- 0L
+    local_mocked_bindings(
+      get_foundation_model_suffix = function() "",
+      par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+      par_end = function(...) NULL,
+      read_file = function(...) data.frame(combo = "series", best_run_name = saved_run),
+      completed_update_runs = function(...) stop("unrelated result must not bypass replacement"),
+      submit_fcst_run = function(..., timestamp) {
+        expect_identical(timestamp, "default")
+        submissions <<- submissions + 1L
+        list(forecast_selection = list(selections = list(series = selection)))
+      },
+      get_fcst_output = function(...) data.frame(),
+      calculate_fcst_metrics = function(...) 0.03,
+      log_best_run = function(...) NULL
+    )
+    agent <- list(run_id = "run", quality_rejected_combos = hash_data("series"),
+      project_info = list(project_name = "project", path = tempdir()))
+    expect_identical(forecast_new_combos(agent, character(), hash_data("series"), NULL, FALSE, 1, 1),
+      "Finished Forecasting New Time Series")
+    expect_identical(submissions, 1L)
+  })
 })
 
 test_that("reconciliation rejects nonfinite input before reading or filling", {

@@ -427,6 +427,11 @@ hash_data <- function(x) {
 
 #' Write data outputs to disk
 #'
+#' Log and final run-metadata writes omit the withdrawn global-update and
+#' default-reforecast tracking columns in inherited metadata. Other columns,
+#' values, artifact types and formats are unchanged. This does not migrate
+#' existing files; removal happens only when a caller already requests a write.
+#'
 #' @param x object to write to disk
 #' @param combo name of time series combo
 #' @param run_info run info using [set_run_info()]
@@ -442,6 +447,15 @@ write_data <- function(x,
                        output_type,
                        folder = NULL,
                        suffix = NULL) {
+  if (identical(folder, "logs") ||
+      (identical(folder, "final_output") && identical(suffix, "-run_metadata"))) {
+    retired <- c("global_update_previous_selection", "global_update_selected",
+      "global_update_recovered_sources", "global_update_concerned_sources", "global_update_status",
+      "default_reforecast_status")
+    if (any(retired %in% names(x))) {
+      x <- dplyr::select(x, -dplyr::any_of(retired))
+    }
+  }
   if (output_type == "data") {
     file_type <- run_info$data_output
   } else if (output_type == "log") {

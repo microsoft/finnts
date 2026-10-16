@@ -284,9 +284,7 @@ test_that("prep_hierarchical_data returns correct grouped hierarchies", {
   #   Bottom combos: raw values (1, 13, 25, 37, 1, 13, 25, 37)
   # Value_Country maps to Country (sum per Country per date):
   #   Bottom-level combos keep their raw Value_Country values.
-  #   Each Country node equals the sum of Value_Country across all combos
-  #   for that Country on the given date, and the Total node equals the sum
-  #   of all Country-node values for that date.
+  #   Each Country node counts its source Country once; Total sums both Countries.
   # Value_Global = 1 on every date (constant across combos and dates).
   # Value_All: each combo has a unique value → aggregated via sum_hts_data.
   # Value_Product maps to Product (sum per Product per date).
@@ -365,7 +363,7 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
     Target = c(1101, 101, 1000, 1, 100, 1000),
     Value_All = c(138, 56, 82, 10, 46, 82),
     Value_Global = c(50, 50, 50, 50, 50, 50),
-    Value_Area = c(90, 90, 90, 20, 20, 70)
+    Value_Area = c(90, 20, 70, 20, 20, 70)
   )
 
   # Assertions
@@ -1033,7 +1031,7 @@ test_that("external_regressor_mapping returns All when regressor varies uniquely
   expect_equal(result$Var[result$Regressor == "Reg"], "All")
 })
 
-test_that("external_regressor_mapping picks only the two tied candidates from three", {
+test_that("external_regressor_mapping validates a joint source grain", {
   n_dates <- 3
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
 
@@ -1060,11 +1058,8 @@ test_that("external_regressor_mapping picks only the two tied candidates from th
     external_regressors = c("Reg")
   )
 
-  var_result <- result$Var[result$Regressor == "Reg"]
-  parts <- sort(strsplit(var_result, "---")[[1]])
-
-  # V1 and V2 both reduce equally, V3 does not
-  expect_equal(parts, c("V1", "V2"))
+  # Both single levels reduce repetition but neither determines Reg per date.
+  expect_identical(result$Var[result$Regressor == "Reg"], "V1---V2")
 })
 
 test_that("external_regressor_mapping picks single best candidate among multiple", {

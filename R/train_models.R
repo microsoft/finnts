@@ -997,12 +997,19 @@ train_models <- function(run_info,
 #' @param data data frame containing a Target column
 #' @param model character string of model name
 #'
-#' @return data frame with negative Target values replaced by zero
+#' @return Data frame with negative training Target values replaced by zero.
+#'   Before clamping, preserves Target in Target_Original when that column is
+#'   absent, so create_splits() restores unclamped assessment actuals. Existing
+#'   Target_Original values, including missing future actuals, are unchanged.
+#'   Warns when clamping occurs; does not write artifacts.
 #' @noRd
 clamp_negative_target <- function(data, model) {
   nonneg_models <- c("croston")
 
   if (model %in% nonneg_models && any(data$Target < 0, na.rm = TRUE)) {
+    if (!"Target_Original" %in% names(data)) {
+      data$Target_Original <- data$Target
+    }
     warning(
       sprintf(
         "Model '%s' requires non-negative Target values. %d negative values clamped to zero.",

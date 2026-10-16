@@ -57,6 +57,27 @@ test_that("custom setup preserves exact enrollment and rejects omission or legac
   expect_error(do.call(set_agent_info, legacy), "enrollment changed")
 })
 
+test_that("request retries resume custom enrollment with the saved bottoms-up contract", {
+  args <- custom_agent_inputs(withr::local_tempdir())
+  args$request_id <- "custom-request"
+  args$agent_action <- "iterate_forecast"
+  first <- load_agent_custom_state(do.call(set_agent_info_custom, args))
+  files <- list.files(args$project_info$path, recursive = TRUE, full.names = TRUE)
+  hashes <- tools::md5sum(files)
+  for (action in c("iterate_forecast", "update_forecast")) {
+    args$agent_action <- action
+    retry <- load_agent_custom_state(do.call(set_agent_info_custom, args))
+    expect_identical(retry$run_id, first$run_id)
+    expect_identical(retry$forecast_approach, "bottoms_up")
+    expect_identical(retry$custom_agent_contract_id, first$custom_agent_contract_id)
+    expect_identical(retry$overwrite, action == "update_forecast")
+  }
+  expect_identical(tools::md5sum(files), hashes)
+  omitted <- args
+  omitted$custom_models <- NULL
+  expect_error(do.call(set_agent_info_custom, omitted), "omitted")
+})
+
 test_that("parent records are exact-path immutable and malformed content stays untouched", {
   args <- custom_agent_inputs(withr::local_tempdir())
   info <- load_agent_custom_state(do.call(set_agent_info, args))
