@@ -733,6 +733,8 @@ custom_author_examples <- function(examples, definition, metadata) {
 # series has the same last finite target; this cannot certify business close status.
 # Every series must cover the common historical window and declared drivers must
 # cover the next horizon. Returns resolved dates/source and internal combo labels;
+# inferred bounds retain the input Date representation. Cadence comparisons use
+# exact day values, independent of integer versus double Date storage.
 # values are not filled, forecasts/vintages are not inferred, and no I/O occurs.
 custom_author_preflight <- function(
     input_data, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
@@ -756,7 +758,7 @@ custom_author_preflight <- function(
     if (length(unique(last_actual)) != 1L) {
       custom_author_abort("input", "Cannot infer a shared hist_end_date from uneven series histories; supply a common completed historical window.")
     }
-    hist_end_date <- as.Date(unname(last_actual[[1L]]), origin = "1970-01-01")
+    hist_end_date <- input_data$Date[[match(last_actual[[1L]], as.numeric(input_data$Date))]]
   }
   if (is.null(hist_start_date))
     hist_start_date <- min(input_data$Date)
@@ -766,9 +768,9 @@ custom_author_preflight <- function(
   }
   historical <- input_data$Date >= hist_start_date & input_data$Date <= hist_end_date
   dates <- sort(unique(input_data$Date[historical]))
-  if (!length(dates) || dates[[1L]] != hist_start_date || tail(dates, 1L) != hist_end_date || !identical(dates, seq(hist_start_date,
+  if (!length(dates) || dates[[1L]] != hist_start_date || tail(dates, 1L) != hist_end_date || !identical(as.numeric(dates), as.numeric(seq(hist_start_date,
     by = date_type, length.out = length(dates)
-  ))) {
+  )))) {
     custom_author_abort("input", "Historical dates must cover an uninterrupted cadence aligned with hist_start_date and hist_end_date.")
   }
   future_dates <- seq(hist_end_date, by = date_type, length.out = forecast_horizon + 1L)[-1L]
@@ -781,7 +783,7 @@ custom_author_preflight <- function(
       custom_author_abort("input", "Historical target values must be observed and finite through hist_end_date; missing actuals cannot become zeros.")
     }
     future_rows <- index[input_data$Date[index] > hist_end_date & input_data$Date[index] <= max(future_dates)]
-    if (length(external_regressors) && !identical(sort(input_data$Date[future_rows]), future_dates)) {
+    if (length(external_regressors) && !identical(as.numeric(sort(input_data$Date[future_rows])), as.numeric(future_dates))) {
       custom_author_abort("input", "Future drivers must cover every forecast date for every series after hist_end_date.")
     }
     for (predictor in external_regressors) {

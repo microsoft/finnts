@@ -2353,6 +2353,8 @@ extend_global_update_selection <- function(selection, hierarchy) {
 # exact approved aliases/versions into preparation and preserves saved component
 # maps. Present incomplete outputs fail before preparation; valid outputs reuse
 # the logging tail. Fixed custom results are reused when built-ins need retuning.
+# Child preparation receives only selected custom envelopes, not unselected
+# parent enrollment; built-in-only winners retain ordinary preparation.
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
                                   parallel_processing,
@@ -2646,7 +2648,10 @@ update_forecast_combo <- function(agent_info,
       project_info$date_type
     ),
     seed = seed,
-    custom_models = if (!is.null(custom_contract)) custom_contract$envelopes else NULL
+    custom_models = if (!is.null(custom_contract)) {
+      selected_custom <- intersect(prev_best_model_list, names(custom_contract$envelopes))
+      if (length(selected_custom)) custom_contract$envelopes[selected_custom] else NULL
+    } else NULL
   )
 
   if (!is.null(custom_contract)) {

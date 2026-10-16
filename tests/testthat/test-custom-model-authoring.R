@@ -2106,18 +2106,23 @@ test_that("structured authoring disables inherited tools before offline transpor
   chat$set_system_prompt("private template prompt")
   session <- new_llm_session(chat)
   request <- NULL
+  intercepted <- FALSE
   original <- get("chat_request", envir = asNamespace("ellmer"))
-  testthat::local_mocked_bindings(chat_perform = function(provider, mode, turns, tools = NULL, type = NULL, ...) {
-    request <<- original(provider = provider, stream = FALSE, turns = turns, tools = if (is.null(tools))
-      list()
-    else tools, type = type)
+  # Capture ellmer's real builder arguments rather than reconstructing a
+  # request from the transport's version-specific signature. Stop before I/O.
+  testthat::local_mocked_bindings(chat_request = function(...) {
+    request <<- original(...)
+    intercepted <<- TRUE
     stop("offline transport intercepted")
   }, .package = "ellmer")
   expect_error(
     custom_author_request(session, "contract", list(instructions = "Use mean.", protocol = current_protocol, metadata = list(forecast_approach = "bottoms_up"))),
     "provider"
   )
-  expect_false(is.null(request))
+  expect_true(intercepted)
+  expect_s3_class(request, "httr2_request")
+  if (!intercepted || !inherits(request, "httr2_request"))
+    stop("Offline authoring did not reach the request interception boundary.", call. = FALSE)
   expect_false(called)
   expect_null(request$body$data$tools)
   expect_equal(chat$get_system_prompt(), "private template prompt")

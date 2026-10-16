@@ -198,10 +198,16 @@ custom_agent_response <- function(models = "business_mean", ...) {
 
 # Serializable offline Chat stand-in with independent histories per clone.
 # The nested factory/callbacks retain only a call tracker and optional worker
-# observation directory; neither shares conversation state nor contacts a provider.
+# observation directory. Resolve lazy inputs before serialization so workers
+# never need the caller's test helpers; no callback contacts a provider.
 custom_agent_chat <- function(response, tracker = new.env(parent = emptyenv()), observation_path = NULL) {
+  force(response)
+  force(observation_path)
   if (is.null(tracker$calls)) tracker$calls <- 0L
   factory <- function(response, tracker, observation_path) {
+    force(response)
+    force(tracker)
+    force(observation_path)
     session <- new.env(parent = emptyenv())
     class(session) <- "Chat"
     session$turns <- list()

@@ -591,12 +591,13 @@ validate_custom_author_unbound_symbol <- function(symbol, source = NULL) {
   symbol
 }
 
-# Recognize only the bounded base-R missing-object message on simple errors and
+# Recognize only the bounded base-R missing-object message on legacy simple
+# errors or typed objectNotFoundError conditions from newer R versions, and
 # verify its identifier against candidate source. Return NULL for other wording,
 # localized/unsafe names, malformed source, or unverifiable dynamic errors; no
 # raw message, call stack, runtime values or runtime-derived identifiers are forwarded.
 custom_author_unbound_symbol <- function(error, source) {
-  if (!inherits(error, "simpleError") || is.null(source))
+  if (!inherits(error, c("simpleError", "objectNotFoundError")) || is.null(source))
     return(NULL)
   message <- conditionMessage(error)
   if (!custom_author_text(message) || nchar(message, type = "bytes") > 160L)

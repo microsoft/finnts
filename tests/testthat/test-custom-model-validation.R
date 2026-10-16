@@ -197,6 +197,11 @@ test_that("missing-variable evidence excludes literals, member names and sensiti
   error <- simpleError("object 'history' not found")
   reference <- c(predict = "function(object, new_data, context) with(object$history, mean(history$Target))")
   expect_identical(custom_author_unbound_symbol(error, reference), "history")
+  typed <- structure(list(message = "object 'history' not found", call = NULL),
+    class = c("objectNotFoundError", "error", "condition"))
+  expect_identical(custom_author_unbound_symbol(typed, reference), "history")
+  expect_null(custom_author_unbound_symbol(
+    structure(unclass(typed), class = c("unrelatedError", "error", "condition")), reference))
   for (body in c(
     "object$history", "object[['history']]", "'history'", "quote(history)", "base::quote(history)", "expression(history)",
     "~history", "history <- 1", "1 -> history", "list(history = 1)", "function(history) NULL", "get('history')", "for (history in 1:3) NULL"
@@ -1437,8 +1442,9 @@ test_that("ordinary R business rule matrix passes real numerical and holdout val
 })
 
 test_that("cutoff preflight preserves explicit and inferred bounds across cadences", {
-  for (cadence in c("day", "week", "month", "quarter", "year")) {
+  for (storage in c("integer", "double")) for (cadence in c("day", "week", "month", "quarter", "year")) {
     dates <- seq(as.Date("2020-01-01"), by = cadence, length.out = 7)
+    storage.mode(dates) <- storage
     raw <- data.frame(Date = rep(dates, 2), id = rep(c("A", "B"), each = 7), value = rep(c(
       0, -5, 10, 20, NA_real_, NA_real_,
       NA_real_

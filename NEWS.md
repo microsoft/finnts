@@ -2,15 +2,18 @@
 
 ## Improvements
 
-- `create_custom_model()` creates reusable local/global forecasting models from business rules in one call, validated against worked examples and approved manually (interactive sessions) or automatically.
-- Custom models train on a new `C1` recipe selected through `recipes_to_run`, so they can run alone or beside built-in models that use stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles and Spark or inner parallelism.
+- `create_custom_model()` creates reusable local/global forecasting models from business rules, validated against worked examples.
+  - Approval is manual in interactive sessions or automatic.
+- Custom models train on a new `C1` recipe selected through `recipes_to_run`, alone or beside built-in models.
+  - Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.
 - Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Copilot saves CLI-local session state under R's temporary directory.
   - Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.
 - Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
   - Optionally cleans inactive series compatibly with preprocessing.
-  - Agent detection shares this structural analysis;   explicit `prep_data()` choices are unchanged.- Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
+  - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
+- Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
 
@@ -33,7 +36,8 @@
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
   -   Preserves saved model selections; older runs reuse saved models,   averaging when needed.
-    -   Handles interrupted updates and changes to hierarchy membership.-   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
+    -   Handles interrupted updates and changes to hierarchy membership.
+-   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
   -   Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.
   -   Restart checks do not prevent concurrent attempts from overwriting files.
 -   Fixed future actuals becoming `0` with `clean_outliers = TRUE`; they remain `NA`, while backtests retain original actuals.
