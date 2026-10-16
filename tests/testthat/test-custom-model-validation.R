@@ -40,47 +40,44 @@ validation_fixture <- function(wrong = FALSE) {
   )))
 }
 
-test_that("example construction preserves independent answers and row keys", {
-  history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Revenue = c(10, 20))
-  future <- data.frame(Date = as.Date(c("2020-04-01", "2020-03-01")), Revenue = NA_real_)
-  before <- serialize(list(history, future), NULL)
-  example <- custom_model_example(history, future, c(40, 30), target_variable = "Revenue")
+test_that("example tables preserve independent answers and row keys", {
+  table <- data.frame(example = rep(c("ordinary", "edge_zero"), each = 4),
+    Date = rep(as.Date(c("2020-01-01", "2020-02-01", "2020-04-01", "2020-03-01")), 2),
+    Revenue = c(10, 20, NA, NA, 0, 0, NA, NA), expected = c(NA, NA, 40, 30, NA, NA, 0, 0))
+  before <- serialize(table, NULL)
+  examples <- custom_examples_from_table(table, "Revenue", NULL, character(), "local")
+  example <- examples[[1]]
   expect_identical(example$expected$.pred, c(30, 40))
-  expect_identical(example$expected$Date, sort(future$Date))
+  expect_identical(example$expected$Date, sort(table$Date[3:4]))
   expect_identical(example$history$Target, c(10, 20))
   expect_identical(unique(example$history$Combo), "example")
   expect_false("Target" %in% names(example$new_data))
-  expect_identical(custom_model_example(history, future, c(40, 30), target_variable = "Revenue"), example)
-  expect_identical(serialize(list(history, future), NULL), before)
-  expect_error(custom_model_example(history, future, 30, target_variable = "Revenue"), "one independent")
-  expect_error(custom_model_example(history, transform(future, Revenue = 4), c(40, 30), target_variable = "Revenue"), "observed target")
-  error <- custom_model_example(transform(history, Revenue = 0), future, target_variable = "Revenue", expected_error = list(
-    phase = "fit",
-    code = "zero_denominator"
-  ))
+  expect_identical(custom_examples_from_table(table, "Revenue", NULL, character(), "local"), examples)
+  expect_identical(serialize(table, NULL), before)
+  malformed <- table
+  malformed$expected[3] <- NA_real_
+  expect_error(custom_examples_from_table(malformed, "Revenue", NULL, character(), "local"), "future rows need an expected value")
+  malformed <- table
+  malformed$Revenue[3] <- 4
+  expect_error(custom_examples_from_table(malformed, "Revenue", NULL, character(), "local"), "not both")
+  errors <- table
+  errors$expected[7:8] <- NA_real_
+  errors$expected_error <- c(rep(NA_character_, 4), rep("fit:zero_denominator", 4))
+  error <- custom_examples_from_table(errors, "Revenue", NULL, character(), "local")[[2]]
   expect_true(error$edge_case)
   expect_null(error$expected)
   expect_identical(error$expected_error, list(phase = "fit", code = "zero_denominator"))
-  keyed_history <- rbind(transform(history, id = "first"), transform(history, id = "second"))
-  keyed_future <- rbind(transform(future, id = "first"), transform(future, id = "second"))
-  global <- custom_model_example(keyed_history, keyed_future, c(40, 30, 80, 60),
-    target_variable = "Revenue", combo_variables = "id",
-    model_type = "global"
-  )
+  keyed <- rbind(transform(table, id = "first"), transform(table, id = "second", expected = 2 * expected))
+  global <- custom_examples_from_table(keyed, "Revenue", "id", character(), "global")[[1]]
   expect_identical(global$expected$.pred, c(30, 40, 60, 80))
   expect_setequal(unique(global$history$Combo), c("first", "second"))
-  answer <- data.frame(Date = keyed_future$Date, id = keyed_future$id, .pred = c(40, 30, 80, 60))
-  keyed <- custom_model_example(keyed_history, keyed_future, answer,
-    target_variable = "Revenue", combo_variables = "id",
-    model_type = "global"
-  )
-  expect_equal(keyed$expected, global$expected)
-  expect_error(custom_model_example(history, future, c(NA_real_, 30), target_variable = "Revenue"), "finite")
-  expect_error(custom_model_example(history, rbind(future, future), rep(30, 4), target_variable = "Revenue"), "unique and nonmissing")
-  expect_error(custom_model_example(history, future, c(40, 30), target_variable = "Revenue", expected_error = list(
-    phase = "fit",
-    code = "zero_denominator"
-  )), "no numerical answer")
+  expect_equal(custom_examples_from_table(keyed[nrow(keyed):1, ], "Revenue", "id", character(), "global")[[2]]$expected, global$expected)
+  malformed <- table
+  malformed$expected[3] <- Inf
+  expect_error(custom_examples_from_table(malformed, "Revenue", NULL, character(), "local"), "finite")
+  expect_error(custom_examples_from_table(rbind(table, table[3, ]), "Revenue", NULL, character(), "local"), "duplicate")
+  errors$expected[7] <- 0
+  expect_error(custom_examples_from_table(errors, "Revenue", NULL, character(), "local"), "expected_error examples leave expected missing")
 })
 
 test_that("raw authoring infers only single-series keys and unambiguous cadences", {
@@ -117,11 +114,12 @@ test_that("raw authoring infers only single-series keys and unambiguous cadences
 })
 
 test_that("UX raw defaults and constructed examples pass real manual validation", {
+  local_custom_console()
   history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Revenue = c(10, 20))
   future <- data.frame(Date = as.Date("2020-03-01"))
-  examples <- list(custom_model_example(history, future, 15, target_variable = "Revenue"), custom_model_example(transform(history,
-    Revenue = 0
-  ), future, 0, target_variable = "Revenue", edge_case = TRUE))
+  examples <- data.frame(example = rep(c("ordinary", "edge_zero"), each = 3),
+    Date = rep(c(history$Date, future$Date), 2), Revenue = c(10, 20, NA, 0, 0, NA),
+    expected = c(NA, NA, 15, NA, NA, 0))
   original <- serialize(examples, NULL)
   requests <- list()
   local_mocked_bindings(
@@ -144,29 +142,20 @@ test_that("UX raw defaults and constructed examples pass real manual validation"
   )
   raw <- data.frame(Date = seq(as.Date("2021-01-01"), by = "month", length.out = 12), Revenue = 12345)
   before <- serialize(raw, NULL)
-  draft <- create_custom_model("Use the historical mean.", list(),
+  model <- create_custom_model("Use the historical mean.", list(),
     input_data = raw, target_variable = "Revenue", forecast_horizon = 1,
     name = "default_mean", validation_examples = examples, control = custom_model_control(package_policy = "base_only")
   )
-  expect_identical(draft$definition$model_type, "local")
-  expect_identical(draft$metadata$date_type, "month")
+  expect_identical(model$definition$model_type, "local")
+  expect_identical(custom_model_feedback(model)$resolved_inputs$date_type, "month")
   expect_identical(requests[[1L]]$model_type, "local")
   expect_identical(serialize(examples, NULL), original)
   expect_identical(serialize(raw, NULL), before)
   expect_false(grepl("12345", jsonlite::toJSON(requests), fixed = TRUE))
-  expect_identical(custom_model_feedback(draft)$resolved_inputs$combo_variables, ".finnts_single_series")
-  model <- create_custom_model(
-    draft = draft, responses = list(request_id = draft$pending$request_id, answer = "yes"),
-    control = custom_model_control()
-  )
+  expect_identical(custom_model_feedback(model)$resolved_inputs$combo_variables, ".finnts_single_series")
   expect_s3_class(model, "finnts_custom_model")
-  expect_equal(custom_model_feedback(model)$resolved_inputs, custom_model_feedback(draft)$resolved_inputs)
   expect_identical(model$definition$model_type, "local")
   expect_identical(custom_run_envelope(model), model)
-  expect_error(
-    create_custom_model(draft = draft, control = custom_model_control(package_policy = "installed_finnts")),
-    "policy"
-  )
   local_mocked_bindings(custom_author_request = function(session, stage, payload) {
     requests[[length(requests) + 1L]] <<- payload
     stop("scaffold_probe")
@@ -1043,6 +1032,12 @@ test_that("percentage examples retain signed values and reject undefined rates o
 test_that("automatic percentage growth records its default and reuses pinned forecasts", {
   fixture <- percentage_growth_fixture()
   protocol_builder <- custom_author_protocol
+  validator <- custom_author_validate
+  validation_report <- NULL
+  local_mocked_bindings(custom_author_validate = function(...) {
+    validation_report <<- validator(...)
+    validation_report
+  }, .package = "finnts")
   invisible(NULL)
   requests <- list()
   local_mocked_bindings(
@@ -1056,13 +1051,11 @@ test_that("automatic percentage growth records its default and reuses pinned for
       c(fixture$proposal, list(defaults_used = c("growth_basis", "averaging_weights")))
     }, .package = "finnts"
   )
-  root <- withr::local_tempdir()
   original <- serialize(fixture$proposal, NULL)
   output <- capture.output(model <- create_custom_model(fixture$contract$instructions, list(),
     input_data = data.frame(),
     name = fixture$contract$name, model_type = "local", approval = "automatic", control = custom_model_control(
-      package_policy = "base_only",
-      draft_path = root
+      package_policy = "base_only"
     )
   ))
   expect_length(requests, 2L)
@@ -1078,30 +1071,21 @@ test_that("automatic percentage growth records its default and reuses pinned for
   expect_identical(sort(names(evidence)), c("defaults_used", "effective"))
   expect_identical(evidence$defaults_used$growth_basis, custom_author_defaults()$growth_basis)
   expect_false(grepl("PRIVATE_PERCENTAGE_SERIES", jsonlite::toJSON(requests), fixed = TRUE))
-  pointer <- file.path(list.dirs(root, recursive = FALSE), "current.rds")
-  state <- custom_draft_load(pointer)$state
-  expect_length(state$receipts, 1L)
-  expect_identical(state$receipts[[1]]$identity, model$definition$version_id)
-  expect_identical(create_custom_model(draft = pointer), model)
   defaults <- contract$automatic_defaults
-  checks <- custom_author_checks(state$report, state$definition, state$contract_id, state$contract$examples,
-    approval_mode = "automatic",
-    automatic_defaults = defaults, contract = state$contract
-  )
-  expect_identical(checks$automatic_defaults, as.character(jsonlite::toJSON(defaults, auto_unbox = TRUE, null = "null")))
+  expect_identical(model$validation$checks$automatic_defaults, as.character(jsonlite::toJSON(defaults, auto_unbox = TRUE, null = "null")))
   for (extra in list(1L, "2", c(2L, 2L))) {
     defaults <- contract$automatic_defaults
     defaults$catalog_version <- extra
-    expect_error(custom_author_checks(state$report, state$definition, state$contract_id, state$contract$examples,
+    expect_error(custom_author_checks(validation_report, model$definition, "contract", contract$examples,
       approval_mode = "automatic",
-      automatic_defaults = defaults, contract = state$contract
+      automatic_defaults = defaults, contract = contract
     ), "fields", class = "finnts_custom_model_authoring_error")
   }
   defaults <- contract$automatic_defaults
   defaults$catalog_version <- NA_integer_
-  expect_error(custom_author_checks(state$report, state$definition, state$contract_id, state$contract$examples,
+  expect_error(custom_author_checks(validation_report, model$definition, "contract", contract$examples,
     approval_mode = "automatic",
-    automatic_defaults = defaults, contract = state$contract
+    automatic_defaults = defaults, contract = contract
   ), "finite and nonmissing", fixed = TRUE)
   local_mocked_bindings(
     custom_author_request = function(...) stop("Unexpected provider"), custom_author_assemble = function(...) stop("Unexpected normalization"),
@@ -1562,10 +1546,10 @@ test_that("prepared driver preflight covers unsampled series and reuses exact re
   expect_error(custom_author_data(NULL, info, NULL, NULL, NULL, NULL, NULL, NULL, NULL), "Future driver values", class = "finnts_custom_model_authoring_error")
   corrupt <- FALSE
   reads <- character()
-  sampled <- custom_author_data(NULL, info, NULL, NULL, NULL, NULL, NULL, NULL, NULL, capture_context = TRUE)
+  sampled <- custom_author_data(NULL, info, NULL, NULL, NULL, NULL, NULL, NULL, NULL)
   expect_identical(sampled$metadata$total_series, 4L)
   expect_equal(sampled$metadata$sampled_series, 3)
-  expect_true(all(paths %in% names(sampled$sources)))
+  expect_true(all(paths %in% reads))
   expect_identical(as.integer(table(factor(reads[reads %in% paths], levels = paths))), rep(1L, 4))
 })
 
@@ -1662,7 +1646,7 @@ test_that("raw driver models can be authored before a forecast run exists", {
   model <- create_custom_model("Revenue equals Units times two.", list(),
     input_data = raw, combo_variables = "id", target_variable = "value",
     date_type = "month", forecast_horizon = 3, external_regressors = "Units", model_type = "local", name = "raw_driver",
-    approval = "automatic", validation_examples = list(basic, edge)
+    approval = "automatic", validation_examples = custom_examples_table(list(basic, edge))
   )
   expect_s3_class(model, "finnts_custom_model")
   expect_true(model$validation$technical_passed)
@@ -1743,21 +1727,19 @@ test_that("raw and prepared authoring data preserve inputs and existing artifact
     check_agent_ellmer_version = function() invisible(NULL), new_llm_session = function(llm) list(),
     custom_author_request = function(session, stage, payload) {
       request <<- payload
-      fields <- custom_author_contract_fields(payload$protocol, payload$name, payload$model_type)
+      fields <- custom_author_contract_fields(payload$protocol, payload$name, payload$model_type, automatic = TRUE)
       response <- stats::setNames(rep(list(NULL), length(fields)), fields)
       response$questions <- list(list(kind = "business", topic = "business_context", question = "Which multiplier?"))
       response
     }, .package = "finnts"
   )
-  draft <- create_custom_model("Use the specified multiplier.", list(),
-    run_info = info, name = "prepared_schema", model_type = "local",
-    control = custom_model_control(draft_path = withr::local_tempdir())
-  )
+  error <- tryCatch(create_custom_model("Use the specified multiplier.", list(),
+    run_info = info, name = "prepared_schema", model_type = "local", approval = "automatic"
+  ), error = identity)
   expect_setequal(names(request$metadata$schema), c("Date", "Combo", "Target"))
   expect_true(all(c("Date", "Combo", "Target") %in% names(known$metadata$schema)))
   expect_false("Date_index.num" %in% names(known$metadata$schema))
-  expect_identical(draft$metadata$schema, known$metadata$schema)
-  expect_identical(draft$pending$stage, "clarify")
+  expect_identical(error$code, "business_clarification")
   expect_identical(tools::md5sum(files), hashes)
   expect_error(custom_author_data(NULL, info, NULL, NULL, "week", NULL, NULL, NULL, NULL), "metadata")
 })

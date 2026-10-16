@@ -1,20 +1,19 @@
 test_that("custom model controls validate defaults and retain explicit settings", {
+  local_custom_console()
   control <- custom_model_control()
   expect_s3_class(control, "finnts_custom_model_control")
   expect_identical(names(control), c(
-    "max_attempts", "validation_budget", "package_policy", "required_properties", "forecast_approach",
-    "draft_path", "interact"
+    "max_attempts", "validation_budget", "package_policy", "required_properties", "forecast_approach"
   ))
   expect_identical(control$max_attempts, 3L)
   expect_identical(control$validation_budget, 60)
   expect_null(control$forecast_approach)
   expect_identical(attr(control, "supplied"), character())
-  explicit <- custom_model_control(max_attempts = 2L, draft_path = NULL)
-  expect_identical(attr(explicit, "supplied"), c("max_attempts", "draft_path"))
+  explicit <- custom_model_control(max_attempts = 2L, package_policy = "base_only")
+  expect_identical(attr(explicit, "supplied"), c("max_attempts", "package_policy"))
   for (arguments in list(
     list(max_attempts = 4), list(validation_budget = Inf), list(validation_budget = 121), list(package_policy = "anything"),
-    list(required_properties = "unknown"), list(forecast_approach = "unknown"), list(draft_path = "https://example.test"),
-    list(interact = TRUE)
+    list(required_properties = "unknown"), list(forecast_approach = "unknown")
   )) {
     expect_error(do.call(custom_model_control, arguments), class = "finnts_custom_model_authoring_error")
   }
@@ -35,25 +34,17 @@ test_that("public authoring signature consolidates advanced settings into contro
   expect_identical(names(formals(create_custom_model)), c(
     "instructions", "llm", "input_data", "run_info", "combo_variables",
     "target_variable", "date_type", "forecast_horizon", "external_regressors", "hist_start_date", "hist_end_date", "name",
-    "model_type", "validation_examples", "approval", "control", "draft", "responses"
+    "model_type", "validation_examples", "approval", "control"
   ))
 })
 
 test_that("current creation API uses controls without legacy forwarding", {
-  local_mocked_bindings(custom_draft_resume = function(draft, responses, llm, deferred, interact, approval, package_policy) {
-    list(draft = draft, approval = approval, package_policy = package_policy, interact = interact)
-  }, check_agent_ellmer_version = function() invisible(NULL), new_llm_session = function(llm) stop("no-provider"), .package = "finnts")
+  local_custom_console()
+  local_custom_console()
+  local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL), new_llm_session = function(llm) stop("no-provider"), .package = "finnts")
   expect_false("..." %in% names(formals(create_custom_model)))
   expect_false(exists("custom_model_authoring_impl", envir = asNamespace("finnts"), inherits = FALSE))
-  expect_null(create_custom_model(draft = list())$approval)
-  expect_identical(create_custom_model(draft = list(), approval = "manual")$approval, "manual")
-  expect_identical(
-    create_custom_model(draft = list(), control = custom_model_control(package_policy = "base_only"))$package_policy,
-    "base_only"
-  )
-  expect_error(create_custom_model(draft = list(), control = custom_model_control(max_attempts = 1L)), "Resume uses saved")
   expect_error(create_custom_model(max_attempts = 1L), "unused argument")
-  expect_error(create_custom_model(draft_path = "old-path"), "unused argument")
   evaluations <- 0L
   expect_error(create_custom_model(instructions = {
     evaluations <- evaluations + 1L
@@ -64,8 +55,9 @@ test_that("current creation API uses controls without legacy forwarding", {
 })
 
 test_that("legacy approval delivery values require explicit migration", {
+  local_custom_console()
   for (policy in list(NULL, "interactive", "deferred", "unknown")) {
-    expect_error(create_custom_model("Use the historical mean.", llm = NULL, input_data = data.frame(), approval = policy),
+    expect_error(create_custom_model("Use the historical mean.", llm = list(), input_data = data.frame(), approval = policy),
       "approval must be manual or automatic",
       class = "finnts_custom_model_authoring_error"
     )
@@ -75,8 +67,8 @@ test_that("legacy approval delivery values require explicit migration", {
 # Small provider-visible examples have independently specified expected values.
 # The second is a zero-valued edge case; neither oracle executes model source.
 author_examples <- function() {
-  history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Combo = "sample", Target = c(10, 20))
-  request <- data.frame(Date = as.Date("2020-03-01"), Combo = "sample")
+  history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Combo = "example", Target = c(10, 20))
+  request <- data.frame(Date = as.Date("2020-03-01"), Combo = "example")
   expected <- request
   expected$.pred <- 15
   first <- list(
@@ -733,7 +725,6 @@ test_that("source repair uses previous candidate and phase evidence without chan
   proposal$parameters_json <- "{\"lag\":12}"
   proposal$parameter_schema <- list(list(name = "lag", type = "number", units = "months"))
   proposal$examples <- NULL
-  root <- withr::local_tempdir()
   local_mocked_bindings(
     check_agent_ellmer_version = function() invisible(NULL), new_llm_session = function(llm) list(),
     custom_author_data = function(...) list(data = data.frame(
@@ -751,23 +742,18 @@ test_that("source repair uses previous candidate and phase evidence without chan
   )
   model <- create_custom_model("Use the prior yearly seasonal value.", list(),
     input_data = data.frame(), approval = "automatic",
-    validation_examples = examples, control = custom_model_control(draft_path = root)
+    validation_examples = custom_examples_table(examples)
   )
-  saved <- custom_draft_load(file.path(list.dirs(root, recursive = FALSE), "current.rds"))$state
   expect_true(model$validation$technical_passed)
   expect_equal(model$definition$fixed_parameters$lag, 12)
-  expect_identical(saved$attempts, list(contract = 1L, source = 2L))
+  expect_identical(vapply(requests, `[[`, character(1), "stage"), c("contract", "source", "source"))
   expect_identical(requests[[2]]$payload$contract, requests[[3]]$payload$contract)
   expect_match(requests[[3]]$payload$previous_source[["finntsPredictBody"]], "lag_date_years(new_data$Date, object$lag)",
     fixed = TRUE
   )
   expect_identical(requests[[3]]$payload$previous_version_id, requests[[3]]$payload$failure$version_id)
-  expect_identical(requests[[3]]$payload$contract_id, saved$contract_id)
-  expect_length(saved$receipts, 2L)
-  expect_length(saved$diagnostics$history, 5L)
-  expect_identical(saved$diagnostics$history[[3]]$failure$phase, "example_predict")
-  expect_false(grepl("PRIVATE_REPAIR_DATA", jsonlite::toJSON(saved$diagnostics), fixed = TRUE))
-  expect_identical(create_custom_model(draft = file.path(saved$store, "current.rds")), model)
+  expect_identical(requests[[3]]$payload$contract_id, digest::digest(requests[[2]]$payload$contract, algo = "sha256", serializeVersion = 2))
+  expect_false(grepl("PRIVATE_REPAIR_DATA", jsonlite::toJSON(requests), fixed = TRUE))
   expect_length(requests, 3L)
 })
 
@@ -894,7 +880,7 @@ test_that("approval has two explicit policies and automatic mode needs no review
   )
   local_mocked_bindings(readline = function(...) stop("Unexpected console question"), .package = "base")
   model <- create_custom_model("Use the historical mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic"
   )
   expect_s3_class(model, "finnts_custom_model")
@@ -906,6 +892,10 @@ test_that("approval has two explicit policies and automatic mode needs no review
 })
 
 test_that("one affirmative review creates a validated model", {
+  local_custom_console(function(request) {
+      stages <<- c(stages, request$stage)
+      " y "
+    })
   invisible(NULL)
   stages <- character()
   proposals <- 0L
@@ -923,11 +913,8 @@ test_that("one affirmative review creates a validated model", {
     }, .package = "finnts"
   )
   model <- create_custom_model("Use the historical mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
-    control = custom_model_control(interact = function(request) {
-      stages <<- c(stages, request$stage)
-      " y "
-    })
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+    control = custom_model_control()
   )
   expect_s3_class(model, "finnts_custom_model")
   expect_identical(stages, "review_create")
@@ -1008,19 +995,28 @@ test_that("automatic defaults are closed and cannot override explicit capabiliti
   }
 })
 
-test_that("automatic rejects manual input before any preparation or provider call", {
+test_that("manual authoring requires an interactive console before provider preparation", {
+  withr::local_options(rlang_interactive = FALSE)
   local_mocked_bindings(
-    check_agent_ellmer_version = function() stop("Unexpected provider setup"), custom_author_data = function(...) stop("Unexpected preparation"),
-    .package = "finnts"
+    check_agent_ellmer_version = function() stop("Unexpected provider setup"),
+    custom_author_data = function(...) stop("Unexpected preparation"), .package = "finnts"
   )
-  expect_error(
-    create_custom_model("Use mean.", approval = "automatic", control = custom_model_control(interact = function(request) "yes")),
-    "cannot use interact"
-  )
-  expect_error(create_custom_model("Use mean.", approval = "automatic", responses = list(answer = "yes")), "manual responses")
+  expect_error(create_custom_model("Use mean.", list(), input_data = data.frame()), "interactive R session")
 })
 
-test_that("deferred hierarchy authoring reviews all derived nodes without forecast enrollment", {
+test_that("single-call hierarchy authoring reviews all derived nodes without forecast enrollment", {
+  reviews <- list()
+  samples <- list()
+  sample_data <- custom_author_data
+  local_custom_console(function(request) {
+    reviews[[length(reviews) + 1L]] <<- request
+    "yes"
+  })
+  local_mocked_bindings(custom_author_data = function(...) {
+    result <- sample_data(...)
+    samples[[length(samples) + 1L]] <<- result
+    result
+  }, .package = "finnts")
   invisible(NULL)
   raw <- expand.grid(Date = seq(as.Date("2020-01-01"), by = "month", length.out = 12), Region = c(
     "PRIVATE_HIER_NORTH",
@@ -1042,26 +1038,22 @@ test_that("deferred hierarchy authoring reviews all derived nodes without foreca
     combo_variables = c(
       "Region",
       "Product"
-    ), target_variable = "value", date_type = "month", forecast_horizon = 1, validation_examples = author_examples(),
-    approval = "manual", control = custom_model_control(forecast_approach = "standard_hierarchy", draft_path = withr::local_tempdir())
+    ), target_variable = "value", date_type = "month", forecast_horizon = 1, validation_examples = custom_examples_table(author_examples()),
+    approval = "manual", control = custom_model_control(forecast_approach = "standard_hierarchy")
   )
-  expect_identical(draft$pending$stage, "review_create")
-  expect_identical(draft$settings$forecast_approach, "standard_hierarchy")
-  expect_identical(draft$contract$requirements$hierarchy$application, "each_prepared_node")
-  expect_identical(draft$contract$requirements$hierarchy$reconciliation, "finnts_reconciliation")
-  expect_match(draft$pending$review$reconciliation, "may adjust")
-  expect_equal(draft$metadata$hierarchy$sampled_leaves, 3)
-  expect_gt(draft$metadata$hierarchy$node_count, 3)
-  snapshot <- readRDS(draft$context$snapshot)
-  expect_equal(length(unique(snapshot$data$Combo)), draft$metadata$hierarchy$node_count)
+  expect_identical(reviews[[1]]$stage, "review_create")
+  expect_identical(samples[[1]]$metadata$resolved_inputs$forecast_approach, "standard_hierarchy")
+  expect_identical(payloads[[2]]$contract$requirements$hierarchy$application, "each_prepared_node")
+  expect_identical(payloads[[2]]$contract$requirements$hierarchy$reconciliation, "finnts_reconciliation")
+  expect_match(reviews[[1]]$review$reconciliation, "may adjust")
+  expect_equal(samples[[1]]$metadata$hierarchy$sampled_leaves, 3)
+  expect_gt(samples[[1]]$metadata$hierarchy$node_count, 3)
+  snapshot <- samples[[1]]
+  expect_equal(length(unique(snapshot$data$Combo)), samples[[1]]$metadata$hierarchy$node_count)
   expect_false(grepl("PRIVATE_HIER|12345", jsonlite::toJSON(payloads)))
-  expect_error(
-    create_custom_model(draft = draft, control = custom_model_control(forecast_approach = "grouped_hierarchy")),
-    "saved inputs"
-  )
   source <- draft
   expect_false("schema_version" %in% names(source$definition))
-  expect_identical(source$pending$stage, "review_create")
+  expect_identical(reviews[[1]]$stage, "review_create")
   info <- set_run_info(
     project_name = "prepared-authoring-hierarchy", path = withr::local_tempdir(), data_output = "csv",
     object_output = "rds", add_unique_id = FALSE
@@ -1077,27 +1069,17 @@ test_that("deferred hierarchy authoring reviews all derived nodes without foreca
     .package = "finnts"
   )
   prepared <- create_custom_model("Use each node's historical mean, then reconcile.", list(),
-    run_info = info, validation_examples = author_examples(),
-    approval = "manual", control = custom_model_control(forecast_approach = "standard_hierarchy", draft_path = withr::local_tempdir())
+    run_info = info, validation_examples = custom_examples_table(author_examples()),
+    approval = "manual", control = custom_model_control(forecast_approach = "standard_hierarchy")
   )
-  expect_equal(prepared$metadata$hierarchy$sampled_leaves, 4)
-  expect_equal(length(unique(readRDS(prepared$context$snapshot)$data$Combo)), prepared$metadata$hierarchy$node_count)
-  expect_true(any(grepl("-hts_info[.]rds$", names(prepared$context$sources))))
-  expect_true(any(grepl("-hts_data[.]csv$", names(prepared$context$sources))))
+  expect_equal(samples[[2]]$metadata$hierarchy$sampled_leaves, 4)
+  expect_equal(length(unique(samples[[2]]$data$Combo)), samples[[2]]$metadata$hierarchy$node_count)
   expect_identical(tools::md5sum(files), before)
   log <- read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
   expect_error(custom_run_hierarchy_context(info, custom_run_context(info, log, allow_hierarchy = TRUE), log,
     return_data = TRUE,
     max_rows = 1
   ), "row limit")
-  path <- local_artifact_path(info, "prep_data", "-hts_info", extension = "rds")
-  metadata <- readRDS(path)
-  metadata$hts_combos <- rev(metadata$hts_combos)
-  saveRDS(metadata, path)
-  expect_error(create_custom_model(draft = prepared, llm = list(), responses = list(
-    request_id = prepared$pending$request_id,
-    answer = prepared$pending$prompt
-  )), "Prepared source context changed")
 })
 
 test_that("confirmed contracts and source reject unexpected or altered fields", {
@@ -1168,8 +1150,16 @@ test_that("hierarchy evidence must cover every captured node", {
 })
 
 # Only provider replies and synthetic human responses are supplied here. All
-# validation, persistence and forecast steps are real and stay in the caller PID.
-test_that("same-session authoring and deferred approval feed a staged standard forecast", {
+# validation and forecast steps are real and stay in the caller PID.
+test_that("same-session authoring and manual approval feed a staged standard forecast", {
+  local_custom_console(function(request) {
+      stages <<- c(stages, request$stage)
+      if (request$stage == "review_create") {
+        expect_identical(validations, as.integer(length(stages) - 1L))
+        expect_match(request$review$warning, "current R session")
+      }
+      "yes"
+    })
   invisible(NULL)
   skip_if_not_installed("ellmer", minimum_version = "0.4.0")
   raw <- data.frame(Date = seq(as.Date("2020-01-01"), by = "month", length.out = 24), id = "private-local", value = 100 +
@@ -1194,14 +1184,7 @@ test_that("same-session authoring and deferred approval feed a staged standard f
   stages <- character()
   model <- create_custom_model("Use each series' historical mean.", chat, raw,
     combo_variables = "id", target_variable = "value",
-    date_type = "month", forecast_horizon = 1, model_type = "local", validation_examples = author_examples(), control = custom_model_control(interact = function(request) {
-      stages <<- c(stages, request$stage)
-      if (request$stage == "review_create") {
-        expect_identical(validations, 0L)
-        expect_match(request$review$warning, "current R session")
-      }
-      "yes"
-    })
+    date_type = "month", forecast_horizon = 1, model_type = "local", validation_examples = custom_examples_table(author_examples()), control = custom_model_control()
   )
   expect_s3_class(model, "finnts_custom_model")
   expect_identical(stages, "review_create")
@@ -1211,12 +1194,10 @@ test_that("same-session authoring and deferred approval feed a staged standard f
     recipes_to_run = c("R1", "C1"), stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE,
     clean_outliers = FALSE, multistep_horizon = FALSE
   )
-  draft <- create_custom_model("Use each series' historical mean.", chat,
-    run_info = info, model_type = "local", validation_examples = author_examples(),
+  approved <- create_custom_model("Use each series' historical mean.", chat,
+    run_info = info, model_type = "local", validation_examples = custom_examples_table(author_examples()),
     approval = "manual"
   )
-  expect_identical(validations, 1L)
-  approved <- create_custom_model(draft = draft, responses = list(request_id = draft$pending$request_id, answer = "yes"))
   expect_identical(approved$definition$version_id, model$definition$version_id)
   expect_identical(validations, 2L)
   expect_identical(requests, 4L)
@@ -1240,7 +1221,8 @@ test_that("same-session authoring and deferred approval feed a staged standard f
   expect_identical(validations, 2L)
 })
 
-test_that("installed hierarchy authoring resumes real validation and produces a mixed forecast", {
+test_that("installed hierarchy authoring performs single-call validation and produces a mixed forecast", {
+  local_custom_console()
   invisible(NULL)
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Actual hierarchy authoring children are verified from the installed namespace")
@@ -1271,23 +1253,12 @@ test_that("installed hierarchy authoring resumes real validation and produces a 
   )
   files <- list.files(prepared_info$path, recursive = TRUE, full.names = TRUE)
   before <- tools::md5sum(files)
-  worker <- function(pointer, response, namespace, final = FALSE) {
-    loadNamespace("finnts")
-    stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(namespace)))
-    testthat::local_mocked_bindings(
-      custom_author_request = function(...) stop("Unexpected provider request"), custom_author_data = function(...) stop("Unexpected repreparation"),
-      .package = "finnts"
-    )
-    if (final)
-      testthat::local_mocked_bindings(custom_author_validate = function(...) stop("Unexpected revalidation"), .package = "finnts")
-    finnts::create_custom_model(draft = pointer, responses = response)
-  }
-  environment(worker) <- baseenv()
   versions <- character()
   for (input in c("raw", "prepared")) {
     arguments <- list(
-      instructions = "Use each node's historical mean, then reconcile.", llm = chat, forecast_approach = "standard_hierarchy",
-      validation_examples = author_examples(), approval = "manual", draft_path = withr::local_tempdir(), validation_timeout = 120
+      instructions = "Use each node's historical mean, then reconcile.", llm = chat,
+      validation_examples = custom_examples_table(author_examples()), approval = "manual",
+      control = custom_model_control(forecast_approach = "standard_hierarchy", validation_budget = 120)
     )
     if (input == "raw")
       arguments <- c(arguments, list(
@@ -1295,24 +1266,9 @@ test_that("installed hierarchy authoring resumes real validation and produces a 
         date_type = "month", forecast_horizon = 1
       ))
     else arguments$run_info <- prepared_info
-    draft <- do.call(create_custom_model, arguments)
-    source <- draft
-    pointer <- file.path(source$store, "current.rds")
-    tested <- callr::r(worker, args = list(pointer = pointer, response = list(
-      request_id = source$pending$request_id,
-      answer = "yes"
-    ), namespace = namespace), libpath = .libPaths(), system_profile = FALSE, user_profile = FALSE)
-    expect_s3_class(tested, "finnts_custom_model")
-    completed <- custom_draft_load(pointer)$state
-    expect_identical(completed$stage, "approved")
-    expect_length(completed$report$holdouts, completed$metadata$hierarchy$node_count)
-    expect_match(completed$checks$hierarchy, "independent node holdouts")
-    model <- callr::r(worker, args = list(pointer = pointer, response = list(
-      request_id = source$pending$request_id,
-      answer = "yes"
-    ), namespace = namespace, final = TRUE), libpath = .libPaths(), system_profile = FALSE, user_profile = FALSE)
+    model <- do.call(create_custom_model, arguments)
     expect_s3_class(model, "finnts_custom_model")
-    expect_identical(model$definition$version_id, source$definition$version_id)
+    expect_match(model$validation$checks$hierarchy, "independent node holdouts")
     versions <- c(versions, model$definition$version_id)
   }
   expect_length(unique(versions), 1L)
@@ -1344,6 +1300,7 @@ author_harness <- function(replies = list(author_proposal(), author_source()), .
                              date_type = "month",
                              forecast_horizon = 1
                            )) {
+  metadata$resolved_inputs <- metadata$resolved_inputs %||% list(combo_variables = "Combo")
   tracker <- new.env(parent = emptyenv())
   tracker$requests <- list()
   tracker$validations <- 0L
@@ -1391,7 +1348,7 @@ test_that("typed contract failures retain exact bounded proposal evidence", {
   )
   tracker <- author_harness(list(proposal, proposal))
   error <- tryCatch(create_custom_model("Use mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic", control = custom_model_control(max_attempts = 2)
   ), error = identity)
   expect_identical(error$code, "invalid_parameters_json")
@@ -1415,7 +1372,7 @@ test_that("unexpected typed contract validator failures are not LLM repairs", {
   tracker <- author_harness(list(proposal, proposal, proposal))
   local_mocked_bindings(custom_author_contract = function(...) stop("PRIVATE_IMPLEMENTATION_FAILURE"), .package = "finnts")
   error <- tryCatch(create_custom_model("Use mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic"
   ), error = identity)
   expect_identical(error$code, "contract_validation_error")
@@ -1443,7 +1400,7 @@ test_that("automatic clarification retains bounded questions before stopping", {
   )
   tracker <- author_harness(list(proposal))
   error <- tryCatch(create_custom_model("Use the fiscal seasonal value.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic"
   ), error = identity)
   expect_identical(error$code, "business_clarification")
@@ -1464,7 +1421,7 @@ test_that("clarification error text is bounded without changing retained questio
   )
   tracker <- author_harness(list(proposal))
   error <- tryCatch(create_custom_model("Use a fiscal rule.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic"
   ), error = identity)
   message <- conditionMessage(error)
@@ -1544,7 +1501,7 @@ test_that("protocol-four exhaustion and caller examples cannot bypass history or
   original <- serialize(examples, NULL)
   tracker <- author_harness(rep(list(proposal), 3L))
   error <- tryCatch(create_custom_model("Use the explicit historical rule.", list(),
-    input_data = data.frame(), validation_examples = examples,
+    input_data = data.frame(), validation_examples = custom_examples_table(examples),
     approval = "automatic"
   ), error = identity)
   expect_identical(error$code, "insufficient_example_history")
@@ -1567,7 +1524,7 @@ test_that("protocol-four binding exhaustion preserves the attempt budget", {
   )
   tracker <- author_harness(list(proposal, bad))
   error <- tryCatch(create_custom_model("Use the explicit historical rule.", list(),
-    input_data = data.frame(), validation_examples = examples,
+    input_data = data.frame(), validation_examples = custom_examples_table(examples),
     approval = "automatic", control = custom_model_control(max_attempts = 1)
   ), error = identity)
   expect_identical(error$code, "source_binding")
@@ -1594,7 +1551,7 @@ test_that("function-format rejection preserves source retry limits and safe evid
     )
     tracker <- author_harness(c(list(proposal), rep(list(bad), limit)))
     error <- tryCatch(create_custom_model("Use mean.", list(),
-      input_data = data.frame(), validation_examples = author_examples(),
+      input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
       approval = "automatic", control = custom_model_control(max_attempts = limit)
     ), error = identity)
     expect_identical(error$code, "source_body_format")
@@ -1622,7 +1579,7 @@ test_that("automatic protocol repairs use exact dependency evidence without chan
   good$fit_body <- "mean(data$Target)"
   tracker <- author_harness(list(proposal, bad, good))
   result <- create_custom_model("Use mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic"
   )
   expect_s3_class(result, "finnts_custom_model")
@@ -1653,7 +1610,7 @@ test_that("new protocol dependency exhaustion retains exact bounded evidence", {
   )
   tracker <- author_harness(list(proposal, source))
   error <- tryCatch(create_custom_model("Use mean.", list(),
-    input_data = data.frame(), validation_examples = author_examples(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "automatic", control = custom_model_control(max_attempts = 1)
   ), error = identity)
   expect_s3_class(error, "finnts_custom_model_authoring_error")
@@ -1699,13 +1656,12 @@ test_that("mode exhaustion and caller failures preserve intent without silent re
   tracker <- author_harness(list(proposal), metadata = metadata)
   error <- tryCatch(create_custom_model("Use prior year times 1.11.", list(),
     input_data = data.frame(), approval = "automatic",
-    validation_examples = examples
-  ), error = identity)
-  expect_identical(error$code, "example_mode")
+    validation_examples = custom_examples_table(examples
+  )), error = identity)
   expect_identical(error$stage, "examples")
-  expect_match(conditionMessage(error), "Caller-provided validation_examples failed", fixed = TRUE)
+  expect_match(conditionMessage(error), "model_type")
   expect_identical(examples, before)
-  expect_length(tracker$requests, 1L)
+  expect_length(tracker$requests, 0L)
   expect_identical(tracker$validations, 0L)
   expect_match(custom_author_contract_feedback("example_mode")$message, "Do not enable another mode")
   expect_identical(custom_author_contract_feedback("example_mode_PRIVATE"), custom_author_contract_feedback("invalid_contract"))
@@ -1715,7 +1671,7 @@ test_that("source exhaustion exposes bounded reusable failure diagnostics", {
   broken <- author_source()
   broken$fit_body <- "function(x, context, parameters) NULL"
   tracker <- author_harness(c(list(c(author_proposal(), list(defaults_used = character()))), rep(list(broken), 3)))
-  error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = author_examples()),
+  error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = custom_examples_table(author_examples())),
     error = identity
   )
   expect_s3_class(error, "finnts_custom_model_authoring_error")
@@ -1767,18 +1723,21 @@ test_that("invalid caller examples fail without replacement or further proposals
     valid <- c(author_proposal(), list(defaults_used = character()))
     invisible(NULL)
     tracker <- author_harness(list(valid))
-    error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = examples),
+    error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = custom_examples_table(examples)),
       error = identity
     )
     expect_s3_class(error, "finnts_custom_model_authoring_error")
     expect_identical(error$stage, "examples")
-    expect_identical(error$code, if (defect == "horizon")
-      "example_horizon"
-    else "invalid_examples")
-    expect_match(conditionMessage(error), "Caller-provided validation_examples failed", fixed = TRUE)
-    expect_match(conditionMessage(error), "they were not changed", fixed = TRUE)
+    if (defect == "horizon") {
+      expect_identical(error$code, "example_horizon")
+      expect_match(conditionMessage(error), "Caller-provided validation_examples failed", fixed = TRUE)
+      expect_match(conditionMessage(error), "they were not changed", fixed = TRUE)
+      expect_length(tracker$requests, 1L)
+    } else {
+      expect_match(conditionMessage(error), "tolerance must be a number from 0 through 0.01", fixed = TRUE)
+      expect_length(tracker$requests, 0L)
+    }
     expect_identical(examples, before)
-    expect_length(tracker$requests, 1L)
     expect_identical(tracker$validations, 0L)
   }
 })
@@ -1787,7 +1746,7 @@ test_that("contract feedback never exposes arbitrary exception text or unknown c
   valid <- c(author_proposal(), list(defaults_used = character()))
   tracker <- author_harness(rep(list(valid), 3))
   local_mocked_bindings(custom_author_contract = function(...) stop("PRIVATE_ERROR_VALUE_SECRET_PATH"), .package = "finnts")
-  error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = author_examples()),
+  error <- tryCatch(create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = custom_examples_table(author_examples())),
     error = identity
   )
   expect_identical(error$code, "contract_validation_error")
@@ -1806,7 +1765,7 @@ test_that("structured contract feedback is separate from source repair diagnosti
   malformed <- valid
   malformed$unexpected <- "PRIVATE_RESPONSE_SENTINEL"
   tracker <- author_harness(list(malformed, valid, author_source()))
-  model <- create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = author_examples())
+  model <- create_custom_model("Use mean.", list(), input_data = data.frame(), approval = "automatic", validation_examples = custom_examples_table(author_examples()))
   expect_s3_class(model, "finnts_custom_model")
   expect_identical(tracker$requests[[2]]$payload$feedback$code, "invalid_contract_response")
   expect_false(grepl("PRIVATE_RESPONSE_SENTINEL", jsonlite::toJSON(tracker$requests), fixed = TRUE))
@@ -1832,7 +1791,7 @@ test_that("contract retry feedback cannot consume provider or capability failure
     else "InventedDriver"
     tracker <- author_harness(list(invalid))
     expect_error(create_custom_model("Use mean.", list(),
-      input_data = data.frame(), approval = "automatic", validation_examples = author_examples(),
+      input_data = data.frame(), approval = "automatic", validation_examples = custom_examples_table(author_examples()),
       control = custom_model_control(max_attempts = 1L)
     ), "invalid fields")
     expect_length(tracker$requests, 1L)
@@ -1861,12 +1820,19 @@ test_that("generated automatic examples use fixed tolerance before source genera
 })
 
 test_that("console review is concise and details do not execute or regenerate", {
+  withr::local_options(rlang_interactive = TRUE)
   tracker <- author_harness()
-  draft <- create_custom_model("PRIVATE_INSTRUCTION_SENTINEL", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
-    approval = "manual"
-  )
-  request <- draft$pending
+  request <- NULL
+  local({
+    local_custom_console(function(value) {
+      request <<- value
+      "no"
+    })
+    expect_error(create_custom_model("PRIVATE_INSTRUCTION_SENTINEL", list(),
+      input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+      approval = "manual"
+    ), "declined")
+  })
   prompts <- character()
   answers <- "Y"
   local_mocked_bindings(readline = function(prompt = "") {
@@ -1876,31 +1842,31 @@ test_that("console review is concise and details do not execute or regenerate", 
     answer
   }, .package = "base")
   output <- capture.output(answer <- custom_author_interact(
-    NULL, request$stage, request$prompt, request$identity, request$review,
+    request$stage, request$prompt, request$identity, request$review,
     request$questions
   ))
   expect_identical(answer, "yes")
   expect_length(prompts, 1L)
   expect_lt(length(output), 30L)
   expect_false(any(grepl("PRIVATE_INSTRUCTION_SENTINEL|available_packages|\\$contract|function\\(", output)))
-  expect_false(any(grepl(draft$definition$version_id, output, fixed = TRUE)))
+  expect_false(any(grepl(request$identity, output, fixed = TRUE)))
   expect_true(any(grepl("Examples?", output)))
   prompts <- character()
   answers <- c("invalid", "D", "e", "", "yes")
   detailed <- capture.output(answer <- custom_author_interact(
-    NULL, request$stage, request$prompt, request$identity, request$review,
+    request$stage, request$prompt, request$identity, request$review,
     request$questions
   ))
   expect_identical(answer, "yes")
   expect_length(prompts, 5L)
   expect_true(any(grepl("Choose y/yes", detailed, fixed = TRUE)))
-  expect_true(grepl(draft$definition$source[["fit"]], paste(detailed, collapse = "\n"), fixed = TRUE))
+  expect_true(grepl(request$review$definition$source[["fit"]], paste(detailed, collapse = "\n"), fixed = TRUE))
   expect_true(any(grepl("PRIVATE_INSTRUCTION_SENTINEL", detailed, fixed = TRUE)))
   expect_identical(tracker$validations, 0L)
   expect_length(tracker$requests, 2L)
   answers <- ""
   expect_error(invisible(capture.output(custom_author_interact(
-    NULL, request$stage, request$prompt, request$identity, request$review,
+    request$stage, request$prompt, request$identity, request$review,
     request$questions
   ))), "declined")
   expect_identical(tracker$validations, 0L)
@@ -1908,27 +1874,24 @@ test_that("console review is concise and details do not execute or regenerate", 
 
 test_that("edits require new candidate consent without changing data capabilities", {
   tracker <- author_harness(list(author_proposal(), author_source(), author_proposal(), author_source()))
-  draft <- create_custom_model("Use mean.", NULL, input_data = data.frame(), validation_examples = author_examples(), approval = "manual")
-  edited <- create_custom_model(draft = draft, llm = list(), responses = list(request_id = draft$pending$request_id, answer = list(
-    action = "EDIT",
-    instructions = "Clarify that all history rows receive equal weight."
-  )))
-  expect_identical(edited$stage, "review_create")
-  expect_false(identical(edited$definition$version_id, draft$definition$version_id))
-  expect_identical(edited$contract$requirements, draft$contract$requirements)
-  expect_null(edited$consent$test)
-  expect_identical(tracker$validations, 0L)
+  reviews <- list()
+  local_custom_console(function(request) {
+    reviews[[length(reviews) + 1L]] <<- request
+    expect_identical(tracker$validations, 0L)
+    if (length(reviews) == 1L) list(action = "EDIT", instructions = "Clarify that all history rows receive equal weight.") else "yes"
+  })
+  model <- create_custom_model("Use mean.", list(), input_data = data.frame(), validation_examples = custom_examples_table(author_examples()))
+  expect_length(reviews, 2L)
+  expect_identical(vapply(reviews, function(request) request$stage, character(1)), rep("review_create", 2L))
+  expect_false(identical(reviews[[1]]$identity, reviews[[2]]$identity))
+  expect_identical(tracker$requests[[2]]$payload$contract$requirements, tracker$requests[[4]]$payload$contract$requirements)
   expect_length(tracker$requests, 4L)
-  expect_error(
-    create_custom_model(draft = edited, responses = list(request_id = draft$pending$request_id, answer = "yes")),
-    "changed|Stale"
-  )
-  model <- create_custom_model(draft = edited, responses = list(request_id = edited$pending$request_id, answer = "yes"))
-  expect_identical(model$definition$version_id, edited$definition$version_id)
+  expect_identical(model$definition$version_id, reviews[[2]]$identity)
   expect_identical(tracker$validations, 1L)
 })
 
 test_that("quiet preparation retains warnings and does not hide validation failures", {
+  local_custom_console(function(request) "no")
   tracker <- author_harness()
   prepare <- custom_author_data
   local_mocked_bindings(custom_author_data = function(...) {
@@ -1937,24 +1900,24 @@ test_that("quiet preparation retains warnings and does not hide validation failu
     warning("Important preparation warning")
     prepare(...)
   }, .package = "finnts")
-  expect_warning(output <- capture.output(draft <- create_custom_model("Use mean.", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
+  expect_warning(output <- capture.output(expect_error(create_custom_model("Use mean.", list(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
     approval = "manual"
-  )), "Important preparation warning")
+  ), "declined")), "Important preparation warning")
   expect_false(any(grepl("ROUTINE_PREPARATION", output, fixed = TRUE)))
-  expect_identical(draft$stage, "review_create")
   expect_identical(tracker$validations, 0L)
 })
 
 test_that("only explicit candidate approval can produce an enrolled envelope", {
+  local_custom_console(respond)
   tracker <- author_harness()
   respond <- function(request) {
     tracker$stages <- c(tracker$stages, request$stage)
     "yes"
   }
-  result <- create_custom_model("Use mean.", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
-    control = custom_model_control(interact = respond)
+  result <- create_custom_model("Use mean.", list(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+    control = custom_model_control()
   )
   expect_s3_class(result, "finnts_custom_model")
   expect_identical(tracker$stages, "review_create")
@@ -1970,15 +1933,17 @@ test_that("declined and stale replies never validate or approve source", {
     respond <- function(request) {
       answer
     }
-    expect_error(create_custom_model("Use mean.", NULL,
-      input_data = data.frame(), validation_examples = author_examples(),
-      control = custom_model_control(interact = respond)
+    local_custom_console(respond)
+    expect_error(create_custom_model("Use mean.", list(),
+      input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+      control = custom_model_control()
     ), "declined|Invalid response", class = "finnts_custom_model_authoring_error")
     expect_identical(tracker$validations, 0L)
   })
 })
 
 test_that("repair keeps the confirmed oracle and obtains fresh source consent", {
+  local_custom_console(respond)
   broken <- author_source()
   broken$fit_body <- "function(data, context, parameters) 999"
   tracker <- author_harness(list(author_proposal(), broken, author_source()))
@@ -1994,9 +1959,9 @@ test_that("repair keeps the confirmed oracle and obtains fresh source consent", 
     }
     "yes"
   }
-  result <- create_custom_model("Use mean.", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
-    control = custom_model_control(interact = respond)
+  result <- create_custom_model("Use mean.", list(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+    control = custom_model_control()
   )
   expect_length(unique(ids), 2L)
   expect_identical(result$definition$version_id, ids[[2]])
@@ -2014,14 +1979,13 @@ test_that("repair keeps the confirmed oracle and obtains fresh source consent", 
 })
 
 test_that("malformed clarification cannot bypass strict proposal fields", {
+  local_custom_console(function(request) stop("Unexpected callback"))
   invalid <- author_proposal()
   invalid$questions <- "Which window?"
   invalid$approved <- TRUE
   tracker <- author_harness(list(invalid))
-  expect_error(create_custom_model("Use mean.", NULL, input_data = data.frame(), control = custom_model_control(
-    max_attempts = 1,
-    interact = function(request) stop("Unexpected callback")
-  )), "fields|contract|clarification")
+  expect_error(create_custom_model("Use mean.", list(), input_data = data.frame(), control = custom_model_control(
+    max_attempts = 1)), "fields|contract|clarification")
   expect_identical(tracker$validations, 0L)
 })
 
@@ -2286,6 +2250,7 @@ test_that("structured authoring disables inherited tools before offline transpor
 })
 
 test_that("installed authoring returns a reusable model without exposing private data", {
+  local_custom_console(respond)
   invisible(NULL)
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace_path, "Meta", "package.rds")), "End-to-end authoring children are checked from the installed namespace")
@@ -2307,7 +2272,7 @@ test_that("installed authoring returns a reusable model without exposing private
   }
   model <- create_custom_model("Use mean.", chat, raw,
     combo_variables = "id", target_variable = "value", date_type = "month",
-    forecast_horizon = 1, validation_examples = author_examples(), control = custom_model_control(interact = respond)
+    forecast_horizon = 1, validation_examples = custom_examples_table(author_examples()), control = custom_model_control()
   )
   expect_s3_class(model, "finnts_custom_model")
   expect_identical(reviewed, "review_create")
@@ -2352,6 +2317,7 @@ test_that("measured report schemas cannot omit holdout evidence", {
 })
 
 test_that("clarification and exhausted repair never manufacture approval", {
+  local_custom_console(respond)
   question <- author_proposal()
   question$questions <- list(list(kind = "business", topic = "business_context", question = "Which history window?"))
   tracker <- author_harness(list(question, author_proposal(), author_source()))
@@ -2360,12 +2326,13 @@ test_that("clarification and exhausted repair never manufacture approval", {
       list(question_1 = "All available history.")
     else "yes"
   }
-  model <- create_custom_model("Use mean.", NULL, input_data = data.frame(), validation_examples = author_examples(), control = custom_model_control(interact = respond))
+  model <- create_custom_model("Use mean.", list(), input_data = data.frame(), validation_examples = custom_examples_table(author_examples()), control = custom_model_control())
   expect_s3_class(model, "finnts_custom_model")
   expect_equal(tracker$requests[[2]]$payload$answers[[1]]$question_1, "All available history.")
 })
 
 test_that("exhaustion and stale reports cannot reach final approval", {
+  local_custom_console(respond)
   tracker <- author_harness()
   tracker$reports <- list(list(passed = FALSE, code = "intent_mismatch"))
   stages <- character()
@@ -2373,23 +2340,25 @@ test_that("exhaustion and stale reports cannot reach final approval", {
     stages <<- c(stages, request$stage)
     "yes"
   }
-  expect_error(create_custom_model("Use mean.", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
-    control = custom_model_control(max_attempts = 1, interact = respond)
+  expect_error(create_custom_model("Use mean.", list(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+    control = custom_model_control(max_attempts = 1)
   ), "No candidate")
   expect_false("approve" %in% stages)
 })
 
 test_that("a report for different examples is never accepted", {
+  local_custom_console(function(request) "yes")
   tracker <- author_harness()
   tracker$reports <- list(list(passed = TRUE, examples_id = paste(rep("a", 64), collapse = "")))
-  expect_error(create_custom_model("Use mean.", NULL,
-    input_data = data.frame(), validation_examples = author_examples(),
-    control = custom_model_control(interact = function(request) "yes")
+  expect_error(create_custom_model("Use mean.", list(),
+    input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+    control = custom_model_control()
   ), "examples.*confirmed")
 })
 
 test_that("measured comparisons must cover the exact confirmed examples", {
+  local_custom_console(function(request) "yes")
   contract <- custom_author_contract(author_proposal(), "Use mean.", list(date_type = "month", forecast_horizon = 1), NULL,
     "local", author_examples(),
     protocol = custom_author_protocol(
@@ -2423,35 +2392,32 @@ test_that("measured comparisons must cover the exact confirmed examples", {
     if (defect == "tolerance")
       altered$examples[[2]]$tolerance <- 0.01
     tracker$reports <- list(altered)
-    expect_error(create_custom_model("Use mean.", NULL,
-      input_data = data.frame(), validation_examples = author_examples(),
-      control = custom_model_control(interact = function(request) "yes")
-    ), "confirmed examples")
+    expect_error(create_custom_model("Use mean.", list(),
+      input_data = data.frame(), validation_examples = custom_examples_table(author_examples()),
+      control = custom_model_control()
+    ), "confirmed examples|confirmed contract")
   })
 })
 
 test_that("invalid authoring inputs stop before any provider request", {
+  local_custom_console(respond)
   tracker <- author_harness()
   respond <- function(request) "yes"
-  expect_error(create_custom_model("Use mean.", NULL, control = custom_model_control(interact = respond)), "exactly one")
+  expect_error(create_custom_model("Use mean.", list(), control = custom_model_control()), "exactly one")
   expect_error(
-    create_custom_model("Use mean.", NULL, input_data = data.frame(), run_info = list(), control = custom_model_control(interact = respond)),
+    create_custom_model("Use mean.", list(), input_data = data.frame(), run_info = list(), control = custom_model_control()),
     "exactly one"
   )
   for (attempts in c(0, 1.5, 4, NA_real_)) {
-    expect_error(create_custom_model("Use mean.", NULL, input_data = data.frame(), control = custom_model_control(
-      max_attempts = attempts,
-      interact = respond
-    )), "max_attempts")
+    expect_error(create_custom_model("Use mean.", list(), input_data = data.frame(), control = custom_model_control(
+      max_attempts = attempts)), "max_attempts")
   }
   for (timeout in c(0, Inf, 121)) {
-    expect_error(create_custom_model("Use mean.", NULL, input_data = data.frame(), control = custom_model_control(
-      validation_budget = timeout,
-      interact = respond
-    )), "validation_budget")
+    expect_error(create_custom_model("Use mean.", list(), input_data = data.frame(), control = custom_model_control(
+      validation_budget = timeout)), "validation_budget")
   }
   expect_error(
-    create_custom_model("Use mean.", NULL, input_data = data.frame(), model_type = c("local", "local"), control = custom_model_control(interact = respond)),
+    create_custom_model("Use mean.", list(), input_data = data.frame(), model_type = c("local", "local"), control = custom_model_control()),
     "model_type"
   )
   expect_length(tracker$requests, 0L)
@@ -2459,6 +2425,7 @@ test_that("invalid authoring inputs stop before any provider request", {
 })
 
 test_that("authoring restores caller RNG and existing options", {
+  local_custom_console(respond)
   tracker <- author_harness()
   withr::local_preserve_seed()
   withr::local_options(list(finnts_authoring_option = "original"))
@@ -2469,7 +2436,7 @@ test_that("authoring restores caller RNG and existing options", {
     options(finnts_authoring_option = "changed")
     "yes"
   }
-  create_custom_model("Use mean.", NULL, input_data = data.frame(), validation_examples = author_examples(), control = custom_model_control(interact = respond))
+  create_custom_model("Use mean.", list(), input_data = data.frame(), validation_examples = custom_examples_table(author_examples()), control = custom_model_control())
   expect_identical(.Random.seed, before)
   expect_identical(getOption("finnts_authoring_option"), "original")
   expect_length(tracker$requests, 2L)

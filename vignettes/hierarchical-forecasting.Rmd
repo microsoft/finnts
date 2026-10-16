@@ -115,8 +115,8 @@ window. This custom profile does not silently zero-fill missing observations.
 Raw authoring samples up to three deterministic leaf series and keeps all their
 derived nodes; prepared authoring reads the whole existing hierarchy without
 modifying it. Both enforce a 10000 historical-node-row bound and validate every
-captured node. Deferred review uses the same gates and persists exact source
-references. Individual authoring validation does not enroll a custom-only HTS run.
+captured node. Manual and automatic approval use the same gates. Individual
+authoring validation does not enroll a custom-only HTS run.
 
 Old bottom-up definitions and hashes remain valid but do not acquire hierarchy
 permission. New hierarchy definitions bind one approach, per-node application
@@ -141,7 +141,7 @@ It does not imply every cross-product of formats, cadences and workers was teste
 | Grouped monthly CSV, two local-machine workers | Implemented-tested: sequential parity, two worker PIDs and exact installed namespace |
 | Year/quarter/month/week/day at native cadence | Implemented-tested: independent reconciliation projection and date-key checks; complete nonmonthly pipeline qualification remains open |
 | RDS and Parquet data, RDS objects | Implemented-tested: preparation, context capture and exact-path reload; full forecasting/worker combinations remain unverified |
-| Raw/prepared deferred hierarchy review | Implemented-tested: real installed TEST/APPROVE children, complete-node evidence and authored mixed forecast |
+| Raw/prepared hierarchy review | Implemented-tested: real installed TEST/APPROVE children, complete-node evidence and authored mixed forecast |
 | Other installed compatible local R1 FinnTS competitors | Inert workflow/dependency checks implemented; individual model-family qualification remains open |
 | Custom-only HTS | Disallowed by explainability policy; use compatible bottom-up definitions |
 | Foundation-model competitors | Not qualified for this custom hierarchy profile; rejected rather than counted as token competitors |

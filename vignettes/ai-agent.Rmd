@@ -59,13 +59,9 @@ first iteration onward, alongside the built-in candidates. Setup has no
 `models_to_run` argument; the Agent chooses built-in candidates without dropping
 custom models or changing their approved logic.
 
-Authoring can now pause and resume at human review gates through
-`create_custom_model(draft = ..., responses = ...)`. Use `approval = "deferred"`
-and a caller-owned `draft_path` for durable review. Noninteractive calls without
-an `interact` callback choose deferred review automatically. A pending draft is
-not an approved model and cannot be supplied for enrollment. See the
-[deferred authoring walkthrough](best-model-selection.html#deferred-review)
-for revision-bound responses, storage privacy and context-expiry limits.
+Manual approval needs an interactive R session. Scripts, scheduled jobs and
+coding agents use `approval = "automatic"`. Only an approved model can be
+supplied for enrollment.
 
 ```{r custom-agent-example, eval=FALSE}
 # custom is an already reviewed create_custom_model() result named business_mean.

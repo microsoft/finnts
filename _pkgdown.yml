@@ -43,3 +43,12 @@ reference:
       - starts_with("ensemble_models")
       - starts_with("final_models")
       - starts_with("list_models")
+
+  - title: "Custom Models"
+    desc: Teach Finn your own forecasting rules, validated against worked examples, and run them in standard or Agent forecasts.
+    contents:
+      - create_custom_model
+      - custom_model_examples_template
+      - custom_model_control
+      - custom_model_feedback
+      - print.finnts_custom_model

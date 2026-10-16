@@ -57,7 +57,9 @@ test_that("current pooled date selection retains peers without defining an aggre
     definition$source[["fit"]] <- paste0("function(data, context, parameters) finntsDateError('", defect, "')")
     definition$version_id <- custom_model_definition_digest(definition)
     panel <- custom_global_case("pooled_mean")
-    example <- custom_model_example(panel$history, panel$future, rep(0, nrow(panel$future)), model_type = "global")
+    example <- list(name = "date_error", model_type = "global", history = panel$history,
+      new_data = panel$future, expected = transform(panel$future, .pred = 0), tolerance = 1e-08,
+      edge_case = FALSE, rationale = "Zero predictions isolate date failures.")
     report <- custom_author_child(definition, list(example), list(data = panel$history, metadata = panel$context))
     expect_identical(report$failure$reason, defect)
     expect_identical(report$failure$phase, "example_fit")

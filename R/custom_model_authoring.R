@@ -1,10 +1,8 @@
 #' Advanced Controls for Custom Model Creation
 #'
-#' Most callers can omit these controls. Explicit settings are tracked separately
-#' from defaults so saved drafts retain their original policies on continuation.
-#' No provider calls, model execution or files are created by this constructor.
-#' Construct a new control rather than mutating one: explicit-setting markers
-#' determine conflicts and which policies may be supplied on continuation.
+#' Most callers can omit these controls. No provider calls, model execution or
+#' files are created by this constructor. Construct a new control rather than
+#' mutating one; explicit-setting markers are checked for consistency.
 #' @param max_attempts Total proposals per phase, including the initial proposal;
 #'   an integer from 1 through 3.
 #' @param validation_budget Elapsed validation budget in seconds, greater than
@@ -19,23 +17,8 @@
 #'   for raw data. Other choices are `"standard_hierarchy"` and
 #'   `"grouped_hierarchy"`; both require local, univariate rules on the raw C1 recipe
 #'   and a mixed custom/FinnTS pool with reconciliation during forecast execution.
-#' @param draft_path Optional local directory for durable draft/audit state.
-#'   Controls persistence only; it does not force deferred manual review.
-#' @param interact Optional trusted synchronous review callback. It is never
-#'   serialized, and cannot be combined with automatic approval.
-#' @return A validated `finnts_custom_model_control` with seven named settings.
+#' @return A validated `finnts_custom_model_control` with five named settings.
 #'   Invalid settings or stale explicit-setting markers raise authoring errors.
-#' @details The callback receives `stage`, `prompt`, `identity`, `review` and
-#'   `questions`. For `clarify`, return a named list of nonblank answers for every
-#'   question. For `review_create`, present the complete review and return the
-#'   user's `yes`/`no`, `details`, or `list(action = "edit", instructions = "...")`.
-#'   Never approve unconditionally. Without a callback, interactive sessions use
-#'   console review and noninteractive sessions return a pending draft.
-#'
-#'   On continuation, omit creation controls. Only `interact` and an unchanged
-#'   explicit `package_policy` may be supplied; defaults inherit saved values.
-#'   Rebuild a control to change settings rather than mutating default fields.
-#'   The validation budget is not a provider-call or execution timeout.
 #' @seealso [create_custom_model()]
 #' @examples
 #' custom_model_control()
@@ -43,28 +26,25 @@
 #' @export
 custom_model_control <- function(
     max_attempts = 3L, validation_budget = 60, package_policy = "installed_finnts", required_properties = character(),
-    forecast_approach = NULL, draft_path = NULL, interact = NULL) {
+    forecast_approach = NULL) {
   values <- list(
     max_attempts = max_attempts, validation_budget = validation_budget, package_policy = package_policy, required_properties = required_properties,
-    forecast_approach = forecast_approach, draft_path = draft_path, interact = interact
+    forecast_approach = forecast_approach
   )
   supplied <- names(values)[c(
     !missing(max_attempts), !missing(validation_budget), !missing(package_policy), !missing(required_properties),
-    !missing(forecast_approach), !missing(draft_path), !missing(interact)
+    !missing(forecast_approach)
   )]
   control <- structure(values, class = "finnts_custom_model_control", supplied = supplied)
   validate_custom_model_control(control)
 }
 
-# Validate the complete control shape and explicit-setting names without running
-# callbacks or doing I/O. Revalidate user-mutated objects at the entry point;
-# reject changed defaults with stale explicit-setting markers rather than silently
-# ignoring caller intent on resume. Canonicalize numeric budget/attempt types.
+# Validate the complete control shape and explicit-setting names without doing
+# I/O. Revalidate user-mutated objects at the entry point and reject changed
+# defaults with stale explicit-setting markers rather than silently ignoring
+# caller intent. Canonicalize numeric budget/attempt types.
 validate_custom_model_control <- function(control) {
-  fields <- c(
-    "max_attempts", "validation_budget", "package_policy", "required_properties", "forecast_approach", "draft_path",
-    "interact"
-  )
+  fields <- c("max_attempts", "validation_budget", "package_policy", "required_properties", "forecast_approach")
   supplied <- attr(control, "supplied", exact = TRUE)
   if (!is.list(control) || !identical(class(control), "finnts_custom_model_control") || !identical(names(control), fields) ||
     !setequal(names(attributes(control)), c("names", "class", "supplied")) || !is.character(supplied) || anyNA(supplied) ||
@@ -91,13 +71,6 @@ validate_custom_model_control <- function(control) {
   if (!is.null(control$forecast_approach) && (!custom_author_text(control$forecast_approach) || !control$forecast_approach %in%
     c("bottoms_up", "standard_hierarchy", "grouped_hierarchy")))
     custom_author_abort("input", "Invalid forecast_approach control.")
-  if (!is.null(control$draft_path) && (!custom_author_text(control$draft_path) || grepl(
-    "^[[:alpha:]][[:alnum:]+.-]*://",
-    control$draft_path
-  )))
-    custom_author_abort("input", "draft_path must be a local directory.")
-  if (!is.null(control$interact) && !is.function(control$interact))
-    custom_author_abort("interaction", "interact must be a trusted callback.")
   defaults <- formals(custom_model_control)
   for (field in setdiff(fields, supplied)) {
     if (!isTRUE(all.equal(control[[field]], eval(defaults[[field]], envir = baseenv())))) {
@@ -1296,13 +1269,11 @@ custom_author_result <- function(model, report) {
   invisible(NULL)
 }
 
-# Deliver one review to a trusted callback or console. Details and invalid input
-# do not advance consent; edits return a passive change request. Blank/EOF
-# declines. Questions retain named nonblank answers; callbacks are never saved.
-custom_author_interact <- function(interact, stage, prompt, identity = NULL, review = list(), questions = NULL) {
+# Deliver one review or clarification to the interactive console. Details and
+# invalid input do not advance consent; edits return a passive change request.
+# Blank/EOF declines. Questions retain named nonblank answers.
+custom_author_interact <- function(stage, prompt, identity = NULL, review = list(), questions = NULL) {
   request <- list(stage = stage, prompt = prompt, identity = identity, review = review, questions = questions)
-  if (!is.null(interact))
-    return(custom_author_response(request, interact(request)))
   if (!is.null(questions)) {
     cat(prompt, "\n")
     response <- stats::setNames(lapply(questions, function(question) readline(paste0(question, ": "))), names(questions))
@@ -1331,7 +1302,7 @@ custom_author_interact <- function(interact, stage, prompt, identity = NULL, rev
 }
 
 # Check a response against the current human gate without I/O or execution.
-# Console, trusted callbacks and deferred replies share normalized decisions;
+# Console replies are normalized into the same decision shapes;
 # revision/version binding is supplied by the draft, not typed by the human.
 custom_author_response <- function(request, response) {
   stage <- request$stage
@@ -1367,14 +1338,13 @@ custom_author_response <- function(request, response) {
 
 #' Create a Validated Custom Model
 #'
-#' Turn plain-language business logic into a reusable custom model. The same
-#' function handles creation, clarification and exact-version approval for people
-#' and coding agents. Use [custom_model_control()] for advanced settings and
-#' [custom_model_example()] for independently calculated validation examples.
+#' Turn plain-language business logic into a reusable custom model. Use
+#' [custom_model_examples_template()] to write worked examples of the forecasts
+#' you expect, and [custom_model_control()] for advanced settings.
 #'
-#' @param instructions Nonblank business logic for a new model; omit on continuation.
-#' @param llm An ellmer Chat template (ellmer >= 0.4.0). Generation uses a fresh
-#'   empty-history clone. Approval and details do not need a new provider call.
+#' @param instructions Nonblank business logic for the new model.
+#' @param llm An ellmer Chat object (ellmer >= 0.4.0). Generation uses a fresh
+#'   empty-history clone.
 #' @param input_data Local data frame containing a column named `Date` of class
 #'   Date, the target, series keys and declared drivers. Supply this or `run_info`.
 #' @param run_info Compatible prepared run that includes the raw C1 recipe, read without changes.
@@ -1392,28 +1362,21 @@ custom_author_response <- function(request, response) {
 #'   For first-of-month data, August 2026 is `as.Date("2026-08-01")`.
 #'   Bounds select authoring history, not a permanent cutoff for later model fits.
 #' @param name Optional safe model name, preserved in the confirmed rule.
-#' @param model_type Unique subset of `c("local", "global")`. New calls default
-#'   to local; pooled/global behavior requires explicit compatible settings.
-#' @param validation_examples Recommended list of two to eight independently
-#'   calculated examples, covering every declared mode and a deliberate edge case.
-#'   Use [custom_model_example()] or the existing materialized-list format.
-#'   Supplied expected values, errors and tolerances remain mandatory during repair.
-#'   Unknown arguments are rejected. Use named `approval`, `control`, `draft`
-#'   and `responses` in new calls.
-#' @param approval `"manual"` (default) or `"automatic"`. Automatic explicitly
-#'   authorizes generated-code execution without review. Omission on continuation
-#'   inherits the saved policy; changing it or supplying NULL is rejected.
+#' @param model_type Unique subset of `c("local", "global")`. Defaults to
+#'   local; pooled/global behavior requires explicit compatible settings.
+#' @param validation_examples Recommended data frame of two to eight
+#'   independently calculated worked examples, including at least one edge
+#'   case, in the format returned by [custom_model_examples_template()]. Its
+#'   expected values, errors and tolerances are mandatory during repair.
+#' @param approval `"manual"` (default) or `"automatic"`. Manual approval needs
+#'   an interactive R session. Automatic explicitly authorizes generated-code
+#'   execution without review.
 #' @param control Advanced settings created by [custom_model_control()]. Omit
-#'   for defaults. Saved limits/policies are not replaced by omitted defaults.
-#' @param draft Pending draft object or exact trusted draft/current RDS path.
-#' @param responses One list with `request_id` and `answer`, bound to the pending
-#'   request. The answer is a user decision, details/edit request or named
-#'   clarification answers. Do not combine it with a callback.
-#' @return An approved, passive `finnts_custom_model` usable by [prep_models()],
-#'   or a non-enrollable `finnts_custom_model_draft` awaiting input. Neither embeds
-#'   fitted state, training data, a callback or a Chat. Cancellation and failed
-#'   gates raise errors, not model envelopes. Use [custom_model_feedback()] on a
-#'   returned object or captured error for bounded status and next-action details.
+#'   for defaults.
+#' @return An approved, passive `finnts_custom_model` usable by [prep_models()].
+#'   It embeds no fitted state, training data or Chat. Cancellation and failed
+#'   gates raise errors; use [custom_model_feedback()] on a returned model or
+#'   captured error for bounded status and next-action details.
 #'
 #' @section Inputs and Validation:
 #' Every series needs finite targets on a complete common historical grid.
@@ -1424,7 +1387,7 @@ custom_author_response <- function(request, response) {
 #' partial actuals, plans or prior forecasts. Driver holdout scores are conditional
 #' on supplied values; historical plan vintages/publication lags are not verified.
 #'
-#' Raw input is privately prepared; existing runs and Chat templates are unchanged.
+#' Raw input is privately prepared; existing runs and Chat objects are unchanged.
 #' Prepared runs must include the raw C1 recipe; built-in transformations such
 #' as differencing, Box-Cox, outlier cleaning and multistep never alter C1. Local sampling retains up to three
 #' series or raw hierarchy leaves. Explicit global calls validate a deterministic
@@ -1449,15 +1412,13 @@ custom_author_response <- function(request, response) {
 #' not proof of arbitrary business correctness or guaranteed forecast accuracy.
 #'
 #' @section Review and Execution:
-#' Manual interactive calls show the rule, examples, candidate and execution
-#' warning, then ask `Create model?`. `yes` authorizes that exact source and
-#' conditionally approves it only if required validation passes. `no`, blank or
-#' EOF declines. `details` shows source without execution; `edit` requests a new
-#' candidate. Every repaired source version needs fresh consent. A trusted
-#' `control$interact` callback can deliver the same review; it must obtain the
-#' user's decision, never approve unconditionally. Noninteractive calls without
-#' a callback return a draft. Automatic mode skips manual review, not validation,
-#' and raises an error when essential business context is unresolved.
+#' Manual calls show the rule, examples, candidate and execution warning, then
+#' ask `Create model?`. `yes` authorizes that exact source and conditionally
+#' approves it only if required validation passes. `no`, blank or EOF declines.
+#' `details` shows source without execution; `edit` requests a new candidate.
+#' Every repaired source version needs fresh consent. Noninteractive manual calls
+#' raise an error. Automatic mode skips manual review, not validation, and raises
+#' an error when essential business context is unresolved.
 #'
 #' Generated R runs in the current session with the account's filesystem/network
 #' permissions. There is no sandbox, crash isolation or hard timeout. The elapsed
@@ -1467,109 +1428,68 @@ custom_author_response <- function(request, response) {
 #' cannot be rolled back. Syntax checks and approval receipts do not authenticate
 #' a human or make arbitrary code safe. No packages are installed by authoring.
 #'
-#' @section Continuation and Persistence:
-#' Continue with this function, `draft`, and a response containing the exact
-#' `draft$pending$request_id`. Present the complete review before collecting its
-#' answer. New proposals need `llm`; approval/details do not. A source/contract
-#' pause without a pending question needs an LLM, not invented user consent.
-#' Accepted identical replies replay without repeating completed work. Stale
-#' requests, changed context/runtime or interrupted actions fail rather than
-#' guessing whether execution completed. Limits remain cumulative across pauses.
-#'
-#' `control$draft_path` retains revisions and separate private context without
-#' forcing deferred review. Without it, temporary context can expire when R exits.
-#' Saving the draft object alone does not copy referenced data. Only load trusted
-#' RDS files; callers own access control and retention. Instructions, examples,
-#' source, diagnostics and snapshots may be confidential. Provider calls receive
-#' instructions, schema and supplied examples, not automatically actual series
-#' values. Callbacks and Chat objects are never saved. No automatic cleanup or
-#' upload occurs. Feedback is advisory and never grants consent or extra retries.
+#' Instructions, examples, source and diagnostics may be confidential. Provider
+#' calls receive instructions, schema and supplied examples, not automatically
+#' actual series values. Chat objects are never saved. Feedback is advisory and
+#' never grants consent or extra retries.
 #'
 #' @section Development Artifacts:
 #' This unreleased feature supports one current creation contract. Advanced
 #' settings belong only in `custom_model_control()`. Older development artifacts
-#' or argument forms must be recreated, not silently migrated. Current-format
-#' continuation retains exact code identity, approval and cumulative limits.
+#' or argument forms must be recreated, not silently migrated.
 #'
-#' @seealso [custom_model_control()], [custom_model_example()],
+#' @seealso [custom_model_examples_template()], [custom_model_control()],
 #'   [custom_model_feedback()], [prep_models()]. See
 #'   `vignette("best-model-selection", package = "finnts")` for workflow examples,
 #'   automatic defaults, protocol details and model enrollment.
 #' @examples
-#' history <- data.frame(
-#'   Date = as.Date(c("2020-01-01", "2020-02-01")), Target = c(10, 20)
-#' )
-#' future <- data.frame(Date = as.Date("2020-03-01"))
-#' examples <- list(
-#'   custom_model_example(history, future, expected = 15),
-#'   custom_model_example(transform(history, Target = 0), future,
-#'     expected = 0, edge_case = TRUE
-#'   )
-#' )
+#' # Worked examples: history rows hold the target, future rows hold the
+#' # independently calculated expected forecast.
+#' examples <- custom_model_examples_template(forecast_horizon = 2)
+#' examples
 #' \dontrun{
-#' model_or_draft <- create_custom_model(
-#'   instructions = "Use the mean of all historical targets per series.",
+#' model <- create_custom_model(
+#'   instructions = "Forecast every future period as the last observed value.",
 #'   llm = ellmer::chat_openai(),
 #'   input_data = data.frame(Date = seq(as.Date("2021-01-01"),
 #'     by = "month",
 #'     length.out = 12
 #'   ), id = "one", value = 15),
 #'   combo_variables = "id", target_variable = "value",
-#'   date_type = "month", forecast_horizon = 1,
+#'   date_type = "month", forecast_horizon = 2,
 #'   validation_examples = examples,
+#'   approval = "automatic",
 #'   control = custom_model_control(package_policy = "base_only")
 #' )
-#' custom_model_feedback(model_or_draft)
+#' custom_model_feedback(model)
 #' }
 #' @export
 create_custom_model <- function(
     instructions = NULL, llm = NULL, input_data = NULL, run_info = NULL, combo_variables = NULL,
     target_variable = NULL, date_type = NULL, forecast_horizon = NULL, external_regressors = NULL, hist_start_date = NULL,
-    hist_end_date = NULL, name = NULL, model_type = NULL, validation_examples = NULL, approval = "manual", control = NULL,
-    draft = NULL, responses = NULL) {
+    hist_end_date = NULL, name = NULL, model_type = NULL, validation_examples = NULL, approval = "manual", control = NULL) {
   original_options <- options()
   on.exit(options(original_options), add = TRUE)
   withr::local_preserve_seed()
   tryCatch(
     {
-      supplied_arguments <- names(match.call())[-1L]
       controls <- if (is.null(control))
         custom_model_control()
       else validate_custom_model_control(control)
-      control_supplied <- attr(controls, "supplied", exact = TRUE)
       max_attempts <- controls$max_attempts
       validation_timeout <- controls$validation_budget
       package_policy <- controls$package_policy
       required_properties <- controls$required_properties
       forecast_approach <- controls$forecast_approach
-      draft_path <- controls$draft_path
-      interact <- controls$interact
       if (!custom_author_text(approval) || !approval %in% c("manual", "automatic")) {
-        custom_author_abort("interaction", "approval must be manual or automatic; replace NULL/interactive/deferred with manual.")
+        custom_author_abort("interaction", "approval must be manual or automatic.")
       }
-      if (approval == "automatic" && (!is.null(interact) || !is.null(responses))) {
-        custom_author_abort("interaction", "Automatic approval cannot use interact or manual responses.")
+      if (approval == "manual" && !rlang::is_interactive()) {
+        custom_author_abort("interaction", "Manual approval needs an interactive R session; run interactively or use approval = \"automatic\".")
       }
-      deferred <- approval == "manual" && is.null(interact) && !interactive()
-      if (!is.null(responses) && !is.null(interact))
-        custom_author_abort("interaction", "Supply responses or interact, not both.")
-      if (!is.null(draft)) {
-        creation_only <- c(
-          "instructions", "input_data", "run_info", "combo_variables", "target_variable", "date_type",
-          "forecast_horizon", "external_regressors", "hist_start_date", "hist_end_date", "name", "model_type", "validation_examples"
-        )
-        if (any(creation_only %in% supplied_arguments) || any(!control_supplied %in% c("interact", "package_policy"))) {
-          custom_author_abort("draft", "Resume uses saved inputs and limits; start a new draft to change them.")
-        }
-        return(custom_draft_resume(draft, responses, llm, deferred, interact,
-          approval = if (missing(approval)) NULL else approval,
-          package_policy = if ("package_policy" %in% control_supplied) package_policy else NULL
-        ))
+      if (!is.null(validation_examples) && !is.data.frame(validation_examples)) {
+        custom_author_abort("examples", "validation_examples must be a data frame; start from custom_model_examples_template().")
       }
-      if (!is.null(responses))
-        custom_author_abort("draft", "responses requires a draft.")
-      if (!is.null(draft_path) && file.exists(draft_path) && !dir.exists(draft_path))
-        custom_author_abort("draft", "draft_path must be a local directory.")
       if (!custom_author_text(instructions))
         custom_author_abort("input", "instructions must be nonblank plain text.")
       if (is.null(input_data) == is.null(run_info))
@@ -1594,14 +1514,21 @@ create_custom_model <- function(
       )) || length(external_regressors))) {
         custom_author_abort("input", "Hierarchy authoring requires local logic without external regressors.")
       }
+      if (is.null(llm))
+        custom_author_abort("provider", "Supply llm, an ellmer Chat object, to create a custom model.")
       check_agent_ellmer_version()
       session <- new_llm_session(llm)
-      persist <- deferred || !is.null(draft_path)
       invisible(utils::capture.output(data <- suppressMessages(custom_author_data(input_data, run_info, combo_variables,
         target_variable, date_type, forecast_horizon, external_regressors, hist_start_date, hist_end_date,
-        capture_context = persist,
         forecast_approach = forecast_approach, global_sample = "global" %in% model_type
       ))))
+      if (!is.null(validation_examples)) {
+        resolved <- data$metadata$resolved_inputs
+        validation_examples <- custom_examples_from_table(
+          validation_examples, resolved$target_variable, resolved$combo_variables,
+          data$metadata$input_context$external_regressors %||% character(), model_type %||% "local"
+        )
+      }
       forecast_approach <- forecast_approach %||% data$metadata$forecast_approach %||% "bottoms_up"
       if (forecast_approach != "bottoms_up" && !is.null(model_type) && !identical(model_type, "local")) {
         custom_author_abort("input", "Hierarchy authoring requires local logic without external regressors.")
@@ -1626,8 +1553,8 @@ create_custom_model <- function(
       settings$required_properties <- sort(unname(required_properties))
       if (approval == "automatic")
         message("Automatic authorization: generated R and bounded repairs execute in this session without manual review. No sandbox or hard timeout.")
-      state <- new_custom_model_draft(settings, data, draft_path, persist)
-      custom_draft_drive(state, data, session, llm, deferred, interact)
+      state <- new_custom_model_draft(settings, data)
+      custom_draft_drive(state, data, session, llm)
     },
     error = function(error) {
       stop(custom_author_error_feedback(error))

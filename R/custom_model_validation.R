@@ -327,138 +327,280 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
   unname(result)
 }
 
-#' Construct a Caller-Owned Custom Model Example
+#' Template for Custom Model Validation Examples
 #'
-#' Build the existing strict worked-example format without writing internal key
-#' tables. Expected answers must be calculated independently of generated code.
-#' No provider, model execution or files are involved. Supply two to eight such
-#' examples to [create_custom_model()], including a deliberate edge case.
-#' @param history Historical table with a valid `Date` column and target.
-#' @param new_data Future table with `Date` and required drivers. Target columns
-#'   may be omitted or contain only NA placeholders, which are removed.
-#' @param expected Independent numeric predictions in the supplied future-row
-#'   order, or a keyed table containing `Date`, series keys and `.pred`.
-#' @param target_variable Historical target column; defaults to `"Target"`.
-#' @param combo_variables Optional series-key columns. Existing `Combo` is used
-#'   when present; otherwise local examples use one constant series key.
-#' @param name Optional unique case name; omission creates a deterministic name.
-#' @param model_type `"local"` (default) or `"global"`. Global examples require
-#'   at least two explicitly identified series.
-#' @param edge_case Whether this is a deliberate edge case. Error examples
-#'   default to TRUE when this argument is omitted.
-#' @param tolerance Absolute numerical tolerance, default 1e-8, at most 0.01.
-#' @param rationale Optional description; defaults to a caller-expectation label.
-#' @param expected_error NULL for numerical cases, or `list(phase = "fit",
-#'   code = "zero_denominator")` with the exact expected phase and code.
-#' @return A plain example list with normalized Date/Combo/Target keys. Row keys
-#'   bind predictions before sorting; answers are never recycled or inferred.
-#' @details Duplicate keys, nonfinite values, incompatible series coverage and
-#'   mixed numerical/error outcomes raise authoring errors. Creation also checks
-#'   the full set of examples for mode/edge coverage, history and forecast dates.
-#'   Local cases have one series; global cases have at least two. Predictions
-#'   must cover exactly the next complete horizon after each example's history.
-#'   Supplied examples are provider-visible; use nonconfidential synthetic cases.
+#' Return a small example table in the format [create_custom_model()] expects
+#' for `validation_examples`. Each `example` value groups one worked case:
+#' history rows carry observed target values, future rows leave the target
+#' missing and carry the independently calculated `expected` forecast. Replace
+#' the illustrative values with cases calculated from your own business rule.
+#'
+#' @param forecast_horizon Number of future rows per example. Must match the
+#'   forecast horizon used by [create_custom_model()].
+#' @param date_type Date cadence: `"year"`, `"quarter"`, `"month"`, `"week"`
+#'   or `"day"`. Must match the cadence used by [create_custom_model()].
+#' @return A data frame with columns `example`, `Date`, `Target`, `expected`
+#'   and `how`. The template holds one normal example (`last_value`) and one
+#'   edge case (`edge_zero_history`) for an illustrative "repeat the last
+#'   observed value" rule.
+#' @details The table may also contain:
+#'   \itemize{
+#'     \item Series columns named like the forecast's `combo_variables`. Omit
+#'       them for one-series examples. An example with two or more series
+#'       validates global logic; one series validates local logic.
+#'     \item Driver columns named like `external_regressors`, filled on every
+#'       row, including future rows.
+#'     \item `edge_case` (logical). Example names starting with `edge_` are
+#'       edge cases automatically.
+#'     \item `expected_error`, written as `"fit:code"` or `"predict:code"`, for
+#'       an edge case whose model must stop with that error code. Leave
+#'       `expected` missing on its future rows.
+#'     \item `how`, a short description of how the expected values were
+#'       calculated, and `tolerance`, an absolute tolerance up to 0.01.
+#'   }
+#'   The target column may be named `Target` or like the forecast's
+#'   `target_variable`. Supply two to eight examples including at least one
+#'   edge case. Examples are visible to the LLM; use nonconfidential values.
 #' @seealso [create_custom_model()]
 #' @examples
-#' history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Target = c(10, 20))
-#' future <- data.frame(Date = as.Date("2020-03-01"))
-#' custom_model_example(history, future, expected = 15)
-#' custom_model_example(transform(history, Target = 0), future,
-#'   expected_error = list(phase = "fit", code = "zero_denominator")
-#' )
+#' custom_model_examples_template()
+#' custom_model_examples_template(forecast_horizon = 2, date_type = "quarter")
 #' @export
-custom_model_example <- function(
-    history, new_data, expected = NULL, target_variable = "Target", combo_variables = NULL,
-    name = NULL, model_type = "local", edge_case = FALSE, tolerance = 1e-08, rationale = NULL, expected_error = NULL) {
-  if (!is.data.frame(history) || !is.data.frame(new_data) || !nrow(history) || !nrow(new_data) || !custom_author_text(target_variable) ||
-    !target_variable %in% names(history) || !custom_author_text(model_type) || !model_type %in% c("local", "global"))
-    custom_author_abort("examples", "Provide history, future rows, target_variable and a supported model_type.")
-  history <- as.data.frame(history)
-  new_data <- as.data.frame(new_data)
-  if (is.null(combo_variables) && "Combo" %in% names(history))
-    combo_variables <- "Combo"
-  if (!is.null(combo_variables) && (!is.character(combo_variables) || !length(combo_variables) || anyNA(combo_variables) ||
-    anyDuplicated(combo_variables) || any(combo_variables %in% c("Date", "Target", target_variable)) || !all(combo_variables %in%
-    names(history)) || !all(combo_variables %in% names(new_data))))
-    custom_author_abort("examples", "Example series keys must exist in history and future rows.")
-  if (target_variable != "Target" && "Target" %in% names(history))
-    custom_author_abort("examples", "Target would collide with target_variable.")
-  names(history)[names(history) == target_variable] <- "Target"
-  for (column in intersect(c(target_variable, "Target"), names(new_data))) {
-    if (!all(is.na(new_data[[column]])))
-      custom_author_abort("examples", "Future rows must not contain observed target values.")
-    new_data[column] <- NULL
+custom_model_examples_template <- function(forecast_horizon = 3, date_type = "month") {
+  if (!is.numeric(forecast_horizon) || length(forecast_horizon) != 1L || !is.finite(forecast_horizon) ||
+    forecast_horizon < 1 || forecast_horizon != floor(forecast_horizon) || forecast_horizon > 24) {
+    stop("forecast_horizon must be a whole number from 1 through 24.", call. = FALSE)
   }
-  keys <- function(table) {
-    if (!"Date" %in% names(table))
-      custom_author_abort("examples", "Examples require a Date column.")
-    if (is.null(combo_variables))
-      table$Combo <- "example"
-    else {
-      if (!all(combo_variables %in% names(table)))
-        custom_author_abort("examples", "Expected tables must contain the declared series keys.")
-      normalized <- normalize_combo_values(table, combo_variables)
-      table$Combo <- tidyr::unite(normalized, ".example_combo", tidyselect::all_of(combo_variables), sep = "--", remove = FALSE)$.example_combo
-      table[setdiff(combo_variables, "Combo")] <- NULL
-    }
-    table
+  if (!custom_author_text(date_type) || !date_type %in% c("year", "quarter", "month", "week", "day")) {
+    stop("date_type must be year, quarter, month, week or day.", call. = FALSE)
   }
-  history <- keys(history)
-  new_data <- keys(new_data)
-  if (!is.null(expected_error)) {
-    if (!is.null(expected) || !is.list(expected_error) || !identical(sort(names(expected_error)), c("code", "phase")) ||
-      !custom_author_text(expected_error$phase) || !expected_error$phase %in% c("fit", "predict") || !custom_author_text(expected_error$code) ||
-      !grepl("^[a-z][a-z0-9_]{0,79}$", expected_error$code))
-      custom_author_abort("examples", "Error examples require an exact phase/code and no numerical answer.")
-    if (missing(edge_case))
-      edge_case <- TRUE
-    if (!isTRUE(edge_case))
-      custom_author_abort("examples", "Error examples must be marked as edge cases.")
-    answer <- NULL
-  } else if (is.numeric(expected) && is.null(dim(expected)) && length(expected) == nrow(new_data) && all(is.finite(expected))) {
-    answer <- new_data[c("Date", "Combo")]
-    answer$.pred <- as.numeric(expected)
-  } else if (is.data.frame(expected)) {
-    answer <- keys(as.data.frame(expected))
-    if (!setequal(names(answer), c("Date", "Combo", ".pred")))
-      custom_author_abort("examples", "Expected tables require only Date, series keys and .pred.")
-  } else custom_author_abort("examples", "Supply one independent finite expected value per future row, or a keyed expected table.")
-  history <- custom_author_table(history)
-  new_data <- custom_author_table(new_data)
-  if (!is.numeric(history$Target) || any(!is.finite(history$Target)))
-    custom_author_abort("examples", "Historical targets must be finite numeric values.")
-  if (!is.null(answer)) {
-    answer <- custom_author_table(answer)
-    if (!is.numeric(answer$.pred) || any(!is.finite(answer$.pred)) || !identical(answer[c("Combo", "Date")], new_data[c(
-      "Combo",
-      "Date"
-    )]))
-      custom_author_abort("examples", "Expected values must match future row keys exactly.")
-    answer <- answer[c("Date", "Combo", ".pred")]
+  dates <- seq(as.Date("2024-01-01"), by = date_type, length.out = 3L + forecast_horizon)
+  future <- rep(NA_real_, forecast_horizon)
+  case <- function(name, history, how) {
+    data.frame(
+      example = name, Date = dates, Target = c(history, future),
+      expected = c(rep(NA_real_, 3L), rep(history[[3L]], forecast_horizon)), how = how,
+      stringsAsFactors = FALSE
+    )
   }
-  series <- unique(history$Combo)
-  if (!setequal(series, unique(new_data$Combo)) || (model_type == "local" && length(series) != 1L) || (model_type == "global" &&
-    length(series) < 2L))
-    custom_author_abort("examples", "Example series do not match model_type.")
-  if (!is.logical(edge_case) || length(edge_case) != 1L || is.na(edge_case) || !is.numeric(tolerance) || length(tolerance) !=
-    1L || !is.finite(tolerance) || tolerance < 0 || tolerance > 0.01)
-    custom_author_abort("examples", "Provide a logical edge_case and tolerance from zero through 0.01.")
-  if (is.null(name))
-    name <- paste0("example_", substr(digest::digest(list(history, new_data, answer, expected_error, edge_case),
-      algo = "sha256",
-      serializeVersion = 2
-    ), 1, 12))
-  if (is.null(rationale))
-    rationale <- if (is.null(expected_error))
-      "Caller-supplied independent expected values."
-    else "Caller-supplied expected business error."
-  if (!custom_author_text(name) || !custom_author_text(rationale))
-    custom_author_abort("examples", "Example names and rationales must be nonblank text.")
-  list(
-    name = name, model_type = model_type, history = history, new_data = new_data, expected = answer, tolerance = as.numeric(tolerance),
-    edge_case = edge_case, rationale = rationale, outcome = if (is.null(expected_error)) "predictions" else "error",
-    expected_error = expected_error
+  rbind(
+    case("last_value", c(100, 110, 120), "Repeat the last observed value."),
+    case("edge_zero_history", c(0, 0, 0), "All-zero history repeats zero.")
   )
+}
+
+# Convert the caller's validation-example table into the internal example list.
+# The table holds one row per example, series and date: history rows carry the
+# target and leave `expected` missing; future rows leave the target missing and
+# carry `expected` (or nothing for an `expected_error` edge case). Series columns
+# use the resolved combo_variables (absent means one series); drivers use the
+# resolved external_regressors. Local/global is inferred from the series count
+# and must match the effective model_type exactly. Errors name the example,
+# table row and date. Set-level and horizon checks remain in custom_author_examples().
+custom_examples_from_table <- function(table, target_variable, combo_variables, external_regressors, model_type) {
+  if (!is.data.frame(table) || !nrow(table)) {
+    custom_author_abort("examples", "validation_examples must be a data frame; start from custom_model_examples_template().")
+  }
+  table <- as.data.frame(table, stringsAsFactors = FALSE)
+  rownames(table) <- NULL
+  columns <- names(table)
+  target <- if (custom_author_text(target_variable) && target_variable %in% columns) target_variable else "Target"
+  required <- c("example", "Date", target, "expected")
+  missing_columns <- setdiff(required, columns)
+  if (length(missing_columns)) {
+    custom_author_abort("examples", paste0(
+      "validation_examples is missing column(s) ", paste(missing_columns, collapse = ", "),
+      "; required columns are example, Date, ", target, " and expected."
+    ))
+  }
+  combo_variables <- setdiff(as.character(combo_variables), c(".finnts_single_series", "Date", target))
+  series <- intersect(combo_variables, columns)
+  if (length(series) && length(series) != length(combo_variables)) {
+    custom_author_abort("examples", paste0(
+      "validation_examples must contain all series columns (", paste(combo_variables, collapse = ", "),
+      ") or none of them."
+    ))
+  }
+  drivers <- as.character(external_regressors)
+  optional <- c("edge_case", "expected_error", "how", "tolerance")
+  unknown <- setdiff(columns, c(required, series, drivers, optional))
+  if (length(unknown)) {
+    custom_author_abort("examples", paste0(
+      "validation_examples has unexpected column(s) ", paste(unknown, collapse = ", "),
+      "; use only example, Date, ", target, ", expected, series columns, driver columns, edge_case, expected_error, how and tolerance."
+    ))
+  }
+  where <- function(row) {
+    paste0("example '", table$example[[row]], "', row ", row, ", date ", format(table$Date[[row]]))
+  }
+  if (anyNA(table$example) || !all(vapply(as.character(table$example), custom_author_text, logical(1)))) {
+    custom_author_abort("examples", "Every row needs a nonblank example name.")
+  }
+  table$example <- as.character(table$example)
+  if (is.character(table$Date)) {
+    if (anyNA(table$Date) || any(!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", table$Date))) {
+      custom_author_abort("examples", "Date values must be Date objects or ISO dates (YYYY-MM-DD).")
+    }
+    table$Date <- as.Date(table$Date)
+  }
+  if (!inherits(table$Date, "Date") || anyNA(table$Date)) {
+    custom_author_abort("examples", "Date values must be Date objects or ISO dates (YYYY-MM-DD).")
+  }
+  for (column in c(target, "expected")) {
+    if (!is.numeric(table[[column]]) && !all(is.na(table[[column]]))) {
+      custom_author_abort("examples", paste0("Column ", column, " must be numeric."))
+    }
+    table[[column]] <- as.numeric(table[[column]])
+  }
+  observed <- !is.na(table[[target]])
+  answered <- !is.na(table$expected)
+  for (row in which(observed & answered)) {
+    custom_author_abort("examples", paste0(
+      where(row), ": a row is either history (", target, " filled, expected missing) or future (",
+      target, " missing, expected filled), not both."
+    ))
+  }
+  for (row in which(observed & !is.finite(table[[target]]) | answered & !is.finite(table$expected))) {
+    custom_author_abort("examples", paste0(where(row), ": values must be finite numbers."))
+  }
+  if (length(series)) {
+    if (anyNA(table[series])) {
+      custom_author_abort("examples", "Series columns must not contain missing values.")
+    }
+    normalized <- normalize_combo_values(table, series)
+    combo <- tidyr::unite(normalized, ".example_combo", tidyselect::all_of(series), sep = "--", remove = FALSE)$.example_combo
+  } else {
+    combo <- rep("example", nrow(table))
+  }
+  duplicated_rows <- which(duplicated(data.frame(table$example, combo, table$Date)))
+  for (row in duplicated_rows) {
+    custom_author_abort("examples", paste0(where(row), ": duplicate example, series and date."))
+  }
+  setting <- function(rows, column) {
+    if (!column %in% columns) {
+      return(NULL)
+    }
+    values <- unique(table[[column]][rows][!is.na(table[[column]][rows])])
+    if (length(values) > 1L) {
+      custom_author_abort("examples", paste0(
+        "example '", table$example[[rows[[1L]]]], "': ", column, " must have one value for the whole example."
+      ))
+    }
+    if (length(values)) values[[1L]] else NULL
+  }
+  names_in_order <- unique(table$example)
+  examples <- lapply(names_in_order, function(name) {
+    rows <- which(table$example == name)
+    error_text <- setting(rows, "expected_error")
+    expected_error <- NULL
+    if (!is.null(error_text)) {
+      parts <- strsplit(as.character(error_text), ":", fixed = TRUE)[[1L]]
+      if (length(parts) != 2L || !trimws(parts[[1L]]) %in% c("fit", "predict") ||
+        !grepl("^[a-z][a-z0-9_]{0,79}$", trimws(parts[[2L]]))) {
+        custom_author_abort("examples", paste0(
+          "example '", name, "': expected_error must look like 'fit:code' or 'predict:code' with a lowercase snake_case code."
+        ))
+      }
+      expected_error <- list(phase = trimws(parts[[1L]]), code = trimws(parts[[2L]]))
+    }
+    edge_value <- setting(rows, "edge_case")
+    if (!is.null(edge_value) && !is.logical(edge_value)) {
+      custom_author_abort("examples", paste0("example '", name, "': edge_case must be TRUE or FALSE."))
+    }
+    edge_case <- isTRUE(edge_value) || startsWith(name, "edge_") || !is.null(expected_error)
+    if (!is.null(expected_error) && identical(edge_value, FALSE)) {
+      custom_author_abort("examples", paste0("example '", name, "': an expected_error example is always an edge case."))
+    }
+    history_rows <- rows[observed[rows]]
+    future_rows <- rows[!observed[rows]]
+    if (!length(history_rows) || !length(future_rows)) {
+      custom_author_abort("examples", paste0(
+        "example '", name, "' needs history rows (", target, " filled) and future rows (", target, " missing)."
+      ))
+    }
+    if (is.null(expected_error)) {
+      for (row in future_rows[!answered[future_rows]]) {
+        custom_author_abort("examples", paste0(
+          where(row), ": future rows need an expected value (or set expected_error for an error edge case)."
+        ))
+      }
+    } else {
+      for (row in future_rows[answered[future_rows]]) {
+        custom_author_abort("examples", paste0(where(row), ": expected_error examples leave expected missing."))
+      }
+    }
+    for (key in unique(combo[rows])) {
+      last_history <- max(table$Date[history_rows][combo[history_rows] == key], as.Date(-Inf))
+      early <- future_rows[combo[future_rows] == key & table$Date[future_rows] <= last_history]
+      if (length(early) || !any(combo[history_rows] == key) || !any(combo[future_rows] == key)) {
+        row <- c(early, rows[combo[rows] == key])[[1L]]
+        custom_author_abort("examples", paste0(
+          where(row), ": every series needs history rows followed by later future rows."
+        ))
+      }
+    }
+    type <- if (length(unique(combo[rows])) > 1L) "global" else "local"
+    for (driver in drivers) {
+      if (!driver %in% columns || anyNA(table[[driver]][rows])) {
+        custom_author_abort("examples", paste0(
+          "example '", name, "': driver column ", driver, " must be filled on every row, including future rows."
+        ))
+      }
+    }
+    keep <- c(drivers)
+    history <- data.frame(Date = table$Date[history_rows], Combo = combo[history_rows], Target = table[[target]][history_rows], stringsAsFactors = FALSE)
+    history[keep] <- table[history_rows, keep, drop = FALSE]
+    new_data <- data.frame(Date = table$Date[future_rows], Combo = combo[future_rows], stringsAsFactors = FALSE)
+    new_data[keep] <- table[future_rows, keep, drop = FALSE]
+    history <- custom_author_table(history)
+    new_data <- custom_author_table(new_data)
+    expected <- NULL
+    if (is.null(expected_error)) {
+      expected <- data.frame(Date = table$Date[future_rows], Combo = combo[future_rows], .pred = table$expected[future_rows], stringsAsFactors = FALSE)
+      expected <- custom_author_table(expected)[c("Date", "Combo", ".pred")]
+      rownames(expected) <- NULL
+    }
+    rownames(history) <- NULL
+    rownames(new_data) <- NULL
+    tolerance <- setting(rows, "tolerance") %||% 1e-08
+    if (!is.numeric(tolerance) || !is.finite(tolerance) || tolerance < 0 || tolerance > 0.01) {
+      custom_author_abort("examples", paste0("example '", name, "': tolerance must be a number from 0 through 0.01."))
+    }
+    rationale <- setting(rows, "how")
+    if (is.null(rationale)) {
+      rationale <- if (is.null(expected_error)) "Caller-supplied independent expected values." else "Caller-supplied expected business error."
+    }
+    if (!custom_author_text(as.character(rationale))) {
+      custom_author_abort("examples", paste0("example '", name, "': how must be nonblank text."))
+    }
+    list(
+      name = name, model_type = type, history = history, new_data = new_data, expected = expected,
+      tolerance = as.numeric(tolerance), edge_case = edge_case, rationale = as.character(rationale),
+      outcome = if (is.null(expected_error)) "predictions" else "error", expected_error = expected_error
+    )
+  })
+  if (length(examples) < 2L || length(examples) > 8L) {
+    custom_author_abort("examples", "validation_examples needs two to eight examples, including at least one edge case.")
+  }
+  if (!any(vapply(examples, function(example) example$edge_case, logical(1)))) {
+    custom_author_abort("examples", "validation_examples needs at least one edge case: name it with an 'edge_' prefix or set edge_case = TRUE.")
+  }
+  types <- unique(vapply(examples, function(example) example$model_type, character(1)))
+  declared <- model_type %||% "local"
+  if (length(setdiff(types, declared))) {
+    custom_author_abort("examples", paste0(
+      "validation_examples include ", paste(setdiff(types, declared), collapse = " and "),
+      " examples (", if ("global" %in% setdiff(types, declared)) "two or more series" else "one series",
+      ") but model_type is ", paste(declared, collapse = "/"), "; add it to model_type or change the examples."
+    ))
+  }
+  if (length(setdiff(declared, types))) {
+    custom_author_abort("examples", paste0(
+      "model_type includes ", paste(setdiff(declared, types), collapse = " and "), " but no example covers it; ",
+      "local examples use one series and global examples use two or more series."
+    ))
+  }
+  unname(examples)
 }
 
 # Convert a reviewed example table from plain data.frame or JSON row records.
@@ -811,8 +953,6 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 # provider-safe schema/cadence/count metadata; no business values enter metadata.
 # Effective driver names and historical bounds come from arguments/already-read
 # run metadata, never additional discovery, and support automatic policy evidence.
-# capture_context adds exact source hashes for read-only prepared runs, verified
-# before and after loading. Deferred snapshot ownership belongs to the caller.
 # Available packages must resolve to real metadata, excluding check-only dummies.
 # Explicit hierarchy inputs retain every derived node of the raw leaf sample,
 # or every node of an existing prepared hierarchy, under the same total row cap.
@@ -822,7 +962,7 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 # Full raw-panel preflight precedes sampling and temporary preparation; resolved
 # cutoffs are validation metadata, never fixed constraints on later model fits.
 # Prepared driver panels are checked one artifact at a time before retaining a
-# three-series sample. Reuse those reads and bind all checked artifacts on resume;
+# three-series sample. Reuse those reads;
 # prepared inputs cannot establish whether prior preparation filled raw gaps.
 # Omitted raw grouping/cadence uses deterministic metadata resolution. Prepared
 # forecast approach may be inherited by reusing its exact log read once.
@@ -834,7 +974,7 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 # the first three series in hash order.
 custom_author_data <- function(
     input_data, run_info, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
-    hist_start_date, hist_end_date, capture_context = FALSE, forecast_approach = "bottoms_up", global_sample = FALSE) {
+    hist_start_date, hist_end_date, forecast_approach = "bottoms_up", global_sample = FALSE) {
   original_options <- options()
   on.exit(options(original_options), add = TRUE)
   withr::local_preserve_seed()
@@ -854,11 +994,9 @@ custom_author_data <- function(
   }
   hierarchical <- forecast_approach != "bottoms_up"
   hierarchy_data <- NULL
-  log_hash <- NULL
   driver_data <- NULL
   prepared_sample <- NULL
   sample_disclosure <- NULL
-  checked_sources <- NULL
   if (!is.null(input_data)) {
     resolved <- custom_author_input_metadata(
       input_data, combo_variables, target_variable, date_type, hist_start_date,
@@ -935,10 +1073,8 @@ custom_author_data <- function(
     info <- run_info
     if (!is.list(info) || !is.null(info$storage_object))
       custom_author_abort("input", "Prepared input requires local/mounted run_info.")
-    if (hierarchical) {
+    if (hierarchical)
       local_artifact_files(local_artifact_path(info, "logs", extension = "csv"))
-      log_hash <- digest::digest(file = local_artifact_path(info, "logs", extension = "csv"), algo = "sha256")
-    }
     log <- if (is.null(prepared_log))
       read_exact_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
     else prepared_log
@@ -980,17 +1116,11 @@ custom_author_data <- function(
       else paths <- sort(as.character(local_artifact_inventory(info, "prep_data", "-*-C1")), method = "radix")
       total_series <- length(paths)
       if (length(actual$external_regressors) || global_sample) {
-        if (capture_context) {
-          log_path <- local_artifact_path(info, "logs", extension = "csv")
-          checked_sources <- stats::setNames(list(digest::digest(file = log_path, algo = "sha256")), log_path)
-        }
         prepared_sample <- list()
         summaries <- list()
         sampled_rows <- 0L
         for (index in seq_along(paths)) {
           path <- as.character(paths[[index]])
-          if (capture_context)
-            checked_sources[[path]] <- digest::digest(file = path, algo = "sha256")
           panel <- read_exact_artifact(info, path)
           if (!all(c("Date", "Combo", "Target", actual$external_regressors) %in% names(panel))) {
             custom_author_abort("input", "Prepared driver data must retain its declared original columns and complete future values.")
@@ -1028,18 +1158,6 @@ custom_author_data <- function(
   }
   if (!length(paths))
     custom_author_abort("data", "No prepared C1 series are available.")
-  sources <- checked_sources
-  if (capture_context && is.null(input_data) && is.null(sources)) {
-    if (hierarchical) {
-      sources <- c(stats::setNames(list(log_hash), local_artifact_path(info, "logs", extension = "csv")), hierarchy_data$sources)
-    } else {
-      source_paths <- c(local_artifact_path(info, "logs", extension = "csv"), as.character(paths))
-      sources <- stats::setNames(
-        lapply(source_paths, function(path) digest::digest(file = path, algo = "sha256")),
-        source_paths
-      )
-    }
-  }
   data <- if (hierarchical)
     hierarchy_data$data
   else if (!is.null(prepared_sample))
@@ -1102,12 +1220,6 @@ custom_author_data <- function(
     target_variable = if (is.null(input_data)) actual$target_variable else target_variable, date_type = date_type, forecast_horizon = as.numeric(forecast_horizon),
     forecast_approach = forecast_approach
   )
-  if (capture_context && is.null(input_data)) {
-    current <- stats::setNames(lapply(names(sources), function(path) digest::digest(file = path, algo = "sha256")), names(sources))
-    if (!identical(current, sources))
-      custom_author_abort("data", "Prepared context changed while reading.")
-    result$sources <- sources
-  }
   result
 }
 

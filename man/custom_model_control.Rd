@@ -9,9 +9,7 @@ custom_model_control(
   validation_budget = 60,
   package_policy = "installed_finnts",
   required_properties = character(),
-  forecast_approach = NULL,
-  draft_path = NULL,
-  interact = NULL
+  forecast_approach = NULL
 )
 }
 \arguments{
@@ -33,36 +31,15 @@ base/recommended allowance; \code{"base_only"} permits base R. No installation.}
 for raw data. Other choices are \code{"standard_hierarchy"} and
 \code{"grouped_hierarchy"}; both require local, univariate rules on the raw C1 recipe
 and a mixed custom/FinnTS pool with reconciliation during forecast execution.}
-
-\item{draft_path}{Optional local directory for durable draft/audit state.
-Controls persistence only; it does not force deferred manual review.}
-
-\item{interact}{Optional trusted synchronous review callback. It is never
-serialized, and cannot be combined with automatic approval.}
 }
 \value{
-A validated \code{finnts_custom_model_control} with seven named settings.
+A validated \code{finnts_custom_model_control} with five named settings.
 Invalid settings or stale explicit-setting markers raise authoring errors.
 }
 \description{
-Most callers can omit these controls. Explicit settings are tracked separately
-from defaults so saved drafts retain their original policies on continuation.
-No provider calls, model execution or files are created by this constructor.
-Construct a new control rather than mutating one: explicit-setting markers
-determine conflicts and which policies may be supplied on continuation.
-}
-\details{
-The callback receives \code{stage}, \code{prompt}, \code{identity}, \code{review} and
-\code{questions}. For \code{clarify}, return a named list of nonblank answers for every
-question. For \code{review_create}, present the complete review and return the
-user's \code{yes}/\code{no}, \code{details}, or \code{list(action = "edit", instructions = "...")}.
-Never approve unconditionally. Without a callback, interactive sessions use
-console review and noninteractive sessions return a pending draft.
-
-On continuation, omit creation controls. Only \code{interact} and an unchanged
-explicit \code{package_policy} may be supplied; defaults inherit saved values.
-Rebuild a control to change settings rather than mutating default fields.
-The validation budget is not a provider-call or execution timeout.
+Most callers can omit these controls. No provider calls, model execution or
+files are created by this constructor. Construct a new control rather than
+mutating one; explicit-setting markers are checked for consistency.
 }
 \examples{
 custom_model_control()

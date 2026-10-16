@@ -20,16 +20,14 @@ create_custom_model(
   model_type = NULL,
   validation_examples = NULL,
   approval = "manual",
-  control = NULL,
-  draft = NULL,
-  responses = NULL
+  control = NULL
 )
 }
 \arguments{
-\item{instructions}{Nonblank business logic for a new model; omit on continuation.}
+\item{instructions}{Nonblank business logic for the new model.}
 
-\item{llm}{An ellmer Chat template (ellmer >= 0.4.0). Generation uses a fresh
-empty-history clone. Approval and details do not need a new provider call.}
+\item{llm}{An ellmer Chat object (ellmer >= 0.4.0). Generation uses a fresh
+empty-history clone.}
 
 \item{input_data}{Local data frame containing a column named \code{Date} of class
 Date, the target, series keys and declared drivers. Supply this or \code{run_info}.}
@@ -57,41 +55,31 @@ Bounds select authoring history, not a permanent cutoff for later model fits.}
 
 \item{name}{Optional safe model name, preserved in the confirmed rule.}
 
-\item{model_type}{Unique subset of \code{c("local", "global")}. New calls default
-to local; pooled/global behavior requires explicit compatible settings.}
+\item{model_type}{Unique subset of \code{c("local", "global")}. Defaults to
+local; pooled/global behavior requires explicit compatible settings.}
 
-\item{validation_examples}{Recommended list of two to eight independently
-calculated examples, covering every declared mode and a deliberate edge case.
-Use \code{\link[=custom_model_example]{custom_model_example()}} or the existing materialized-list format.
-Supplied expected values, errors and tolerances remain mandatory during repair.
-Unknown arguments are rejected. Use named \code{approval}, \code{control}, \code{draft}
-and \code{responses} in new calls.}
+\item{validation_examples}{Recommended data frame of two to eight
+independently calculated worked examples, including at least one edge
+case, in the format returned by \code{\link[=custom_model_examples_template]{custom_model_examples_template()}}. Its
+expected values, errors and tolerances are mandatory during repair.}
 
-\item{approval}{\code{"manual"} (default) or \code{"automatic"}. Automatic explicitly
-authorizes generated-code execution without review. Omission on continuation
-inherits the saved policy; changing it or supplying NULL is rejected.}
+\item{approval}{\code{"manual"} (default) or \code{"automatic"}. Manual approval needs
+an interactive R session. Automatic explicitly authorizes generated-code
+execution without review.}
 
 \item{control}{Advanced settings created by \code{\link[=custom_model_control]{custom_model_control()}}. Omit
-for defaults. Saved limits/policies are not replaced by omitted defaults.}
-
-\item{draft}{Pending draft object or exact trusted draft/current RDS path.}
-
-\item{responses}{One list with \code{request_id} and \code{answer}, bound to the pending
-request. The answer is a user decision, details/edit request or named
-clarification answers. Do not combine it with a callback.}
+for defaults.}
 }
 \value{
-An approved, passive \code{finnts_custom_model} usable by \code{\link[=prep_models]{prep_models()}},
-or a non-enrollable \code{finnts_custom_model_draft} awaiting input. Neither embeds
-fitted state, training data, a callback or a Chat. Cancellation and failed
-gates raise errors, not model envelopes. Use \code{\link[=custom_model_feedback]{custom_model_feedback()}} on a
-returned object or captured error for bounded status and next-action details.
+An approved, passive \code{finnts_custom_model} usable by \code{\link[=prep_models]{prep_models()}}.
+It embeds no fitted state, training data or Chat. Cancellation and failed
+gates raise errors; use \code{\link[=custom_model_feedback]{custom_model_feedback()}} on a returned model or
+captured error for bounded status and next-action details.
 }
 \description{
-Turn plain-language business logic into a reusable custom model. The same
-function handles creation, clarification and exact-version approval for people
-and coding agents. Use \code{\link[=custom_model_control]{custom_model_control()}} for advanced settings and
-\code{\link[=custom_model_example]{custom_model_example()}} for independently calculated validation examples.
+Turn plain-language business logic into a reusable custom model. Use
+\code{\link[=custom_model_examples_template]{custom_model_examples_template()}} to write worked examples of the forecasts
+you expect, and \code{\link[=custom_model_control]{custom_model_control()}} for advanced settings.
 }
 \section{Inputs and Validation}{
 
@@ -103,7 +91,7 @@ This does not certify business close: specify a cutoff when later rows contain
 partial actuals, plans or prior forecasts. Driver holdout scores are conditional
 on supplied values; historical plan vintages/publication lags are not verified.
 
-Raw input is privately prepared; existing runs and Chat templates are unchanged.
+Raw input is privately prepared; existing runs and Chat objects are unchanged.
 Prepared runs must include the raw C1 recipe; built-in transformations such
 as differencing, Box-Cox, outlier cleaning and multistep never alter C1. Local sampling retains up to three
 series or raw hierarchy leaves. Explicit global calls validate a deterministic
@@ -130,15 +118,13 @@ not proof of arbitrary business correctness or guaranteed forecast accuracy.
 
 \section{Review and Execution}{
 
-Manual interactive calls show the rule, examples, candidate and execution
-warning, then ask \verb{Create model?}. \code{yes} authorizes that exact source and
-conditionally approves it only if required validation passes. \code{no}, blank or
-EOF declines. \code{details} shows source without execution; \code{edit} requests a new
-candidate. Every repaired source version needs fresh consent. A trusted
-\code{control$interact} callback can deliver the same review; it must obtain the
-user's decision, never approve unconditionally. Noninteractive calls without
-a callback return a draft. Automatic mode skips manual review, not validation,
-and raises an error when essential business context is unresolved.
+Manual calls show the rule, examples, candidate and execution warning, then
+ask \verb{Create model?}. \code{yes} authorizes that exact source and conditionally
+approves it only if required validation passes. \code{no}, blank or EOF declines.
+\code{details} shows source without execution; \code{edit} requests a new candidate.
+Every repaired source version needs fresh consent. Noninteractive manual calls
+raise an error. Automatic mode skips manual review, not validation, and raises
+an error when essential business context is unresolved.
 
 Generated R runs in the current session with the account's filesystem/network
 permissions. There is no sandbox, crash isolation or hard timeout. The elapsed
@@ -147,65 +133,44 @@ restarting R. Ordinary options, RNG, working directory and library paths are
 restored on normal return/error, but arbitrary global or external side effects
 cannot be rolled back. Syntax checks and approval receipts do not authenticate
 a human or make arbitrary code safe. No packages are installed by authoring.
-}
 
-\section{Continuation and Persistence}{
-
-Continue with this function, \code{draft}, and a response containing the exact
-\code{draft$pending$request_id}. Present the complete review before collecting its
-answer. New proposals need \code{llm}; approval/details do not. A source/contract
-pause without a pending question needs an LLM, not invented user consent.
-Accepted identical replies replay without repeating completed work. Stale
-requests, changed context/runtime or interrupted actions fail rather than
-guessing whether execution completed. Limits remain cumulative across pauses.
-
-\code{control$draft_path} retains revisions and separate private context without
-forcing deferred review. Without it, temporary context can expire when R exits.
-Saving the draft object alone does not copy referenced data. Only load trusted
-RDS files; callers own access control and retention. Instructions, examples,
-source, diagnostics and snapshots may be confidential. Provider calls receive
-instructions, schema and supplied examples, not automatically actual series
-values. Callbacks and Chat objects are never saved. No automatic cleanup or
-upload occurs. Feedback is advisory and never grants consent or extra retries.
+Instructions, examples, source and diagnostics may be confidential. Provider
+calls receive instructions, schema and supplied examples, not automatically
+actual series values. Chat objects are never saved. Feedback is advisory and
+never grants consent or extra retries.
 }
 
 \section{Development Artifacts}{
 
 This unreleased feature supports one current creation contract. Advanced
 settings belong only in \code{custom_model_control()}. Older development artifacts
-or argument forms must be recreated, not silently migrated. Current-format
-continuation retains exact code identity, approval and cumulative limits.
+or argument forms must be recreated, not silently migrated.
 }
 
 \examples{
-history <- data.frame(
-  Date = as.Date(c("2020-01-01", "2020-02-01")), Target = c(10, 20)
-)
-future <- data.frame(Date = as.Date("2020-03-01"))
-examples <- list(
-  custom_model_example(history, future, expected = 15),
-  custom_model_example(transform(history, Target = 0), future,
-    expected = 0, edge_case = TRUE
-  )
-)
+# Worked examples: history rows hold the target, future rows hold the
+# independently calculated expected forecast.
+examples <- custom_model_examples_template(forecast_horizon = 2)
+examples
 \dontrun{
-model_or_draft <- create_custom_model(
-  instructions = "Use the mean of all historical targets per series.",
+model <- create_custom_model(
+  instructions = "Forecast every future period as the last observed value.",
   llm = ellmer::chat_openai(),
   input_data = data.frame(Date = seq(as.Date("2021-01-01"),
     by = "month",
     length.out = 12
   ), id = "one", value = 15),
   combo_variables = "id", target_variable = "value",
-  date_type = "month", forecast_horizon = 1,
+  date_type = "month", forecast_horizon = 2,
   validation_examples = examples,
+  approval = "automatic",
   control = custom_model_control(package_policy = "base_only")
 )
-custom_model_feedback(model_or_draft)
+custom_model_feedback(model)
 }
 }
 \seealso{
-\code{\link[=custom_model_control]{custom_model_control()}}, \code{\link[=custom_model_example]{custom_model_example()}},
+\code{\link[=custom_model_examples_template]{custom_model_examples_template()}}, \code{\link[=custom_model_control]{custom_model_control()}},
 \code{\link[=custom_model_feedback]{custom_model_feedback()}}, \code{\link[=prep_models]{prep_models()}}. See
 \code{vignette("best-model-selection", package = "finnts")} for workflow examples,
 automatic defaults, protocol details and model enrollment.

@@ -46,17 +46,18 @@ even when the winning model has not changed.
 ## Experimental custom models
 
 `prep_models()` and `forecast_time_series()` accept a named `custom_models` list.
-Only names explicitly included in `models_to_run` become candidates. Supplying
-custom models alone does not change the built-in default pool; an explicit pool
-can contain custom models only or a mixture of custom and built-in models for
-`bottoms_up`. Custom hierarchy execution requires an explicitly selected mixed
-pool and separately reviewed hierarchy capabilities.
+With `models_to_run = NULL`, every built-in model and every supplied custom model
+runs. An explicit `models_to_run` must name every supplied custom model; an
+unlisted custom model is an error rather than being silently dropped. An explicit
+pool can contain custom models only or a mixture of custom and built-in models.
+Custom hierarchy execution also requires separately reviewed hierarchy capabilities.
 
 `create_custom_model()` is the single natural-language authoring entrypoint.
 It accepts raw `input_data` with Finn metadata or an existing prepared `run_info`.
-Humans and coding agents use the same function, including continuation through
-`draft` and `responses`. Advanced settings belong in `custom_model_control()`;
-approval stays visible at the top level and defaults to manual.
+Humans and coding agents use the same function in one call. Advanced settings
+belong in `custom_model_control()`; approval stays visible at the top level and
+defaults to manual. Manual approval needs an interactive R session; scripts,
+schedulers and coding agents use `approval = "automatic"`.
 
 New calls default to local models. Raw input must contain a column named `Date`
 and an explicit target and horizon. Grouping can be omitted only when dates are
@@ -96,8 +97,7 @@ cutoff**. An approved definition can be refitted in later runs with different
 history end dates and new driver values, as long as its declared capabilities
 remain compatible. Each fit derives its own cutoff and per-series cutoffs;
 relative calculations must use those dates and the prediction request. Reusing
-an old fitted workflow without refitting does not advance its cutoff. A pending
-authoring draft, unlike a reusable approved model, retains its original inputs.
+an old fitted workflow without refitting does not advance its cutoff.
 
 Driver-based holdout metrics are explicitly conditional on supplied assessment
 drivers. The current interface does not verify historical plan vintages or
@@ -133,12 +133,14 @@ exact-candidate consent, replay handling and retry limits do not change.
 
 ```{r custom-authoring-example, eval=FALSE}
 llm <- ellmer::chat_openai()
-history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Target = c(10, 20))
-future <- data.frame(Date = seq(as.Date("2020-03-01"), by = "month", length.out = 3))
-examples <- list(
-  custom_model_example(history, future, expected = c(15, 15, 15)),
-  custom_model_example(transform(history, Target = 0), future,
-    expected = c(0, 0, 0), edge_case = TRUE)
+custom_model_examples_template(forecast_horizon = 3, date_type = "month")
+dates <- seq(as.Date("2020-01-01"), by = "month", length.out = 5)
+examples <- data.frame(
+  example = rep(c("mean_case", "edge_zero_history"), each = 5),
+  Date = rep(dates, 2),
+  Target = c(10, 20, NA, NA, NA, 0, 0, NA, NA, NA),
+  expected = c(NA, NA, 15, 15, 15, NA, NA, 0, 0, 0),
+  how = rep(c("Mean of 10 and 20.", "All-zero history gives zero."), each = 5)
 )
 custom <- create_custom_model(
   instructions = "Use the mean of all historical targets independently for each series.",
@@ -153,28 +155,28 @@ custom <- create_custom_model(
 )
 ```
 
-`custom_model_example()` accepts history, future rows and independently calculated
-answers. Numeric answers bind to the original future row order before sorting;
-there is no recycling or inferred answer. `target_variable` maps a caller target
-to `Target`, and `combo_variables` maps declared series keys to `Combo`. Omitted
-keys create one example series; global examples require explicit series coverage.
-For a deliberate error case, supply `expected_error = list(phase = "fit", code =
-"zero_denominator")` and omit `expected`. At least two cases, every declared
-mode, and an edge case remain required by creation. Existing example lists still
-work; every supplied expectation remains mandatory during repair.
+`validation_examples` is one plain table, easy for a person or coding agent to
+write. Each `example` value is one worked case. History rows carry the observed
+`Target` and leave `expected` missing; future rows leave `Target` missing and
+carry the independently calculated `expected` forecast. There is no recycling
+or inferred answer. The target column may also use the `target_variable` name.
+Add series columns named like `combo_variables` for multi-series cases: one
+series validates local logic and two or more validate global logic. Driver
+columns named like `external_regressors` are filled on every row. Examples
+named `edge_...` or flagged with `edge_case = TRUE` are edge cases. For a
+deliberate error case, set `expected_error = "fit:zero_denominator"` on its rows
+and leave `expected` missing. Optional `how` and `tolerance` (at most 0.01)
+columns document and loosen a case. Two to eight examples including an edge
+case are required; every supplied expectation stays fixed during repair.
 
-`custom_model_control()` has seven settings: `max_attempts = 3L`,
+`custom_model_control()` has five settings: `max_attempts = 3L`,
 `validation_budget = 60`, `package_policy = "installed_finnts"`,
-`required_properties = character()`, `forecast_approach = NULL`,
-`draft_path = NULL`, and `interact = NULL`. Build a fresh control to change
-settings; explicit-setting markers distinguish supplied values from defaults.
-The public signature exposes these settings only through `control`. Supply
-`approval`, `control`, `draft` and `responses` by name. Unknown arguments fail;
-omitted controls never overwrite saved draft settings. `validation_budget` is
-not a hard timeout. `control$draft_path` controls persistence only, including
-synchronous callback or console review. Custom-model creation supports one
-current implementation; obsolete development arguments and artifacts must be
-recreated, not migrated through compatibility bridges.
+`required_properties = character()` and `forecast_approach = NULL`.
+Build a fresh control to change settings; explicit-setting markers distinguish
+supplied values from defaults. Supply `approval` and `control` by name. Unknown
+arguments fail. `validation_budget` is not a hard timeout. Custom-model creation
+supports one current implementation; obsolete development arguments and
+artifacts must be recreated, not migrated through compatibility bridges.
 
 In an interactive R session, answer `y`/`yes` or `n`/`no`, without typing hashes.
 Case and surrounding whitespace are ignored; blank or EOF declines. `details`
@@ -182,14 +184,10 @@ shows readable source and complete examples without executing or regenerating
 anything. `edit` collects a requested change and prepares a new review within
 the cumulative proposal limits. Existing data/capability constraints stay fixed.
 The default display omits instructions, schema/package inventories and source
-dumps; a short measured summary follows success.
-
-A trusted `control$interact` callback receives `stage`, `prompt`, `identity`, `review`
-and `questions`. Stage `clarify` requires named text answers. Stage `review_create`
-accepts the user's yes/no decision, `details`, or
-`list(action = "edit", instructions = "requested change")`. Present the review
-to a user; never implement unconditional approval. Stale or exhausted responses return no
-enrollable model. See `?create_custom_model` for the complete contract.
+dumps; a short measured summary follows success. Outside an interactive session,
+`approval = "manual"` fails before contacting the LLM; scripts, schedulers and
+coding agents use `approval = "automatic"`. See `?create_custom_model` for the
+complete contract.
 
 ### Deterministic Authoring Mechanics
 
@@ -270,11 +268,11 @@ diagnostics: mismatches produce a user warning, not rejection or a request to
 rewrite the formula. Measured errors remain in the validation evidence, and the
 warning is retained in `model$validation$checks$llm_example_warning`. Matching
 incorrect code and answers can still pass finite comparisons; a warning alone
-cannot identify which side is wrong. Current-format drafts retain their saved policy.
+cannot identify which side is wrong.
 
 **Bring your own validation examples.** Calculate expected outputs with business
 logic reviewed independently of the generated model, then pass the materialized
-cases through `validation_examples`. This is an examples-list argument, not a
+cases as one table through `validation_examples`. This is an examples table, not a
 validation-function callback. Caller-provided output mismatches remain mandatory
 and can trigger bounded source repair. These exact examples are included in the
 initial contract request, so the provider can align history requirements and
@@ -285,19 +283,14 @@ mode, and meaningful edges such as zeros, negative values or calendar boundaries
 For example, these independently specified checks describe a three-point mean:
 
 ```{r caller-validation-example, eval=FALSE}
-history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01")),
-  Combo = "example", Target = c(10, 20, 30))
-future <- data.frame(Date = as.Date(c("2020-04-01", "2020-05-01")), Combo = "example")
-ordinary <- list(name = "mean", model_type = "local", history = history,
-  new_data = future, expected = transform(future, .pred = 20), tolerance = 1e-8,
-  edge_case = FALSE, rationale = "(10 + 20 + 30) / 3 = 20")
-zero <- ordinary
-zero$name <- "zero"
-zero$history$Target <- 0
-zero$expected$.pred <- 0
-zero$edge_case <- TRUE
-zero$rationale <- "The mean of three zeros is zero."
-validation_examples <- list(ordinary, zero)
+dates <- as.Date(c("2020-01-01", "2020-02-01", "2020-03-01", "2020-04-01", "2020-05-01"))
+validation_examples <- data.frame(
+  example = rep(c("mean", "edge_zero"), each = 5),
+  Date = rep(dates, 2),
+  Target = c(10, 20, 30, NA, NA, 0, 0, 0, NA, NA),
+  expected = c(NA, NA, NA, 20, 20, NA, NA, NA, 0, 0),
+  how = rep(c("(10 + 20 + 30) / 3 = 20", "The mean of three zeros is zero."), each = 5)
+)
 ```
 
 Use those cases only for that rule and matching cadence/horizon, not for arbitrary
@@ -319,9 +312,9 @@ declarations receive bounded field-specific diagnostics before contract acceptan
 Required business errors are separate outcomes, not placeholder zero forecasts.
 An `error_policy` binds the code and fit/predict stage, and each mode must include
 valid numerical controls plus tests for its declared errors. Generated error
-cases use empty expected arrays. Caller error cases use `expected = NULL`,
-`outcome = "error"`, and `expected_error = list(phase = "predict",
-code = "zero_denominator")` with the usual example metadata and nonempty tables.
+cases use empty expected arrays. Caller error cases set the table's
+`expected_error` column to `"predict:zero_denominator"` on that example's rows
+and leave `expected` missing.
 Candidate code raises the portable sibling helper `finntsRuleError(code)`.
 An unrelated exception or a zero-returning fallback does not pass that test.
 Additional named error scenarios remain within the existing eight-case limit.
@@ -411,17 +404,14 @@ quoted/formula and unknown nonstandard-evaluation syntax alone. Uncertain contro
 flow still requires runtime validation. Bounded `source_binding` evidence names
 the function and symbol for source repair, without arbitrary exception text.
 
-Drafts and approved models never gain new permissions on resume or forecast reuse.
-Omit `control$package_policy` when
-resuming; an explicit policy change requires a new call. Unknown protocols,
+Approved models never gain new permissions on forecast reuse. Unknown protocols,
 altered scaffolds and changed runtime/package metadata are rejected.
 
 ### Automatic Authorization
 
 Set `approval = "automatic"` to authorize generated R and bounded repairs without
-manual review. It never calls `readline()`, requests clarification or returns a
-human-review draft: it returns a validated model or a typed actionable error.
-`control$interact` and `responses` are prohibited. This deliberately gives up source
+manual review. It never calls `readline()` or requests clarification: it returns
+a validated model or a typed actionable error. This deliberately gives up source
 review, not numerical validation. The code runs in the current R session with
 your permissions, without a sandbox or reliable interruption.
 
@@ -493,10 +483,8 @@ and `Model_ID` do not change solely because approval policy differs, while run a
 Agent provenance distinguish the policies. Forecast reuse does not call the authoring LLM or regenerate source.
 
 The only public approval values are `"manual"` and `"automatic"`. Explicit NULL,
-`"interactive"` and `"deferred"` fail. Noninteractive manual calls return a review
-draft. Omitted approval on resume inherits the explicitly saved mode; mode changes
-fail. Automatic `control$draft_path` stores confidential
-audit state without pausing; an approved current pointer replays without refitting.
+`"interactive"` and `"deferred"` fail. Manual approval outside an interactive R
+session fails; use `"automatic"` there.
 
 ### Example Dates and Retries
 
@@ -527,7 +515,7 @@ When a generated contract is rejected, the next bounded contract attempt receive
 safe package-owned feedback explaining the rejection category and correction.
 The final error includes the last safe rejection if attempts are exhausted.
 Raw exception messages, private values, paths and provider output are not copied
-into that feedback. A draft retains its diagnostic code and attempt counts.
+into that feedback.
 
 Feedback also names the rejected field, such as `parameters_json` or
 `examples.series`. Unexpected validator failures stop rather than consume more
@@ -722,27 +710,24 @@ inputs and bounded safe details without dumping source, training rows or raw
 exception text. Questions are labelled provider proposals. NULL counts mean
 unavailable evidence, not unlimited retries; approved models do not retain
 attempt histories. `needs_user_input` is true for questions and manual review.
-Preflight failures without a draft/model have unknown approval policy (`NULL`);
+Preflight failures without a model have unknown approval policy (`NULL`);
 known error stages are retained. Errors still raise normally and are never usable models.
 Full diagnostic history remains separately available in `result$diagnostics`
 when an error is captured. Both reports can contain confidential column names,
 provider-visible questions or explicitly chosen artifact paths.
 
-Coding agents should present `needs_input` questions to the user and inspect the
-exact pending review before requesting consent. Feedback does not authorize
-execution, restart an interrupted action, increase budgets, or silently refresh
-a stale request. Use the same `create_custom_model(draft = ..., responses = ...)`
-flow below. LLM configuration remains per call; no global provider configuration
-or hard provider/execution timeout is introduced.
+Coding agents should relay `needs_input` questions and any review request to the
+user, then call `create_custom_model()` again with refined instructions or
+`approval = "automatic"`. Feedback does not authorize execution, restart an
+interrupted action or increase budgets. LLM configuration remains per call; no
+global provider configuration or hard provider/execution timeout is introduced.
 
 The bundle retains at most 12 compact attempts and one candidate/accepted-contract
 snapshot under a one-MiB JSON limit. Oversized snapshots have an explicit omission
 flag and retained hashes; validation examples themselves are never truncated.
-With `control$draft_path`, diagnostics share the existing immutable revisions; otherwise
-the condition carries them in memory. No new default data persistence or cloud
+The condition carries diagnostics in memory; no data persistence or cloud
 upload occurs. Treat source, instructions and provider-visible examples as
 confidential. The snapshot excludes real training rows, fitted objects and Chat.
-Current drafts require their diagnostic history and explicit approval policy.
 
 Source repair cannot change the rule, units, parameters, expected answers or
 tolerances, and each candidate still needs exact manual or automatic authorization.
@@ -753,73 +738,22 @@ These are examples of supported ordinary-R logic, not a closed model menu or a
 promise that every arbitrary or ambiguous request succeeds. Live-provider
 reliability requires separate evaluation; no sandbox or hard timeout is added.
 
-### Deferred Review
+### Manual Review
 
-Manual noninteractive calls without a callback return a non-enrollable draft at
-the next review gate. `control$draft_path` persists state without changing review
-delivery; `control$interact` supplies synchronous trusted-callback review.
-Resume with the same public function and one response bound to the pending
-request. Inspect the complete review before entering any confirmation.
+Manual approval runs only in an interactive R session, using the console replies
+described in [Experimental custom models](#experimental-custom-models). Business questions
+are asked in the same console. Changed source always requires a fresh review;
+expected examples stay fixed during code repairs.
 
-```{r custom-authoring-deferred, eval=FALSE}
-draft <- create_custom_model(
-  instructions = "Use the mean of all historical targets independently for each series.",
-  llm = llm,
-  input_data = data_tbl,
-  combo_variables = "id", target_variable = "value",
-  date_type = "month", forecast_horizon = 3,
-  approval = "manual", validation_examples = examples,
-  control = custom_model_control(draft_path = "custom-model-reviews")
-)
-print(draft)
-next_state <- draft
-if (inherits(draft, "finnts_custom_model_draft")) {
-  request <- draft$pending
-  if (identical(request$stage, "clarify")) {
-    answer <- lapply(request$questions, function(question) readline(paste0(question, ": ")))
-  } else {
-    cat(request$review$contract$interpretation, "\n", request$review$warning, "\n")
-    print(lapply(request$review$contract$examples, function(example) example[c("name", "expected")]))
-    answer <- readline("Create model? [y/N/details]: ")
-  }
-  next_state <- create_custom_model(
-    draft = draft, llm = llm,
-    responses = list(request_id = request$request_id, answer = answer)
-  )
-}
-```
-
-One yes can return the approved model without `llm`; `details` prints the exact
-candidate and returns the same draft without changing its revision. For an edit,
-send `list(action = "edit", instructions = "requested change")` as the answer.
-An edit without `llm` waits at stage `contract`; a failed candidate without an LLM
-waits at stage `source`. Resume either with `llm` for the next bounded proposal.
-Expected examples stay fixed during code repairs, and cumulative limits survive
-every pause. Changed source requires a fresh combined review and decision.
-
-An explicit `control$draft_path` retains a separate private context snapshot and versioned
-review files across R sessions. Resume using the returned object or its exact
-`file.path(draft$store, "current.rds")` path. `saveRDS(draft, ...)` alone does not
-copy the referenced data. Without `control$draft_path`, temporary context may expire when
-R exits. The caller owns access control and retention: source, instructions,
-examples and snapshot data may be confidential. No automatic cleanup or upload
-occurs. Drafts contain references, not training rows, callbacks, fitted workflows
-or Chat sessions; their print methods omit review contents and private paths.
-
-Stale replies, missing or changed context, altered evidence and changed runtime
-metadata fail before old consent can be reused. Repeating an accepted identical
-response returns saved current state without repeating completed work. Interrupted
-actions or corrupt pointers require restoration or a new draft, not guessed
-approval. These checks are not authentication or concurrent-writer transactions.
-The manual approved envelope is unchanged; only a validated envelope can be enrolled.
+Scripts, scheduled jobs and coding agents run noninteractively. Manual approval
+there fails before contacting the LLM; use `approval = "automatic"` instead.
+Coding agents should show the user the instructions and example table they plan
+to submit, and relay any authoring error back to the user.
 
 Authoring validation uses the currently loaded FinnTS functions in the current R
 session, including `devtools::load_all()`. It starts no child process and installs
 no package snapshot. Load the intended development code and revalidate after
 changing it; FinnTS does not compare loaded functions against on-disk source.
-The current draft format records the combined decision. Unsupported development
-formats require a new call and fresh review; no compatibility implementation is
-retained for them.
 Local authoring prepares at most three deterministic series; explicit global
 authoring prepares a representative sample of at most 100 series. Both enforce at most 10000 total
 historical rows, using a separate temporary root for raw data. Existing prepared

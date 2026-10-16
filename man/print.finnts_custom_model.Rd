@@ -2,20 +2,17 @@
 % Please edit documentation in R/custom_model_drafts.R
 \name{print.finnts_custom_model}
 \alias{print.finnts_custom_model}
-\alias{print.finnts_custom_model_draft}
-\title{Print a Custom Model or Pending Draft}
+\title{Print a Custom Model}
 \usage{
 \method{print}{finnts_custom_model}(x, ...)
-
-\method{print}{finnts_custom_model_draft}(x, ...)
 }
 \arguments{
-\item{x}{A validated custom model or pending authoring draft to summarize.}
+\item{x}{A validated custom model returned by \code{\link[=create_custom_model]{create_custom_model()}}.}
 
 \item{...}{Unused print arguments.}
 }
 \value{
-The object invisibly. Invalid model/draft evidence raises an error.
+The object invisibly. Invalid model evidence raises an error.
 }
 \description{
 Display a compact status summary without exposing private review contents,

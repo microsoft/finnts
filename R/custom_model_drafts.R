@@ -245,25 +245,17 @@ custom_draft_environment <- function(metadata) {
   packages <- sort(unique(c("finnts", "ellmer", "callr", metadata$available_packages)), method = "radix")
   result <- list(r_version = as.character(getRversion()), packages = stats::setNames(lapply(packages, function(package) {
     description <- system.file("DESCRIPTION", package = package)
-    if (!nzchar(description)) custom_author_abort("draft", paste("Package metadata is unavailable for", package, "- restore the package or start a new draft."))
+    if (!nzchar(description)) custom_author_abort("draft", paste("Package metadata is unavailable for", package, "- restore the package or rerun create_custom_model()."))
     list(version = as.character(utils::packageVersion(package)), description = digest::digest(file = description, algo = "sha256"))
   }), packages))
   result$validation_execution <- "current_session"
   result
 }
 
-# Decode only an exact caller-owned RDS artifact. Failures stay typed and do not
-# disclose arbitrary deserializer text or private paths; nothing is rewritten.
-custom_draft_read <- function(path) {
-  if (!custom_author_text(path) || !file.exists(path))
-    custom_author_abort("draft", "Required draft artifact is missing; restore it or restart.")
-  tryCatch(readRDS(path), error = function(error) custom_author_abort("draft", "Required draft artifact is corrupt or unreadable."))
-}
-
-# Create an internal lifecycle with no fitted state or session. Persisted mode
-# writes a bounded private snapshot in a unique caller-owned/temporary directory;
-# only references enter the draft. Synchronous calls keep data outside the state.
-new_custom_model_draft <- function(settings, data, draft_path, persist) {
+# Create the in-memory authoring lifecycle for one create_custom_model() call.
+# Validation data stays outside the state; nothing is written to disk and the
+# state never leaves the call except as passive error feedback.
+new_custom_model_draft <- function(settings, data) {
   if (!is.null(settings$validation_examples)) {
     settings$validation_examples <- lapply(settings$validation_examples, function(example) {
       for (field in intersect(c("history", "new_data", "expected"), names(example))) {
@@ -274,69 +266,22 @@ new_custom_model_draft <- function(settings, data, draft_path, persist) {
     })
     custom_draft_passive(settings$validation_examples)
   }
-  store <- NULL
-  context <- NULL
-  if (persist) {
-    if (!is.null(draft_path) && !custom_author_text(draft_path))
-      custom_author_abort("draft", "draft_path must be a local directory.")
-    root <- if (is.null(draft_path))
-      tempdir()
-    else draft_path
-    if (!dir.exists(root) && !dir.create(root, recursive = TRUE))
-      custom_author_abort("draft", "Cannot create draft directory.")
-    store <- tempfile("finnts-draft-", tmpdir = normalizePath(root, winslash = "/", mustWork = TRUE))
-    if (!dir.create(store))
-      custom_author_abort("draft", "Cannot create private draft directory.")
-    store <- normalizePath(store, winslash = "/", mustWork = TRUE)
-    snapshot <- file.path(store, "context.rds")
-    saveRDS(data[c("data", "metadata")], snapshot)
-    context <- list(snapshot = snapshot, hash = digest::digest(file = snapshot, algo = "sha256"), sources = data$sources %||%
-      list(), durable = !is.null(draft_path))
-    message(if (is.null(draft_path))
-      "Draft context is temporary and may expire at session end."
-    else "Draft context is retained in your chosen directory; manage its retention as confidential data.")
-  }
-  state <- structure(list(
-    draft_id = digest::digest(list(store, Sys.time(), Sys.getpid()), algo = "sha256"),
-    revision = 0L, status = "running", stage = "contract", settings = settings, metadata = data$metadata, context = context,
+  state <- list(
+    draft_id = digest::digest(list(Sys.time(), Sys.getpid(), settings$instructions), algo = "sha256"),
+    revision = 0L, status = "running", stage = "contract", settings = settings, metadata = data$metadata,
     environment = custom_draft_environment(data$metadata), answers = list(), contract = NULL, contract_id = NULL, definition = NULL,
     report = NULL, checks = NULL, consent = list(intent = NULL, test = NULL), attempts = list(contract = 0L, source = 0L),
-    diagnostic = "initial", pending = NULL, receipts = list(), result = NULL, store = store, state_digest = NULL
-  ), class = "finnts_custom_model_draft")
+    diagnostic = "initial", pending = NULL, receipts = list(), result = NULL, state_digest = NULL
+  )
   state$diagnostics <- list(history = list(), snapshot = NULL, omitted = FALSE)
   custom_draft_save(state)
 }
 
-# Persist a full immutable revision before advancing the exact current pointer.
-# A torn pointer is a hard error on resume. No deletion, repair, transaction or
-# concurrent-writer guarantee is provided; files belong to the draft directory.
+# Advance the in-memory revision and bind its passive content digest. Gate
+# request identities and consent receipts use this digest; nothing is persisted.
 custom_draft_save <- function(state) {
-  if (!is.null(state$store) && state$revision > 0L) {
-    current <- custom_draft_read(file.path(state$store, "current.rds"))
-    if (!identical(current$draft_id, state$draft_id) || !identical(current$revision, state$revision) || !identical(
-      current$state_digest,
-      state$state_digest
-    ))
-      custom_author_abort("draft", "A newer draft revision exists; reload current.rds.")
-  }
   state$revision <- state$revision + 1L
   state$state_digest <- custom_draft_digest(state)
-  if (!is.null(state$store)) {
-    filename <- paste0(state$revision, "-", state$state_digest, ".rds")
-    path <- file.path(state$store, filename)
-    if (file.exists(path))
-      custom_author_abort("draft", "Draft revision already exists; restore the current state.")
-    saveRDS(state, path)
-    if (!identical(readRDS(path), state))
-      custom_author_abort("draft", "Draft revision verification failed.")
-    pointer <- list(
-      draft_id = state$draft_id, revision = state$revision, state_digest = state$state_digest,
-      filename = filename
-    )
-    saveRDS(pointer, file.path(state$store, "current.rds"))
-    if (!identical(readRDS(file.path(state$store, "current.rds")), pointer))
-      custom_author_abort("draft", "Draft pointer verification failed.")
-  }
   state
 }
 
@@ -398,279 +343,7 @@ custom_draft_review <- function(contract, definition, metadata, diagnostics = NU
   review
 }
 
-# Validate current draft identity, protocol, policy, contract, diagnostics and exact approval receipts.
-# Recompute passive hashes and report summaries; no package discovery or candidate code executes.
-# Unknown formats, missing required fields, altered contexts or stale consent fail rather than migrate.
-validate_custom_model_draft <- function(state) {
-  fields <- c(
-    "draft_id", "revision", "status", "stage", "settings", "metadata", "context", "environment",
-    "answers", "contract", "contract_id", "definition", "report", "checks", "consent", "attempts", "diagnostic", "pending",
-    "receipts", "result", "store", "state_digest", "diagnostics"
-  )
-  if (typeof(state) != "list" || !identical(attr(state, "class"), "finnts_custom_model_draft") || length(state) != length(fields) ||
-    anyDuplicated(names(state)) || !setequal(names(state), fields) || any(!names(attributes(state)) %in% c("names", "class"))) {
-    custom_author_abort("draft", "Invalid draft schema or identity.")
-  }
-  custom_draft_passive(unclass(state))
-  validate_custom_draft_diagnostics(state$diagnostics)
-  if (!identical(state$state_digest, custom_draft_digest(state)) || !custom_author_text(state$draft_id) || !grepl(
-    "^[a-f0-9]{64}$",
-    state$draft_id
-  ) || !is.integer(state$revision) || length(state$revision) != 1L || state$revision < 1L || length(state$status) !=
-    1L || !state$status %in% c("running", "review_required", "approved") || length(state$stage) != 1L || !state$stage %in%
-    c("contract", "clarify", "source", "review_create", "validation", "approved")) {
-    custom_author_abort("draft", "Invalid draft lifecycle identity.")
-  }
-  custom_author_fields(
-    state$settings[setdiff(names(state$settings), "validation_examples")], c(
-      "instructions", "name",
-      "model_type", "max_attempts", "validation_timeout", "approval_mode", if ("automatic_policy" %in% names(state$settings)) "automatic_policy",
-      "authoring_protocol", "required_properties", if ("forecast_approach" %in% names(state$settings)) "forecast_approach"
-    ),
-    "draft"
-  )
-  protocol <- state$settings$authoring_protocol
-  {
-    validate_custom_author_protocol(protocol, state$metadata, state$settings$model_type, !is.null(state$settings$validation_examples))
-    if (!is.null(state$contract) && (!identical(
-      state$contract$package_policy,
-      protocol$package_policy
-    ) || !identical(state$contract$example_scaffold, protocol$scaffold) || !identical(
-      state$contract$requirements$predictors,
-      protocol$predictors
-    ) || (!identical(state$contract$requirements$missing_data, protocol$missing_data)))) {
-      custom_author_abort("protocol", "Contract differs from frozen authoring protocol.")
-    }
-    if (!is.null(state$contract)) {
-      history <- custom_author_history_requirements(state$contract$history_requirements)
-      if (!identical(history, state$contract$history_requirements))
-        custom_author_abort("protocol", "History requirements changed.")
-      custom_author_check_history(state$contract$examples, history, state$metadata$date_type)
-      parameters <- custom_author_typed_parameters(state$contract$fixed_parameters, state$contract$parameter_schema)
-      behavior <- custom_author_behavior_contract(
-        state$contract$error_policy, state$contract$validation_properties,
-        state$contract$examples, state$contract$model_type
-      )
-      provenance <- if (is.null(state$settings$validation_examples))
-        "llm_proposed_unverified"
-      else "caller_supplied_unverified"
-      if (!identical(parameters$values, state$contract$fixed_parameters) || !identical(parameters$schema, state$contract$parameter_schema) ||
-        !identical(behavior$error_policy, state$contract$error_policy) || !identical(
-        behavior$validation_properties,
-        state$contract$validation_properties
-      ) || !identical(state$contract$expectation_provenance, provenance))
-        custom_author_abort("protocol", "Typed validation contract changed.")
-    }
-    required <- state$settings$required_properties
-    if (!is.character(required) || anyNA(required) || anyDuplicated(required) || !identical(required, sort(required)) ||
-      !all(required %in% c("constant_forecast", "target_scale_equivariant", "independent_series", "fixed_window", "relative_calendar"))) {
-      custom_author_abort("protocol", "Caller-required properties changed.")
-    }
-    if (!is.null(state$contract) && (!identical(state$contract$required_properties, required) || !all(required %in% state$contract$validation_properties))) {
-      custom_author_abort("protocol", "Property authority or runtime contract changed.")
-    }
-    if (!is.null(state$contract))
-      custom_model_runtime(state$contract$requirements$runtime, state$contract$requirements$predictors, state$contract$model_type)
-  }
-  policy <- state$settings$approval_mode
-  if (!custom_author_text(policy) || !policy %in% c("manual", "automatic"))
-    custom_author_abort("draft", "Invalid saved approval policy.")
-  if (policy == "automatic" && (!is.list(state$settings$automatic_policy) || !identical(state$settings$automatic_policy$catalog, custom_author_defaults()))) {
-    custom_author_abort("draft", "Automatic defaults policy changed; start a new draft.")
-  }
-  if (policy == "manual" && !is.null(state$settings$automatic_policy))
-    custom_author_abort("draft", "Manual drafts cannot carry automatic policy.")
-  if (!identical(state$settings$forecast_approach, state$metadata$forecast_approach)) {
-    custom_author_abort("draft", "Draft hierarchy approach changed.")
-  }
-  custom_author_fields(state$attempts, c("contract", "source"), "draft")
-  custom_author_fields(state$consent, c("intent", "test"), "draft")
-  if (!is.integer(state$settings$max_attempts) || length(state$settings$max_attempts) != 1L || !state$settings$max_attempts %in%
-    1:3 || !is.numeric(state$settings$validation_timeout) || length(state$settings$validation_timeout) != 1L || state$settings$validation_timeout <=
-    0 || state$settings$validation_timeout > 120 || any(!vapply(state$attempts, function(count) is.integer(count) &&
-    length(count) == 1L && count >= 0L && count <= state$settings$max_attempts, logical(1)))) {
-    custom_author_abort("draft", "Invalid draft attempt limits.")
-  }
-  if (!is.null(state$definition))
-    custom_model_current_definition(state$definition)
-  if (!is.null(state$contract) && !identical(state$contract_id, digest::digest(state$contract, algo = "sha256", serializeVersion = 2))) {
-    custom_author_abort("draft", "Confirmed contract changed.")
-  }
-  if (policy == "automatic" && !is.null(state$contract)) {
-    saved_policy <- state$settings$automatic_policy
-    assumptions <- custom_author_assumptions(
-      list(defaults_used = setdiff(
-        names(state$contract$automatic_defaults$defaults_used),
-        saved_policy$defaulted
-      ), model_type = state$contract$model_type, predictors = state$contract$requirements$predictors),
-      saved_policy
-    )
-    if (!identical(assumptions, state$contract$automatic_defaults) || !identical(saved_policy$effective$model_type, state$settings$model_type) ||
-      !identical(saved_policy$effective$max_attempts, state$settings$max_attempts) || !identical(
-      saved_policy$effective$validation_timeout,
-      state$settings$validation_timeout
-    )) {
-      custom_author_abort("draft", "Automatic assumptions or effective settings changed.")
-    }
-  }
-  if (!is.null(state$definition)) {
-    source <- state$definition$source
-    expected <- custom_author_definition(state$contract, list(source = lapply(names(source), function(name) list(
-      name = name,
-      code = source[[name]]
-    ))), assembled = TRUE)
-    if (!identical(expected$version_id, state$definition$version_id))
-      custom_author_abort("draft", "Candidate differs from confirmed intent.")
-  }
-  for (receipt in state$receipts) {
-    custom_author_fields(receipt, c("response_digest", "state_digest", "stage", "identity", "contract_id"), "draft")
-  }
-  if (!is.null(state$consent$intent) || !is.null(state$consent$test)) {
-    if (is.null(state$definition) || !identical(state$consent$intent, state$contract_id) || !identical(
-      state$consent$test,
-      state$definition$version_id
-    ))
-      custom_author_abort("draft", "Missing exact candidate consent.")
-    valid <- vapply(names(state$receipts), function(request_id) {
-      receipt <- state$receipts[[request_id]]
-      authorization <- if (policy == "automatic")
-        list(request_id = request_id, authorization = "automatic", contract_id = state$contract_id)
-      else list(request_id = request_id, answer = "yes")
-      identical(receipt$stage, if (policy == "automatic")
-        "automatic_authorization"
-      else "review_create") && identical(receipt$identity, state$definition$version_id) && identical(
-        receipt$contract_id,
-        state$contract_id
-      ) && identical(receipt$response_digest, digest::digest(authorization, algo = "sha256", serializeVersion = 2))
-    }, logical(1))
-    if (!any(valid))
-      custom_author_abort("draft", "Missing exact policy-bound authorization receipt.")
-  }
-  if (state$stage %in% c("source", "review_create", "validation", "approved") && is.null(state$contract_id))
-    custom_author_abort("draft", "Missing fixed interpretation.")
-  if (state$stage %in% c("validation", "approved") && (is.null(state$definition) || !identical(state$consent$intent, state$contract_id) ||
-    !identical(state$consent$test, state$definition$version_id)))
-    custom_author_abort("draft", "Missing source-specific consent.")
-  if (state$stage == "approved") {
-    if (!identical(state$report$examples_id, digest::digest(state$contract$examples, algo = "sha256", serializeVersion = 2))) {
-      custom_author_abort("draft", "Confirmed validation examples changed.")
-    }
-    checks <- custom_author_checks(state$report, state$definition, state$contract_id, state$contract$examples, state$metadata,
-      policy, state$contract$automatic_defaults,
-      contract = state$contract
-    )
-    if (!identical(checks, state$checks))
-      custom_author_abort("draft", "Validation evidence changed.")
-  }
-  if (!is.null(state$pending)) {
-    request <- state$pending
-    if (!setequal(names(request), c("request_id", "stage", "prompt", "identity", "review", "questions")) || !identical(
-      request$stage,
-      state$stage
-    ) || !identical(state$status, "review_required") || !custom_author_text(request$request_id)) {
-      custom_author_abort("draft", "Invalid pending review request.")
-    }
-    expected <- switch(state$stage,
-      review_create = "Create model? [y/N/details/edit]",
-      clarify = "Clarify the business rule."
-    )
-    if (!identical(request$prompt, expected))
-      custom_author_abort("draft", "Pending review prompt changed.")
-    if (!identical(request$request_id, custom_draft_request_id(state)))
-      custom_author_abort("draft", "Pending request identity changed.")
-    if (state$stage == "review_create" && (!identical(request$identity, state$definition$version_id) || !identical(
-      request$review,
-      custom_draft_review(state$contract, state$definition, state$metadata, if ("repair" %in% names(request$review))
-        state$diagnostics
-      else NULL)
-    ))) {
-      custom_author_abort("draft", "Review content changed.")
-    }
-  } else if (state$status == "review_required" && !state$stage %in% c("contract", "source"))
-    custom_author_abort("draft", "Missing pending review.")
-  if (!identical(state$status == "approved", !is.null(state$result)) || (!is.null(state$result) && (state$stage != "approved" ||
-    !is.null(state$pending) || !identical(state$result$definition, state$definition) || !identical(
-    state$result$validation$checks,
-    state$checks
-  )))) {
-    custom_author_abort("draft", "Draft status does not grant approval.")
-  }
-  if (!is.null(state$result)) {
-    custom_run_envelope(state$result)
-    if (!identical(state$result$approval$mode %||% "manual", policy))
-      custom_author_abort("draft", "Result approval policy changed.")
-  }
-  state
-}
-
-# Resolve the exact latest revision from a trusted draft object or RDS path.
-# An old object is only usable for a previously accepted identical response;
-# callers cannot use stale snapshots to roll back current consent or counters.
-custom_draft_load <- function(draft) {
-  supplied <- if (custom_author_text(draft))
-    custom_draft_read(draft)
-  else draft
-  pointer <- is.list(supplied) && !inherits(supplied, "finnts_custom_model_draft")
-  store <- if (pointer && custom_author_text(draft))
-    dirname(normalizePath(draft, winslash = "/", mustWork = TRUE))
-  else validate_custom_model_draft(supplied)$store
-  if (!custom_author_text(store))
-    custom_author_abort("draft", "A deferred draft requires its saved context directory.")
-  current <- custom_draft_read(file.path(store, "current.rds"))
-  custom_author_fields(current, c("draft_id", "revision", "state_digest", "filename"), "draft")
-  expected <- paste0(current$revision, "-", current$state_digest, ".rds")
-  if (!is.integer(current$revision) || length(current$revision) != 1L || !custom_author_text(current$state_digest) || !grepl(
-    "^[a-f0-9]{64}$",
-    current$state_digest
-  ) || !identical(current$filename, expected) || grepl("[/\\\\]", expected))
-    custom_author_abort("draft", "Invalid draft pointer.")
-  state <- validate_custom_model_draft(custom_draft_read(file.path(store, expected)))
-  if (!identical(state$draft_id, current$draft_id) || !identical(state$revision, current$revision) || !identical(
-    state$state_digest,
-    current$state_digest
-  ) || !identical(state$store, store))
-    custom_author_abort("draft", "Draft pointer mismatch.")
-  if (!pointer && !identical(state$draft_id, supplied$draft_id))
-    custom_author_abort("draft", "Draft ownership changed.")
-  list(state = state, supplied = if (pointer) state else supplied)
-}
-
-# Verify saved data, environment and execution contract before reusing consent.
-# Obsolete isolation consent requires a new draft. Read only deterministic data
-# paths and snapshot bytes, never rediscover or reprepare.
-custom_draft_data <- function(state) {
-  if (!is.list(state$environment) || !identical(state$environment$validation_execution, "current_session")) {
-    custom_author_abort("draft", "Draft uses an obsolete validation execution contract; start a new draft.")
-  }
-  context <- state$context
-  if (!is.list(context) || !setequal(names(context), c("snapshot", "hash", "sources", "durable")) || !identical(
-    context$snapshot,
-    file.path(state$store, "context.rds")
-  ) || !file.exists(context$snapshot) || !identical(digest::digest(
-    file = context$snapshot,
-    algo = "sha256"
-  ), context$hash)) {
-    custom_author_abort("draft", "Draft context is missing or changed; restart with a durable draft_path.")
-  }
-  for (path in names(context$sources)) {
-    if (!file.exists(path) || !identical(digest::digest(file = path, algo = "sha256"), context$sources[[path]])) {
-      custom_author_abort("draft", "Prepared source context changed; start a new draft.")
-    }
-  }
-  if (!identical(state$environment, custom_draft_environment(state$metadata)))
-    custom_author_abort("draft", "Draft runtime/package environment changed.")
-  data <- custom_draft_read(context$snapshot)
-  custom_draft_passive(data)
-  if (!is.list(data) || !setequal(names(data), c("data", "metadata")) || !is.data.frame(data$data) || !nrow(data$data) ||
-    nrow(data$data) > 10000L || !all(c("Date", "Combo", "Target") %in% names(data$data)) || !is.numeric(data$data$Target) ||
-    any(!is.finite(data$data$Target)))
-    custom_author_abort("draft", "Invalid validation snapshot.")
-  if (!identical(data$metadata, state$metadata))
-    custom_author_abort("draft", "Draft metadata changed.")
-  data
-}
-
-# Normalize one revision-bound decision and persist a combined consent receipt
+# Normalize one revision-bound decision and record a combined consent receipt
 # before execution. Details is read-only; edits clear consent and retain budgets.
 # A running checkpoint after interruption is never auto-retried.
 custom_draft_answer <- function(state, responses) {
@@ -687,7 +360,7 @@ custom_draft_answer <- function(state, responses) {
   }
   editing <- is.list(answer) && identical(answer$action, "edit")
   if (editing && (state$attempts$contract >= state$settings$max_attempts || state$attempts$source >= state$settings$max_attempts)) {
-    custom_author_abort("draft", "Edit exceeds max_attempts; start a new draft.")
+    custom_author_abort("draft", "Edit exceeds max_attempts; rerun create_custom_model().")
   }
   normalized <- list(request_id = request$request_id, answer = answer)
   state$receipts[[request$request_id]] <- list(
@@ -713,67 +386,7 @@ custom_draft_answer <- function(state, responses) {
   custom_draft_save(state)
 }
 
-# Continue a current draft using its saved inputs, policy and cumulative attempts.
-# Validate context before reusing consent; only exact response replay is idempotent. New proposals require a session.
-# Package permissions cannot be broadened. Persistence and generated execution follow the existing lifecycle gates.
-custom_draft_resume <- function(draft, responses, llm, deferred, interact, approval = NULL, package_policy = NULL) {
-  loaded <- custom_draft_load(draft)
-  state <- loaded$state
-  policy <- state$settings$approval_mode
-  if (!is.null(package_policy) && !identical(package_policy, state$settings$authoring_protocol$package_policy$mode)) {
-    custom_author_abort("draft", "Package policy cannot change on resume; start a new draft.")
-  }
-  if (!is.null(approval) && !identical(approval, policy))
-    custom_author_abort("draft", "Approval policy cannot change on resume; start a new draft.")
-  if (policy == "automatic" && (!is.null(interact) || !is.null(responses)))
-    custom_author_abort("draft", "Automatic approval cannot use interact or manual responses.")
-  if (policy == "automatic")
-    deferred <- FALSE
-  data <- custom_draft_data(state)
-  if (identical(state$status, "running"))
-    custom_author_abort("draft", "Interrupted authoring action; restore reviewed state or start a new draft.")
-  if (!is.null(responses)) {
-    custom_author_fields(responses, c("request_id", "answer"), "draft")
-    if (!custom_author_text(responses$request_id))
-      custom_author_abort("draft", "request_id must be plain text.")
-    receipt <- state$receipts[[responses$request_id]]
-    if (!is.null(receipt)) {
-      normalized <- list(request_id = responses$request_id, answer = tryCatch(custom_author_response(list(
-        stage = receipt$stage,
-        questions = if (receipt$stage == "clarify") responses$answer else NULL
-      ), responses$answer), finnts_custom_model_authoring_error = function(error) custom_author_abort(
-        "draft",
-        "Previously accepted response changed."
-      )))
-      if (!identical(receipt$response_digest, digest::digest(normalized, algo = "sha256", serializeVersion = 2)))
-        custom_author_abort("draft", "Previously accepted response changed.")
-      return(if (is.null(state$result)) state else state$result)
-    }
-  }
-  if (!identical(state$state_digest, loaded$supplied$state_digest))
-    custom_author_abort("draft", "Stale draft revision; reload current.rds.")
-  if (!is.null(responses) && !is.null(state$pending) && identical(responses$request_id, state$pending$request_id) && identical(custom_author_response(
-    state$pending,
-    responses$answer
-  ), "details")) {
-    custom_author_review(state$pending$review, details = TRUE)
-    return(state)
-  }
-  needs_provider <- state$stage %in% c("clarify", "contract", "source") && (!is.null(responses) || is.null(state$pending) ||
-    !deferred)
-  if (needs_provider && is.null(llm))
-    custom_author_abort("draft", "Supply llm for the next authoring proposal.")
-  session <- NULL
-  if (needs_provider) {
-    check_agent_ellmer_version()
-    session <- new_llm_session(llm)
-  }
-  if (!is.null(responses))
-    state <- custom_draft_answer(state, responses)
-  custom_draft_drive(state, data, session, llm, deferred, interact)
-}
-
-# Persist automatic authorization of one exact candidate under the saved caller
+# Record automatic authorization of one exact candidate under the caller
 # policy. This is not a human response; the record precedes every execution and
 # is bound to the pending revision, fixed contract and generated source version.
 custom_draft_authorize <- function(state) {
@@ -913,8 +526,7 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
       remaining = remaining
     ), questions = questions, questions_provenance = if (length(questions)) "provider_proposed" else NULL,
     details = details, resolved_inputs = resolved, validation = list(technical_passed = approved, expectation_provenance = state$contract$expectation_provenance %||%
-      model$validation$checks$expectation_provenance, checks = model$validation$checks %||% list(), business_correctness_guaranteed = FALSE),
-    artifacts = list(draft_reference = if (is.null(state$store)) NULL else file.path(state$store, "current.rds"))
+      model$validation$checks$expectation_provenance, checks = model$validation$checks %||% list(), business_correctness_guaranteed = FALSE)
   )
   custom_run_passive(report)
   report
@@ -939,25 +551,26 @@ custom_author_error_feedback <- function(error, state = NULL) {
 #'
 #' Obtain a machine-readable status report without generating code, granting
 #' consent, loading training data or writing files. Error conditions keep their
-#' ordinary R error semantics; pending drafts cannot be enrolled as models.
-#' @param x An approved custom model, pending draft, or captured error condition.
+#' ordinary R error semantics.
+#' @param x An approved custom model or a captured error condition from
+#'   [create_custom_model()].
 #' @return A passive version-1 list with status, stage/code, next action, bounded
 #'   questions/details, candidate/request identities and remaining phase budgets.
 #'   NULL counts mean unavailable historical evidence, not unlimited attempts.
 #' @details Status is `approved`, `review_required`, `needs_input` or `failed`.
 #'   Questions are provider proposals, not verified input errors. Remaining counts
-#'   do not authorize retries or execution; use the existing pending draft and
-#'   exact `request_id` for continuation. Approved envelopes do not retain attempt
-#'   histories, so those counts are NULL. Older models may lack resolved inputs.
-#'   The accessor validates model/draft integrity and can reject altered records.
+#'   do not authorize retries or execution; rerun [create_custom_model()] with
+#'   clearer instructions or examples instead. Approved envelopes do not retain
+#'   attempt histories, so those counts are NULL. Older models may lack resolved
+#'   inputs. The accessor validates model integrity and can reject altered records.
 #'   Authoring errors carry this report in `feedback`; other captured errors
 #'   receive a generic report. Foreign or altered attached feedback is rebuilt
 #'   without mutating the supplied condition. Unknown stage/policy is not invented.
 #'   `needs_user_input` covers business questions and manual candidate review.
 #'   Catching an error never converts it into an enrollable model. Private raw
-#'   rows, source and arbitrary exception text are not included. Column names,
-#'   provider-visible questions and explicitly chosen artifact paths may still
-#'   be confidential. There is no automatic upload, retry or approval.
+#'   rows, source and arbitrary exception text are not included. Column names and
+#'   provider-visible questions may still be confidential. There is no automatic
+#'   upload, retry or approval.
 #' @seealso [create_custom_model()]
 #' @examples
 #' failure <- tryCatch(create_custom_model(), error = identity)
@@ -967,24 +580,22 @@ custom_model_feedback <- function(x) {
   if (inherits(x, "finnts_custom_model")) {
     return(custom_author_feedback(model = custom_run_envelope(x)))
   }
-  if (inherits(x, "finnts_custom_model_draft"))
-    return(custom_author_feedback(state = validate_custom_model_draft(x)))
   if (inherits(x, "error")) {
     return(custom_author_error_feedback(x)$feedback)
   }
-  custom_author_abort("input", "Feedback requires a custom model, pending draft or captured error.")
+  custom_author_abort("input", "Feedback requires a custom model or captured error.")
 }
 
 # Drive the current contract, clarification, source, review and validation lifecycle with bounded attempts.
 # Caller examples and accepted contracts stay fixed; candidate repairs require exact renewed authorization.
 # Only recognized proposal/source defects consume the existing budgets. Operational failures and unchanged failed source stop.
-# Persist transitions and bounded diagnostics before returning an approved envelope, a pending draft, or a typed error.
+# Record transitions and bounded diagnostics in memory before returning an approved envelope or a typed error.
 # Transport and approved generated R have side effects; this workflow is not a sandbox or a hard timeout.
-custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
+custom_draft_drive <- function(state, data, session, llm) {
   tryCatch(repeat {
     automatic <- identical(state$settings$approval_mode, "automatic")
     if (!is.null(state$environment) && !identical(state$environment, custom_draft_environment(state$metadata))) {
-      custom_author_abort("draft", "Draft runtime/package environment changed; start a new draft.")
+      custom_author_abort("draft", "Draft runtime/package environment changed; rerun create_custom_model().")
     }
     if (!is.null(state$result))
       return(custom_run_envelope(state$result))
@@ -994,15 +605,13 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
           custom_author_abort("clarification", "Automatic mode needs more explicit business context; no candidate was executed.")
         state <- custom_draft_authorize(state)
       } else {
-        if (deferred)
-          return(state)
         request <- state$pending
         answer <- custom_author_interact(
-          interact, request$stage, request$prompt, request$identity, request$review,
+          request$stage, request$prompt, request$identity, request$review,
           request$questions
         )
         if (!is.null(state$environment) && !identical(state$environment, custom_draft_environment(state$metadata))) {
-          custom_author_abort("draft", "Draft runtime/package environment changed; start a new draft.")
+          custom_author_abort("draft", "Draft runtime/package environment changed; rerun create_custom_model().")
         }
         state <- custom_draft_answer(state, list(request_id = request$request_id, answer = answer))
       }
@@ -1055,12 +664,8 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
         else "validation", reason, code = feedback$code)
       }
       if (is.null(session)) {
-        if (is.null(llm)) {
-          if (automatic)
-            custom_author_abort("provider", "Supply llm for automatic authoring or repair.")
-          state$status <- "review_required"
-          return(custom_draft_save(state))
-        }
+        if (is.null(llm))
+          custom_author_abort("provider", "Supply llm for authoring or repair.")
         check_agent_ellmer_version()
         session <- new_llm_session(llm)
       }
@@ -1408,10 +1013,7 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
     } else custom_author_abort("draft", "Invalid lifecycle stage.")
   }, error = function(error) {
     diagnostics <- state$diagnostics %||% list(history = list(), snapshot = NULL, omitted = FALSE)
-    bundle <- c(validate_custom_draft_diagnostics(diagnostics), list(stage = state$stage, draft_reference = if (is.null(state$store)) NULL else file.path(
-      state$store,
-      "current.rds"
-    )))
+    bundle <- c(validate_custom_draft_diagnostics(diagnostics), list(stage = state$stage))
     if (custom_draft_diagnostic_size(bundle) > 1048576L) {
       bundle$snapshot[c("contract", "source")] <- list(NULL, NULL)
       bundle$omitted <- TRUE
@@ -1421,13 +1023,13 @@ custom_draft_drive <- function(state, data, session, llm, deferred, interact) {
   })
 }
 
-#' Print a Custom Model or Pending Draft
+#' Print a Custom Model
 #'
 #' Display a compact status summary without exposing private review contents,
 #' source code or artifact paths. Full identities remain available in the object.
-#' @param x A validated custom model or pending authoring draft to summarize.
+#' @param x A validated custom model returned by [create_custom_model()].
 #' @param ... Unused print arguments.
-#' @return The object invisibly. Invalid model/draft evidence raises an error.
+#' @return The object invisibly. Invalid model evidence raises an error.
 #' @seealso [create_custom_model()], [custom_model_feedback()]
 #' @export
 print.finnts_custom_model <- function(x, ...) {
@@ -1441,28 +1043,5 @@ print.finnts_custom_model <- function(x, ...) {
   )
   if (identical(model$approval$mode, "automatic"))
     cat("Authorization: automatic (not manually reviewed)\n")
-  invisible(x)
-}
-
-#' @rdname print.finnts_custom_model
-#' @export
-print.finnts_custom_model_draft <- function(x, ...) {
-  state <- validate_custom_model_draft(x)
-  cat("<finnts_custom_model_draft>\n", "Draft: ", substr(state$draft_id, 1L, 12L), "\n", "Revision: ", state$revision,
-    "\n", "Status: ", state$status, "\n", "Next: ", state$stage, if (is.null(state$pending) && state$stage %in% c(
-      "contract",
-      "source"
-    ))
-      " (llm required)"
-    else "", "\n",
-    sep = ""
-  )
-  if (!is.null(state$definition))
-    cat("Name: ", state$definition$name, "\n", "Version: ", substr(state$definition$version_id, 1L, 12L), "\n", "Mode: ",
-      paste(state$definition$model_type, collapse = ", "), "\n",
-      sep = ""
-    )
-  else if (!is.null(state$contract))
-    cat("Name: ", state$contract$name, "\n", "Mode: ", paste(state$contract$model_type, collapse = ", "), "\n", sep = "")
   invisible(x)
 }
