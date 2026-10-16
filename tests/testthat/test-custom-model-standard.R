@@ -77,3 +77,24 @@ test_that("high-level custom-only forecasts preserve aliases and leave C1 untran
   expect_true(all(result$Best_Model == "Yes"))
   expect_equal(result$Forecast, ifelse(result$Combo == "A", 100, 200))
 })
+
+test_that("CSV custom finalization keeps numeric-looking combo labels as text", {
+  model <- standard_custom_model(modes = "local")
+  info <- set_run_info(
+    project_name = "custom-numeric-combo", run_name = "test", path = withr::local_tempdir(), data_output = "csv",
+    object_output = "rds", add_unique_id = FALSE
+  )
+  input <- standard_input
+  input$id <- ifelse(input$id == "A", "17", "007")
+  forecast_time_series(
+    run_info = info, input_data = input, combo_variables = "id", target_variable = "value", date_type = "month",
+    forecast_horizon = 2, models_to_run = "business_mean", custom_models = list(business_mean = model),
+    recipes_to_run = "C1", stationary = FALSE, clean_missing_values = FALSE, run_ensemble_models = FALSE,
+    negative_forecast = TRUE, run_global_models = FALSE, back_test_scenarios = 1, average_models = FALSE,
+    return_data = FALSE
+  )
+  result <- get_forecast_data(info)
+  expect_setequal(unique(as.character(result$Combo)), c("17", "007"))
+  expect_true(all(result$Best_Model == "Yes"))
+  expect_equal(result$Forecast, ifelse(as.character(result$Combo) == "17", 100, 200))
+})

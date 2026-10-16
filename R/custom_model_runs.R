@@ -877,9 +877,12 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     present <- local_artifact_files(path, allow_missing = !required)
     if (!length(present))
       return(NULL)
-    rows <- read_exact_artifact(run_info, present, return_type = if (object)
-      "object"
-    else "df")
+    rows <- if (object) {
+      read_exact_artifact(run_info, present, return_type = "object")
+    } else {
+      read_exact_artifact(run_info, present, return_type = "df",
+        character_columns = c("Combo", "Combo_ID", "Model_ID"))
+    }
     if (is.null(rows) || !is.data.frame(rows) || (required && !nrow(rows)))
       stop("Invalid required custom run artifact.", call. = FALSE)
     averages <- identical(suffix, "-average_models")

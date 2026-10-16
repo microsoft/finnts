@@ -92,7 +92,7 @@ custom <- create_custom_model(
   combo_variables = c("Region", "Product"), target_variable = "value",
   date_type = "month", forecast_horizon = 3,
   model_type = "local", name = "business_mean",
-  forecast_approach = "standard_hierarchy"
+  control = custom_model_control(forecast_approach = "standard_hierarchy")
 )
 
 run_info <- set_run_info(data_output = "csv", object_output = "rds")

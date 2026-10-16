@@ -1049,7 +1049,8 @@ read_local_artifacts <- function(run_info, file_list, return_type = "df",
 #' @param recipes resolved recipes when already available to the caller
 #' @param file_list previously discovered recipe paths
 #'
-#' @return recipe data as data frame
+#' @return recipe data as data frame. Custom-only C1 data keeps `Combo` as text
+#'   so CSV labels such as "007" match the custom workflow template.
 #' @noRd
 get_recipe_data <- function(run_info,
                             combo = "single",
@@ -1121,9 +1122,12 @@ get_recipe_data <- function(run_info,
   for (recipe in unique(file_name_tbl$Recipe)) {
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe)
+    character_columns <- if (identical(recipe, "C1")) "Combo"
 
     if (local_reads) {
-      temp_file_tbl <- read_local_artifacts(run_info, temp_path$Path)
+      temp_file_tbl <- read_local_artifacts(run_info, temp_path$Path,
+        character_columns = character_columns
+      )
       recipe_tbl <- dplyr::bind_rows(recipe_tbl,
         tibble::tibble(Recipe = recipe, Data = list(temp_file_tbl))
       )
@@ -1148,7 +1152,8 @@ get_recipe_data <- function(run_info,
 
     temp_file_tbl <- read_file(run_info,
       path = temp_path,
-      return_type = "df"
+      return_type = "df",
+      character_columns = character_columns
     )
 
     temp_final_tbl <- tibble::tibble(
