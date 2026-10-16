@@ -1,7 +1,11 @@
-# finnts 0.7.0.9013 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9014 (DEVELOPMENT VERSION)
 
 ## Improvements
 
+- `create_custom_model()` creates reusable local/global forecasting models from business rules, validated against worked examples.
+  - Approval is manual in interactive sessions or automatic.
+- Custom models train on a new `C1` recipe selected through `recipes_to_run`, alone or beside built-in models.
+  - Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.
 - Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Copilot saves CLI-local session state under R's temporary directory.
@@ -15,6 +19,7 @@
 
 ## Bug Fixes
 
+- Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
@@ -30,8 +35,8 @@
   - New versions use current detection; updates across outer-approach changes still require fresh iteration.
 -   Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.
 -   Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.
-  -   Preserves saved model selections; older runs reuse saved models, averaging when needed.
-  -   Handles interrupted updates and changes to hierarchy membership.
+  -   Preserves saved model selections; older runs reuse saved models,   averaging when needed.
+    -   Handles interrupted updates and changes to hierarchy membership.
 -   Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.
   -   Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.
   -   Restart checks do not prevent concurrent attempts from overwriting files.
