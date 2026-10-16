@@ -36,7 +36,9 @@ test_that("approved custom candidates form a passive Agent contract", {
   expect_match(contract$contract_id, "^[a-f0-9]{64}$")
   expect_identical(fixture, original)
   expect_identical(contract, unserialize(serialize(contract, NULL)))
-  expect_null(resolve_agent_custom_models(fixture$info, custom_models = list(business_mean = fixture$model)))
+  all_models <- resolve_agent_custom_models(fixture$info, custom_models = list(business_mean = fixture$model))
+  expect_true("business_mean" %in% all_models$selected)
+  expect_identical(all_models$envelopes, list(business_mean = fixture$model))
 })
 
 test_that("automatic Agent contracts retain policy provenance without executing source", {
@@ -79,9 +81,9 @@ test_that("Agent contracts preserve selection and reject invalid envelopes", {
   expect_identical(mixed$selected, c("business_mean", "meanf"))
   expect_identical(mixed$mode_models$local, c("business_mean", "meanf"))
   expect_identical(mixed$mode_models$global, "business_mean")
-  expect_null(resolve_agent_custom_models(fixture$info, "meanf", models))
-  expect_error(resolve_agent_custom_models(fixture$info, "unknown", models), "Unknown")
-  expect_error(resolve_agent_custom_models(fixture$info, "business_mean", list(other = fixture$model)), "alias")
+  expect_error(resolve_agent_custom_models(fixture$info, "meanf", models), "must also be listed")
+  expect_error(resolve_agent_custom_models(fixture$info, c("business_mean", "unknown"), models), "Unknown")
+  expect_error(resolve_agent_custom_models(fixture$info, "other", list(other = fixture$model)), "alias")
   for (invalid in list(fixture$model$definition, list(name = "business_mean", version_id = fixture$model$definition$version_id), stats::lm(mpg ~ wt, mtcars))) {
     expect_error(resolve_agent_custom_models(fixture$info, "business_mean", list(business_mean = invalid)), "envelopes")
   }
@@ -147,6 +149,8 @@ test_that("Agent contract identity is canonical and sensitive to approved conten
   second_info$project_info$path <- "PRIVATE_PATH_SENTINEL"
   models$business_mean$definition$created_at <- "2026-01-01T00:00:00Z"
   models$unused <- agent_custom_fixture("unused")$model
+  expect_error(resolve_agent_custom_models(second_info, c("meanf", "business_mean"), models), "must also be listed")
+  models$unused <- NULL
   second <- resolve_agent_custom_models(second_info, c("meanf", "business_mean"), rev(models))
   expect_identical(first$pool_id, second$pool_id)
   expect_identical(first$contract_id, second$contract_id)

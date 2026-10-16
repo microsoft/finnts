@@ -62,17 +62,42 @@ custom_run_envelope <- function(model) {
   model
 }
 
-#' Resolve enrollment through M3a after checking every supplied envelope. Returns
-#' the passive pool plus only selected attestations; never executes source or
-#' enrolls unselected customs. Legacy NULL/empty custom input returns NULL so
-#' existing built-in selection semantics remain with their original owner.
+#' Resolve the custom-model run pool
+#'
+#' Checks every supplied envelope, then resolves enrollment through
+#' `resolve_custom_model_pool()`. A NULL `models_to_run` selects every built-in
+#' model not in `models_not_to_run` plus every supplied custom model. An explicit
+#' `models_to_run` must name every supplied custom model, and a supplied custom
+#' model cannot also be excluded, so supplied models are never silently skipped.
+#' Never executes source.
+#'
+#' @param models_to_run NULL or explicit model selection (character vector or flat list).
+#' @param models_not_to_run Optional built-in exclusions.
+#' @param custom_models Uniquely named list of approved custom-model envelopes.
+#'
+#' @return NULL when `custom_models` is NULL or empty; otherwise the passive pool
+#'   plus the selected envelopes. Errors on unlisted or excluded custom models.
 #' @noRd
 custom_run_pool <- function(models_to_run, models_not_to_run, custom_models) {
   if (is.null(custom_models) || identical(custom_models, list()))
     return(NULL)
   if (typeof(custom_models) != "list" || any(!names(attributes(custom_models)) %in% "names") || is.null(names(custom_models)))
     stop("custom_models must be a uniquely named list.", call. = FALSE)
-  custom_model_pool_names(names(custom_models), "custom_models names")
+  supplied <- custom_model_pool_names(names(custom_models), "custom_models names")
+  excluded <- custom_model_pool_names(models_not_to_run, "models_not_to_run", empty = TRUE)
+  both <- intersect(supplied, excluded)
+  if (length(both)) {
+    stop("Custom models cannot be both supplied and excluded in models_not_to_run: ", paste(both, collapse = ", "),
+      ".", call. = FALSE)
+  }
+  if (is.null(models_to_run)) {
+    models_to_run <- c(setdiff(list_models(), excluded), supplied)
+  }
+  unlisted <- setdiff(supplied, custom_model_pool_names(models_to_run, "models_to_run"))
+  if (length(unlisted)) {
+    stop("Custom models must also be listed in models_to_run: ", paste(unlisted, collapse = ", "),
+      ". Add them to models_to_run or remove them from custom_models.", call. = FALSE)
+  }
   envelopes <- lapply(custom_models, custom_run_envelope)
   definitions <- lapply(envelopes, function(model) model$definition)
   pool <- resolve_custom_model_pool(models_to_run, models_not_to_run, definitions)

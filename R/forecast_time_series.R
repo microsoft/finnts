@@ -34,7 +34,9 @@
 #'   values. Turned off when running hierarchical forecasts.
 #' @param clean_outliers If TRUE, outliers are cleaned and inputted with values more in line with historical data
 #' @param custom_models Named list of experimental approved custom-model envelopes,
-#'   enrolled only through `models_to_run`. See [prep_models()] for the envelope
+#'   enrolled through `models_to_run`. A NULL `models_to_run` runs all built-in
+#'   models plus every supplied custom model; an explicit `models_to_run` must
+#'   name every supplied custom model, otherwise an error is raised. See [prep_models()] for the envelope
 #'   contract and supported profile. Selected custom models add the raw C1
 #'   recipe to `recipes_to_run` and may run alone or alongside built-in models.
 #'   Their declared drivers come from eligible original input columns, not just

@@ -52,7 +52,10 @@ greater than 1. Custom values are used by \code{stlm-arima}, \code{stlm-ets}, an
 \item{seed}{Set seed for random number generator. Numeric value.}
 
 \item{custom_models}{Named list of experimental, version-bound approved
-\code{finnts_custom_model} envelopes. Only \code{models_to_run} enrolls custom models.
+\code{finnts_custom_model} envelopes. A NULL \code{models_to_run} runs all built-in
+models plus every supplied custom model; an explicit \code{models_to_run} must
+name every supplied custom model, otherwise an error is raised. Supplied
+custom models cannot also appear in \code{models_not_to_run}.
 Raw definitions or registry references do not grant execution permission.}
 }
 \value{
@@ -74,7 +77,8 @@ Unknown fields or modes fail. These are trusted-caller attestations, not
 authenticated human identity, a sandbox or an approval inferred from storage.
 Use \code{\link[=create_custom_model]{create_custom_model()}} for manual or explicitly automatic authoring.
 
-Only explicit \code{models_to_run} selects custom models. Custom models train on
+Supplied custom models run when \code{models_to_run} is NULL or names them; an
+explicit \code{models_to_run} that omits one is an error. Custom models train on
 the original-scale \code{C1} recipe, which must be in the \code{recipes_to_run} given
 to \code{\link[=prep_data]{prep_data()}}; otherwise preparation errors. Built-in models selected in
 the same run use R1/R2 with any supported settings (stationary, Box-Cox,

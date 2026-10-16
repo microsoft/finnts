@@ -14,7 +14,8 @@
 #'   authenticated human identity, a sandbox or an approval inferred from storage.
 #'   Use [create_custom_model()] for manual or explicitly automatic authoring.
 #'
-#'   Only explicit `models_to_run` selects custom models. Custom models train on
+#'   Supplied custom models run when `models_to_run` is NULL or names them; an
+#'   explicit `models_to_run` that omits one is an error. Custom models train on
 #'   the original-scale `C1` recipe, which must be in the `recipes_to_run` given
 #'   to [prep_data()]; otherwise preparation errors. Built-in models selected in
 #'   the same run use R1/R2 with any supported settings (stationary, Box-Cox,
@@ -70,7 +71,10 @@
 #'   `tbats`. A value of NULL uses the defaults for `date_type`.
 #' @param seed Set seed for random number generator. Numeric value.
 #' @param custom_models Named list of experimental, version-bound approved
-#'   `finnts_custom_model` envelopes. Only `models_to_run` enrolls custom models.
+#'   `finnts_custom_model` envelopes. A NULL `models_to_run` runs all built-in
+#'   models plus every supplied custom model; an explicit `models_to_run` must
+#'   name every supplied custom model, otherwise an error is raised. Supplied
+#'   custom models cannot also appear in `models_not_to_run`.
 #'   Raw definitions or registry references do not grant execution permission.
 #'
 #' @return Writes outputs related to model prep to disk.

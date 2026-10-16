@@ -49,7 +49,8 @@ day, week, month, quarter, year.}
 
 \item{external_regressors}{List of column headers within input data to be used as features in multivariate models.
 Controls built-in R1/R2 recipes only. C1 retains eligible original numeric,
-character, factor, logical and Date columns independently of this list.
+character, factor, logical and Date columns independently of this list in
+bottoms_up runs; hierarchical C1 nodes keep only these aggregated regressors.
 Each custom workflow uses only its declared predictors plus Date and Combo.}
 
 \item{hist_start_date}{Date value of when your input_data starts. Default of NULL uses earliest date value in

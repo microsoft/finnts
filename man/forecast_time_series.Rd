@@ -170,7 +170,9 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 \item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
 
 \item{custom_models}{Named list of experimental approved custom-model envelopes,
-enrolled only through \code{models_to_run}. See \code{\link[=prep_models]{prep_models()}} for the envelope
+enrolled through \code{models_to_run}. A NULL \code{models_to_run} runs all built-in
+models plus every supplied custom model; an explicit \code{models_to_run} must
+name every supplied custom model, otherwise an error is raised. See \code{\link[=prep_models]{prep_models()}} for the envelope
 contract and supported profile. Selected custom models add the raw C1
 recipe to \code{recipes_to_run} and may run alone or alongside built-in models.
 Their declared drivers come from eligible original input columns, not just

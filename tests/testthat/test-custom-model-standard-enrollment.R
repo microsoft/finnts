@@ -37,7 +37,7 @@ test_that("approval and supported preparation settings fail before enrollment", 
   invalid <- model
   invalid$approval$session <- new.env()
   expect_error(finnts:::custom_run_pool("business_mean", NULL, list(business_mean = invalid)), "passive")
-  expect_null(finnts:::custom_run_pool(NULL, NULL, list(business_mean = model)))
+  expect_null(finnts:::custom_run_pool(NULL, NULL, list()))
   info <- standard_run(withr::local_tempdir())
   log <- finnts:::read_exact_artifact(info, finnts:::local_artifact_path(info, "logs", extension = "csv"))
   for (field in c("stationary", "box_cox", "clean_missing_values", "clean_outliers", "multistep_horizon")) {
@@ -50,4 +50,24 @@ test_that("approval and supported preparation settings fail before enrollment", 
   expect_error(finnts:::custom_run_context(info, changed), "need C1")
   changed$recipes_to_run <- "R1---C1"
   expect_identical(finnts:::custom_run_context(info, changed)$recipe_id, "C1")
+})
+
+test_that("custom models run with NULL models_to_run and must be named in explicit selections", {
+  model <- standard_custom_model()
+  supplied <- list(business_mean = model)
+  # NULL keeps the simple default: every built-in model plus every supplied custom model.
+  pool <- finnts:::custom_run_pool(NULL, NULL, supplied)
+  expect_setequal(pool$selected, c(list_models(), "business_mean"))
+  expect_identical(names(pool$custom), "business_mean")
+  pool <- finnts:::custom_run_pool(NULL, list("arima"), supplied)
+  expect_false("arima" %in% pool$selected)
+  expect_true("business_mean" %in% pool$selected)
+  # Explicit selections must name supplied custom models instead of silently skipping them.
+  expect_error(finnts:::custom_run_pool(c("arima", "meanf"), NULL, supplied), "must also be listed in models_to_run: business_mean")
+  expect_identical(finnts:::custom_run_pool(list("business_mean", "meanf"), NULL, supplied)$built_in, "meanf")
+  expect_error(finnts:::custom_run_pool(NULL, "business_mean", supplied), "both supplied and excluded")
+  expect_error(prep_models(standard_run(withr::local_tempdir()),
+    models_to_run = "meanf", custom_models = supplied, run_ensemble_models = FALSE,
+    back_test_scenarios = 1, num_hyperparameters = 1
+  ), "must also be listed in models_to_run")
 })
