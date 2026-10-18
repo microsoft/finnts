@@ -2227,7 +2227,9 @@ reject_saved_default_forecasts <- function(run_info, run_log, combos, global) {
 #'   output validation precedes returning a successful run. Input CSV series
 #'   identities remain text, and known recipe settings are reused for coverage.
 #'   Custom submissions verify parent identity and complete fixed-rule settings,
-#'   then pass exact approved envelopes into ordinary standard preparation.
+#'   then pass only the exact approved envelopes selected in `models_to_run` into
+#'   ordinary standard preparation, so built-in-only children run without custom
+#'   enrollment.
 #'   Default replacements also retain the current update marker, so accepted
 #'   results can be audited independently from predecessor replay choices.
 #'
@@ -2453,7 +2455,12 @@ submit_fcst_run <- function(agent_info,
     pca = pca,
     num_hyperparameters = 10,
     seasonal_period = null_converter(inputs$seasonal_period),
-    custom_models = if (!is.null(custom_contract)) custom_contract$envelopes else NULL
+    custom_models = if (!is.null(custom_contract)) {
+      selected_custom <- intersect(names(custom_contract$envelopes), inputs$models_to_run)
+      if (length(selected_custom)) custom_contract$envelopes[selected_custom] else NULL
+    } else {
+      NULL
+    }
   )
 
   # train models
