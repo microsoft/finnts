@@ -1,11 +1,14 @@
 # Synthetic approved mean definition for offline replay tests. Source/evidence
-# are fixed; this fixture never infers provider or authoring approval.
-custom_update_model <- function(name = "replay_mean") {
+# are fixed; this fixture never infers provider or authoring approval. Global
+# fixtures can require all fitted peers so recipient filtering is tested only
+# after complete-cohort prediction.
+custom_update_model <- function(name = "replay_mean", cohort = "series") {
   definition <- finnts:::new_custom_model_definition(
     name, "Use the historical mean.", "Use the analysis mean; {literal_update_text} is descriptive text.",
     c("local", "global"), c(fit = "function(data, context, parameters) mean(data$Target)", predict = "function(object, new_data, context) data.frame(.finnts_row=new_data$.finnts_row,.pred=rep(object,nrow(new_data)))"),
     list(predictors = character(), recipes = "C1", target_scale = "original",
-      date_types = "month", forecast_horizon = c(1, 2), missing_data = "error")
+      date_types = "month", forecast_horizon = c(1, 2), missing_data = "error",
+      runtime = list(prediction_scope = "complete_horizon", cohort = cohort, group_columns = character()))
   )
   structure(list(definition = definition, validation = list(
     version_id = definition$version_id, technical_passed = TRUE,
@@ -98,8 +101,8 @@ custom_update_fixture <- local({
       data <- data.frame(Date = rep(seq(as.Date("2020-01-01"),
         by = "month", length.out = 24), length(series)),
         series = rep(series, each = 24), value = 100)
-      envelopes <- list(replay_mean = custom_update_model())
-      if (global) envelopes$other_mean <- custom_update_model("other_mean")
+      envelopes <- list(replay_mean = custom_update_model(cohort = if (global) "all" else "series"))
+      if (global) envelopes$other_mean <- custom_update_model("other_mean", cohort = "all")
       args <- list(project_info = set_project_info(
         project_name = paste0("custom-update-", mode), path = path,
         combo_variables = "series", target_variable = "value", date_type = "month"),

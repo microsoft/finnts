@@ -19,6 +19,100 @@ runtime_history <- function() {
   data.frame(Date = seq(as.Date("2020-01-01"), by = "month", length.out = 24), Combo = "first", Target = seq_len(24))
 }
 
+test_that("new definitions are reusable by default at independent horizons and cutoffs", {
+  definition <- runtime_definition()
+  expect_identical(definition$requirements$forecast_horizon, "any_positive_integer")
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(definition, path)
+  restored <- readRDS(path)
+  for (horizon in c(1, 2, 3, 6, 12, 37)) for (length in c(12L, 24L)) {
+    history <- head(runtime_history(), length)
+    context <- list(model_type = "local", recipe_id = "C1", date_type = "month",
+      forecast_horizon = horizon, target_scale = "original")
+    fitted <- custom_model_fit_impl(history[c("Date", "Combo")], history$Target, restored, context, TRUE)
+    future <- data.frame(Date = seq(max(history$Date), by = "month", length.out = horizon + 1)[-1],
+      Combo = "first")
+    expect_equal(custom_model_predict_impl(fitted, future), rep(mean(history$Target), horizon))
+  }
+  expect_identical(restored, definition)
+  for (horizon in list(0, -1, 1.5, NA_real_, Inf, c(1, 2))) {
+    context$forecast_horizon <- horizon
+    expect_error(custom_model_context(definition, context, TRUE), "forecast_horizon")
+  }
+})
+
+test_that("runtime enforces approved history needs on every fit and forecast", {
+  definition <- runtime_definition()
+  definition$requirements$history <- custom_author_history_requirements(
+    list(minimum_rows_per_series = 12L, required_lag_periods = 12L))
+  definition$version_id <- custom_model_definition_digest(definition)
+  history <- runtime_history()
+  context <- list(model_type = "local", recipe_id = "C1", date_type = "month",
+    forecast_horizon = 13, target_scale = "original")
+  expect_error(custom_model_fit_impl(head(history[c("Date", "Combo")], 6), 1:6,
+    definition, context, TRUE), "history")
+  fitted <- custom_model_fit_impl(history[c("Date", "Combo")], history$Target, definition, context, TRUE)
+  future <- data.frame(Date = seq(max(history$Date), by = "month", length.out = 14)[-1], Combo = "first")
+  expect_error(custom_model_predict_impl(fitted, future), "lag")
+  obsolete <- definition
+  obsolete$requirements$forecast_horizon <- 1:12
+  expect_error(validate_custom_model_definition(obsolete), "recreate")
+})
+
+test_that("assembled rules reuse current horizons, drivers and pooled populations", {
+  for (rule in c("compounding", "driver_ratio", "allocation")) {
+    contract <- runtime_definition(if (rule == "allocation") "global" else "local")
+    contract$requirements$predictors <- c("Date", "Combo", "Driver")
+    if (rule == "allocation") contract$requirements$runtime$cohort <- "all"
+    contract$package_policy <- list(mode = "base_only", available = "base")
+    bodies <- switch(rule,
+      compounding = list(fit_body = "data$Target[nrow(data)]",
+        predict_body = "object * 1.1 ^ context$forecast_step"),
+      driver_ratio = list(fit_body = "sum(data$Target) / sum(data$Driver)",
+        predict_body = "object * new_data$Driver"),
+      allocation = list(fit_body = "mean(tapply(data$Target, data$Date, sum))",
+        predict_body = paste0("totals <- tapply(new_data$Driver, new_data$Date, sum); ",
+          "object / context$forecast_horizon * new_data$Driver / as.numeric(totals[as.character(new_data$Date)])")))
+    definition <- custom_author_definition(contract, c(list(status = "candidate", conflict = "", helpers = list()), bodies))
+    path <- withr::local_tempfile(fileext = ".rds")
+    saveRDS(definition, path)
+    for (horizon in c(1, 2, 3, 6, 12)) for (peers in if (rule == "allocation") c(2L, 3L) else 1L) {
+      history <- head(runtime_history(), if (horizon < 6) 12L else 24L)
+      history$Driver <- history$Target / 2
+      history <- do.call(rbind, lapply(seq_len(peers), function(peer)
+        transform(history, Combo = paste0("peer", peer), Target = Target * peer, Driver = Driver * peer)))
+      context <- list(model_type = if (rule == "allocation") "global" else "local",
+        recipe_id = "C1", date_type = "month", forecast_horizon = horizon, target_scale = "original")
+      fitted <- custom_model_fit_impl(history[c("Date", "Combo", "Driver")], history$Target,
+        readRDS(path), context, TRUE)
+      future <- expand.grid(Date = seq(max(history$Date), by = "month", length.out = horizon + 1)[-1],
+        Combo = unique(history$Combo), stringsAsFactors = FALSE)
+      future$Driver <- rep(seq_len(peers), each = horizon)
+      expected <- switch(rule,
+        compounding = tail(history$Target, 1) * 1.1 ^ seq_len(horizon),
+        driver_ratio = 2 * future$Driver,
+        allocation = mean(seq_len(nrow(history) / peers)) * future$Driver / horizon)
+      actual <- custom_model_predict_impl(fitted, future)
+      expect_equal(actual, expected)
+      if (rule == "allocation") expect_equal(sum(actual),
+        mean(seq_len(nrow(history) / peers)) * sum(seq_len(peers)))
+    }
+  }
+})
+
+test_that("reusable driver declarations reject changed types before source execution", {
+  definition <- runtime_definition()
+  definition$requirements$predictors <- c("Date", "Combo", "Driver")
+  definition$requirements$predictor_types <- list(Driver = "number")
+  definition$version_id <- custom_model_definition_digest(definition)
+  context <- list(model_type = "local", recipe_id = "C1", date_type = "month",
+    forecast_horizon = 2, target_scale = "original")
+  history <- runtime_history()
+  history$Driver <- "changed-to-text"
+  expect_error(custom_model_fit_impl(history[c("Date", "Combo", "Driver")], history$Target,
+    definition, context, TRUE), "type")
+})
+
 # Build a trusted fixture workflow with explicit representation metadata. This
 # helper belongs to this test file so installed-worker tests are standalone.
 runtime_workflow <- function(definition = runtime_definition(), history = runtime_history(), recipe = recipes::recipe(Target ~
@@ -323,7 +417,7 @@ test_that("representation metadata and protected recipe fields are enforced", {
     target_scale = "original", allow_code = TRUE
   )
   for (change in list(
-    list(model_type = "global"), list(recipe_id = "R2"), list(date_type = "day"), list(forecast_horizon = 13),
+    list(model_type = "global"), list(recipe_id = "R2"), list(date_type = "day"), list(forecast_horizon = 1.5),
     list(target_scale = "prepared")
   )) {
     invalid <- utils::modifyList(args, change)

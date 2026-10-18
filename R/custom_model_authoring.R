@@ -1154,7 +1154,7 @@ custom_author_review <- function(review, details = FALSE) {
     definition$model_type, definition$requirements$hierarchy$forecast_approach %||% "bottoms_up",
     "C1", "original target scale"
   ))
-  custom_author_line("Forecast", paste(definition$requirements$forecast_horizon, definition$requirements$date_types, "period(s)"))
+  custom_author_line("Forecast", paste("Any positive whole-number horizon;", definition$requirements$date_types, "cadence"))
   custom_author_line("Predictors", if (length(definition$requirements$predictors))
     definition$requirements$predictors
   else "none")
@@ -1403,6 +1403,15 @@ custom_author_response <- function(request, response) {
 #' prediction. Required peers and complete horizons are checked before prediction.
 #' The LLM still writes pooling, regression, transformations and allocation logic;
 #' portable calendar/key helpers and prompts do not choose formulas or fit models.
+#'
+#' Approved envelopes are reusable by default: save the complete returned object
+#' with `saveRDS()`, read it back and supply it to later standard or Agent runs.
+#' The authoring horizon describes validation examples, not a future horizon
+#' whitelist. Each fresh fit uses its current horizon, history, cutoff and drivers.
+#' Positive whole-number horizons are supported subject to the fixed rule's
+#' history, driver-type, cadence, mode and business constraints. Finite validation
+#' cases do not prove correctness at every horizon. Same-run restarts still
+#' require unchanged inputs/settings; reuse does not advance an old fitted object.
 #'
 #' Examples must forecast the next complete horizon immediately after their own
 #' history and include enough history for the rule. Supplied answers are never
@@ -2067,6 +2076,7 @@ custom_author_request <- function(session, stage, payload) {
     schema <- do.call(ellmer::type_object, fields)
     instruction <- paste(
       "Interpret the human's fixed business rule, not accuracy optimization. Return exactly the requested native structured fields.",
+      "The model is reusable in later runs with different positive integer forecast horizons, history lengths, cutoffs and compatible driver values or series. The supplied horizon defines examples, not a fixed limit. Preserve genuine business, history, category and cohort constraints.",
       "FinnTS owns installed packages, predictors, known name/modes, dates, keys, tolerance and missing_data=error. Do not return those omitted metadata fields or examples_json.",
       "Return a precise interpretation and fixed parameters with explicit units as parameters_json, a valid JSON object string. Preserve percentage versus absolute growth and period versus calendar units; do not invent essential terms.",
       if (automatic)
@@ -2146,6 +2156,7 @@ custom_author_request <- function(session, stage, payload) {
       "Implement exactly the fixed contract as ordinary R calculation bodies. Return status, conflict, fit_body, predict_body and helpers; FinnTS builds the complete functions and validates their exact protocol.",
       "fit_body receives data, context, parameters and returns portable fitted state. data contains historical Target, Date, Combo and declared predictors. Save any parameters/history needed by prediction in that state.",
       "predict_body receives object, new_data, context and returns one finite numeric vector in new_data row order, not a data.frame. No Target is present in new_data, and there is no parameters argument.",
+      "Definitions are reusable by default. Never hard-code the example horizon, cutoff, data length, driver values or current series membership. Use context$forecast_horizon, context$forecast_step, current data and declared cohort keys. Preserve genuine fixed business constants and reject unsupported rule domains explicitly.",
       "FinnTS adds original .finnts_row IDs and rejects missing/extra/nonfinite predictions. No recycling, reordering, imputation, unrequested clipping or rounding, or accuracy optimization.",
       "Optional helpers are named function expressions in a base-parented sibling environment. Names fit, predict and finntsPredictBody are reserved. No private environments or closures in fitted state.",
       "Use base functions or explicit public pkg::function references from contract.package_policy.available. FinnTS derives actual dependencies from syntax; do not supply a package list or assume attached packages.",
@@ -2285,7 +2296,8 @@ custom_author_contract <- function(proposal, instructions, metadata, name, model
   modes <- strings(modes)
   requirements <- list(
     predictors = protocol$predictors, recipes = "C1", target_scale = "original", date_types = metadata$date_type,
-    forecast_horizon = metadata$forecast_horizon, missing_data = protocol$missing_data
+    forecast_horizon = "any_positive_integer", missing_data = protocol$missing_data,
+    history = history_requirements, predictor_types = protocol$predictor_types
   )
   requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
   if ("global" %in% model_type) {

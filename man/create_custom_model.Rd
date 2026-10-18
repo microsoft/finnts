@@ -107,6 +107,15 @@ prediction. Required peers and complete horizons are checked before prediction.
 The LLM still writes pooling, regression, transformations and allocation logic;
 portable calendar/key helpers and prompts do not choose formulas or fit models.
 
+Approved envelopes are reusable by default: save the complete returned object
+with \code{saveRDS()}, read it back and supply it to later standard or Agent runs.
+The authoring horizon describes validation examples, not a future horizon
+whitelist. Each fresh fit uses its current horizon, history, cutoff and drivers.
+Positive whole-number horizons are supported subject to the fixed rule's
+history, driver-type, cadence, mode and business constraints. Finite validation
+cases do not prove correctness at every horizon. Same-run restarts still
+require unchanged inputs/settings; reuse does not advance an old fitted object.
+
 Examples must forecast the next complete horizon immediately after their own
 history and include enough history for the rule. Supplied answers are never
 computed from the candidate or changed to make it pass. If examples are omitted,

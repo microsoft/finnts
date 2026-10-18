@@ -93,11 +93,27 @@ across all requested series before sampling, but their stored values cannot
 prove whether earlier preparation filled a raw gap.
 
 The authoring cutoff is saved validation evidence, **not a permanent model
-cutoff**. An approved definition can be refitted in later runs with different
-history end dates and new driver values, as long as its declared capabilities
-remain compatible. Each fit derives its own cutoff and per-series cutoffs;
+cutoff**. Every newly approved model is reusable by default, without a special
+control option. Save the entire envelope with `saveRDS()` and reload it with
+`readRDS()` for later standard or Agent runs. Those runs may use different
+positive whole-number forecast horizons, history lengths, end dates, compatible
+driver values and global training populations. Each fit derives its own cutoff and per-series cutoffs;
 relative calculations must use those dates and the prediction request. Reusing
 an old fitted workflow without refitting does not advance its cutoff.
+
+The approved formula, cadence, units, required driver types, local/global mode,
+cohort rules and business constants remain fixed. Declared minimum history is
+checked on each analysis fold; forecast-relative observed lags must exist for
+every requested future date. A longer horizon can therefore expose a genuine
+rule constraint and fail explicitly. Horizon-wide allocations can legitimately
+change earlier predictions when the horizon changes; they need not have an
+invariant prefix. Representative validation is evidence, not proof for all
+positive horizons.
+
+Existing run IDs remain exact restart contracts. Use a fresh standard run or a
+new Agent version for changed data/settings. Older pre-release custom objects
+and saved custom runs may be incompatible with this contract and must be
+recreated; they are not migrated or rewritten automatically.
 
 Driver-based holdout metrics are explicitly conditional on supplied assessment
 drivers. The current interface does not verify historical plan vintages or

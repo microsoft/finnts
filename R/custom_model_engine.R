@@ -55,6 +55,7 @@ custom_model_workflow <- function(definition, recipe, model_type, recipe_id,
 
 # Validate identity and scalar representation metadata without executing source.
 # Returns only the five approved fields, excluding arbitrary session/run state.
+# Horizons are finite positive whole numbers, not a creation-time whitelist.
 # Execution permission is checked separately before any namespace/source loading.
 custom_model_context <- function(definition, context, allow_code) {
   validate_custom_model_definition(definition)
@@ -81,7 +82,7 @@ custom_model_context <- function(definition, context, allow_code) {
   }
   horizon <- context$forecast_horizon
   if (!is.numeric(horizon) || length(horizon) != 1L || !is.finite(horizon) ||
-    !horizon %in% definition$requirements$forecast_horizon) {
+    horizon < 1 || horizon != floor(horizon)) {
     stop("Custom model has incompatible forecast_horizon.", call. = FALSE)
   }
   context[fields]
@@ -212,7 +213,22 @@ custom_model_functions <- function(definition, allow_code) {
   environment
 }
 
-# Validate data identities after baking and return predictor data. Recipes turn
+# Reject changed declared business-driver types without executing candidate code.
+# Numeric/integer and character/factor representations are equivalent respectively;
+# no coercion is performed. Internal definitions can omit type declarations.
+custom_model_predictor_types <- function(definition, data) {
+  for (field in names(definition$requirements$predictor_types)) {
+    value <- data[[field]]
+    valid <- switch(definition$requirements$predictor_types[[field]],
+      number = is.numeric(value) && !is.object(value),
+      string = is.character(value) || is.factor(value),
+      boolean = is.logical(value))
+    if (!valid) stop("Custom model predictor type changed: ", field, ".", call. = FALSE)
+  }
+  invisible(NULL)
+}
+
+# Validate data identities and declared driver types after baking and return data. Recipes turn
 # character predictors into factors by default; restore Combo labels, never their
 # integer codes. Duplicate series/date keys are always rejected.
 custom_model_data <- function(data, definition, context) {
@@ -231,6 +247,7 @@ custom_model_data <- function(data, definition, context) {
   if (context$model_type == "local" && length(unique(data$Combo)) != 1L) {
     stop("Custom model local fitting/prediction requires exactly one Combo.", call. = FALSE)
   }
+  custom_model_predictor_types(definition, data)
   data
 }
 
@@ -287,6 +304,11 @@ custom_model_fit_impl <- function(x, y, definition, context, allow_code = FALSE)
   rownames(data) <- NULL
   context$cutoff <- max(data$Date)
   context$series_cutoffs <- lapply(split(data$Date, data$Combo), max)
+  # Retain only date keys to enforce observed lags on later prediction requests.
+  context$history_dates <- data[c("Date", "Combo")]
+  if (any(table(data$Combo) < definition$requirements$history$workflow_minimum_rows_per_series)) {
+    stop("Custom model has insufficient history for its approved rule.", call. = FALSE)
+  }
   cohort <- custom_model_cohort(data, definition$requirements$runtime, context$model_type)
   if (!is.null(cohort)) context$prediction_cohort <- cohort
   state <- functions$fit(data = data, context = context, parameters = definition$fixed_parameters)
@@ -350,6 +372,8 @@ custom_model_predict_impl <- function(object, new_data) {
     }
     steps[rows] <- match(new_data$Date[rows], dates)
   }
+  custom_author_check_history(list(list(history = context$history_dates, new_data = new_data)),
+    object$definition$requirements$history, context$date_type)
   functions <- custom_model_functions(object$definition, object$allow_code)
   custom_model_state(object$state)
   original_rows <- seq_len(nrow(new_data))

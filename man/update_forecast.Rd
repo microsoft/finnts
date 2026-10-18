@@ -137,8 +137,9 @@ access failures remain errors. These checks do not coordinate concurrent
 writers or guarantee that another attempt cannot overwrite a checked file.
 Approved custom pools require explicit \code{allow_iterate_forecast = FALSE},
 \code{overwrite = TRUE}, identical enrollment and approval evidence, cadence,
-horizon, regressors and enabled modes. New observations,
-historical cutoffs and backtest settings are allowed in the new parent.
+regressors and enabled modes. New observations, positive whole-number
+horizons, historical windows, cutoffs and backtest settings are allowed
+in the new parent, subject to approved history and driver requirements.
 The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 remain required. The completed predecessor, exact selected components,
 current input signatures and replay controls are pinned before child fitting.
@@ -149,7 +150,10 @@ evaluates complete horizons from existing predictors but preserves the
 original analysis cutoffs and scoring rows. New series and recoverable
 built-in fitting or forecast-quality failures use the existing default-local
 fallback with every compatible current-version custom model included first.
-A changed global cohort cannot reuse its former pooled fit. Source, provider,
+Global custom models refit on the compatible current cohort, including new
+peers, but publish only to surviving series with saved global winners.
+New peers still receive default-local forecasts, not untested global winners.
+Changed cohorts never reuse the former fitted state. Source, provider,
 enrollment, identity and required-artifact failures remain hard errors;
 custom logic is never repaired or silently dropped. Complete outputs can
 resume missing completion logging without refits

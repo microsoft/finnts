@@ -1,4 +1,4 @@
-test_that("a changed global cohort recovers through genuine compatible custom defaults", {
+test_that("changed global cohorts retain existing winners and locally fit new series", {
   fixture <- custom_update_fixture(TRUE, updated = FALSE)
   local_custom_update_runtime()
   local_custom_default_grid()
@@ -17,12 +17,12 @@ test_that("a changed global cohort recovers through genuine compatible custom de
       submitted <<- inputs
       original_submit(agent_info, inputs, ...)
     },
-    update_forecast_combo = function(...) stop("Changed global cohort must not replay saved fits"),
     .package = "finnts")
   prepared <- prepare_agent_custom_update(current, 123)
   routed <- initial_agent_custom_update(prepared)
-  expect_equal(nrow(routed$prev_best_runs_tbl), 0L)
-  expect_setequal(routed$new_combos, vapply(c("replacement", "second"), hash_data, character(1)))
+  expect_identical(routed$prev_best_runs_tbl$combo, "second")
+  expect_identical(routed$prev_best_runs_tbl$model_type, "global")
+  expect_identical(routed$new_combos, hash_data("replacement"))
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)
   expect_identical(submitted$models_to_run[1:2], names(args$custom_models))
   actual <- get_agent_forecast(current)
@@ -31,6 +31,8 @@ test_that("a changed global cohort recovers through genuine compatible custom de
   custom <- actual[actual$Model_ID %in% ids & actual$Train_Test_ID == 1, ]
   expect_setequal(custom$Model_ID, ids)
   expect_equal(custom$Forecast, rep(100, nrow(custom)))
-  expect_true(all(get_best_agent_run(current)$model_type == "local"))
+  best <- get_best_agent_run(current)
+  expect_identical(best$model_type[best$combo == "second"], "global")
+  expect_identical(best$model_type[best$combo == "replacement"], "local")
   expect_no_error(audit_agent_custom_best(load_agent_custom_state(current), get_best_agent_run(current)))
 })

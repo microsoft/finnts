@@ -6,6 +6,9 @@
 # Every new definition has the current chronological runtime. An omitted runtime
 # at construction uses series-separable prediction; saved definitions must already
 # contain the complete current contract and are never upgraded during validation.
+# Numeric forecast_horizon values supplied at construction describe example
+# horizons only; the resulting definition always permits any positive integer.
+# History requirements default to one observed row for internal definitions.
 # Source is parsed but never evaluated; malformed definitions raise errors.
 new_custom_model_definition <- function(name,
                                         instructions,
@@ -17,6 +20,18 @@ new_custom_model_definition <- function(name,
                                         packages = character(),
                                         parent_version = NULL,
                                         created_at = NULL) {
+  if (is.list(requirements)) {
+    horizon <- requirements$forecast_horizon
+    if (!identical(horizon, "any_positive_integer") &&
+      (!is.numeric(horizon) || !length(horizon) || any(!is.finite(horizon)) ||
+        any(horizon <= 0 | horizon != floor(horizon)) || anyDuplicated(horizon))) {
+      stop("Custom model requirements$forecast_horizon must contain unique positive whole numbers.", call. = FALSE)
+    }
+    requirements$forecast_horizon <- "any_positive_integer"
+    requirements$history <- custom_author_history_requirements(requirements$history %||%
+      list(minimum_rows_per_series = 1L, required_lag_periods = integer()))
+    if (is.null(requirements$predictor_types)) requirements$predictor_types <- list()
+  }
   if (is.list(requirements) && is.null(requirements$runtime)) requirements$runtime <- list(
     prediction_scope = "complete_horizon", cohort = "series", group_columns = character()
   )
@@ -171,15 +186,23 @@ validate_custom_model_definition <- function(definition) {
   requirements <- definition$requirements
   requirement_fields <- c(
     "predictors", "recipes", "target_scale", "date_types",
-    "forecast_horizon", "missing_data", "runtime", if ("hierarchy" %in% names(requirements)) "hierarchy"
+    "forecast_horizon", "missing_data", "runtime", "history", "predictor_types",
+    if ("hierarchy" %in% names(requirements)) "hierarchy"
   )
   if (!is.list(requirements) || !setequal(names(requirements), requirement_fields)) {
     stop("Custom model requirements must declare: ",
-      paste(requirement_fields, collapse = ", "), ".",
+      paste(requirement_fields, collapse = ", "), ". Unsupported development object; recreate the model.",
       call. = FALSE
     )
   }
   check_text(requirements$predictors, "requirements$predictors", empty = TRUE)
+  types <- requirements$predictor_types
+  if (!is.list(types) || (length(types) && (is.null(names(types)) ||
+    any(!names(types) %in% setdiff(requirements$predictors, c("Date", "Combo"))) ||
+    !all(vapply(types, function(value) is.character(value) && length(value) == 1L &&
+      value %in% c("number", "string", "boolean"), logical(1)))))) {
+    stop("Custom model requirements$predictor_types must map declared drivers to supported types.", call. = FALSE)
+  }
   check_text(requirements$recipes, "requirements$recipes")
   if (!identical(unname(requirements$recipes), "C1")) stop("Custom model requirements$recipes must use C1.", call. = FALSE)
   check_text(requirements$target_scale, "requirements$target_scale", scalar = TRUE)
@@ -188,10 +211,11 @@ validate_custom_model_definition <- function(definition) {
   if (!all(requirements$date_types %in% c("year", "quarter", "month", "week", "day"))) {
     stop("Custom model requirements$date_types must use supported Finn cadences.", call. = FALSE)
   }
-  horizon <- requirements$forecast_horizon
-  if (!is.numeric(horizon) || !length(horizon) || any(horizon <= 0) ||
-    any(horizon != floor(horizon)) || anyDuplicated(horizon)) {
-    stop("Custom model requirements$forecast_horizon must contain unique positive whole numbers.", call. = FALSE)
+  if (!identical(requirements$forecast_horizon, "any_positive_integer")) {
+    stop("Custom model requirements$forecast_horizon uses an obsolete contract; recreate the model.", call. = FALSE)
+  }
+  if (!identical(requirements$history, custom_author_history_requirements(requirements$history))) {
+    stop("Custom model requirements$history must contain normalized history requirements.", call. = FALSE)
   }
   check_text(requirements$missing_data, "requirements$missing_data", scalar = TRUE)
   custom_model_runtime(requirements$runtime, requirements$predictors, definition$model_type)
@@ -278,6 +302,5 @@ custom_model_definition_digest <- function(definition) {
   for (field in c("predictors", "recipes", "date_types")) {
     content$requirements[[field]] <- sort(unname(content$requirements[[field]]), method = "radix")
   }
-  content$requirements$forecast_horizon <- sort(as.numeric(content$requirements$forecast_horizon))
   digest::digest(content, algo = "sha256", serializeVersion = 2)
 }

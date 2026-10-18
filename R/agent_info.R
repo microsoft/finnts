@@ -128,7 +128,8 @@ set_agent_info <- function(project_info,
 }
 
 # Shared setup preserves the public defaults and saved-setting validation.
-# custom_models carries the explicit approved enrollment unchanged.
+# custom_models carries the explicit approved enrollment unchanged. Custom
+# horizons normalize plain integer storage to the numeric run-log representation.
 # An internal resume_run_id selects exactly one saved run for request-ID retries;
 # missing or duplicate matches fail before writes. NULL retains latest-run setup.
 # Returns the Agent contract; new versions retain the existing artifact writes.
@@ -159,6 +160,9 @@ set_agent_info_impl <- function(project_info,
   check_input_type("project_info", project_info, "list")
   check_agent_llm(llm)
   check_input_type("input_data", input_data, c("tbl", "tbl_df", "data.frame"))
+  if (length(custom_models) && is.integer(forecast_horizon) && is.null(attributes(forecast_horizon))) {
+    forecast_horizon <- as.numeric(forecast_horizon)
+  }
   check_input_type("forecast_horizon", forecast_horizon, "numeric")
   check_input_type("external_regressors", external_regressors, c("character", "NULL"))
   check_input_type("hist_end_date", hist_end_date, c("Date", "NULL"))

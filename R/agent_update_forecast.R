@@ -88,8 +88,9 @@
 #'   writers or guarantee that another attempt cannot overwrite a checked file.
 #'   Approved custom pools require explicit `allow_iterate_forecast = FALSE`,
 #'   `overwrite = TRUE`, identical enrollment and approval evidence, cadence,
-#'   horizon, regressors and enabled modes. New observations,
-#'   historical cutoffs and backtest settings are allowed in the new parent.
+#'   regressors and enabled modes. New observations, positive whole-number
+#'   horizons, historical windows, cutoffs and backtest settings are allowed
+#'   in the new parent, subject to approved history and driver requirements.
 #'   The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 #'   remain required. The completed predecessor, exact selected components,
 #'   current input signatures and replay controls are pinned before child fitting.
@@ -100,7 +101,10 @@
 #'   original analysis cutoffs and scoring rows. New series and recoverable
 #'   built-in fitting or forecast-quality failures use the existing default-local
 #'   fallback with every compatible current-version custom model included first.
-#'   A changed global cohort cannot reuse its former pooled fit. Source, provider,
+#'   Global custom models refit on the compatible current cohort, including new
+#'   peers, but publish only to surviving series with saved global winners.
+#'   New peers still receive default-local forecasts, not untested global winners.
+#'   Changed cohorts never reuse the former fitted state. Source, provider,
 #'   enrollment, identity and required-artifact failures remain hard errors;
 #'   custom logic is never repaired or silently dropped. Complete outputs can
 #'   resume missing completion logging without refits
@@ -2513,15 +2517,21 @@ update_forecast_combo <- function(agent_info,
 
   # get input data for new run
   if (combo == "All-Data") {
-    input_data <- read_file(
-      run_info = project_info,
-      file_list = list_files(
+    input_files <- if (!is.null(custom_contract)) {
+      vapply(names(agent_info$custom_agent_update$inputs), function(series_hash)
+        local_artifact_path(agent_custom_parent_info(agent_info), "input_data", combo = series_hash), character(1))
+    } else {
+      list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
           hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
         )
-      ),
+      )
+    }
+    input_data <- read_file(
+      run_info = project_info,
+      file_list = input_files,
       return_type = "df"
     ) %>%
       adjust_combo_column()
@@ -3118,8 +3128,11 @@ fit_models <- function(run_info,
       return(fixed)
     }
     if (is_custom) {
-      validate_agent_custom_update_workflows(model_run, custom)
-      custom_run_membership(model_run, custom, custom_run_candidates(custom, combo != "All-Data", combo == "All-Data"))
+      validate_agent_custom_update_workflows(model_run, custom, as.numeric(prev_run_log_tbl$forecast_horizon))
+      predecessor_custom <- custom
+      predecessor_custom$manifest$context$forecast_horizon <- as.numeric(prev_run_log_tbl$forecast_horizon)
+      custom_run_membership(model_run, predecessor_custom,
+        custom_run_candidates(predecessor_custom, combo != "All-Data", combo == "All-Data"))
       custom_run_predictors(custom$pool$custom[[model]], prep_data)
       cutoff <- max(model_train_test_tbl$Train_End)
       if (any(!is.finite(prep_data$Target[prep_data$Date <= cutoff]))) stop("Custom update requires finite historical targets.", call. = FALSE)
@@ -3128,6 +3141,14 @@ fit_models <- function(run_info,
     # convert trained workflow to empty workflow to prevent memory issues
     workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
+    if (is_custom) {
+      # Authenticate the predecessor above, then construct the current spec.
+      # Never carry a fitted state or its old horizon into the new fit.
+      workflow_spec <- custom_model_spec(custom$pool$custom[[model]],
+        list(model_type = model_run$Model_Type[[1]], recipe_id = "C1",
+          date_type = custom$manifest$context$date_type, forecast_horizon = as.numeric(forecast_horizon),
+          target_scale = "original"), TRUE)
+    }
     workflow <- workflows::workflow() %>%
       workflows::add_recipe(workflow_recipe) %>%
       workflows::add_model(workflow_spec)

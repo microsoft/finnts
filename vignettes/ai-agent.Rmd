@@ -119,8 +119,10 @@ without `vip`.
 ### Updating Approved Choices
 
 Create a new parent for new observations using the same explicit approved pool,
-cadence, forecast horizon, built-in candidate regressor set and enabled modes.
-Historical cutoffs and backtest settings may change in this new parent. Explicitly
+cadence, built-in candidate regressor set and enabled modes.
+Forecast horizon, historical window, cutoffs, compatible driver values and
+backtest settings may change in this new parent. Every fit must still satisfy
+the approved rule's history and driver-type requirements. Explicitly
 set `allow_iterate_forecast = FALSE`; omitting it is not custom replay consent.
 
 ```{r custom-agent-update-example, eval=FALSE}
@@ -153,9 +155,20 @@ errors, not automatic repair. Source failures and quality rejection never trigge
 implicit iteration. New series and recoverable built-in execution or quality
 failures use default local settings with every compatible enrolled custom model,
 within the existing recovery limits. Source, enrollment, provider and required
-artifact errors remain hard failures. Changed enrollment or a changed horizon
-requires a new initial `iterate_forecast()` run. An ordinary
+artifact errors remain hard failures. Changed enrollment requires a new initial
+`iterate_forecast()` run; a changed horizon does not. An ordinary
 built-in parent cannot infer custom enrollment from a predecessor.
+
+Global updates distinguish training peers from forecast recipients. If A/B
+previously selected a global model, C selected a local model and D is new, the
+global model may refit using all compatible current peers, including D. Only A/B
+receive that saved global selection; C follows its saved local path and D uses
+default local fallback. Required joint predictions still include all necessary
+peers before recipient filtering, without renormalizing an allocation over A/B.
+A later `iterate_forecast()` can evaluate whether a global approach is best for D.
+The existing new-series limit remains `max(10, ceiling(previous_count * 0.20))`.
+Larger additions require iteration. Same-version restarts retain exact settings
+and input signatures; predecessor audits use the predecessor's own horizon.
 
 Normal EDA post-processing still uses its isolated LLM when needed, without the
 custom source or approval payload. These provenance checks are not a sandbox,

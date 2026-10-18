@@ -109,7 +109,7 @@ test_that("Agent contracts validate metadata and declared modes without I/O", {
   expect_identical(contract$mode_models, list(local = "business_mean", global = character()))
   invalid_contexts <- list(
     list(run_local_models = FALSE), list(negative_forecast = NA), list(allow_hierarchical_forecast = TRUE),
-    list(forecast_approach = "standard_hierarchy"), list(forecast_horizon = 3), list(forecast_horizon = 1.5), list(forecast_horizon = NA_real_),
+    list(forecast_approach = "standard_hierarchy"), list(forecast_horizon = 0), list(forecast_horizon = 1.5), list(forecast_horizon = NA_real_),
     list(forecast_horizon = Inf), list(external_regressors = character()), list(run_global_models = NA), list(run_global_models = c(
       TRUE,
       FALSE
@@ -166,7 +166,8 @@ test_that("Agent contract identity is canonical and sensitive to approved conten
     if (field == "interpretation")
       model$definition$interpretation <- "A clarified historical mean."
     if (field == "requirements")
-      model$definition$requirements$forecast_horizon <- 2
+      model$definition$requirements$history <- custom_author_history_requirements(
+        list(minimum_rows_per_series = 2L, required_lag_periods = integer()))
     if (field == "evidence")
       model$validation$checks$arithmetic <- "Different synthetic check"
     model <- agent_custom_reapprove(model)

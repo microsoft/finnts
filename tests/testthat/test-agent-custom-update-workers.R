@@ -35,6 +35,7 @@ test_that("installed mixed custom updates preserve choices on two real workers",
   args$input_data <- rbind(data, data.frame(Date = as.Date("2022-01-01"),
     series = c("first", "second"), value = 125))
   args$overwrite <- TRUE
+  args$forecast_horizon <- 2L
   sequential_args <- args
   sequential_args$project_info$path <- sequential_path
   sequential <- do.call(set_agent_info, sequential_args)
@@ -79,6 +80,7 @@ test_that("installed mixed custom updates preserve choices on two real workers",
   expect_equal(dplyr::arrange(actual[, columns], Combo, Date, Model_ID, Train_Test_ID),
     dplyr::arrange(expected[, columns], Combo, Date, Model_ID, Train_Test_ID))
   future <- actual[actual$Train_Test_ID == 1, ]
+  expect_true(all(table(future$Combo[future$Best_Model == "Yes"]) == 2L))
   builtin_mean <- mean(c(rep(100, 11), 125))
   expect_equal(unique(future$Forecast[future$Model_ID == custom_id]), 101)
   expect_equal(unique(future$Forecast[future$Model_ID == "meanf--local--R1"]), builtin_mean)

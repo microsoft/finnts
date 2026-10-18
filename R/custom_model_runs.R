@@ -512,7 +512,7 @@ custom_model_predictor_columns <- function(predictors) {
 
 #' Validate required predictors on each actual prepared dataset, not just the
 #' first recipe sample. Returns the declared identity/predictor names; missing,
-#' nonfinite, unsupported or outcome/assessment input values error without I/O.
+#' nonfinite, unsupported, changed declared types or outcome/assessment input values error without I/O.
 #' @noRd
 custom_run_predictors <- function(definition, data) {
   predictors <- custom_model_predictor_columns(definition$requirements$predictors)
@@ -522,6 +522,7 @@ custom_run_predictors <- function(definition, data) {
       paste(unique(c(setdiff(c("Target", predictors), names(data)), intersect(predictors, forbidden))), collapse = ", "),
       ".", call. = FALSE)
   }
+  custom_model_predictor_types(definition, data)
   for (field in predictors) {
     values <- data[[field]]
     if (anyNA(values) || (is.numeric(values) && any(!is.finite(values))) || !(is.numeric(values) || is.character(values) ||

@@ -1163,7 +1163,8 @@ test_that("typed seasonal examples preserve independent arithmetic and required 
     NULL, history_protocol
   )
   history_definition <- custom_author_definition(history_contract, source)
-  expect_identical(history_definition$version_id, definition$version_id)
+  expect_false(identical(history_definition$version_id, definition$version_id))
+  expect_identical(history_definition$requirements$history, history_contract$history_requirements)
   history_result <- custom_author_validate(history_definition, history_contract$examples, data, 60, package_policy = history_protocol$package_policy)
   expect_true(history_result$passed)
   expect_true(history_result$serialization)
@@ -1760,7 +1761,7 @@ test_that("reviewed example predictions align by keys regardless of row names", 
 test_that("local seasonal contracts identify undeclared global examples specifically", {
   fixture <- validation_fixture()
   fixture$definition$model_type <- "local"
-  fixture$definition$requirements$forecast_horizon <- 3
+  expect_identical(fixture$definition$requirements$forecast_horizon, "any_positive_integer")
   fixture$definition$version_id <- custom_model_definition_digest(fixture$definition)
   metadata <- list(date_type = "month", forecast_horizon = 3)
   history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01", "2020-12-01")), Combo = "A", Target = c(
@@ -1857,7 +1858,7 @@ test_that("example mode diagnostics preserve local global and mixed capability b
 test_that("horizon diagnostics preserve strict complete consecutive example dates", {
   fixture <- validation_fixture()
   fixture$definition$model_type <- "local"
-  fixture$definition$requirements$forecast_horizon <- 3
+  expect_identical(fixture$definition$requirements$forecast_horizon, "any_positive_integer")
   fixture$definition$version_id <- custom_model_definition_digest(fixture$definition)
   metadata <- list(date_type = "month", forecast_horizon = 3)
   example <- fixture$examples[[1]]

@@ -45,14 +45,13 @@ test_that("custom update rejects corrupt fits and altered workflow approval", {
   expect_identical(tools::md5sum(names(before)), before)
 })
 
-test_that("changed custom evidence and context fail before update writes", {
-  for (change in c("evidence", "horizon", "mode", "source")) local({
+test_that("changed custom evidence and invariant context fail before update writes", {
+  for (change in c("evidence", "mode", "source")) local({
     fixture <- custom_update_fixture()
     local_custom_update_runtime()
     other <- fixture$args
     if (change == "evidence")
       other$custom_models$replay_mean$validation$checks$arithmetic <- "Different approved evidence"
-    if (change == "horizon") other$forecast_horizon <- 2
     if (change == "mode") other$run_global_models <- TRUE
     if (change == "source") other$custom_models <- list(other_mean = custom_update_model("other_mean"))
     changed <- do.call(set_agent_info, other)

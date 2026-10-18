@@ -135,6 +135,17 @@ validate_agent_custom_models <- function(contract) {
   contract
 }
 
+# Compare approved enrollment across versions without confusing reusable rule
+# identity with exact current-run inputs. Horizon, available extra columns and
+# source bytes may change; modes, required drivers, policies and evidence may not.
+# Exact contract_id remains mandatory for same-version restart and artifact audit.
+agent_custom_reuse_identity <- function(contract) {
+  contract <- validate_agent_custom_models(contract)
+  contract$contract_id <- NULL
+  contract$context[c("forecast_horizon", "c1_source_id", "c1_predictors")] <- NULL
+  custom_run_digest(contract)
+}
+
 # Project enrolled candidates for one mode using explicit foundation availability.
 # NULL combo means global; a plain nonblank combo selects local. Returns names and
 # whitelisted descriptive metadata, never source, parameters, approval, paths or
@@ -587,10 +598,16 @@ read_agent_custom_update <- function(agent_info, required = FALSE) {
     stop("Invalid custom update provenance identity.", call. = FALSE)
   }
   if (!identical(sort(record$selected), sort(agent_info$custom_agent_contract$selected)) ||
-    !is.list(record$predecessor) || !setequal(names(record$predecessor), c("run_id", "agent_version")) ||
+    !is.list(record$predecessor) || !setequal(names(record$predecessor),
+      c("run_id", "agent_version", "contract_id", "forecast_horizon")) ||
     !is.character(record$predecessor$run_id) || length(record$predecessor$run_id) != 1L ||
     !nzchar(record$predecessor$run_id) || !is.numeric(record$predecessor$agent_version) ||
     length(record$predecessor$agent_version) != 1L || record$predecessor$agent_version >= record$agent_version ||
+    !is.character(record$predecessor$contract_id) || length(record$predecessor$contract_id) != 1L ||
+    !grepl("^custom-agent-[a-f0-9]{64}$", record$predecessor$contract_id) ||
+    !is.numeric(record$predecessor$forecast_horizon) || length(record$predecessor$forecast_horizon) != 1L ||
+    !is.finite(record$predecessor$forecast_horizon) || record$predecessor$forecast_horizon < 1 ||
+    record$predecessor$forecast_horizon != floor(record$predecessor$forecast_horizon) ||
     !is.list(record$winners) || !is.list(record$inputs) ||
     !all(vapply(names(record$winners), hash_data, character(1)) %in% names(record$inputs))) {
     stop("Invalid custom update predecessor or series provenance.", call. = FALSE)
@@ -630,7 +647,8 @@ agent_custom_update_context <- function(agent_info, combos, seed) {
 
 # Pin the latest completed compatible predecessor and its exact saved choices.
 # Reentry uses the saved predecessor, not discovery. Enrollment and controls
-# must match; current series may change within the established new-series limit.
+# must be compatible; exact predecessor and current identities remain pinned.
+# Current series may change within the established new-series limit.
 # One record and parent marker are written before child execution. This is
 # immutable reentry checking, not a transaction.
 prepare_agent_custom_update <- function(agent_info, seed) {
@@ -659,7 +677,8 @@ prepare_agent_custom_update <- function(agent_info, seed) {
     previous <- completed[[1]]$agent_info
     previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
     previous$custom_agent_update_audit <- TRUE
-    if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) {
+    if (!identical(agent_custom_reuse_identity(previous$custom_agent_contract),
+      agent_custom_reuse_identity(agent_info$custom_agent_contract))) {
       stop("Custom update requires the same enrollment and context.", call. = FALSE)
     }
     best <- completed[[1]]$best_runs_tbl
@@ -679,7 +698,7 @@ prepare_agent_custom_update <- function(agent_info, seed) {
       child <- previous$project_info
       child$project_name <- paste0(child$project_name, "_", hash_data(if (row$model_type == "global") "all" else row$combo))
       child$run_name <- row$best_run_name
-      saved <- read_update_result(child, row$combo, row$model_type == "global", agent_info$forecast_horizon)
+      saved <- read_update_result(child, row$combo, row$model_type == "global", previous$forecast_horizon)
       if (is.null(saved)) stop("Custom predecessor selected artifacts are incomplete.", call. = FALSE)
       selected <- unique(saved$forecasts$Model_ID[saved$forecasts$Best_Model == "Yes"])
       if (length(selected) != 1L || anyNA(selected)) stop("Custom predecessor choice is ambiguous.", call. = FALSE)
@@ -694,7 +713,8 @@ prepare_agent_custom_update <- function(agent_info, seed) {
     record <- c(list(selected = agent_info$custom_agent_contract$selected,
       project_name = info$project_name, run_id = agent_info$run_id, agent_version = as.numeric(agent_info$agent_version),
       contract_id = agent_info$custom_agent_contract_id), context,
-      list(predecessor = list(run_id = previous$run_id, agent_version = as.numeric(previous$agent_version)), winners = winners))
+      list(predecessor = list(run_id = previous$run_id, agent_version = as.numeric(previous$agent_version),
+        contract_id = previous$custom_agent_contract_id, forecast_horizon = previous$forecast_horizon), winners = winners))
     custom_run_passive(record)
     record$manifest_id <- custom_run_digest(record)
     write_data(record, NULL, info, "object", "logs", "-agent-custom-update")
@@ -709,17 +729,21 @@ prepare_agent_custom_update <- function(agent_info, seed) {
 
 # Build replay work and default-recovery hashes from pinned choices and inputs.
 # Replay work retains its typed schema even when every predecessor series was
-# removed. Changed global cohorts use defaults rather than replaying a partial
-# global fit. Audit completed outputs before excluding them; damage is an error.
+# removed. Global fits use current peers but retain only saved winner recipients;
+# new series use local defaults. Audit outputs before excluding them.
 initial_agent_custom_update <- function(agent_info) {
   record <- read_agent_custom_update(agent_info, TRUE)
   if (!identical(record, agent_info$custom_agent_update)) stop("Custom update provenance changed before dispatch.", call. = FALSE)
   previous <- agent_info
   previous$run_id <- record$predecessor$run_id
   previous$agent_version <- record$predecessor$agent_version
+  previous$forecast_horizon <- record$predecessor$forecast_horizon
+  previous$custom_agent_contract <- previous$custom_agent_contract_id <- NULL
   previous$custom_agent_update <- previous$custom_agent_update_id <- NULL
   previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
-  if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) stop("Custom predecessor enrollment changed.", call. = FALSE)
+  if (!identical(previous$custom_agent_contract_id, record$predecessor$contract_id) ||
+    !identical(agent_custom_reuse_identity(previous$custom_agent_contract),
+      agent_custom_reuse_identity(agent_info$custom_agent_contract))) stop("Custom predecessor enrollment changed.", call. = FALSE)
   best <- if (length(record$winners)) {
     dplyr::bind_rows(lapply(record$winners, function(row) row[setdiff(names(row), c("components", "selected_id"))]))
   } else {
@@ -727,10 +751,6 @@ initial_agent_custom_update <- function(agent_info) {
       model_type = character(), weighted_mape = numeric(), models_to_run = character())
   }
   defaults <- setdiff(names(record$inputs), vapply(names(record$winners), hash_data, character(1)))
-  if (!setequal(get_total_combos(previous), names(record$inputs)) && nrow(best)) {
-    defaults <- union(defaults, vapply(best$combo[best$model_type == "global"], hash_data, character(1)))
-    best <- best[best$model_type != "global", , drop = FALSE]
-  }
   current <- load_update_runs(agent_info)
   if (nrow(current)) {
     audit_agent_custom_best(agent_info, current)
@@ -762,10 +782,14 @@ agent_custom_update_child <- function(agent_info, rows, seed) {
   previous <- agent_info
   previous$run_id <- record$predecessor$run_id
   previous$agent_version <- record$predecessor$agent_version
+  previous$forecast_horizon <- record$predecessor$forecast_horizon
+  previous$custom_agent_contract <- previous$custom_agent_contract_id <- NULL
   previous$custom_agent_update <- previous$custom_agent_update_id <- NULL
   previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
   previous$custom_agent_update_audit <- TRUE
-  if (!identical(previous$custom_agent_contract_id, agent_info$custom_agent_contract_id)) stop("Custom predecessor enrollment changed.", call. = FALSE)
+  if (!identical(previous$custom_agent_contract_id, record$predecessor$contract_id) ||
+    !identical(agent_custom_reuse_identity(previous$custom_agent_contract),
+      agent_custom_reuse_identity(agent_info$custom_agent_contract))) stop("Custom predecessor enrollment changed.", call. = FALSE)
   for (index in seq_len(nrow(rows))) {
     row <- rows[index, ]
     expected <- record$winners[[row$combo]]
@@ -833,7 +857,9 @@ audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) 
 # Check the executable workflow spec and recipe before replaying a saved fit.
 # Fit metadata alone cannot authenticate a changed unprepped workflow. Quosure
 # values must be passive constants; no saved expression is evaluated here.
-validate_agent_custom_update_workflows <- function(models, custom) {
+# An explicit predecessor horizon authenticates old specs before a fresh refit.
+validate_agent_custom_update_workflows <- function(models, custom,
+                                                  forecast_horizon = custom$manifest$context$forecast_horizon) {
   for (index in seq_len(nrow(models))) {
     row <- models[index, ]
     spec <- workflows::extract_spec_parsnip(row$Model_Fit[[1]])
@@ -844,7 +870,7 @@ validate_agent_custom_update_workflows <- function(models, custom) {
     definition <- custom$pool$custom[[row$Model_Name]]
     arguments <- lapply(spec$eng_args, rlang::get_expr)
     context <- list(model_type = row$Model_Type, recipe_id = "C1", date_type = custom$manifest$context$date_type,
-      forecast_horizon = custom$manifest$context$forecast_horizon, target_scale = "original")
+      forecast_horizon = forecast_horizon, target_scale = "original")
     if (!inherits(spec, "finnts_custom") || !identical(spec$engine, "finnts") ||
       !identical(arguments$definition, definition) || !identical(arguments$context, context) ||
       !identical(arguments$allow_code, TRUE)) stop("Saved custom replay workflow specification changed.", call. = FALSE)

@@ -24,7 +24,9 @@ test_that("Agent enrollment uses objects alone and returns lightweight reference
 
 test_that("public Agent setup pins approved custom enrollment without executing source", {
   args <- custom_agent_inputs(withr::local_tempdir())
+  args$forecast_horizon <- 1L
   info <- load_agent_custom_state(do.call(set_agent_info, args))
+  expect_identical(info$forecast_horizon, 1)
   expect_match(info$custom_agent_contract_id, "^custom-agent-[a-f0-9]{64}$")
   expect_setequal(info$custom_agent_contract$selected, c(list_models(), "business_mean"))
   expect_false(info$allow_hierarchical_forecast)

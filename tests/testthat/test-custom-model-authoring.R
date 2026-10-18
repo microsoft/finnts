@@ -117,6 +117,8 @@ test_that("authoring prompts separate reference demonstrations from the actual r
     )
     expect_identical(custom_author_request(session, stage, payload), list())
     prompt <- tail(prompts, 1L)
+    expect_match(prompt, "reusable")
+    if (stage == "source") expect_match(prompt, "Never hard-code the example horizon", fixed = TRUE)
     expect_true(grepl("[REFERENCE_DEMONSTRATIONS]", prompt, fixed = TRUE))
     expect_true(grepl("[ACTUAL_REQUEST]", prompt, fixed = TRUE))
     if (!grepl("[REFERENCE_DEMONSTRATIONS]", prompt, fixed = TRUE))

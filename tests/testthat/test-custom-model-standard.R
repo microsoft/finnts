@@ -78,6 +78,32 @@ test_that("high-level custom-only forecasts preserve aliases and leave C1 untran
   expect_equal(result$Forecast, ifelse(result$Combo == "A", 100, 200))
 })
 
+test_that("one saved approved envelope supports fresh standard horizons and windows", {
+  model <- standard_custom_model(modes = "local")
+  path <- withr::local_tempfile(fileext = ".rds")
+  saveRDS(model, path)
+  for (horizon in c(1, 6)) {
+    info <- set_run_info(project_name = "custom-reuse", run_name = paste0("h", horizon),
+      path = withr::local_tempdir(), data_output = "csv", object_output = "rds", add_unique_id = FALSE)
+    input <- standard_input
+    if (horizon == 6) {
+      input <- input[input$Date >= as.Date("2020-07-01"), ]
+      input$value <- input$value * 2
+    }
+    forecast_time_series(run_info = info, input_data = input, combo_variables = "id",
+      target_variable = "value", date_type = "month", forecast_horizon = horizon,
+      models_to_run = "business_mean", custom_models = list(business_mean = readRDS(path)),
+      recipes_to_run = "C1", stationary = FALSE, clean_missing_values = FALSE,
+      run_ensemble_models = FALSE, negative_forecast = TRUE, run_global_models = FALSE,
+      back_test_scenarios = 1, average_models = FALSE, return_data = FALSE)
+    result <- get_forecast_data(info)
+    future <- result[result$Train_Test_ID == 1 & result$Best_Model == "Yes", ]
+    expect_true(all(table(future$Combo) == horizon))
+    expect_equal(future$Forecast, ifelse(future$Combo == "A", 100, 200) * if (horizon == 6) 2 else 1)
+    expect_identical(readRDS(path), model)
+  }
+})
+
 test_that("CSV custom finalization keeps numeric-looking combo labels as text", {
   model <- standard_custom_model(modes = "local")
   info <- set_run_info(
