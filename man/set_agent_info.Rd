@@ -91,8 +91,10 @@ approved pool is pinned before the parent run log. Existing-run setup requires
 equivalent explicit enrollment; changed or omitted approval requires a new
 run. Source is trusted R, not sandboxed. For compatible new-data updates,
 create a new parent with \code{overwrite = TRUE}, the same explicit enrollment,
-horizon, regressors and modes, then call \code{\link[=update_forecast]{update_forecast()}} with
-explicit \code{allow_iterate_forecast = FALSE}. Changed enrollment needs iteration.
+cadence, regressors and modes, then call \code{\link[=update_forecast]{update_forecast()}} with
+explicit \code{allow_iterate_forecast = FALSE}. The positive whole-number forecast
+horizon may change, subject to the approved rule's history and driver
+requirements. Changed enrollment needs iteration.
 New series are routed to defaults within the existing new-series limit.
 The setup API has no
 \code{models_to_run} argument: Finn includes every compatible enrolled custom

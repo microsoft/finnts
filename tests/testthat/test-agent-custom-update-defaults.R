@@ -14,7 +14,8 @@ test_that("a public update replays saved custom winners and genuinely fits new-s
   # Retain every default engine and genuine fit/prediction, with one tuning
   # candidate per engine. Observe actual dispatch, not fabricated forecasts.
   local_mocked_bindings(
-    get_foundation_model_suffix = function(...) "",
+    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    agent_custom_foundations = function(...) "",
     summarize_models = function(...) invisible(NULL),
     prep_models = function(..., num_hyperparameters = 20) {
       original_prep(..., num_hyperparameters = 1)

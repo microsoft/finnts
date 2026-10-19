@@ -6,7 +6,8 @@ test_that("saved custom updates and new-series defaults preserve model-owned dri
   local_custom_default_grid()
   original_prep <- finnts:::prep_models
   local_mocked_bindings(get_eda_data = function(...) data.frame(done = TRUE),
-    get_foundation_model_suffix = function(...) "",
+    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    agent_custom_foundations = function(...) "",
     prep_models = function(..., num_hyperparameters = 20)
       original_prep(..., num_hyperparameters = 1), .package = "finnts")
   previous <- do.call(set_agent_info, args)

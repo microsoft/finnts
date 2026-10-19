@@ -897,12 +897,18 @@ Agent profile. Spark still requires its ordinary mounted-storage and worker-pack
 setup; permitting dispatch is not evidence of a live-cluster test.
 
 Compatible updates require an identically enrolled new parent, unchanged cadence,
-horizon, regressors and enabled modes, and explicit `allow_iterate_forecast = FALSE`.
+regressors and enabled modes, and explicit `allow_iterate_forecast = FALSE`.
+The positive whole-number forecast horizon may change, subject to the approved
+rule's history and driver requirements.
 Successful series replay their saved winners and component subsets. New series
 and recoverable built-in fitting or forecast-quality failures use Finn's existing
 default-local fallback, with all compatible current-version custom models added
-first. Changed global cohorts do not reuse a pooled fit from different membership;
-their current series follow default recovery. Required custom drivers remain
+first, plus enrolled foundation models whose credentials are available. The
+coordinator checks foundation availability once and passes it to workers for
+consistent default-model validation. Changed global cohorts are refitted using
+compatible current peers rather than reusing a pooled fit from different
+membership. Saved global winners are published only for surviving series;
+new peers still receive default-local forecasts. Required custom drivers remain
 mandatory. Custom rules are never retuned or regenerated; mixed retuning reuses
 their fixed results.
 

@@ -150,6 +150,9 @@ evaluates complete horizons from existing predictors but preserves the
 original analysis cutoffs and scoring rows. New series and recoverable
 built-in fitting or forecast-quality failures use the existing default-local
 fallback with every compatible current-version custom model included first.
+Defaults also include enrolled foundation models whose credentials are
+available. Availability is checked once in the coordinator and passed to
+workers so both validate the same default model pool.
 Global custom models refit on the compatible current cohort, including new
 peers, but publish only to surviving series with saved global winners.
 New peers still receive default-local forecasts, not untested global winners.

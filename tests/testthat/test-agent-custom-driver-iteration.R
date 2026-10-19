@@ -52,7 +52,8 @@ test_that("failed-series recovery dispatches C1 without enabling built-in xregs"
   submitted <- NULL
   # Stop at the real dispatch boundary: genuine default fitting is covered by
   # the public update regression, and no successful forecast is fabricated here.
-  local_mocked_bindings(get_foundation_model_suffix = function(...) "",
+  local_mocked_bindings(get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    agent_custom_foundations = function(...) "",
     submit_fcst_run = function(agent_info, inputs, combo, ...) {
       submitted <<- inputs
       restored <- load_agent_custom_state(agent_info)

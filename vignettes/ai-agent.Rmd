@@ -154,7 +154,10 @@ corrupt or conflicting required identities and incomplete fitted outputs are har
 errors, not automatic repair. Source failures and quality rejection never trigger
 implicit iteration. New series and recoverable built-in execution or quality
 failures use default local settings with every compatible enrolled custom model,
-within the existing recovery limits. Source, enrollment, provider and required
+plus enrolled foundation models whose credentials are available, within the
+existing recovery limits. Foundation availability is checked once before
+dispatch and reused by workers when validating the default model pool.
+Source, enrollment, provider and required
 artifact errors remain hard failures. Changed enrollment requires a new initial
 `iterate_forecast()` run; a changed horizon does not. An ordinary
 built-in parent cannot infer custom enrollment from a predecessor.

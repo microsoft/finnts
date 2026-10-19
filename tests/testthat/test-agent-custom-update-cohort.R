@@ -10,7 +10,8 @@ test_that("changed global cohorts retain existing winners and locally fit new se
   original_submit <- finnts:::submit_fcst_run
   submitted <- NULL
   # Bound only the tuning grid; all default/custom engines still fit and predict.
-  local_mocked_bindings(get_foundation_model_suffix = function(...) "",
+  local_mocked_bindings(get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    agent_custom_foundations = function(...) "",
     summarize_models = function(...) invisible(NULL),
     prep_models = function(..., num_hyperparameters = 20) original_prep(..., num_hyperparameters = 1),
     submit_fcst_run = function(agent_info, inputs, ...) {

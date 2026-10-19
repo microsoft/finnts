@@ -53,7 +53,8 @@ test_that("custom update recovery retains failure limits and mandatory default c
   observed <- new.env(parent = emptyenv())
   testthat::local_mocked_bindings(
     resolve_combo_hashes = function(agent_info, combos) combos,
-    get_foundation_model_suffix = function(...) "",
+    get_foundation_model_suffix = function(...) stop("Unselected foundation probe"),
+    agent_custom_foundations = function(...) "",
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
     par_end = function(...) invisible(NULL),
     submit_fcst_run = function(agent_info, inputs, ...) {
@@ -80,6 +81,48 @@ test_that("custom update recovery retains failure limits and mandatory default c
   expect_identical(observed$inputs$recipes_to_run, c("R1", "C1"))
   expect_true(observed$inputs$stationary)
   expect_true(observed$inputs$clean_missing_values)
+})
+
+test_that("custom default recovery revalidates enrolled credentialed foundations in workers", {
+  withr::local_envvar(c(NIXTLA_API_KEY = "", CHRONOS_API_URL = "https://offline.invalid",
+    CHRONOS_API_TOKEN = "offline", TIMESFM_API_URL = "https://offline.invalid",
+    TIMESFM_API_TOKEN = "offline"))
+  withr::local_options(NIXTLA_API_KEY = NULL)
+  args <- custom_agent_inputs(withr::local_tempdir())
+  info <- load_agent_custom_state(do.call(set_agent_info, args))
+  original_probe <- finnts:::get_foundation_model_suffix
+  original_submission <- finnts:::agent_custom_submission
+  observed <- new.env(parent = emptyenv())
+  observed$probes <- 0L
+  # Exercise real dispatch and revalidation, then stop before fitting or provider
+  # calls. The probe wrapper records any unintended machine-wide discovery.
+  local_mocked_bindings(
+    resolve_combo_hashes = function(agent_info, combos) combos,
+    get_foundation_model_suffix = function(...) {
+      observed$probes <- observed$probes + 1L
+      original_probe(...)
+    },
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) invisible(NULL),
+    agent_custom_submission = function(inputs, agent_info, combo) {
+      observed$suffix <- agent_info$custom_foundation_suffix
+      observed$inputs <- original_submission(inputs, agent_info, combo)
+      stop("Observed worker revalidation")
+    },
+    .package = "finnts"
+  )
+  expect_error(forecast_new_combos(info, hash_data("series1"), parallel_processing = NULL,
+    inner_parallel = FALSE, num_cores = 1, seed = 123), "Observed worker revalidation")
+  expect_identical(observed$probes, 0L)
+  foundations <- c("chronos2", "chronos-bolt-base", "chronos-bolt-tiny", "timesfm")
+  expect_setequal(strsplit(sub("^---", "", observed$suffix %||% ""), "---", fixed = TRUE)[[1]],
+    foundations)
+  expect_setequal(observed$inputs$models_to_run,
+    c("business_mean", "arima", "ets", "naive", "snaive", "tbats", "stlm-arima",
+      "xgboost", "glmnet", foundations))
+  expect_identical(observed$inputs$models_to_run[[1]], "business_mean")
+  expect_identical(observed$inputs$recipes_to_run, c("R1", "C1"))
+  expect_identical(observed$inputs$negative_forecast, TRUE)
 })
 
 test_that("custom update provenance routes added series to default recovery", {

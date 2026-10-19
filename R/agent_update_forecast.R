@@ -101,6 +101,9 @@
 #'   original analysis cutoffs and scoring rows. New series and recoverable
 #'   built-in fitting or forecast-quality failures use the existing default-local
 #'   fallback with every compatible current-version custom model included first.
+#'   Defaults also include enrolled foundation models whose credentials are
+#'   available. Availability is checked once in the coordinator and passed to
+#'   workers so both validate the same default model pool.
 #'   Global custom models refit on the compatible current cohort, including new
 #'   peers, but publish only to surviving series with saved global winners.
 #'   New peers still receive default-local forecasts, not untested global winners.
@@ -1972,6 +1975,9 @@ reconcile_agent_forecast <- function(agent_info,
 #'   state is created inside the worker, never dispatched.
 #'   Fresh defaults may explicitly accept a usable plausibility fallback.
 #'   Worker fallback warnings are relayed to the coordinator, never saved.
+#'   Custom runs check enrolled foundation-model availability once in the
+#'   coordinator and pass it to workers for consistent submission revalidation.
+#'   Non-custom runs retain the machine-wide foundation-model availability check.
 #' @noRd
 forecast_new_combos <- function(agent_info,
                                 new_combos,
@@ -2010,7 +2016,12 @@ forecast_new_combos <- function(agent_info,
   project_info <- agent_info$project_info
 
   # build fixed default local model inputs; see .github/agent-guides/adding-a-model.md
-  fm_suffix <- get_foundation_model_suffix()
+  if (is.null(agent_info$custom_agent_contract)) {
+    fm_suffix <- get_foundation_model_suffix()
+  } else {
+    fm_suffix <- agent_custom_foundations(agent_info$custom_agent_contract)
+    agent_info$custom_foundation_suffix <- fm_suffix
+  }
 
   default_inputs <- list(
     models_to_run = strsplit(paste0("arima---ets---naive---snaive---tbats---stlm-arima---xgboost---glmnet", fm_suffix), "---")[[1]],
