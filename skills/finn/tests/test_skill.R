@@ -273,6 +273,7 @@ with(common, {
   check("estimate: iterate takes longer", finn_estimate_runtime(100, "iterate", 1)$high_min > e1$high_min)
   check("estimate: capped and readable", finn_estimate_runtime(1e7)$high_min <= 72 * 60 && grepl("hours", finn_estimate_runtime(1e7)$text))
   check("estimate: NULL inputs are safe", grepl("minutes", finn_estimate_runtime(NULL)$text))
+  check("estimate: equal range ends show one value", identical(finn_estimate_runtime(1, "standard", 100)$text, "roughly 4 minutes"))
   du_paths <- finn_project_paths(file.path(tmp, "root"), "Disk")
   finn_ensure_project_dirs(du_paths)
   writeBin(raw(2 * 1024^2), file.path(du_paths$input, "big.bin"))
@@ -368,22 +369,104 @@ with(common, {
   check("recommend: user back test that leaves little history is flagged",
     !any(grepl("back_test", vapply(user_bt$recommendations, `[[`, character(1), "key"))) && any(grepl("periods to train on", user_bt$notes)))
   vc <- load_functions("validate_config.R", common)
-  lines <- vc$validate_recommendation_lines(big)
-  check("validate: card shows size, suggestions, and run type advice",
-    any(grepl("very large", lines)) && any(grepl("models_to_run = xgboost", lines)) && any(grepl("Run type advice", lines)))
   local({
-    config <- finn_merge_config(list(mode = "standard", run_ensemble_models = FALSE))
-    card <- function(config) vc$validate_settings_card(config, list(), list(reason = "offline"))
-    check("approval card shows ensembles off separately from averaging",
-      any(grepl("Ensemble training: off; simple averaging:", card(config), fixed = TRUE)))
-    check("approval card shows explicitly requested ensembles on",
-      any(grepl("Ensemble training: on", card(modifyList(config, list(run_ensemble_models = TRUE))), fixed = TRUE)))
-    config$run_ensemble_models <- NULL
-    check("approval card warns about automatic ensembles",
-      any(grepl("auto (may enable ensembles", card(config), fixed = TRUE)))
-    config$mode <- "agent"
-    check("approval card does not imply standard ensemble setting affects Agent",
-      !any(grepl("Ensemble training", card(config), fixed = TRUE)))
+    has <- function(text, pattern) grepl(pattern, text, fixed = TRUE)
+    config <- finn_merge_config(list(mode = "standard", project_name = "demo", target_variable = "Sales",
+      combo_variables = c("Region", "Product"), date_type = "month", forecast_horizon = 12,
+      run_ensemble_models = FALSE, external_regressors = "Promo|Flag"))
+    facts <- list(n_rows = 120, n_columns = 5, n_series = 4, date_min = "2021-01-01", date_max = "2023-06-01",
+      last_actual_date = "2022-12-01")
+    review <- vc$validate_settings_review(config, facts, list(reason = "offline plan"), big, "Low RAM.", "Read with a comma.")
+    order <- vapply(c("Here are the proposed **Standard** forecast settings for project `demo`.", "- **Run type:** Standard.",
+      "### Data check", "### Forecast configuration", "### Warnings", "### Suggestions", "### On this computer",
+      "Reply `run` to start the forecast"), function(p) regexpr(p, review, fixed = TRUE)[[1]], numeric(1))
+    check("settings review: section order with run footer", length(review) == 1 && all(order > 0) && !is.unsorted(order))
+    check("settings review: configuration table header",
+      has(review, "| Input | Recommended value | What it means for your forecast |\n|---|---|---|"))
+    check("settings review: JSON values for arrays, strings, booleans, and null",
+      has(review, "| `combo_variables` | `[\"Region\",\"Product\"]` |") && has(review, "| `target_variable` | `\"Sales\"` |") &&
+        has(review, "| `negative_forecast` | `false` |") && has(review, "| `hist_start_date` | `null` |"))
+    check("settings review: pipes in values are escaped", has(review, "`[\"Promo\\|Flag\"]`"))
+    check("settings review: data check shows last actuals and notes",
+      has(review, "**Last period with actuals:** `2022-12-01`") && has(review, "- Read with a comma.") &&
+        has(review, "passed with 1 warning`"))
+    check("settings review: auto hist_end_date names the date used", has(review, "Auto uses `2022-12-01`."))
+    check("settings review: suggestions show size and JSON value; run type is not a suggestion",
+      has(review, "very large") && has(review, "- `models_to_run`: `[\"xgboost\"]`.") && !has(review, "Run type advice") &&
+        has(review, "Fast and predictable."))
+    one <- vc$validate_settings_review(modifyList(config, list(combo_variables = "Region")), facts, list())
+    check("settings review: single combo column stays an array", has(one, "| `combo_variables` | `[\"Region\"]` |"))
+    check("settings review: ensembles off are kept separate from averaging",
+      has(review, "| `run_ensemble_models` | `false` |") && has(review, "Kept `false` for standard runs"))
+    check("settings review: explicitly requested ensembles on",
+      has(vc$validate_settings_review(modifyList(config, list(run_ensemble_models = TRUE)), facts, list()), "| `run_ensemble_models` | `true` | Controls whether ensemble models are trained; separate from simple averaging. Ensembles are on"))
+    auto <- config
+    auto$run_ensemble_models <- NULL
+    check("settings review: automatic ensembles are flagged",
+      has(vc$validate_settings_review(auto, facts, list()), "| `run_ensemble_models` | `null` |") &&
+        has(vc$validate_settings_review(auto, facts, list()), "Auto may enable ensembles"))
+    agent <- modifyList(config, list(mode = "agent", agent = list(max_iter = 3, weighted_mape_goal = 0.03)))
+    agent_review <- vc$validate_settings_review(agent, facts, list())
+    check("settings review: Agent rows replace standard-only rows",
+      !has(agent_review, "`run_ensemble_models`") && !has(agent_review, "`forecast_approach`") &&
+        has(agent_review, "| `max_iter` | `3` |") && has(agent_review, "| `weighted_mape_goal` | `0.03` |") &&
+        has(agent_review, "| `llm` |") && has(agent_review, "**Agent iterate** forecast settings") &&
+        has(agent_review, "over up to 3 iterations"))
+    check("settings review: hidden internals are not shown",
+      !has(review, "`seed`") && !has(review, "`parallel`"))
+
+    update_run <- list(run_type = "update", label = "Agent update", hint = finn_run_type_hint("update"),
+      situation = "agent_refresh", why = "Your last Agent forecast used actuals through `2022-06-01`.",
+      alternative = list(run_type = "iterate", label = "Agent iterate (new Agent version)", reason = "Searches again."))
+    update_review <- vc$validate_settings_review(agent, facts, list(), run = update_run)
+    check("settings review: existing project names the next run type with hint, why, and other option",
+      has(update_review, "Here are the proposed settings for the next **Agent update** forecast for existing project `demo`.") &&
+        has(update_review, "- **Run type:** Agent update. Reuses what the Agent learned") &&
+        has(update_review, "- **Why:** Your last Agent forecast used actuals through `2022-06-01`.") &&
+        has(update_review, "- **Other option:** Agent iterate (new Agent version). Searches again. Tell me if you prefer it."))
+    cont <- vc$validate_settings_review(agent, facts, list(), run = list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3))
+    check("settings review: max_iter explains continuing the last Agent search",
+      has(cont, "Your last Agent search ran up to `3`; a higher value continues that Agent version"))
+    check("settings review: max_iter has no continue note for a new project",
+      !has(agent_review, "Your last Agent search"))
+
+    nr_new <- list(run_type = "standard", situation = "new_project", launch = "--mode=standard")
+    ri <- vc$validate_run_info(nr_new, "standard", config, small)
+    check("run info: new small standard project offers Agent iterate from size advice",
+      identical(ri$alternative$run_type, "iterate") && grepl("practical", ri$alternative$reason) && identical(ri$launch, "--mode=standard"))
+    check("run info: very large standard project does not recommend the Agent",
+      grepl("Not recommended", vc$validate_run_info(nr_new, "standard", config, big)$alternative$reason))
+    ri_switch <- vc$validate_run_info(nr_new, "iterate", agent, small)
+    check("run info: user-chosen Agent on a new project offers Standard and launches iterate",
+      identical(ri_switch$run_type, "iterate") && identical(ri_switch$alternative$run_type, "standard") &&
+        identical(ri_switch$launch, "--mode=iterate") && is.null(ri_switch$why))
+    nr_refresh <- list(run_type = "update", situation = "agent_refresh", why = "New actuals.", launch = "--mode=update", prior_max_iter = 3,
+      alternative = list(run_type = "iterate", label = "Agent iterate (new Agent version)", reason = "Again.", launch = "--mode=iterate --new=true --confirm=true"))
+    ri_over <- vc$validate_run_info(nr_refresh, "iterate", agent)
+    check("run info: overriding the recommendation keeps it as the other option",
+      identical(ri_over$alternative$run_type, "update") && grepl("(recommended)", ri_over$alternative$label, fixed = TRUE) &&
+        identical(ri_over$alternative$reason, "New actuals.") && identical(ri_over$launch, "--mode=iterate --new=true --confirm=true") &&
+        is.null(ri_over$prior_max_iter))
+
+    changed <- modifyList(config, list(forecast_horizon = 6, models_to_run = c("arima", "ets")))
+    changes <- vc$validate_settings_changes(config, changed, facts, "Low RAM.")
+    check("settings changes: only changed inputs with previous and new values",
+      has(changes, "| Input | Previous | New value | What it means for your forecast |") &&
+        has(changes, "| `forecast_horizon` | `12` | `6` |") && has(changes, "| `models_to_run` | `null` | `[\"arima\",\"ets\"]` |") &&
+        !has(changes, "`target_variable`") && has(changes, "### Warnings") && has(changes, "`show full configuration`"))
+    check("settings changes: no change says so",
+      has(vc$validate_settings_changes(config, config, facts), "No settings changed."))
+    check("settings changes: mode switch falls back to the full review", is.null(vc$validate_settings_changes(config, agent, facts)))
+
+    root <- tempfile("finn-prev-")
+    paths <- finn_project_paths(root, "demo")
+    dir.create(paths$dir, recursive = TRUE)
+    saved <- file.path(paths$dir, "config.json")
+    check("previous config: none before a config is saved", is.null(vc$validate_previous_config(paths, saved)))
+    finn_write_json(list(mode = "standard", forecast_horizon = 12), saved)
+    check("previous config: saved config is not compared with itself", is.null(vc$validate_previous_config(paths, saved)))
+    prev <- vc$validate_previous_config(paths, file.path(root, "draft.json"))
+    check("previous config: draft is compared with the saved config", identical(prev$forecast_horizon, 12))
   })
 })
 
@@ -552,6 +635,91 @@ with(launch, {
   check("drift: series count change", any(grepl("number of time series", launch_update_drift(paths, la, list(n_series = 5), "old", TRUE))))
   check("drift: revised history without newer dates", any(grepl("revised", launch_update_drift(paths, la, list(n_series = 4), "new", FALSE))))
   check("drift: newer dates are expected changes", length(launch_update_drift(paths, la, list(n_series = 4), "new", TRUE)) == 0)
+
+  local({
+    md5 <- launch_data_md5(data_file)
+    acfg <- modifyList(cfg, list(mode = "agent", agent = list(max_iter = 3)))
+    project_with <- function(name, runs = list(), last_agent = NULL) {
+      p <- finn_project_paths(file.path(tmp, "root"), name)
+      finn_ensure_project_dirs(p)
+      for (r in runs) do.call(finn_update_state, c(list(finn_run_paths(p, r$run_id)), r))
+      finn_write_project(p, list(name = name, last_agent = last_agent))
+      p
+    }
+    agent_last <- function(run_id, mode = "iterate", hist_end = "2023-12-01") list(status = "completed", run_id = run_id, mode = mode,
+      request_id = "req-1", agent_run_id = "agent-run-1", agent_version = 1L, hist_end_date = hist_end,
+      config_hash = launch_config_hash(acfg), data_md5 = md5)
+    agent_state <- function(run_id, mode = "iterate", config = acfg) list(run_id = run_id, mode = mode, status = "completed",
+      created_at = "2024-01-01T00:00:00+0000", data_end = "2023-12-01", config = config, data_md5 = md5)
+
+    np <- project_with("NextNew")
+    check("next run: new project follows the config mode", identical(finn_next_run(np, cfg, list())$situation, "new_project") &&
+      identical(finn_next_run(np, acfg, list())$run_type, "iterate"))
+
+    sp <- project_with("NextStd", list(list(run_id = "std-1", mode = "standard", status = "completed",
+      created_at = "2024-01-01T00:00:00+0000", data_end = "2023-12-01")))
+    sr <- finn_next_run(sp, cfg, list(last_actual_date = "2024-06-01"))
+    check("next run: standard project with new actuals refreshes with standard",
+      identical(sr$situation, "standard_refresh") && identical(sr$run_type, "standard") && identical(sr$launch, "--mode=standard") &&
+        identical(sr$alternative$run_type, "iterate") && grepl("2024-06-01", sr$why))
+    check("next run: standard project without new actuals", identical(finn_next_run(sp, cfg, list(last_actual_date = "2023-12-01"))$situation, "standard_current"))
+    pinned <- finn_next_run(sp, modifyList(cfg, list(hist_end_date = "2023-12-01")), list(last_actual_date = "2024-06-01"))
+    check("next run: pinned hist_end_date is a suggestion, not a silent change",
+      length(pinned$recommendations) == 1 && identical(pinned$recommendations[[1]]$key, "hist_end_date") &&
+        identical(pinned$recommendations[[1]]$value, "2024-06-01") && grepl("Set `hist_end_date`", pinned$why))
+
+    ap <- project_with("NextAgent", list(agent_state("iter-1")), agent_last("iter-1"))
+    ar <- finn_next_run(ap, acfg, list(last_actual_date = "2024-06-01"))
+    check("next run: Agent project with new actuals recommends Agent update",
+      identical(ar$situation, "agent_refresh") && identical(ar$run_type, "update") && identical(ar$launch, "--mode=update") &&
+        grepl("--new=true", ar$alternative$launch, fixed = TRUE) && length(ar$settings_changes) == 0)
+    ac <- finn_next_run(ap, acfg, list(last_actual_date = "2023-12-01"))
+    check("next run: current Agent project explains continuing with a higher max_iter",
+      identical(ac$situation, "agent_current") && identical(ac$run_type, "iterate") && identical(as.numeric(ac$prior_max_iter), 3) &&
+        grepl("above `3`", ac$why, fixed = TRUE))
+    check("next run: settings changes since the last Agent forecast are listed",
+      identical(finn_next_run(ap, modifyList(acfg, list(forecast_horizon = 12)), list(last_actual_date = "2024-06-01"))$settings_changes,
+        "forecast_horizon 6 -> 12"))
+
+    rpj <- project_with("NextResume", list(agent_state("iter-1"), list(run_id = "upd-2", mode = "update", status = "failed",
+      created_at = "2024-02-01T00:00:00+0000")), agent_last("iter-1"))
+    rr <- finn_next_run(rpj, acfg, list(last_actual_date = "2024-06-01"))
+    check("next run: unfinished latest run is resumed first", identical(rr$situation, "resume") && identical(rr$run_type, "update"))
+
+    check("settings drift: none without a prior config", length(finn_settings_drift(NULL, acfg)) == 0)
+    check("settings drift: hist_end_date and speed settings are ignored",
+      length(finn_settings_drift(acfg, modifyList(acfg, list(hist_end_date = "2024-06-01", parallel = "none")))) == 0)
+    check("settings drift: Agent settings are compared",
+      identical(finn_settings_drift(acfg, modifyList(acfg, list(agent = list(max_iter = 5)))), "max_iter 3 -> 5"))
+
+    more <- modifyList(acfg, list(agent = list(max_iter = 5)))
+    cd <- launch_decide(ap, "iterate", more, list(), list())
+    check("continue: higher max_iter reopens the same Agent version",
+      identical(cd$action, "new") && identical(cd$request_id, "req-1") && identical(cd$overwrite, FALSE) &&
+        any(grepl("only the iterations up to 5", cd$notes)))
+    other <- launch_decide(ap, "iterate", modifyList(more, list(forecast_horizon = 12)), list(), list())
+    check("continue: other setting changes still need a new Agent version", identical(other$result$status, "needs_new_version"))
+    same <- launch_decide(ap, "iterate", acfg, list(), list())
+    check("continue: same settings explain raising max_iter",
+      identical(same$result$status, "already_complete") && any(grepl("higher agent.max_iter", same$result$next_actions)))
+    up <- project_with("UpdateOnly", list(agent_state("upd-1", mode = "update")), agent_last("upd-1", mode = "update"))
+    check("continue: only after an iterate run", identical(launch_decide(up, "iterate", modifyList(more, list(project_name = "UpdateOnly")), list(), list())$action, "stop"))
+
+    check("mismatch: new run of another mode needs a new review",
+      identical(launch_mode_mismatch(list(action = "new"), "standard", "iterate")$status, "needs_review"))
+    check("mismatch: matching mode and resumes are not blocked",
+      is.null(launch_mode_mismatch(list(action = "new"), "agent", "update")) && is.null(launch_mode_mismatch(list(action = "resume"), "standard", "iterate")))
+
+    std_update <- launch_decide(sp, "update", acfg, list(last_actual_date = "2024-06-01"), list())
+    check("update: standard projects are told to refresh with standard",
+      identical(std_update$result$status, "needs_agent_run") && any(grepl("--mode=standard", std_update$result$next_actions, fixed = TRUE)))
+    stuck <- launch_decide(ap, "update", modifyList(acfg, list(hist_end_date = "2023-12-01")), list(last_actual_date = "2024-06-01"), list())
+    check("update: pinned hist_end_date explains why nothing is new",
+      identical(stuck$result$status, "no_new_data") && isTRUE(stuck$result$data$hist_end_pinned) && grepl("hist_end_date is set", stuck$result$message))
+    drifted <- launch_decide(ap, "update", modifyList(acfg, list(forecast_horizon = 12)), list(last_actual_date = "2024-06-01", n_series = 4), list())
+    check("update: changed settings need confirmation",
+      identical(drifted$result$status, "needs_confirmation") && any(grepl("forecast_horizon 6 -> 12", drifted$result$data$changes, fixed = TRUE)))
+  })
 
   plan_local <- list(parallel_processing = "local_machine", num_cores = 8, inner_parallel = FALSE)
   plan_seq <- list(parallel_processing = NULL, inner_parallel = FALSE)
@@ -779,6 +947,16 @@ with(launch, {
     card <- eval(preview_expr, preview)
     check("preview wires batch share without false pressure warning", card$ok && card$data$parallel$num_cores == 7 &&
       !any(grepl("Available RAM is below", card$data$warnings)))
+    check("preview returns one settings review without the old card", length(card$data$settings_review) == 1 &&
+      grepl("### Forecast configuration", card$data$settings_review, fixed = TRUE) && is.null(card$data$settings_card))
+    check("preview names the next run type for an existing standard project",
+      identical(card$data$run$run_type, "standard") && grepl("^standard_", card$data$run$situation) &&
+        grepl("next **Standard** forecast for existing project `First`", card$data$settings_review, fixed = TRUE))
+    preview$finn_main <- function(fn) fn(list(root = entry_root, project = "First", batch_size = "3", run_type = "update"))
+    preview$finn_check_config <- function(cfg, data, root) list(errors = character())
+    upd_card <- eval(preview_expr, preview)
+    check("preview warns that update needs a completed Agent forecast",
+      identical(upd_card$data$run$run_type, "update") && any(grepl("Agent", upd_card$data$warnings)))
   })
 
   if (requireNamespace("processx", quietly = TRUE) && requireNamespace("ps", quietly = TRUE)) {
@@ -1017,11 +1195,11 @@ with(up, {
   check("older skill without history reports unavailable", !missing_notes$available && grepl("no version history", missing_notes$error))
   remote_notes <- finn_skill_changes(sha = "pinned123", fetch = function(url, timeout) {
     check("release notes pinned to compared commit", grepl("/pinned123/skills/finn/version.json$", url))
-    history_json(c("0.2.0", "0.1.0"))
+    history_json(c("99.0.0", "0.1.0"))
   })
   check("remote history filters changes since installed version", remote_notes$available &&
     length(remote_notes$changes_since_installed) == 1 &&
-    identical(remote_notes$changes_since_installed[[1]]$version, "0.2.0"))
+    identical(remote_notes$changes_since_installed[[1]]$version, "99.0.0"))
   check("remote history keeps older versions", length(remote_notes$entries) == 2)
   unavailable <- finn_skill_changes(sha = "old", fetch = function(...) stop("offline"))
   check("missing remote notes do not masquerade as success", !unavailable$available && grepl("offline", unavailable$error))
@@ -1047,10 +1225,10 @@ with(up, {
   entry$finn_remote_versions <- function(...) stop("Local history must stay offline")
   entry$finn_update_check <- function(...) list(
     update_available = TRUE, finnts_update_available = FALSE, sha = "preview123",
-    local_skill_version = finn_skill_version, remote_skill_version = "0.2.0")
+    local_skill_version = finn_skill_version, remote_skill_version = "99.0.0")
   entry$finn_http_get <- function(url, timeout) {
     check("check dispatcher fetches notes at compared SHA", grepl("/preview123/skills/finn/version.json$", url))
-    history_json("0.2.0")
+    history_json("99.0.0")
   }
   # Rebind the history function so its default fetch uses the isolated seam.
   entry$finn_skill_changes <- finn_skill_changes
@@ -1063,7 +1241,7 @@ with(up, {
   entry_args <- list(action = "check")
   check_result <- eval(handler, entry)
   check("check action includes release notes without installing", identical(check_result$status, "update_available") &&
-    identical(check_result$data$release_notes$changes_since_installed[[1]]$version, "0.2.0"))
+    identical(check_result$data$release_notes$changes_since_installed[[1]]$version, "99.0.0"))
   entry$finn_update_check <- function(...) list(
     update_available = FALSE, finnts_update_available = TRUE,
     local_skill_version = finn_skill_version, remote_finnts_version = "99.0.0")
@@ -1076,7 +1254,7 @@ with(up, {
     check("remote history honors selected ref", identical(ref, "release"))
     list(sha = "preview123")
   }
-  entry$finn_http_get <- function(...) history_json("0.2.0")
+  entry$finn_http_get <- function(...) history_json("99.0.0")
   online_result <- eval(handler, entry)
   check("remote changes action returns pinned history", identical(online_result$status, "ok") &&
     grepl("/preview123/", online_result$data$source) && length(online_result$data$changes_since_installed) == 1)

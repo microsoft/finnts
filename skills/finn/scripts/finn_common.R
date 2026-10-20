@@ -7,7 +7,7 @@
 #    "next_actions": [...]}
 # Coding agents read only that final line. Nothing here deletes files.
 
-finn_skill_version <- "0.1.0"
+finn_skill_version <- "0.2.0"
 finn_schema_version <- 1L
 
 #' Null-coalescing helper
@@ -1044,7 +1044,8 @@ finn_append_history <- function(entry) {
 #' @param n_series Number of time series.
 #' @param mode "standard", "iterate", or "update".
 #' @param workers Parallel workers in use (NULL or 1 for sequential).
-#' @return List with `low_min`, `high_min`, and `text`.
+#' @return List with `low_min`, `high_min`, and `text` (a single value when
+#'   both ends of the range round to the same label).
 finn_estimate_runtime <- function(n_series, mode = "standard", workers = NULL) {
   n <- max(as.numeric(n_series %||% 1), 1)
   w <- max(as.numeric(workers %||% 1), 1)
@@ -1053,9 +1054,11 @@ finn_estimate_runtime <- function(n_series, mode = "standard", workers = NULL) {
   mins <- 3 + per_series * n * mult / w
   mins <- pmin(mins, 72 * 60)
   fmt <- function(m) if (m < 90) sprintf("%d minutes", as.integer(ceiling(m))) else sprintf("%.1f hours", m / 60)
+  low <- fmt(mins[["low"]])
+  high <- fmt(mins[["high"]])
   list(
     low_min = round(mins[["low"]]), high_min = round(mins[["high"]]),
-    text = paste0("roughly ", fmt(mins[["low"]]), " to ", fmt(mins[["high"]]))
+    text = if (identical(low, high)) paste0("roughly ", low) else paste0("roughly ", low, " to ", high)
   )
 }
 
@@ -2235,6 +2238,171 @@ finn_recommend_settings <- function(cfg, facts, root = NULL, workers = NULL) {
     test_subset_first = tier != "small",
     estimated_runtime = finn_estimate_runtime(n, run_mode, workers)$text
   )
+}
+
+#' User-facing name of a run type
+#'
+#' @param run_type "standard", "iterate", or "update".
+#' @return Label such as "Agent update".
+finn_run_type_label <- function(run_type) {
+  switch(run_type, iterate = "Agent iterate", update = "Agent update", "Standard")
+}
+
+#' Plain-language explanation of what a run type does
+#'
+#' @param run_type "standard", "iterate", or "update".
+#' @param cfg Merged config, used for the Agent iteration limit.
+#' @return One or two sentences.
+finn_run_type_hint <- function(run_type, cfg = list()) {
+  switch(run_type,
+    iterate = sprintf(paste(
+      "An AI model looks at your data, tries different settings over up to %s iterations,",
+      "and keeps what improves accuracy per series. Slower, and it uses Copilot requests."
+    ), cfg$agent$max_iter %||% 3),
+    update = paste(
+      "Reuses what the Agent learned in your last Agent forecast and refits on the new actuals;",
+      "much faster than a new Agent search."
+    ),
+    "Finn trains the selected models once, scores them on back tests, and picks the best per series. Fast and predictable."
+  )
+}
+
+#' Forecast settings that differ between two configs
+#'
+#' Compares the settings that change what an Agent update or a continued
+#' Agent search produces. `hist_end_date` is left out because a refresh is
+#' expected to move it, and speed-only settings are ignored.
+#'
+#' @param prior Config of the earlier run, or NULL.
+#' @param cfg Current config.
+#' @return Character vector such as `"forecast_horizon 12 -> 6"`; empty when
+#'   nothing changed or `prior` is NULL.
+finn_settings_drift <- function(prior, cfg) {
+  if (is.null(prior)) {
+    return(character())
+  }
+  prior <- finn_merge_config(prior)
+  cfg <- finn_merge_config(cfg)
+  fmt <- function(v) {
+    if (is.null(v) || !length(v)) "null" else as.character(jsonlite::toJSON(unlist(v), auto_unbox = TRUE, digits = NA))
+  }
+  top <- c("target_variable", "combo_variables", "date_type", "forecast_horizon", "external_regressors",
+    "hist_start_date", "combo_cleanup_date", "back_test_scenarios", "back_test_spacing", "negative_forecast",
+    "run_global_models", "run_local_models", "fiscal_year_start")
+  agent <- c("allow_hierarchical_forecast", "max_iter", "weighted_mape_goal", "allow_iterate_forecast")
+  pairs <- c(
+    lapply(top, function(k) list(k, prior[[k]], cfg[[k]])),
+    lapply(agent, function(k) list(k, prior$agent[[k]], cfg$agent[[k]])),
+    list(list("llm", prior$agent$llm[c("provider", "model")], cfg$agent$llm[c("provider", "model")]))
+  )
+  out <- character()
+  for (p in pairs) {
+    old <- fmt(p[[2]])
+    new <- fmt(p[[3]])
+    if (!identical(old, new)) out <- c(out, sprintf("%s %s -> %s", p[[1]], old, new))
+  }
+  out
+}
+
+#' Recommend the next run type from a project's run history
+#'
+#' Read-only. Resumes an unfinished latest run; otherwise refreshes on the
+#' project's track (Agent projects with Agent update, standard projects with
+#' a standard run) when the file has actuals past the last forecast. With no
+#' new actuals, an Agent project can continue its search on the same Agent
+#' version by raising `max_iter`. A project with no runs follows the config
+#' mode, so the size-based advice in [finn_recommend_settings()] still applies.
+#'
+#' @param paths Project paths.
+#' @param cfg Merged, validated config.
+#' @param facts Data facts from [finn_check_config()].
+#' @return List with `run_type`, `situation` ("new_project", "resume",
+#'   "agent_refresh", "agent_current", "standard_refresh", or
+#'   "standard_current"), `why` (or NULL), `launch` (run_forecast.R arguments),
+#'   `alternative` (list with `run_type`, `label`, `reason`, `launch`, or
+#'   NULL), `data_end`, `last_end`, `prior_max_iter`, `last_agent_version`,
+#'   `settings_changes` (from [finn_settings_drift()] against the last Agent
+#'   forecast), and `recommendations` (each `key`, `value`, `reason`).
+finn_next_run <- function(paths, cfg, facts = list()) {
+  runs <- Filter(function(s) !identical(s$effective_status, "unreadable"), finn_list_runs(paths))
+  last_agent <- (finn_read_project(paths) %||% list())$last_agent
+  agent_done <- identical(last_agent$status, "completed")
+  data_end <- facts$last_actual_date %||% facts$date_max
+  data_end <- if (is.null(data_end)) NULL else as.character(data_end)
+  completed <- Filter(function(s) identical(s$effective_status, "completed"), runs)
+  last_done <- if (length(completed)) completed[[1]]
+  out <- list(run_type = if (identical(cfg$mode, "agent")) "iterate" else "standard", situation = "new_project",
+    why = NULL, alternative = NULL, data_end = data_end, last_end = NULL, prior_max_iter = NULL,
+    last_agent_version = if (agent_done) last_agent$agent_version, settings_changes = character(),
+    recommendations = list())
+  later <- function(a, b) !is.null(a) && !is.null(b) && a > as.character(b)
+  hist_note <- function() {
+    if (!later(data_end, cfg$hist_end_date)) {
+      return(NULL)
+    }
+    out$recommendations <<- list(list(key = "hist_end_date", value = data_end, reason = sprintf(
+      "`hist_end_date` is set to `%s`, which leaves out the new actuals through `%s`. Use `%s` so the forecast starts after them.",
+      cfg$hist_end_date, data_end, data_end
+    )))
+    sprintf(" Set `hist_end_date` to `%s` to include them.", data_end)
+  }
+  agent_switch <- list(run_type = "iterate", label = "Agent iterate",
+    reason = "Switches the whole project to the Agent, which searches settings per series for better accuracy. Slower, uses Copilot requests, and later refreshes use Agent update.",
+    launch = "--mode=iterate")
+  new_version <- list(run_type = "iterate", label = "Agent iterate (new Agent version)",
+    reason = "Searches again from scratch, for example after the series or drivers changed a lot. Slower, uses more Copilot requests, and needs your confirmation; earlier versions are kept.",
+    launch = "--mode=iterate --new=true --confirm=true")
+
+  latest <- if (length(runs)) runs[[1]]
+  if (!is.null(latest) && latest$effective_status %in% c("interrupted", "failed", "cancelled") &&
+    isTRUE(latest$mode %in% c("standard", "iterate", "update"))) {
+    out$run_type <- latest$mode
+    out$situation <- "resume"
+    out$why <- sprintf("Run `%s` (%s) stopped before finishing (%s). Running it again resumes where it stopped with its saved settings.",
+      latest$run_id, finn_run_type_label(latest$mode), latest$effective_status)
+  } else if (agent_done && (is.null(last_done) || !identical(last_done$mode, "standard"))) {
+    out$last_end <- last_agent$hist_end_date
+    version <- last_agent$agent_version %||% "?"
+    prior <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))
+    out$settings_changes <- finn_settings_drift(prior$config, cfg)
+    if (later(data_end, last_agent$hist_end_date)) {
+      out$run_type <- "update"
+      out$situation <- "agent_refresh"
+      out$why <- paste0(sprintf("Your last Agent forecast (version %s) used actuals through `%s`; the file now has actuals through `%s`.",
+        version, last_agent$hist_end_date, data_end), hist_note() %||% "")
+      out$alternative <- new_version
+    } else {
+      out$prior_max_iter <- prior$config$agent$max_iter
+      out$run_type <- "iterate"
+      out$situation <- "agent_current"
+      out$why <- if (identical(last_agent$mode, "iterate") && !is.null(out$prior_max_iter)) {
+        sprintf(paste(
+          "Your last Agent forecast (version %s) already uses actuals through `%s`. To search longer, set `max_iter` above `%s`:",
+          "the same Agent version continues and only the extra iterations run."
+        ), version, last_agent$hist_end_date %||% data_end, out$prior_max_iter)
+      } else {
+        sprintf("Your last Agent forecast (version %s) already uses actuals through `%s`. Add newer actuals to refresh it with Agent update.",
+          version, last_agent$hist_end_date %||% data_end)
+      }
+      out$alternative <- new_version
+    }
+  } else if (!is.null(last_done)) {
+    out$last_end <- last_done$data_end
+    out$run_type <- "standard"
+    if (later(data_end, last_done$data_end)) {
+      out$situation <- "standard_refresh"
+      out$why <- paste0(sprintf("Your last standard forecast used actuals through `%s`; the file now has actuals through `%s`. Standard projects refresh with another standard run.",
+        last_done$data_end, data_end), hist_note() %||% "")
+    } else {
+      out$situation <- "standard_current"
+      out$why <- sprintf("Your last standard forecast already uses actuals through `%s`. A new standard run is only needed if you change settings.",
+        last_done$data_end %||% data_end)
+    }
+    out$alternative <- agent_switch
+  }
+  out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else switch(out$run_type,
+    iterate = "--mode=iterate", update = "--mode=update", "--mode=standard")
+  out
 }
 
 #' Merge a user config over defaults

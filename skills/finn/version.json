@@ -1,7 +1,16 @@
 {
-  "version": "0.1.0",
-  "released": "2026-10-12",
+  "version": "0.2.0",
+  "released": "2026-10-20",
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-20",
+      "changes": [
+        "Settings reviews now include a data check, a configuration table explaining each input, warnings, suggestions, and an estimated run time on this computer.",
+        "Revising settings shows only the inputs that changed, with previous and new values; reply `run` to save and start the forecast.",
+        "Reviews name the run type with a plain-language hint and suggest the next run from project history: update for new actuals, more Agent iterations, or a standard refresh."
+      ]
+    },
     {
       "version": "0.1.0",
       "date": "2026-10-12",

@@ -28,6 +28,30 @@ and then sending poorly forecast or key series to the Agent in a separate projec
 forecasts are harder to explain, compare, and maintain. If the user asks for that split
 themselves, explain these drawbacks and follow their choice.
 
+## Agreeing on the run type before the review
+
+Settle the run type with the user before showing settings, then run
+`validate_config.R --project=<name> --run_type=<standard|iterate|update>`. Without
+`--run_type`, the script proposes one and returns it in `data.run`. The review intro
+names the run type, adds a plain-language hint, says why it fits, and offers the other
+option; if the user prefers that option, rerun with its `--run_type`. Launch with the
+arguments in `data.run.launch`.
+
+For new projects the proposal follows the config `mode`; use the size tiers below to
+recommend standard or Agent iterate. For existing projects it follows the history:
+
+| Project history | Proposed next run | Other option |
+|---|---|---|
+| Latest run stopped, failed, or was cancelled | Resume it with the same run type | none |
+| Finished Agent forecast, newer actuals in the file | Agent update | Agent iterate as a new Agent version |
+| Finished Agent forecast, no newer actuals | Agent iterate; a higher `agent.max_iter` continues the same Agent version | Agent iterate as a new Agent version |
+| Finished standard forecast | Standard | Agent iterate |
+
+The review warns when an update has nothing to build on or no newer actuals, and lists
+settings that differ from the last Agent forecast. If `hist_end_date` is set to an
+earlier date than the newest actuals, it suggests moving `hist_end_date`; apply it only
+if the user agrees.
+
 ## Ensemble policy for standard runs
 
 For all new standard runs, explicitly set `run_ensemble_models = false` in the
@@ -45,8 +69,8 @@ the running or saved run.
 
 ## Size tiers
 
-`validate_config.R` returns `data.recommendations` and adds lines to the settings card.
-Tiers by series count:
+`validate_config.R` returns `data.recommendations` and lists them in the settings
+review's "Suggestions" section. Tiers by series count:
 
 | Tier | Series | What the skill suggests |
 |---|---|---|

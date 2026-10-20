@@ -16,7 +16,7 @@ an exception: it can change on resume for memory recovery.
 | `agent_inputs_changed` | Agent saw different settings/data than its saved version | restore the original settings/data and resume, or confirm a new Agent version |
 | `agent_history` | saved Agent history did not match cleanly | delete nothing; report run and request ids; offer a confirmed new Agent version |
 | `agent_approach_changed` | forecast approach differs from the saved Agent version | restore the approach, or confirm a new version |
-| `update_needs_agent` | update has no finished Agent forecast | run `--mode=iterate` or resume the unfinished Agent run |
+| `update_needs_agent` | update has no finished Agent forecast | run `--mode=iterate` or resume the unfinished Agent run; standard projects refresh with `--mode=standard` |
 | `update_too_many_new_series` | too many new series for a quick update | with approval, a new iterate version |
 | `update_model_mix` | update turns off local/global models the last Agent used | restore `run_local_models` / `run_global_models`, or a new version |
 | `missing_regressors` | a driver column is missing or lacks future values | `profile_data.R`; add future driver values for the full horizon or drop the driver |

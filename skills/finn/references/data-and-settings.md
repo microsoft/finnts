@@ -5,7 +5,9 @@ For the required data layout, history length, and template, see
 
 ## Settings (`config.json`)
 
-Change settings only through `validate_config.R` and the user's approval. Key settings:
+Change settings only through `validate_config.R` and the user's approval. Show
+`data.settings_review` exactly as written; to propose a change, validate a draft
+config with `--config=<draft>` and show `data.settings_changes`. Key settings:
 
 | setting | meaning |
 |---|---|

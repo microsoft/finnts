@@ -280,8 +280,10 @@ launch_version_changes <- function(recorded, current = finn_versions()) {
 #' @param cur_md5 Current input file MD5.
 #' @param newer Whether the data has dates past the last forecast, or the
 #'   user already confirmed revised history with `--force=true`.
+#' @param cfg Current validated config, compared with the last Agent
+#'   forecast's settings; NULL skips the settings comparison.
 #' @return Character vector of drift descriptions (possibly empty).
-launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer) {
+launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer, cfg = NULL) {
   prior <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))
   out <- character()
   old_n <- prior$n_series
@@ -292,7 +294,50 @@ launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer) {
   if (!newer && !is.null(last_agent$data_md5) && !identical(last_agent$data_md5, cur_md5)) {
     out <- c(out, "the input file changed but has no newer dates, so earlier history may have been revised")
   }
+  settings <- if (!is.null(cfg) && is.list(prior$config)) finn_settings_drift(prior$config, cfg) else character()
+  if (length(settings)) {
+    out <- c(out, paste0("these settings changed: ", paste(settings, collapse = ", ")))
+  }
   out
+}
+
+#' Continue the last Agent search on the same version with more iterations
+#'
+#' `iterate_forecast()` treats `max_iter` as the total for an Agent version,
+#' so reopening the last iterate request with a higher limit runs only the
+#' extra iterations. Allowed only when the last Agent forecast was an iterate
+#' run, the input file is unchanged, and the only changed setting is a higher
+#' `agent.max_iter`.
+#'
+#' @param paths Project paths.
+#' @param last_agent `last_agent` entry from project.json.
+#' @param cfg Current validated config.
+#' @param cur_md5 Current input file MD5.
+#' @return A "new" decision that reuses the last request id, or NULL.
+launch_continue_iterate <- function(paths, last_agent, cfg, cur_md5) {
+  if (!identical(last_agent$mode, "iterate") || !identical(last_agent$status, "completed") ||
+    is.null(last_agent$request_id) || is.null(last_agent$run_id) || !identical(last_agent$data_md5, cur_md5)) {
+    return(NULL)
+  }
+  prior <- finn_read_state(finn_run_paths(paths, last_agent$run_id))$config
+  old_max <- prior$agent$max_iter
+  new_max <- cfg$agent$max_iter
+  if (is.null(prior) || is.null(old_max) || is.null(new_max) || !(as.numeric(new_max) > as.numeric(old_max))) {
+    return(NULL)
+  }
+  prior <- finn_merge_config(prior)
+  prior$agent$max_iter <- new_max
+  if (!identical(launch_config_hash(prior), launch_config_hash(cfg))) {
+    return(NULL)
+  }
+  versions <- launch_version_changes(last_agent)
+  list(action = "new", overwrite = FALSE, request_id = last_agent$request_id,
+    notes = c(sprintf("This continues Agent version %s: it already ran up to %s iterations, so only the iterations up to %s run now.",
+      last_agent$agent_version %||% "?", old_max, new_max),
+      if (length(versions)) {
+        paste0("The last Agent forecast used different software (", paste(versions, collapse = "; "),
+          "). Tell the user the extra iterations use the installed versions and results may shift slightly.")
+      }))
 }
 
 #' Rough runtime estimate for a launch
@@ -343,6 +388,29 @@ launch_data_end <- function(cfg, facts) {
   if (is.null(end)) NULL else as.character(end)
 }
 
+#' Stop a new run whose mode differs from the reviewed config
+#'
+#' The settings review is rendered for the saved config's mode, so starting a
+#' new run of the other kind would launch settings the user did not see.
+#' Resumes keep their own saved settings and are never blocked.
+#'
+#' @param decision Result of [launch_decide()].
+#' @param saved_mode Mode stored in the project config ("standard" or "agent").
+#' @param mode Launch mode.
+#' @return NULL when the launch may proceed, otherwise a "needs_review" `finn_result`.
+launch_mode_mismatch <- function(decision, saved_mode, mode) {
+  if (!identical(decision$action, "new") || identical(saved_mode, launch_config_mode(mode))) {
+    return(NULL)
+  }
+  finn_result(FALSE, "needs_review", paste0(
+    "The saved settings are for a ", if (identical(saved_mode, "agent")) "Agent" else "Standard",
+    " forecast, but this launch asks for ", finn_run_type_label(mode), ". Nothing was started."
+  ),
+  list(saved_mode = saved_mode, mode = mode),
+  c(paste0("Rerun validate_config.R with --run_type=", mode, ", show data.settings_review to the user, and save with --save=true once they agree."),
+    paste0("Then rerun this command with --mode=", mode, ".")))
+}
+
 #' Decide whether to resume, refuse, or start fresh
 #'
 #' @param paths Project paths.
@@ -351,7 +419,8 @@ launch_data_end <- function(cfg, facts) {
 #' @param facts Data facts.
 #' @param args Parsed arguments.
 #' @return List with `action` ("resume", "new", or "stop"), plus `prior`,
-#'   `overwrite`, `notes`, and a `result` when stopping.
+#'   `overwrite`, `notes`, a `request_id` when continuing the last Agent
+#'   version, and a `result` when stopping.
 launch_decide <- function(paths, mode, cfg, facts, args) {
   runs <- finn_list_runs(paths)
   latest <- launch_latest_of_mode(runs, mode)
@@ -409,11 +478,18 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
         c("Run diagnose_run.R on that run. To start over, ask the user to confirm a new Agent version, then rerun with --new=true --confirm=true.")))
     }
     if (!want_new) {
+      continued <- launch_continue_iterate(paths, last_agent, cfg, cur_md5)
+      if (!is.null(continued)) {
+        return(continued)
+      }
       same <- identical(last_agent$config_hash, cur_hash) && identical(last_agent$data_md5, cur_md5)
       newer <- !is.null(last_agent$hist_end_date) && !is.null(data_end) && data_end > last_agent$hist_end_date
       msg <- if (same) "The latest Agent forecast already used these settings and data." else "Settings or data changed since the latest Agent forecast."
       acts <- c(
         if (newer) "The data has newer dates. Suggest --mode=update to refresh the forecast without a full new search.",
+        if (same && identical(last_agent$mode, "iterate")) {
+          "To search longer on the same Agent version, show the review with a higher agent.max_iter, save it, then rerun this command; only the extra iterations run."
+        },
         "To search again from scratch, ask the user to confirm a new Agent version, then rerun with --new=true --confirm=true.",
         "To review results instead, use export_results.R or a free-form analysis."
       )
@@ -431,18 +507,37 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
 
   # update
   if (is.null(last_agent) || !identical(last_agent$status, "completed")) {
+    done <- Filter(function(s) identical(s$effective_status, "completed"), runs)
+    standard_project <- length(done) && identical(done[[1]]$mode, "standard")
     return(stop_with("needs_agent_run",
       "Update needs a finished Agent forecast to build on, and none was found for this project.",
-      NULL, c("Run --mode=iterate first, or check run_status.R for an unfinished Agent run to resume.")))
+      NULL, if (standard_project) {
+        c("This project's forecasts are standard runs. Refresh it with new actuals using a standard run: rerun validate_config.R with --run_type=standard, show the review, then launch with --mode=standard.",
+          "To switch the project to the Agent instead, start with --mode=iterate after the user agrees.")
+      } else {
+        c("Run --mode=iterate first, or check run_status.R for an unfinished Agent run to resume.")
+      }))
   }
   newer <- !is.null(last_agent$hist_end_date) && !is.null(data_end) && data_end > last_agent$hist_end_date
   if (!newer && !finn_bool(finn_arg(args, "force"))) {
+    actual_end <- facts$last_actual_date %||% facts$date_max
+    actual_end <- if (is.null(actual_end)) NULL else as.character(actual_end)
+    pinned <- !is.null(cfg$hist_end_date) && !is.null(actual_end) && actual_end > as.character(cfg$hist_end_date)
     return(stop_with("no_new_data",
-      paste0("The actuals end on ", data_end, ", the same as the last Agent forecast (", last_agent$hist_end_date, "). There is nothing new to update with."),
-      list(data_end = data_end, last_end = last_agent$hist_end_date),
-      c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")))
+      if (pinned) {
+        paste0("hist_end_date is set to ", cfg$hist_end_date, ", so the update would stop at the same date as the last Agent forecast (",
+          last_agent$hist_end_date, ") even though the file has actuals through ", actual_end, ".")
+      } else {
+        paste0("The actuals end on ", data_end, ", the same as the last Agent forecast (", last_agent$hist_end_date, "). There is nothing new to update with.")
+      },
+      list(data_end = data_end, last_end = last_agent$hist_end_date, actual_end = actual_end, hist_end_pinned = pinned),
+      if (pinned) {
+        c(paste0("Ask the user to change hist_end_date to ", actual_end, " (or remove it): rerun validate_config.R with --run_type=update, show the review, save with --save=true, then rerun this command."))
+      } else {
+        c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")
+      }))
   }
-  drift <- launch_update_drift(paths, last_agent, facts, cur_md5, newer || finn_bool(finn_arg(args, "force")))
+  drift <- launch_update_drift(paths, last_agent, facts, cur_md5, newer || finn_bool(finn_arg(args, "force")), cfg)
   if (length(drift) && !confirmed) {
     return(stop_with("needs_confirmation",
       paste0("Since the last Agent forecast, ", paste(drift, collapse = "; "), "."),
@@ -469,6 +564,7 @@ finn_main(function(args) {
   cfg <- finn_read_project_config(paths)
   mode <- finn_arg(args, "mode") %||% (if (identical(cfg$mode, "agent")) "iterate" else "standard")
   if (!mode %in% c("standard", "iterate", "update")) stop("--mode must be standard, iterate, or update.", call. = FALSE)
+  saved_mode <- cfg$mode %||% "standard"
   cfg$mode <- launch_config_mode(mode)
 
   # Hold a project launch lock so two agents cannot both pass the active-run
@@ -507,6 +603,10 @@ finn_main(function(args) {
   if (identical(decision$action, "stop")) {
     return(decision$result)
   }
+  mismatch <- launch_mode_mismatch(decision, saved_mode, mode)
+  if (!is.null(mismatch)) {
+    return(mismatch)
+  }
 
   if (identical(decision$action, "resume")) {
     prior <- decision$prior
@@ -519,7 +619,7 @@ finn_main(function(args) {
   } else {
     run_cfg <- cfg
     step_down <- 0L
-    request_id <- if (mode == "standard") NULL else finn_new_request_id()
+    request_id <- if (mode == "standard") NULL else decision$request_id %||% finn_new_request_id()
     resumed <- 0L
   }
 

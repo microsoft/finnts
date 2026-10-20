@@ -76,10 +76,10 @@ Runs launch in the background and return immediately; do not block the chat wait
 | Replace the data with a newer file | `setup_project.R --action=create --project=<name> --data=<file>`; on `needs_confirmation` ask, then add `--replace_data=true` |
 | Check disk space used | `setup_project.R --action=disk_usage --project=<name>` |
 | Compare two runs | Free-form R with `finn_compare_runs()` ([references/analysis.md](references/analysis.md)) |
-| Review or change settings | `validate_config.R --project=<name>` and show the settings card; `--save=true` after the user agrees |
+| Review or change settings | `validate_config.R --project=<name>` (add `--run_type=standard\|iterate\|update` once the user picks), show `data.settings_review` exactly as written; for a change, validate a draft with `--config=<draft>` and show `data.settings_changes`; `--save=true` after the user replies `run` |
 | Run a standard forecast | `run_forecast.R --project=<name> --mode=standard` |
 | Run the Agent (AI model search) | `run_forecast.R --project=<name> --mode=iterate` |
-| Refresh with new actuals | `run_forecast.R --project=<name> --mode=update` |
+| Refresh with new actuals | Same run type as the project's last forecast: `data.run.launch` from `validate_config.R` (`--mode=update` for Agent projects, `--mode=standard` for standard ones) |
 | Resume a stopped run | `run_forecast.R --project=<name> --mode=<same mode>` |
 | Check progress | `run_status.R --project=<name>` (stage and % complete); `--all=true` for every active run on this computer |
 | Stop a run | Ask, then `run_cancel.R --project=<name> --run_id=<id> --confirm=true` |
@@ -136,28 +136,42 @@ Do not change the finnts package version for a skill-only change.
    no file ready or are unsure of the layout, show data-requirements.md and the template.
 3. `setup_project.R --action=create --project=<name> --data=<file>`. The input file is
    copied into the project; the original is untouched.
-4. `profile_data.R`, then `validate_config.R`. Show the settings card: series columns,
-   target, date type, horizon, back tests, models, and drivers. Ask about anything marked
-   as a guess, including how dates and decimals were read and, for monthly or longer
-   data, which month the fiscal year starts. Show any size-based suggestions from
-   `data.recommendations` with their reasons; apply them only if the user agrees, and
-   never refuse a run. For more than 100 series, suggest a sample test first
-   ([references/choosing-a-run.md](references/choosing-a-run.md)). Save only after the
-   user agrees.
-5. Recommend one run type for the whole data set (choosing-a-run.md); never suggest
-   splitting series across run types. Standard for large data or speed; Agent iterate
-   for small to medium data where accuracy matters, which needs an LLM, by default
-   GitHub Copilot through `finnts::chat_copilot()`; Agent update to refresh a finished
-   Agent project with new actuals. The user decides. Before the first
+4. `profile_data.R`, then agree on one run type for the whole data set before showing
+   settings (choosing-a-run.md); never suggest splitting series across run types.
+   Standard for large data or speed; Agent iterate for small to medium data where
+   accuracy matters, which needs an LLM, by default GitHub Copilot through
+   `finnts::chat_copilot()`; Agent update to refresh a finished Agent project with new
+   actuals. For existing projects, `validate_config.R` recommends the next run from the
+   project's history (`data.run`); explain its `why` and other option. The user decides;
+   pass their choice with `--run_type=<standard|iterate|update>`.
+5. `validate_config.R --project=<name> --run_type=<choice>`. Show `data.settings_review`
+   exactly as written; do not reorder, reformat, or paraphrase it. It includes an intro
+   naming the run type with a plain-language hint, why it fits, and
+   the other option; a data check; a forecast configuration table with each input's value
+   and meaning; warnings; suggestions; and run time on this computer. If the user now
+   prefers the other option, rerun with its `--run_type` and show the new review. Ask
+   about anything marked as a guess, including how dates and decimals were read and, for
+   monthly or longer data, which month the fiscal year starts. Apply suggestions from
+   `data.recommendations` only if the user agrees, and never refuse a run. For more than
+   100 series, suggest a sample test first
+   ([references/choosing-a-run.md](references/choosing-a-run.md)). When the user changes
+   an input, write the full proposed config to a draft file outside the project, run
+   `validate_config.R --project=<name> --config=<draft> --run_type=<choice>`, and show
+   `data.settings_changes` (only the changed inputs; show `data.settings_review` if they
+   ask for the full configuration). Save with `--save=true --run_type=<choice>` only
+   after the user replies `run` or otherwise agrees.
+6. Launch with `run_forecast.R --project=<name>` plus the arguments in `data.run.launch`,
+   so the run matches the reviewed run type; if launch returns `needs_review`, the saved
+   settings were reviewed for another run type, so redo step 5. Before the first
    Agent run, confirm they are fine with data summaries and series names (not raw rows)
    being sent to the chosen LLM (README "Your data and privacy"). If launch returns `needs_setup`,
-   walk them through each listed fix (setup.md "GitHub Copilot"). Launch with
-   `run_forecast.R`, tell them it runs in the background, share `estimated_runtime` as a
+   walk them through each listed fix (setup.md "GitHub Copilot"). Tell them it runs in
+   the background, share `estimated_runtime` as a
    rough range (not a promise), relay any `notes` (for example Copilot premium-request
    use, OneDrive sync), and check `run_status.R` when they ask.
    Data `warnings` (zero-only series, values after `hist_end_date`, drivers without
    future values) never block a run; explain them and let the user decide.
-6. When it completes, summarize accuracy and the forecast (in the input's units), offer
+7. When it completes, summarize accuracy and the forecast (in the input's units), offer
    `export_results.R`, and answer follow-ups with free-form analysis. After the first
    completed run (or the tutorial), offer three or four next prompts from
    starter-prompts.md.
