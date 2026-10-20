@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -308,6 +308,148 @@ forecasts for the grand total of “Enterprise” and “Public Sector”</li>
 <li>Product: model “Target” across the sum of “Product”. Creating
 forecasts for the grand total of “Coffee” and “Tea”.</li>
 </ul>
+</div>
+<div class="section level3">
+<h3 id="reviewed-custom-rules">Reviewed Custom Rules<a class="anchor" aria-label="anchor" href="#reviewed-custom-rules"></a>
+</h3>
+<p>Standalone hierarchy runs can apply a reviewed custom rule
+independently to every prepared node, including aggregates, then use
+FinnTS’s regular hts reconciliation to publish the lowest level. Review
+must explicitly permit this adjustment: reconciled values are not
+guaranteed to equal the rule’s original base predictions.</p>
+<p>An HTS forecast using custom models requires a shared, explicitly
+enrolled mixed custom/FinnTS candidate pool. Custom-only requests must
+use <code>bottoms_up</code> with a compatible bottom-up definition. Finn
+does not silently add competitors or switch approaches. Eligibility
+depends on requested candidates, not winners; custom models may win
+everywhere. Existing built-in-only hierarchy behavior is unchanged.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">custom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
+<span>  instructions <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/paste.html" class="external-link">paste</a></span><span class="op">(</span></span>
+<span>    <span class="st">"For each hierarchy node, forecast the mean of all historical targets."</span>,</span>
+<span>    <span class="st">"Allow normal FinnTS reconciliation to adjust base forecasts."</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>, input_data <span class="op">=</span> <span class="va">data_tbl</span>,</span>
+<span>  combo_variables <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Region"</span>, <span class="st">"Product"</span><span class="op">)</span>, target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
+<span>  date_type <span class="op">=</span> <span class="st">"month"</span>, forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  model_type <span class="op">=</span> <span class="st">"local"</span>, name <span class="op">=</span> <span class="st">"business_mean"</span>,</span>
+<span>  control <span class="op">=</span> <span class="fu"><a href="../reference/custom_model_control.html">custom_model_control</a></span><span class="op">(</span>forecast_approach <span class="op">=</span> <span class="st">"standard_hierarchy"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span>data_output <span class="op">=</span> <span class="st">"csv"</span>, object_output <span class="op">=</span> <span class="st">"rds"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/forecast_time_series.html">forecast_time_series</a></span><span class="op">(</span></span>
+<span>  <span class="va">run_info</span>, <span class="va">data_tbl</span>, <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Region"</span>, <span class="st">"Product"</span><span class="op">)</span>, <span class="st">"value"</span>, <span class="st">"month"</span>, <span class="fl">3</span>,</span>
+<span>  forecast_approach <span class="op">=</span> <span class="st">"standard_hierarchy"</span>,</span>
+<span>  custom_models <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>business_mean <span class="op">=</span> <span class="va">custom</span><span class="op">)</span>,</span>
+<span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"business_mean"</span>, <span class="st">"meanf"</span><span class="op">)</span>,</span>
+<span>  recipes_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"R1"</span>, <span class="st">"C1"</span><span class="op">)</span>, stationary <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  clean_missing_values <span class="op">=</span> <span class="cn">FALSE</span>, clean_outliers <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>, run_global_models <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  run_ensemble_models <span class="op">=</span> <span class="cn">FALSE</span>, average_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  feature_selection <span class="op">=</span> <span class="cn">FALSE</span>, inner_parallel <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  negative_forecast <span class="op">=</span> <span class="cn">TRUE</span>, weekly_to_daily <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>The input must contain a complete finite leaf panel over the
+requested historical window. This custom profile does not silently
+zero-fill missing observations. Raw authoring samples up to three
+deterministic leaf series and keeps all their derived nodes; prepared
+authoring reads the whole existing hierarchy without modifying it. Both
+enforce a 10000 historical-node-row bound and validate every captured
+node. Manual and automatic approval use the same gates. Individual
+authoring validation does not enroll a custom-only HTS run.</p>
+<p>Old bottom-up definitions and hashes remain valid but do not acquire
+hierarchy permission. New hierarchy definitions bind one approach,
+per-node application and permission for reconciliation. The approved
+envelope and registry format are unchanged. Run manifests additionally
+bind topology and input artifacts. Changed context or missing base
+candidates cannot be treated as a completed restart.</p>
+<p>Custom hierarchy requires <code>average_models = FALSE</code>, no
+external regressors, no target transformations or cleaning, and no
+pooled/global fitting. Weekly output stays weekly. Every enrolled
+candidate must have complete finite node/fold/date coverage before
+reconciliation; missing nodes are not filled from <code>snaive</code>
+and failed candidates are not silently skipped. Normal weights and
+selection policy remain unchanged. Per-model results retain their
+readable aliases and full version IDs; the selected mixture is published
+as <code>Best-Model</code>.</p>
+<p>The following matrix distinguishes implementation from qualification
+evidence. It does not imply every cross-product of formats, cadences and
+workers was tested.</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr class="header">
+<th>Capability</th>
+<th>Current Evidence or Boundary</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Standard/grouped, local R1, monthly CSV</td>
+<td>Implemented-tested: real mixed forecasts, strict coverage and
+exact-version restarts</td>
+</tr>
+<tr class="even">
+<td>Grouped monthly CSV, two local-machine workers</td>
+<td>Implemented-tested: sequential parity, two worker PIDs and exact
+installed namespace</td>
+</tr>
+<tr class="odd">
+<td>Year/quarter/month/week/day at native cadence</td>
+<td>Implemented-tested: independent reconciliation projection and
+date-key checks; complete nonmonthly pipeline qualification remains
+open</td>
+</tr>
+<tr class="even">
+<td>RDS and Parquet data, RDS objects</td>
+<td>Implemented-tested: preparation, context capture and exact-path
+reload; full forecasting/worker combinations remain unverified</td>
+</tr>
+<tr class="odd">
+<td>Raw/prepared hierarchy review</td>
+<td>Implemented-tested: real installed TEST/APPROVE children,
+complete-node evidence and authored mixed forecast</td>
+</tr>
+<tr class="even">
+<td>Other installed compatible local R1 FinnTS competitors</td>
+<td>Inert workflow/dependency checks implemented; individual
+model-family qualification remains open</td>
+</tr>
+<tr class="odd">
+<td>Custom-only HTS</td>
+<td>Disallowed by explainability policy; use compatible bottom-up
+definitions</td>
+</tr>
+<tr class="even">
+<td>Foundation-model competitors</td>
+<td>Not qualified for this custom hierarchy profile; rejected rather
+than counted as token competitors</td>
+</tr>
+<tr class="odd">
+<td>Drivers, pooling, R2, transformed targets, hierarchy averages,
+weekly expansion</td>
+<td>Remaining work; rejected by the current profile</td>
+</tr>
+<tr class="even">
+<td>Agent hierarchy and hierarchical new-data updates</td>
+<td>Remaining work; current custom Agent behavior remains bottom-up
+only</td>
+</tr>
+<tr class="odd">
+<td>Remote/Spark, other platforms, minimum dependency versions and live
+providers</td>
+<td>Not qualified here; separate approval and validation required</td>
+</tr>
+</tbody>
+</table>
+<p>The per-series routing interface is deferred. Future user-specific
+model restrictions will require <code>bottoms_up</code>; ordinary
+node-level winner differences and internal worker partitions are not
+routing restrictions. Users requiring exact single-rule bottom-up output
+must also explicitly disable averaging. Trusted source and RDS are not
+sandboxed or authenticated approval. Offline provider fixtures verify
+control flow, not live generation quality.</p>
 </div>
 <div class="section level3">
 <h3 id="external-regressors">External Regressors<a class="anchor" aria-label="anchor" href="#external-regressors"></a>

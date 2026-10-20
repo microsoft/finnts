@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -100,10 +100,17 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9013" id="finnts-0709013-development-version">finnts 0.7.0.9013 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709013-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9014" id="finnts-0709014-development-version">finnts 0.7.0.9014 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709014-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9013">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9013"></a></h3>
-<ul><li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
+<h3 id="improvements-0-7-0-9014">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9014"></a></h3>
+<ul><li>
+<code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> creates reusable local/global forecasting models from business rules, validated against worked examples.
+<ul><li>Approval is manual in interactive sessions or automatic.</li>
+</ul></li>
+<li>Custom models train on a new <code>C1</code> recipe selected through <code>recipes_to_run</code>, alone or beside built-in models.
+<ul><li>Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.</li>
+</ul></li>
+<li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
 <ul><li>Defaults to automatic model selection, with isolated conversations and tool-disabled requests.</li>
 <li>Copilot saves CLI-local session state under R’s temporary directory.</li>
 <li>Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.</li>
@@ -118,8 +125,9 @@
 <code><a href="../reference/update_forecast.html">update_forecast()</a></code> now includes <code>naive</code> and <code>snaive</code> in default models for new or failed series.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9013">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9013"></a></h3>
-<ul><li>Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
+<h3 id="bug-fixes-0-7-0-9014">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9014"></a></h3>
+<ul><li>Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.</li>
+<li>Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
 <ul><li>Negative targets are still clamped to zero for Croston training only.</li>
 </ul></li>
 <li>Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
@@ -137,8 +145,7 @@
 </ul></li>
 <li>Default forecasts retry locally after three Spark execution failures, matching local-model updates without bypassing forecast-quality checks.</li>
 <li>Fixed chained hierarchical forecast updates, including older runs without saved source forecasts.</li>
-<li>Preserves saved model selections; older runs reuse saved models, averaging when needed.</li>
-<li>Handles interrupted updates and changes to hierarchy membership.</li>
+<li>Preserves saved model selections; older runs reuse saved models, averaging when needed. - Handles interrupted updates and changes to hierarchy membership.</li>
 <li>Forecast updates verify saved models and forecasts, refit damaged results, and recover interrupted logging without rewriting valid outputs.</li>
 <li>Shared global updates preserve valid local winners; preparation, artifact formats, and worker payloads are unchanged.</li>
 <li>Restart checks do not prevent concurrent attempts from overwriting files.</li>

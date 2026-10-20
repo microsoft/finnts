@@ -24,7 +24,7 @@ splits, creating hyperparameters, etc."><meta property="og:image" content="https
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -117,7 +117,8 @@ splits, creating hyperparameters, etc.</p>
 <span>  pca <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  num_hyperparameters <span class="op">=</span> <span class="fl">10</span>,</span>
 <span>  seasonal_period <span class="op">=</span> <span class="cn">NULL</span>,</span>
-<span>  seed <span class="op">=</span> <span class="fl">123</span></span>
+<span>  seed <span class="op">=</span> <span class="fl">123</span>,</span>
+<span>  custom_models <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -176,10 +177,63 @@ greater than 1. Custom values are used by <code>stlm-arima</code>, <code>stlm-et
 <dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
 <dd><p>Set seed for random number generator. Numeric value.</p></dd>
 
+
+<dt id="arg-custom-models">custom_models<a class="anchor" aria-label="anchor" href="#arg-custom-models"></a></dt>
+<dd><p>Named list of experimental, version-bound approved
+<code>finnts_custom_model</code> envelopes. A NULL <code>models_to_run</code> runs all built-in
+models plus every supplied custom model; an explicit <code>models_to_run</code> must
+name every supplied custom model, otherwise an error is raised. Supplied
+custom models cannot also appear in <code>models_not_to_run</code>.
+Raw definitions or registry references do not grant execution permission.</p></dd>
+
 </dl></div>
     <div id="value">
     <h2>Value</h2>
     <p>Writes outputs related to model prep to disk.</p>
+    </div>
+    <div id="details">
+    <h2>Details</h2>
+    <p>Experimental custom enrollment requires named <code>finnts_custom_model</code>
+envelopes holding an exact passive definition plus technical validation and
+approval bound to its content hash (<code>version_id</code>). Validation contains
+<code>version_id</code>, <code>technical_passed = TRUE</code>, and a nonempty list of check-summary
+strings. Manual approval contains the same <code>version_id</code>,
+<code>intent_confirmed = TRUE</code> and <code>allow_code = TRUE</code>. Explicit automatic approval
+has <code>intent_confirmed = FALSE</code>, <code>allow_code = TRUE</code> and <code>mode = "automatic"</code>.
+Unknown fields or modes fail. These are trusted-caller attestations, not
+authenticated human identity, a sandbox or an approval inferred from storage.
+Use <code><a href="create_custom_model.html">create_custom_model()</a></code> for manual or explicitly automatic authoring.</p>
+<p>Supplied custom models run when <code>models_to_run</code> is NULL or names them; an
+explicit <code>models_to_run</code> that omits one is an error. Custom models train on
+the original-scale <code>C1</code> recipe, which must be in the <code>recipes_to_run</code> given
+to <code><a href="prep_data.html">prep_data()</a></code>; otherwise preparation errors. Built-in models selected in
+the same run use R1/R2 with any supported settings (stationary, Box-Cox,
+outlier cleaning, multistep, feature selection, ensembles). Built-in models
+on a C1-only run error, and a prepared C1 recipe without custom models is
+ignored with a warning. Custom forecasts can feed simple averages and
+ensembles; <code>negative_forecast = FALSE</code> floors custom output at zero like
+built-ins. Local/mounted storage, CSV/RDS/Parquet data and RDS model
+objects are required; sequential, local-machine and Spark execution and
+<code>inner_parallel</code> are supported. Custom recipes retain only Date, Combo and
+declared predictors; no implicit PCA, feature selection or target
+transformation is applied.
+C1 driver availability is independent of <code>external_regressors</code> in
+<code><a href="prep_data.html">prep_data()</a></code>. Required predictors must exist with complete supported
+values, including supplied future values, or preparation errors.</p>
+<p>A definition with reviewed hierarchy capability permits <code>standard_hierarchy</code>
+or <code>grouped_hierarchy</code> with local univariate original-scale C1 logic. Every
+prepared node receives the same explicitly selected mixed custom/FinnTS
+pool. Custom-only hierarchy requests fail; no built-in is silently added.
+Forecast use requires local-only custom training, no regressors, and no
+weekly-to-daily expansion. Topology and exact input artifacts are pinned
+before enrollment.</p>
+<p>Definitions are pinned in the normal prepared workflows, with passive
+attestations attached to that same artifact; no separate standard registry
+or pool-manifest copy is required. Reentry requires the same approved effective pool; changed
+definitions or preparation context require a new run. Supplying definitions
+without selecting them leaves built-in defaults unchanged. Registry presence
+alone grants neither enrollment nor execution consent. No source is evaluated
+during preparation and no packages are installed.</p>
     </div>
 
     <div id="ref-examples">
@@ -196,7 +250,7 @@ greater than 1. Custom values are used by <code>stlm-arima</code>, <code>stlm-et
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: finn_project</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261015T222334Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261020T013500Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu"><a href="prep_data.html">prep_data</a></span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -207,20 +261,20 @@ greater than 1. Custom values are used by <code>stlm-arima</code>, <code>stlm-et
 <span class="r-in"><span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[2.9s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[2.6s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">prep_models</span><span class="op">(</span><span class="va">run_info</span>,</span></span>
 <span class="r-in"><span>  models_to_run <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"arima"</span>, <span class="st">"ets"</span>, <span class="st">"glmnet"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Workflows</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[217ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Workflows <span style="color: #B2B2B2;">[203ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Model Hyperparameters</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[254ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Model Hyperparameters <span style="color: #B2B2B2;">[232ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Creating Train Test Splits</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[385ms]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Creating Train Test Splits <span style="color: #B2B2B2;">[317ms]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>

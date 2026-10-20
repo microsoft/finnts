@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -165,7 +165,11 @@ day, week, month, quarter, year.</p></dd>
 
 
 <dt id="arg-external-regressors">external_regressors<a class="anchor" aria-label="anchor" href="#arg-external-regressors"></a></dt>
-<dd><p>List of column headers within input data to be used as features in multivariate models.</p></dd>
+<dd><p>List of column headers within input data to be used as features in multivariate models.
+Controls built-in R1/R2 recipes only. C1 retains eligible original numeric,
+character, factor, logical and Date columns independently of this list in
+bottoms_up runs; hierarchical C1 nodes keep only these aggregated regressors.
+Each custom workflow uses only its declared predictors plus Date and Combo.</p></dd>
 
 
 <dt id="arg-hist-start-date">hist_start_date<a class="anchor" aria-label="anchor" href="#arg-hist-start-date"></a></dt>
@@ -242,7 +246,15 @@ chooses these values based on date_type.</p></dd>
 <dt id="arg-recipes-to-run">recipes_to_run<a class="anchor" aria-label="anchor" href="#arg-recipes-to-run"></a></dt>
 <dd><p>List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types. A value of "all" runs all recipes, regardless
-of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe.</p></dd>
+of date type. A list like c("R1") or c("R2") would only run models with the R1 or R2 recipe. Add "C1" to also write
+the custom-model recipe used by custom models: the padded history and future frame on the original scale, with
+missing values imputed only when <code>clean_missing_values</code> is TRUE and no outlier cleaning, Box-Cox, differencing or
+engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.
+Reserved outcome/assessment columns and unsupported column types are excluded.
+Supply every required custom driver through the forecast horizon; missing
+future values error rather than being forecast or replaced with zero.
+C1 source identity is pinned before preparation, including interrupted runs.
+Changing eligible source data requires a new <code><a href="set_run_info.html">set_run_info()</a></code> run.</p></dd>
 
 
 <dt id="arg-multistep-horizon">multistep_horizon<a class="anchor" aria-label="anchor" href="#arg-multistep-horizon"></a></dt>
@@ -269,7 +281,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
 <span class="r-in"><span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="set_run_info.html">set_run_info</a></span><span class="op">(</span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> Finn Submission Info</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Project Name: finn_project</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261015T222333Z</span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">•</span> Run Name: finn_fcst-20261020T013459Z</span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span></span></span>
 <span class="r-in"><span><span class="fu">prep_data</span><span class="op">(</span><span class="va">run_info</span>,</span></span>
@@ -281,7 +293,7 @@ of date type. A list like c("R1") or c("R2") would only run models with the R1 o
 <span class="r-in"><span>  recipes_to_run <span class="op">=</span> <span class="st">"R1"</span></span></span>
 <span class="r-in"><span><span class="op">)</span></span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BBBB;">ℹ</span> Prepping Data</span>
-<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[1.2s]</span></span>
+<span class="r-msg co"><span class="r-pr">#&gt;</span> <span style="color: #00BB00;">✔</span> Prepping Data <span style="color: #B2B2B2;">[1.1s]</span></span>
 <span class="r-msg co"><span class="r-pr">#&gt;</span> </span>
 <span class="r-in"><span><span class="co"># }</span></span></span>
 </code></pre></div>

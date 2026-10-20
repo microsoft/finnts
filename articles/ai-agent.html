@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -188,6 +188,136 @@ importance).</li>
 <hr>
 </div>
 <div class="section level2">
+<h2 id="approved-custom-models">Approved Custom Models<a class="anchor" aria-label="anchor" href="#approved-custom-models"></a>
+</h2>
+<p><code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> produces reviewed, version-bound
+definitions before an Agent forecast begins. Supply those envelopes
+through <code>custom_models</code> in <code><a href="../reference/set_agent_info.html">set_agent_info()</a></code>.
+Every compatible enrolled custom model is mandatory from the first
+iteration onward, alongside the built-in candidates. Setup has no
+<code>models_to_run</code> argument; the Agent chooses built-in
+candidates without dropping custom models or changing their approved
+logic.</p>
+<p>Manual approval needs an interactive R session. Scripts, scheduled
+jobs and coding agents use <code>approval = "automatic"</code>. Only an
+approved model can be supplied for enrollment.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="co"># custom is an already reviewed create_custom_model() result named business_mean.</span></span>
+<span><span class="va">agent_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
+<span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">hist_data</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  custom_models <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>business_mean <span class="op">=</span> <span class="va">custom</span><span class="op">)</span>,</span>
+<span>  negative_forecast <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  allow_hierarchical_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/iterate_forecast.html">iterate_forecast</a></span><span class="op">(</span><span class="va">agent_info</span>, max_iter <span class="op">=</span> <span class="fl">3</span>, inner_parallel <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/get_summarized_models.html">get_summarized_models</a></span><span class="op">(</span><span class="va">agent_info</span><span class="op">)</span></span></code></pre></div>
+<p>Custom Agent runs train custom models on the raw C1 recipe, with
+supported local/mounted, Blob or M365 storage, CSV data and RDS objects.
+Built-in models retain their supported preprocessing and R recipes.
+Sequential, <code>local_machine</code> and Spark execution are
+supported; custom Agent inner parallelism is not. Each model must
+support the requested cadence, horizon, drivers and enabled local/global
+mode. A global-only run needs two series. The ordinary
+accuracy/plausibility rules still decide the winning eligible model;
+enrollment does not guarantee selection.</p>
+<p>The Agent may select built-in subsets but never regenerate source or
+calibrate the human’s fixed rule. It receives descriptive candidate
+metadata, not custom source or approval payloads. Ordinary EDA and
+forecast reasoning retain their existing data disclosures. Generated R
+is trusted code under your account, not sandboxed code; authoring review
+and version-specific consent remain separate from forecasting.</p>
+<p>Parent and child records pin source content, approval evidence and
+context. Reentering <code><a href="../reference/set_agent_info.html">set_agent_info()</a></code> requires the same
+explicit approved pool; equivalent ordering is accepted, while missing
+or changed enrollment requires a new run. Calling
+<code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> again on the same saved Agent object
+reuses valid completed results without authoring or refitting. Corrupt
+or inconsistent required identity fails rather than silently
+substituting another version. These checks are not transactional
+protection against concurrent writers.</p>
+<p><code>external_regressors</code> lists candidate drivers for built-in
+models only. C1 keeps eligible original numeric, character, factor,
+logical and Date columns from the input, even when a first iteration
+uses no built-in xregs. Each custom workflow receives only its declared
+predictors plus Date and Combo. Those declarations also apply during
+updates and simple default recovery. Supply required drivers through the
+forecast horizon: missing future values are not forecast or zero-filled,
+including when built-in missing-value cleaning is enabled. Changing
+eligible source data requires a new Agent version
+(<code>overwrite = TRUE</code>), not an in-place restart.</p>
+<p>Custom model summaries include exact version, interpretation and
+representation, without fitted-state introspection or invented variable
+importance. They work without <code>vip</code>.</p>
+<div class="section level3">
+<h3 id="updating-approved-choices">Updating Approved Choices<a class="anchor" aria-label="anchor" href="#updating-approved-choices"></a>
+</h3>
+<p>Create a new parent for new observations using the same explicit
+approved pool, cadence, built-in candidate regressor set and enabled
+modes. Forecast horizon, historical window, cutoffs, compatible driver
+values and backtest settings may change in this new parent. Every fit
+must still satisfy the approved rule’s history and driver-type
+requirements. Explicitly set
+<code>allow_iterate_forecast = FALSE</code>; omitting it is not custom
+replay consent.</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">updated_agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
+<span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">updated_hist_data</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  custom_models <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>business_mean <span class="op">=</span> <span class="va">custom</span><span class="op">)</span>,</span>
+<span>  negative_forecast <span class="op">=</span> <span class="cn">TRUE</span>,</span>
+<span>  allow_hierarchical_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  run_global_models <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  overwrite <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/update_forecast.html">update_forecast</a></span><span class="op">(</span><span class="va">updated_agent</span>, allow_iterate_forecast <span class="op">=</span> <span class="cn">FALSE</span>, inner_parallel <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/get_agent_forecast.html">get_agent_forecast</a></span><span class="op">(</span><span class="va">updated_agent</span><span class="op">)</span></span></code></pre></div>
+<p>The update pins its completed predecessor, per-series selected
+components, current input signatures and controls before fitting. It
+replays those choices, including saved custom/built-in averages and
+different subsets from one shared global run. It never regenerates or
+tunes the custom rule. When selected built-ins need retuning, existing
+custom results are reused. A completed custom update can be the
+predecessor of another compatible update.</p>
+<p>Calling the same update again reuses complete valid results; an
+interrupted completion-log write can finish without fitting or rewriting
+forecasts. Missing, corrupt or conflicting required identities and
+incomplete fitted outputs are hard errors, not automatic repair. Source
+failures and quality rejection never trigger implicit iteration. New
+series and recoverable built-in execution or quality failures use
+default local settings with every compatible enrolled custom model, plus
+enrolled foundation models whose credentials are available, within the
+existing recovery limits. Foundation availability is checked once before
+dispatch and reused by workers when validating the default model pool.
+Source, enrollment, provider and required artifact errors remain hard
+failures. Changed enrollment requires a new initial
+<code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> run; a changed horizon does not. An
+ordinary built-in parent cannot infer custom enrollment from a
+predecessor.</p>
+<p>Global updates distinguish training peers from forecast recipients.
+If A/B previously selected a global model, C selected a local model and
+D is new, the global model may refit using all compatible current peers,
+including D. Only A/B receive that saved global selection; C follows its
+saved local path and D uses default local fallback. Required joint
+predictions still include all necessary peers before recipient
+filtering, without renormalizing an allocation over A/B. A later
+<code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code> can evaluate whether a global approach
+is best for D. The existing new-series limit remains
+<code>max(10, ceiling(previous_count * 0.20))</code>. Larger additions
+require iteration. Same-version restarts retain exact settings and input
+signatures; predecessor audits use the predecessor’s own horizon.</p>
+<p>Normal EDA post-processing still uses its isolated LLM when needed,
+without the custom source or approval payload. These provenance checks
+are not a sandbox, authenticated approval or concurrent-writer
+transaction.</p>
+</div>
+</div>
+<div class="section level2">
 <h2 id="prerequisites">Prerequisites<a class="anchor" aria-label="anchor" href="#prerequisites"></a>
 </h2>
 <ul>
@@ -205,7 +335,7 @@ responses.</li>
 </li>
 </ul>
 <p>Set up environment variables for Azure OpenAI (example):</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/base/Sys.setenv.html" class="external-link">Sys.setenv</a></span><span class="op">(</span></span>
 <span>  AZURE_OPENAI_ENDPOINT    <span class="op">=</span> <span class="st">"&lt;your-endpoint&gt;"</span>,</span>
 <span>  AZURE_OPENAI_API_KEY     <span class="op">=</span> <span class="st">"&lt;your-key&gt;"</span>,</span>
@@ -261,7 +391,7 @@ section</a> for details.</li>
 <div class="section level3">
 <h3 id="create-a-project">1) Create a project<a class="anchor" aria-label="anchor" href="#create-a-project"></a>
 </h3>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://dplyr.tidyverse.org" class="external-link">dplyr</a></span><span class="op">)</span></span>
 <span></span>
@@ -293,7 +423,7 @@ Supports local filesystem, Azure Blob (via
 (historical <strong>or historical+future</strong> values, if you want
 them used in forecasting).</li>
 </ul>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">hist_data</span> <span class="op">&lt;-</span> <span class="fu">timetk</span><span class="fu">::</span><span class="va"><a href="https://business-science.github.io/timetk/reference/m4_monthly.html" class="external-link">m4_monthly</a></span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">date</span> <span class="op">&gt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2013-01-01"</span><span class="op">)</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
 <span>  <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/rename.html" class="external-link">rename</a></span><span class="op">(</span>Date <span class="op">=</span> <span class="va">date</span><span class="op">)</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span></span>
@@ -308,7 +438,7 @@ this template. It creates an isolated, empty-history session for each
 forecast series and each <code><a href="../reference/ask_agent.html">ask_agent()</a></code> request, so one modern
 model can perform both forecast input selection and results analysis
 without conversation history leaking between workflows.</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_azure_openai</span><span class="op">(</span>model <span class="op">=</span> <span class="st">"gpt-4o-mini"</span><span class="op">)</span></span></code></pre></div>
 <div class="section level4">
 <h4 id="alternative-github-copilot-cli">Alternative: GitHub Copilot CLI<a class="anchor" aria-label="anchor" href="#alternative-github-copilot-cli"></a>
@@ -319,7 +449,7 @@ distribution</a>. On Windows, use the standalone
 <code>copilot.exe</code> (for example, installed through WinGet), not an
 npm <code>.cmd</code> shim. Install the optional R dependency if
 needed:</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"processx"</span><span class="op">)</span></span>
 <span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/chat_copilot.html">chat_copilot</a></span><span class="op">(</span>timeout <span class="op">=</span> <span class="fl">120</span><span class="op">)</span> <span class="co"># defaults to Copilot's auto model routing</span></span>
 <span><span class="co"># Or pin a model:</span></span>
@@ -390,7 +520,7 @@ Copilot.</p>
 <div class="section level3">
 <h3 id="create-the-agent-run">4) Create the agent run<a class="anchor" aria-label="anchor" href="#create-the-agent-run"></a>
 </h3>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">agent</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_agent_info.html">set_agent_info</a></span><span class="op">(</span></span>
 <span>  project_info <span class="op">=</span> <span class="va">project</span>,</span>
 <span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
@@ -408,7 +538,7 @@ Copilot.</p>
 <div class="section level3">
 <h3 id="let-the-agent-iterate-to-a-best-run">5) Let the agent iterate to a best run<a class="anchor" aria-label="anchor" href="#let-the-agent-iterate-to-a-best-run"></a>
 </h3>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="fu"><a href="../reference/iterate_forecast.html">iterate_forecast</a></span><span class="op">(</span></span>
 <span>  agent_info          <span class="op">=</span> <span class="va">agent</span>,</span>
 <span>  weighted_mape_goal  <span class="op">=</span> <span class="fl">0.05</span>, <span class="co"># your accuracy target of 5%</span></span>
@@ -448,7 +578,7 @@ iterations.</p>
 <div class="section level3">
 <h3 id="retrieve-results">6) Retrieve results<a class="anchor" aria-label="anchor" href="#retrieve-results"></a>
 </h3>
-<div class="sourceCode" id="cb8"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">best_runs</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/get_best_agent_run.html">get_best_agent_run</a></span><span class="op">(</span>agent_info <span class="op">=</span> <span class="va">agent</span>, full_run_info <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/utils/head.html" class="external-link">head</a></span><span class="op">(</span><span class="va">best_runs</span><span class="op">)</span></span>
 <span></span>
@@ -497,7 +627,7 @@ results</p>
 <div class="section level3">
 <h3 id="example-questions">Example questions<a class="anchor" aria-label="anchor" href="#example-questions"></a>
 </h3>
-<div class="sourceCode" id="cb9"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb11"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># Ask about forecast accuracy</span></span>
 <span><span class="va">answer</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/ask_agent.html">ask_agent</a></span><span class="op">(</span></span>
 <span>  agent_info <span class="op">=</span> <span class="va">agent</span>,</span>
@@ -583,7 +713,7 @@ your question.</p>
 <p>When you have <strong>new input data</strong>, keep the same project
 and create a <strong>new agent run</strong> with updated
 <code>input_data</code>. Then call <code><a href="../reference/update_forecast.html">update_forecast()</a></code>:</p>
-<div class="sourceCode" id="cb10"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb12"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># suppose you've appended more months to hist_data:</span></span>
 <span><span class="va">hist_data2</span> <span class="op">&lt;-</span> <span class="va">hist_data</span> <span class="op"><a href="https://magrittr.tidyverse.org/reference/pipe.html" class="external-link">%&gt;%</a></span> <span class="fu">dplyr</span><span class="fu">::</span><span class="fu"><a href="https://dplyr.tidyverse.org/reference/filter.html" class="external-link">filter</a></span><span class="op">(</span><span class="va">Date</span> <span class="op">&lt;=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2016-06-01"</span><span class="op">)</span><span class="op">)</span></span>
 <span></span>

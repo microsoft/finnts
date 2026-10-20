@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -124,7 +124,8 @@ It checks for existing runs and allows for overwriting if specified.</p>
 <span>  negative_forecast <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  run_global_models <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  run_local_models <span class="op">=</span> <span class="cn">TRUE</span>,</span>
-<span>  overwrite <span class="op">=</span> <span class="cn">FALSE</span></span>
+<span>  overwrite <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  custom_models <span class="op">=</span> <span class="cn">NULL</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -154,7 +155,10 @@ from this data frame. Create a new version to use revised data.</p></dd>
 
 
 <dt id="arg-external-regressors">external_regressors<a class="anchor" aria-label="anchor" href="#arg-external-regressors"></a></dt>
-<dd><p>Optional character vector of external regressors</p></dd>
+<dd><p>Optional character vector of candidate external
+regressors for built-in models. Custom models always use their declared
+drivers from eligible original input columns, independently of this list
+or the Agent's per-iteration choices.</p></dd>
 
 
 <dt id="arg-hist-end-date">hist_end_date<a class="anchor" aria-label="anchor" href="#arg-hist-end-date"></a></dt>
@@ -204,6 +208,13 @@ local models. Default is TRUE.</p></dd>
 <dt id="arg-overwrite">overwrite<a class="anchor" aria-label="anchor" href="#arg-overwrite"></a></dt>
 <dd><p>Logical indicating whether to overwrite existing agent run info</p></dd>
 
+
+<dt id="arg-custom-models">custom_models<a class="anchor" aria-label="anchor" href="#arg-custom-models"></a></dt>
+<dd><p>Named approved custom-model envelopes from <code><a href="create_custom_model.html">create_custom_model()</a></code>.
+All supplied models are enrolled automatically alongside built-in candidates.
+The returned object retains names only; approved objects are saved once in
+an Agent-version bundle in <code>prep_models</code>.</p></dd>
+
 </dl></div>
     <div id="value">
     <h2>Value</h2>
@@ -211,7 +222,36 @@ local models. Default is TRUE.</p></dd>
     </div>
     <div id="details">
     <h2>Details</h2>
-    <p>With <code>overwrite = FALSE</code>, an existing version retains its saved
+    <p>Custom Agent runs add the raw <code>C1</code> recipe and require CSV data, RDS objects,
+supported local/mounted, Blob or M365 storage and no hierarchy. <code>negative_forecast = FALSE</code> floors
+finished custom forecasts at zero, as for built-in models. The exact
+approved pool is pinned before the parent run log. Existing-run setup requires
+equivalent explicit enrollment; changed or omitted approval requires a new
+run. Source is trusted R, not sandboxed. For compatible new-data updates,
+create a new parent with <code>overwrite = TRUE</code>, the same explicit enrollment,
+cadence, regressors and modes, then call <code><a href="update_forecast.html">update_forecast()</a></code> with
+explicit <code>allow_iterate_forecast = FALSE</code>. The positive whole-number forecast
+horizon may change, subject to the approved rule's history and driver
+requirements. Changed enrollment needs iteration.
+New series are routed to defaults within the existing new-series limit.
+The setup API has no
+<code>models_to_run</code> argument: Finn includes every compatible enrolled custom
+model from the first iteration onward, outside LLM control. Built-in
+candidate choices and supported preprocessing remain independent of raw C1.
+Custom driver values must be supplied through the forecast horizon; Finn
+does not forecast missing future custom drivers. The same driver declarations
+apply during saved-winner updates and default recovery. Changed source data
+requires a new Agent version (<code>overwrite = TRUE</code>), not an in-place restart.
+Global-only custom
+runs need at least two series. Each selected custom model must support an
+enabled mode and the project's cadence, horizon and required predictors.
+The return keeps only custom-model names, not untrained models or approval
+payloads. The Agent-version CSV always contains one <code>custom_models</code> names
+field (<code>NA</code> without enrollment); the complete immutable bundle lives in
+<code>prep_models</code>, under the existing project/run/version identity.
+Saved approval is trusted-caller evidence, not
+authenticated identity; forecasting never calls the authoring LLM again.</p>
+<p>With <code>overwrite = FALSE</code>, an existing version retains its saved
 forecast approach even if hierarchy detection changes after a package upgrade.
 Logged user settings must still match. New versions use current detection;
 one retained series or one combo column uses bottoms-up. Updating a new

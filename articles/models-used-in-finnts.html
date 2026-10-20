@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -151,6 +151,15 @@ creating features. These can be identified by seeing the letter “R”
 followed by a number like “1” or “2”. More info can be found in the
 feature engineering vignette.</p></li>
 </ul>
+<p>Approved custom models use the separate original-scale
+<code>C1</code> recipe, not R1/R2. C1 retains eligible original input
+columns independently of built-in <code>external_regressors</code>, but
+each custom workflow receives only its declared predictors plus Date and
+Combo. Required custom drivers must include supplied future values
+through the horizon, even if built-ins use different xregs or none. The
+same declarations apply in Agent iterations, updates and default
+recovery. See the <a href="best-model-selection.html#experimental-custom-models">custom-model
+walkthrough</a>.</p>
 </div>
 <div class="section level3">
 <h3 id="adaptive-daily-arima">Adaptive Daily ARIMA<a class="anchor" aria-label="anchor" href="#adaptive-daily-arima"></a>

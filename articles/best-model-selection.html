@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -202,6 +202,1160 @@ forecast</strong> combines predictions from selected components, while
 <strong>average model accuracy</strong> summarizes individual model
 WMAPEs to guide Agent search. Improving the latter can be useful even
 when the winning model has not changed.</p>
+</div>
+<div class="section level2">
+<h2 id="experimental-custom-models">Experimental custom models<a class="anchor" aria-label="anchor" href="#experimental-custom-models"></a>
+</h2>
+<p><code><a href="../reference/prep_models.html">prep_models()</a></code> and <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>
+accept a named <code>custom_models</code> list. With
+<code>models_to_run = NULL</code>, every built-in model and every
+supplied custom model runs. An explicit <code>models_to_run</code> must
+name every supplied custom model; an unlisted custom model is an error
+rather than being silently dropped. An explicit pool can contain custom
+models only or a mixture of custom and built-in models. Custom hierarchy
+execution also requires separately reviewed hierarchy capabilities.</p>
+<p><code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> is the single natural-language
+authoring entrypoint. It accepts raw <code>input_data</code> with Finn
+metadata or an existing prepared <code>run_info</code>. Humans and
+coding agents use the same function in one call. Advanced settings
+belong in <code><a href="../reference/custom_model_control.html">custom_model_control()</a></code>; approval stays visible at
+the top level and defaults to manual. Manual approval needs an
+interactive R session; scripts, schedulers and coding agents use
+<code>approval = "automatic"</code>.</p>
+<p>Instructions may contain up to <strong>1 MiB (1048576 UTF-8
+bytes)</strong>, including accumulated review edits. This permits
+thousands of words and hundreds of code lines; text is never silently
+truncated. The selected LLM’s context window must also accommodate
+Finn’s schema, examples and conversation history. This input limit does
+not enlarge the separate generated-response or reviewed-source
+limits.</p>
+<p>Declared string drivers retain their type when C1 CSV data is read
+for workflow preparation and training. Numeric-looking category labels
+such as <code>"100"</code> and leading-zero labels remain strings rather
+than being inferred as numeric values. This does not coerce ordinary
+numeric drivers or change the stored CSV format.</p>
+<p><strong>Custom-driver importance.</strong></p>
+<p>Newly generated Agent model summaries include custom-driver
+importance without requiring <code>vip</code>. Finn holds out the latest
+complete historical forecast horizon, refits the exact approved rule on
+earlier history once per fitted workflow, and compares baseline holdout
+RMSE with ten deterministic cyclic permutations of each eligible driver.
+The score is the <strong>mean signed increase in holdout RMSE</strong>,
+in target units. Zero and negative scores are retained. Scores are
+conditional on the supplied assessment drivers, chosen holdout and
+correlations; they are not causal attribution, percentages, or a
+model-selection criterion.</p>
+<p>Date/series identities and cohort keys never move. Global prediction
+requests retain their complete peers and horizons; permutations stay
+within declared groups. Global recipients share the diagnostic
+computation within one summary invocation. This executes additional
+trusted custom fitting and prediction code with the same permissions as
+forecasting; it adds runtime and is not sandboxed. It does not overwrite
+saved fits or forecasts. No-driver models need no extra diagnostic
+fitting.</p>
+<p>Insufficient history or lags, incomplete historical holdouts, and
+constant or cohort-key drivers are explicitly reported as not estimable,
+rather than given invented zero scores. Unexpected source, identity,
+data or storage errors still fail. Summary artifacts retain their
+existing columns and add <code>importance</code> rows (<code>name</code>
+is the driver, <code>value</code> is its score), plus
+<code>importance_metadata</code> method/status rows. Consumers should
+accept these additional rows. Existing completed runs and saved
+summaries are not migrated.</p>
+<p>New calls default to local models. Raw input must contain a column
+named <code>Date</code> and an explicit target and horizon. Grouping can
+be omitted only when dates are unique and no varying undeclared columns
+suggest multiple series. Cadence can be omitted only when at least three
+actual dates per series match exactly one complete
+day/week/month/quarter/year grid. Ambiguous or incomplete grids require
+explicit metadata. Prepared runs supply their saved settings, including
+forecast approach. Neither inference supplies fiscal calendars nor
+proves business close.</p>
+<p>Raw driver-based models can be created and validated before the
+caller creates its forecast run or calls <code><a href="../reference/prep_data.html">prep_data()</a></code>.
+Authoring keeps original driver names, values and types alongside its
+privately prepared historical target data. Only observed historical
+driver rows enter validation; future values are not used, and
+missing/nonfinite driver history is rejected rather than filled. Check
+forecast-date coverage and supply the required future driver inputs
+before executing the resulting model. Private temporary preparation
+still occurs inside authoring; it does not create the caller’s forecast
+run.</p>
+<p>Use <code>hist_end_date</code> as the last closed actual period, with
+the same date-label convention as the data. For monthly observations
+labelled on the first day, August 2026 is
+<code>as.Date("2026-08-01")</code>, not August 31. Without an explicit
+cutoff, every series must have the same last finite target date for
+inference. Finite values do not prove a business close: supply a cutoff
+when later target rows contain budgets, prior forecasts or partial
+actuals.</p>
+<p>Before sampling or padding, raw input must cover an uninterrupted
+common historical window with finite targets for every series. Drivers
+must cover that window and every requested future period; future target
+values are ignored. Missing periods, uneven histories and future-only
+series now fail rather than being padded with zeros. Explicit common
+<code>hist_start_date</code>/<code>hist_end_date</code> bounds can
+select a complete overlap. Prepared driver artifacts are checked across
+all requested series before sampling, but their stored values cannot
+prove whether earlier preparation filled a raw gap.</p>
+<p>The authoring cutoff is saved validation evidence, <strong>not a
+permanent model cutoff</strong>. Every newly approved model is reusable
+by default, without a special control option. Save the entire envelope
+with <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> and reload it with <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">readRDS()</a></code>
+for later standard or Agent runs. Those runs may use different positive
+whole-number forecast horizons, history lengths, end dates, compatible
+driver values and global training populations. Each fit derives its own
+cutoff and per-series cutoffs; relative calculations must use those
+dates and the prediction request. Reusing an old fitted workflow without
+refitting does not advance its cutoff.</p>
+<p>The approved formula, cadence, units, required driver types,
+local/global mode, cohort rules and business constants remain fixed.
+Declared minimum history is checked on each analysis fold;
+forecast-relative observed lags must exist for every requested future
+date. A longer horizon can therefore expose a genuine rule constraint
+and fail explicitly. Horizon-wide allocations can legitimately change
+earlier predictions when the horizon changes; they need not have an
+invariant prefix. Representative validation is evidence, not proof for
+all positive horizons.</p>
+<p>Existing run IDs remain exact restart contracts. Use a fresh standard
+run or a new Agent version for changed data/settings. Older pre-release
+custom objects and saved custom runs may be incompatible with this
+contract and must be recreated; they are not migrated or rewritten
+automatically.</p>
+<p>Driver-based holdout metrics are explicitly conditional on supplied
+assessment drivers. The current interface does not verify historical
+plan vintages or publication delays. For realistic business backtests,
+provide the plans actually available at each forecast origin rather than
+revised plans or realized drivers.</p>
+<p>Enrollment accepts only <code>finnts_custom_model</code> envelopes
+containing an exact passive definition, version-bound technical check
+summaries, manual intent confirmation or explicit automatic trusted-code
+authorization. Raw definitions, registry references, fitted models and
+stale approval evidence are rejected. Attestations are provided by a
+trusted caller; they are not authenticated proof of human approval or a
+sandbox for untrusted R code. Tests use clearly synthetic evidence, not
+authenticated proof of approval or live-provider validation.</p>
+<p>The default <code>approval = "manual"</code> asks unresolved business
+questions, prepares a fixed interpretation and numerical examples, and
+generates a candidate. One compact review then asks whether to create
+that exact model. A yes both authorizes same-session execution and
+conditionally approves the model if validation passes. There is no
+second approval prompt after success. A repair cannot change the
+expected values or reuse another version’s consent: revised code always
+receives a fresh review. Holdout accuracy is reported, not used to
+rewrite the human rule.</p>
+<p>If validation fails and another candidate is proposed, manual review
+now explains why approval is needed again. It displays the prior failure
+phase and safe reason, previous/current version IDs, and the names of
+changed source functions. The rule and worked examples remain unchanged;
+the proposed repair is not yet validated. An identical resubmission is
+labelled as the same failed candidate, not a fix. <code>details</code>
+shows full identities and the current source without executing it.
+Compact per-function hashes support the comparison without retaining
+another full source snapshot. Older diagnostics can lack those hashes,
+in which case comparison detail is explicitly unavailable. Existing
+saved reviews remain valid; exact-candidate consent, replay handling and
+retry limits do not change.</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_openai</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="fu"><a href="../reference/custom_model_examples_template.html">custom_model_examples_template</a></span><span class="op">(</span>forecast_horizon <span class="op">=</span> <span class="fl">3</span>, date_type <span class="op">=</span> <span class="st">"month"</span><span class="op">)</span></span>
+<span><span class="va">dates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2020-01-01"</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"month"</span>, length.out <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="va">examples</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  example <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean_case"</span>, <span class="st">"edge_zero_history"</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span>,</span>
+<span>  Date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="va">dates</span>, <span class="fl">2</span><span class="op">)</span>,</span>
+<span>  Target <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">20</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">0</span>, <span class="fl">0</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span><span class="op">)</span>,</span>
+<span>  expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">15</span>, <span class="fl">15</span>, <span class="fl">15</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">0</span>, <span class="fl">0</span>, <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  how <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Mean of 10 and 20."</span>, <span class="st">"All-zero history gives zero."</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">custom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
+<span>  instructions <span class="op">=</span> <span class="st">"Use the mean of all historical targets independently for each series."</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>,</span>
+<span>  input_data <span class="op">=</span> <span class="va">data_tbl</span>,</span>
+<span>  combo_variables <span class="op">=</span> <span class="st">"id"</span>,</span>
+<span>  target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
+<span>  date_type <span class="op">=</span> <span class="st">"month"</span>,</span>
+<span>  forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  name <span class="op">=</span> <span class="st">"business_mean"</span>,</span>
+<span>  validation_examples <span class="op">=</span> <span class="va">examples</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p><code>validation_examples</code> is one plain table, easy for a
+person or coding agent to write. Each <code>example</code> value is one
+worked case. History rows carry the observed <code>Target</code> and
+leave <code>expected</code> missing; future rows leave
+<code>Target</code> missing and carry the independently calculated
+<code>expected</code> forecast. There is no recycling or inferred
+answer. The target column may also use the <code>target_variable</code>
+name. Add series columns named like <code>combo_variables</code> for
+multi-series cases: one series validates local logic and two or more
+validate global logic. Driver columns named like
+<code>external_regressors</code> are filled on every row. Examples named
+<code>edge_...</code> or flagged with <code>edge_case = TRUE</code> are
+edge cases. For a deliberate error case, set
+<code>expected_error = "fit:zero_denominator"</code> on its rows and
+leave <code>expected</code> missing. Optional <code>how</code> and
+<code>tolerance</code> (at most 0.01) columns document and loosen a
+case. Two to eight examples including an edge case are required; every
+supplied expectation stays fixed during repair.</p>
+<p><code><a href="../reference/custom_model_control.html">custom_model_control()</a></code> has five settings:
+<code>max_attempts = 3L</code>, <code>validation_budget = 60</code>,
+<code>package_policy = "installed_finnts"</code>,
+<code>required_properties = character()</code> and
+<code>forecast_approach = NULL</code>. Build a fresh control to change
+settings; explicit-setting markers distinguish supplied values from
+defaults. Supply <code>approval</code> and <code>control</code> by name.
+Unknown arguments fail. <code>validation_budget</code> is not a hard
+timeout. Custom-model creation supports one current implementation;
+obsolete development arguments and artifacts must be recreated, not
+migrated through compatibility bridges.</p>
+<p>In an interactive R session, answer <code>y</code>/<code>yes</code>
+or <code>n</code>/<code>no</code>, without typing hashes. Case and
+surrounding whitespace are ignored; blank or EOF declines.
+<code>details</code> shows readable source and complete examples without
+executing or regenerating anything. <code>edit</code> collects a
+requested change and prepares a new review within the cumulative
+proposal limits. Existing data/capability constraints stay fixed. The
+default display omits instructions, schema/package inventories and
+source dumps; a short measured summary follows success. Outside an
+interactive session, <code>approval = "manual"</code> fails before
+contacting the LLM; scripts, schedulers and coding agents use
+<code>approval = "automatic"</code>. See
+<code><a href="../reference/create_custom_model.html">?create_custom_model</a></code> for the complete contract.</p>
+<div class="section level3">
+<h3 id="deterministic-authoring-mechanics">Deterministic Authoring Mechanics<a class="anchor" aria-label="anchor" href="#deterministic-authoring-mechanics"></a>
+</h3>
+<p>The current authoring contract uses typed structured responses. The
+default <code>control$package_policy = "installed_finnts"</code> freezes
+installed direct FinnTS <code>Depends</code>, <code>Imports</code> and
+<code>Suggests</code>, plus the existing R base/recommended allowance.
+It does not admit arbitrary installed or transitive-only packages. Use
+<code>custom_model_control(package_policy = "base_only")</code> to
+restrict generated code to base R.</p>
+<p>FinnTS parses source to derive only the packages actually referenced
+through <code>pkg::function</code>; the LLM no longer supplies a
+dependency list. The resulting packages and complete assembled source
+are hashed before candidate review and authorization. Nothing is
+installed or attached. Namespace availability and public exports are
+checked after authorization, before candidate bodies execute. Namespace
+loading can itself have side effects; it is not a sandbox.</p>
+<p>FinnTS also supplies fit/predict signatures, prediction row IDs, and
+generated example dates, keys, declared-mode coverage and tolerance. The
+LLM returns calculation bodies, optional helpers, synthetic value
+arrays, independent expected answers and business rationale. Prediction
+bodies return finite numeric vectors in request order; the fixed wrapper
+rejects wrong lengths/types rather than recycling, clipping or imputing.
+The full reusable model remains ordinary R.</p>
+<p>Authoring metadata lists only the workflow’s actual input columns:
+<code>Date</code>, <code>Combo</code>, <code>Target</code> and declared
+external regressors. Prediction excludes <code>Target</code>. Internal
+prepared features such as <code>Date_index.num</code> are not advertised
+as implicit inputs; an explicitly declared driver with that name remains
+valid. For a six-observation trend, generated code can construct
+positions <code>1:6</code> and predict at
+<code>6 + context$forecast_step</code>, without assuming a prepared
+feature exists. Only the outgoing metadata copy is filtered. Captured
+data, saved metadata, accepted examples, approved model identities and
+older authoring protocols stay unchanged.</p>
+<p>For new definitions, FinnTS supplies fit and prediction rows sorted
+by series and Date, with integer <code>context$forecast_step</code>
+values derived from each series’ current training cutoff. It restores
+the caller’s original output order. Each included series must supply its
+complete forecast horizon; partial-date requests fail before prediction
+source executes. The runtime does not synthesize missing drivers or
+infer fiscal calendars. Daily through yearly cadences use their saved
+period labels. Separate series batches are allowed when the business
+rule permits them, not as a guarantee that pooled rules are independent.
+Later refits derive new cutoffs without changing model identity. Saved
+older definitions keep their original ordering and partial-request
+behavior. Internal resampling may have shorter scoring windows. FinnTS
+supplies existing predictor rows through the full horizon, then retains
+only the original scoring rows. It does not extend training history,
+expose assessment targets to generated prediction code, fill missing
+drivers, or change forecast-selection policy.</p>
+<p>Body fields prefer calculation statements, but new proposals also
+accept one complete function with the exact signature
+<code>function(data, context, parameters)</code> for fit or
+<code>function(object, new_data, context)</code> for prediction. No
+defaults, ellipsis, reordered names or extra arguments are allowed in
+this alternate form. FinnTS extracts that function body once using
+parsed syntax, before hashing, review and authorization. It never calls
+the function to discover its result. Equivalent complete-function and
+body inputs yield the same canonical candidate.</p>
+<p>Ambiguous signatures, extra top-level expressions alongside a
+function, and direct nested function returns produce
+<code>source_body_format</code> feedback before execution. Local
+assigned helper functions and callbacks remain valid. Fitted state must
+still be portable data and prediction must still return a numeric
+vector. Saved-source replay does not normalize or silently repair old
+models; their exact source, identity and authorization remain unchanged.
+This support does not introduce another authoring protocol or any new
+public argument.</p>
+<p>Generated examples are native nested objects and arrays in the
+structured response, not JSON embedded inside a text field.
+<code>series</code> remains an array even for one series. FinnTS
+validates required fields, lengths and captured numeric,
+character/factor or logical predictor types locally as well. The
+missing-data policy is fixed to rejection of required missing inputs;
+the LLM cannot return a blank replacement. This adds neither cleaning
+nor imputation.</p>
+<p>The arbitrary passive fixed-parameter map uses
+<code>parameters_json</code> to support structured parameter values.
+Invalid JSON identifies that field explicitly; malformed strings are not
+repaired by guessing braces or stripping text. Expected answers remain
+independent of candidate execution. Structural validation does not
+independently prove their arithmetic. New calls treat LLM-generated
+numerical expectations as diagnostics: mismatches produce a user
+warning, not rejection or a request to rewrite the formula. Measured
+errors remain in the validation evidence, and the warning is retained in
+<code>model$validation$checks$llm_example_warning</code>. Matching
+incorrect code and answers can still pass finite comparisons; a warning
+alone cannot identify which side is wrong.</p>
+<p><strong>Bring your own validation examples.</strong> Calculate
+expected outputs with business logic reviewed independently of the
+generated model, then pass the materialized cases as one table through
+<code>validation_examples</code>. This is an examples table, not a
+validation-function callback. Caller-provided output mismatches remain
+mandatory and can trigger bounded source repair. These exact examples
+are included in the initial contract request, so the provider can align
+history requirements and preserve caller error codes/phases before
+generating source. It must not invent extra business error declarations
+without matching caller error cases. Include at least two cases, every
+declared mode, and meaningful edges such as zeros, negative values or
+calendar boundaries. For example, these independently specified checks
+describe a three-point mean:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">dates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2020-01-01"</span>, <span class="st">"2020-02-01"</span>, <span class="st">"2020-03-01"</span>, <span class="st">"2020-04-01"</span>, <span class="st">"2020-05-01"</span><span class="op">)</span><span class="op">)</span></span>
+<span><span class="va">validation_examples</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  example <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"edge_zero"</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span>,</span>
+<span>  Date <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="va">dates</span>, <span class="fl">2</span><span class="op">)</span>,</span>
+<span>  Target <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="fl">10</span>, <span class="fl">20</span>, <span class="fl">30</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">0</span>, <span class="fl">0</span>, <span class="fl">0</span>, <span class="cn">NA</span>, <span class="cn">NA</span><span class="op">)</span>,</span>
+<span>  expected <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">20</span>, <span class="fl">20</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="cn">NA</span>, <span class="fl">0</span>, <span class="fl">0</span><span class="op">)</span>,</span>
+<span>  how <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"(10 + 20 + 30) / 3 = 20"</span>, <span class="st">"The mean of three zeros is zero."</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Use those cases only for that rule and matching cadence/horizon, not
+for arbitrary custom logic. Caller examples are also provider-visible;
+keep sensitive real observations out of examples you do not want sent to
+the provider. Technical failures such as broken R, invalid output shape,
+nonportable state, required properties and coded-error mismatches still
+fail and may use bounded repair. Only caller-supplied numerical
+expectations can request an output-matching rewrite. LLM-generated
+numerical differences cannot.</p>
+<p>Parameters have explicit types and units. Declared numeric weight or
+decay vectors become atomic R vectors; objects and arrays of records
+retain list structure. Synthetic numeric history and future columns
+share double types, including whole-valued historical discounts followed
+by fractional forecasts. Blank nonnumeric units normalize to
+<code>not_applicable</code>. Numeric units remain required; no business
+units are inferred. Malformed declarations receive bounded
+field-specific diagnostics before contract acceptance.</p>
+<p>Required business errors are separate outcomes, not placeholder zero
+forecasts. An <code>error_policy</code> binds the code and fit/predict
+stage, and each mode must include valid numerical controls plus tests
+for its declared errors. Generated error cases use empty expected
+arrays. Caller error cases set the table’s <code>expected_error</code>
+column to <code>"predict:zero_denominator"</code> on that example’s rows
+and leave <code>expected</code> missing. Candidate code raises the
+portable sibling helper <code>finntsRuleError(code)</code>. An unrelated
+exception or a zero-returning fallback does not pass that test.
+Additional named error scenarios remain within the existing eight-case
+limit.</p>
+<p>Row-order invariance and fitted-state serialization are mandatory.
+Other properties are tested when declared: constant forecasts,
+target-scale equivariance, independent series, fixed history windows,
+and relative calendars. The caller
+<code>control$required_properties</code> are frozen hard requirements.
+Other LLM suggestions are diagnostic only: their failed checks are
+reported without rejecting valid calculations. This does not weaken
+caller numerical cases, coded business errors, row identity, finite
+outputs, portability or exact-version approval. For example, use
+<code>custom_model_control(required_properties = "constant_forecast")</code>
+only when constant output is a genuine business requirement, not for
+every custom model. Calendar tests translate inputs by four years;
+fixed-calendar rules should not declare that property. Reports retain
+measured counts and expectation provenance, explicitly labelled
+caller-supplied or LLM-proposed and unverified. These are behavioral
+checks, not a general rule compiler or independent arithmetic
+verifier.</p>
+<p>Stateless future-driver formulas may declare zero formula-history
+need. Their workflow examples still need a historical row to establish
+the schema and cutoff; FinnTS records that workflow minimum separately.
+Preprocessing casting failures stop rather than requesting different
+source arithmetic. Repeating the same source version and failure stops
+the repair loop without changing fixed answers. Contradictory contracts
+require a new authoring version and authorization. New source responses
+may explicitly report <code>contract_conflict</code>; this stops before
+execution without rewriting the accepted contract or answers. Under the
+new comparison policy, disagreement with an LLM-generated numerical
+answer is not a reason to declare a conflict: source should implement
+the business rule and let validation record any numerical warning.
+Tagged protocol questions receive package-owned facts within the
+existing retry budget, while unresolved business questions still require
+clarification. Automatic defaults cannot override explicitly supplied
+settings. Invalid defaults declarations are corrected as contract
+defects, not by changing the caller’s settings. Current-format approved
+models are not silently revalidated or repaired.</p>
+<p>Generated examples use one basic and one edge scenario per declared
+mode, with a fixed cadence-aligned synthetic cutoff and enough
+provider-supplied historical values for the rule. Caller-provided
+examples retain their original tables, values and tolerances. No
+candidate execution supplies its own expected answers. Those answers and
+business interpretation remain fallible LLM work: this is not an
+independent general formula evaluator. New automatic calls supply a
+percentage-growth convention through the current defaults catalog, but
+that policy does not prove arbitrary provider prose or code follows
+it.</p>
+<p>The contract requests explicit <code>history_requirements</code>: a
+nonnegative integer <code>minimum_rows_per_series</code> and unique
+positive <code>required_lag_periods</code>, bounded by the existing
+example limits. Offsets use the captured cadence. Rules without exact
+observed-history lookups may declare an empty lag array. FinnTS
+validates each example series against the minimum count and every
+required lag date before accepting the contract. For monthly same-month
+values and three annual differences, offsets 12, 24, 36 and 48 require
+four annual observations; seven monthly rows cannot meet that
+requirement.</p>
+<p>Fit-time windows use the minimum count, not forecast-relative lag
+offsets. For example, “use the median of the last six actual months for
+every forecast month” needs <code>minimum_rows_per_series = 6</code> and
+<code>required_lag_periods = []</code>. The model computes that median
+at fit time and repeats it across the horizon. Declaring lags 1 through
+6 instead asks for observations before each future forecast date. With
+three forecast months, offsets 1 and 2 eventually point into the
+unobserved forecast window. More old observations cannot fix this.</p>
+<p>Repair feedback explicitly identifies
+<code>lag_reference = "forecast_date"</code> and the conflicting
+<code>unobserved_lag_periods</code>. Exhaustion errors include the same
+bounded explanation. A provider must correct an unaccepted declaration
+that misrepresents the rule; FinnTS never silently drops its lags or
+changes expected answers. Seasonal forecast-date lookups retain their
+existing strict checks.</p>
+<p>Missing coverage is rejected during contract review, before source
+generation. Authoring can retry an unaccepted history declaration that
+conflicts with structurally valid caller examples. For example, a
+fit-time growth window must not be described as observed lags reaching
+into the forecast window. The next attempt receives numerical-case row
+counts and impossible-lag feedback; intentional error cases are excluded
+from those counts. The declaration must still express the actual
+business rule, not weakened history needs merely to pass. Exhaustion
+returns an error under the existing contract-attempt limit. Only
+unaccepted generated examples may be replaced. Caller examples, accepted
+answers and the source-repair oracle never change, and no history is
+invented, imputed or silently extended. The declaration is testable
+metadata, not a proof that the LLM has interpreted every possible
+business rule correctly.</p>
+<p>New source preflight also rejects obvious uninitialized
+protocol-state references, such as
+<code>object$history &lt;- data</code> in fit when <code>object</code>
+was never created. Fit receives <code>data</code>, <code>context</code>
+and <code>parameters</code>; prediction receives <code>object</code>,
+<code>new_data</code> and <code>context</code>. The check never inserts
+an object or rewrites a formula. It inspects ordinary evaluated syntax
+and lexical bindings without execution, while leaving quoted/formula and
+unknown nonstandard-evaluation syntax alone. Uncertain control flow
+still requires runtime validation. Bounded <code>source_binding</code>
+evidence names the function and symbol for source repair, without
+arbitrary exception text.</p>
+<p>Approved models never gain new permissions on forecast reuse. Unknown
+protocols, altered scaffolds and changed runtime/package metadata are
+rejected.</p>
+</div>
+<div class="section level3">
+<h3 id="automatic-authorization">Automatic Authorization<a class="anchor" aria-label="anchor" href="#automatic-authorization"></a>
+</h3>
+<p>Set <code>approval = "automatic"</code> to authorize generated R and
+bounded repairs without manual review. It never calls
+<code><a href="https://rdrr.io/r/base/readline.html" class="external-link">readline()</a></code> or requests clarification: it returns a
+validated model or a typed actionable error. This deliberately gives up
+source review, not numerical validation. The code runs in the current R
+session with your permissions, without a sandbox or reliable
+interruption.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">custom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
+<span>  instructions <span class="op">=</span> <span class="st">"Use the mean of historical targets independently for each series."</span>,</span>
+<span>  llm <span class="op">=</span> <span class="va">llm</span>, input_data <span class="op">=</span> <span class="va">data_tbl</span>,</span>
+<span>  combo_variables <span class="op">=</span> <span class="st">"id"</span>, target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
+<span>  date_type <span class="op">=</span> <span class="st">"month"</span>, forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>  approval <span class="op">=</span> <span class="st">"automatic"</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Automatic calls use one closed, package-owned defaults catalog.
+Explicit supported instructions and supplied metadata take precedence;
+incompatible or contradictory requirements fail instead of silently
+widening capabilities.</p>
+<table class="table">
+<colgroup>
+<col width="50%">
+<col width="50%">
+</colgroup>
+<thead><tr class="header">
+<th>Omitted Choice</th>
+<th>Default or Required Action</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td>Target and horizon</td>
+<td>Required for raw input; inherited from compatible prepared metadata.
+Never guessed.</td>
+</tr>
+<tr class="even">
+<td>Series keys and cadence</td>
+<td>Only unambiguous single-series grouping and complete regular grids
+can be inferred; otherwise supply them explicitly.</td>
+</tr>
+<tr class="odd">
+<td>Forecast approach</td>
+<td>
+<code>bottoms_up</code> for raw input; inherited for prepared runs.
+Hierarchy retains capability restrictions and a mixed execution
+pool.</td>
+</tr>
+<tr class="even">
+<td>Model mode</td>
+<td>
+<code>local</code>; global/pooling requires explicit
+<code>model_type</code> and compatible metadata.</td>
+</tr>
+<tr class="odd">
+<td>Lookback</td>
+<td>All training history within supplied historical bounds and the
+current fold cutoff. Explicit supported lookback wins.</td>
+</tr>
+<tr class="even">
+<td>Ordinary arithmetic-average weights</td>
+<td>Equal weights only when unspecified. A requested weighted rule with
+missing weights fails.</td>
+</tr>
+<tr class="odd">
+<td>Growth basis</td>
+<td>Percentage change, <code>newer / older - 1</code>, when unspecified;
+apply the rate multiplicatively. Explicit absolute, percentage-point or
+CAGR rules override this fallback.</td>
+</tr>
+<tr class="even">
+<td>Drivers</td>
+<td>None unless declared by arguments or prepared metadata. No automatic
+feature selection or derived columns.</td>
+</tr>
+<tr class="odd">
+<td>Required history/predictors</td>
+<td>Reject empty, missing or nonfinite values and duplicate series/date
+keys; no dropping or imputation. Unsupported cleaning fails.</td>
+</tr>
+<tr class="even">
+<td>Zero/negative values</td>
+<td>Valid observations; no implicit clipping or rounding.</td>
+</tr>
+<tr class="odd">
+<td>Undefined division</td>
+<td>Error, with no invented epsilon, cap or rate. Zero-denominator
+holdout WMAPE remains unavailable.</td>
+</tr>
+<tr class="even">
+<td>Trend, seasonality, transforms, tuning</td>
+<td>None implicitly added; custom models train on the original-scale C1
+recipe.</td>
+</tr>
+<tr class="odd">
+<td>Dependencies</td>
+<td>Freeze installed FinnTS eligibility, or explicit
+<code>base_only</code>; derive actual dependencies from syntax. No
+installation.</td>
+</tr>
+<tr class="even">
+<td>Worked examples</td>
+<td>New calls scaffold basic/edge examples per mode; the provider
+supplies independent values/answers. Generated tolerance is
+<code>1e-8</code>.</td>
+</tr>
+<tr class="odd">
+<td>Caller-provided examples</td>
+<td>Preserve expected values and tolerances; never relax them during
+repair.</td>
+</tr>
+<tr class="even">
+<td>Attempt limit</td>
+<td>Three attempts total per contract/source phase;
+<code>control$max_attempts</code> may be 1-3.</td>
+</tr>
+<tr class="odd">
+<td>Validation budget</td>
+<td>60 seconds after evaluation returns; positive
+<code>control$validation_budget</code> may be at most 120. Not a hard
+interrupt.</td>
+</tr>
+<tr class="even">
+<td>Sampling</td>
+<td>Up to three deterministic series/leaves and 10000 historical node
+rows. Raw hierarchy retains derived nodes; prepared hierarchy is read
+completely.</td>
+</tr>
+<tr class="odd">
+<td>Name</td>
+<td>Generate a safe descriptive name; preserve an explicit name.</td>
+</tr>
+</tbody>
+</table>
+<p>Never invent business offsets, multipliers, numeric growth rates,
+allocation percentages, caps, commercial targets, required
+weights/drivers/formula terms, unspecified fiscal calendars or
+aggregation semantics. If essential context remains unresolved, start a
+new call with explicit instructions and compatible metadata. The catalog
+does not infer these choices from observed values or improve the
+requested rule.</p>
+<p>For a prior-year seasonal value plus average growth over three years,
+four annual observations of 100, 120, 150 and 180 give percentage
+changes of 20%, 25% and 20%. Their equally weighted arithmetic mean
+applied to 180 gives <strong>219</strong>. This is not CAGR, an absolute
+increment or extra compounding across forecast steps. The requested
+lookback and seasonal/calendar alignment still govern which observations
+are used. Undefined division still errors; no epsilon, clipping or
+fallback rate is introduced. Existing absolute-growth worked examples
+and caller-supplied answers are never rewritten to fit this
+convention.</p>
+<p>The fixed contract records <code>catalog_version</code>, effective
+settings and actually applied defaults. The approved model retains their
+JSON in <code>custom$validation$checks$automatic_defaults</code>;
+success prints the applied choices and measured results. Semantic
+defaults-used declarations come from the provider and are restricted to
+catalog keys/values. Neither those declarations nor finite examples
+prove arbitrary prose/code semantics for every future input.
+<code>growth_basis</code> is recorded only when the provider declares
+that the percentage fallback was applied, not for explicit growth bases
+or non-growth rules.</p>
+<p>Every source version receives a separate automatic authorization
+before execution. The record has <code>intent_confirmed = FALSE</code>,
+<code>allow_code = TRUE</code> and <code>mode = "automatic"</code>,
+bound to its <code>version_id</code>; it never claims human review.
+Manual envelopes record the three explicit confirmation fields.
+Definition hashes and <code>Model_ID</code> do not change solely because
+approval policy differs, while run and Agent provenance distinguish the
+policies. Forecast reuse does not call the authoring LLM or regenerate
+source.</p>
+<p>The only public approval values are <code>"manual"</code> and
+<code>"automatic"</code>. Explicit NULL, <code>"interactive"</code> and
+<code>"deferred"</code> fail. Manual approval outside an interactive R
+session fails; use <code>"automatic"</code> there.</p>
+</div>
+<div class="section level3">
+<h3 id="example-dates-and-retries">Example Dates and Retries<a class="anchor" aria-label="anchor" href="#example-dates-and-retries"></a>
+</h3>
+<p>Every worked example must forecast exactly the next
+<code>forecast_horizon</code> consecutive cadence dates immediately
+after its last historical Date. With monthly horizon 3 and history
+ending December 2025, those dates are January-March 2026. A prior-year
+seasonal rule uses January-March 2025 values from history; it does not
+move the forecast window another year forward. History must contain the
+observations the rule needs. For a fixed 11% increase, prior-year values
+10, 20 and 30 produce 11.1, 22.2 and 33.3. Zero and negative values
+remain valid unless explicitly excluded by the supported rule.</p>
+<p>Examples must cover every declared <code>model_type</code> and no
+undeclared modes. A local-only contract needs only local examples, with
+exactly one series per example; it must not add a global example merely
+because FinnTS supports global models. A global-only contract needs only
+global examples, each with at least two series. Either single-mode
+contract still needs two to eight total examples, including an edge
+case. Mixed contracts require coverage of both declared modes.</p>
+<p>An undeclared example mode produces specific mode feedback during
+contract retries. FinnTS does not silently remove or relabel the example
+or enable another mode to make it pass. The provider may regenerate the
+unaccepted proposal within the existing attempt limit; caller-provided
+examples must instead be corrected by the caller. Valid tolerance values
+are not reported as the cause of a well-formed example’s undeclared
+mode.</p>
+<p>When a generated contract is rejected, the next bounded contract
+attempt receives safe package-owned feedback explaining the rejection
+category and correction. The final error includes the last safe
+rejection if attempts are exhausted. Raw exception messages, private
+values, paths and provider output are not copied into that feedback.</p>
+<p>Feedback also names the rejected field, such as
+<code>parameters_json</code> or <code>examples.series</code>. Unexpected
+validator failures stop rather than consume more provider retries. An
+optional <code>diagnostics$rejected_contract</code> snapshot retains
+only known provider-visible response fields, their hash, the field/code
+and an omission marker. It shares the existing one-MiB diagnostic cap;
+oversized content is omitted without truncating an accepted oracle. Raw
+exceptions, Chat objects and actual training data are excluded. This
+snapshot is diagnostic evidence, not an accepted contract or
+authorization. No extra automatic file is written.</p>
+<p>Automatic <code>business_clarification</code> errors retain the
+unanswered questions at
+<code>diagnostics$rejected_contract$proposal$questions</code>, subject
+to the same size limit. The normal error message also displays the
+questions, labelled as provider clarification rather than independently
+verified input errors. Each question is limited to 500 displayed
+characters with a truncation marker, and control characters are removed;
+the original diagnostic text is unchanged. No debugger-frame search is
+needed to see ordinary questions. Supplied metadata and catalog defaults
+should resolve known choices; genuinely missing business terms still
+require clarification rather than guessed answers.</p>
+<p>For insufficient declared history, retries receive
+<code>feedback$history</code> with package-computed minimum rows, the
+supplied row counts per scenario/series, declared lags and whether all
+lookups can remain historical through the horizon. Generated cases use
+scaffold identities; caller cases use their already provider-visible
+names and series keys. Only counts and identifiers are included in this
+feedback, not observed training values. No rows or answers are filled or
+rewritten. New examples should use simple, independently checkable
+arithmetic; source repairs cannot replace a bad accepted oracle merely
+to pass validation.</p>
+<p>The provider may replace invalid generated examples only before the
+contract is accepted. Caller-provided examples are never replaced:
+structurally invalid supplied examples fail when checked, without
+spending further provider attempts on them. A conflicting unaccepted
+history declaration is retried instead of blaming or changing a valid
+caller example; earlier protocols retain their existing history-failure
+behavior. After contract acceptance, code repairs must preserve its
+examples and tolerances. The existing date checks, numerical checks,
+three-attempt limits and manual or automatic authorization policy remain
+unchanged. Corrective feedback improves repair information; it does not
+guarantee successful live generation.</p>
+</div>
+<div class="section level3">
+<h3 id="source-repair-diagnostics">Source Repair Diagnostics<a class="anchor" aria-label="anchor" href="#source-repair-diagnostics"></a>
+</h3>
+<p>New source requests contain <code>fit_body</code>,
+<code>predict_body</code> and optional named helper functions. Body
+fields may use the exact complete-function alternate form above. FinnTS
+assembles the fixed interfaces and row-identity wrapper from parsed
+expressions, without evaluating them. A passive preflight checks syntax,
+permitted namespaces and resolvable base/lexical function calls, without
+guessing packages for unresolved calls. Units come from the accepted
+interpretation and examples: a lag of twelve monthly observations means
+one year, not twelve years. Parameters needed by <code><a href="https://rdrr.io/r/stats/predict.html" class="external-link">predict()</a></code>
+belong in fitted state.</p>
+<p>Dependency repairs also receive bounded export-location hints from
+already-loaded eligible namespaces. FinnTS neither loads additional
+namespaces for this lookup nor substitutes functions automatically;
+identical exported names may have different semantics. Date lookup
+guidance preserves matching key classes: <code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply()</a></code> can drop
+a <code>Date</code> result’s class even with a Date template. These aids
+reduce mechanical errors, but do not prove arbitrary generated logic
+correct.</p>
+<p>Every custom model uses one current calendar-helper bundle. The
+reviewed helper source includes:</p>
+<ul>
+<li>
+<code>finntsShiftDate(dates, periods, date_type, invalid_day = "error")</code>
+returns Date values in the supplied order for integral day, week, month,
+quarter or year offsets. Negative offsets look back; offsets must be
+scalar or match the dates’ length. Nonexistent month-end or leap-day
+dates error by default. <code>invalid_day = "last_day"</code> is
+available only when the business rule explicitly permits clamping. The
+helper does not infer fiscal calendars.</li>
+<li>
+<code>finntsMatchDate(dates, history_dates, combo = NULL, history_combo = NULL)</code>
+returns historical row indices, preserving request order. Pooled
+histories must supply both character series-key vectors. Date vectors
+must retain their class, and historical keys must be unique within each
+series. Missing keys return NA rather than filling history or changing
+the model’s error policy.</li>
+<li>
+<code>finntsRowsDate(dates, history_dates, history_combo)</code>
+returns a list of all matching historical row indices for each requested
+date. Repeated dates across different series are valid; duplicate
+series/date keys still error. Missing dates return
+<code>integer(0)</code>. The LLM implements the actual aggregation,
+weighting, grouping and business missing-history behavior.</li>
+</ul>
+<p>These helpers handle calendar mechanics, not the business
+calculation. Their source and the reserved <code>finntsDateError</code>
+helper are frozen into model identity, repair snapshots and saved
+approvals. They require no new package dependency or provider call
+during prediction and leave room for 24 provider helpers within the
+unchanged source-size limit.</p>
+<p>New global contracts distinguish shared fitting from prediction
+scope. <code>prediction_cohort</code> declares <code>series</code>,
+<code>groups</code> with explicit stable group columns, or
+<code>all</code> fitted series. A shared regression can predict complete
+series batches independently; portfolio allocations generally need the
+full cohort. FinnTS checks required peers and group membership before
+generated prediction code runs. Resampling expands execution to required
+peers and dates while retaining the original analysis rows and scoring
+only original assessment rows. Local models use series scope; global
+models declare the scope their rule needs.</p>
+<p>Explicit global authoring checks every supplied series, then
+validates generated code on a deterministic representative sample of at
+most 100 series within 10000 historical rows, which keeps authoring
+preparation fast on large cohorts. The sample always includes edge
+series (largest and smallest scale, most zeros, negatives, flattest,
+shortest), covers multi-variable combo levels when they fit, and fills
+the rest in hash order. Its counts, never series labels, are disclosed
+to the provider; forecasting later fits the approved model on every
+series. Regression guidance asks generated code to retain feature order,
+category levels, contrasts, scaling and time origin in portable fitted
+state. These mechanics do not choose formulas: the LLM still writes the
+actual model, transformations and allocation.</p>
+<p>A genuine fixed-contract contradiction stops authoring. An explicitly
+reported implementation difficulty can use only remaining source
+attempts; it cannot change examples, extend the retry budget or bypass
+exact-version approval. Provider failures are separate operational
+errors with bounded category, HTTP status when known, phase, prompt
+bytes and elapsed time. Unknown causes remain unknown; raw provider
+messages, response bodies and headers are not retained.</p>
+<p>The shared source guard catches explicit Date-template
+<code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">vapply()</a></code> and plainly Date-returning <code><a href="https://rdrr.io/r/base/lapply.html" class="external-link">sapply()</a></code>
+simplification before execution. It preserves numeric iteration, quoted
+code, local shadows and explicit Date/numeric conversions; unknown
+expressions are not treated as proven type errors. Runtime helper
+conditions distinguish <code>date_key_type</code>,
+<code>date_key_duplicate</code>, and <code>date_shift_invalid</code>
+from genuine missing-history business errors. Together with
+<code>date_class_loss</code>, these produce bounded technical repair
+feedback without exposing lookup values, rewriting examples, increasing
+retries or bypassing approval. They are not a general proof of
+generated-code correctness.</p>
+<p>Unsupported development formats require recreation, not compatibility
+bridges. Approved models never acquire helpers silently. Approved helper
+source remains unchanged during later-cutoff refits, serialization and
+worker execution, just like the model’s calculation source.</p>
+<p>Repairs receive the previous source and a version-bound failure
+record identifying the phase, reason and, where applicable,
+worked-example index and mode. Fitting, prediction, arithmetic mismatch,
+nonportable state, roundtrip disagreement, holdout failure and
+elapsed-budget failure remain distinct. Up to four keyed expected/actual
+comparisons may be provided for fixed worked examples. Real holdout
+values, driver values and business-series identifiers are never
+added.</p>
+<p>Recognized missing-object runtime errors now use
+<code>reason = "unbound_symbol"</code> with a separate
+<code>failure$unbound_symbol</code> value, such as <code>history</code>.
+That value must be an ASCII identifier of at most 120 bytes referenced
+in parsed candidate code. Names found only in strings, member names,
+assignment bindings or quoted/formula expressions do not qualify, and
+sensitive-looking identifiers are withheld. Unrecognized or localized
+error wording remains generic. No raw exception text, stack trace or
+runtime value is included in this diagnostic.</p>
+<p>The source request instructs prediction code to bind fitted-state
+aliases explicitly. For example,
+<code>history &lt;- object$history</code> makes
+<code>history$Date</code> valid; <code>with(object$history, ...)</code>
+alone exposes the table’s columns but does not create the
+<code>history</code> alias. Valid data masks and nested functions remain
+supported. FinnTS reports runtime evidence rather than pretending to
+infer every R scope, and never injects an alias or changes the generated
+calculation automatically.</p>
+<p>Manual repair reviews and exhausted-attempt messages show the bounded
+missing identifier. Repairs still preserve the accepted contract, caller
+examples and attempt budget; manually repaired source still requires
+fresh version-specific consent. Saved failures without the new field and
+existing approved models remain readable without changing their source
+or triggering new authoring.</p>
+<p>Messages are package-owned by default. An exact constant literal
+<code><a href="https://rdrr.io/r/base/stop.html" class="external-link">stop()</a></code> message already present in source can be returned
+only after restrictive length/content checks. Dynamic error values,
+arbitrary stack traces and credential/path-like content are withheld.
+Preparation, missing dependencies and RDS I/O remain hard operational
+failures instead of being disguised as repairable business logic.</p>
+<p>New-protocol dependency failures carry up to eight static references
+and 32 eligible package names within eight KiB, with explicit omission
+counts. They distinguish undeclared/unavailable packages,
+unexported/private members, forbidden operations and unresolved
+functions. For example, an eligible package can still have a requested
+function that is not exported. Repairs receive that exact reference, not
+advice to install the package or change the accepted formula. Call
+arguments and arbitrary namespace-load errors are never included.</p>
+<p>Capture an authoring error to inspect its retained diagnostics
+without entering the debugger:</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span></span>
+<span>  <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
+<span>    instructions <span class="op">=</span> <span class="st">"Use the same calendar month in the prior year."</span>,</span>
+<span>    llm <span class="op">=</span> <span class="va">llm</span>, input_data <span class="op">=</span> <span class="va">data_tbl</span>,</span>
+<span>    combo_variables <span class="op">=</span> <span class="st">"id"</span>, target_variable <span class="op">=</span> <span class="st">"value"</span>,</span>
+<span>    date_type <span class="op">=</span> <span class="st">"month"</span>, forecast_horizon <span class="op">=</span> <span class="fl">3</span>,</span>
+<span>    approval <span class="op">=</span> <span class="st">"automatic"</span></span>
+<span>  <span class="op">)</span>,</span>
+<span>  error <span class="op">=</span> <span class="kw">function</span><span class="op">(</span><span class="va">error</span><span class="op">)</span> <span class="va">error</span></span>
+<span><span class="op">)</span></span>
+<span><span class="va">feedback</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/custom_model_feedback.html">custom_model_feedback</a></span><span class="op">(</span><span class="va">result</span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/print.html" class="external-link">print</a></span><span class="op">(</span><span class="va">feedback</span><span class="op">[</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"status"</span>, <span class="st">"stage"</span>, <span class="st">"code"</span>, <span class="st">"next_action"</span>, <span class="st">"attempts"</span>, <span class="st">"questions"</span><span class="op">)</span><span class="op">]</span><span class="op">)</span></span>
+<span><span class="kw">if</span> <span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="va">feedback</span><span class="op">$</span><span class="va">status</span>, <span class="st">"approved"</span><span class="op">)</span><span class="op">)</span> <span class="va">custom</span> <span class="op">&lt;-</span> <span class="va">result</span></span></code></pre></div>
+<p>Feedback schema 1 covers <code>approved</code>,
+<code>review_required</code>, <code>needs_input</code>, and
+<code>failed</code>. It includes available candidate/contract/request
+identities, resolved inputs and bounded safe details without dumping
+source, training rows or raw exception text. Questions are labelled
+provider proposals. NULL counts mean unavailable evidence, not unlimited
+retries; approved models do not retain attempt histories.
+<code>needs_user_input</code> is true for questions and manual review.
+Preflight failures without a model have unknown approval policy
+(<code>NULL</code>); known error stages are retained. Errors still raise
+normally and are never usable models. Full diagnostic history remains
+separately available in <code>result$diagnostics</code> when an error is
+captured. Both reports can contain confidential column names,
+provider-visible questions or explicitly chosen artifact paths.</p>
+<p>Coding agents should relay <code>needs_input</code> questions and any
+review request to the user, then call <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code>
+again with refined instructions or <code>approval = "automatic"</code>.
+Feedback does not authorize execution, restart an interrupted action or
+increase budgets. LLM configuration remains per call; no global provider
+configuration or hard provider/execution timeout is introduced.</p>
+<p>The bundle retains at most 12 compact attempts and one
+candidate/accepted-contract snapshot under a one-MiB JSON limit.
+Oversized snapshots have an explicit omission flag and retained hashes;
+validation examples themselves are never truncated. The condition
+carries diagnostics in memory; no data persistence or cloud upload
+occurs. Treat source, instructions and provider-visible examples as
+confidential. The snapshot excludes real training rows, fitted objects
+and Chat.</p>
+<p>Source repair cannot change the rule, units, parameters, expected
+answers or tolerances, and each candidate still needs exact manual or
+automatic authorization. The three-attempt limits remain unchanged.
+Tests cover last-value, mean/offset, rolling and weighted means,
+seasonal lookup/growth, explicitly defined mean YoY growth, driver
+ratios and conditional rules, plus quarterly and pooled controls. These
+are examples of supported ordinary-R logic, not a closed model menu or a
+promise that every arbitrary or ambiguous request succeeds.
+Live-provider reliability requires separate evaluation; no sandbox or
+hard timeout is added.</p>
+</div>
+<div class="section level3">
+<h3 id="manual-review">Manual Review<a class="anchor" aria-label="anchor" href="#manual-review"></a>
+</h3>
+<p>Manual approval runs only in an interactive R session, using the
+console replies described in <a href="#experimental-custom-models">Experimental custom models</a>.
+Business questions are asked in the same console. Changed source always
+requires a fresh review; expected examples stay fixed during code
+repairs.</p>
+<p>Scripts, scheduled jobs and coding agents run noninteractively.
+Manual approval there fails before contacting the LLM; use
+<code>approval = "automatic"</code> instead. Coding agents should show
+the user the instructions and example table they plan to submit, and
+relay any authoring error back to the user.</p>
+<p>Authoring validation uses the currently loaded FinnTS functions in
+the current R session, including <code>devtools::load_all()</code>. It
+starts no child process and installs no package snapshot. Load the
+intended development code and revalidate after changing it; FinnTS does
+not compare loaded functions against on-disk source. Local authoring
+prepares at most three deterministic series; explicit global authoring
+prepares a representative sample of at most 100 series. Both enforce at
+most 10000 total historical rows, using a separate temporary root for
+raw data. Existing prepared runs are read without writes. Explicit
+hierarchy authoring samples up to three raw leaf series and retains
+every derived node; a prepared hierarchy is read completely. The
+10000-row limit applies to all historical node rows, and larger
+hierarchies are rejected rather than truncated. The configured provider
+receives instructions, column types and fixed examples during
+generation, not automatically raw Target/regressor values or business
+series labels. The return is passive and serializable; it contains
+measured summaries but no fitted state, raw data, callbacks or Chat.</p>
+<p>Generated R runs in your current session with access to
+session/environment values and your account’s filesystem/network
+permissions. There is no sandbox, crash isolation or reliable automatic
+interruption; stuck code may require restarting R.
+<code>control$validation_budget</code> is an elapsed acceptance budget
+checked after evaluation returns, not an interrupting timeout. Ordinary
+options, RNG, working directory and library paths are restored on normal
+return/error, but arbitrary global, environment, filesystem or
+native-code side effects cannot be rolled back. Manual mode requires
+review before consenting; automatic mode explicitly waives that review.
+Sample validation is evidence, not a proof of all future behavior. No
+packages are installed and authoring does not register the result or
+publish a forecast. Select its alias explicitly through
+<code>models_to_run</code> when supplying
+<code>custom_models = list(business_mean = custom)</code> to standard
+preparation.</p>
+<p>Custom models train on a dedicated raw recipe, <code>C1</code>. Add
+it to <code>recipes_to_run</code> (for example
+<code>c("R1", "C1")</code>, or <code>"C1"</code> for a custom-only run).
+<code><a href="../reference/prep_data.html">prep_data()</a></code> writes the C1 files alongside any R1/R2 files,
+so built-in and custom models can share one run without sharing a
+representation:</p>
+<table class="table">
+<colgroup>
+<col width="33%">
+<col width="33%">
+<col width="33%">
+</colgroup>
+<thead><tr class="header">
+<th>Setting</th>
+<th>Effect on custom models (C1)</th>
+<th>Effect on built-in models (R1/R2)</th>
+</tr></thead>
+<tbody>
+<tr class="odd">
+<td><code>recipes_to_run</code></td>
+<td>Must include <code>"C1"</code>, otherwise preparation errors</td>
+<td>Need at least one R recipe; built-ins on a C1-only run error</td>
+</tr>
+<tr class="even">
+<td><code>external_regressors</code></td>
+<td>Does not restrict C1 availability; each custom model uses its
+declared drivers from eligible original input columns</td>
+<td>Selects drivers for R1/R2</td>
+</tr>
+<tr class="odd">
+<td>
+<code>stationary</code>, <code>box_cox</code>,
+<code>multistep_horizon</code>, <code>feature_selection</code>
+</td>
+<td>Not applied; C1 stays on the original target scale</td>
+<td>Applied as usual</td>
+</tr>
+<tr class="even">
+<td><code>clean_missing_values</code></td>
+<td>Cleans historical original-scale values; missing required future
+drivers still error</td>
+<td>Applied as usual</td>
+</tr>
+<tr class="odd">
+<td><code>clean_outliers</code></td>
+<td>Not applied; C1 keeps observed outliers</td>
+<td>Applied as usual</td>
+</tr>
+<tr class="even">
+<td>
+<code>average_models</code>, <code>run_ensemble_models</code>
+</td>
+<td>Custom forecasts can join simple averages and ensembles when they
+have enough back tests</td>
+<td>Unchanged</td>
+</tr>
+<tr class="odd">
+<td><code>negative_forecast</code></td>
+<td>
+<code>FALSE</code> floors finished custom forecasts at zero, as for
+built-ins; authoring validation checks unclipped output</td>
+<td>Unchanged</td>
+</tr>
+<tr class="even">
+<td>
+<code>parallel_processing</code>, <code>inner_parallel</code>
+</td>
+<td>Sequential, <code>"local_machine"</code> and <code>"spark"</code>
+are supported, with or without <code>inner_parallel</code>
+</td>
+<td>Unchanged</td>
+</tr>
+<tr class="odd">
+<td>Storage and formats</td>
+<td>Local/mounted paths or supported Blob/M365
+<code>storage_object</code>; CSV/RDS/Parquet data and RDS model
+objects</td>
+<td>Unchanged</td>
+</tr>
+</tbody>
+</table>
+<p>A prepared C1 recipe with no selected custom model is ignored with a
+warning. <code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> exposes
+<code>stationary</code>, retaining its existing <code>TRUE</code>
+default for ordinary calls.</p>
+<p>Custom workflows preserve Date and Combo plus explicitly declared
+predictors. They do not acquire implicit PCA, feature selection, target
+transforms or hidden features. Missing required data is an error.
+Local/global declarations constrain the enabled run modes; a definition
+with no compatible enabled mode fails rather than enabling a different
+mode. Custom fits use chronological analysis folds and fixed parameters,
+without tuning, source regeneration or package installation. Custom
+source or incomplete-prediction failures cannot be silently dropped to
+make a mixed run appear successful.</p>
+<p>C1 retains eligible original numeric, character, factor, logical and
+Date columns; reserved outcome/assessment columns and unsupported types
+are excluded. Supply each declared driver’s future values through the
+forecast horizon. Finn neither forecasts those future drivers nor
+replaces missing values with zero. This remains true when built-ins use
+other xregs, the Agent’s first iteration uses none, or update recovery
+uses simple defaults. C1 source identity is pinned before recipe writes,
+including partial preparation: changing eligible source values requires
+a new standard run or Agent version, not a restart.</p>
+<p>A manifest attached to the normal <code>-model_workflows.rds</code>
+artifact pins the effective pool, exact source content, attestations and
+preparation context. Standard preparation needs no separate custom
+registry or pool-manifest file. Reordered equivalent selections can
+reuse it; changed definitions, approvals or context require a new run.
+Custom <code>Model_Name</code> values keep their readable aliases,
+including underscores. Custom <code>Model_ID</code> values use
+<code>custom-&lt;full content hash&gt;--&lt;local|global&gt;--C1</code>,
+avoiding ambiguity with existing average-component separators. Saved
+workflows, fits, predictions and averages are checked before completion
+shortcuts; stale definitions and foreign components raise errors instead
+of being silently repaired.</p>
+<p>The ordinary accuracy and plausibility policy still selects the best
+eligible candidate. With <code>average_models = TRUE</code>, custom
+forecasts can be averaged with other selected models, and learned
+ensembles can use custom back-test forecasts. Enrollment does not
+guarantee selection. Exact single-rule workflows must explicitly disable
+averaging; <code>bottoms_up</code> alone does not do that. Supported
+storage backends retain their ordinary access and package
+requirements.</p>
+</div>
+<div class="section level3">
+<h3 id="reviewed-hierarchy-rules">Reviewed Hierarchy Rules<a class="anchor" aria-label="anchor" href="#reviewed-hierarchy-rules"></a>
+</h3>
+<p>Use
+<code>create_custom_model(control = custom_model_control(forecast_approach = "standard_hierarchy"), ...)</code>
+or <code>"grouped_hierarchy"</code> to review a new local-per-node
+definition. Its contract explicitly permits normal reconciliation to
+adjust the rule’s base predictions before publishing the bottom level.
+An old bottom-up approval cannot be silently upgraded; changing
+hierarchy semantics requires a new version and human approval.</p>
+<p>Forecast enrollment must include both compatible custom rules and
+eligible FinnTS models in one shared <code>models_to_run</code> pool. A
+custom-only hierarchy request errors without adding a model or switching
+the approach. Individual rule validation during authoring does not
+require a competitor and does not enroll a forecast. Different winners
+at different nodes, including custom winners everywhere, are valid
+outcomes of an eligible mixed pool.</p>
+<p>This profile is local and univariate; custom nodes train on
+original-scale C1, while built-ins keep their usual settings. Simple
+averages and learned ensembles are allowed. Every candidate must cover
+every required node and forecast key. Missing coverage cannot be
+replaced by <code>snaive</code>, zero-filled or silently omitted.
+Existing hts mathematics and quality selection are reused. Per-series
+routing, pooled/global hierarchy and Agent hierarchy remain later work.
+See the <a href="hierarchical-forecasting.html#reviewed-custom-rules">hierarchy
+walkthrough</a> for explicit controls and the compatibility evidence
+matrix.</p>
+</div>
+<div class="section level3">
+<h3 id="custom-models-in-agent-iterations-and-updates">Custom models in Agent iterations and updates<a class="anchor" aria-label="anchor" href="#custom-models-in-agent-iterations-and-updates"></a>
+</h3>
+<p>Supply approved objects with
+<code>set_agent_info(custom_models = list(business_mean = custom))</code>.
+The setup <code>models_to_run</code> argument is removed: built-in
+candidate search remains the Agent’s responsibility, while every
+mode-compatible enrolled custom model is mandatory from the first
+iteration onward and executes before built-ins. The LLM cannot omit
+these models or alter their approved logic. Required drivers and raw C1
+are retained; ordinary built-in transformations, ranking and
+average-model accuracy signals remain intact. Custom-only forecasting
+without built-in search belongs in a standard run.</p>
+<p>Each version’s existing CSV log always contains one
+<code>custom_models</code> names column, using <code>NA</code> when none
+are enrolled. Setup saves one complete, immutable enrollment bundle at
+<code>prep_models/&lt;project-hash&gt;-&lt;hash-of-agent-run-id&gt;-custom-models.rds</code>.
+The returned Agent object and dispatched worker metadata contain
+names/references, not untrained custom workflows or source/approval
+payloads. Workers load the exact version-owned bundle after dispatch.
+Sequential, local-machine and Spark dispatch are supported with CSV
+data, RDS model objects and no inner parallelism for this Agent profile.
+Spark still requires its ordinary mounted-storage and worker-package
+setup; permitting dispatch is not evidence of a live-cluster test.</p>
+<p>Compatible updates require an identically enrolled new parent,
+unchanged cadence, regressors and enabled modes, and explicit
+<code>allow_iterate_forecast = FALSE</code>. The positive whole-number
+forecast horizon may change, subject to the approved rule’s history and
+driver requirements. Successful series replay their saved winners and
+component subsets. New series and recoverable built-in fitting or
+forecast-quality failures use Finn’s existing default-local fallback,
+with all compatible current-version custom models added first, plus
+enrolled foundation models whose credentials are available. The
+coordinator checks foundation availability once and passes it to workers
+for consistent default-model validation. Changed global cohorts are
+refitted using compatible current peers rather than reusing a pooled fit
+from different membership. Saved global winners are published only for
+surviving series; new peers still receive default-local forecasts.
+Required custom drivers remain mandatory. Custom rules are never retuned
+or regenerated; mixed retuning reuses their fixed results.</p>
+<p>Storage/authentication failures, missing or malformed required
+artifacts, enrollment/identity mismatches and custom-source failures
+remain hard errors. Fallback cannot silently drop a custom model or
+fabricate successful output. Accepted defaults retain provenance and
+completed restarts do not refit them. Update replay provenance uses a
+separate <code>logs/...-agent-custom-update.rds</code> record: it
+identifies the predecessor and saved choices, not another copy of the
+untrained enrollment bundle. Older unreleased custom artifact layouts
+must be recreated with the current setup/preparation functions; they are
+not migrated.</p>
+</div>
 </div>
 <div class="section level2">
 <h2 id="future-forecast-checks">Future-forecast checks<a class="anchor" aria-label="anchor" href="#future-forecast-checks"></a>

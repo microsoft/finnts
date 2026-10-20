@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9013</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9014</span>
       </span>
     </div>
 
@@ -173,12 +173,17 @@
 <li>Make the smallest grounded change and run a focused executable check immediately.</li>
 <li>Add or update tests for the happy path, relevant edge cases, and the regression being fixed.</li>
 <li>Document every new or modified function, including internal helpers, following the <a href=".claude/rules/r-package.html#function-documentation">function documentation contract</a>. Update roxygen or vignettes when the public API or user workflow changes, then regenerate documentation.</li>
-<li>Run the broadest practical validation before finishing and report anything not run.</li>
+<li>Run the checks required by the selected validation scope and report anything not run.</li>
 </ol><p>Keep edits focused. Do not refactor unrelated code, change public APIs without approval, or overwrite user changes in a dirty worktree.</p>
 <p>For work-item and repository-hosting services, prefer authenticated command-line or API tools over browser automation when those tools can retrieve the required information. Keep repository guidance provider-neutral and never record organization names, private project identifiers, work-item URLs, or other environment-specific details.</p>
+<p>Keep one current implementation of custom-model logic and helpers. Update it directly without retaining older versions or building compatibility bridges to prior versions.</p>
 </div>
 <div class="section level2">
-<h2 id="artifact-io">Artifact I/O<a class="anchor" aria-label="anchor" href="#artifact-io"></a></h2>
+<h2 id="validation-scope">Validation Scope<a class="anchor" aria-label="anchor" href="#validation-scope"></a></h2>
+<p>Interactive development defaults to targeted tests for the changed behavior and its direct callers. Honor explicit requests for targeted tests only. Record the selected scope and exact checks in the plan; do not silently expand into the unfiltered package suite, R CMD check, or full vignette/site builds.</p>
+<p>Targeted scope still requires focused regression checks, relevant edge cases, necessary documentation generation, and final diff/integrity review. Include a narrowly scoped installed-package or worker check only when the touched behavior needs it. If more coverage is necessary, explain why and get approval before broadening the scope.</p>
+<p>Full validation remains required for release qualification, explicit full-validation requests, and unattended work. A public API, metadata, or multi-file change does not by itself override an explicitly selected targeted development scope; record the broader release checks as deferred instead.</p>
+<p>Report targeted completion as “Targeted tests passed; full validation not run by request.” This is not a claim that the package is R CMD check-clean or release-qualified. Preserve historical validation findings, test assertions, CRAN skips, and runtime limits; selecting fewer tests is not permission to weaken them. ## Artifact I/O</p>
 <ul><li>Before a code change adds, removes, renames, or changes columns or stored values in any file saved to disk, ask for and receive the user’s explicit approval. This includes logs, forecasts, metadata, serialized objects, and downstream copies; approval to fix a bug or improve logging is not blanket approval to change persisted data.</li>
 <li>Before asking for approval, explicitly warn: “This changes how data is saved in ADLS.” Identify the affected files, columns or values, and downstream compatibility implications. The rule applies even when developing or validating with local files.</li>
 <li>Do not work around this approval gate by placing new tracking data in existing columns, serialized attributes, or additional files. Keep unapproved bookkeeping in memory.</li>

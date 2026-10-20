@@ -39,9 +39,15 @@
 <url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/chronos_bolt_tiny_model_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/create_custom_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/cubist_multistep_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/custom_model_control.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/custom_model_examples_template.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/custom_model_feedback.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/custom_model_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/custom_model_predict_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/detect_hierarchy.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/ensemble_models.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/final_models.html</loc></url>
@@ -80,6 +86,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/print.chronos_bolt_tiny_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.cubist_multistep_fit_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/print.finnts_custom_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.glmnet_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/print.mars_multistep.html</loc></url>
@@ -130,5 +137,6 @@
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_predict_impl.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/scott_cherry_custom_acr_logic_playground_prompt.html</loc></url>
 </urlset>
 
