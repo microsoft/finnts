@@ -1,6 +1,8 @@
 #' Update Forecast with Latest Data and Inputs
 #'
 #' This function updates the forecast agent with the latest data and inputs.
+#' The default recovery behavior below applies to ordinary built-in runs;
+#' approved custom pools use the bounded replay contract described in Details.
 #' If new time series are detected in the data (up to 20\% of existing series,
 #' with a floor of 10), simple forecasts are automatically created for them
 #' using default local model inputs without LLM involvement. If the number
@@ -84,11 +86,43 @@
 #'   caching and artifact formats are unchanged. Required predecessor and storage
 #'   access failures remain errors. These checks do not coordinate concurrent
 #'   writers or guarantee that another attempt cannot overwrite a checked file.
+#'   Approved custom pools require explicit `allow_iterate_forecast = FALSE`,
+#'   `overwrite = TRUE`, identical enrollment and approval evidence, cadence,
+#'   regressors and enabled modes. New observations, positive whole-number
+#'   horizons, historical windows, cutoffs and backtest settings are allowed
+#'   in the new parent, subject to approved history and driver requirements.
+#'   The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
+#'   remain required. The completed predecessor, exact selected components,
+#'   current input signatures and replay controls are pinned before child fitting.
+#'   Replay retains full custom version IDs and per-series global subsets. Custom
+#'   logic is never regenerated or tuned; mixed retuning reuses fixed custom
+#'   results while retuning selected built-ins only. Temporal custom resampling
+#'   evaluates complete horizons from existing predictors but preserves the
+#'   original analysis cutoffs and scoring rows. New series and recoverable
+#'   built-in fitting or forecast-quality failures use the existing default-local
+#'   fallback with every compatible current-version custom model included first.
+#'   Defaults also include enrolled foundation models whose credentials are
+#'   available. Availability is checked once in the coordinator and passed to
+#'   workers so both validate the same default model pool.
+#'   Global custom models refit on the compatible current cohort, including new
+#'   peers, but publish only to surviving series with saved global winners.
+#'   New peers still receive default-local forecasts, not untested global winners.
+#'   Changed cohorts never reuse the former fitted state. Source, provider,
+#'   enrollment, identity and required-artifact failures remain hard errors;
+#'   custom logic is never repaired or silently dropped. Complete outputs can
+#'   resume missing completion logging without refits
+#'   or forecast writes; conflicting or incomplete fitted outputs fail untouched.
+#'   A completed compatible custom update can be the next update's predecessor.
+#'   Ordinary EDA post-processing may still call its isolated LLM; approved source
+#'   and approval payloads are excluded. Replay provenance is not authenticated
+#'   approval, a sandbox or a concurrent-writer transaction. A built-in-only parent
+#'   cannot adopt a custom predecessor without explicit enrollment.
 #'
 #' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
 #' @param allow_iterate_forecast Logical indicating if the forecast iteration
 #'   should be allowed if poor performance is detected, meaning >40% of
-#'   time series with >20% worse weighted MAPE than previous agent run
+#'   time series with >20% worse weighted MAPE than previous agent run.
+#'   Custom updates require this argument to be supplied explicitly as FALSE.
 #' @param max_iter Numeric indicating the maximum number of iterations
 #'   if iterate_forecast is ran
 #' @param parallel_processing Default of NULL runs no parallel processing and
@@ -170,6 +204,12 @@ update_forecast <- function(agent_info,
   # formatting checks
   check_agent_info(agent_info)
 
+  agent_info <- load_agent_custom_state(agent_info)
+  if (!is.null(agent_info$custom_agent_contract)) {
+    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    if (missing(allow_iterate_forecast) || !identical(allow_iterate_forecast, FALSE)) stop("Custom Agent updates are unsupported unless allow_iterate_forecast = FALSE is explicit.", call. = FALSE)
+  } else reject_agent_custom_update(agent_info)
+
   check_parallel_processing(
     run_info = agent_info$project_info,
     parallel_processing = parallel_processing,
@@ -206,6 +246,9 @@ update_forecast <- function(agent_info,
 #' Update Forecast Agent Workflow
 #'
 #' This function defines the workflow for updating the forecast agent.
+#' Custom parents pin provenance before dispatch, bypass default recovery and
+#' transport contracts through context references without interpolating source.
+#' EDA receives a contract-free copy; ordinary built-in graphs are unchanged.
 #' Local-model updates and default forecasts each retry three failed Spark
 #' attempts once on the local machine with inner parallelism disabled and the
 #' requested core count unchanged. Backend changes stay within the failing node;
@@ -233,6 +276,12 @@ update_fcst_agent_workflow <- function(agent_info,
                                        allow_iterate_forecast = TRUE,
                                        weighted_mape_goal = 0.1,
                                        seed = 123) {
+  agent_info <- load_agent_custom_state(agent_info)
+  if (!is.null(agent_info$custom_agent_contract)) {
+    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    if (!identical(allow_iterate_forecast, FALSE)) stop("Custom update requires allow_iterate_forecast = FALSE.", call. = FALSE)
+    agent_info <- prepare_agent_custom_update(agent_info, seed)
+  }
   # construct the workflow
   workflow <- list(
     start = list(
@@ -342,7 +391,7 @@ update_fcst_agent_workflow <- function(agent_info,
         forecast_approach <- ctx$agent_info$forecast_approach
 
         # check if forecast iteration should be ran again
-        if (perc_worse >= 40 && allow_iterate_forecast) {
+        if (isTRUE(perc_worse >= 40) && allow_iterate_forecast) {
           cli::cli_alert_info("Poor performance detected: Running iterate_forecast() to improve results.")
           return(list(ctx = ctx, `next` = "iterate_forecast"))
         } else if (forecast_approach != "bottoms_up") {
@@ -439,13 +488,40 @@ update_fcst_agent_workflow <- function(agent_info,
     agent_info = agent_info # agent information
   )
 
+  if (!is.null(agent_info$custom_agent_contract)) {
+    workflow$start$fn <- "initial_agent_custom_update"
+    # Preserve completed replay; submit defaults only for routed recovery.
+    workflow$check_update_failures$branch <- function(ctx) {
+      pending <- c(ctx$results$initial_checks$new_combos, ctx$results$check_update_failures)
+      list(ctx = ctx, `next` = if (length(pending)) "forecast_new_combos" else "save_best_agent_run")
+    }
+    init_ctx$custom_agent_info <- agent_info
+    init_ctx$custom_eda_info <- agent_info[setdiff(names(agent_info), c("custom_agent_contract", "custom_agent_contract_id",
+      "custom_agent_update", "custom_agent_update_id"))]
+    for (node in names(workflow)) {
+      if ("agent_info" %in% names(workflow[[node]]$args)) workflow[[node]]$args$agent_info <- "{ctx$custom_agent_info}"
+    }
+    workflow$eda_agent_workflow$args$agent_info <- "{ctx$custom_eda_info}"
+    workflow$start$branch <- function(ctx) {
+      result <- ctx$results$initial_agent_custom_update
+      ctx$results$initial_checks <- result
+      list(ctx = ctx, `next` = if (identical(result, "no updates required")) "save_best_agent_run" else "update_global_models")
+    }
+  }
+
   # run the graph
   workflow_llm <- new_llm_session(agent_info$llm)
   run_graph(workflow_llm, workflow, init_ctx)
 }
 
+# Rebuild predecessor metadata from its saved version row, decoding the logged
+# regressor list. Preserve its execution permissions rather than the current
+# version's flags; an absent optional hierarchy flag remains NULL until custom
+# enrollment supplies its trusted restriction. Malformed enrollment is rejected.
 build_previous_agent_info <- function(agent_info, agent_run_tbl) {
   project_info <- agent_info$project_info
+  regressors <- agent_run_tbl$external_regressors[1]
+  regressors <- if (!length(regressors) || is.na(regressors)) NULL else strsplit(regressors, ", ", fixed = TRUE)[[1]]
 
   list(
     agent_version = agent_run_tbl$agent_version[1],
@@ -456,7 +532,9 @@ build_previous_agent_info <- function(agent_info, agent_run_tbl) {
     forecast_approach = agent_run_tbl$forecast_approach[1],
     llm = agent_info$llm,
     forecast_horizon = agent_run_tbl$forecast_horizon[1],
-    external_regressors = agent_run_tbl$external_regressors[1],
+    external_regressors = regressors,
+    negative_forecast = agent_run_tbl[["negative_forecast"]][1],
+    allow_hierarchical_forecast = agent_run_tbl[["allow_hierarchical_forecast"]][1],
     hist_end_date = agent_run_tbl$hist_end_date[1],
     back_test_scenarios = agent_run_tbl$back_test_scenarios[1],
     back_test_spacing = agent_run_tbl$back_test_spacing[1],
@@ -781,8 +859,10 @@ read_update_keys <- function(info, combo, splits = NULL, recipes = NULL) {
     rlang::abort("Update completion requires the saved run log and train/test splits.",
       class = "finnts_update_artifact_error")
   }
-  recipe <- if (is.null(recipes) || is.na(recipes) || recipes == "all" ||
-    "R1" %in% strsplit(recipes, "---", fixed = TRUE)[[1]]) "R1" else "R2"
+  # Calendar comes from the first prepared recipe; R1 and C1 hold one row per date.
+  saved_recipes <- if (is.null(recipes) || is.na(recipes)) character() else strsplit(recipes, "---", fixed = TRUE)[[1]]
+  recipe <- if (!length(saved_recipes) || "all" %in% saved_recipes || "R1" %in% saved_recipes) "R1" else
+    if ("C1" %in% saved_recipes && !"R2" %in% saved_recipes) "C1" else "R2"
   prepared <- read_update_artifact(info, local_artifact_path(info, "prep_data", paste0("-", recipe), hash_data(combo)))
   if (is.data.frame(prepared) && recipe == "R2" && "Horizon" %in% names(prepared)) {
     prepared <- prepared[!is.na(prepared$Horizon) & prepared$Horizon == 1, , drop = FALSE]
@@ -1054,6 +1134,7 @@ completed_update_runs <- function(agent_info, metadata) {
 #'   access failures remain errors.
 #' @noRd
 initial_checks <- function(agent_info) {
+  reject_agent_custom_update(agent_info)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -1130,6 +1211,7 @@ initial_checks <- function(agent_info) {
   }
 
   prev_agent_info <- completed_runs[[1]]$agent_info
+  reject_agent_custom_update(prev_agent_info)
   prev_best_runs_tbl <- completed_runs[[1]]$best_runs_tbl
   prev_hierarchy_summary_tbl <- completed_runs[[1]]$hierarchy_summary_tbl
 
@@ -1290,6 +1372,9 @@ initial_checks <- function(agent_info) {
 #' components or recovering inner hierarchical source choices from the fitted
 #' pool. Fitting failures use the existing local fallback; current-artifact
 #' access failures propagate and must not be reinterpreted as model failures.
+#' Active custom replay restores enrollment and propagates every failure without
+#' default fallback; its pinned group retains one global child identity. Dispatch
+#' carries only enrollment/replay references and restores both inside the worker.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame containing the previous best run information.
@@ -1309,6 +1394,7 @@ update_global_models <- function(agent_info,
                                  inner_parallel,
                                  num_cores,
                                  seed) {
+  agent_info <- load_agent_custom_update_state(agent_info)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -1322,6 +1408,7 @@ update_global_models <- function(agent_info,
   }
 
   validate_global_iteration(previous_best_run_global_tbl)
+  agent_info_lean <- agent_custom_worker_info(agent_info)
 
   # start forecast update process
   global_error <- tryCatch(
@@ -1351,13 +1438,13 @@ update_global_models <- function(agent_info,
               seed = seed
             )
           },
-          args = list(agent_info, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
+          args = list(agent_info_lean, previous_best_run_global_tbl, parallel_processing, inner_parallel, num_cores, seed, .libPaths()),
           libpath = .libPaths(),
           stdout = "|", stderr = "|", show = TRUE, supervise = TRUE
         )
       } else {
         update_forecast_combo(
-          agent_info = agent_info,
+          agent_info = agent_info_lean,
           prev_best_run_tbl = previous_best_run_global_tbl,
           parallel_processing = parallel_processing,
           num_cores = num_cores,
@@ -1378,6 +1465,8 @@ update_global_models <- function(agent_info,
 
   if (inherits(global_error, "condition")) {
     if (inherits(global_error, "finnts_update_artifact_error")) stop(global_error)
+    if (!is.null(agent_info$custom_agent_contract) &&
+      !inherits(global_error, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(global_error)
     # extract individual combos that were covered by the global model
     failed_global_combos <- unique(previous_best_run_global_tbl$combo)
     failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
@@ -1406,6 +1495,9 @@ update_global_models <- function(agent_info,
 #' completion metadata cannot override the work list. Storage failures propagate,
 #' including required predecessor metadata failures with their original cause,
 #' while ordinary fitting and quality failures keep their existing fallback.
+#' Custom replay validates enrollment before reference-only dispatch, restores
+#' enrollment and replay inside each worker, and propagates worker conditions.
+#' No untrained custom objects, fitted objects, forecasts or Chat are dispatched.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame containing the previous best run information.
@@ -1423,6 +1515,7 @@ update_local_models <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 seed) {
+  agent_info <- load_agent_custom_update_state(agent_info)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -1448,8 +1541,7 @@ update_local_models <- function(agent_info,
     unique()
 
   # agent adjustments to prevent serialization issues
-  agent_info_lean <- agent_info
-  agent_info_lean$llm <- NULL
+  agent_info_lean <- agent_custom_worker_info(agent_info)
 
   # start forecast update process
   par_info <- par_start(
@@ -1522,6 +1614,8 @@ update_local_models <- function(agent_info,
   for (i in seq_along(combo_results)) {
     result <- combo_results[[i]]
     if (inherits(result, "finnts_update_artifact_error")) stop(result)
+    if (!is.null(agent_info$custom_agent_contract) && inherits(result, "condition") &&
+      !inherits(result, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(result)
     if (inherits(result, "finnts_forecast_selection_rejected")) {
       quality_rejected_combos <- c(quality_rejected_combos, hash_data(local_combo_list[[i]]))
       next
@@ -1557,6 +1651,8 @@ update_local_models <- function(agent_info,
 #' update steps does not exceed the allowed threshold (20\% of existing combos,
 #' with a floor of 10). If the threshold is exceeded, an error is raised. Otherwise,
 #' the failed combos are returned so they can be re-forecast using default inputs.
+#' Active custom replay instead raises an error for any failed or quality-rejected
+#' series, preventing default recovery or implicit candidate search.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param previous_best_run_tbl A data frame of the previous best run results.
@@ -1620,12 +1716,15 @@ check_update_failures <- function(agent_info,
 #'
 #' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
 #' Agent-log run IDs remain character while versions and accuracy retain numeric
-#' types. Missing completed predecessors, absent common series, and storage/read
-#' failures remain errors; the comparison does not write artifacts.
+#' types. Missing completed predecessors and storage/read failures remain errors.
+#' When every current custom-enrolled series is new, report the absent comparison
+#' explicitly and return NA rather than fabricate an accuracy percentage. Ordinary
+#' runs retain their absent-common-series error. No artifacts are written here.
 #'
 #' @param agent_info A list containing the agent information.
 #'
-#' @return A numeric value representing the percentage of time series that had poor performance.
+#' @return The percentage of comparable series with poor performance, or
+#'   NA_real_ for a custom-enrolled update with no retained series to compare.
 #' @noRd
 analyze_results <- function(agent_info) {
   # get metadata
@@ -1689,6 +1788,10 @@ analyze_results <- function(agent_info) {
     unique(previous_best_run_tbl$combo)
   )
 
+  if (length(common_combos) == 0 && !is.null(agent_info$custom_agent_contract)) {
+    cli::cli_alert_info("All current custom Agent series are new; there is no previous accuracy comparison.")
+    return(NA_real_)
+  }
   if (length(common_combos) == 0) {
     stop("Error in analyze_results(). No common combos found between current and previous agent runs.",
       call. = FALSE
@@ -1872,6 +1975,9 @@ reconcile_agent_forecast <- function(agent_info,
 #'   state is created inside the worker, never dispatched.
 #'   Fresh defaults may explicitly accept a usable plausibility fallback.
 #'   Worker fallback warnings are relayed to the coordinator, never saved.
+#'   Custom runs check enrolled foundation-model availability once in the
+#'   coordinator and pass it to workers for consistent submission revalidation.
+#'   Non-custom runs retain the machine-wide foundation-model availability check.
 #' @noRd
 forecast_new_combos <- function(agent_info,
                                 new_combos,
@@ -1880,6 +1986,7 @@ forecast_new_combos <- function(agent_info,
                                 inner_parallel,
                                 num_cores,
                                 seed) {
+  agent_info <- load_agent_custom_state(agent_info)
   # merge new and failed combos
   all_combos <- unique(c(new_combos, failed_combos))
 
@@ -1909,7 +2016,12 @@ forecast_new_combos <- function(agent_info,
   project_info <- agent_info$project_info
 
   # build fixed default local model inputs; see .github/agent-guides/adding-a-model.md
-  fm_suffix <- get_foundation_model_suffix()
+  if (is.null(agent_info$custom_agent_contract)) {
+    fm_suffix <- get_foundation_model_suffix()
+  } else {
+    fm_suffix <- agent_custom_foundations(agent_info$custom_agent_contract)
+    agent_info$custom_foundation_suffix <- fm_suffix
+  }
 
   default_inputs <- list(
     models_to_run = strsplit(paste0("arima---ets---naive---snaive---tbats---stlm-arima---xgboost---glmnet", fm_suffix), "---")[[1]],
@@ -1926,10 +2038,17 @@ forecast_new_combos <- function(agent_info,
     lag_periods = "NULL",
     rolling_window_periods = "NULL"
   )
+  if (!is.null(agent_info$custom_agent_contract)) {
+    proposal <- default_inputs
+    proposal$negative_forecast <- NULL
+    proposal$models_to_run <- paste(proposal$models_to_run, collapse = "---")
+    proposal$reasoning <- "Use default built-in inputs and every compatible enrolled custom model."
+    default_inputs <- validate_agent_custom_proposal(proposal, agent_info$custom_agent_contract,
+      "local", fm_suffix)
+  }
 
   # agent adjustments to prevent serialization issues
-  agent_info_lean <- agent_info
-  agent_info_lean$llm <- NULL
+  agent_info_lean <- agent_custom_worker_info(agent_info)
   agent_info_lean$default_reforecast <- TRUE
 
   # parallel setup
@@ -1958,6 +2077,8 @@ forecast_new_combos <- function(agent_info,
         .multicombine = TRUE
       ) %op%
         {
+          agent_info_lean$custom_enrollment_cache <- new.env(parent = emptyenv())
+          worker_info <- load_agent_custom_update_state(agent_info_lean)
           # check if combo already ran (in case of restart)
           metadata_reader <- if (combo_hash %in% agent_info_lean$quality_rejected_combos) {
             read_file
@@ -1976,7 +2097,7 @@ forecast_new_combos <- function(agent_info,
             paste0("agent_", agent_info_lean$run_id, "_", combo_hash, "_", timestamp))
           current_complete <- nrow(agent_best_run_tbl) > 0 &&
             (!combo_hash %in% agent_info_lean$quality_rejected_combos || accepted_default) &&
-            nrow(completed_update_runs(agent_info_lean, agent_best_run_tbl)) > 0
+            nrow(completed_update_runs(worker_info, agent_best_run_tbl)) > 0
           if (current_complete) {
             return(data.frame(Combo = combo_hash))
           }
@@ -2011,7 +2132,7 @@ forecast_new_combos <- function(agent_info,
 
           # log the best run
           log_best_run(
-            agent_info = agent_info_lean,
+            agent_info = worker_info,
             run_info = run_info,
             weighted_mape = weighted_mape,
             check_best_run = FALSE,
@@ -2243,12 +2364,22 @@ extend_global_update_selection <- function(selection, hierarchy) {
 # refit cannot leave an older selected average behind after an interrupted run.
 # Storage failures and inconsistent selected-fit identities remain hard errors;
 # no additional artifact type is persisted or shipped.
+# Custom replay validates pinned source ownership before child writes, carries
+# exact approved aliases/versions into preparation and preserves saved component
+# maps. Present incomplete outputs fail before preparation; valid outputs reuse
+# the logging tail. Fixed custom results are reused when built-ins need retuning.
+# Child preparation receives only selected custom envelopes, not unselected
+# parent enrollment; built-in-only winners retain ordinary preparation.
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
                                   parallel_processing,
                                   num_cores,
                                   inner_parallel,
                                   seed) {
+  agent_info$custom_enrollment_cache <- new.env(parent = emptyenv())
+  agent_info <- load_agent_custom_update_state(agent_info)
+  custom_contract <- agent_info$custom_agent_contract
+  if (!is.null(custom_contract)) agent_custom_update_child(agent_info, prev_best_run_tbl, seed)
   # get metadata
   project_info <- agent_info$project_info
 
@@ -2358,6 +2489,12 @@ update_forecast_combo <- function(agent_info,
     }
   }
 
+  if (!is.null(custom_contract)) {
+    expected <- unique(unlist(lapply(agent_info$custom_agent_update$winners[combo_list], function(row) row$components), use.names = FALSE))
+    if (!setequal(model_id_list, expected)) stop("Custom update selected component identities changed.", call. = FALSE)
+    prev_best_model_list <- unique(as.character(trained_models_tbl$Model_Name))
+  }
+
   # get external regressor info from previous run
   external_regressors <- adjust_inputs(prev_run_log_tbl$external_regressors)
 
@@ -2391,15 +2528,21 @@ update_forecast_combo <- function(agent_info,
 
   # get input data for new run
   if (combo == "All-Data") {
-    input_data <- read_file(
-      run_info = project_info,
-      file_list = list_files(
+    input_files <- if (!is.null(custom_contract)) {
+      vapply(names(agent_info$custom_agent_update$inputs), function(series_hash)
+        local_artifact_path(agent_custom_parent_info(agent_info), "input_data", combo = series_hash), character(1))
+    } else {
+      list_files(
         project_info$storage_object,
         paste0(
           project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
           hash_data(agent_info$run_id), "-", combo_value, ".", project_info$data_output
         )
-      ),
+      )
+    }
+    input_data <- read_file(
+      run_info = project_info,
+      file_list = input_files,
       return_type = "df"
     ) %>%
       adjust_combo_column()
@@ -2424,6 +2567,21 @@ update_forecast_combo <- function(agent_info,
   )
 
   # create new run
+  if (!is.null(custom_contract)) {
+    child <- project_info
+    child$project_name <- project_name
+    child$run_name <- run_name
+    prior <- read_selection_file(child, "logs", optional = TRUE)
+    if (nrow(prior) && (!identical(prior$custom_agent_contract_id, agent_info$custom_agent_contract_id) ||
+      !identical(prior$custom_agent_update_id, agent_info$custom_agent_update_id))) stop("Custom update child provenance changed.", call. = FALSE)
+    outputs <- c(local_artifact_path(child, "models", "-single_models", hash_data(combo), "rds"),
+      vapply(combo_list, function(series) local_artifact_path(child, "forecasts",
+        if (combo == "All-Data") "-global_models" else "-single_models", hash_data(series)), character(1)),
+      vapply(combo_list, function(series) local_artifact_path(child, "forecasts", "-average_models", hash_data(series)), character(1)))
+    if (length(local_artifact_files(outputs, allow_missing = TRUE))) {
+      audit_agent_custom_child(agent_info, child, vapply(combo_list, hash_data, character(1)))
+    }
+  }
   new_run_info <- set_run_info(
     project_name = project_name,
     run_name = run_name,
@@ -2491,6 +2649,12 @@ update_forecast_combo <- function(agent_info,
   }
 
   # prep models and train/test splits
+  if (!is.null(custom_contract)) {
+    child_log <- read_selection_file(new_run_info, "logs")
+    child_log$custom_agent_contract_id <- agent_info$custom_agent_contract_id
+    child_log$custom_agent_update_id <- agent_info$custom_agent_update_id
+    write_data(child_log, NULL, new_run_info, "log", "logs")
+  }
   prep_models(
     run_info = new_run_info,
     back_test_scenarios = agent_info$back_test_scenarios,
@@ -2504,9 +2668,16 @@ update_forecast_combo <- function(agent_info,
       prev_run_log_tbl$seasonal_period,
       project_info$date_type
     ),
-    seed = seed
+    seed = seed,
+    custom_models = if (!is.null(custom_contract)) {
+      selected_custom <- intersect(prev_best_model_list, names(custom_contract$envelopes))
+      if (length(selected_custom)) custom_contract$envelopes[selected_custom] else NULL
+    } else NULL
   )
 
+  if (!is.null(custom_contract)) {
+    new_run_info$custom_agent_run <- custom_run_load(new_run_info, read_selection_file(new_run_info, "logs"))
+  }
   prepped_model_tbl <- get_prepped_models(new_run_info)
 
   model_train_test_tbl <- prepped_model_tbl %>%
@@ -2577,9 +2748,12 @@ update_forecast_combo <- function(agent_info,
     calc_wmape()
 
   # retune hyperparameters if +10% worse than previous best
-  if (!is.na(final_wmape) && !is.na(prev_best_wmape) && final_wmape > (prev_best_wmape * 1.1)) {
+  if (!is.na(final_wmape) && !is.na(prev_best_wmape) && final_wmape > (prev_best_wmape * 1.1) &&
+    (is.null(custom_contract) || any(!trained_models_tbl$Model_Name %in% names(custom_contract$envelopes)))) {
     cli::cli_progress_step("Retuning Model Hyperparameters")
 
+    if (!is.null(custom_contract)) new_run_info$custom_fixed_results <- final_model_tbl[
+      final_model_tbl$Model_Name %in% names(custom_contract$envelopes), , drop = FALSE]
     rm(final_model_tbl)
     rm(final_fcst_tbl)
     rm(final_wmape)
@@ -2635,6 +2809,7 @@ update_forecast_combo <- function(agent_info,
   final_model_tbl <- final_model_tbl %>%
     tidyr::unite(col = "Model_ID", c("Model_Name", "Model_Type", "Recipe_ID"), sep = "--", remove = FALSE) %>%
     dplyr::select(Combo_ID, Model_ID, Model_Name, Model_Type, Recipe_ID, Model_Fit)
+  final_model_tbl <- custom_run_model_ids(final_model_tbl, new_run_info$custom_agent_run)
 
   # write final outputs
   cli::cli_progress_step("Logging Forecast Results")
@@ -2811,9 +2986,26 @@ update_forecast_combo <- function(agent_info,
   return(list(status = "done", quality_rejected_combos = quality_rejected))
 }
 
+# Evaluate one fitting/resampling call after artifact and workflow validation.
+# Only built-in, non-provider numerical execution may enter default recovery.
+# Custom source, missing packages and typed artifact failures retain their cause.
+update_model_execution <- function(expression, model, recoverable) {
+  tryCatch(force(expression), error = function(error) {
+    if (!recoverable || inherits(error, c("finnts_update_artifact_error", "packageNotFoundError"))) stop(error)
+    rlang::abort(paste0("Model '", model, "' update execution failed: ", conditionMessage(error)),
+      class = unique(c("finnts_update_model_error", class(error))), parent = error)
+  })
+}
+
 #' Fit models based on previous run information and hyperparameters
 #'
 #' This function fits models based on the provided run information, combo, and previous run log. It handles model adjustments, feature selection, and hyperparameter tuning if necessary.
+#' With `run_info$custom_agent_run`, approved custom specs and unprepped recipes
+#' must match exactly. Missing predictors and incomplete fold predictions error;
+#' no predictor substitution, parameter tuning or source regeneration occurs.
+#' `custom_fixed_results` reuses the first custom fit during mixed built-in retuning.
+#' Recoverable built-in execution errors retain a typed cause for default recovery;
+#' custom source, provider, configuration and artifact errors remain hard.
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
@@ -2829,6 +3021,9 @@ update_forecast_combo <- function(agent_info,
 #' @param seed An integer seed for reproducibility.
 #'
 #' @return A data frame containing the fitted models with their respective model IDs, names, types, recipes, and fitted model objects.
+#' @details Temporal custom workflows evaluate complete horizons using existing
+#'   predictor rows, then discard unrequested predictions before scoring. Analysis
+#'   rows, target isolation, selected components and exact source identity remain.
 #' @noRd
 fit_models <- function(run_info,
                        combo,
@@ -2842,6 +3037,7 @@ fit_models <- function(run_info,
                        num_cores,
                        inner_parallel,
                        seed = 123) {
+  custom <- run_info$custom_agent_run
   # get recipe info
   if ("R1" %in% unique(trained_models_tbl$Recipe_ID)) {
     if (combo == "All-Data") {
@@ -2881,6 +3077,20 @@ fit_models <- function(run_info,
       adjust_combo_column()
   }
 
+  # custom winners refit on their raw C1 recipe
+  if ("C1" %in% unique(trained_models_tbl$Recipe_ID)) {
+    c1_tbl <- if (combo == "All-Data") {
+      get_prepped_data(run_info = run_info, recipe = "C1")
+    } else {
+      read_file(
+        run_info = run_info,
+        file_list = local_artifact_path(run_info, "prep_data", "-C1", hash_data(combo)),
+        return_type = "df"
+      )
+    }
+    c1_tbl <- adjust_combo_column(c1_tbl)
+  }
+
   # train each model
   par_info <- par_start(
     run_info = run_info,
@@ -2896,11 +3106,12 @@ fit_models <- function(run_info,
   inner_cl <- par_info$cl
   inner_packages <- par_info$packages
 
-  model_tbl <- foreach::foreach(
+  trained_models_tbl <- trained_models_tbl %>%
+    dplyr::arrange(!(Model_Name %in% names(custom$pool$custom)))
+  model_results <- foreach::foreach(
     model_run = trained_models_tbl %>%
       dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-    .combine = "rbind",
-    .errorhandling = "stop",
+    .errorhandling = "pass",
     .verbose = FALSE,
     .inorder = FALSE,
     .multicombine = TRUE,
@@ -2915,14 +3126,40 @@ fit_models <- function(run_info,
 
     prep_data <- switch(data_prep_recipe,
       "R1" = r1_tbl,
-      "R2" = r2_tbl
+      "R2" = r2_tbl,
+      "C1" = c1_tbl
     )
 
     workflow <- model_run$Model_Fit[[1]]
+    is_custom <- !is.null(custom) && model %in% names(custom$pool$custom)
+    recoverable <- !is_custom && !model %in% list_foundation_models()
+    if (is_custom && retune_hyperparameters && !is.null(run_info$custom_fixed_results)) {
+      fixed <- run_info$custom_fixed_results[run_info$custom_fixed_results$Model_Name == model, , drop = FALSE]
+      if (nrow(fixed) != 1L) stop("Custom fixed replay results are missing or ambiguous.", call. = FALSE)
+      return(fixed)
+    }
+    if (is_custom) {
+      validate_agent_custom_update_workflows(model_run, custom, as.numeric(prev_run_log_tbl$forecast_horizon))
+      predecessor_custom <- custom
+      predecessor_custom$manifest$context$forecast_horizon <- as.numeric(prev_run_log_tbl$forecast_horizon)
+      custom_run_membership(model_run, predecessor_custom,
+        custom_run_candidates(predecessor_custom, combo != "All-Data", combo == "All-Data"))
+      custom_run_predictors(custom$pool$custom[[model]], prep_data)
+      cutoff <- max(model_train_test_tbl$Train_End)
+      if (any(!is.finite(prep_data$Target[prep_data$Date <= cutoff]))) stop("Custom update requires finite historical targets.", call. = FALSE)
+    }
 
     # convert trained workflow to empty workflow to prevent memory issues
     workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
+    if (is_custom) {
+      # Authenticate the predecessor above, then construct the current spec.
+      # Never carry a fitted state or its old horizon into the new fit.
+      workflow_spec <- custom_model_spec(custom$pool$custom[[model]],
+        list(model_type = model_run$Model_Type[[1]], recipe_id = "C1",
+          date_type = custom$manifest$context$date_type, forecast_horizon = as.numeric(forecast_horizon),
+          target_scale = "original"), TRUE)
+    }
     workflow <- workflows::workflow() %>%
       workflows::add_recipe(workflow_recipe) %>%
       workflows::add_model(workflow_spec)
@@ -2937,7 +3174,7 @@ fit_models <- function(run_info,
       )
     }
 
-    if (combo == "All-Data") {
+    if (combo == "All-Data" && !is_custom) {
       # adjust column types to match original data
       prep_data <- adjust_column_types(
         prep_data,
@@ -2977,6 +3214,7 @@ fit_models <- function(run_info,
 
     if (length(missing_cols) > 0 ||
       (!is.na(prev_run_log_tbl$forecast_horizon) & as.numeric(prev_run_log_tbl$forecast_horizon) != forecast_horizon & model %in% list_multistep_models())) {
+      if (is_custom) stop("Custom update cannot replace missing recipe predictors.", call. = FALSE)
       if (isTRUE(prev_run_log_tbl$feature_selection)) {
         fs_list <- prep_data %>%
           run_feature_selection(
@@ -3096,10 +3334,10 @@ fit_models <- function(run_info,
     prep_data <- clamp_negative_target(prep_data, model)
 
     # tune hyperparameters
-    if (retune_hyperparameters) {
+    if (retune_hyperparameters && !is_custom) {
       set.seed(seed)
 
-      tune_results <- tune::tune_grid(
+      tune_results <- update_model_execution(tune::tune_grid(
         object = workflow,
         resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
         grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
@@ -3108,11 +3346,12 @@ fit_models <- function(run_info,
           pkgs = c(inner_packages, "finnts"),
           parallel_over = "everything"
         )
-      ) %>%
+      ), model, recoverable) %>%
         base::suppressMessages() %>%
         base::suppressWarnings()
 
-      best_param <- tune::select_best(tune_results, metric = "rmse")
+      best_param <- update_model_execution(tune::select_best(tune_results, metric = "rmse"),
+        model, recoverable)
 
       if (length(colnames(best_param)) == 1) {
         hyperparameter_id <- 1
@@ -3133,13 +3372,21 @@ fit_models <- function(run_info,
     # fit model on entire input data
     set.seed(seed)
 
-    wflow_fit <- generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)) %>%
+    wflow_fit <- update_model_execution(
+      generics::fit(finalized_workflow, prep_data %>% tidyr::drop_na(Target)),
+      model, recoverable) %>%
       base::suppressMessages()
 
     # refit on all train test splits
     set.seed(seed)
 
-    refit_tbl <- tune::fit_resamples(
+    refit_tbl <- if (is_custom) {
+      custom_run_fit_resamples(finalized_workflow, prep_data,
+        create_splits(prep_data, model_train_test_tbl),
+        tune::control_resamples(allow_par = inner_parallel, save_pred = TRUE,
+          pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
+        base::suppressMessages() %>% base::suppressWarnings()
+    } else update_model_execution(tune::fit_resamples(
       object = finalized_workflow,
       resamples = create_splits(prep_data, model_train_test_tbl),
       metrics = NULL,
@@ -3149,10 +3396,11 @@ fit_models <- function(run_info,
         pkgs = c(inner_packages, "finnts"),
         parallel_over = "everything"
       )
-    ) %>%
-      tune::collect_predictions() %>%
+    ) %>% tune::collect_predictions(), model, recoverable) %>%
       base::suppressMessages() %>%
       base::suppressWarnings()
+
+    if (is_custom) custom_run_check_predictions(refit_tbl, prep_data, create_splits(prep_data, model_train_test_tbl))
 
     # finalize forecast
     final_fcst <- refit_tbl %>%
@@ -3282,6 +3530,10 @@ fit_models <- function(run_info,
   try(doParallel::stopImplicitCluster(), silent = TRUE)
   foreach::registerDoSEQ()
 
+  failures <- Filter(function(result) inherits(result, "condition"), model_results)
+  if (length(failures)) stop(failures[[1]])
+  model_tbl <- dplyr::bind_rows(model_results)
+
   # ensure at least one model ran successfully
   if (is.null(model_tbl)) {
     stop("All models failed to train")
@@ -3309,6 +3561,8 @@ average_update_forecasts <- function(rows, components) {
 #' Adjust Forecast After Model Fitting
 #'
 #' This function assembles fitted component and average forecasts before quality assessment and any hierarchical reconciliation.
+#' A custom run carried in `run_info` restores full version IDs before grouping,
+#' selected-component filtering or averaging; built-in IDs remain unchanged.
 #'
 #' @param model_tbl A tibble containing the model fitting results.
 #' @param run_info A list containing run information such as project name, run name, etc.
@@ -3341,6 +3595,7 @@ adjust_forecast <- function(model_tbl,
     dplyr::group_by(Combo, Model_ID, Train_Test_ID) %>%
     dplyr::mutate(Horizon = dplyr::row_number()) %>%
     dplyr::ungroup()
+  forecast_tbl <- custom_run_model_ids(forecast_tbl, run_info$custom_agent_run)
 
   if (!is.null(selected_models)) {
     hierarchical <- forecast_approach != "bottoms_up"
@@ -3706,7 +3961,9 @@ adjust_inputs <- function(x,
 #' @return A data frame containing the loaded forecast data for the specified combo.
 #' @details CSV series and model identities retain their original text. Required
 #'   individual forecasts and splits must be readable; the legacy optional average
-#'   fallback remains unchanged. This loader never writes artifacts.
+#'   fallback remains unchanged, and zero-row average files are skipped before
+#'   combining so their untyped columns cannot conflict. This loader never
+#'   writes artifacts.
 #' @noRd
 load_combo_forecast <- function(combo, run_info) {
   # standard forecast loading for global models
@@ -3752,8 +4009,8 @@ load_combo_forecast <- function(combo, run_info) {
     }
   )
 
-  # combine forecasts
-  fcst_tbl <- dplyr::bind_rows(single_models_fcst, avg_models_fcst)
+  # combine forecasts; skip header-only average files whose columns are untyped
+  fcst_tbl <- dplyr::bind_rows(Filter(nrow, list(single_models_fcst, avg_models_fcst)))
 
   # check if forecast data exists
   if (nrow(fcst_tbl) == 0) {

@@ -43,7 +43,9 @@ forecast_time_series(
   seed = 123,
   run_model_parallel = FALSE,
   return_data = TRUE,
-  run_name = "finnts_forecast"
+  run_name = "finnts_forecast",
+  custom_models = NULL,
+  stationary = TRUE
 )
 }
 \arguments{
@@ -123,7 +125,8 @@ chooses these values based on date type.}
 \item{recipes_to_run}{List of recipes to run on multivariate models that can run different recipes. A value of NULL runs
 all recipes, but only runs the R1 recipe for weekly and daily date types, and also for global models to prevent memory issues.
 A value of "all" runs all recipes, regardless of date type or if it's a local/global model. A list like c("R1") or c("R2")
-would only run models with the R1 or R2 recipe.}
+would only run models with the R1 or R2 recipe. "C1" is the raw recipe for custom models and is added automatically
+when custom models are selected; c("C1") alone runs only custom models.}
 
 \item{pca}{If TRUE, run principle component analysis on any lagged features to speed up model run time. Default of NULL runs
 PCA on day and week date types across all local multivariate models, and also for global models across all date types.}
@@ -165,6 +168,21 @@ with previous finnts versions. Recommended to use a value of FALSE and leverage
 \code{\link[=get_forecast_data]{get_forecast_data()}} for new features.}
 
 \item{run_name}{Name used when submitting jobs to external compute like Azure Batch. Formatted as a character string.}
+
+\item{custom_models}{Named list of experimental approved custom-model envelopes,
+enrolled through \code{models_to_run}. A NULL \code{models_to_run} runs all built-in
+models plus every supplied custom model; an explicit \code{models_to_run} must
+name every supplied custom model, otherwise an error is raised. See \code{\link[=prep_models]{prep_models()}} for the envelope
+contract and supported profile. Selected custom models add the raw C1
+recipe to \code{recipes_to_run} and may run alone or alongside built-in models.
+Their declared drivers come from eligible original input columns, not just
+\code{external_regressors}. Supply required future values through the horizon.
+Incompatible explicit custom settings error before data preparation. Use
+\code{\link[=create_custom_model]{create_custom_model()}} for reviewed authoring.}
+
+\item{stationary}{Apply differencing during preparation; retains the existing
+TRUE default. Applies only to built-in R1/R2 recipes; custom models always
+use the raw, original-scale C1 recipe.}
 }
 \value{
 A list of three separate data sets: the future forecast, the back test results, and the best model per time series.
@@ -183,6 +201,13 @@ The saved nonwinning average uses the same ranking among eligible averages.
 Hierarchical forecasts use the selected base forecasts as input to the existing
 reconciliation solver. Reconciled future outputs are not evaluated to choose
 a replacement set or trigger additional model fitting.
+
+Reviewed custom hierarchy models require a shared explicitly mixed
+custom/FinnTS pool, local-only C1 execution and no external regressors.
+Model averages and ensembles may include custom forecasts.
+Eligibility uses requested candidates, not the eventual winning models.
+Custom-only forecasts require a compatible bottom-up definition instead;
+no model is automatically added and no requested approach is changed.
 }
 \examples{
 \donttest{

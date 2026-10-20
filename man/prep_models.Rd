@@ -14,7 +14,8 @@ prep_models(
   pca = NULL,
   num_hyperparameters = 10,
   seasonal_period = NULL,
-  seed = 123
+  seed = 123,
+  custom_models = NULL
 )
 }
 \arguments{
@@ -49,6 +50,13 @@ greater than 1. Custom values are used by \code{stlm-arima}, \code{stlm-ets}, an
 \code{tbats}. A value of NULL uses the defaults for \code{date_type}.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
+
+\item{custom_models}{Named list of experimental, version-bound approved
+\code{finnts_custom_model} envelopes. A NULL \code{models_to_run} runs all built-in
+models plus every supplied custom model; an explicit \code{models_to_run} must
+name every supplied custom model, otherwise an error is raised. Supplied
+custom models cannot also appear in \code{models_not_to_run}.
+Raw definitions or registry references do not grant execution permission.}
 }
 \value{
 Writes outputs related to model prep to disk.
@@ -56,6 +64,52 @@ Writes outputs related to model prep to disk.
 \description{
 Preps various aspects of run before training models. Things like train/test
 splits, creating hyperparameters, etc.
+}
+\details{
+Experimental custom enrollment requires named \code{finnts_custom_model}
+envelopes holding an exact passive definition plus technical validation and
+approval bound to its content hash (\code{version_id}). Validation contains
+\code{version_id}, \code{technical_passed = TRUE}, and a nonempty list of check-summary
+strings. Manual approval contains the same \code{version_id},
+\code{intent_confirmed = TRUE} and \code{allow_code = TRUE}. Explicit automatic approval
+has \code{intent_confirmed = FALSE}, \code{allow_code = TRUE} and \code{mode = "automatic"}.
+Unknown fields or modes fail. These are trusted-caller attestations, not
+authenticated human identity, a sandbox or an approval inferred from storage.
+Use \code{\link[=create_custom_model]{create_custom_model()}} for manual or explicitly automatic authoring.
+
+Supplied custom models run when \code{models_to_run} is NULL or names them; an
+explicit \code{models_to_run} that omits one is an error. Custom models train on
+the original-scale \code{C1} recipe, which must be in the \code{recipes_to_run} given
+to \code{\link[=prep_data]{prep_data()}}; otherwise preparation errors. Built-in models selected in
+the same run use R1/R2 with any supported settings (stationary, Box-Cox,
+outlier cleaning, multistep, feature selection, ensembles). Built-in models
+on a C1-only run error, and a prepared C1 recipe without custom models is
+ignored with a warning. Custom forecasts can feed simple averages and
+ensembles; \code{negative_forecast = FALSE} floors custom output at zero like
+built-ins. Local/mounted storage, CSV/RDS/Parquet data and RDS model
+objects are required; sequential, local-machine and Spark execution and
+\code{inner_parallel} are supported. Custom recipes retain only Date, Combo and
+declared predictors; no implicit PCA, feature selection or target
+transformation is applied.
+C1 driver availability is independent of \code{external_regressors} in
+\code{\link[=prep_data]{prep_data()}}. Required predictors must exist with complete supported
+values, including supplied future values, or preparation errors.
+
+A definition with reviewed hierarchy capability permits \code{standard_hierarchy}
+or \code{grouped_hierarchy} with local univariate original-scale C1 logic. Every
+prepared node receives the same explicitly selected mixed custom/FinnTS
+pool. Custom-only hierarchy requests fail; no built-in is silently added.
+Forecast use requires local-only custom training, no regressors, and no
+weekly-to-daily expansion. Topology and exact input artifacts are pinned
+before enrollment.
+
+Definitions are pinned in the normal prepared workflows, with passive
+attestations attached to that same artifact; no separate standard registry
+or pool-manifest copy is required. Reentry requires the same approved effective pool; changed
+definitions or preparation context require a new run. Supplying definitions
+without selecting them leaves built-in defaults unchanged. Registry presence
+alone grants neither enrollment nor execution consent. No source is evaluated
+during preparation and no packages are installed.
 }
 \examples{
 \donttest{

@@ -19,7 +19,8 @@ set_agent_info(
   negative_forecast = FALSE,
   run_global_models = NULL,
   run_local_models = TRUE,
-  overwrite = FALSE
+  overwrite = FALSE,
+  custom_models = NULL
 )
 }
 \arguments{
@@ -36,7 +37,10 @@ from this data frame. Create a new version to use revised data.}
 
 \item{forecast_horizon}{The number of periods to forecast}
 
-\item{external_regressors}{Optional character vector of external regressors}
+\item{external_regressors}{Optional character vector of candidate external
+regressors for built-in models. Custom models always use their declared
+drivers from eligible original input columns, independently of this list
+or the Agent's per-iteration choices.}
 
 \item{hist_end_date}{Optional Date object indicating the end of the historical data}
 
@@ -65,6 +69,11 @@ except week and day.}
 local models. Default is TRUE.}
 
 \item{overwrite}{Logical indicating whether to overwrite existing agent run info}
+
+\item{custom_models}{Named approved custom-model envelopes from \code{\link[=create_custom_model]{create_custom_model()}}.
+All supplied models are enrolled automatically alongside built-in candidates.
+The returned object retains names only; approved objects are saved once in
+an Agent-version bundle in \code{prep_models}.}
 }
 \value{
 A list containing the agent run information
@@ -75,6 +84,36 @@ including input data, forecast horizon, and other parameters.
 It checks for existing runs and allows for overwriting if specified.
 }
 \details{
+Custom Agent runs add the raw \code{C1} recipe and require CSV data, RDS objects,
+supported local/mounted, Blob or M365 storage and no hierarchy. \code{negative_forecast = FALSE} floors
+finished custom forecasts at zero, as for built-in models. The exact
+approved pool is pinned before the parent run log. Existing-run setup requires
+equivalent explicit enrollment; changed or omitted approval requires a new
+run. Source is trusted R, not sandboxed. For compatible new-data updates,
+create a new parent with \code{overwrite = TRUE}, the same explicit enrollment,
+cadence, regressors and modes, then call \code{\link[=update_forecast]{update_forecast()}} with
+explicit \code{allow_iterate_forecast = FALSE}. The positive whole-number forecast
+horizon may change, subject to the approved rule's history and driver
+requirements. Changed enrollment needs iteration.
+New series are routed to defaults within the existing new-series limit.
+The setup API has no
+\code{models_to_run} argument: Finn includes every compatible enrolled custom
+model from the first iteration onward, outside LLM control. Built-in
+candidate choices and supported preprocessing remain independent of raw C1.
+Custom driver values must be supplied through the forecast horizon; Finn
+does not forecast missing future custom drivers. The same driver declarations
+apply during saved-winner updates and default recovery. Changed source data
+requires a new Agent version (\code{overwrite = TRUE}), not an in-place restart.
+Global-only custom
+runs need at least two series. Each selected custom model must support an
+enabled mode and the project's cadence, horizon and required predictors.
+The return keeps only custom-model names, not untrained models or approval
+payloads. The Agent-version CSV always contains one \code{custom_models} names
+field (\code{NA} without enrollment); the complete immutable bundle lives in
+\code{prep_models}, under the existing project/run/version identity.
+Saved approval is trusted-caller evidence, not
+authenticated identity; forecasting never calls the authoring LLM again.
+
 With \code{overwrite = FALSE}, an existing version retains its saved
 forecast approach even if hierarchy detection changes after a package upgrade.
 Logged user settings must still match. New versions use current detection;

@@ -38,6 +38,14 @@ Ensemble model outputs are written to disk
 \description{
 Create ensemble model forecasts
 }
+\details{
+Custom-model runs validate their pinned enrollment and existing
+artifact identities before ensembling. Custom forecasts from the raw C1
+recipe join the ensemble inputs when they pass the same backtest screening
+as built-in models. When C1 forecasts are present, ensembles train against
+original-scale actuals so raw custom and cleaned built-in targets are never
+averaged. Built-in-only runs retain existing behavior.
+}
 \examples{
 \donttest{
 data_tbl <- timetk::m4_monthly \%>\%
