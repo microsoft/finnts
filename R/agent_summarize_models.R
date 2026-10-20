@@ -2,17 +2,24 @@
 #'
 #' This function retrieves the final summarized model info (hyperparameters,
 #' recipe steps, feature importance, etc.) after an agent completes its run.
-#' Variable-importance rows are included when the optional `vip` package was
+#' Built-in variable-importance rows are included when the optional `vip` package was
 #' available while summaries were generated; all other summary sections remain
 #' available without it.
 #' Custom models expose their exact version, confirmed interpretation and
-#' representation, without source text, fitted-state introspection or importance.
+#' representation without source text or arbitrary fitted-state introspection.
+#' Driver importance is the mean signed increase in historical holdout RMSE
+#' under ten deterministic cyclic permutations, conditional on supplied drivers.
+#' It is not causal attribution or a percentage. Generating these summaries
+#' refits trusted custom source once per fitted workflow on earlier history and
+#' predicts complete holdout cohorts; no-driver models need no diagnostic fit.
+#' Non-estimable cases are disclosed through warnings and method/status rows.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return A tibble containing the summarized models for the agent. The
-#'   `importance` section is omitted when `vip` was unavailable during summary
-#'   generation.
+#' @return A tibble containing the summarized models for the agent.
+#'   Built-in `importance` sections may be omitted without `vip`. Custom
+#'   importance does not require `vip`. Existing saved summaries are not migrated;
+#'   newly generated summaries can contain additional importance metadata rows.
 #' @examples
 #' \dontrun{
 #' # load example data
@@ -70,10 +77,117 @@ get_summarized_models <- function(agent_info) {
   return(model_summary_tbl)
 }
 
-# Summarize only validated custom definition metadata and bounded check text.
-# The fitted workflow must bind the same version and actual mode. No arbitrary
-# fitted-state introspection, candidate code, predictions or vip calls occur.
-summarize_model_custom <- function(workflow, model, mode) {
+# Compute conditional driver importance on the latest complete historical
+# horizon, never the fitted engine's in-sample dates. Refit the pinned definition
+# once on earlier rows and average ten deterministic cyclic permutations' signed
+# RMSE increases. Identity/date and cohort keys never move. Returns per-series
+# score/method/status rows, with explicit warnings for non-estimable diagnostics.
+# Unexpected source/data errors propagate. No artifacts or fitted objects change;
+# trusted source executes with its existing permissions and RNG is restored.
+custom_summary_importance <- function(workflow) {
+  fit <- workflows::extract_fit_parsnip(workflow)$fit
+  definition <- fit$definition
+  drivers <- setdiff(definition$requirements$predictors, c("Date", "Combo"))
+  if (!length(drivers)) return(NULL)
+  withr::local_preserve_seed()
+  set.seed(42L)
+  mold <- workflows::extract_mold(workflow)
+  data <- as.data.frame(mold$predictors)
+  data$Target <- mold$outcomes[[1]]
+  data <- custom_model_data(data, definition, fit$context)
+  data <- data[order(data$Combo, data$Date, method = "radix"), , drop = FALSE]
+  combos <- unique(data$Combo)
+  method <- "Mean signed holdout RMSE increase; 10 deterministic cyclic driver permutations; conditional, not causal."
+  # Build explicit status rows rather than inventing a zero when no diagnostic
+  # is possible. The enclosing contract owns these callbacks and their warnings.
+  unavailable <- function(reason) {
+    warning("Custom driver importance not estimable: ", reason, call. = FALSE)
+    dplyr::bind_rows(lapply(combos, function(combo) {
+      tibble::tibble(Combo = combo, section = "importance_metadata",
+        name = c("method", "status"), value = c(method, reason))
+    }))
+  }
+  horizon <- fit$context$forecast_horizon
+  if (any(table(data$Combo) < horizon + definition$requirements$history$workflow_minimum_rows_per_series))
+    return(unavailable("insufficient historical rows for a complete holdout and approved analysis history"))
+  assessment_rows <- unlist(lapply(split(seq_len(nrow(data)), data$Combo), tail, n = horizon), use.names = FALSE)
+  analysis <- data[-assessment_rows, , drop = FALSE]
+  assessment <- data[assessment_rows, , drop = FALSE]
+  history_ok <- tryCatch({
+    custom_author_check_history(list(list(history = analysis, new_data = assessment)),
+      definition$requirements$history, fit$context$date_type)
+    TRUE
+  }, finnts_custom_model_authoring_error = function(error) {
+    if (!identical(error$code, "insufficient_example_history")) stop(error)
+    FALSE
+  })
+  if (!history_ok) return(unavailable("approved historical lags are unavailable at the holdout origin"))
+  for (combo in combos) {
+    cutoff <- max(analysis$Date[analysis$Combo == combo])
+    expected <- seq(cutoff, by = fit$context$date_type, length.out = horizon + 1L)[-1L]
+    if (!identical(sort(assessment$Date[assessment$Combo == combo]), expected))
+      return(unavailable("historical dates do not form a complete holdout at the approved cadence"))
+  }
+  context <- fit$context[c("model_type", "recipe_id", "date_type", "forecast_horizon", "target_scale")]
+  keys <- definition$requirements$runtime$group_columns
+  if (length(keys)) {
+    previous <- custom_model_cohort(analysis, definition$requirements$runtime, context$model_type)
+    current <- custom_model_cohort(assessment, definition$requirements$runtime, context$model_type)
+    if (!identical(previous, current)) return(unavailable("holdout cohort membership differs from analysis"))
+  }
+  predictors <- assessment[setdiff(names(assessment), "Target")]
+  groups <- if (length(keys)) {
+    split(seq_len(nrow(predictors)), interaction(predictors[keys], drop = TRUE, lex.order = TRUE))
+  } else list(seq_len(nrow(predictors)))
+  eligible <- setdiff(drivers, keys)
+  eligible <- eligible[vapply(eligible, function(driver) {
+    any(vapply(groups, function(indices) length(unique(predictors[[driver]][indices])) > 1L, logical(1)))
+  }, logical(1))]
+  rows <- list()
+  if (length(eligible)) {
+    fitted <- custom_model_fit_impl(analysis[setdiff(names(analysis), "Target")],
+      analysis$Target, definition, context, allow_code = TRUE)
+    baseline <- custom_model_predict_impl(fitted, predictors)
+    # Permute within declared groups; all peers and the full horizon remain in
+    # every prediction request, including global allocation/cohort models.
+    for (driver in eligible) {
+      differences <- matrix(NA_real_, nrow = length(combos), ncol = 10L)
+      for (iteration in seq_len(10L)) {
+        permuted <- predictors
+        for (indices in groups) {
+          order <- ((seq_along(indices) - 1L + iteration) %% length(indices)) + 1L
+          permuted[[driver]][indices] <- predictors[[driver]][indices[order]]
+        }
+        prediction <- custom_model_predict_impl(fitted, permuted)
+        for (index in seq_along(combos)) {
+          take <- assessment$Combo == combos[[index]]
+          differences[index, iteration] <- sqrt(mean((assessment$Target[take] - prediction[take])^2)) -
+            sqrt(mean((assessment$Target[take] - baseline[take])^2))
+        }
+      }
+      if (any(!is.finite(differences)))
+        stop("Custom driver importance produced nonfinite RMSE differences: ", driver, ".", call. = FALSE)
+      rows[[driver]] <- tibble::tibble(Combo = combos, section = "importance",
+        name = driver, value = as.character(rowMeans(differences)))
+    }
+  }
+  excluded <- setdiff(drivers, eligible)
+  status <- if (length(excluded)) paste("not estimable for cohort-key or constant holdout drivers:",
+    paste(excluded, collapse = ", ")) else "estimated"
+  if (length(excluded)) warning("Custom driver importance ", status, call. = FALSE)
+  metadata <- dplyr::bind_rows(lapply(combos, function(combo) {
+    tibble::tibble(Combo = combo, section = "importance_metadata",
+      name = c("method", "status"), value = c(method, status))
+  }))
+  dplyr::bind_rows(c(rows, list(metadata)))
+}
+
+# Summarize validated metadata/check text plus conditional backtest importance.
+# Exact version/mode/consent is checked before code or cache access. The optional
+# invocation-local cache shares only diagnostic rows for an identical fitted
+# state/mold, not fits or forecasts. combo selects recipient rows after a complete
+# global-cohort evaluation. No storage writes or optional importance engine calls.
+summarize_model_custom <- function(workflow, model, mode, combo = NULL, cache = NULL) {
   model <- custom_run_envelope(model)
   fit <- workflows::extract_fit_parsnip(workflow)$fit
   definition <- model$definition
@@ -82,6 +196,24 @@ summarize_model_custom <- function(workflow, model, mode) {
     stop("Custom model summary identity or consent mismatch.", call. = FALSE)
   }
   custom_model_current_definition(fit$definition)
+  importance <- NULL
+  if (length(definition$requirements$predictors)) {
+    mold <- workflows::extract_mold(workflow)
+    key <- digest::digest(list(fit, mold$predictors, mold$outcomes), algo = "sha256")
+    if (!is.null(cache) && exists(key, cache, inherits = FALSE)) {
+      importance <- get(key, cache, inherits = FALSE)
+    } else {
+      importance <- custom_summary_importance(workflow)
+      if (!is.null(cache)) assign(key, importance, cache)
+    }
+    if (!is.null(importance)) {
+      if (!is.null(combo)) {
+        if (!combo %in% importance$Combo) stop("Custom importance recipient is not in the fitted cohort.", call. = FALSE)
+        importance <- importance[importance$Combo == combo, , drop = FALSE]
+      }
+      importance$Combo <- NULL
+    }
+  }
   values <- list(name = definition$name, interpretation = definition$interpretation,
     version_id = definition$version_id, model_type = mode,
     predictors = paste(definition$requirements$predictors, collapse = ", "),
@@ -90,7 +222,7 @@ summarize_model_custom <- function(workflow, model, mode) {
   metadata <- tibble::tibble(section = "custom_model", name = names(values), value = unlist(values, use.names = FALSE))
   checks <- model$validation$checks
   dplyr::bind_rows(metadata, tibble::tibble(section = "validation", name = paste0("check_", seq_along(checks)),
-    value = substr(unlist(checks, use.names = FALSE), 1L, 2000L)))
+    value = substr(unlist(checks, use.names = FALSE), 1L, 2000L)), importance)
 }
 
 #' Summarize Models
@@ -100,7 +232,13 @@ summarize_model_custom <- function(workflow, model, mode) {
 #' When the optional `vip` package is unavailable, variable importance is
 #' omitted and all other supported summary sections are retained.
 #' Custom parent/child identity is audited before reads. Generic custom summaries
-#' never fit, predict, execute model source or call optional importance engines.
+#' never inspect arbitrary fitted model internals or call optional importance
+#' engines. Approved custom driver diagnostics refit on an earlier chronological
+#' analysis window and permute complete holdout predictor cohorts, preserving
+#' the pinned formula, identity and consent. This adds trusted-code execution
+#' and runtime, but never rewrites saved fits or forecasts. No-driver custom
+#' models retain metadata-only summaries. Global recipients share one in-memory
+#' diagnostic computation per fitted workflow within this invocation.
 #' Workers receive enrollment references, then read the authoritative bundle
 #' locally rather than serializing untrained objects in every dispatched task.
 #' Zero-row forecast files (for example, header-only average files written by
@@ -196,10 +334,17 @@ summarize_models <- function(agent_info,
   `%op%` <- par_info$foreach_operator
   agent_info_lean <- agent_custom_worker_info(agent_info)
 
+  # One task owns all recipients of a global run, so its in-memory importance
+  # cache avoids repeating diagnostic fits while preserving existing I/O paths.
+  summary_jobs <- if (is.null(custom_contract)) {
+    best_run_tbl %>% dplyr::group_split(dplyr::row_number(), .keep = FALSE)
+  } else {
+    split(best_run_tbl, ifelse(best_run_tbl$model_type == "global",
+      paste0("global:", best_run_tbl$best_run_name), paste0("local:", best_run_tbl$combo)))
+  }
   # Step 2 & 3: Process each time series combo
   summary_tbl <- foreach::foreach(
-    x = best_run_tbl %>%
-      dplyr::group_split(dplyr::row_number(), .keep = FALSE),
+    job = summary_jobs,
     .combine = "rbind",
     .packages = packages,
     .errorhandling = "stop",
@@ -210,6 +355,9 @@ summarize_models <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
+      custom_summary_cache <- new.env(parent = emptyenv())
+      dplyr::bind_rows(lapply(seq_len(nrow(job)), function(index) {
+      x <- job[index, , drop = FALSE]
       worker_contract <- load_agent_custom_state(agent_info_lean)$custom_agent_contract
       # set metadata
       combo <- x$combo[1]
@@ -402,7 +550,8 @@ summarize_models <- function(agent_info,
         summarize_fn <- model_summarize_map[[model_name]]
 
         if (!is.null(worker_contract) && model_name %in% names(worker_contract$envelopes)) {
-          summary_df <- summarize_model_custom(workflow, worker_contract$envelopes[[model_name]], model_type)
+          summary_df <- summarize_model_custom(workflow, worker_contract$envelopes[[model_name]], model_type,
+            combo = combo, cache = custom_summary_cache)
         } else if (is.null(summarize_fn)) {
           # Model type not supported for summarization
           summary_df <- tibble::tibble(
@@ -454,6 +603,7 @@ summarize_models <- function(agent_info,
       )
 
       return(data.frame(Combo = combo))
+      }))
     } %>%
     base::suppressPackageStartupMessages()
 

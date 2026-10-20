@@ -346,6 +346,7 @@ custom_draft_review <- function(contract, definition, metadata, diagnostics = NU
 # Normalize one revision-bound decision and record a combined consent receipt
 # before execution. Details is read-only; edits clear consent and retain budgets.
 # A running checkpoint after interruption is never auto-retried.
+# Accumulated edits are size-checked before changing receipts or saving state.
 custom_draft_answer <- function(state, responses) {
   custom_author_fields(responses, c("request_id", "answer"), "draft")
   if (!custom_author_text(responses$request_id))
@@ -362,6 +363,10 @@ custom_draft_answer <- function(state, responses) {
   if (editing && (state$attempts$contract >= state$settings$max_attempts || state$attempts$source >= state$settings$max_attempts)) {
     custom_author_abort("draft", "Edit exceeds max_attempts; rerun create_custom_model().")
   }
+  if (editing) {
+    instructions <- paste(state$settings$instructions, "Requested change:", answer$instructions, sep = "\n")
+    custom_author_instructions(instructions, "draft")
+  }
   normalized <- list(request_id = request$request_id, answer = answer)
   state$receipts[[request$request_id]] <- list(
     response_digest = digest::digest(normalized, algo = "sha256", serializeVersion = 2),
@@ -370,7 +375,7 @@ custom_draft_answer <- function(state, responses) {
   state["pending"] <- list(NULL)
   state$status <- "running"
   if (editing) {
-    state$settings$instructions <- paste(state$settings$instructions, "Requested change:", answer$instructions, sep = "\n")
+    state$settings$instructions <- instructions
     state[c("definition", "report", "checks", "result")] <- list(NULL, NULL, NULL, NULL)
     state$consent[c("intent", "test")] <- list(NULL, NULL)
     state$diagnostic <- "user_edit"

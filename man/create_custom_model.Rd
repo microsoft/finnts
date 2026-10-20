@@ -143,6 +143,12 @@ restored on normal return/error, but arbitrary global or external side effects
 cannot be rolled back. Syntax checks and approval receipts do not authenticate
 a human or make arbitrary code safe. No packages are installed by authoring.
 
+Input instructions, including accumulated review edits, are limited to
+1048576 UTF-8 bytes (1 MiB), without truncation. This accommodates thousands
+of words and hundreds of code lines. The selected provider's context limit
+still applies to instructions plus schema, examples and conversation history.
+Separate generated-response and reviewed-source size limits are unchanged.
+
 Instructions, examples, source and diagnostics may be confidential. Provider
 calls receive instructions, schema and supplied examples, not automatically
 actual series values. Chat objects are never saved. Feedback is advisory and

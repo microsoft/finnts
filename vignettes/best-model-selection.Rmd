@@ -59,6 +59,44 @@ belong in `custom_model_control()`; approval stays visible at the top level and
 defaults to manual. Manual approval needs an interactive R session; scripts,
 schedulers and coding agents use `approval = "automatic"`.
 
+Instructions may contain up to **1 MiB (1048576 UTF-8 bytes)**, including
+accumulated review edits. This permits thousands of words and hundreds of code
+lines; text is never silently truncated. The selected LLM's context window must
+also accommodate Finn's schema, examples and conversation history. This input
+limit does not enlarge the separate generated-response or reviewed-source limits.
+
+Declared string drivers retain their type when C1 CSV data is read for workflow
+preparation and training. Numeric-looking category labels such as `"100"` and
+leading-zero labels remain strings rather than being inferred as numeric values.
+This does not coerce ordinary numeric drivers or change the stored CSV format.
+
+**Custom-driver importance.**
+
+Newly generated Agent model summaries include custom-driver importance without
+requiring `vip`. Finn holds out the latest complete historical forecast horizon,
+refits the exact approved rule on earlier history once per fitted workflow, and
+compares baseline holdout RMSE with ten deterministic cyclic permutations of
+each eligible driver. The score is the **mean signed increase in holdout RMSE**,
+in target units. Zero and negative scores are retained. Scores are conditional
+on the supplied assessment drivers, chosen holdout and correlations; they are
+not causal attribution, percentages, or a model-selection criterion.
+
+Date/series identities and cohort keys never move. Global prediction requests
+retain their complete peers and horizons; permutations stay within declared
+groups. Global recipients share the diagnostic computation within one summary
+invocation. This executes additional trusted custom fitting and prediction code
+with the same permissions as forecasting; it adds runtime and is not sandboxed.
+It does not overwrite saved fits or forecasts. No-driver models need no extra
+diagnostic fitting.
+
+Insufficient history or lags, incomplete historical holdouts, and constant or
+cohort-key drivers are explicitly reported as not estimable, rather than given
+invented zero scores. Unexpected source, identity, data or storage errors still
+fail. Summary artifacts retain their existing columns and add `importance`
+rows (`name` is the driver, `value` is its score), plus
+`importance_metadata` method/status rows. Consumers should accept these
+additional rows. Existing completed runs and saved summaries are not migrated.
+
 New calls default to local models. Raw input must contain a column named `Date`
 and an explicit target and horizon. Grouping can be omitted only when dates are
 unique and no varying undeclared columns suggest multiple series. Cadence can be

@@ -451,6 +451,17 @@ custom_author_text <- function(value) {
     validUTF8(enc2utf8(value))
 }
 
+# Validate effective human instructions before session creation or draft writes.
+# One MiB of UTF-8 text permits large rules and code; provider context budgets
+# remain independent. Returns unchanged text, or an actionable typed error.
+custom_author_instructions <- function(value, stage = "input") {
+  if (!custom_author_text(value))
+    custom_author_abort(stage, "instructions must be nonblank plain text.")
+  if (nchar(enc2utf8(value), type = "bytes") > 1048576L)
+    custom_author_abort(stage, "instructions must not exceed 1048576 UTF-8 bytes (1 MiB), including accumulated edits.")
+  value
+}
+
 # Return only short nonnumeric source-literal messages without secret/path-like
 # content. Unknown exception text is never echoed, even when a candidate embeds it.
 #' Sanitize a provider's explanation for a declined source candidate
@@ -1305,6 +1316,7 @@ custom_author_interact <- function(stage, prompt, identity = NULL, review = list
 # Check a response against the current human gate without I/O or execution.
 # Console replies are normalized into the same decision shapes;
 # revision/version binding is supplied by the draft, not typed by the human.
+# Edit instructions retain the one-MiB UTF-8 input bound before normalization.
 custom_author_response <- function(request, response) {
   stage <- request$stage
   questions <- request$questions
@@ -1313,6 +1325,7 @@ custom_author_response <- function(request, response) {
       custom_author_fields(response, c("action", "instructions"), stage)
       if (!custom_author_text(response$action) || tolower(trimws(response$action)) != "edit" || !custom_author_text(response$instructions))
         custom_author_abort(stage, "Edit requires a nonblank instructions value.")
+      custom_author_instructions(response$instructions, stage)
       return(list(action = "edit", instructions = trimws(response$instructions)))
     }
     if (!is.character(response) || length(response) != 1L || is.na(response) || !is.null(attributes(response))) {
@@ -1438,6 +1451,12 @@ custom_author_response <- function(request, response) {
 #' cannot be rolled back. Syntax checks and approval receipts do not authenticate
 #' a human or make arbitrary code safe. No packages are installed by authoring.
 #'
+#' Input instructions, including accumulated review edits, are limited to
+#' 1048576 UTF-8 bytes (1 MiB), without truncation. This accommodates thousands
+#' of words and hundreds of code lines. The selected provider's context limit
+#' still applies to instructions plus schema, examples and conversation history.
+#' Separate generated-response and reviewed-source size limits are unchanged.
+#'
 #' Instructions, examples, source and diagnostics may be confidential. Provider
 #' calls receive instructions, schema and supplied examples, not automatically
 #' actual series values. Chat objects are never saved. Feedback is advisory and
@@ -1500,8 +1519,7 @@ create_custom_model <- function(
       if (!is.null(validation_examples) && !is.data.frame(validation_examples)) {
         custom_author_abort("examples", "validation_examples must be a data frame; start from custom_model_examples_template().")
       }
-      if (!custom_author_text(instructions))
-        custom_author_abort("input", "instructions must be nonblank plain text.")
+      custom_author_instructions(instructions)
       if (is.null(input_data) == is.null(run_info))
         custom_author_abort("input", "Supply exactly one of input_data or run_info.")
       if (!is.null(name) && !custom_author_text(name))

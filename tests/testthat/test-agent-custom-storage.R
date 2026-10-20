@@ -51,3 +51,36 @@ test_that("update workers restore enrollment and replay without local backend pr
     expect_identical(loaded$custom_agent_update, expected)
   }
 })
+
+test_that("custom audits read optional and required backend artifacts by exact path", {
+  info <- standard_run(withr::local_tempdir())
+  model <- standard_custom_model()
+  prep_models(info, models_to_run = "business_mean", custom_models = list(business_mean = model),
+    back_test_scenarios = 1, num_hyperparameters = 1, run_ensemble_models = FALSE)
+  train_models(info, run_local_models = TRUE, run_global_models = FALSE)
+  custom <- custom_run_read(info, TRUE)
+  combos <- vapply(c("A", "B"), hash_data, character(1))
+  expected <- custom_run_audit(info, custom, TRUE, FALSE, combos, TRUE)
+  local_custom_storage_download()
+  for (backend in c("blob_container", "ms_drive")) {
+    remote <- info
+    remote$storage_object <- structure(list(root = info$path), class = backend)
+    remote$path <- fs::path(withr::local_tempdir(), "remote")
+    expect_equal(custom_run_audit(remote, custom, TRUE, FALSE, combos, FALSE), expected)
+    expect_equal(custom_run_audit(remote, custom, TRUE, FALSE, combos, TRUE), expected)
+    listings <- 0L
+    local_mocked_bindings(list_files = function(storage_object, path, ...) {
+      listings <<- listings + 1L
+      expect_match(path, "C1")
+      fs::path("prep_data", paste0(hash_data(info$project_name), "-", hash_data(info$run_name),
+        "-", combos, "-C1.csv"))
+    }, .package = "finnts")
+    expect_equal(custom_run_audit(remote, custom, TRUE, FALSE, complete = TRUE), expected)
+    expect_equal(listings, 1L)
+    local_mocked_bindings(download_exact_artifact = function(...) {
+      rlang::abort("Offline provider access denied", class = "offline_provider_error")
+    }, .package = "finnts")
+    expect_error(custom_run_audit(remote, custom, TRUE, FALSE, combos), class = "offline_provider_error")
+    local_custom_storage_download()
+  }
+})

@@ -510,6 +510,22 @@ custom_model_predictor_columns <- function(predictors) {
   unique(c("Date", "Combo", predictors))
 }
 
+# Return C1 CSV columns that must be parsed as text from the current approved
+# pool. Conflicting declarations fail before reading; no enrollment reload or I/O.
+custom_run_character_columns <- function(custom) {
+  if (is.null(custom)) return(NULL)
+  types <- list()
+  for (definition in custom$pool$custom) {
+    for (field in names(definition$requirements$predictor_types)) {
+      type <- definition$requirements$predictor_types[[field]]
+      if (!is.null(types[[field]]) && !identical(types[[field]], type))
+        stop("Conflicting custom model predictor types: ", field, ".", call. = FALSE)
+      types[[field]] <- type
+    }
+  }
+  unique(c("Combo", names(types)[vapply(types, identical, logical(1), "string")]))
+}
+
 #' Validate required predictors on each actual prepared dataset, not just the
 #' first recipe sample. Returns the declared identity/predictor names; missing,
 #' nonfinite, unsupported, changed declared types or outcome/assessment input values error without I/O.
@@ -856,7 +872,9 @@ custom_run_ensemble_ids <- function() {
 #' Audit present saved artifacts before any completed-run shortcut, using one
 #' coordinating discovery only when series names are unknown. Known paths are
 #' read exactly once; returns per-combo forecast tables for final selection reuse.
-#' Missing required completed artifacts, empty required payloads and mismatched
+#' Local and supported remote artifacts use exact reads; unknown series require
+#' one storage-aware discovery. Confirmed optional absence is allowed, but access
+#' and parsing failures propagate. Missing required artifacts and mismatched
 #' identities error rather than being repaired or treated as fallback candidates.
 #' @noRd
 custom_run_audit <- function(run_info, custom, local, global, combos = NULL, complete = FALSE) {
@@ -867,7 +885,12 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     if (length(run_info$combo))
       combos <- run_info$combo
     else {
-      files <- local_artifact_inventory(run_info, "prep_data", "-*-C1")
+      files <- if (is.null(run_info$storage_object)) {
+        local_artifact_inventory(run_info, "prep_data", "-*-C1")
+      } else {
+        list_files(run_info$storage_object,
+          local_artifact_path(run_info, "prep_data", "-*-C1"), fail_on_error = TRUE)
+      }
       prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-")
       combos <- sub(paste0("-C1\\.", run_info$data_output, "$"), "", substring(basename(files), nchar(prefix) + 1L))
     }
@@ -876,15 +899,13 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     path <- local_artifact_path(run_info, folder, suffix, combo, extension = if (object)
       "rds"
     else run_info$data_output)
-    present <- local_artifact_files(path, allow_missing = !required)
-    if (!length(present))
-      return(NULL)
     rows <- if (object) {
-      read_exact_artifact(run_info, present, return_type = "object")
+      read_exact_artifact(run_info, path, return_type = "object", allow_missing = !required)
     } else {
-      read_exact_artifact(run_info, present, return_type = "df",
+      read_exact_artifact(run_info, path, return_type = "df", allow_missing = !required,
         character_columns = c("Combo", "Combo_ID", "Model_ID"))
     }
+    if (is.null(rows) && !required) return(NULL)
     if (is.null(rows) || !is.data.frame(rows) || (required && !nrow(rows)))
       stop("Invalid required custom run artifact.", call. = FALSE)
     averages <- identical(suffix, "-average_models")

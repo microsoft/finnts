@@ -636,6 +636,8 @@ model_recipe_files <- function(run_info, log_df, include_custom = FALSE) {
 #' @param seasonal_period seasonal period
 #' @param seed Set seed for random number generator. Numeric value.
 #' @param custom_pool Internal resolved enrollment, or NULL for built-in runs.
+#'   Its declared string predictors are parsed as text when reading C1 CSVs;
+#'   other recipes and native formats retain their existing types.
 #'
 #' @details Custom models get workflows only on C1; built-in models only on
 #'   R1/R2. Errors when built-ins are selected without an R recipe; warns when
@@ -750,7 +752,8 @@ model_workflows <- function(run_info,
 
     temp_file_tbl <- read_file(run_info,
       path = source_path,
-      return_type = "df"
+      return_type = "df",
+      character_columns = if (identical(recipe, "C1")) custom_run_character_columns(custom_run)
     )
 
     temp_final_tbl <- tibble::tibble(

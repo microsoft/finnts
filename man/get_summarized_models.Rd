@@ -10,18 +10,25 @@ get_summarized_models(agent_info)
 \item{agent_info}{Agent info from \code{set_agent_info()}}
 }
 \value{
-A tibble containing the summarized models for the agent. The
-\code{importance} section is omitted when \code{vip} was unavailable during summary
-generation.
+A tibble containing the summarized models for the agent.
+Built-in \code{importance} sections may be omitted without \code{vip}. Custom
+importance does not require \code{vip}. Existing saved summaries are not migrated;
+newly generated summaries can contain additional importance metadata rows.
 }
 \description{
 This function retrieves the final summarized model info (hyperparameters,
 recipe steps, feature importance, etc.) after an agent completes its run.
-Variable-importance rows are included when the optional \code{vip} package was
+Built-in variable-importance rows are included when the optional \code{vip} package was
 available while summaries were generated; all other summary sections remain
 available without it.
 Custom models expose their exact version, confirmed interpretation and
-representation, without source text, fitted-state introspection or importance.
+representation without source text or arbitrary fitted-state introspection.
+Driver importance is the mean signed increase in historical holdout RMSE
+under ten deterministic cyclic permutations, conditional on supplied drivers.
+It is not causal attribution or a percentage. Generating these summaries
+refits trusted custom source once per fitted workflow on earlier history and
+predicts complete holdout cohorts; no-driver models need no diagnostic fit.
+Non-estimable cases are disclosed through warnings and method/status rows.
 }
 \examples{
 \dontrun{

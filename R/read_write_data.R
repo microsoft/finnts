@@ -1062,6 +1062,8 @@ read_local_artifacts <- function(run_info, file_list, return_type = "df",
 #' @param combo how much recipe data to ready into memory
 #' @param recipes resolved recipes when already available to the caller
 #' @param file_list previously discovered recipe paths
+#' @param character_columns Declared custom string drivers parsed as text on
+#'   C1 CSV reads only. Native formats and ordinary recipes are unchanged.
 #'
 #' @return recipe data as data frame. Custom-only C1 data keeps `Combo` as text
 #'   so CSV labels such as "007" match the custom workflow template.
@@ -1069,7 +1071,8 @@ read_local_artifacts <- function(run_info, file_list, return_type = "df",
 get_recipe_data <- function(run_info,
                             combo = "single",
                             recipes = NULL,
-                            file_list = NULL) {
+                            file_list = NULL,
+                            character_columns = NULL) {
   local_reads <- is.null(run_info$storage_object) &&
     run_info$data_output %in% c("csv", "parquet", "rds")
   if (local_reads && identical(combo, "single") && length(run_info$combo) == 1L) {
@@ -1136,11 +1139,11 @@ get_recipe_data <- function(run_info,
   for (recipe in unique(file_name_tbl$Recipe)) {
     temp_path <- file_name_tbl %>%
       dplyr::filter(Recipe == recipe)
-    character_columns <- if (identical(recipe, "C1")) "Combo"
+    recipe_character_columns <- if (identical(recipe, "C1")) unique(c("Combo", character_columns))
 
     if (local_reads) {
       temp_file_tbl <- read_local_artifacts(run_info, temp_path$Path,
-        character_columns = character_columns
+        character_columns = recipe_character_columns
       )
       recipe_tbl <- dplyr::bind_rows(recipe_tbl,
         tibble::tibble(Recipe = recipe, Data = list(temp_file_tbl))
@@ -1167,7 +1170,7 @@ get_recipe_data <- function(run_info,
     temp_file_tbl <- read_file(run_info,
       path = temp_path,
       return_type = "df",
-      character_columns = character_columns
+      character_columns = recipe_character_columns
     )
 
     temp_final_tbl <- tibble::tibble(

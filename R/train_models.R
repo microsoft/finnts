@@ -379,6 +379,9 @@ train_models <- function(run_info,
 
   # submit tasks
   prepared_custom_workflows <- if (!is.null(custom_run)) model_workflow_tbl else NULL
+  # Resolve declared C1 text columns once before dispatch, without worker reads
+  # of enrollment metadata. Other recipes and native-format types are unchanged.
+  custom_character_columns <- custom_run_character_columns(custom_run)
   # global custom models always train on C1, independent of global_model_recipes
   training_global_recipes <- unique(c(global_model_recipes, if (!is.null(custom_run)) "C1"))
   train_models_tbl <- foreach::foreach(
@@ -410,7 +413,8 @@ train_models <- function(run_info,
         } else {
           unique(model_workflow_tbl$Model_Recipe)
         },
-        file_list = recipe_file_list
+        file_list = recipe_file_list,
+        character_columns = custom_character_columns
       )
 
       if (combo_hash == "All-Data") {
