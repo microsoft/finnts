@@ -29,6 +29,7 @@ config with `--config=<draft>` and show `data.settings_changes`. Key settings:
 | `parallel` | `auto` (skill picks local or inner parallelism) or `none` |
 | `agent.llm` | AI model for Agent runs (setup.md) |
 | `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches (a total per search for the Agent version) and its accuracy target |
+| `custom_models` | saved custom models every run of the project uses, as `[{"name", "version_id"}]`; change only with `custom_model.R --action=enroll` or `--action=unenroll` ([custom-models.md](custom-models.md)) |
 
 ## Choosing settings by size
 

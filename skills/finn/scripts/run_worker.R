@@ -154,20 +154,26 @@ worker_standard <- function(paths, run_paths, state, data) {
     fourier_periods = worker_opt(cfg$fourier_periods),
     lag_periods = worker_opt(cfg$lag_periods),
     rolling_window_periods = worker_opt(cfg$rolling_window_periods),
-    recipes_to_run = worker_opt(cfg$recipes_to_run)
+    recipes_to_run = finn_custom_recipes(cfg)
   ))
 
-  stage("prep_models", finnts::prep_models(
+  model_args <- list(
     run_info = run_info,
     back_test_scenarios = worker_int(cfg$back_test_scenarios),
     back_test_spacing = worker_int(cfg$back_test_spacing),
-    models_to_run = worker_opt(cfg$models_to_run),
+    models_to_run = finn_custom_models_to_run(cfg),
     models_not_to_run = worker_opt(cfg$models_not_to_run),
     run_ensemble_models = worker_opt(cfg$run_ensemble_models),
     pca = worker_opt(cfg$pca),
     num_hyperparameters = as.numeric(cfg$num_hyperparameters %||% 10L),
     seed = seed
-  ))
+  )
+  stage("prep_models", {
+    # finnts verifies each saved custom model again before using it.
+    custom <- finn_load_custom_models(paths, cfg, verify = FALSE)
+    if (length(custom)) model_args$custom_models <- custom
+    do.call(finnts::prep_models, model_args)
+  })
 
   stage("train_models", finnts::train_models(
     run_info = run_info,
@@ -223,7 +229,7 @@ worker_agent <- function(paths, run_paths, state, data) {
   project_info <- finn_project_info(paths, cfg)
   llm <- finn_build_llm(agent_cfg$llm %||% list())
 
-  agent_info <- finnts:::set_agent_info_custom(
+  agent_args <- list(
     project_info = project_info,
     llm = llm,
     input_data = data,
@@ -242,6 +248,10 @@ worker_agent <- function(paths, run_paths, state, data) {
     request_id = state$request_id,
     agent_action = state$agent_action
   )
+  # Every iterate and update of an Agent version must enroll the same custom models.
+  custom <- finn_load_custom_models(paths, cfg, verify = FALSE)
+  if (length(custom)) agent_args$custom_models <- custom
+  agent_info <- do.call(finnts:::set_agent_info_custom, agent_args)
   finn_update_state(run_paths,
     agent_run_id = agent_info$run_id, agent_version = agent_info$agent_version,
     stage = state$agent_action

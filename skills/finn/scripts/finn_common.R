@@ -2307,7 +2307,8 @@ finn_run_type_hint <- function(run_type, cfg = list()) {
 #' Forecast settings that differ between two configs
 #'
 #' Compares the settings that change what an Agent update or a continued
-#' Agent search produces. `hist_end_date` is left out because a refresh is
+#' Agent search produces, including the enrolled custom models.
+#' `hist_end_date` is left out because a refresh is
 #' expected to move it, and speed-only settings are ignored.
 #'
 #' @param prior Config of the earlier run, or NULL.
@@ -2330,7 +2331,8 @@ finn_settings_drift <- function(prior, cfg) {
   pairs <- c(
     lapply(top, function(k) list(k, prior[[k]], cfg[[k]])),
     lapply(agent, function(k) list(k, prior$agent[[k]], cfg$agent[[k]])),
-    list(list("llm", prior$agent$llm[c("provider", "model")], cfg$agent$llm[c("provider", "model")]))
+    list(list("llm", prior$agent$llm[c("provider", "model")], cfg$agent$llm[c("provider", "model")])),
+    list(list("custom_models", finn_custom_labels(prior), finn_custom_labels(cfg)))
   )
   out <- character()
   for (p in pairs) {
@@ -2470,6 +2472,9 @@ finn_stopped_iterate_revision <- function(latest, cfg) {
 #' version by raising `max_iter` or tightening `weighted_mape_goal`
 #' ([finn_iterate_continuation()]). A stopped iterate run whose only changes
 #' are those two settings continues with them ([finn_stopped_iterate_revision()]).
+#' When the enrolled custom models differ from the last Agent forecast's, a
+#' refresh needs a new Agent version, because Agent update must reuse the
+#' same custom models.
 #' A project with no runs follows the config
 #' mode, so the size-based advice in [finn_recommend_settings()] still applies.
 #' When `hist_end_date` already leaves out a latest period that has not ended,
@@ -2486,7 +2491,11 @@ finn_stopped_iterate_revision <- function(latest, cfg) {
 #'   `prior_weighted_mape_goal`, `last_agent_version`, `continuation` (from
 #'   [finn_iterate_continuation()] when iterate would continue or reopen an
 #'   Agent version, else NULL), `settings_changes` (from
-#'   [finn_settings_drift()] against the last Agent forecast), and
+#'   [finn_settings_drift()] against the last Agent forecast),
+#'   `custom_models_changed` (list with `previous` and `new` custom model
+#'   labels when they differ from the last Agent forecast, else NULL),
+#'   `new_version` (TRUE when the recommended launch starts a new Agent
+#'   version; absent otherwise), and
 #'   `recommendations` (each `key`, `value`, `reason`).
 finn_next_run <- function(paths, cfg, facts = list()) {
   runs <- Filter(function(s) !identical(s$effective_status, "unreadable"), finn_list_runs(paths))
@@ -2504,7 +2513,7 @@ finn_next_run <- function(paths, cfg, facts = list()) {
   last_done <- if (length(completed)) completed[[1]]
   out <- list(run_type = if (identical(cfg$mode, "agent")) "iterate" else "standard", situation = "new_project",
     why = NULL, alternative = NULL, data_end = data_end, last_end = NULL, prior_max_iter = NULL,
-    prior_weighted_mape_goal = NULL, continuation = NULL,
+    prior_weighted_mape_goal = NULL, continuation = NULL, custom_models_changed = NULL,
     last_agent_version = if (agent_done) last_agent$agent_version, settings_changes = character(),
     recommendations = list())
   later <- function(a, b) !is.null(a) && !is.null(b) && a > as.character(b)
@@ -2547,7 +2556,24 @@ finn_next_run <- function(paths, cfg, facts = list()) {
     version <- last_agent$agent_version %||% "?"
     prior <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))
     out$settings_changes <- finn_settings_drift(prior$config, cfg)
-    if (later(data_end, last_agent$hist_end_date)) {
+    custom_old <- finn_custom_labels(prior$config)
+    custom_new <- finn_custom_labels(cfg)
+    custom_changed <- is.list(prior$config) && !identical(custom_old, custom_new)
+    if (custom_changed) out$custom_models_changed <- list(previous = custom_old, new = custom_new)
+    if (later(data_end, last_agent$hist_end_date) && custom_changed) {
+      out$run_type <- "iterate"
+      out$situation <- "agent_refresh"
+      out$why <- paste0(sprintf(paste(
+        "Your last Agent forecast (version %s) used actuals through `%s`; the file now has actuals through `%s`.",
+        "Agent update must reuse the custom models that version used (%s), but this config enrolls %s,",
+        "so refreshing with them needs a new Agent version, which needs your confirmation; earlier versions are kept."
+      ), version, last_agent$hist_end_date, data_end, finn_custom_label_text(custom_old), finn_custom_label_text(custom_new)),
+      hist_note() %||% "")
+      out$alternative <- list(run_type = "update", label = "Agent update (previous custom models)",
+        reason = "Refreshes the current Agent version instead. Restore its custom model enrollment first with custom_model.R --action=enroll or --action=unenroll.",
+        launch = "--mode=update")
+      out$new_version <- TRUE
+    } else if (later(data_end, last_agent$hist_end_date)) {
       out$run_type <- "update"
       out$situation <- "agent_refresh"
       out$why <- paste0(sprintf("Your last Agent forecast (version %s) used actuals through `%s`; the file now has actuals through `%s`.",
@@ -2585,7 +2611,9 @@ finn_next_run <- function(paths, cfg, facts = list()) {
   if (!is.null(left_out) && !identical(out$situation, "resume") && !is.null(out$why)) {
     out$why <- paste(out$why, sprintf("The `%s` period has not ended yet, so `hist_end_date` leaves it out.", left_out))
   }
-  out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else switch(out$run_type,
+  out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else if (isTRUE(out$new_version)) {
+    "--mode=iterate --new=true --confirm=true"
+  } else switch(out$run_type,
     iterate = "--mode=iterate", update = "--mode=update", "--mode=standard")
   out
 }
@@ -2593,14 +2621,17 @@ finn_next_run <- function(paths, cfg, facts = list()) {
 #' Merge a user config over defaults
 #'
 #' @param cfg User config list.
-#' @return Config with every default key present and integer values stored
-#'   as doubles, because finnts type checks require `numeric` class.
+#' @return Config with every default key present, `custom_models` normalized
+#'   by [finn_custom_normalize()] (and removed when empty), and integer values
+#'   stored as doubles, because finnts type checks require `numeric` class.
 finn_merge_config <- function(cfg) {
   defaults <- finn_default_config()
   cfg <- cfg %||% list()
   out <- utils::modifyList(defaults, cfg, keep.null = TRUE)
   out$agent <- utils::modifyList(defaults$agent, cfg$agent %||% list(), keep.null = TRUE)
   out$agent$llm <- utils::modifyList(defaults$agent$llm, cfg$agent$llm %||% list(), keep.null = TRUE)
+  # Assigning NULL drops an empty entry, so configs without custom models keep their fingerprint.
+  out$custom_models <- finn_custom_normalize(out$custom_models)
   finn_ints_to_double(out)
 }
 
@@ -2626,12 +2657,15 @@ finn_ints_to_double <- function(x) {
 #'
 #' @param cfg Config list (merged or raw).
 #' @param data Optional prepared data frame with a `Date` column.
-#' @param root Optional storage root, used for OneDrive warnings.
+#' @param root Optional storage root, used for OneDrive warnings and to read
+#'   enrolled custom models.
 #' @param today Date used to spot a latest period that has not ended; tests
 #'   pass a fixed date.
 #' @return List with `config`, `errors`, `warnings`, and `facts`. `facts`
 #'   includes `incomplete_period` from [finn_incomplete_period()] when the
-#'   latest period with actuals has not ended.
+#'   latest period with actuals has not ended, and `custom_models` (from
+#'   [finn_check_custom_models()]) when data is given and custom models are
+#'   enrolled.
 finn_check_config <- function(cfg, data = NULL, root = NULL, today = Sys.Date()) {
   fiscal_unset <- is.null(cfg$fiscal_year_start)
   cfg <- finn_merge_config(cfg)
@@ -2711,6 +2745,11 @@ finn_check_config <- function(cfg, data = NULL, root = NULL, today = Sys.Date())
         facts$n_series
       ))
     }
+  }
+  if (!is.null(data) && length(errors) == 0 && length(cfg$custom_models)) {
+    custom <- finn_check_custom_models(cfg, root)
+    errors <- c(errors, custom$errors)
+    facts$custom_models <- custom$models
   }
   list(config = cfg, errors = unique(errors), warnings = unique(warnings), facts = facts)
 }
@@ -3106,4 +3145,503 @@ finn_tail <- function(path, n = 40L) {
   }
   lines <- tryCatch(readLines(path, warn = FALSE), error = function(e) character())
   finn_redact(utils::tail(lines, n))
+}
+
+# ---------------------------------------------------------------------------
+# Custom models
+# ---------------------------------------------------------------------------
+
+#' Folder holding a project's saved custom models
+#'
+#' Each approved custom model version is saved once as
+#' `custom_models/<name>/<version>.rds` with readable metadata in
+#' `<version>.json`; worked examples live in `custom_models/<name>-examples.csv`.
+#'
+#' @param paths Project paths from [finn_project_paths()].
+#' @return Folder path; it may not exist yet.
+finn_custom_models_dir <- function(paths) {
+  file.path(paths$dir, "custom_models")
+}
+
+#' Short form of a custom model version id
+#'
+#' @param version_id Full 64-character version id.
+#' @return Its first 12 characters, used in file names and reviews.
+finn_custom_version_short <- function(version_id) {
+  substr(as.character(version_id), 1L, 12L)
+}
+
+#' Files that store one saved custom model version
+#'
+#' @param paths Project paths.
+#' @param name Custom model name.
+#' @param version_id Full version id.
+#' @return List with `dir`, `rds` (the approved model), and `json` (metadata).
+finn_custom_model_files <- function(paths, name, version_id) {
+  dir <- file.path(finn_custom_models_dir(paths), name)
+  short <- finn_custom_version_short(version_id)
+  list(dir = dir, rds = file.path(dir, paste0(short, ".rds")), json = file.path(dir, paste0(short, ".json")))
+}
+
+#' Worked-examples file for a custom model
+#'
+#' @param paths Project paths.
+#' @param name Custom model name.
+#' @return Path of `custom_models/<name>-examples.csv`.
+finn_custom_examples_file <- function(paths, name) {
+  file.path(finn_custom_models_dir(paths), paste0(name, "-examples.csv"))
+}
+
+#' Normalize the `custom_models` config entry
+#'
+#' The entry lists the saved custom models every run of the project uses, as
+#' `[{"name": ..., "version_id": ...}]`; one object is accepted as one entry.
+#' List entries keep only `name` and `version_id` (NA when missing) and are
+#' sorted by name, so the config fingerprint does not depend on their order.
+#' Other values are kept for [finn_check_custom_models()] to report.
+#'
+#' @param x Raw `custom_models` value.
+#' @return NULL when empty, otherwise the normalized entries.
+finn_custom_normalize <- function(x) {
+  if (is.null(x) || !length(x)) {
+    return(NULL)
+  }
+  if (!is.list(x)) {
+    return(x)
+  }
+  if (!is.null(names(x)) && "name" %in% names(x)) x <- list(x)
+  scalar <- function(v) {
+    v <- unlist(v)
+    if (length(v) != 1L || is.na(v)) NA_character_ else as.character(v)
+  }
+  out <- lapply(unname(x), function(e) if (is.list(e)) list(name = scalar(e$name), version_id = scalar(e$version_id)) else e)
+  key <- vapply(out, function(e) if (is.list(e) && !is.na(e$name)) e$name else "", character(1))
+  out[order(key, method = "radix")]
+}
+
+#' Names of the custom models a config enrolls
+#'
+#' @param cfg Config list (merged or raw), or NULL.
+#' @return Character vector of model names; empty when none are enrolled.
+finn_custom_names <- function(cfg) {
+  entries <- finn_custom_normalize(cfg$custom_models)
+  if (!is.list(entries)) {
+    return(character())
+  }
+  as.character(unlist(lapply(entries, function(e) if (is.list(e) && !is.na(e$name)) e$name)))
+}
+
+#' Labels of the custom models a config enrolls
+#'
+#' @param cfg Config list (merged or raw), or NULL.
+#' @return Sorted `name@version` labels with short version ids; empty when
+#'   none are enrolled.
+finn_custom_labels <- function(cfg) {
+  entries <- finn_custom_normalize(cfg$custom_models)
+  if (!length(entries)) {
+    return(character())
+  }
+  if (!is.list(entries)) {
+    return("?")
+  }
+  labels <- vapply(entries, function(e) {
+    if (is.list(e)) paste0(e$name, "@", finn_custom_version_short(e$version_id)) else "?"
+  }, character(1))
+  sort(labels, method = "radix")
+}
+
+#' Format custom model labels for a sentence
+#'
+#' @param labels Labels from [finn_custom_labels()].
+#' @return Labels in backticks separated by commas, or "none".
+finn_custom_label_text <- function(labels) {
+  if (length(labels)) paste(sprintf("`%s`", labels), collapse = ", ") else "none"
+}
+
+#' Plain-language rule for custom model names
+#'
+#' @return One sentence fragment describing valid names.
+finn_custom_name_rule <- function() {
+  paste("Custom model names must start with a lowercase letter, use only lowercase letters, digits,",
+    "`_`, or `-` (no `--`), and differ from Finn's own model names")
+}
+
+#' Custom model names that finnts would reject
+#'
+#' @param names Candidate names.
+#' @param builtin Finn's built-in model names, from `finnts::list_models()`.
+#' @return The invalid names, in input order.
+finn_custom_bad_names <- function(names, builtin = character()) {
+  names <- as.character(names)
+  reserved <- c(builtin, "all", "all-data", "best-model", "local", "global", "ensemble", "average")
+  names[is.na(names) | !grepl("^[a-z][a-z0-9_-]*$", names) | grepl("--", names, fixed = TRUE) | names %in% reserved]
+}
+
+#' Whether the installed finnts can create and run custom models
+#'
+#' @param mode Config mode; `"agent"` also needs custom model support in the
+#'   internal Agent setup.
+#' @return Logical.
+finn_custom_supported <- function(mode = "standard") {
+  if (!requireNamespace("finnts", quietly = TRUE)) {
+    return(FALSE)
+  }
+  ns <- asNamespace("finnts")
+  has <- function(f) exists(f, envir = ns, inherits = FALSE)
+  ok <- all(vapply(c("create_custom_model", "custom_model_feedback", "add_custom_recipe"), has, logical(1))) &&
+    "custom_models" %in% names(formals(get("prep_models", envir = ns)))
+  if (ok && identical(mode, "agent")) {
+    ok <- has("set_agent_info_custom") && "custom_models" %in% names(formals(get("set_agent_info_custom", envir = ns)))
+  }
+  ok
+}
+
+#' Whether the installed finnts can create custom models with GitHub Copilot
+#'
+#' Copilot creation needs the structured replies that newer finnts versions
+#' add to `chat_copilot()`.
+#'
+#' @return Logical.
+finn_custom_copilot_supported <- function() {
+  requireNamespace("finnts", quietly = TRUE) &&
+    exists("copilot_request_turn", envir = asNamespace("finnts"), inherits = FALSE)
+}
+
+#' Check that a saved custom model is intact and approved
+#'
+#' Uses `finnts::custom_model_feedback()`, which checks the model's integrity
+#' records without running its code.
+#'
+#' @param model Object read from a saved custom model file.
+#' @return Invisible feedback list; errors when the model is not approved.
+finn_custom_verify <- function(model) {
+  feedback <- finnts::custom_model_feedback(model)
+  if (!identical(feedback$status, "approved")) {
+    stop("it is not an approved model (status ", feedback$status %||% "unknown", ").", call. = FALSE)
+  }
+  invisible(feedback)
+}
+
+#' Read one enrolled custom model from the project
+#'
+#' Reads the exact saved file for the entry; it never lists folders.
+#'
+#' @param paths Project paths.
+#' @param entry Normalized entry with `name` and `version_id`.
+#' @param verify Whether to run [finn_custom_verify()].
+#' @return The custom model object. Errors with a plain message when the file
+#'   is missing, unreadable, not a custom model, or does not match the entry.
+finn_custom_read <- function(paths, entry, verify = TRUE) {
+  files <- finn_custom_model_files(paths, entry$name, entry$version_id)
+  label <- sprintf("Custom model `%s` (version %s)", entry$name, finn_custom_version_short(entry$version_id))
+  if (!file.exists(files$rds)) {
+    stop(label, " is not saved in this project (expected ", finn_norm(files$rds),
+      "). Create it with custom_model.R --action=create, or unenroll it.", call. = FALSE)
+  }
+  model <- tryCatch(readRDS(files$rds), error = function(e) {
+    stop(label, " could not be read: ", conditionMessage(e), call. = FALSE)
+  })
+  def <- if (is.list(model)) model$definition
+  if (!inherits(model, "finnts_custom_model") || !is.list(def)) {
+    stop(label, " is not a finnts custom model file.", call. = FALSE)
+  }
+  if (!identical(def$name, entry$name) || !identical(def$version_id, entry$version_id)) {
+    stop(label, " does not match its saved file, which holds `", paste(def$name, collapse = ""), "` version ",
+      finn_custom_version_short(paste(def$version_id, collapse = "")), ".", call. = FALSE)
+  }
+  if (isTRUE(verify)) {
+    tryCatch(finn_custom_verify(model), error = function(e) {
+      stop(label, " failed its integrity check: ", conditionMessage(e),
+        " Create it again with custom_model.R --action=create.", call. = FALSE)
+    })
+  }
+  model
+}
+
+#' Read every custom model a config enrolls
+#'
+#' @param paths Project paths.
+#' @param cfg Config list.
+#' @param verify Whether to verify each model; the worker skips it because
+#'   finnts verifies models again when a run uses them.
+#' @return Named list of custom model objects (names are model names), or
+#'   NULL when none are enrolled.
+finn_load_custom_models <- function(paths, cfg, verify = TRUE) {
+  entries <- finn_custom_normalize(cfg$custom_models)
+  if (!length(entries)) {
+    return(NULL)
+  }
+  models <- lapply(entries, function(e) finn_custom_read(paths, e, verify))
+  names(models) <- vapply(entries, function(e) e$name, character(1))
+  models
+}
+
+#' Recipes a standard run prepares
+#'
+#' With custom models enrolled, adds the original-scale `C1` recipe they read
+#' the same way `forecast_time_series()` does, keeping the requested standard
+#' recipes (date-type defaults for NULL, R1 plus R2 for "all").
+#'
+#' @param cfg Config list.
+#' @return Recipe ids, or NULL for finnts defaults.
+finn_custom_recipes <- function(cfg) {
+  recipes <- if (length(cfg$recipes_to_run)) unlist(cfg$recipes_to_run)
+  if (!length(finn_custom_names(cfg))) {
+    return(recipes)
+  }
+  finnts:::add_custom_recipe(recipes, cfg$date_type)
+}
+
+#' Models a standard run trains
+#'
+#' finnts needs every supplied custom model listed when `models_to_run` is
+#' set, so enrolled custom models are added to an explicit list. NULL stays
+#' NULL, which already includes them.
+#'
+#' @param cfg Config list.
+#' @return Model names, or NULL for finnts defaults.
+finn_custom_models_to_run <- function(cfg) {
+  models <- if (length(cfg$models_to_run)) unlist(cfg$models_to_run)
+  if (is.null(models)) {
+    return(NULL)
+  }
+  unique(c(models, finn_custom_names(cfg)))
+}
+
+#' Parallel plan for an Agent run with custom models
+#'
+#' finnts runs Agent custom models only without inner parallelism, so an
+#' inner-parallel plan becomes parallel series workers within the same worker
+#' budget (halved after one memory failure, as [finn_choose_parallel()] does),
+#' or sequential with one series, one worker, or after repeated memory
+#' failures. Notes about other runs or batch shares are kept. Other plans are
+#' returned unchanged.
+#'
+#' @param plan Plan from [finn_plan_with_others()].
+#' @param cfg Config list.
+#' @param data_gb Approximate input size in GB.
+#' @param n_series Number of series.
+#' @param step_down Fallback level after memory failures; 2 or more stays
+#'   sequential.
+#' @return Adjusted plan with its claim recomputed by [finn_plan_claim()].
+finn_custom_agent_plan <- function(plan, cfg, data_gb, n_series, step_down = 0L) {
+  if (!length(finn_custom_names(cfg)) || !isTRUE(plan$inner_parallel)) {
+    return(plan)
+  }
+  workers <- as.integer(plan$num_cores %||% 1L)
+  n <- as.integer(n_series %||% 1L)
+  step_down <- as.integer(step_down %||% 0L)
+  reason <- plan$reason %||% ""
+  marker <- "not a memory limit."
+  suffix <- if (grepl(marker, reason, fixed = TRUE)) sub("^.*?not a memory limit\\.", "", reason, perl = TRUE) else ""
+  plan$inner_parallel <- FALSE
+  if (n >= 2L && workers >= 2L && step_down < 2L) {
+    if (step_down >= 1L) workers <- max(2L, workers %/% 2L)
+    plan$parallel_processing <- "local_machine"
+    plan$num_cores <- min(n, workers)
+    reason <- paste("Local machine: Agent runs with custom models can't train models in parallel within a series,",
+      "so series train in parallel worker processes instead.")
+  } else {
+    plan["parallel_processing"] <- list(NULL)
+    plan["num_cores"] <- list(NULL)
+    reason <- paste("Sequential: Agent runs with custom models can't train models in parallel within a series,",
+      "and this run has one series, one worker, or earlier memory failures.")
+  }
+  plan$reason <- paste0(reason, " Uses ", plan$num_cores %||% 1L,
+    " worker(s); 300 MB per worker is an estimate, not a memory limit.", suffix)
+  finn_plan_claim(plan, data_gb)
+}
+
+#' Short description of a saved custom model
+#'
+#' @param model Custom model object.
+#' @param combo_variables Series columns, left out of the driver list.
+#' @return List with `name`, `version_id`, `version` (short id), `model_type`,
+#'   `drivers`, `date_types`, `hierarchy` (approach or NULL), `approval`, and
+#'   `interpretation`.
+finn_custom_summary <- function(model, combo_variables = NULL) {
+  def <- model$definition
+  req <- def$requirements %||% list()
+  list(
+    name = def$name, version_id = def$version_id, version = finn_custom_version_short(def$version_id),
+    model_type = as.list(unlist(def$model_type)),
+    drivers = as.list(setdiff(unlist(req$predictors), c("Date", "Combo", unlist(combo_variables)))),
+    date_types = as.list(unlist(req$date_types)),
+    hierarchy = req$hierarchy$forecast_approach,
+    approval = model$approval$mode,
+    interpretation = paste(def$interpretation %||% "", collapse = " ")
+  )
+}
+
+#' Readable metadata saved next to a custom model
+#'
+#' Holds no data values, model code, or secrets.
+#'
+#' @param model Custom model object.
+#' @param llm_cfg LLM settings used to create it (`provider`, `model`).
+#' @param n_examples Number of worked examples supplied.
+#' @param combo_variables Series columns.
+#' @return List written to `<version>.json`.
+finn_custom_metadata <- function(model, llm_cfg = list(), n_examples = 0L, combo_variables = NULL) {
+  s <- finn_custom_summary(model, combo_variables)
+  list(
+    name = s$name, version_id = s$version_id, model_type = s$model_type, drivers = s$drivers,
+    date_types = s$date_types, hierarchy = s$hierarchy, approval = s$approval,
+    checks = as.list(names(model$validation$checks)),
+    provider = llm_cfg$provider %||% "copilot", llm_model = llm_cfg$model %||% "auto",
+    created_at = as.character(model$definition$created_at %||% finn_now()),
+    examples = as.integer(n_examples)
+  )
+}
+
+#' Save an approved custom model in the project without replacing files
+#'
+#' @param paths Project paths.
+#' @param model Approved custom model object.
+#' @param meta Metadata from [finn_custom_metadata()].
+#' @return List with `rds`, `json`, and `status` ("saved", or "exists" when
+#'   this exact version was already saved and nothing was written).
+finn_custom_save <- function(paths, model, meta) {
+  files <- finn_custom_model_files(paths, model$definition$name, model$definition$version_id)
+  if (file.exists(files$rds)) {
+    return(list(rds = finn_norm(files$rds), json = finn_norm(files$json), status = "exists"))
+  }
+  dir.create(files$dir, recursive = TRUE, showWarnings = FALSE)
+  saveRDS(model, files$rds)
+  if (!file.exists(files$json)) finn_write_json(meta, files$json)
+  list(rds = finn_norm(files$rds), json = finn_norm(files$json), status = "saved")
+}
+
+#' Check the custom models a config enrolls
+#'
+#' Early, plain-language versions of the checks finnts applies when a run
+#' uses custom models: each enrolled model must be saved in the project,
+#' intact, and compatible with the run settings. finnts enforces its own
+#' checks again during the run.
+#'
+#' @param cfg Merged config.
+#' @param root Storage root holding the project folder, or NULL.
+#' @return List with `errors` and `models` (one [finn_custom_summary()] per
+#'   enrolled model that passed).
+finn_check_custom_models <- function(cfg, root) {
+  entries <- finn_custom_normalize(cfg$custom_models)
+  errors <- character()
+  models <- list()
+  done <- function() list(errors = unique(errors), models = models)
+  if (!length(entries)) {
+    return(done())
+  }
+  agent <- identical(cfg$mode, "agent")
+  if (!finn_custom_supported(cfg$mode)) {
+    errors <- paste("The installed finnts cannot run custom models", if (agent) "in Agent runs" else "",
+      "- offer install_finnts.R --confirm=true to install the latest finnts from GitHub, or unenroll the custom models.")
+    return(done())
+  }
+  if (is.null(root)) {
+    errors <- "Custom models are read from the Finn project folder; validate the project with validate_config.R --project=<name>."
+    return(done())
+  }
+  well_formed <- is.list(entries) && all(vapply(entries, function(e) {
+    is.list(e) && !is.na(e$name) && !is.na(e$version_id)
+  }, logical(1)))
+  if (!well_formed) {
+    errors <- "custom_models must be a list of {\"name\": ..., \"version_id\": ...} entries. Change it with custom_model.R --action=enroll or --action=unenroll."
+    return(done())
+  }
+  names <- vapply(entries, function(e) e$name, character(1))
+  ids <- vapply(entries, function(e) e$version_id, character(1))
+  quote <- function(x) paste(sprintf("`%s`", x), collapse = ", ")
+  builtin <- tryCatch(finnts::list_models(), error = function(e) character())
+  bad <- finn_custom_bad_names(names, builtin)
+  if (length(bad)) {
+    errors <- c(errors, paste0(finn_custom_name_rule(), ": ", quote(bad), "."))
+  }
+  bad <- names[!grepl("^[a-f0-9]{64}$", ids)]
+  if (length(bad)) {
+    errors <- c(errors, paste0("custom_models needs each model's full 64-character version_id (see custom_model.R --action=list): ", quote(bad), "."))
+  }
+  bad <- unique(names[duplicated(names)])
+  if (length(bad)) errors <- c(errors, paste0("Enroll each custom model only once: ", quote(bad), "."))
+  bad <- intersect(names, unlist(cfg$models_not_to_run))
+  if (length(bad)) {
+    errors <- c(errors, paste0("Enrolled custom models can't also be in models_not_to_run: ", quote(bad), ". Unenroll them instead."))
+  }
+
+  approach <- cfg$forecast_approach %||% "bottoms_up"
+  hierarchy <- !agent && !identical(approach, "bottoms_up")
+  local_on <- finn_bool(cfg$run_local_models, TRUE)
+  global_on <- isTRUE(cfg$run_global_models %||% finn_default_global_models(cfg$date_type))
+  if (agent) {
+    if (isTRUE(cfg$agent$allow_hierarchical_forecast)) {
+      errors <- c(errors, "Agent runs with custom models can't try hierarchical forecasts. Set agent.allow_hierarchical_forecast to false, or unenroll the custom models.")
+    }
+    if (isTRUE(cfg$agent$allow_iterate_forecast)) {
+      errors <- c(errors, "Agent updates with custom models can't start a new search. Set agent.allow_iterate_forecast to false, or unenroll the custom models.")
+    }
+  }
+  if (hierarchy) {
+    if (length(cfg$external_regressors)) {
+      errors <- c(errors, sprintf("Custom models in a %s forecast can't use drivers. Remove external_regressors or use forecast_approach `bottoms_up`.", approach))
+    }
+    if (!local_on) errors <- c(errors, "Custom models in a hierarchical forecast need run_local_models set to true.")
+    if (global_on) errors <- c(errors, "Custom models in a hierarchical forecast need run_global_models set to false.")
+    if (identical(cfg$date_type, "week")) {
+      errors <- c(errors, "Custom models can't run in a hierarchical forecast of weekly data. Use forecast_approach `bottoms_up`.")
+    }
+    pool <- if (length(cfg$models_to_run)) setdiff(unlist(cfg$models_to_run), names) else builtin
+    pool <- setdiff(pool, unlist(cfg$models_not_to_run))
+    foundation <- intersect(pool, tryCatch(finnts:::list_foundation_models(), error = function(e) character()))
+    if (!length(pool)) {
+      errors <- c(errors, "Custom models in a hierarchical forecast need at least one of Finn's models alongside them in models_to_run.")
+    } else if (length(foundation)) {
+      errors <- c(errors, paste0("Custom models in a hierarchical forecast can't run with foundation models (", quote(foundation),
+        "). Add them to models_not_to_run, or list the models to run in models_to_run."))
+    }
+  }
+  if (length(errors)) {
+    return(done())
+  }
+
+  paths <- finn_project_paths(root, cfg$project_name)
+  enabled <- c(if (local_on) "local", if (global_on) "global")
+  for (e in entries) {
+    model <- tryCatch(finn_custom_read(paths, e, verify = TRUE), error = function(err) conditionMessage(err))
+    if (is.character(model)) {
+      errors <- c(errors, model)
+      next
+    }
+    def <- model$definition
+    req <- def$requirements %||% list()
+    label <- sprintf("Custom model `%s`", e$name)
+    date_types <- unlist(req$date_types)
+    if (length(date_types) && !isTRUE(cfg$date_type %in% date_types)) {
+      errors <- c(errors, sprintf("%s works with %s data, not %s data.", label, paste(date_types, collapse = "/"), cfg$date_type))
+    }
+    types <- unlist(def$model_type)
+    if (!length(intersect(types, enabled))) {
+      off <- setdiff(types, enabled)
+      errors <- c(errors, sprintf("%s is a %s model, but this config turns %s models off. Set %s to true, or unenroll it.",
+        label, paste(types, collapse = "/"), paste(off, collapse = " and "), paste0("run_", off, "_models", collapse = " or ")))
+    }
+    drivers <- setdiff(unlist(req$predictors), c("Date", "Combo", unlist(cfg$combo_variables)))
+    missing <- setdiff(drivers, unlist(cfg$external_regressors))
+    if (length(missing)) {
+      errors <- c(errors, sprintf("%s uses drivers that are not in external_regressors: %s. Add them, or unenroll the model.", label, quote(missing)))
+    }
+    packages <- unique(unlist(def$packages))
+    absent <- packages[!nzchar(vapply(packages, function(p) system.file(package = p), character(1)))]
+    if (length(absent)) {
+      errors <- c(errors, sprintf("%s needs R packages that are not installed: %s. Ask the user before installing them.", label, quote(absent)))
+    }
+    hier <- req$hierarchy$forecast_approach
+    if (!is.null(req$hierarchy) && agent) {
+      errors <- c(errors, sprintf("%s was approved only for %s forecasts, which Agent runs don't use. Create a bottoms_up version for Agent runs.", label, hier %||% "hierarchical"))
+    } else if (!is.null(req$hierarchy) && !hierarchy) {
+      errors <- c(errors, sprintf("%s was approved only for %s forecasts. Set forecast_approach to `%s`, or create a bottoms_up version.", label, hier %||% "hierarchical", hier %||% "standard_hierarchy"))
+    } else if (hierarchy && !identical(hier, approach)) {
+      errors <- c(errors, sprintf("%s isn't approved for %s forecasts. Create a version for it while forecast_approach is `%s`, or use `bottoms_up`.", label, approach, approach))
+    }
+    models[[length(models) + 1L]] <- finn_custom_summary(model, cfg$combo_variables)
+  }
+  done()
 }

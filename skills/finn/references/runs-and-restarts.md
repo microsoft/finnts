@@ -52,6 +52,11 @@ version (`overwrite = TRUE`) is only created when:
 
 Earlier versions and their history stay in `finn_artifacts/`.
 
+Enrolled custom models ([custom-models.md](custom-models.md)) are part of an Agent
+version's settings. Changing the enrollment makes the next iterate a new Agent version,
+and an update must enroll the same custom models as the last Agent version
+(`needs_new_version`, `reason: custom_models_changed`).
+
 ### Continuing an Agent version
 
 `agent.max_iter` is the **total** number of iterations per search (the global search and
@@ -110,7 +115,7 @@ note that results may shift slightly.
 | `needs_review` | the saved settings were reviewed for another run type | rerun `validate_config.R --run_type=<mode>`, show the review, save, then launch |
 | `needs_confirmation` | resume with changed inputs, update with changed settings, a new Agent version, or different software (`reason: software_changed`) | ask the user, then rerun with the flags given |
 | `already_complete` | iterate would run nothing new: same settings and data, a lower `agent.max_iter`, or only a looser goal (`reason`) | show results; raise `agent.max_iter` or tighten the goal to continue, or confirm a new version |
-| `needs_new_version` | data or other settings changed, a newer update is unfinished, or the earlier Agent run cannot be resumed (`reason`) | suggest `update` if data is newer; resume an unfinished update; otherwise confirm a new version |
+| `needs_new_version` | data or other settings changed, a newer update is unfinished, an update enrolls different custom models, or the earlier Agent run cannot be resumed (`reason`) | suggest `update` if data is newer; resume an unfinished update; restore the custom models of the last Agent version; otherwise confirm a new version |
 | `needs_agent_run` | update has no finished Agent forecast | run `--mode=iterate` first or resume the unfinished one; standard projects refresh with `--mode=standard` |
 | `no_new_data` | update data ends on the same date as last time, `hist_end_date` holds it back, or the only newer period has not ended | add newer actuals, move `hist_end_date`, wait for the open period to end, or `--force=true` if past values were revised |
 

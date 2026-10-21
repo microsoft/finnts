@@ -21,6 +21,14 @@
 # --confirm=true. Stop results carry data$reason. A stopped iterate run whose
 # only changes are those two settings continues with them the same way.
 #
+# Custom models: config.json `custom_models` lists the saved custom models
+# (custom_models/<name>/<version>.rds) every run of the project uses. Standard
+# runs train them with the built-in models. Agent runs enroll them in the
+# Agent version; its iterate continuations and updates must enroll the same
+# ones, so a changed enrollment returns needs_new_version (reason
+# custom_models_changed for updates). Agent runs with custom models train
+# series in parallel worker processes instead of within-series parallelism.
+#
 # --wait=true runs in the foreground (used by tests). Nothing here deletes
 # files.
 
@@ -641,6 +649,17 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
         c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")
       }))
   }
+  prior_cfg <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))$config
+  custom_old <- finn_custom_labels(prior_cfg)
+  custom_new <- finn_custom_labels(cfg)
+  if (is.list(prior_cfg) && !identical(custom_old, custom_new)) {
+    return(stop_with("needs_new_version", paste0(
+      "Agent update must reuse the custom models of Agent version ", last_agent$agent_version %||% "?", " (",
+      finn_custom_label_text(custom_old), "), but this config enrolls ", finn_custom_label_text(custom_new), "."
+    ), list(reason = "custom_models_changed", agent_version = last_agent$agent_version,
+      previous = as.list(custom_old), new = as.list(custom_new)),
+    c("Ask the user which they want: restore the previous custom models with custom_model.R --action=enroll or --action=unenroll, rerun validate_config.R --run_type=update, and save; or start a new Agent version that uses the current custom models with --mode=iterate --new=true --confirm=true after they agree.")))
+  }
   drift <- launch_update_drift(paths, last_agent, facts, cur_md5, newer || finn_bool(finn_arg(args, "force")), cfg)
   if (length(drift) && !confirmed) {
     return(stop_with("needs_confirmation",
@@ -743,6 +762,7 @@ finn_main(function(args) {
     return(launch_machine_busy(claimed, sizing$remaining, data_gb))
   }
   plan <- sizing$plan
+  if (!identical(mode, "standard")) plan <- finn_custom_agent_plan(plan, run_cfg, data_gb, facts$n_series, step_down)
 
   if (!identical(decision$action, "resume")) {
     run_paths <- finn_run_paths(paths, finn_new_run_id(mode))

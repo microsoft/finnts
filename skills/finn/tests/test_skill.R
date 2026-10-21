@@ -2378,6 +2378,488 @@ local({
   check("data template: no duplicate series/date rows", !any(duplicated(tpl[c("Date", "Region", "Product")])))
 })
 
+# ---- Custom models -------------------------------------------------------------------
+cm <- load_functions("custom_model.R", common)
+vcm <- load_functions("validate_config.R", common)
+custom_saved <- mget(c("finn_custom_supported", "finn_custom_verify", "finn_custom_copilot_supported"), envir = common)
+assign("finn_custom_supported", function(mode = "standard") TRUE, envir = common)
+assign("finn_custom_verify", function(model) invisible(list(status = "approved", message = "Checks passed.")), envir = common)
+assign("finn_custom_copilot_supported", function() TRUE, envir = common)
+local({
+  has_custom_api <- requireNamespace("finnts", quietly = TRUE) &&
+    exists("add_custom_recipe", envir = asNamespace("finnts"), inherits = FALSE)
+  safely <- function(expr) tryCatch(expr, error = function(e) {
+    message("  error: ", conditionMessage(e))
+    NULL
+  })
+  full_a <- strrep("a", 64)
+  full_b <- strrep("b", 64)
+  fake_model <- function(name, version_id = full_a, model_type = "local", predictors = c("Date", "Combo"),
+                         date_types = "month", hierarchy = NULL, packages = character(),
+                         created_at = "2024-01-01T00:00:00+0000", interpretation = "Adds last year's growth.") {
+    req <- list(predictors = predictors, date_types = date_types)
+    if (!is.null(hierarchy)) req$hierarchy <- list(forecast_approach = hierarchy)
+    structure(list(
+      definition = list(name = name, version_id = version_id, model_type = model_type, requirements = req,
+        interpretation = interpretation, created_at = created_at, packages = packages),
+      validation = list(checks = list(schema = TRUE, examples = TRUE)), approval = list(mode = "automatic")
+    ), class = "finnts_custom_model")
+  }
+  enroll <- function(name, version_id = full_a) list(list(name = name, version_id = version_id))
+
+  # Config helpers
+  check("custom models: empty entries normalize to NULL",
+    is.null(finn_custom_normalize(NULL)) && is.null(finn_custom_normalize(list())))
+  check("custom models: one object is one entry",
+    identical(finn_custom_normalize(list(name = "g", version_id = "x")), list(list(name = "g", version_id = "x"))))
+  check("custom models: entries are sorted, trimmed to name/version_id, NA when missing",
+    identical(finn_custom_normalize(list(list(name = "b", version_id = "1", extra = TRUE), list(name = "a"))),
+      list(list(name = "a", version_id = NA_character_), list(name = "b", version_id = "1"))))
+  check("custom models: malformed values are kept for the checks to report",
+    identical(finn_custom_normalize("growth"), "growth") && identical(finn_custom_normalize(list("growth")), list("growth")))
+  check("custom models: names", identical(finn_custom_names(list()), character()) &&
+    identical(finn_custom_names(list(custom_models = "growth")), character()) &&
+    identical(finn_custom_names(list(custom_models = list(list(name = "b", version_id = "1"), list(name = "a", version_id = "2")))), c("a", "b")))
+  check("custom models: labels are sorted short ids, ? for malformed entries",
+    identical(finn_custom_labels(list()), character()) &&
+      identical(finn_custom_labels(list(custom_models = "growth")), "?") &&
+      identical(finn_custom_labels(list(custom_models = list("x", list(name = "b", version_id = strrep("c", 64))))),
+        c("?", "b@cccccccccccc")))
+  check("custom models: label text", identical(finn_custom_label_text(character()), "none") &&
+    identical(finn_custom_label_text(c("a@1", "b@2")), "`a@1`, `b@2`"))
+  check("custom models: invalid names", identical(
+    finn_custom_bad_names(c("growth_rule", "g2-x", "Growth", "1abc", "a--b", "all", "arima", NA), builtin = "arima"),
+    c("Growth", "1abc", "a--b", "all", "arima", NA)
+  ))
+
+  # Merge and fingerprint
+  check("custom models: merge drops an empty enrollment",
+    !("custom_models" %in% names(finn_merge_config(list(custom_models = list())))))
+  pinned_cfg <- list(mode = "agent", project_name = "P", parallel = "auto", data = list(file = "C:/a/data.csv"), forecast_horizon = 6,
+    agent = list(max_iter = 3, weighted_mape_goal = 0.03, llm = list(provider = "copilot")))
+  plain_hash <- finn_config_hash(finn_merge_config(pinned_cfg))
+  e1 <- list(name = "a", version_id = strrep("1", 64))
+  e2 <- list(name = "b", version_id = strrep("2", 64))
+  check("custom models: an empty enrollment keeps the fingerprint",
+    identical(plain_hash, finn_config_hash(finn_merge_config(c(pinned_cfg, list(custom_models = list()))))))
+  check("custom models: entry order does not change the fingerprint", identical(
+    finn_config_hash(finn_merge_config(c(pinned_cfg, list(custom_models = list(e1, e2))))),
+    finn_config_hash(finn_merge_config(c(pinned_cfg, list(custom_models = list(e2, e1)))))
+  ))
+  check("custom models: enrolling changes the fingerprint",
+    !identical(plain_hash, finn_config_hash(finn_merge_config(c(pinned_cfg, list(custom_models = list(e1)))))))
+
+  # Models and recipes for standard runs
+  check("custom models: NULL models_to_run stays NULL", is.null(finn_custom_models_to_run(list(custom_models = enroll("growth")))))
+  check("custom models: explicit models_to_run gains enrolled models once",
+    identical(finn_custom_models_to_run(list(models_to_run = list("arima", "ets"), custom_models = enroll("growth"))), c("arima", "ets", "growth")) &&
+      identical(finn_custom_models_to_run(list(models_to_run = list("arima", "growth"), custom_models = enroll("growth"))), c("arima", "growth")))
+  check("custom models: recipes unchanged without custom models",
+    is.null(finn_custom_recipes(list())) && identical(finn_custom_recipes(list(recipes_to_run = list("R1"))), "R1"))
+  if (has_custom_api) {
+    check("custom models: recipes add C1",
+      "C1" %in% finn_custom_recipes(list(recipes_to_run = list("R1"), date_type = "month", custom_models = enroll("growth"))))
+  }
+
+  # Agent parallel plan
+  plan <- list(parallel_processing = NULL, inner_parallel = TRUE, num_cores = 4L,
+    reason = "Inner parallel: models train in parallel. Uses 4 worker(s); 300 MB per worker is an estimate, not a memory limit. Another run is using 2 cores.")
+  acust <- list(mode = "agent", custom_models = enroll("growth"))
+  check("custom models: Agent plan unchanged without custom models or inner parallel",
+    identical(finn_custom_agent_plan(plan, list(mode = "agent"), 0.1, 4), plan) &&
+      identical(finn_custom_agent_plan(modifyList(plan, list(inner_parallel = FALSE)), acust, 0.1, 4), modifyList(plan, list(inner_parallel = FALSE))))
+  a4 <- finn_custom_agent_plan(plan, acust, 0.1, 4)
+  check("custom models: Agent plan moves inner parallel to series workers",
+    identical(a4$parallel_processing, "local_machine") && isFALSE(a4$inner_parallel) && identical(as.integer(a4$num_cores), 4L) &&
+      identical(as.integer(a4$claimed_cores), 4L) && grepl("Uses 4 worker(s)", a4$reason, fixed = TRUE) &&
+      endsWith(a4$reason, " Another run is using 2 cores."))
+  check("custom models: Agent plan caps workers at the series count",
+    identical(as.integer(finn_custom_agent_plan(plan, acust, 0.1, 3)$num_cores), 3L))
+  check("custom models: Agent plan halves workers after a memory failure",
+    identical(as.integer(finn_custom_agent_plan(plan, acust, 0.1, 4, step_down = 1L)$num_cores), 2L))
+  for (case in list(list(n = 4, step = 2L), list(n = 1, step = 0L))) {
+    s <- finn_custom_agent_plan(plan, acust, 0.1, case$n, step_down = case$step)
+    check(sprintf("custom models: Agent plan is sequential (%d series, step down %d)", case$n, case$step),
+      is.null(s$parallel_processing) && "num_cores" %in% names(s) && is.null(s$num_cores) &&
+        identical(as.integer(s$claimed_cores), 1L) && grepl("^Sequential:", s$reason))
+  }
+
+  # Saving, reading, and checking enrolled models
+  root <- file.path(tmp, "custom-root")
+  p <- finn_project_paths(root, "CustomChecks")
+  finn_ensure_project_dirs(p)
+  finn_write_project(p, list(name = "CustomChecks"))
+  drv <- fake_model("drv", predictors = c("Date", "Combo", "Region", "Price"))
+  meta <- finn_custom_metadata(drv, list(provider = "openai", model = "gpt"), 2L, "Region")
+  check("custom models: metadata fields", identical(names(meta), c("name", "version_id", "model_type", "drivers", "date_types",
+    "hierarchy", "approval", "checks", "provider", "llm_model", "created_at", "examples")) &&
+    identical(meta$drivers, list("Price")) && identical(meta$provider, "openai") && identical(meta$examples, 2L))
+  saved <- finn_custom_save(p, drv, meta)
+  drv_files <- finn_custom_model_files(p, "drv", full_a)
+  json_before <- readLines(drv_files$json, warn = FALSE)
+  again <- finn_custom_save(p, drv, modifyList(meta, list(provider = "copilot")))
+  check("custom models: save never replaces a saved version",
+    identical(saved$status, "saved") && identical(again$status, "exists") &&
+      file.exists(drv_files$rds) && identical(readLines(drv_files$json, warn = FALSE), json_before))
+  for (m in list(fake_model("growthok"), fake_model("weekly", date_types = "week"), fake_model("glob", model_type = "global"),
+    fake_model("pkg", packages = "notarealpkg.finn"), fake_model("hier", hierarchy = "standard_hierarchy"))) {
+    finn_custom_save(p, m, finn_custom_metadata(m))
+  }
+  loaded <- finn_load_custom_models(p, list(custom_models = enroll("growthok")))
+  check("custom models: load enrolled models by name",
+    identical(names(loaded), "growthok") && inherits(loaded$growthok, "finnts_custom_model") &&
+      is.null(finn_load_custom_models(p, list())))
+
+  junk <- finn_custom_model_files(p, "junk", full_a)
+  dir.create(junk$dir, recursive = TRUE, showWarnings = FALSE)
+  writeLines("junk", junk$rds)
+  plain <- finn_custom_model_files(p, "plain", full_a)
+  dir.create(plain$dir, recursive = TRUE, showWarnings = FALSE)
+  saveRDS(list(a = 1), plain$rds)
+  other <- finn_custom_model_files(p, "mismatch", full_a)
+  dir.create(other$dir, recursive = TRUE, showWarnings = FALSE)
+  saveRDS(fake_model("other"), other$rds)
+  entry <- function(name) list(name = name, version_id = full_a)
+  check("custom models: read reports a missing file", errors_with(finn_custom_read(p, entry("missing")), "is not saved in this project"))
+  check("custom models: read reports an unreadable file", errors_with(finn_custom_read(p, entry("junk")), "could not be read"))
+  check("custom models: read rejects other objects", errors_with(finn_custom_read(p, entry("plain")), "is not a finnts custom model file"))
+  check("custom models: read rejects a different model", errors_with(finn_custom_read(p, entry("mismatch")), "does not match its saved file"))
+  assign("finn_custom_verify", function(model) stop("tampered.", call. = FALSE), envir = common)
+  check("custom models: read reports a failed integrity check", errors_with(finn_custom_read(p, entry("growthok")), "failed its integrity check"))
+  assign("finn_custom_verify", function(model) invisible(list(status = "approved", message = "Checks passed.")), envir = common)
+
+  kbase <- finn_merge_config(list(project_name = "CustomChecks", combo_variables = "Region", target_variable = "Revenue",
+    date_type = "month", forecast_horizon = 3))
+  kcfg <- function(name, ...) {
+    cfg <- kbase
+    cfg$custom_models <- enroll(name)
+    over <- list(...)
+    for (k in names(over)) cfg[k] <- list(over[[k]])
+    cfg
+  }
+  hcfg <- function(name = "growthok") {
+    kcfg(name, forecast_approach = "standard_hierarchy", run_global_models = FALSE, models_to_run = list("arima"))
+  }
+  errs <- function(cfg, use_root = root) finn_check_custom_models(cfg, use_root)$errors
+  has_error <- function(cfg, pattern, use_root = root) any(grepl(pattern, errs(cfg, use_root), fixed = TRUE))
+
+  assign("finn_custom_supported", function(mode = "standard") FALSE, envir = common)
+  check("custom models: check needs a finnts that runs them", has_error(kcfg("growthok"), "cannot run custom models"))
+  assign("finn_custom_supported", function(mode = "standard") TRUE, envir = common)
+  check("custom models: check needs the project folder", has_error(kcfg("growthok"), "read from the Finn project folder", NULL))
+  bad <- kbase
+  bad$custom_models <- list(list(name = "growthok"))
+  check("custom models: check needs name and version_id", has_error(bad, "must be a list of"))
+  check("custom models: check rejects invalid names", has_error(kcfg("Growth"), "must start with a lowercase letter"))
+  bad$custom_models <- list(list(name = "growthok", version_id = "abc"))
+  check("custom models: check needs the full version id", has_error(bad, "full 64-character version_id"))
+  bad$custom_models <- c(enroll("growthok"), enroll("growthok"))
+  check("custom models: check rejects duplicate enrollment", has_error(bad, "Enroll each custom model only once"))
+  check("custom models: check rejects models_not_to_run overlap",
+    has_error(kcfg("growthok", models_not_to_run = list("growthok")), "can't also be in models_not_to_run"))
+  agent_k <- kcfg("growthok", mode = "agent")
+  agent_k$agent$allow_hierarchical_forecast <- TRUE
+  check("custom models: Agent runs can't try hierarchies", has_error(agent_k, "can't try hierarchical forecasts"))
+  agent_k <- kcfg("growthok", mode = "agent")
+  agent_k$agent$allow_iterate_forecast <- TRUE
+  check("custom models: Agent updates can't start a new search", has_error(agent_k, "can't start a new search"))
+
+  h <- hcfg()
+  h$external_regressors <- list("Price")
+  check("custom models: hierarchy can't use drivers", has_error(h, "can't use drivers"))
+  h <- hcfg()
+  h$run_local_models <- FALSE
+  check("custom models: hierarchy needs local models", has_error(h, "need run_local_models set to true"))
+  h <- hcfg()
+  h$run_global_models <- TRUE
+  check("custom models: hierarchy needs global models off", has_error(h, "need run_global_models set to false"))
+  h <- hcfg()
+  h$date_type <- "week"
+  check("custom models: no weekly hierarchy", has_error(h, "hierarchical forecast of weekly data"))
+  h <- hcfg()
+  h$models_to_run <- list("growthok")
+  check("custom models: hierarchy needs a Finn model too", has_error(h, "at least one of Finn's models"))
+  foundation <- if (requireNamespace("finnts", quietly = TRUE)) {
+    tryCatch(finnts:::list_foundation_models(), error = function(e) character())
+  } else {
+    character()
+  }
+  if (length(foundation)) {
+    h <- hcfg()
+    h$models_to_run <- list("arima", foundation[[1]])
+    check("custom models: hierarchy can't run with foundation models", has_error(h, "can't run with foundation models"))
+  }
+
+  check("custom models: date type must match", has_error(kcfg("weekly"), "works with week data, not month data"))
+  check("custom models: model type must be turned on",
+    has_error(kcfg("glob", run_global_models = FALSE), "is a global model, but this config turns global models off"))
+  check("custom models: drivers must be external regressors", has_error(kcfg("drv"), "uses drivers that are not in external_regressors"))
+  check("custom models: packages must be installed", has_error(kcfg("pkg"), "needs R packages that are not installed"))
+  check("custom models: hierarchy model is not for Agent runs", has_error(kcfg("hier", mode = "agent"), "which Agent runs don't use"))
+  check("custom models: hierarchy model needs its approach", has_error(kcfg("hier"), "Set forecast_approach to"))
+  check("custom models: bottoms_up model is not for a hierarchy", has_error(hcfg("growthok"), "isn't approved for standard_hierarchy forecasts"))
+  ok <- finn_check_custom_models(kcfg("growthok"), root)
+  check("custom models: a compatible model passes with its summary",
+    !length(ok$errors) && identical(ok$models[[1]]$name, "growthok") && identical(ok$models[[1]]$version, "aaaaaaaaaaaa"))
+  ok_h <- finn_check_custom_models(hcfg("hier"), root)
+  check("custom models: a hierarchy model passes in its approach",
+    !length(ok_h$errors) && identical(ok_h$models[[1]]$hierarchy, "standard_hierarchy"))
+
+  cm_data <- data.frame(
+    Date = rep(seq(as.Date("2022-01-01"), by = "month", length.out = 24), 2),
+    Region = rep(c("A", "B"), each = 24), Revenue = c(1:24, 101:124) * 1.0, stringsAsFactors = FALSE
+  )
+  checked <- safely(finn_check_config(kcfg("growthok"), cm_data, root = root, today = as.Date("2025-01-01")))
+  check("custom models: config check adds enrolled models to facts",
+    !length(checked$errors) && identical(checked$facts$custom_models[[1]]$name, "growthok"))
+  no_root <- safely(finn_check_config(kcfg("growthok"), cm_data, root = NULL, today = as.Date("2025-01-01")))
+  check("custom models: config check without a project folder fails",
+    any(grepl("read from the Finn project folder", no_root$errors, fixed = TRUE)))
+
+  # Agent version rules
+  adata <- file.path(tmp, "custom-agent-data.csv")
+  file.copy(file.path(skill_dir, "examples", "sample_monthly.csv"), adata)
+  amd5 <- finn_data_md5(adata)
+  acfg <- modifyList(finn_merge_config(list(project_name = "CustomAgent", combo_variables = "Region", target_variable = "Revenue",
+    date_type = "month", forecast_horizon = 6, data = list(file = adata))), list(mode = "agent", agent = list(max_iter = 3)))
+  with_growth <- acfg
+  with_growth$custom_models <- enroll("growth")
+  drift <- finn_settings_drift(acfg, with_growth)
+  check("custom models: enrollment is settings drift",
+    length(drift) == 1 && grepl("^custom_models .*growth@aaaaaaaaaaaa", drift))
+  cont <- finn_iterate_continuation(acfg, with_growth)
+  check("custom models: enrollment change can't continue an Agent version",
+    identical(cont$kind, "other_changes") && any(grepl("^custom_models ", cont$changed)))
+  agent_project <- function(name, prior_cfg) {
+    ap <- finn_project_paths(root, name)
+    finn_ensure_project_dirs(ap)
+    finn_update_state(finn_run_paths(ap, "iter-1"), run_id = "iter-1", mode = "iterate", status = "completed",
+      created_at = "2024-01-01T00:00:00+0000", data_end = "2023-12-01", config = prior_cfg, data_md5 = amd5)
+    finn_write_project(ap, list(name = name, last_agent = list(status = "completed", run_id = "iter-1", mode = "iterate",
+      request_id = "req-1", agent_run_id = "agent-run-1", agent_version = 1L, hist_end_date = "2023-12-01",
+      config_hash = finn_config_hash(prior_cfg), data_md5 = amd5)))
+    ap
+  }
+  ap <- agent_project("CustomAgent", acfg)
+  ap_same <- agent_project("CustomAgentSame", with_growth)
+  newer <- list(last_actual_date = "2024-06-01")
+  upd <- launch$launch_decide(ap, "update", with_growth, newer, list())
+  check("custom models: update with different custom models needs a new Agent version",
+    identical(upd$result$status, "needs_new_version") && identical(upd$result$data$reason, "custom_models_changed") &&
+      identical(unlist(upd$result$data$new), "growth@aaaaaaaaaaaa"))
+  check("custom models: update with the same custom models proceeds",
+    identical(launch$launch_decide(ap_same, "update", with_growth, newer, list())$action, "new"))
+  nr <- finn_next_run(ap, with_growth, newer)
+  check("custom models: next run recommends a new Agent version when enrollment changed",
+    identical(nr$situation, "agent_refresh") && identical(nr$run_type, "iterate") && isTRUE(nr$new_version) &&
+      identical(nr$launch, "--mode=iterate --new=true --confirm=true") && identical(nr$alternative$run_type, "update") &&
+      identical(nr$custom_models_changed$new, "growth@aaaaaaaaaaaa"))
+  check("custom models: next run keeps update when enrollment matches",
+    identical(finn_next_run(ap_same, with_growth, newer)$run_type, "update"))
+  it <- launch$launch_decide(ap, "iterate", with_growth, list(last_actual_date = "2023-12-01"), list())
+  check("custom models: iterate with changed enrollment needs a new Agent version",
+    identical(it$result$status, "needs_new_version") && identical(it$result$data$reason, "settings_changed") &&
+      any(grepl("^custom_models ", unlist(it$result$data$changed))))
+
+  # Settings review
+  sec <- vcm$validate_custom_models_section(list(finn_custom_summary(fake_model("growth"), "Region")), "standard")
+  check("custom models: review section lists each model",
+    grepl("### Custom models", sec, fixed = TRUE) &&
+      grepl("| `growth` | `aaaaaaaaaaaa` | local | none | Adds last year's growth. |", sec, fixed = TRUE) &&
+      grepl("compete with Finn's models", sec, fixed = TRUE))
+  check("custom models: Agent review explains later runs",
+    grepl("later iterate and update runs", vcm$validate_custom_models_section(list(finn_custom_summary(fake_model("growth"))), "iterate"), fixed = TRUE))
+  check("custom models: no review section without models", is.null(vcm$validate_custom_models_section(list(), "standard")))
+  long <- vcm$validate_custom_models_section(list(finn_custom_summary(fake_model("growth", interpretation = strrep("x", 250)))))
+  check("custom models: long interpretations are shortened",
+    grepl(paste0(strrep("x", 197), "..."), long, fixed = TRUE) && !grepl(strrep("x", 198), long, fixed = TRUE))
+  prev_cfg <- finn_merge_config(list(project_name = "P", combo_variables = "Region", target_variable = "Revenue", date_type = "month", forecast_horizon = 3))
+  next_cfg <- prev_cfg
+  next_cfg$custom_models <- enroll("growth")
+  changes <- vcm$validate_settings_changes(prev_cfg, next_cfg)
+  check("custom models: revision view lists enrollment changes",
+    grepl("| `custom_models` | none | `growth@aaaaaaaaaaaa` |", changes, fixed = TRUE))
+
+  # custom_model.R helpers
+  check("custom_model: split", identical(cm$custom_model_split(" a, b ,a,"), c("a", "b")) && identical(cm$custom_model_split(NULL), character()))
+  check("custom_model: name is required", errors_with(cm$custom_model_name(list()), "Pass --name"))
+  check("custom_model: name must qualify", errors_with(cm$custom_model_name(list(name = "Bad")), "doesn't qualify"))
+  check("custom_model: horizon defaults to the config, capped at 24",
+    identical(cm$custom_model_horizon(list(), list(forecast_horizon = 6)), 6L) &&
+      identical(cm$custom_model_horizon(list(), list(forecast_horizon = 36)), 24L))
+  for (v in c("0", "25", "1.5")) {
+    check(paste("custom_model: horizon rejects", v),
+      errors_with(cm$custom_model_horizon(list(horizon = v), list(forecast_horizon = 6)), "whole number from 1 through 24"))
+  }
+  check("custom_model: drivers must be external regressors",
+    errors_with(cm$custom_model_drivers(list(drivers = "Price"), list()), "external_regressors first") &&
+      identical(cm$custom_model_drivers(list(drivers = "Price"), list(external_regressors = list("Price"))), "Price"))
+  instr <- file.path(tmp, "custom-instructions.txt")
+  writeLines(c("Use growth.", "Keep it positive."), instr)
+  check("custom_model: instructions are required", errors_with(cm$custom_model_instructions(list(instructions = "  ")), "Describe the model"))
+  check("custom_model: instructions file must exist",
+    errors_with(cm$custom_model_instructions(list(instructions_file = file.path(tmp, "no-such.txt"))), "No instructions file"))
+  check("custom_model: instructions file is read",
+    identical(cm$custom_model_instructions(list(instructions_file = instr)), "Use growth.\nKeep it positive."))
+  header_only <- file.path(tmp, "custom-header.csv")
+  writeLines("example,Date,Revenue,expected", header_only)
+  check("custom_model: examples file must exist", errors_with(cm$custom_model_read_examples(file.path(tmp, "no-such.csv")), "No examples file"))
+  check("custom_model: examples file needs rows", errors_with(cm$custom_model_read_examples(header_only), "has no rows"))
+
+  panel <- function(data, ...) cm$custom_model_panel(data, "Region", "Revenue", date_type = "month", horizon = 3, ...)
+  full <- panel(cm_data)
+  check("custom_model: panel keeps complete series", identical(full$series_used, 2L) && identical(full$periods, 24L) && nrow(full$data) == 48)
+  gap <- cm_data[!(cm_data$Region == "B" & cm_data$Date == as.Date("2022-05-01")), ]
+  gp <- panel(gap)
+  check("custom_model: panel starts after a gap when that keeps more data",
+    identical(gp$hist_start_date, as.Date("2022-06-01")) && identical(gp$series_used, 2L) && identical(gp$periods, 19L))
+  gs <- panel(gap, hist_start_date = "2022-01-01")
+  check("custom_model: panel honors a chosen start", identical(gs$series_used, 1L) && identical(gs$periods, 24L))
+  check("custom_model: panel start must be a data date", errors_with(panel(gap, hist_start_date = "2022-01-15"), "--hist_start_date must be one of"))
+  check("custom_model: panel needs actuals", errors_with(panel(transform(cm_data, Revenue = NA_real_)), "has no actuals"))
+  last_na <- cm_data
+  last_na$Revenue[last_na$Date == as.Date("2023-12-01")] <- NA
+  check("custom_model: panel needs actuals in the latest period",
+    errors_with(panel(last_na, hist_end_date = "2023-12-01"), "No series has actuals"))
+  future <- data.frame(Date = rep(seq(as.Date("2024-01-01"), by = "month", length.out = 3), 2), Region = rep(c("A", "B"), each = 3),
+    Revenue = NA_real_, stringsAsFactors = FALSE)
+  with_price <- rbind(cbind(cm_data, Price = 1), cbind(future, Price = 2))
+  dp <- cm$custom_model_panel(with_price, "Region", "Revenue", "Price", "month", 3)
+  check("custom_model: panel keeps future driver rows", nrow(dp$data) == 54 && identical(dp$series_used, 2L))
+  daily <- data.frame(Date = rep(seq(as.Date("2015-01-01"), by = "day", length.out = 3500), 3),
+    Region = rep(c("A", "B", "C"), each = 3500), Revenue = 1, stringsAsFactors = FALSE)
+  dd <- cm$custom_model_panel(daily, "Region", "Revenue", date_type = "day", horizon = 3)
+  check("custom_model: panel stays within the creation budget", identical(dd$periods, 3333L) && identical(dd$series_used, 3L))
+
+  # custom_model.R actions
+  cp <- finn_project_paths(root, "Custom")
+  finn_ensure_project_dirs(cp)
+  finn_write_project(cp, list(name = "Custom"))
+  cdata <- file.path(cp$input, "sample_monthly.csv")
+  file.copy(file.path(skill_dir, "examples", "sample_monthly.csv"), cdata)
+  finn_write_json(list(project_name = "Custom", combo_variables = "Region", target_variable = "Revenue", date_type = "month",
+    forecast_horizon = 3, data = list(file = cdata)), file.path(cp$dir, "config.json"))
+  ex_file <- finn_custom_examples_file(cp, "growth")
+  dir.create(dirname(ex_file), recursive = TRUE, showWarnings = FALSE)
+  writeLines(c("example,Date,Revenue,expected", "base,2024-01-01,10,"), ex_file)
+  check("custom_model: examples keep dates as text", is.character(cm$custom_model_read_examples(ex_file)$Date))
+
+  captured <- NULL
+  built <- NULL
+  cm$finn_load_checked <- function(cfg, root = NULL) {
+    list(config = finn_merge_config(cfg), errors = character(), warnings = character(), data = cm_data)
+  }
+  cm$finn_build_llm <- function(llm_cfg) {
+    built <<- llm_cfg
+    "fake-llm"
+  }
+  author_ok <- function(...) {
+    captured <<- list(...)
+    fake_model(captured$name)
+  }
+  cm$custom_model_author <- author_ok
+  cargs <- list(root = root, project = "Custom", name = "growth", instructions = "Use last year's growth.", examples = ex_file)
+  growth_dir <- file.path(finn_custom_models_dir(cp), "growth")
+  r0 <- safely(suppressMessages(cm$custom_model_create(cargs, cp)))
+  check("custom_model: create asks for consent before contacting the LLM",
+    identical(r0$status, "needs_confirmation") && is.null(captured) && !dir.exists(growth_dir) &&
+      identical(r0$data$check_window$series_used, 2L) && identical(r0$data$examples, 1L))
+  r1 <- safely(suppressMessages(cm$custom_model_create(c(cargs, list(confirm = "true", enroll = "true")), cp)))
+  growth_files <- finn_custom_model_files(cp, "growth", full_a)
+  check("custom_model: confirmed create saves and enrolls the approved model",
+    isTRUE(r1$ok) && identical(captured$approval, "automatic") && identical(captured$llm, "fake-llm") &&
+      nrow(captured$input_data) == 48 && is.null(captured$control) && file.exists(growth_files$rds) && file.exists(growth_files$json) &&
+      identical(finn_custom_labels(finn_read_json(file.path(cp$dir, "config.json"))), "growth@aaaaaaaaaaaa"))
+  check("custom_model: Copilot creation gets at least 10 minutes", identical(as.numeric(built$timeout), 600))
+  r2 <- safely(suppressMessages(cm$custom_model_create(c(cargs, list(confirm = "true")), cp)))
+  check("custom_model: create never replaces a saved version",
+    isTRUE(r2$ok) && grepl("already saved", r2$message, fixed = TRUE) && identical(r2$data$saved$status, "exists"))
+  cm$custom_model_author <- function(...) stop("LLM unavailable.", call. = FALSE)
+  r3 <- safely(suppressMessages(cm$custom_model_create(modifyList(cargs, list(name = "broken", confirm = "true")), cp)))
+  check("custom_model: a failed creation saves nothing",
+    identical(r3$status, "not_created") && !dir.exists(file.path(finn_custom_models_dir(cp), "broken")))
+  cm$custom_model_author <- author_ok
+  check("custom_model: timeout must be positive",
+    errors_with(cm$custom_model_create(c(cargs, list(timeout = "0")), cp), "--timeout must be"))
+  assign("finn_custom_copilot_supported", function() FALSE, envir = common)
+  check("custom_model: Copilot creation needs a finnts that supports it",
+    identical(safely(cm$custom_model_create(cargs, cp))$status, "blocked"))
+  assign("finn_custom_copilot_supported", function() TRUE, envir = common)
+  assign("finn_custom_supported", function(mode = "standard") FALSE, envir = common)
+  check("custom_model: create needs a finnts with custom models", identical(safely(cm$custom_model_create(cargs, cp))$status, "blocked"))
+  assign("finn_custom_supported", function(mode = "standard") TRUE, envir = common)
+  check("custom_model: hierarchy models must be local without drivers",
+    errors_with(cm$custom_model_create(c(cargs, list(forecast_approach = "standard_hierarchy", model_type = "global")), cp),
+      "must be local models without drivers"))
+
+  check("custom_model: template never replaces an examples file",
+    identical(safely(cm$custom_model_template(list(name = "growth"), cp))$status, "exists"))
+  if (has_custom_api && exists("custom_model_examples_template", envir = asNamespace("finnts"), inherits = FALSE)) {
+    tp <- safely(cm$custom_model_template(list(name = "fresh"), cp))
+    check("custom_model: template writes a new examples file",
+      isTRUE(tp$ok) && file.exists(finn_custom_examples_file(cp, "fresh")))
+  }
+
+  run_entry <- function(args) {
+    entry <- new.env(parent = cm)
+    entry$finn_main <- function(fn) fn(args)
+    eval(tail(as.list(parse(file.path(scripts_dir, "custom_model.R"), keep.source = FALSE)), 1)[[1]], entry)
+  }
+  base_args <- list(root = root, project = "Custom")
+  act <- function(...) safely(run_entry(c(base_args, list(...))))
+  lst <- act(action = "list")
+  check("custom_model: list shows saved models and enrollment",
+    isTRUE(lst$ok) && length(lst$data$models) == 1 && identical(lst$data$models[[1]]$name, "growth") &&
+      isTRUE(lst$data$models[[1]]$versions[[1]]$enrolled))
+  shown <- act(action = "show", name = "growth")
+  check("custom_model: show explains the enrolled model", isTRUE(shown$ok) && isTRUE(shown$data$model$enrolled))
+
+  mb <- fake_model("growth", version_id = full_b, created_at = "2024-02-01T00:00:00+0000")
+  finn_custom_save(cp, mb, finn_custom_metadata(mb))
+  versions <- cm$custom_model_versions(cp, "growth")
+  check("custom_model: versions are newest first", identical(versions[[1]]$version, "bbbbbbbbbbbb") && length(versions) == 2)
+  nojson <- finn_custom_model_files(p, "nojson", strrep("d", 64))
+  dir.create(nojson$dir, recursive = TRUE, showWarnings = FALSE)
+  saveRDS(fake_model("nojson", version_id = strrep("d", 64)), nojson$rds)
+  check("custom_model: versions fall back to the model file without metadata",
+    identical(cm$custom_model_versions(p, "nojson")[[1]]$version_id, strrep("d", 64)))
+  check("custom_model: pick needs a saved model", errors_with(cm$custom_model_pick(list(), "x"), "No custom model named"))
+  check("custom_model: pick asks when several versions exist", is.null(cm$custom_model_pick(versions, "growth")))
+  check("custom_model: pick reports an unknown version", errors_with(cm$custom_model_pick(versions, "growth", "c"), "No saved version"))
+  check("custom_model: pick reports an ambiguous version",
+    errors_with(cm$custom_model_pick(list(list(version_id = "abc1"), list(version_id = "abc2")), "m", "abc"), "More than one"))
+  nocfg <- finn_project_paths(root, "NoConfig")
+  finn_ensure_project_dirs(nocfg)
+  check("custom_model: enrollment needs a saved config",
+    errors_with(cm$custom_model_set_enrollment(nocfg, "growth", full_a), "no saved config yet"))
+
+  pick <- act(action = "enroll", name = "growth")
+  check("custom_model: enroll asks which version", identical(pick$status, "needs_input") && length(pick$data$versions) == 2)
+  check("custom_model: enroll asks for consent",
+    identical(act(action = "enroll", name = "growth", version = "bbbb")$status, "needs_confirmation"))
+  en <- act(action = "enroll", name = "growth", version = "bbbb", confirm = "true")
+  check("custom_model: enroll replaces the enrolled version",
+    isTRUE(en$ok) && identical(en$data$enrollment$current, "growth@bbbbbbbbbbbb") &&
+      identical(en$data$enrollment$previous, "growth@aaaaaaaaaaaa"))
+  check("custom_model: show defaults to the enrolled version",
+    identical(act(action = "show", name = "growth")$data$model$version, "bbbbbbbbbbbb"))
+  check("custom_model: unenroll a model that isn't enrolled", identical(act(action = "unenroll", name = "other")$status, "not_enrolled"))
+  check("custom_model: unenroll asks for consent", identical(act(action = "unenroll", name = "growth")$status, "needs_confirmation"))
+  un <- act(action = "unenroll", name = "growth", confirm = "true")
+  saved_cfg <- finn_read_json(file.path(cp$dir, "config.json"))
+  check("custom_model: unenroll removes the entry and keeps the files",
+    isTRUE(un$ok) && !("custom_models" %in% names(saved_cfg)) && identical(saved_cfg$target_variable, "Revenue") &&
+      file.exists(growth_files$rds) && file.exists(finn_custom_model_files(cp, "growth", full_b)$rds))
+  check("custom_model: unknown action", errors_with(run_entry(c(base_args, list(action = "bogus"))),
+    "--action must be list, show, template, create, enroll, or unenroll"))
+
+  skill_md <- paste(readLines(file.path(skill_dir, "SKILL.md"), warn = FALSE), collapse = "\n")
+  check("custom models: SKILL.md routes to custom_model.R and its reference",
+    grepl("custom_model.R", skill_md, fixed = TRUE) && grepl("custom-models.md", skill_md, fixed = TRUE) &&
+      file.exists(file.path(skill_dir, "references", "custom-models.md")))
+}, envir = new.env(parent = cm))
+list2env(custom_saved, envir = common)
+
 # ---- Export ------------------------------------------------------------------------
 ex <- load_functions("export_results.R", common)
 with(ex, {

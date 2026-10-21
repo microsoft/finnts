@@ -2,7 +2,7 @@
 % Please edit documentation in R/agent_copilot.R
 \name{chat_copilot}
 \alias{chat_copilot}
-\title{Use GitHub Copilot CLI as the Finn Agent LLM}
+\title{Use GitHub Copilot CLI as a Finn LLM}
 \usage{
 chat_copilot(model = "auto", command = "copilot", timeout = 120)
 }
@@ -18,9 +18,14 @@ On Windows, prefer the standalone \code{copilot.exe} rather than an npm
 }
 \value{
 A \code{finnts_copilot_chat} environment with \verb{$chat(prompt, echo = FALSE)},
+\verb{$chat_structured(prompt, type, echo = "none", convert = FALSE)},
 \verb{$set_system_prompt(prompt)}, \verb{$get_system_prompt()}, \verb{$get_model()}, and
-\verb{$get_turns()} methods. \verb{$chat()} returns one character string. Successful
-exchanges update in-memory history; failed requests do not.
+\verb{$get_turns()} methods. \verb{$chat()} returns one character string.
+\verb{$chat_structured()} accepts ellmer basic, enum, array and object types
+and returns parsed JSON without vector/data-frame simplification.
+It supports only \code{convert = FALSE}; \code{echo} is \code{"none"}, \code{"text"},
+\code{"output"} or \code{"all"}. Raw JSON Schema and ignored-field types are not
+supported. Successful exchanges update in-memory history; failed requests do not.
 }
 \description{
 Creates a serializable configuration template for isolated Finn Agent
@@ -42,6 +47,13 @@ Only use data approved for GitHub Copilot.
 Repository instructions, hooks, IDE connections, built-in MCP servers, and
 model tools are disabled. Cached Copilot-only logins are not copied into
 the isolated home; use an environment token or \verb{gh auth login} instead.
+
+Use this template with \code{\link[=create_custom_model]{create_custom_model()}} as well as Agent workflows.
+Custom-model authoring also requires ellmer >= 0.4.0 and S7 for response
+types. The adapter requests JSON and checks its shape locally; Copilot CLI
+does not enforce the schema. Invalid responses raise
+\code{finnts_copilot_structured_error} without committing history or retrying.
+The usual custom-model approval and numerical validation gates still apply.
 }
 \examples{
 \dontrun{

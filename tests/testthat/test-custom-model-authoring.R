@@ -64,42 +64,13 @@ test_that("legacy approval delivery values require explicit migration", {
   }
 })
 
-# Small provider-visible examples have independently specified expected values.
-# The second is a zero-valued edge case; neither oracle executes model source.
-author_examples <- function() {
-  history <- data.frame(Date = as.Date(c("2020-01-01", "2020-02-01")), Combo = "example", Target = c(10, 20))
-  request <- data.frame(Date = as.Date("2020-03-01"), Combo = "example")
-  expected <- request
-  expected$.pred <- 15
-  first <- list(
-    name = "ordinary", model_type = "local", history = history, new_data = request, expected = expected, tolerance = 1e-08,
-    edge_case = FALSE, rationale = "(10 + 20) / 2 = 15", outcome = "predictions", expected_error = NULL
-  )
-  second <- first
-  second$name <- "zero"
-  second$history$Target <- c(0, 0)
-  second$expected$.pred <- 0
-  second$edge_case <- TRUE
-  second$rationale <- "The mean of zeros is zero."
-  list(first, second)
-}
-
-# Return a scripted proposal and source with no provider, session or credentials.
-author_proposal <- function() {
-  list(
-    questions = list(), name = "human_mean", interpretation = "Use the mean of historical targets.", parameters_json = "{}",
-    parameter_schema = list(), history_requirements = list(minimum_rows_per_series = 1L, required_lag_periods = integer()),
-    error_policy = list(), validation_properties = character()
-  )
-}
-
-# Return fixed source text; tests deliberately replace entries for repair cases.
-author_source <- function() {
-  list(
-    status = "candidate", conflict = "", fit_body = "mean(data$Target)", predict_body = "rep(object, nrow(new_data))",
-    helpers = list()
-  )
-}
+test_that("native JSON empty property arrays retain the empty business-invariant contract", {
+  empty <- jsonlite::parse_json("[]", simplifyVector = FALSE)
+  expected <- custom_author_behavior_contract(list(), character(), author_examples(), "local")
+  expect_identical(custom_author_behavior_contract(list(), empty, author_examples(), "local"), expected)
+  expect_error(custom_author_behavior_contract(list(), list(NULL), author_examples(), "local"),
+    "Unsupported validation property")
+})
 
 test_that("authoring prompts separate reference demonstrations from the actual request", {
   skip_if_not_installed("ellmer", minimum_version = "0.4.0")
@@ -2067,7 +2038,8 @@ test_that("provider failures retain only bounded typed diagnostics", {
   skip_if_not_installed("ellmer", minimum_version = "0.4.0")
   cases <- list(
     httr2_http_429 = "rate_limit", httr2_http_401 = "authentication", httr2_http_503 = "server", httr2_failure = "transport",
-    curl_error_operation_timedout = "timeout", simpleError = "unknown"
+    curl_error_operation_timedout = "timeout", simpleError = "unknown",
+    finnts_copilot_transport_error = "transport", finnts_copilot_structured_error = "structured_output"
   )
   for (kind in names(cases)) {
     original <- structure(list(message = "PRIVATE_TOKEN and PRIVATE_RESPONSE", call = NULL, body = "PRIVATE_BODY", headers = list(Authorization = "PRIVATE_SECRET")),

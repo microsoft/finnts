@@ -21,8 +21,8 @@ Speak in plain finance language (series, horizon, accuracy, back test), not R ja
    own R code against saved outputs.
 3. **Confirm before anything consequential.** Ask the user before installing software,
    choosing or moving the storage folder, changing a setting or data value, starting a
-   fresh run or a new Agent version, or cancelling a run. Pass `--confirm=true` only after
-   the user says yes.
+   fresh run or a new Agent version, cancelling a run, or creating, enrolling, or
+   unenrolling a custom model. Pass `--confirm=true` only after the user says yes.
 4. **Never delete files.** No script deletes anything; do not delete project, run, or
    `finn_artifacts` files yourself. Old runs and Agent versions are history.
 5. **Resume by default.** Rerunning `run_forecast.R` picks up an unfinished run with the
@@ -81,6 +81,8 @@ Runs launch in the background and return immediately; do not block the chat wait
 | Review or change settings | `validate_config.R --project=<name>` (add `--run_type=standard\|iterate\|update` once the user picks), show `data.settings_review` exactly as written; for a change, validate a draft with `--config=<draft>` and show `data.settings_changes`; `--save=true` after the user replies `run` |
 | Run a standard forecast | `run_forecast.R --project=<name> --mode=standard` |
 | Run the Agent (AI model search) | `run_forecast.R --project=<name> --mode=iterate` |
+| Create a custom model from a rule in plain words | `custom_model.R --project=<name> --action=template --name=<model>` for worked examples, then `--action=create`; explain that its generated R code runs unsandboxed and get a yes before `--confirm=true` ([references/custom-models.md](references/custom-models.md)) |
+| List, explain, or choose which custom models runs use | `custom_model.R --project=<name> --action=list`, `--action=show`, or (after the user agrees) `--action=enroll` / `--action=unenroll --confirm=true`; enrolled models are reused by every standard, iterate, and update run ([references/custom-models.md](references/custom-models.md)) |
 | Refresh with new actuals | Same run type as the project's last forecast: `data.run.launch` from `validate_config.R` (`--mode=update` for Agent projects, `--mode=standard` for standard ones) |
 | Resume a stopped run | `run_forecast.R --project=<name> --mode=<same mode>` |
 | Check progress | `run_status.R --project=<name>` (stage and % complete); `--all=true` for every active run on this computer |
@@ -191,6 +193,7 @@ next step; scripts and instructions may have changed.
   finn_artifacts/   finnts working files (the finnts `path=`); do not edit
   runs/<run_id>/    run state, config snapshot, log
   analysis/         saved free-form analysis results
+  custom_models/    approved custom models and their worked examples; do not edit
   config.json       project settings
   project.json      project bookkeeping (latest Agent version, request id)
 ```

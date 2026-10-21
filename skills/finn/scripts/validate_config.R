@@ -229,12 +229,13 @@ validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
 #' Settings review for user confirmation
 #'
 #' Renders an intro naming the run type, `Data check`, a `Forecast configuration`
-#' table, `Warnings`, `Suggestions`, `On this computer`, and a fixed footer.
+#' table, a `Custom models` table when custom models are enrolled, `Warnings`,
+#' `Suggestions`, `On this computer`, and a fixed footer.
 #' Values use config.json notation.
 #'
 #' @param cfg Merged, validated config.
 #' @param facts Data facts from [finn_check_config()], optionally with
-#'   `n_columns`.
+#'   `n_columns`; `custom_models` lists enrolled custom models.
 #' @param plan Parallel plan from [finn_plan_with_others()].
 #' @param rec Result of [finn_recommend_settings()], or NULL.
 #' @param warnings Non-blocking warnings to list.
@@ -286,6 +287,7 @@ validate_settings_review <- function(cfg, facts, plan, rec = NULL, warnings = ch
   }, character(1), USE.NAMES = FALSE)
   sections <- c(sections, paste(c("### Forecast configuration", "",
     "| Input | Recommended value | What it means for your forecast |", "|---|---|---|", rows), collapse = "\n"))
+  sections <- c(sections, validate_custom_models_section(facts$custom_models, run_type))
 
   if (length(warnings)) {
     sections <- c(sections, paste(c("### Warnings", "", paste0("- ", vapply(warnings, validate_escape_cell, character(1), USE.NAMES = FALSE))), collapse = "\n"))
@@ -315,9 +317,38 @@ validate_settings_review <- function(cfg, facts, plan, rec = NULL, warnings = ch
   paste(sections, collapse = "\n\n")
 }
 
+#' Custom models section of the settings review
+#'
+#' @param models Summaries from [finn_check_custom_models()].
+#' @param run_type Run type under review.
+#' @return Markdown string, or NULL when no custom models are enrolled.
+validate_custom_models_section <- function(models, run_type = "standard") {
+  if (!length(models)) {
+    return(NULL)
+  }
+  short <- function(x) {
+    x <- trimws(gsub("\\s+", " ", paste(x %||% "", collapse = " ")))
+    if (nchar(x) > 200) paste0(substr(x, 1, 197), "...") else x
+  }
+  list_text <- function(x) if (length(unlist(x))) paste(unlist(x), collapse = ", ") else "none"
+  rows <- vapply(models, function(m) {
+    sprintf("| `%s` | `%s` | %s | %s | %s |", m$name, m$version, validate_escape_cell(list_text(m$model_type)),
+      validate_escape_cell(list_text(m$drivers)), validate_escape_cell(short(m$interpretation)))
+  }, character(1))
+  note <- if (identical(run_type, "standard")) {
+    "Saved, approved custom models from this project. They train and compete with Finn's models in this run."
+  } else {
+    paste("Saved, approved custom models from this project. The Agent tries them alongside its own models;",
+      "later iterate and update runs of this Agent version must use the same ones.")
+  }
+  paste(c("### Custom models", "", note, "",
+    "| Model | Version | Type | Drivers | What it does |", "|---|---|---|---|---|", rows), collapse = "\n")
+}
+
 #' Revision view listing only the settings that changed
 #'
-#' Renders a `Changes` table with previous and new values, current warnings,
+#' Renders a `Changes` table with previous and new values (including the
+#' enrolled custom models), current warnings,
 #' and a footer offering the full configuration.
 #'
 #' @param previous Merged config the user reviewed before (the saved config).
@@ -338,6 +369,13 @@ validate_settings_changes <- function(previous, cfg, facts = list(), warnings = 
       rows <- c(rows, sprintf("| `%s` | `%s` | `%s` | %s |", key, validate_escape_cell(old), validate_escape_cell(new),
         validate_escape_cell(validate_field_explanation(key, cfg, facts))))
     }
+  }
+  custom_old <- finn_custom_labels(previous)
+  custom_new <- finn_custom_labels(cfg)
+  if (!identical(custom_old, custom_new)) {
+    rows <- c(rows, sprintf("| `custom_models` | %s | %s | %s |", validate_escape_cell(finn_custom_label_text(custom_old)),
+      validate_escape_cell(finn_custom_label_text(custom_new)),
+      "Saved custom models this project's runs train alongside Finn's models (`name@version`)."))
   }
   sections <- if (length(rows)) {
     c("Updated the settings.", paste(c("### Changes", "",
@@ -400,6 +438,13 @@ finn_main(function(args) {
       data$warnings <- c(data$warnings, sprintf("The file has no actuals newer than your last Agent forecast (`%s`), so there is nothing new to update with.",
         next_run$last_end %||% "unknown"))
     }
+    changed <- next_run$custom_models_changed
+    if (!is.null(changed) && !identical(next_run$situation, "resume")) {
+      data$warnings <- c(data$warnings, sprintf(paste(
+        "Agent update must use the same custom models as your last Agent forecast (%s), but this config enrolls %s.",
+        "Restore them with custom_model.R --action=enroll or --action=unenroll, or start a new Agent version instead."
+      ), finn_custom_label_text(changed$previous), finn_custom_label_text(changed$new)))
+    }
   }
   cont <- next_run$continuation
   iterate_current <- identical(run_type, "iterate") && identical(next_run$situation, "agent_current") && is.list(cont)
@@ -436,6 +481,7 @@ finn_main(function(args) {
     num_cores = if (is.null(args$num_cores)) NULL else suppressWarnings(as.numeric(args$num_cores))
   )
   plan <- sizing$plan
+  if (!identical(run_type, "standard")) plan <- finn_custom_agent_plan(plan, cfg, finn_data_gb(checked$data), checked$facts$n_series)
   if (!sizing$fits) {
     plan$reason <- paste(plan$reason, "Other Finn runs are using this computer now, so this run cannot start until one finishes.")
   }
