@@ -1546,6 +1546,33 @@ finn_hash <- function(x) {
   digest::digest(object = x, algo = "xxhash64")
 }
 
+#' Fingerprint of the settings that change forecast results
+#'
+#' Excludes fields that only affect speed or bookkeeping, so changing the
+#' parallel setting does not block a resume. Agent LLM settings do participate:
+#' changing them requires confirmation because resumes use the saved snapshot.
+#' Run states store this value as `config_hash`, so its output must stay
+#' stable for existing projects.
+#'
+#' @param cfg Config list.
+#' @return Hash string.
+finn_config_hash <- function(cfg) {
+  keep <- cfg
+  keep$parallel <- NULL
+  keep$project_name <- NULL
+  keep$data$file <- basename(keep$data$file %||% "")
+  if (identical(keep$mode, "standard")) keep$agent$llm <- NULL
+  finn_hash(finn_to_json(keep))
+}
+
+#' MD5 of the input data file
+#'
+#' @param file Data file path.
+#' @return Hash string, or NA when the file cannot be read.
+finn_data_md5 <- function(file) {
+  tryCatch(unname(tools::md5sum(file)), error = function(e) NA_character_)
+}
+
 #' File names in one artifact folder for a project and run
 #'
 #' Lists the folder once and filters by the hashed project/run prefix.
@@ -2314,13 +2341,136 @@ finn_settings_drift <- function(prior, cfg) {
   out
 }
 
+#' Classify an iterate launch against an earlier iterate run's settings
+#'
+#' `iterate_forecast()` treats `max_iter` as the total number of iterations
+#' per search (the global search and each series' local search) for one Agent
+#' version, and uses `weighted_mape_goal` to pick which series reopen and when
+#' a search stops. On the same Agent version, then, a higher `max_iter` runs up
+#' to the new total; a stricter goal with the same `max_iter` reopens only
+#' series whose best model is global and that miss the new goal; and a lower
+#' `max_iter` or a looser goal alone runs nothing new. Every other setting
+#' fingerprinted by [finn_config_hash()] must match to stay on that version.
+#'
+#' @param prior Config saved with the earlier iterate run.
+#' @param cfg Current config.
+#' @return List with `kind` ("continue", "unchanged", "looser_goal_only",
+#'   "lower_max_iter", or "other_changes"), `partial` (TRUE when only a
+#'   stricter goal continues with the same `max_iter`), `goal_changed`,
+#'   `max_iter` and `weighted_mape_goal` (each with `previous` and `new`), and
+#'   `changed` (differing settings other than those two, from
+#'   [finn_settings_drift()]; may be empty when the difference is in a setting
+#'   that function does not list).
+finn_iterate_continuation <- function(prior, cfg) {
+  prior <- finn_merge_config(prior)
+  cfg <- finn_merge_config(cfg)
+  num <- function(v) if (is.null(v) || !length(v)) NA_real_ else suppressWarnings(as.numeric(v[[1]]))
+  old_max <- num(prior$agent$max_iter)
+  new_max <- num(cfg$agent$max_iter)
+  old_goal <- num(prior$agent$weighted_mape_goal)
+  new_goal <- num(cfg$agent$weighted_mape_goal)
+  aligned <- prior
+  aligned$agent$max_iter <- cfg$agent$max_iter
+  aligned$agent$weighted_mape_goal <- cfg$agent$weighted_mape_goal
+  # Goals are decimals saved through JSON, so compare with a small tolerance.
+  tol <- 1e-9
+  stricter <- isTRUE(new_goal < old_goal - tol)
+  looser <- isTRUE(new_goal > old_goal + tol)
+  kind <- if (!identical(finn_config_hash(aligned), finn_config_hash(cfg)) || is.na(old_max) || is.na(new_max)) {
+    "other_changes"
+  } else if (new_max > old_max) {
+    "continue"
+  } else if (new_max < old_max) {
+    "lower_max_iter"
+  } else if (stricter) {
+    "continue"
+  } else if (looser) {
+    "looser_goal_only"
+  } else {
+    "unchanged"
+  }
+  drift <- finn_settings_drift(prior, cfg)
+  list(kind = kind, partial = identical(kind, "continue") && identical(new_max, old_max),
+    goal_changed = stricter || looser,
+    max_iter = list(previous = old_max, new = new_max),
+    weighted_mape_goal = list(previous = old_goal, new = new_goal),
+    changed = drift[!grepl("^(max_iter|weighted_mape_goal) ", drift)])
+}
+
+#' Plain-language explanation of an iterate continuation for the review
+#'
+#' @param cont Result of [finn_iterate_continuation()].
+#' @param version Agent version label of the earlier iterate run.
+#' @return One string.
+finn_continuation_why <- function(cont, version) {
+  old_max <- format(cont$max_iter$previous)
+  new_max <- format(cont$max_iter$new)
+  goal <- sprintf("`%s` -> `%s`", format(cont$weighted_mape_goal$previous), format(cont$weighted_mape_goal$new))
+  switch(cont$kind,
+    continue = if (cont$partial) {
+      sprintf(paste(
+        "Launching iterate continues version %s with a stricter weighted MAPE goal (%s). With `max_iter` still `%s`,",
+        "only series whose best model is global and that miss the new goal reopen; set `max_iter` above `%s` to search longer."
+      ), version, goal, old_max, old_max)
+    } else {
+      paste0(sprintf(paste(
+        "Launching iterate continues version %s: `max_iter` `%s` -> `%s` is a total per search,",
+        "so each search runs only the iterations it has left up to `%s`."
+      ), version, old_max, new_max, new_max), if (cont$goal_changed) sprintf(" The weighted MAPE goal changes %s.", goal) else "")
+    },
+    looser_goal_only = sprintf(paste(
+      "A looser weighted MAPE goal (%s) alone runs nothing new on version %s.",
+      "To search longer, set `max_iter` above `%s`: the same Agent version continues and only the extra iterations run."
+    ), goal, version, old_max),
+    lower_max_iter = paste0(sprintf(paste(
+      "Version %s already ran up to `%s` iterations per search, and a lower `max_iter` (`%s`) can't undo iterations,",
+      "so nothing new would run. Set `max_iter` above `%s` to continue that Agent version."
+    ), version, old_max, new_max, old_max),
+    if (cont$goal_changed) sprintf(" Keep `max_iter` at `%s` or higher for the goal change to apply.", old_max) else ""),
+    other_changes = sprintf(paste(
+      "Other settings differ from it (%s), so launching iterate needs a new Agent version, which needs your confirmation;",
+      "earlier versions are kept. Only `max_iter` and `weighted_mape_goal` can change on the same version."
+    ), if (length(cont$changed)) paste(sprintf("`%s`", cont$changed), collapse = ", ") else "forecast settings"),
+    sprintf(paste(
+      "To search longer, set `max_iter` above `%s`: the same Agent version continues and only the extra iterations run.",
+      "A stricter `weighted_mape_goal` also continues it, but reopens only series whose best model is global and that miss the new goal."
+    ), old_max)
+  )
+}
+
+#' Budget or goal revision for a stopped iterate run
+#'
+#' A stopped iterate run can take a revised `max_iter` or `weighted_mape_goal`
+#' on the same Agent version: the launcher starts a new skill run that reuses
+#' the stopped run's request id, so finished iterations are kept. Allowed only
+#' when the input file and every other setting are unchanged and `max_iter`
+#' is not lower; anything else keeps the usual resume-or-start-fresh
+#' confirmation.
+#'
+#' @param latest State of the latest run of the mode, with `effective_status`.
+#' @param cfg Current config.
+#' @return Result of [finn_iterate_continuation()] when the revision applies,
+#'   otherwise NULL.
+finn_stopped_iterate_revision <- function(latest, cfg) {
+  saved <- latest[["config", exact = TRUE]]
+  if (!identical(latest$mode, "iterate") || !isTRUE(latest$effective_status %in% c("interrupted", "failed", "cancelled")) ||
+    !is.list(saved) || is.null(latest$request_id) || !identical(latest$data_md5, finn_data_md5(cfg$data$file))) {
+    return(NULL)
+  }
+  cont <- finn_iterate_continuation(saved, cfg)
+  if (cont$kind %in% c("continue", "looser_goal_only")) cont
+}
+
 #' Recommend the next run type from a project's run history
 #'
 #' Read-only. Resumes an unfinished latest run; otherwise refreshes on the
 #' project's track (Agent projects with Agent update, standard projects with
 #' a standard run) when the file has actuals past the last forecast. With no
 #' new actuals, an Agent project can continue its search on the same Agent
-#' version by raising `max_iter`. A project with no runs follows the config
+#' version by raising `max_iter` or tightening `weighted_mape_goal`
+#' ([finn_iterate_continuation()]). A stopped iterate run whose only changes
+#' are those two settings continues with them ([finn_stopped_iterate_revision()]).
+#' A project with no runs follows the config
 #' mode, so the size-based advice in [finn_recommend_settings()] still applies.
 #' When `hist_end_date` already leaves out a latest period that has not ended,
 #' the actuals count only through the last complete period.
@@ -2332,9 +2482,12 @@ finn_settings_drift <- function(prior, cfg) {
 #'   "agent_refresh", "agent_current", "standard_refresh", or
 #'   "standard_current"), `why` (or NULL), `launch` (run_forecast.R arguments),
 #'   `alternative` (list with `run_type`, `label`, `reason`, `launch`, or
-#'   NULL), `data_end`, `last_end`, `prior_max_iter`, `last_agent_version`,
-#'   `settings_changes` (from [finn_settings_drift()] against the last Agent
-#'   forecast), and `recommendations` (each `key`, `value`, `reason`).
+#'   NULL), `data_end`, `last_end`, `prior_max_iter`,
+#'   `prior_weighted_mape_goal`, `last_agent_version`, `continuation` (from
+#'   [finn_iterate_continuation()] when iterate would continue or reopen an
+#'   Agent version, else NULL), `settings_changes` (from
+#'   [finn_settings_drift()] against the last Agent forecast), and
+#'   `recommendations` (each `key`, `value`, `reason`).
 finn_next_run <- function(paths, cfg, facts = list()) {
   runs <- Filter(function(s) !identical(s$effective_status, "unreadable"), finn_list_runs(paths))
   last_agent <- (finn_read_project(paths) %||% list())$last_agent
@@ -2351,6 +2504,7 @@ finn_next_run <- function(paths, cfg, facts = list()) {
   last_done <- if (length(completed)) completed[[1]]
   out <- list(run_type = if (identical(cfg$mode, "agent")) "iterate" else "standard", situation = "new_project",
     why = NULL, alternative = NULL, data_end = data_end, last_end = NULL, prior_max_iter = NULL,
+    prior_weighted_mape_goal = NULL, continuation = NULL,
     last_agent_version = if (agent_done) last_agent$agent_version, settings_changes = character(),
     recommendations = list())
   later <- function(a, b) !is.null(a) && !is.null(b) && a > as.character(b)
@@ -2378,6 +2532,16 @@ finn_next_run <- function(paths, cfg, facts = list()) {
     out$situation <- "resume"
     out$why <- sprintf("Run `%s` (%s) stopped before finishing (%s). Running it again resumes where it stopped with its saved settings.",
       latest$run_id, finn_run_type_label(latest$mode), latest$effective_status)
+    revised <- finn_stopped_iterate_revision(latest, cfg)
+    if (!is.null(revised)) {
+      out$continuation <- revised
+      out$why <- sprintf(paste(
+        "Run `%s` (%s) stopped before finishing (%s). Running it again continues the same Agent version and its finished",
+        "iterations with your revised settings: `max_iter` `%s` -> `%s`, weighted MAPE goal `%s` -> `%s`."
+      ), latest$run_id, finn_run_type_label(latest$mode), latest$effective_status,
+      format(revised$max_iter$previous), format(revised$max_iter$new),
+      format(revised$weighted_mape_goal$previous), format(revised$weighted_mape_goal$new))
+    }
   } else if (agent_done && (is.null(last_done) || !identical(last_done$mode, "standard"))) {
     out$last_end <- last_agent$hist_end_date
     version <- last_agent$agent_version %||% "?"
@@ -2391,16 +2555,16 @@ finn_next_run <- function(paths, cfg, facts = list()) {
       out$alternative <- new_version
     } else {
       out$prior_max_iter <- prior$config$agent$max_iter
+      out$prior_weighted_mape_goal <- prior$config$agent$weighted_mape_goal
       out$run_type <- "iterate"
       out$situation <- "agent_current"
-      out$why <- if (identical(last_agent$mode, "iterate") && !is.null(out$prior_max_iter)) {
-        sprintf(paste(
-          "Your last Agent forecast (version %s) already uses actuals through `%s`. To search longer, set `max_iter` above `%s`:",
-          "the same Agent version continues and only the extra iterations run."
-        ), version, last_agent$hist_end_date %||% data_end, out$prior_max_iter)
+      current <- sprintf("Your last Agent forecast (version %s) already uses actuals through `%s`.",
+        version, last_agent$hist_end_date %||% data_end)
+      out$why <- if (identical(last_agent$mode, "iterate") && is.list(prior$config)) {
+        out$continuation <- finn_iterate_continuation(prior$config, cfg)
+        paste(current, finn_continuation_why(out$continuation, version))
       } else {
-        sprintf("Your last Agent forecast (version %s) already uses actuals through `%s`. Add newer actuals to refresh it with Agent update.",
-          version, last_agent$hist_end_date %||% data_end)
+        paste(current, "Add newer actuals to refresh it with Agent update.")
       }
       out$alternative <- new_version
     }

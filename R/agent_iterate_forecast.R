@@ -147,8 +147,16 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   identically enrolled parent. Changed enrollment or series requires iteration.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
-#' @param max_iter Maximum number of iterations for forecast optimization.
-#' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve for each time series
+#' @param max_iter Maximum number of iterations for forecast optimization. This
+#'   is a total per search (the global search and each time series' local
+#'   search) for the Agent version, not a number of extra iterations: calling
+#'   again on the same Agent run with a higher value runs only the remaining
+#'   iterations, and a lower value runs nothing new.
+#' @param weighted_mape_goal Weighted MAPE goal the agent is trying to achieve
+#'   for each time series. Series that already meet it are not searched again,
+#'   and a search can stop early once it is reached. On the same Agent run, a
+#'   stricter goal reopens time series whose best model is global and that
+#'   miss the new goal.
 #' @param parallel_processing Default of NULL runs no parallel processing and
 #'   forecasts each individual time series one after another. 'local_machine'
 #'   leverages all cores on current machine Finn is running on. 'spark'

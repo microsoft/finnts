@@ -17,9 +17,17 @@ iterate_forecast(
 \arguments{
 \item{agent_info}{Agent info from \code{set_agent_info()}}
 
-\item{max_iter}{Maximum number of iterations for forecast optimization.}
+\item{max_iter}{Maximum number of iterations for forecast optimization. This
+is a total per search (the global search and each time series' local
+search) for the Agent version, not a number of extra iterations: calling
+again on the same Agent run with a higher value runs only the remaining
+iterations, and a lower value runs nothing new.}
 
-\item{weighted_mape_goal}{Weighted MAPE goal the agent is trying to achieve for each time series}
+\item{weighted_mape_goal}{Weighted MAPE goal the agent is trying to achieve
+for each time series. Series that already meet it are not searched again,
+and a search can stop early once it is reached. On the same Agent run, a
+stricter goal reopens time series whose best model is global and that
+miss the new goal.}
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and
 forecasts each individual time series one after another. 'local_machine'

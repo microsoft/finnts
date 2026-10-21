@@ -44,7 +44,7 @@ recommend standard or Agent iterate. For existing projects it follows the histor
 |---|---|---|
 | Latest run stopped, failed, or was cancelled | Resume it with the same run type | none |
 | Finished Agent forecast, newer actuals in the file | Agent update | Agent iterate as a new Agent version |
-| Finished Agent forecast, no newer actuals | Agent iterate; a higher `agent.max_iter` continues the same Agent version | Agent iterate as a new Agent version |
+| Finished Agent forecast, no newer actuals | Agent iterate; a higher `agent.max_iter` or a stricter `agent.weighted_mape_goal` continues the same Agent version | Agent iterate as a new Agent version |
 | Finished standard forecast | Standard | Agent iterate |
 
 The review warns when an update has nothing to build on or no newer actuals, and lists

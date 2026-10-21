@@ -28,7 +28,7 @@ config with `--config=<draft>` and show `data.settings_changes`. Key settings:
 | `clean_outliers`, `clean_missing_values`, `negative_forecast` | data cleaning and sign rules |
 | `parallel` | `auto` (skill picks local or inner parallelism) or `none` |
 | `agent.llm` | AI model for Agent runs (setup.md) |
-| `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches and its accuracy target |
+| `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches (a total per search for the Agent version) and its accuracy target |
 
 ## Choosing settings by size
 

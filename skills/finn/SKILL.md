@@ -26,8 +26,9 @@ Speak in plain finance language (series, horizon, accuracy, back test), not R ja
 4. **Never delete files.** No script deletes anything; do not delete project, run, or
    `finn_artifacts` files yourself. Old runs and Agent versions are history.
 5. **Resume by default.** Rerunning `run_forecast.R` picks up an unfinished run with the
-   same run id and the same Agent version. Fresh starts need the user's OK
-   ([references/runs-and-restarts.md](references/runs-and-restarts.md)).
+   same run id and the same Agent version. A saved higher `agent.max_iter` or stricter
+   `agent.weighted_mape_goal` continues the last Agent version. Fresh starts need the
+   user's OK ([references/runs-and-restarts.md](references/runs-and-restarts.md)).
 6. **Every script prints one JSON object** with `ok`, `status`, `message`, `data`, and
    `next_actions`. Read `status` and follow `next_actions`; relay `message` in plain words.
 7. Never print, store, or commit API keys. LLM keys come from environment variables only.

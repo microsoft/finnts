@@ -83,7 +83,8 @@ validate_escape_cell <- function(x) {
 #' @param cfg Merged config.
 #' @param facts Data facts from [finn_check_config()].
 #' @param run Result of [validate_run_info()], or NULL. Adds how to continue
-#'   the last Agent search when `max_iter` is shown for an Agent iterate run.
+#'   the last Agent search when `max_iter` or `weighted_mape_goal` is shown
+#'   for an Agent iterate run that can continue the current Agent version.
 #' @return Explanation sentence(s).
 validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
   text <- switch(key,
@@ -112,7 +113,7 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
     clean_outliers = "Controls whether detected target outliers are replaced.",
     clean_missing_values = "Controls whether missing target values are imputed.",
     allow_hierarchical_forecast = "Lets the Agent try hierarchical forecasts that add up across series.",
-    max_iter = "The maximum number of Agent optimization iterations.",
+    max_iter = "The maximum number of Agent optimization iterations per search (the global search and each series' search); a total for the Agent version, not extra iterations.",
     weighted_mape_goal = "The target weighted MAPE expressed as a decimal, such as `0.03` for 3%; the Agent can stop early once it is reached.",
     llm = "The AI provider and model the Agent uses.",
     date_column = "The input column that holds dates.",
@@ -138,10 +139,23 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
       "Kept `false` for standard runs unless you ask for ensembles."
     })
   } else if (identical(key, "max_iter") && !is.null(run$prior_max_iter)) {
-    text <- paste(text, sprintf(
-      "Your last Agent search ran up to `%s`; a higher value continues that Agent version and runs only the extra iterations.",
-      run$prior_max_iter
-    ))
+    lower <- isTRUE(suppressWarnings(as.numeric(value) < as.numeric(run$prior_max_iter)))
+    text <- paste(text, if (lower) {
+      sprintf(paste(
+        "Your last Agent search ran up to `%s`; a lower value can't undo iterations, so nothing new would run.",
+        "Set it above `%s` to continue that Agent version."
+      ), run$prior_max_iter, run$prior_max_iter)
+    } else {
+      sprintf(
+        "Your last Agent search ran up to `%s`; a higher value continues that Agent version and runs only the extra iterations.",
+        run$prior_max_iter
+      )
+    })
+  } else if (identical(key, "weighted_mape_goal") && !is.null(run$prior_weighted_mape_goal)) {
+    text <- paste(text, sprintf(paste(
+      "Your last Agent search used `%s`. A stricter (lower) goal continues that Agent version and reopens series whose best",
+      "model is global and miss it; a looser goal alone runs nothing new."
+    ), run$prior_weighted_mape_goal))
   }
   text
 }
@@ -182,7 +196,8 @@ validate_new_project_alternative <- function(run_type, rec = NULL) {
 #' @param rec Result of [finn_recommend_settings()], or NULL.
 #' @return List with `run_type`, `label`, `hint`, `situation`, `why`,
 #'   `alternative`, `launch`, `recommended_run_type`, and `prior_max_iter`
-#'   (set only when an iterate run can continue the current Agent version).
+#'   and `prior_weighted_mape_goal` (set only when an iterate run can continue
+#'   the current Agent version).
 validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
   recommended <- next_run$run_type
   situation <- next_run$situation
@@ -207,7 +222,8 @@ validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
   list(run_type = run_type, label = finn_run_type_label(run_type), hint = finn_run_type_hint(run_type, cfg),
     situation = situation, why = why, alternative = alternative, launch = launch,
     recommended_run_type = recommended,
-    prior_max_iter = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_max_iter)
+    prior_max_iter = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_max_iter,
+    prior_weighted_mape_goal = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_weighted_mape_goal)
 }
 
 #' Settings review for user confirmation
@@ -385,13 +401,32 @@ finn_main(function(args) {
         next_run$last_end %||% "unknown"))
     }
   }
-  if (run_type %in% c("update", "iterate") && length(next_run$settings_changes) &&
+  cont <- next_run$continuation
+  iterate_current <- identical(run_type, "iterate") && identical(next_run$situation, "agent_current") && is.list(cont)
+  settings_changes <- next_run$settings_changes
+  if (iterate_current && !identical(cont$kind, "other_changes")) {
+    # Budget and goal changes are the supported way to continue this version.
+    settings_changes <- settings_changes[!grepl("^(max_iter|weighted_mape_goal) ", settings_changes)]
+  }
+  if (run_type %in% c("update", "iterate") && length(settings_changes) &&
     next_run$situation %in% c("agent_refresh", "agent_current")) {
     data$warnings <- c(data$warnings, paste0(
       sprintf("These settings differ from your last Agent forecast (version %s): ", next_run$last_agent_version %||% "?"),
-      paste(sprintf("`%s`", next_run$settings_changes), collapse = ", "),
-      if (identical(run_type, "update")) ". The update will ask you to confirm them; for big changes a new Agent iterate version may fit better." else "."
+      paste(sprintf("`%s`", settings_changes), collapse = ", "),
+      if (identical(run_type, "update")) {
+        ". The update will ask you to confirm them; for big changes a new Agent iterate version may fit better."
+      } else if (iterate_current && identical(cont$kind, "other_changes")) {
+        ". Only `max_iter` and `weighted_mape_goal` can change on the same Agent version, so this needs a new Agent version, which needs your confirmation."
+      } else {
+        "."
+      }
     ))
+  }
+  if (iterate_current && identical(cont$kind, "lower_max_iter")) {
+    data$warnings <- c(data$warnings, sprintf(paste(
+      "`max_iter` (`%s`) is lower than the `%s` your last Agent search already ran, so nothing new would run.",
+      "Set it above `%s` to continue that Agent version."
+    ), format(cont$max_iter$new), format(cont$max_iter$previous), format(cont$max_iter$previous)))
   }
   global <- cfg$run_global_models %||% finn_default_global_models(cfg$date_type)
   claimed <- finn_claimed_resources(paths$root, exclude_project = paths$name)

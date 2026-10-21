@@ -860,6 +860,11 @@ with(common, {
       has(cont, "Your last Agent search ran up to `3`; a higher value continues that Agent version"))
     check("settings review: max_iter has no continue note for a new project",
       !has(agent_review, "Your last Agent search"))
+    lower_review <- vc$validate_settings_review(modifyList(agent, list(agent = list(max_iter = 2))), facts, list(),
+      run = list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3, prior_weighted_mape_goal = 0.05))
+    check("settings review: lower max_iter and the prior goal are explained",
+      has(lower_review, "a lower value can't undo iterations, so nothing new would run. Set it above `3`") &&
+        has(lower_review, "Your last Agent search used `0.05`. A stricter (lower) goal continues that Agent version"))
 
     nr_new <- list(run_type = "standard", situation = "new_project", launch = "--mode=standard")
     ri <- vc$validate_run_info(nr_new, "standard", config, small)
@@ -990,19 +995,19 @@ if (requireNamespace("finnts", quietly = TRUE)) {
 launch <- load_functions("run_forecast.R", common)
 with(launch, {
   base_cfg <- finn_merge_config(list(project_name = "Demo", combo_variables = "Region", target_variable = "Revenue", date_type = "month", forecast_horizon = 6))
-  h <- launch_config_hash(base_cfg)
-  check("hash ignores parallel", identical(h, launch_config_hash(modifyList(base_cfg, list(parallel = "none")))))
-  check("hash ignores LLM model", identical(h, launch_config_hash(modifyList(base_cfg, list(agent = list(llm = list(model = "other")))))))
+  h <- finn_config_hash(base_cfg)
+  check("hash ignores parallel", identical(h, finn_config_hash(modifyList(base_cfg, list(parallel = "none")))))
+  check("hash ignores LLM model", identical(h, finn_config_hash(modifyList(base_cfg, list(agent = list(llm = list(model = "other")))))))
   check("hash ignores data folder", identical(
-    launch_config_hash(modifyList(base_cfg, list(data = list(file = "C:/a/data.csv")))),
-    launch_config_hash(modifyList(base_cfg, list(data = list(file = "D:/b/data.csv"))))
+    finn_config_hash(modifyList(base_cfg, list(data = list(file = "C:/a/data.csv")))),
+    finn_config_hash(modifyList(base_cfg, list(data = list(file = "D:/b/data.csv"))))
   ))
-  check("hash tracks horizon", !identical(h, launch_config_hash(modifyList(base_cfg, list(forecast_horizon = 12)))))
+  check("hash tracks horizon", !identical(h, finn_config_hash(modifyList(base_cfg, list(forecast_horizon = 12)))))
   agent_cfg <- modifyList(base_cfg, list(mode = "agent"))
   for (change in list(list(model = "other"), list(provider = "openai"),
       list(command = "other-cli"), list(timeout = 99), list(api_key_env = "OTHER_KEY"))) {
     check(paste("Agent hash tracks LLM", names(change)),
-      !identical(launch_config_hash(agent_cfg), launch_config_hash(modifyList(agent_cfg, list(agent = list(llm = change))))))
+      !identical(finn_config_hash(agent_cfg), finn_config_hash(modifyList(agent_cfg, list(agent = list(llm = change))))))
   }
   check("config mode mapping", identical(launch_config_mode("standard"), "standard") && identical(launch_config_mode("update"), "agent"))
 
@@ -1019,7 +1024,7 @@ with(launch, {
   rp <- finn_run_paths(paths, "std-20240101-000000")
   finn_update_state(rp,
     run_id = rp$id, mode = "standard", status = "failed", created_at = finn_now(),
-    config_hash = launch_config_hash(cfg), data_md5 = launch_data_md5(data_file)
+    config_hash = finn_config_hash(cfg), data_md5 = finn_data_md5(data_file)
   )
   check("failed run is listed", length(finn_list_runs(paths)) == 1 && identical(finn_list_runs(paths)[[1]]$effective_status, "failed"))
   d1 <- launch_decide(paths, "standard", cfg, list(), list())
@@ -1036,7 +1041,7 @@ with(launch, {
     agent_run <- finn_run_paths(agent_paths, "agent-old")
     finn_update_state(agent_run, run_id = agent_run$id, mode = "iterate", status = "failed",
       created_at = finn_now(), config = saved, config_hash = "old-fingerprint-excluding-llm",
-      data_md5 = launch_data_md5(data_file))
+      data_md5 = finn_data_md5(data_file))
     check("legacy Agent snapshot resumes unchanged despite older hash",
       identical(launch_decide(agent_paths, "iterate", saved, list(), list())$action, "resume"))
     changed <- modifyList(saved, list(agent = list(llm = list(provider = "openai"))))
@@ -1068,7 +1073,7 @@ with(launch, {
   check("drift: newer dates are expected changes", length(launch_update_drift(paths, la, list(n_series = 4), "new", TRUE)) == 0)
 
   local({
-    md5 <- launch_data_md5(data_file)
+    md5 <- finn_data_md5(data_file)
     acfg <- modifyList(cfg, list(mode = "agent", agent = list(max_iter = 3)))
     project_with <- function(name, runs = list(), last_agent = NULL) {
       p <- finn_project_paths(file.path(tmp, "root"), name)
@@ -1079,7 +1084,7 @@ with(launch, {
     }
     agent_last <- function(run_id, mode = "iterate", hist_end = "2023-12-01") list(status = "completed", run_id = run_id, mode = mode,
       request_id = "req-1", agent_run_id = "agent-run-1", agent_version = 1L, hist_end_date = hist_end,
-      config_hash = launch_config_hash(acfg), data_md5 = md5)
+      config_hash = finn_config_hash(acfg), data_md5 = md5)
     agent_state <- function(run_id, mode = "iterate", config = acfg) list(run_id = run_id, mode = mode, status = "completed",
       created_at = "2024-01-01T00:00:00+0000", data_end = "2023-12-01", config = config, data_md5 = md5)
 
@@ -1133,6 +1138,94 @@ with(launch, {
     same <- launch_decide(ap, "iterate", acfg, list(), list())
     check("continue: same settings explain raising max_iter",
       identical(same$result$status, "already_complete") && any(grepl("higher agent.max_iter", same$result$next_actions)))
+    lower <- launch_decide(ap, "iterate", modifyList(acfg, list(agent = list(max_iter = 2))), list(), list())
+    check("continue: lower max_iter is already complete, not a new version",
+      identical(lower$result$status, "already_complete") && identical(lower$result$data$reason, "lower_max_iter") &&
+        identical(as.numeric(lower$result$data$max_iter$previous), 3) && grepl("up to 3", lower$result$message, fixed = TRUE) &&
+        any(grepl("above 3", lower$result$next_actions, fixed = TRUE)))
+    lower_other <- launch_decide(ap, "iterate", modifyList(acfg, list(agent = list(max_iter = 2), forecast_horizon = 12)), list(), list())
+    check("continue: lower max_iter with other changes still needs a new Agent version",
+      identical(lower_other$result$status, "needs_new_version"))
+    finn_write_project(ap, list(name = "NextAgent", last_agent = modifyList(agent_last("iter-1"), list(data_md5 = "changed"))))
+    check("continue: lower max_iter with changed data still needs a new Agent version",
+      identical(launch_decide(ap, "iterate", modifyList(acfg, list(agent = list(max_iter = 2))), list(), list())$result$status, "needs_new_version"))
+    finn_write_project(ap, list(name = "NextAgent", last_agent = agent_last("iter-1")))
+
+    pinned_cfg <- list(mode = "agent", project_name = "P", parallel = "auto", data = list(file = "C:/a/data.csv"), forecast_horizon = 6,
+      agent = list(max_iter = 3, weighted_mape_goal = 0.03, llm = list(provider = "copilot")))
+    check("hash: fingerprints saved by existing projects are unchanged",
+      identical(finn_config_hash(pinned_cfg), "5418c3f4068e2dd8") &&
+        identical(finn_config_hash(modifyList(pinned_cfg, list(mode = "standard"))), "683b53a5cce12f53"))
+    with_goal <- function(config, goal) modifyList(config, list(agent = list(weighted_mape_goal = goal)))
+    base_goal <- as.numeric(acfg$agent$weighted_mape_goal)
+    both <- launch_decide(ap, "iterate", with_goal(more, base_goal / 2), list(), list())
+    check("continue: higher max_iter with a stricter goal continues the same request",
+      identical(both$action, "new") && identical(both$request_id, "req-1") && identical(both$overwrite, FALSE) &&
+        any(grepl("only the iterations up to 5", both$notes)) && any(grepl("goal changes", both$notes)) &&
+        identical(both$continuation$from_run_id, "iter-1") && identical(both$continuation$from_status, "completed") &&
+        identical(as.numeric(both$continuation$max_iter$new), 5) && isFALSE(both$continuation$partial) &&
+        identical(as.numeric(both$continuation$weighted_mape_goal$previous), base_goal))
+    strict <- launch_decide(ap, "iterate", with_goal(acfg, base_goal / 2), list(), list())
+    check("continue: a stricter goal alone continues and explains its partial effect",
+      identical(strict$action, "new") && identical(strict$request_id, "req-1") && isTRUE(strict$continuation$partial) &&
+        any(grepl("best model is global", strict$notes)))
+    loose <- launch_decide(ap, "iterate", with_goal(acfg, base_goal * 2), list(), list())
+    check("continue: a looser goal alone is already complete",
+      identical(loose$result$status, "already_complete") && identical(loose$result$data$reason, "looser_goal_only"))
+    lower_goal <- launch_decide(ap, "iterate", with_goal(modifyList(acfg, list(agent = list(max_iter = 2))), base_goal / 2), list(), list())
+    check("continue: lower max_iter with a goal change says to keep max_iter",
+      identical(lower_goal$result$data$reason, "lower_max_iter") &&
+        grepl("Keep agent.max_iter at 3 or higher", lower_goal$result$message, fixed = TRUE))
+    llm_change <- launch_decide(ap, "iterate", modifyList(more, list(agent = list(llm = list(provider = "openai")))), list(), list())
+    check("continue: an LLM change needs a new Agent version",
+      identical(llm_change$result$status, "needs_new_version") && identical(llm_change$result$data$reason, "settings_changed"))
+    check("continue: a seed change needs a new Agent version",
+      identical(launch_decide(ap, "iterate", modifyList(more, list(seed = 7L)), list(), list())$result$status, "needs_new_version"))
+    check("continue: other changes name the reason",
+      identical(other$result$data$reason, "settings_changed") && "forecast_horizon 6 -> 12" %in% other$result$data$changed)
+
+    assign("finn_versions", function() list(finnts_version = "9.9.9", r_version = "9.9.9"), envir = launch)
+    finn_write_project(ap, list(name = "NextAgent", last_agent = modifyList(agent_last("iter-1"), list(finnts_version = "0.0.1"))))
+    sw <- launch_decide(ap, "iterate", more, list(), list())
+    sw_ok <- launch_decide(ap, "iterate", more, list(), list(confirm = "true"))
+    rm("finn_versions", envir = launch)
+    finn_write_project(ap, list(name = "NextAgent", last_agent = agent_last("iter-1")))
+    check("continue: different software needs confirmation, then continues the same version",
+      identical(sw$result$status, "needs_confirmation") && identical(sw$result$data$reason, "software_changed") &&
+        identical(sw_ok$action, "new") && identical(sw_ok$request_id, "req-1") && any(grepl("different software", sw_ok$notes)))
+
+    uu <- project_with("UnfinishedUpdate", list(agent_state("iter-1"), list(run_id = "upd-2", mode = "update", status = "failed",
+      created_at = "2024-02-01T00:00:00+0000")), agent_last("iter-1"))
+    ub <- launch_decide(uu, "iterate", more, list(), list())
+    check("continue: a newer unfinished update blocks continuation",
+      identical(ub$result$status, "needs_new_version") && identical(ub$result$data$reason, "unfinished_update") &&
+        any(grepl("--mode=update", ub$result$next_actions, fixed = TRUE)))
+
+    stopped <- project_with("StoppedIterate", list(modifyList(agent_state("iter-1"),
+      list(status = "failed", request_id = "req-9", step_down = 2L, overwrite = TRUE))))
+    sd <- launch_decide(stopped, "iterate", more, list(), list())
+    check("stopped iterate: a higher max_iter continues the same request with the new budget",
+      identical(sd$action, "new") && identical(sd$request_id, "req-9") && identical(as.integer(sd$step_down), 2L) &&
+        isTRUE(sd$overwrite) && identical(sd$continuation$from_run_id, "iter-1") && identical(sd$continuation$from_status, "failed"))
+    check("stopped iterate: a design change still asks before resuming",
+      identical(launch_decide(stopped, "iterate", modifyList(more, list(forecast_horizon = 12)), list(), list())$result$status,
+        "needs_confirmation"))
+    check("stopped iterate: unchanged settings resume the stopped run",
+      identical(launch_decide(stopped, "iterate", acfg, list(), list())$action, "resume"))
+
+    nr_lower <- finn_next_run(ap, modifyList(acfg, list(agent = list(max_iter = 2))), list(last_actual_date = "2023-12-01"))
+    check("next run: lower max_iter explains nothing new would run",
+      identical(nr_lower$continuation$kind, "lower_max_iter") && grepl("can't undo iterations", nr_lower$why, fixed = TRUE))
+    nr_more <- finn_next_run(ap, more, list(last_actual_date = "2023-12-01"))
+    check("next run: higher max_iter explains continuing the same version",
+      identical(nr_more$continuation$kind, "continue") && grepl("continues version 1", nr_more$why, fixed = TRUE) &&
+        identical(as.numeric(nr_more$prior_weighted_mape_goal), base_goal))
+    nr_stop <- finn_next_run(stopped, more, list(last_actual_date = "2023-12-01"))
+    check("next run: a stopped iterate run with a higher budget continues with revised settings",
+      identical(nr_stop$situation, "resume") && identical(nr_stop$continuation$kind, "continue") &&
+        grepl("revised settings", nr_stop$why, fixed = TRUE))
+    check("continuation: other settings are listed separately from budget and goal",
+      identical(finn_iterate_continuation(acfg, modifyList(more, list(forecast_horizon = 12)))$changed, "forecast_horizon 6 -> 12"))
     up <- project_with("UpdateOnly", list(agent_state("upd-1", mode = "update")), agent_last("upd-1", mode = "update"))
     check("continue: only after an iterate run", identical(launch_decide(up, "iterate", modifyList(more, list(project_name = "UpdateOnly")), list(), list())$action, "stop"))
 
@@ -1405,13 +1498,75 @@ with(launch, {
       identical(upd_card$data$run$run_type, "update") && any(grepl("Agent", upd_card$data$warnings)))
   })
 
+  local({
+    old_settings <- Sys.getenv("FINN_SETTINGS_DIR")
+    Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "continue-settings"))
+    on.exit(Sys.setenv(FINN_SETTINGS_DIR = old_settings))
+    cont_root <- file.path(tmp, "continue-root")
+    cpaths <- finn_project_paths(cont_root, "Continue")
+    finn_ensure_project_dirs(cpaths)
+    config <- finn_default_config()
+    config$project_name <- "Continue"
+    config$mode <- "agent"
+    config$data$file <- data_file
+    config$agent$max_iter <- 3L
+    finn_save_project_config(cpaths, config)
+    saved <- finn_read_project_config(cpaths)
+    finn_update_state(finn_run_paths(cpaths, "iter-1"), run_id = "iter-1", mode = "iterate", status = "completed",
+      created_at = "2024-01-01T00:00:00+0000", config = saved, request_id = "req-1", data_md5 = finn_data_md5(data_file))
+    finn_write_project(cpaths, list(name = "Continue", last_agent = list(status = "completed", run_id = "iter-1", mode = "iterate",
+      request_id = "req-1", agent_run_id = "agent-run-1", agent_version = 1L, hist_end_date = "2024-12-01",
+      config_hash = finn_config_hash(saved), data_md5 = finn_data_md5(data_file))))
+    checked <- function(config, root = NULL) list(config = config, errors = character(), warnings = character(),
+      facts = list(n_series = 4, n_rows = 48, date_min = "2024-01-01", date_max = "2024-12-01"), data = data.frame(value = 1))
+    plan_stub <- function(...) common$finn_plan_with_others(..., resources = list(cores = 8L, total_gb = 32, free_gb = 16))
+
+    preview <- load_functions("validate_config.R", common)
+    preview$finn_load_checked <- checked
+    preview$finn_plan_with_others <- plan_stub
+    preview$finn_main <- function(fn) fn(list(root = cont_root, project = "Continue", run_type = "iterate"))
+    preview_expr <- tail(as.list(parse(file.path(scripts_dir, "validate_config.R"))), 1)[[1]]
+    review_with <- function(max_iter) {
+      config$agent$max_iter <- max_iter
+      finn_save_project_config(cpaths, config)
+      eval(preview_expr, preview)
+    }
+    budget <- review_with(5L)
+    check("review: a higher max_iter continues the version without a settings-change warning",
+      isTRUE(budget$ok) && identical(budget$data$run$situation, "agent_current") &&
+        !any(grepl("These settings differ", budget$data$warnings)) && grepl("continues version 1", budget$data$run$why, fixed = TRUE))
+    lower <- review_with(2L)
+    check("review: a lower max_iter warns that nothing new would run",
+      any(grepl("lower than the `3`", lower$data$warnings, fixed = TRUE)))
+    review_with(5L)
+
+    entry <- new.env(parent = launch)
+    entry$finn_load_checked <- checked
+    entry$finn_plan_with_others <- plan_stub
+    entry$finn_versions <- function() list(finnts_version = "offline", r_version = "offline")
+    entry$finn_copilot_status <- function(...) list(ready = TRUE)
+    entry$launch_worker <- function(paths, run_paths, wait = FALSE) list(pid = Sys.getpid(), pid_create_time = NULL)
+    entry$finn_main <- function(fn) fn(list(root = cont_root, project = "Continue", mode = "iterate"))
+    main_expr <- tail(as.list(parse(file.path(scripts_dir, "run_forecast.R"))), 1)[[1]]
+    started <- eval(main_expr, entry)
+    new_state <- if (isTRUE(started$ok)) finn_read_state(finn_run_paths(cpaths, started$data$run_id))
+    old_state <- finn_read_state(finn_run_paths(cpaths, "iter-1"))
+    check("launcher: continuing a completed Agent version reuses its request without overwriting",
+      isTRUE(started$ok) && identical(started$data$request_id, "req-1") && identical(started$data$continuation$from_run_id, "iter-1") &&
+        identical(as.numeric(started$data$continuation$max_iter$previous), 3) &&
+        identical(as.numeric(started$data$continuation$max_iter$new), 5) && !identical(started$data$run_id, "iter-1") &&
+        identical(new_state$request_id, "req-1") && isFALSE(new_state$overwrite) &&
+        identical(old_state$status, "completed") && identical(as.numeric(old_state$config$agent$max_iter), 3) &&
+        identical(finn_read_project(cpaths)$last_agent$run_id, "iter-1"))
+  })
+
   if (requireNamespace("processx", quietly = TRUE) && requireNamespace("ps", quietly = TRUE)) {
     kpaths <- finn_project_paths(file.path(tmp, "root"), "KillResume")
     finn_ensure_project_dirs(kpaths)
     kcfg <- modifyList(cfg, list(project_name = "KillResume"))
     finn_write_project(kpaths, list(name = "KillResume", last_agent = list(
       status = "completed", agent_run_id = "agent-v1", agent_version = 1L,
-      config_hash = launch_config_hash(kcfg), data_md5 = launch_data_md5(data_file)
+      config_hash = finn_config_hash(kcfg), data_md5 = finn_data_md5(data_file)
     )))
     worker <- processx::process$new(file.path(R.home("bin"), "Rscript"), c("-e", "Sys.sleep(120)"))
     krp <- finn_run_paths(kpaths, "iter-20240104-000000")
@@ -1419,7 +1574,7 @@ with(launch, {
       run_id = krp$id, mode = "iterate", status = "running", stage = "iterate_forecast",
       created_at = finn_now(), host = Sys.info()[["nodename"]],
       pid = worker$get_pid(), pid_create_time = as.numeric(ps::ps_create_time(ps::ps_handle(worker$get_pid()))),
-      config_hash = launch_config_hash(kcfg), data_md5 = launch_data_md5(data_file),
+      config_hash = finn_config_hash(kcfg), data_md5 = finn_data_md5(data_file),
       request_id = "req-kill-test", agent_run_id = "agent-v2", agent_version = 2L,
       finnts_version = finn_versions()$finnts_version, r_version = finn_versions()$r_version
     )
