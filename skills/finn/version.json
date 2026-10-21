@@ -8,7 +8,9 @@
       "changes": [
         "Settings reviews now include a data check, a configuration table explaining each input, warnings, suggestions, and an estimated run time on this computer.",
         "Revising settings shows only the inputs that changed, with previous and new values; reply `run` to save and start the forecast.",
-        "Reviews name the run type with a plain-language hint and suggest the next run from project history: update for new actuals, more Agent iterations, or a standard refresh."
+        "Reviews name the run type with a plain-language hint and suggest the next run from project history: update for new actuals, more Agent iterations, or a standard refresh.",
+        "Fix messy files such as pivots, footnotes, text numbers, mixed dates, and unit changes with a plan you approve once; totals and finnts input checks must pass before a copy is written.",
+        "Flags a latest month, quarter, or year that has not ended and suggests ending history before it."
       ]
     },
     {

@@ -61,9 +61,11 @@ Earlier versions and their history stay in `finn_artifacts/`.
 `--mode=update` needs a finished Agent forecast and data that ends later than it did
 (`--force=true` if only past values were revised). If `hist_end_date` is set to an
 earlier date than the newest actuals, it returns `no_new_data` and says so; move
-`hist_end_date` with the user's approval. If the series count changed, the file changed
-without newer dates, or settings differ from the last Agent forecast, it returns
-`needs_confirmation` with `changes`; confirm with the user and rerun with
+`hist_end_date` with the user's approval. If the only newer period is a month, quarter,
+or year that has not ended yet, `no_new_data` says so and suggests waiting until it ends
+rather than moving `hist_end_date` into partial actuals. If the series count changed,
+the file changed without newer dates, or settings differ from the last Agent forecast,
+it returns `needs_confirmation` with `changes`; confirm with the user and rerun with
 `--confirm=true`, or suggest a fresh iterate if the series or settings changed a lot.
 Projects whose last forecast was standard are refreshed with another standard run, not
 an update. A different finnts or R version than the last Agent forecast only adds a
@@ -83,7 +85,7 @@ note that results may shift slightly.
 | `already_complete` | iterate already ran on the same settings and data | show results; raise `agent.max_iter` to continue, or confirm a new version |
 | `needs_new_version` | settings/data changed, or the earlier Agent run cannot be resumed | suggest `update` if data is newer; otherwise confirm a new version |
 | `needs_agent_run` | update has no finished Agent forecast | run `--mode=iterate` first or resume the unfinished one; standard projects refresh with `--mode=standard` |
-| `no_new_data` | update data ends on the same date as last time, or `hist_end_date` holds it back | add newer actuals, move `hist_end_date`, or `--force=true` if past values were revised |
+| `no_new_data` | update data ends on the same date as last time, `hist_end_date` holds it back, or the only newer period has not ended | add newer actuals, move `hist_end_date`, wait for the open period to end, or `--force=true` if past values were revised |
 
 ## Corner cases
 

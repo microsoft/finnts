@@ -2153,10 +2153,12 @@ finn_recommend_back_test <- function(date_type, tier, n_periods, horizon) {
 #' Advisory only: nothing is changed or saved, and no run is ever refused.
 #' Back testing always aims to cover the last year of history; for many series
 #' it spaces back-test origins further apart instead of shortening the window.
+#' When the latest period with actuals has not ended, suggests ending history
+#' at the last complete period.
 #'
 #' @param cfg Merged config.
-#' @param facts Facts from [finn_check_config()], with `n_series` and
-#'   `n_periods`.
+#' @param facts Facts from [finn_check_config()], with `n_series`,
+#'   `n_periods`, and optionally `incomplete_period`.
 #' @param root Optional storage root, used to suggest a local folder.
 #' @param workers Optional planned parallel workers for the runtime estimate.
 #' @return List with `tier`, `recommendations` (each `key`, `value`,
@@ -2169,6 +2171,14 @@ finn_recommend_settings <- function(cfg, facts, root = NULL, workers = NULL) {
   notes <- character()
   add <- function(key, value, reason) recs[[length(recs) + 1]] <<- list(key = key, value = value, reason = reason)
   agent <- identical(cfg$mode, "agent")
+
+  partial <- finn_partial_in_history(cfg, facts)
+  if (!is.null(partial$suggested_hist_end_date)) {
+    add("hist_end_date", partial$suggested_hist_end_date, sprintf(
+      "The `%s` period has not ended yet, so its actuals are probably partial. Ending history at the last complete period keeps them out of training and back tests.",
+      partial$date
+    ))
+  }
 
   if (is.null(cfg$back_test_scenarios) && is.null(cfg$back_test_spacing)) {
     bt <- finn_recommend_back_test(cfg$date_type, tier, facts$n_periods, cfg$forecast_horizon)
@@ -2312,6 +2322,8 @@ finn_settings_drift <- function(prior, cfg) {
 #' new actuals, an Agent project can continue its search on the same Agent
 #' version by raising `max_iter`. A project with no runs follows the config
 #' mode, so the size-based advice in [finn_recommend_settings()] still applies.
+#' When `hist_end_date` already leaves out a latest period that has not ended,
+#' the actuals count only through the last complete period.
 #'
 #' @param paths Project paths.
 #' @param cfg Merged, validated config.
@@ -2329,6 +2341,12 @@ finn_next_run <- function(paths, cfg, facts = list()) {
   agent_done <- identical(last_agent$status, "completed")
   data_end <- facts$last_actual_date %||% facts$date_max
   data_end <- if (is.null(data_end)) NULL else as.character(data_end)
+  partial <- facts$incomplete_period
+  left_out <- NULL
+  if (!is.null(partial$suggested_hist_end_date) && identical(partial$date, data_end) && is.null(finn_partial_in_history(cfg, facts))) {
+    left_out <- data_end
+    data_end <- partial$suggested_hist_end_date
+  }
   completed <- Filter(function(s) identical(s$effective_status, "completed"), runs)
   last_done <- if (length(completed)) completed[[1]]
   out <- list(run_type = if (identical(cfg$mode, "agent")) "iterate" else "standard", situation = "new_project",
@@ -2400,6 +2418,9 @@ finn_next_run <- function(paths, cfg, facts = list()) {
     }
     out$alternative <- agent_switch
   }
+  if (!is.null(left_out) && !identical(out$situation, "resume") && !is.null(out$why)) {
+    out$why <- paste(out$why, sprintf("The `%s` period has not ended yet, so `hist_end_date` leaves it out.", left_out))
+  }
   out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else switch(out$run_type,
     iterate = "--mode=iterate", update = "--mode=update", "--mode=standard")
   out
@@ -2442,8 +2463,12 @@ finn_ints_to_double <- function(x) {
 #' @param cfg Config list (merged or raw).
 #' @param data Optional prepared data frame with a `Date` column.
 #' @param root Optional storage root, used for OneDrive warnings.
-#' @return List with `config`, `errors`, `warnings`, and `facts`.
-finn_check_config <- function(cfg, data = NULL, root = NULL) {
+#' @param today Date used to spot a latest period that has not ended; tests
+#'   pass a fixed date.
+#' @return List with `config`, `errors`, `warnings`, and `facts`. `facts`
+#'   includes `incomplete_period` from [finn_incomplete_period()] when the
+#'   latest period with actuals has not ended.
+finn_check_config <- function(cfg, data = NULL, root = NULL, today = Sys.Date()) {
   fiscal_unset <- is.null(cfg$fiscal_year_start)
   cfg <- finn_merge_config(cfg)
   errors <- character()
@@ -2500,6 +2525,7 @@ finn_check_config <- function(cfg, data = NULL, root = NULL) {
     facts$date_max <- as.character(max(data$Date, na.rm = TRUE))
     has_target <- !is.na(data[[cfg$target_variable]])
     facts$last_actual_date <- if (any(has_target)) as.character(max(data$Date[has_target], na.rm = TRUE)) else NULL
+    facts$incomplete_period <- finn_incomplete_period(facts$last_actual_date, cfg$date_type, data$Date[has_target], today)
     facts$n_periods <- length(unique(data$Date[has_target & !is.na(data$Date)]))
     dup <- sum(duplicated(data[c("Date", cfg$combo_variables)]))
     if (dup > 0) errors <- c(errors, sprintf("%d rows repeat the same series and date. Aggregate or remove duplicates first.", dup))
@@ -2525,16 +2551,87 @@ finn_check_config <- function(cfg, data = NULL, root = NULL) {
   list(config = cfg, errors = unique(errors), warnings = unique(warnings), facts = facts)
 }
 
+#' Latest history period that has not ended yet
+#'
+#' Month, quarter, and year data only. A date on the last day of a month
+#' stands for the period ending on it; any other date stands for the period
+#' starting on it. When `today` falls inside that period its actuals are
+#' probably partial, so it usually should not be the history end.
+#'
+#' @param last_date Last history date, as a Date or "YYYY-MM-DD" string.
+#' @param date_type finnts date type.
+#' @param dates Optional dates with actuals; the latest one before
+#'   `last_date` becomes the suggested history end.
+#' @param today Date to compare with; tests pass a fixed date.
+#' @return NULL when the period has ended, has not started, or is not
+#'   checked; otherwise a list with `date`, `period_start`, `period_end`,
+#'   `today`, `suggested_hist_end_date` (NULL without an earlier date), and
+#'   `message`.
+finn_incomplete_period <- function(last_date, date_type, dates = NULL, today = Sys.Date()) {
+  months <- if (length(date_type) == 1) switch(date_type, month = 1L, quarter = 3L, year = 12L, NULL)
+  d <- tryCatch(as.Date(last_date), error = function(e) NULL)
+  if (is.null(months) || length(d) != 1 || is.na(d)) {
+    return(NULL)
+  }
+  shift <- function(x, n) if (n == 0) x else seq(x, by = paste(n, "months"), length.out = 2)[2]
+  first <- as.Date(format(d, "%Y-%m-01"))
+  if (d != first && d == shift(first, 1L) - 1) {
+    start <- shift(first, -(months - 1L))
+    end <- d
+  } else {
+    start <- d
+    end <- shift(d, months) - 1
+  }
+  today <- as.Date(today)
+  if (today < start || today > end) {
+    return(NULL)
+  }
+  dates <- if (length(dates)) tryCatch(as.Date(dates), error = function(e) as.Date(character())) else as.Date(character())
+  prior <- dates[!is.na(dates) & dates < d]
+  prior <- if (length(prior)) format(max(prior))
+  list(
+    date = format(d), period_start = format(start), period_end = format(end), today = format(today),
+    suggested_hist_end_date = prior,
+    message = paste0(
+      sprintf(
+        "The latest period with actuals (`%s`, covering %s to %s) has not ended yet (day %d of %d), so its actuals are probably incomplete.",
+        format(d), format(start), format(end), as.integer(today - start) + 1L, as.integer(end - start) + 1L
+      ),
+      if (is.null(prior)) {
+        " Confirm it is complete, or remove it from the file."
+      } else {
+        sprintf(" Set `hist_end_date` to `%s` so history ends at the last complete period.", prior)
+      }
+    )
+  )
+}
+
+#' Incomplete latest period the run would still use
+#'
+#' @param cfg Merged config.
+#' @param facts Data facts with `incomplete_period` from [finn_check_config()].
+#' @return The `incomplete_period` entry, or NULL when there is none or
+#'   `hist_end_date` already ends before it.
+finn_partial_in_history <- function(cfg, facts) {
+  p <- facts$incomplete_period
+  if (is.null(p) || (!is.null(cfg$hist_end_date) && as.Date(cfg$hist_end_date) < as.Date(p$date))) {
+    return(NULL)
+  }
+  p
+}
+
 #' Data-quality warnings that never block a run
 #'
 #' Flags series that are all zero, history and future boundaries that look
-#' wrong, and drivers without future values. Every flag is a warning so the
-#' user decides whether to fix the source file.
+#' wrong, a latest history period that has not ended yet, and drivers without
+#' future values. Every flag is a warning so the user decides whether to fix
+#' the source file.
 #'
 #' @param data Prepared data frame with a `Date` column.
 #' @param cfg Merged config.
 #' @param key Series key per row.
-#' @param facts Facts already computed, including `last_actual_date`.
+#' @param facts Facts already computed, including `last_actual_date` and
+#'   `incomplete_period`.
 #' @return Character vector of warnings.
 finn_quality_flags <- function(data, cfg, key, facts) {
   out <- character()
@@ -2566,6 +2663,8 @@ finn_quality_flags <- function(data, cfg, key, facts) {
       format(last_actual), format(last_actual)
     ))
   }
+  partial <- finn_partial_in_history(cfg, facts)
+  if (!is.null(partial)) out <- c(out, partial$message)
   regs <- unlist(cfg$external_regressors)
   boundary <- hist_end %||% last_actual
   if (length(regs) > 0 && !is.null(boundary)) {

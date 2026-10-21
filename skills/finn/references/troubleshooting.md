@@ -47,12 +47,29 @@ an exception: it can change on resume for memory recovery.
 - **"R is not found."** See setup.md; installing R is the user's decision.
 - **Slow OneDrive.** See storage.md.
 - **"My spreadsheet has months as columns / totals / a title row."** `profile_data.R`
-  returns `needs_reshape` with `shape_issues` and `suggested_prepare_args`. Explain each
+  returns `needs_reshape` with `shape_issues`. With `suggested_prepare_args`, explain each
   issue, confirm, run `prepare_data.R` (it writes a `_finn_ready.csv` copy and never
-  changes the original), then profile the copy.
+  changes the original), then profile the copy. With `needs_transform` (for example a
+  filtered or outline pivot, or `<label> Total` rows), those flags would misread the
+  file; use a transform spec (data-preparation.md).
+- **Transform preview returns `gate_failed`.** Nothing was written. Show
+  `preview_markdown` and explain each FAIL row: P9a means a row or column was dropped
+  without a reason; P9b or P9c means totals no longer match the source; T5 means a total
+  label is still in a series column; T1 means target values were filled after the history
+  end; R and P rows are finnts' own input checks. Revise the spec, preview again, and ask
+  for approval again.
+- **"The approval token does not match."** The spec, data file, or settings changed since
+  the preview. Preview again and get the user's approval for the new preview.
+- **"validate_prepared_input() is missing."** The installed finnts is too old to check
+  prepared data. Update finnts with `install_finnts.R` after the user agrees.
 - **Data warnings** (all-zero series, values after `hist_end_date`, drivers without
   future values) never block a run. Explain them; the user decides whether to fix the
   data first. Duplicate series/date rows are errors and must be fixed.
+- **"The latest period has not ended yet."** Month, quarter, or year data whose last
+  actuals fall in the current period are probably partial. The review suggests
+  `hist_end_date` at the last complete period; apply it only if the user agrees, and keep
+  the rows in the file. An Agent update stops with `no_new_data` when the only newer
+  period is still in progress; usually wait until it ends.
 - **"Running out of disk space."** `setup_project.R --action=disk_usage --project=<name>`;
   the user can archive old `runs/` and `output/` folders by hand. Keep `finn_artifacts/`.
 - **Work or managed computer** (no admin rights, proxy, OneDrive placeholders, org

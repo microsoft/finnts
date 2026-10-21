@@ -523,16 +523,27 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
     actual_end <- facts$last_actual_date %||% facts$date_max
     actual_end <- if (is.null(actual_end)) NULL else as.character(actual_end)
     pinned <- !is.null(cfg$hist_end_date) && !is.null(actual_end) && actual_end > as.character(cfg$hist_end_date)
+    partial <- facts$incomplete_period
+    open_end <- if (pinned && identical(partial$date, actual_end)) actual_end
+    complete_end <- if (!is.null(open_end)) partial$suggested_hist_end_date else actual_end
+    only_open <- !is.null(open_end) && !(is.character(complete_end) && complete_end > as.character(cfg$hist_end_date))
     return(stop_with("no_new_data",
-      if (pinned) {
+      if (only_open) {
+        paste0("The only actuals after the last Agent forecast (", last_agent$hist_end_date, ") are for ", open_end,
+          ", a period that has not ended yet, and hist_end_date (", cfg$hist_end_date, ") leaves it out.")
+      } else if (pinned) {
         paste0("hist_end_date is set to ", cfg$hist_end_date, ", so the update would stop at the same date as the last Agent forecast (",
-          last_agent$hist_end_date, ") even though the file has actuals through ", actual_end, ".")
+          last_agent$hist_end_date, ") even though the file has actuals through ", actual_end, ".",
+          if (!is.null(open_end)) paste0(" The ", open_end, " period has not ended yet; the last complete period is ", complete_end, "."))
       } else {
         paste0("The actuals end on ", data_end, ", the same as the last Agent forecast (", last_agent$hist_end_date, "). There is nothing new to update with.")
       },
-      list(data_end = data_end, last_end = last_agent$hist_end_date, actual_end = actual_end, hist_end_pinned = pinned),
-      if (pinned) {
-        c(paste0("Ask the user to change hist_end_date to ", actual_end, " (or remove it): rerun validate_config.R with --run_type=update, show the review, save with --save=true, then rerun this command."))
+      list(data_end = data_end, last_end = last_agent$hist_end_date, actual_end = actual_end, hist_end_pinned = pinned,
+        incomplete_period = open_end),
+      if (only_open) {
+        c("Tell the user the newer period is still in progress. Usually wait until it ends and the actuals are complete; set hist_end_date to it only if the user wants to update with partial actuals.")
+      } else if (pinned) {
+        c(paste0("Ask the user to change hist_end_date to ", complete_end, " (or remove it): rerun validate_config.R with --run_type=update, show the review, save with --save=true, then rerun this command."))
       } else {
         c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")
       }))

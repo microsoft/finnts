@@ -263,6 +263,42 @@ with(common, {
   qchk <- finn_check_config(qbase, qd)
   check("quality: flags are warnings, not errors", !any(grepl("only zeros|blank future", qchk$errors)) && any(grepl("only zeros", qchk$warnings)))
 
+  # ---- Latest period that has not ended yet ----------------------------------------
+  oct20 <- as.Date("2026-10-20")
+  ip <- finn_incomplete_period("2026-10-01", "month", as.Date(c("2026-08-01", "2026-09-01", "2026-10-01")), today = oct20)
+  check("incomplete: a month in progress is flagged with the previous month as the history end",
+    identical(ip$period_end, "2026-10-31") && identical(ip$suggested_hist_end_date, "2026-09-01") &&
+      grepl("day 20 of 31", ip$message) && grepl("Set `hist_end_date` to `2026-09-01`", ip$message, fixed = TRUE))
+  ipe <- finn_incomplete_period("2026-10-31", "month", today = oct20)
+  check("incomplete: a month-end date covers the month it ends, and without earlier dates asks to confirm",
+    identical(ipe$period_start, "2026-10-01") && is.null(ipe$suggested_hist_end_date) && grepl("Confirm it is complete", ipe$message))
+  check("incomplete: quarter and year periods",
+    identical(finn_incomplete_period("2026-10-01", "quarter", today = as.Date("2026-12-31"))$period_end, "2026-12-31") &&
+      identical(finn_incomplete_period("2026-12-31", "quarter", today = as.Date("2026-11-15"))$period_start, "2026-10-01") &&
+      identical(finn_incomplete_period("2026-01-01", "year", today = oct20)$period_end, "2026-12-31"))
+  check("incomplete: ended or future periods, week and day data, and bad dates are not flagged",
+    is.null(finn_incomplete_period("2026-09-01", "month", today = oct20)) && is.null(finn_incomplete_period("2026-11-01", "month", today = oct20)) &&
+      is.null(finn_incomplete_period("2026-10-19", "week", today = oct20)) && is.null(finn_incomplete_period("2026-10-20", "day", today = oct20)) &&
+      is.null(finn_incomplete_period(NA, "month", today = oct20)) && is.null(finn_incomplete_period("bad", "month", today = oct20)) &&
+      is.null(finn_incomplete_period(NULL, "month", today = oct20)))
+  idat <- data.frame(Region = "East", Date = as.Date(c("2026-08-01", "2026-09-01", "2026-10-01")), Revenue = c(1, 2, 3))
+  ibase <- list(project_name = "I", combo_variables = "Region", target_variable = "Revenue", date_type = "month", forecast_horizon = 1, fiscal_year_start = 1)
+  ichk <- finn_check_config(ibase, idat, today = oct20)
+  check("incomplete: the config check warns but never blocks",
+    any(grepl("has not ended yet", ichk$warnings)) && !any(grepl("has not ended", ichk$errors)) &&
+      identical(ichk$facts$incomplete_period$suggested_hist_end_date, "2026-09-01"))
+  check("incomplete: no warning once the period has ended",
+    !any(grepl("has not ended yet", finn_check_config(ibase, idat, today = as.Date("2026-11-02"))$warnings)))
+  ileft <- modifyList(ibase, list(hist_end_date = "2026-09-01"))
+  ileft_chk <- finn_check_config(ileft, idat, today = oct20)
+  check("incomplete: a hist_end_date before the period silences the warning",
+    !any(grepl("has not ended yet", ileft_chk$warnings)) && !is.null(ileft_chk$facts$incomplete_period))
+  irec <- finn_recommend_settings(finn_merge_config(ibase), ichk$facts)$recommendations
+  check("incomplete: the settings review suggests ending history at the last complete period",
+    identical(irec[[1]]$key, "hist_end_date") && identical(irec[[1]]$value, "2026-09-01") && grepl("has not ended yet", irec[[1]]$reason))
+  check("incomplete: no suggestion once hist_end_date leaves the period out",
+    !any(vapply(finn_recommend_settings(finn_merge_config(ileft), ileft_chk$facts)$recommendations, `[[`, character(1), "key") == "hist_end_date"))
+
   # ---- Versions, runtime estimate, host, disk usage --------------------------------
   v <- finn_versions()
   check("versions: R version recorded", grepl("^[0-9]+\\.[0-9]+", v$r_version))
@@ -314,7 +350,9 @@ with(setup, {
 })
 
 # ---- Data preparation script ---------------------------------------------------------
-prep_env <- load_functions("prepare_data.R", common)
+tx <- new.env(parent = common)
+sys.source(file.path(scripts_dir, "finn_prep.R"), envir = tx)
+prep_env <- load_functions("prepare_data.R", tx)
 with(prep_env, {
   d <- file.path(tmp, "prep_out")
   dir.create(d, showWarnings = FALSE)
@@ -335,6 +373,399 @@ with(prep_env, {
   check("prepare: asking for more series than exist keeps all", nrow(prepare_sample_series(sd, "R", 50)$data) == 15)
   check("prepare: sample needs real columns", errors_with(prepare_sample_series(sd, "Nope", 2), "Columns not found"))
   check("prepare: sample size must be positive", errors_with(prepare_sample_series(sd, "R", "0"), "positive whole number"))
+})
+
+# ---- Transform specs and the verification gate --------------------------------------
+tx_dir <- file.path(tmp, "tx")
+dir.create(tx_dir, showWarnings = FALSE)
+
+#' Write a fixture file for transform tests
+#'
+#' @param name File name.
+#' @param lines Lines to write.
+#' @return Path.
+tx_put <- function(name, lines) {
+  p <- file.path(tx_dir, name)
+  writeLines(lines, p)
+  p
+}
+
+#' Fake finnts validator that passes, standing in when finnts is not installed
+#'
+#' @param input_data Prepared data.
+#' @param ... Other validator arguments.
+#' @return Validator result list.
+tx_pass_validator <- function(input_data, ...) {
+  list(passed = TRUE, checks = data.frame(Rule = "R1", Description = "fake", Status = "pass", Message = "ok", stringsAsFactors = FALSE), summary = list(), details = list())
+}
+
+#' Fake validator that fails one rule
+#'
+#' @param rule Rule id.
+#' @return Validator function.
+tx_fail_validator <- function(rule) {
+  force(rule)
+  function(input_data, ...) {
+    list(passed = FALSE, checks = data.frame(Rule = rule, Description = "fake", Status = "fail", Message = paste(rule, "failed"), stringsAsFactors = FALSE), summary = list(), details = list())
+  }
+}
+
+#' Build a transform spec
+#'
+#' @param steps Step JSON strings.
+#' @param settings Settings JSON object text.
+#' @param extra Extra top-level JSON members, starting with a comma.
+#' @param description Plan description.
+#' @return Spec JSON text.
+tx_spec <- function(steps, settings = '{"combo_variables":["Region","Product"],"target_variable":"Value","date_type":"month","forecast_horizon":3}', extra = "", description = "test plan") {
+  sprintf('{"version":1,"description":"%s","settings":%s,"steps":[%s]%s}', description, settings, paste(steps, collapse = ","), extra)
+}
+
+#' Gate statuses by rule
+#'
+#' @param r Result of finn_tx_run().
+#' @return Named character vector.
+tx_status <- function(r) stats::setNames(r$gate$checks$Status, r$gate$checks$Rule)
+
+tx_region <- '{"combo_variables":["Region"],"target_variable":"Value","date_type":"month","forecast_horizon":3}'
+tx_tidy <- tx_put("tidy.csv", c(
+  "Region,Date,Value", "East,2024-01-01,10", "East,2024-02-01,11", "East,2024-03-01,12",
+  "West,2024-01-01,20", "West,2024-02-01,21", "West,2024-03-01,22"
+))
+tx_tidy_steps <- c('{"op":"use_header_rows","rows":[1]}', '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}')
+tx_outline <- tx_put("outline.csv", c(
+  "Sales Report,,,,,", "Filter: All,,,,,", ",,,,,",
+  "Region,Product,Jan 2024,Feb 2024,Mar 2024,Total",
+  "East,A,\"1,000\",1.2K,(50),2150", ",B,200,300,400,900", "East Total,,1200,1500,350,3050",
+  "West,A,10,20,30,60", "West Total,,10,20,30,60", "Grand Total,,1210,1520,380,3110",
+  "Note: values in USD,,,,,"
+))
+tx_outline_steps <- c(
+  '{"op":"use_header_rows","rows":[4]}', '{"op":"drop_rows","rows":[11],"reason":"footnote"}',
+  '{"op":"fill_down","columns":["Region"]}', '{"op":"drop_total_rows","columns":["Region","Product"]}',
+  '{"op":"drop_total_columns","columns":["Total"]}', '{"op":"pivot_longer","id_columns":["Region","Product"]}',
+  '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+)
+# Filtered pivot with a blank first column, outline labels, and a lone Total
+# value column, like an exported Excel pivot.
+tx_filtered <- tx_put("filtered_pivot.csv", c(
+  ",Adjustment Type,(Multiple Items),", ",Anomaly Flag,No,", ",,,", ",Revenue by area,,",
+  ",Area,Fiscal Month,Total",
+  ",North,2026-07-01,100", ",,2026-08-01,110", ",,2026-09-01,120", ",,2026-10-01,40",
+  ",Grand Total,,370"
+))
+tx_recent <- tx_put("recent.csv", c("Region,Date,Value", "East,2026-08-01,10", "East,2026-09-01,11", "East,2026-10-01,3"))
+tx_oct20 <- as.Date("2026-10-20")
+
+with(tx, {
+  run <- function(file, spec, validator = tx_pass_validator, ...) finn_tx_run(file, spec, validator = validator, ...)
+
+  # Positive fixtures.
+  md5_before <- unname(tools::md5sum(tx_outline))
+  r <- run(tx_outline, tx_spec(tx_outline_steps))
+  out <- r$gate$output
+  check("transform: outline pivot passes the gate with a token", isTRUE(r$gate$passed) && nchar(r$token) == 16)
+  check("transform: outline pivot becomes one row per series and month", nrow(out) == 9 &&
+    identical(names(out), c("Region", "Product", "Date", "Value")) && !any(out$Region %in% c("", NA)))
+  check("transform: K suffix, thousands separators, and parentheses are read",
+    identical(out$Value[out$Region == "East" & out$Product == "A"], c(1000, 1200, -50)))
+  check("transform: leaf values add up to the grand total", sum(out$Value) == 3110)
+  check("transform: subtotals, totals, and the total column reconcile", tx_status(r)[["P9c"]] == "pass" && length(r$gate$totals) >= 3)
+  check("transform: every dropped row and column is explained", tx_status(r)[["P9a"]] == "pass" && tx_status(r)[["P9b"]] == "pass")
+  check("transform: the source file is never changed", identical(unname(tools::md5sum(tx_outline)), md5_before))
+  sections <- c(
+    "## Proposed data preparation", "**Source:**", "**Result:**", "**Checked against settings:**", "**Target total:**",
+    "### Changes", "### Needs your extra confirmation", "### Dropped rows", "### Before", "### After", "### Verification", "**Overall: PASSED.**"
+  )
+  pos <- vapply(sections, function(s) regexpr(s, r$preview_markdown, fixed = TRUE)[1], integer(1))
+  check("transform: preview has the fixed sections in order", all(pos > 0) && !is.unsorted(pos))
+  check("transform: preview masks labels and values by default",
+    !grepl("East|West|Sales Report|1,000", r$preview_markdown) && grepl("text_[0-9]+ Total", r$preview_markdown) && grepl("#,###", r$preview_markdown))
+  check("transform: labels are shown only when revealed", grepl("East", run(tx_outline, tx_spec(tx_outline_steps), reveal_labels = TRUE)$preview_markdown))
+  set.seed(42)
+  draw <- runif(1)
+  set.seed(42)
+  r2 <- run(tx_outline, tx_spec(tx_outline_steps))
+  check("transform: runs are deterministic and leave the random state alone",
+    identical(r$token, r2$token) && identical(finn_tx_csv_lines(out), finn_tx_csv_lines(r2$gate$output)) && identical(runif(1), draw))
+  check("transform: token changes with the spec or settings",
+    !identical(r$token, run(tx_outline, tx_spec(tx_outline_steps, description = "other"))$token) &&
+      !identical(r$token, run(tx_outline, tx_spec(tx_outline_steps, settings = '{"combo_variables":["Region","Product"],"target_variable":"Value","date_type":"month","forecast_horizon":6}'))$token))
+
+  seen <- new.env()
+  spy <- function(...) {
+    seen$args <- list(...)
+    tx_pass_validator(...)
+  }
+  run(tx_outline, tx_spec(tx_outline_steps, settings = '{"combo_variables":["Region","Product"],"target_variable":"Value","date_type":"month","forecast_horizon":3,"fiscal_year_start":7,"clean_missing_values":true}'), spy)
+  check("transform: the gate passes the real run settings to the finnts validator",
+    identical(seen$args$combo_variables, c("Region", "Product")) && identical(seen$args$target_variable, "Value") &&
+      identical(seen$args$date_type, "month") && seen$args$forecast_horizon == 3 && seen$args$fiscal_year_start == 7 &&
+      isTRUE(seen$args$clean_missing_values) && inherits(seen$args$input_data$Date, "Date") && is.character(seen$args$input_data$Region))
+
+  compact <- tx_put("compact.csv", c(
+    "Row Labels,Jan 2024,Feb 2024,Mar 2024", "East,,,", "A,1,2,3", "B,4,5,6", "East Total,5,7,9",
+    "West,,,", "A,7,8,9", "West Total,7,8,9", "Grand Total,12,15,18"
+  ))
+  rc <- run(compact, tx_spec(c(
+    '{"op":"use_header_rows","rows":[1]}', '{"op":"split_compact_labels","column":"Row Labels","into":["Region","Product"]}',
+    '{"op":"drop_total_rows","columns":["Region","Product"]}', '{"op":"pivot_longer","id_columns":["Region","Product"]}',
+    '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+  )))
+  check("transform: compact pivot splits group labels and reconciles totals",
+    isTRUE(rc$gate$passed) && nrow(rc$gate$output) == 9 && sum(rc$gate$output$Value) == 45 && tx_status(rc)[["P9c"]] == "pass")
+  check("transform: change counts of one use the singular", grepl("| 1 column |", rc$preview_markdown, fixed = TRUE) &&
+    !grepl("\\b1 (rows|columns|values)\\b", rc$preview_markdown))
+
+  tabular <- tx_put("tabular.csv", c(
+    "Region,Product,Jan 2024,Feb 2024,Mar 2024", "East,A,1,2,3", "East,B,4,5,6", "East Total,,5,7,9",
+    "West,A,7,8,9", "West Total,,7,8,9", "Grand Total,,12,15,18"
+  ))
+  rt <- run(tabular, tx_spec(c(
+    '{"op":"use_header_rows","rows":[1]}', '{"op":"drop_total_rows","columns":["Region","Product"]}',
+    '{"op":"pivot_longer","id_columns":["Region","Product"]}', '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+  )))
+  check("transform: tabular pivot passes", isTRUE(rt$gate$passed) && nrow(rt$gate$output) == 9)
+
+  two_row <- tx_put("two_row.csv", c(",,2023,,2024,", "Region,Product,Nov,Dec,Jan,Feb", "East,A,1,2,3,4", "West,A,5,6,7,8"))
+  r2r <- run(two_row, tx_spec(c(
+    '{"op":"use_header_rows","rows":[1,2],"sep":" "}', '{"op":"pivot_longer","id_columns":["Region","Product"]}',
+    '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+  )))
+  check("transform: merged two-row year/month headers become dates",
+    isTRUE(r2r$gate$passed) && identical(sort(unique(format(r2r$gate$output$Date))), c("2023-11-01", "2023-12-01", "2024-01-01", "2024-02-01")))
+
+  tables <- tx_put("tables.csv", c(
+    "Region,Date,Value", "East,2024-01-01,10", "East,2024-02-01,11", "East,2024-03-01,12", ",,",
+    "Region,Date,Value", "West,2024-01-01,20", "West,2024-02-01,21", "West,2024-03-01,22", "* Preliminary figures,,"
+  ))
+  rtb <- run(tables, tx_spec(c(
+    '{"op":"use_header_rows","rows":[1]}', '{"op":"drop_rows","rows":[6],"reason":"header of the second table"}',
+    '{"op":"drop_rows","rows":[10],"reason":"footnote"}', '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+  ), settings = tx_region))
+  check("transform: stacked tables with a footnote pass", isTRUE(rtb$gate$passed) && nrow(rtb$gate$output) == 6 && sum(rtb$gate$output$Value) == 96)
+
+  money <- tx_put("money.csv", c(
+    "Region,Date,Value", "East,2024-01-01,\"$1,234.50\"", "East,2024-02-01,(100)", "East,2024-03-01,1.5M",
+    "West,2024-01-01,n/a", "West,2024-02-01,\u2014", "West,2024-03-01,\"\u20ac2,000\""
+  ))
+  rm1 <- run(money, tx_spec(c(tx_tidy_steps[1], '{"op":"parse_numbers","columns":["Value"],"missing":["\u2014"]}', tx_tidy_steps[3]), settings = tx_region))
+  check("transform: currency, parentheses, suffixes, and no-value text are read",
+    identical(rm1$gate$output$Value, c(1234.5, -100, 1.5e6, NA, NA, 2000)) && isTRUE(rm1$gate$passed))
+  check("transform: unlisted text in a number column stops the step",
+    errors_with(run(money, tx_spec(tx_tidy_steps, settings = tx_region)), "not numbers"))
+
+  units <- tx_put("units.csv", c(
+    "Region,Date,Value,Unit", "East,2024-01-01,1,USD k", "East,2024-02-01,2,USD k", "East,2024-03-01,3000,USD",
+    "West,2024-01-01,5,USD k", "West,2024-02-01,6,USD k", "West,2024-03-01,7,USD k"
+  ))
+  ru <- run(units, tx_spec(c(
+    tx_tidy_steps, '{"op":"scale","column":"Value","factor":1000,"reason":"thousands to dollars","where":{"column":"Unit","equals":"USD k"}}',
+    '{"op":"drop_columns","columns":["Unit"],"reason":"unit is now USD everywhere"}'
+  ), settings = tx_region))
+  check("transform: a unit change is converted and needs extra confirmation",
+    isTRUE(ru$gate$passed) && identical(ru$gate$output$Value, c(1000, 2000, 3000, 5000, 6000, 7000)) &&
+      length(ru$ctx$confirm) == 1 && ru$gate$counts$unit_converted == 5 && !grepl("- None.", ru$preview_markdown, fixed = TRUE))
+
+  mixed <- tx_put("mixed.csv", c("Region,Date,Value", "East,Jan 2024,1", "East,2024-02,2", "East,03/2024,3"))
+  rmx <- run(mixed, tx_spec(tx_tidy_steps, settings = tx_region))
+  check("transform: mixed month formats read value by value",
+    isTRUE(rmx$gate$passed) && identical(format(rmx$gate$output$Date), c("2024-01-01", "2024-02-01", "2024-03-01")))
+  ambiguous <- tx_put("ambiguous.csv", c("Region,Date,Value", "East,01/02/2024,1", "East,01/03/2024,2"))
+  check("transform: ambiguous day/month dates stop until a format is given",
+    errors_with(run(ambiguous, tx_spec(tx_tidy_steps, settings = tx_region)), "(?i)ambiguous|format") &&
+      isTRUE(run(ambiguous, tx_spec(c(tx_tidy_steps[1:2], '{"op":"parse_dates","column":"Date","format":"%d/%m/%Y"}'), settings = '{"combo_variables":["Region"],"target_variable":"Value","date_type":"month","forecast_horizon":3}'))$gate$passed))
+
+  fiscal <- tx_put("fiscal.csv", c("Region,Period,Value", "East,FY24 P01,1", "East,FY24 P02,2", "East,FY24 P03,3"))
+  rf <- run(fiscal, tx_spec(c(
+    tx_tidy_steps[1:2], '{"op":"fiscal_to_date","column":"Period","pattern":"FY(?<year>[0-9]{2})\\\\s*P(?<period>[0-9]{2})","fiscal_year_start":7,"into":"Date"}',
+    '{"op":"drop_columns","columns":["Period"],"reason":"replaced by Date"}'
+  ), settings = tx_region))
+  check("transform: fiscal periods become calendar months", isTRUE(rf$gate$passed) && identical(format(rf$gate$output$Date)[1], "2023-07-01"))
+
+  dupes <- tx_put("dupes.csv", c("Region,Date,Value", "East,2024-01-01,1", "East,2024-01-01,2", "East,2024-02-01,3", "East,2024-03-01,4"))
+  rd <- run(dupes, tx_spec(c(tx_tidy_steps, '{"op":"aggregate_duplicates","keys":["Region","Date"],"columns":["Value"],"reason":"two invoices in one month"}'), settings = tx_region))
+  check("transform: duplicate keys are summed with extra confirmation and conserve the total",
+    isTRUE(rd$gate$passed) && identical(rd$gate$output$Value, c(3, 3, 4)) && length(rd$ctx$confirm) == 1 && tx_status(rd)[["P9b"]] == "pass")
+
+  # Negative fixtures: spec rules.
+  check("transform: unknown ops are rejected", errors_with(finn_tx_read_spec('{"version":1,"steps":[{"op":"read_file"}]}'), "unknown op"))
+  check("transform: file or address parameters are rejected",
+    errors_with(finn_tx_read_spec('{"version":1,"steps":[{"op":"drop_rows","rows":[1],"reason":"x","path":"/tmp/x"}]}'), "unknown parameters") &&
+      errors_with(finn_tx_read_spec('{"version":1,"steps":[{"op":"parse_dates","column":"Date","url":"http://x"}]}'), "unknown parameters"))
+  check("transform: unknown top-level keys and missing version are rejected",
+    errors_with(finn_tx_read_spec('{"version":1,"code":"x","steps":[]}'), "Unknown spec keys") &&
+      errors_with(finn_tx_read_spec('{"steps":[]}'), "version"))
+  check("transform: a spec without required settings is rejected",
+    errors_with(run(tx_tidy, tx_spec(tx_tidy_steps, settings = '{"target_variable":"Value"}')), "needs the run settings"))
+
+  # Negative fixtures: gate rules.
+  rules <- c(paste0("R", 1:11), paste0("P", 1:8))
+  check("transform: every finnts rule failure (R1-R11, P1-P8) fails the gate", all(vapply(rules, function(rule) {
+    g <- run(tx_tidy, tx_spec(tx_tidy_steps, settings = tx_region), tx_fail_validator(rule))
+    !isTRUE(g$gate$passed) && is.null(g$token) && tx_status(g)[[rule]] == "fail" && grepl("**Overall: FAILED.**", g$preview_markdown, fixed = TRUE)
+  }, logical(1))))
+  nv <- run(tx_tidy, tx_spec(tx_tidy_steps, settings = tx_region), NULL)
+  check("transform: the gate fails closed without the finnts validator", !isTRUE(nv$gate$passed) && is.null(nv$token))
+  ev <- run(tx_tidy, tx_spec(tx_tidy_steps, settings = tx_region), function(...) stop("boom"))
+  check("transform: a validator error fails the gate", !isTRUE(ev$gate$passed) && tx_status(ev)[["R/P"]] == "fail")
+  lie <- run(tx_tidy, tx_spec(tx_tidy_steps, settings = tx_region), function(...) modifyList(tx_pass_validator(), list(passed = FALSE)))
+  check("transform: a validator that does not pass fails the gate even without a failed row", !isTRUE(lie$gate$passed))
+  check("transform: a result without parsed dates fails S1",
+    tx_status(run(tx_tidy, tx_spec(tx_tidy_steps[1:2], settings = tx_region)))[["S1"]] == "fail")
+
+  gate_after <- function(edit) {
+    spec <- finn_tx_read_spec(tx_spec(tx_tidy_steps, settings = tx_region))
+    cfg <- finn_tx_settings(NULL, spec$settings)
+    ctx <- finn_tx_load(tx_tidy, spec)
+    finn_tx_apply(ctx, spec)
+    edit(ctx)
+    finn_tx_gate(ctx, spec, cfg, tx_pass_validator)
+  }
+  g_drop <- gate_after(function(ctx) ctx$d <- ctx$d[-1, ])
+  check("transform: an unexplained dropped row fails P9a", !g_drop$passed && g_drop$checks$Status[g_drop$checks$Rule == "P9a"] == "fail")
+  g_change <- gate_after(function(ctx) ctx$d$Value[1] <- ctx$d$Value[1] + 1)
+  check("transform: a changed target value fails P9b", !g_change$passed && g_change$checks$Status[g_change$checks$Rule == "P9b"] == "fail")
+
+  bad_total <- tx_put("bad_total.csv", sub("^East Total,,1200", "East Total,,1250", readLines(tx_outline)))
+  rbt <- run(bad_total, tx_spec(tx_outline_steps))
+  check("transform: a subtotal that does not match its rows fails P9c", !isTRUE(rbt$gate$passed) && tx_status(rbt)[["P9c"]] == "fail")
+  no_rec <- sub('"columns":["Region","Product"]}', '"columns":["Region","Product"],"reconcile":false}', tx_outline_steps, fixed = TRUE)
+  rnr <- run(bad_total, tx_spec(no_rec))
+  check("transform: reconcile false reports a total mismatch instead of failing", isTRUE(rnr$gate$passed) && tx_status(rnr)[["P9c"]] == "report")
+
+  gap <- tx_put("gap.csv", c("Region,Date,Value", "East,2024-01-01,1", "East,2024-02-01,2", "East,2024-03-01,3", "East,2024-04-01,"))
+  fill_future <- tx_spec(c(tx_tidy_steps, '{"op":"fill_values","column":"Value","method":"previous","reason":"carry forward","extend_into_future":true}'),
+    settings = '{"combo_variables":["Region"],"target_variable":"Value","date_type":"month","forecast_horizon":3,"hist_end_date":"2024-03-01"}')
+  rff <- run(gap, fill_future)
+  check("transform: target values filled after the history end fail T1", !isTRUE(rff$gate$passed) && tx_status(rff)[["T1"]] == "fail")
+
+  totals_left <- tx_put("totals_left.csv", c("Region,Date,Value", "East,2024-01-01,1", "Total,2024-01-01,1"))
+  rtl <- run(totals_left, tx_spec(tx_tidy_steps, settings = tx_region))
+  check("transform: total labels left in the series fail T5", !isTRUE(rtl$gate$passed) && tx_status(rtl)[["T5"]] == "fail")
+  check("transform: not_totals allows a real series named like a total",
+    tx_status(run(totals_left, tx_spec(tx_tidy_steps, settings = tx_region, extra = ',"not_totals":["Total"]')))[["T5"]] == "pass")
+
+  # Diagnostics.
+  dg <- finn_tx_diagnose(tx_outline)
+  check("diagnose: finds the header, title rows, totals, footnote, and outline labels",
+    identical(dg$header_guess, 4L) && identical(unlist(dg$title_rows), 1:2) && identical(dg$total_rows$rows, c(7L, 9L, 10L)) &&
+      identical(unlist(dg$total_columns), "F") && 11L %in% unlist(dg$footnote_rows) &&
+      "A" %in% vapply(dg$outline_columns, `[[`, character(1), "column") && length(dg$unit_mentions) == 1)
+  check("diagnose: data labels are masked but column names are shown",
+    !grepl("East|West|Sales Report", finn_to_json(dg$sample_masked)) && identical(dg$header_candidates[[1]]$cells$A, "Region"))
+  check("diagnose: two-row date headers are detected", identical(finn_tx_diagnose(two_row)$two_row_date_header$rows, 1:2))
+  check("diagnose: a tidy file has no pivot filters or outline columns",
+    length(finn_tx_diagnose(tx_tidy)$pivot_filters) == 0 && length(finn_tx_diagnose(tx_tidy)$outline_columns) == 0)
+  fp <- finn_tx_diagnose(tx_filtered)
+  check("diagnose: pivot filters show the field and an Excel marker, and mask a single selected item",
+    length(fp$pivot_filters) == 2 && identical(fp$pivot_filters[[1]]$field, "Adjustment Type") &&
+      identical(fp$pivot_filters[[1]]$selection, "(Multiple Items)") && identical(fp$pivot_filters[[2]]$kind, "single") &&
+      !identical(fp$pivot_filters[[2]]$selection, "No"))
+  check("diagnose: the header below the filters, outline labels next to dates, and the Grand Total row are found",
+    identical(fp$header_guess, 5L) && identical(vapply(fp$outline_columns, `[[`, character(1), "column"), "B") &&
+      identical(fp$total_rows$rows, 10L))
+  check("diagnose: a lone value column headed Total is the value, not a total column", length(fp$total_columns) == 0)
+
+  # Latest period that has not ended.
+  rr <- run(tx_recent, tx_spec(tx_tidy_steps, settings = tx_region), today = tx_oct20)
+  check("transform: the preview flags a latest period that has not ended",
+    identical(rr$latest_period$suggested_hist_end_date, "2026-09-01") &&
+      grepl("**Latest period:** The latest period with actuals (`2026-10-01`", rr$preview_markdown, fixed = TRUE))
+  rr_later <- run(tx_recent, tx_spec(tx_tidy_steps, settings = tx_region), today = as.Date("2026-11-05"))
+  check("transform: the latest-period note never changes the gate or the token",
+    is.null(rr_later$latest_period) && !grepl("Latest period", rr_later$preview_markdown, fixed = TRUE) &&
+      identical(rr$token, rr_later$token) && identical(rr$gate$checks, rr_later$gate$checks))
+  check("transform: no latest-period note when hist_end_date already leaves it out",
+    is.null(finn_tx_latest_period(rr$gate$output, list(target_variable = "Value", date_type = "month", hist_end_date = "2026-09-01"), tx_oct20)) &&
+      is.null(finn_tx_latest_period(NULL, list(target_variable = "Value", date_type = "month"), tx_oct20)))
+})
+
+profile_env <- load_functions("profile_data.R", tx)
+with(profile_env, {
+  reasons_for <- function(file) {
+    df <- finn_load_data(file)
+    profile_transform_reasons(finn_tx_diagnose(file), df, finn_shape_issues(df))
+  }
+  fdf <- finn_load_data(tx_filtered)
+  check("profile guard: the automatic reshape alone would misread the filtered pivot",
+    length(finn_shape_issues(fdf)) > 0 && !"title_rows" %in% vapply(finn_shape_issues(fdf), `[[`, character(1), "type"))
+  fr <- reasons_for(tx_filtered)
+  check("profile guard: filters, the real header row, and outline labels need a transform spec",
+    any(grepl("2 pivot filters", fr)) && any(grepl("(Multiple Items)", fr, fixed = TRUE)) && any(grepl("a single item", fr)) &&
+      !any(grepl("Anomaly Flag = No", fr, fixed = TRUE)) && any(grepl("sheet row 5", fr)) && any(grepl("Column B", fr)))
+  orr <- reasons_for(tx_outline)
+  check("profile guard: subtotals the automatic reshape misses, footnotes, and total columns are reported",
+    any(grepl("2 subtotal labels", orr)) && any(grepl("footnote", orr)) && any(grepl("Column F holds totals", orr)) &&
+      any(grepl("Column A", orr)) && !any(grepl("column headers look", orr)))
+  check("profile guard: a tidy file needs nothing", length(reasons_for(tx_tidy)) == 0)
+  check("profile guard: diagnostics errors give no reasons", length(profile_transform_reasons(list(error = "x"), fdf, list())) == 0)
+  check("profile guard: pivot filters add a filtered-slice next action",
+    grepl("filtered pivot", profile_filter_action(finn_tx_diagnose(tx_filtered))) && is.null(profile_filter_action(list())))
+  lp <- profile_latest_period(utils::read.csv(tx_recent, stringsAsFactors = FALSE), "Date", "Value", "month", tx_oct20)
+  check("profile: a latest month that has not ended is reported with the previous month",
+    identical(lp$suggested_hist_end_date, "2026-09-01") &&
+      is.null(profile_latest_period(utils::read.csv(tx_recent, stringsAsFactors = FALSE), "Date", "Value", "month", as.Date("2026-11-05"))) &&
+      is.null(profile_latest_period(data.frame(), NULL, "Value", "month", tx_oct20)))
+})
+
+with(prep_env, {
+  d <- file.path(tmp, "tx_out")
+  spec <- tx_spec(tx_outline_steps, description = "SPEC-MARKER-7731")
+  check("prepare transform: the spec is read from standard input only",
+    errors_with(prepare_read_spec(file.path(tx_dir, "spec.json")), "only accepts '-'") &&
+      identical(prepare_read_spec("-", textConnection(spec)), spec))
+  base <- list(file = tx_outline, out_dir = d)
+  check("prepare transform: preview and approve are exclusive",
+    errors_with(prepare_transform(base, tx_outline, spec, tx_pass_validator), "exactly one"))
+  check("prepare transform: a missing finnts validator stops before anything is written",
+    errors_with(prepare_transform(c(base, preview = "true"), tx_outline, spec, NULL), "validate_prepared_input") && !dir.exists(d))
+  pv <- prepare_transform(c(base, preview = "true"), tx_outline, spec, tx_pass_validator)
+  check("prepare transform: preview returns a token and writes only the local preview file",
+    identical(pv$status, "preview") && nchar(pv$data$token) == 16 && identical(list.files(d), "outline_finn_preview.csv") &&
+      startsWith(readLines(file.path(d, "outline_finn_preview.csv"), n = 1), "\"finn_preview_source_rows\""))
+  prepare_transform(c(base, preview = "true"), tx_outline, spec, tx_pass_validator)
+  check("prepare transform: a new preview replaces only its own preview file", identical(list.files(d), "outline_finn_preview.csv"))
+  check("prepare transform: a wrong token writes nothing",
+    errors_with(prepare_transform(c(base, approve = "0000000000000000"), tx_outline, spec, tx_pass_validator), "does not match") &&
+      identical(list.files(d), "outline_finn_preview.csv"))
+  check("prepare transform: a changed spec needs a new preview",
+    errors_with(prepare_transform(c(base, approve = pv$data$token), tx_outline, tx_spec(tx_outline_steps, description = "edited"), tx_pass_validator), "does not match"))
+  failing <- prepare_transform(c(base, preview = "true"), tx_outline, tx_spec(tx_outline_steps), tx_fail_validator("R7"))
+  check("prepare transform: a failed gate returns no token", identical(failing$status, "gate_failed") && is.null(failing$data$token))
+  ap <- prepare_transform(c(base, approve = pv$data$token), tx_outline, spec, tx_pass_validator)
+  written <- utils::read.csv(ap$data$output, stringsAsFactors = FALSE)
+  check("prepare transform: approval writes the verified table", identical(ap$status, "ok") && nrow(written) == 9 && sum(written$Value) == 3110)
+  check("prepare transform: the spec is never saved",
+    !any(vapply(list.files(c(d, tx_dir), full.names = TRUE), function(f) any(grepl("SPEC-MARKER-7731|\"op\"", readLines(f, warn = FALSE))), logical(1))))
+
+  root <- file.path(tmp, "tx_root")
+  paths <- finn_project_paths(root, "Prep")
+  finn_ensure_project_dirs(paths)
+  finn_write_project(paths, list(name = "Prep"))
+  pargs <- list(file = tx_outline, root = root, project = "Prep")
+  tok <- prepare_transform(c(pargs, preview = "true"), tx_outline, spec, tx_pass_validator)$data$token
+  pa <- prepare_transform(c(pargs, approve = tok), tx_outline, spec, tx_pass_validator)
+  rec <- finn_read_project(paths)$data_preparations
+  check("prepare transform: approval records an audit entry without the spec or data",
+    length(rec) == 1 && setequal(names(rec[[1]]), c("prepared_at", "source", "output", "source_md5", "token", "plan_summary", "checks", "counts")) &&
+      startsWith(rec[[1]]$output, "input/") && file.exists(pa$data$output))
+
+  rpaths <- finn_project_paths(root, "Recent")
+  finn_ensure_project_dirs(rpaths)
+  finn_write_project(rpaths, list(name = "Recent"))
+  rargs <- list(file = tx_recent, root = root, project = "Recent")
+  rspec <- tx_spec(tx_tidy_steps, settings = tx_region)
+  rpv <- prepare_transform(c(rargs, preview = "true"), tx_recent, rspec, tx_pass_validator, today = tx_oct20)
+  check("prepare transform: an open latest period is pointed out with hist_end_date offered, not rows dropped",
+    identical(rpv$data$latest_period$suggested_hist_end_date, "2026-09-01") &&
+      any(grepl("Offer hist_end_date `2026-09-01`", rpv$next_actions, fixed = TRUE)))
+  prepare_transform(c(rargs, approve = rpv$data$token), tx_recent, rspec, tx_pass_validator, today = tx_oct20)
+  rrec <- finn_read_project(rpaths)$data_preparations
+  check("prepare transform: the latest-period note is never saved in the audit record",
+    length(rrec) == 1 && setequal(names(rrec[[1]]), names(rec[[1]])) && !grepl("not ended|Latest period", finn_to_json(rrec)))
+  check("prepare transform: no latest-period action when the period has ended",
+    !any(grepl("Latest period", prepare_transform(c(rargs, preview = "true"), tx_recent, rspec, tx_pass_validator, today = as.Date("2026-11-05"))$next_actions)))
 })
 
 # ---- Size-based recommendations -------------------------------------------------
@@ -716,6 +1147,21 @@ with(launch, {
     stuck <- launch_decide(ap, "update", modifyList(acfg, list(hist_end_date = "2023-12-01")), list(last_actual_date = "2024-06-01"), list())
     check("update: pinned hist_end_date explains why nothing is new",
       identical(stuck$result$status, "no_new_data") && isTRUE(stuck$result$data$hist_end_pinned) && grepl("hist_end_date is set", stuck$result$message))
+    open_jan <- list(last_actual_date = "2024-01-01", incomplete_period = list(date = "2024-01-01", suggested_hist_end_date = "2023-12-01"))
+    left_out <- finn_next_run(ap, modifyList(acfg, list(hist_end_date = "2023-12-01")), open_jan)
+    check("next run: a period that has not ended and is left out by hist_end_date is not new actuals",
+      identical(left_out$situation, "agent_current") && identical(left_out$data_end, "2023-12-01") &&
+        grepl("`2024-01-01` period has not ended yet", left_out$why, fixed = TRUE) && length(left_out$recommendations) == 0)
+    check("next run: without hist_end_date the open period still counts, so the review can warn about it",
+      identical(finn_next_run(ap, acfg, open_jan)$situation, "agent_refresh"))
+    open_only <- launch_decide(ap, "update", modifyList(acfg, list(hist_end_date = "2023-12-01")), open_jan, list())
+    check("update: only a period that has not ended is newer, so the user is told to wait",
+      identical(open_only$result$status, "no_new_data") && identical(open_only$result$data$incomplete_period, "2024-01-01") &&
+        grepl("has not ended yet", open_only$result$message) && any(grepl("wait until it ends", open_only$result$next_actions)))
+    open_jun <- list(last_actual_date = "2024-06-01", incomplete_period = list(date = "2024-06-01", suggested_hist_end_date = "2024-05-01"))
+    open_pinned <- launch_decide(ap, "update", modifyList(acfg, list(hist_end_date = "2023-12-01")), open_jun, list())
+    check("update: a pinned hist_end_date points to the last complete period, not the open one",
+      grepl("last complete period is 2024-05-01", open_pinned$result$message) && any(grepl("hist_end_date to 2024-05-01", open_pinned$result$next_actions)))
     drifted <- launch_decide(ap, "update", modifyList(acfg, list(forecast_horizon = 12)), list(last_actual_date = "2024-06-01", n_series = 4), list())
     check("update: changed settings need confirmation",
       identical(drifted$result$status, "needs_confirmation") && any(grepl("forecast_horizon 6 -> 12", drifted$result$data$changes, fixed = TRUE)))

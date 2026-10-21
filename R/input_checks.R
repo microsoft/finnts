@@ -174,6 +174,10 @@ check_input_type <- function(input_name,
 
 #' Check input data
 #'
+#' Runs every input-data rule in a fixed order and stops at the first failure.
+#' Each rule lives in its own `check_input_*()` helper so
+#' [validate_prepared_input()] can report all failures with identical messages.
+#'
 #' @param input_data input name
 #' @param combo_variables combo variables
 #' @param target_variable target variable
@@ -191,6 +195,38 @@ check_input_data <- function(input_data,
                              date_type,
                              fiscal_year_start,
                              parallel_processing) {
+  check_input_columns(input_data, combo_variables, target_variable, external_regressors)
+
+  input_data <- normalize_combo_values(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
+  check_input_reserved_date(combo_variables, target_variable, external_regressors)
+  check_input_combo_types(input_data, combo_variables)
+  check_input_target_numeric(input_data, target_variable)
+  check_input_date_column(input_data)
+  check_input_blank_combos(input_data, combo_variables)
+  check_input_date_alignment(input_data, date_type)
+  check_input_fiscal_year_start(fiscal_year_start)
+  check_input_parallel_type(input_data, parallel_processing)
+  check_input_duplicates(input_data, combo_variables)
+}
+
+#' Check that required input columns exist
+#'
+#' @param input_data input data
+#' @param combo_variables combo variable names
+#' @param target_variable target variable name
+#' @param external_regressors external regressor names or NULL
+#'
+#' @return nothing; stops when a combo variable, the target or an external
+#'   regressor is not a column, listing missing and available columns
+#' @noRd
+check_input_columns <- function(input_data,
+                                combo_variables,
+                                target_variable,
+                                external_regressors) {
   # data combo names match the input data
   if (sum(combo_variables %in% colnames(input_data)) != length(combo_variables)) {
     missing_vars <- setdiff(combo_variables, colnames(input_data))
@@ -221,13 +257,20 @@ check_input_data <- function(input_data,
       call. = FALSE
     )
   }
+}
 
-  input_data <- normalize_combo_values(
-    input_data = input_data,
-    combo_variables = combo_variables
-  )
-
-  # 'Date' column is reserved for the time stamp
+#' Check that the reserved Date column is not used as a variable
+#'
+#' @param combo_variables combo variable names
+#' @param target_variable target variable name
+#' @param external_regressors external regressor names or NULL
+#'
+#' @return nothing; stops when `Date` is a combo variable, the target or an
+#'   external regressor
+#' @noRd
+check_input_reserved_date <- function(combo_variables,
+                                      target_variable,
+                                      external_regressors) {
   if ("Date" %in% combo_variables) {
     stop("'Date' column cannot be used as a combo variable. It is reserved for the time stamp.",
       call. = FALSE
@@ -245,8 +288,17 @@ check_input_data <- function(input_data,
       call. = FALSE
     )
   }
+}
 
-  # combo variables must not be date-formatted columns
+#' Check that combo variables are not date-typed
+#'
+#' @param input_data input data
+#' @param combo_variables combo variable names
+#'
+#' @return nothing; stops when a combo variable is a Date or date-time column
+#' @noRd
+check_input_combo_types <- function(input_data,
+                                    combo_variables) {
   for (cv in combo_variables) {
     if (inherits(input_data[[cv]], c("Date", "POSIXct", "POSIXlt"))) {
       stop(
@@ -255,18 +307,36 @@ check_input_data <- function(input_data,
       )
     }
   }
+}
 
-  # target variable is numeric
+#' Check that the target variable is numeric
+#'
+#' @param input_data input data
+#' @param target_variable target variable name
+#'
+#' @return nothing; stops when the target column is not numeric
+#' @noRd
+check_input_target_numeric <- function(input_data,
+                                       target_variable) {
   if (!input_data %>%
     dplyr::rename(Target = tidyselect::all_of(target_variable)) %>%
     dplyr::pull(Target) %>%
     is.numeric()) {
-    stop("Target variable in input data needs to be numeric")
+    stop("Target variable in input data needs to be numeric", call. = FALSE)
   }
+}
 
+#' Check the Date column name and class
+#'
+#' @param input_data input data
+#'
+#' @return nothing; stops when no column is named `Date` or when it is not of
+#'   class Date
+#' @noRd
+check_input_date_column <- function(input_data) {
   # date column is labeled as "Date"
   if (!("Date" %in% colnames(input_data))) {
-    stop("date column in input data needs to be named as 'Date'")
+    stop("date column in input data needs to be named as 'Date'", call. = FALSE)
   }
 
   # date column is formatted as a date
@@ -276,9 +346,21 @@ check_input_data <- function(input_data,
     dplyr::collect() %>%
     dplyr::pull(Date) %>%
     lubridate::is.Date()) {
-    stop("date column in input data needs to be formatted as a date value")
+    stop("date column in input data needs to be formatted as a date value", call. = FALSE)
   }
+}
 
+#' Check that character combo values are not blank
+#'
+#' Expects combo values already trimmed by `normalize_combo_values()`.
+#'
+#' @param input_data input data with normalized combo values
+#' @param combo_variables combo variable names
+#'
+#' @return nothing; stops when a character-like combo value is an empty string
+#' @noRd
+check_input_blank_combos <- function(input_data,
+                                     combo_variables) {
   character_variables <- character_combo_variables(
     input_data = input_data,
     combo_variables = combo_variables
@@ -311,7 +393,18 @@ check_input_data <- function(input_data,
       )
     }
   }
+}
 
+#' Check that period dates share one day of the month
+#'
+#' @param input_data input data
+#' @param date_type date type
+#'
+#' @return nothing; stops when month, quarter or year data falls on more than
+#'   one day of the month
+#' @noRd
+check_input_date_alignment <- function(input_data,
+                                       date_type) {
   # ensure month, quarter, year data repeats on the same day of each period
   if ((date_type != "day" & date_type != "week") & length(unique(format(input_data$Date, format = "%d"))) != 1) {
     unique_days <- unique(format(input_data$Date, format = "%d"))
@@ -323,13 +416,29 @@ check_input_data <- function(input_data,
       call. = FALSE
     )
   }
+}
 
-  # fiscal year start formatting
+#' Check the fiscal year start month
+#'
+#' @param fiscal_year_start fiscal year start month
+#'
+#' @return nothing; stops unless the value is a number from 1 to 12
+#' @noRd
+check_input_fiscal_year_start <- function(fiscal_year_start) {
   if (!is.numeric(fiscal_year_start) | fiscal_year_start < 1 | fiscal_year_start > 12) {
-    stop("fiscal year start should be a number from 1 to 12")
+    stop("fiscal year start should be a number from 1 to 12", call. = FALSE)
   }
+}
 
-  # input_data is correct type for parallel processing
+#' Check that Spark tables use Spark parallel processing
+#'
+#' @param input_data input data
+#' @param parallel_processing parallel processing setting
+#'
+#' @return nothing; stops when a Spark table runs without Spark processing
+#' @noRd
+check_input_parallel_type <- function(input_data,
+                                      parallel_processing) {
   if (inherits(input_data, c("data.frame", "tbl")) & is.null(parallel_processing)) {
     # do nothing
   } else if (inherits(input_data, "tbl_spark") & is.null(parallel_processing)) {
@@ -341,8 +450,19 @@ check_input_data <- function(input_data,
       call. = FALSE
     )
   }
+}
 
-  # duplicate rows
+#' Check for duplicate combo and Date rows
+#'
+#' Expects combo values already trimmed by `normalize_combo_values()`.
+#'
+#' @param input_data input data with normalized combo values
+#' @param combo_variables combo variable names
+#'
+#' @return nothing; stops when a combo has more than one row for a date
+#' @noRd
+check_input_duplicates <- function(input_data,
+                                   combo_variables) {
   duplicate_tbl <- input_data %>%
     tidyr::unite("Combo",
       tidyselect::all_of(combo_variables),

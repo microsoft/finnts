@@ -72,7 +72,8 @@ Runs launch in the background and return immediately; do not block the chat wait
 | Choose where projects live | `setup_project.R --action=status`, then `--action=set_root --root=... --confirm=true` ([references/storage.md](references/storage.md)) |
 | Start a project from a file | `setup_project.R --action=create --project=<name> --data=<file>` |
 | Look at the data | `profile_data.R --project=<name>` |
-| Fix a wide, totals, or title-row layout | When profile returns `needs_reshape`, confirm, then `prepare_data.R --file=<file> <suggested_prepare_args> --project=<name>` |
+| Fix a wide, totals, or title-row layout | When profile returns `needs_reshape` with `suggested_prepare_args`, confirm, then `prepare_data.R --file=<file> <suggested_prepare_args> --project=<name>`. If it returns `needs_transform` instead, those flags would misread the file; use a transform spec |
+| Fix any other messy layout (pivots, merged headers, footnotes, text numbers, mixed dates, duplicates, unit changes) | Diagnose, propose a transform spec on stdin with `--transform=- --preview=true`, show `data.preview_markdown` exactly, get one approval, then `--approve=<token>` ([references/data-preparation.md](references/data-preparation.md)). Never save the spec or skip its checks |
 | Replace the data with a newer file | `setup_project.R --action=create --project=<name> --data=<file>`; on `needs_confirmation` ask, then add `--replace_data=true` |
 | Check disk space used | `setup_project.R --action=disk_usage --project=<name>` |
 | Compare two runs | Free-form R with `finn_compare_runs()` ([references/analysis.md](references/analysis.md)) |
@@ -169,8 +170,9 @@ Do not change the finnts package version for a skill-only change.
    the background, share `estimated_runtime` as a
    rough range (not a promise), relay any `notes` (for example Copilot premium-request
    use, OneDrive sync), and check `run_status.R` when they ask.
-   Data `warnings` (zero-only series, values after `hist_end_date`, drivers without
-   future values) never block a run; explain them and let the user decide.
+   Data `warnings` (zero-only series, values after `hist_end_date`, a latest period that
+   has not ended, drivers without future values) never block a run; explain them and let
+   the user decide.
 7. When it completes, summarize accuracy and the forecast (in the input's units), offer
    `export_results.R`, and answer follow-ups with free-form analysis. After the first
    completed run (or the tutorial), offer three or four next prompts from

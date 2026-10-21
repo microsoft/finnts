@@ -170,27 +170,9 @@ prep_data <- function(run_info,
   )
 
   # get hist data start and end date
-  if (is.null(hist_end_date)) {
-    hist_end_date <- input_data %>%
-      dplyr::select(Date) %>%
-      dplyr::distinct() %>%
-      dplyr::collect() %>%
-      dplyr::distinct() %>%
-      dplyr::filter(Date == max(Date)) %>%
-      dplyr::pull(Date) %>%
-      suppressWarnings()
-  }
-
-  if (is.null(hist_start_date)) {
-    hist_start_date <- input_data %>%
-      dplyr::select(Date) %>%
-      dplyr::distinct() %>%
-      dplyr::collect() %>%
-      dplyr::distinct() %>%
-      dplyr::filter(Date == min(Date)) %>%
-      dplyr::pull(Date) %>%
-      suppressWarnings()
-  }
+  hist_bounds <- resolve_hist_date_bounds(input_data, hist_start_date, hist_end_date)
+  hist_start_date <- hist_bounds$hist_start_date
+  hist_end_date <- hist_bounds$hist_end_date
 
   # prep initial data before feature engineering
   initial_prep_tbl <- input_data %>%
@@ -343,23 +325,11 @@ prep_data <- function(run_info,
 
   # compute global xregs_future_values_list across all combos so every combo
   # keeps the same raw xreg columns in recipe output (prevents NA when combined)
-  global_xregs_future_list <- NULL
-  if (!is.null(external_regressors) && length(external_regressors) > 0) {
-    global_future <- c()
-    for (xr in external_regressors) {
-      has_future <- initial_prep_tbl %>%
-        dplyr::filter(Date > hist_end_date, !is.na(.data[[xr]])) %>%
-        dplyr::summarise(n = dplyr::n()) %>%
-        dplyr::collect() %>%
-        dplyr::pull(n)
-      if (isTRUE(has_future > 0)) {
-        global_future <- c(global_future, xr)
-      }
-    }
-    if (length(global_future) > 0) {
-      global_xregs_future_list <- global_future
-    }
-  }
+  global_xregs_future_list <- global_future_regressors(
+    initial_prep_tbl,
+    external_regressors,
+    hist_end_date
+  )
 
   # parallel run info
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
@@ -880,6 +850,78 @@ prep_data <- function(run_info,
       suffix = "-orig_combo_info"
     )
   }
+}
+
+#' Resolve the historical start and end dates
+#'
+#' Fills NULL bounds with the earliest and latest `Date` in the input so every
+#' caller derives the same history window as [prep_data()].
+#'
+#' @param input_data input data with a `Date` column
+#' @param hist_start_date Date value or NULL for the earliest date
+#' @param hist_end_date Date value or NULL for the latest date
+#'
+#' @return list with `hist_start_date` and `hist_end_date`
+#' @noRd
+resolve_hist_date_bounds <- function(input_data,
+                                     hist_start_date,
+                                     hist_end_date) {
+  if (is.null(hist_end_date)) {
+    hist_end_date <- input_data %>%
+      dplyr::select(Date) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::filter(Date == max(Date)) %>%
+      dplyr::pull(Date) %>%
+      suppressWarnings()
+  }
+
+  if (is.null(hist_start_date)) {
+    hist_start_date <- input_data %>%
+      dplyr::select(Date) %>%
+      dplyr::distinct() %>%
+      dplyr::collect() %>%
+      dplyr::distinct() %>%
+      dplyr::filter(Date == min(Date)) %>%
+      dplyr::pull(Date) %>%
+      suppressWarnings()
+  }
+
+  list(hist_start_date = hist_start_date, hist_end_date = hist_end_date)
+}
+
+#' Find external regressors with future values
+#'
+#' An external regressor becomes a future regressor when any row after the
+#' historical end date has a non-missing value, across all combos.
+#'
+#' @param data_tbl input data with `Date` and regressor columns
+#' @param external_regressors external regressor names or NULL
+#' @param hist_end_date last historical date
+#'
+#' @return character vector of future regressor names, or NULL when none
+#' @noRd
+global_future_regressors <- function(data_tbl,
+                                     external_regressors,
+                                     hist_end_date) {
+  if (is.null(external_regressors) || length(external_regressors) == 0) {
+    return(NULL)
+  }
+
+  global_future <- c()
+  for (xr in external_regressors) {
+    has_future <- data_tbl %>%
+      dplyr::filter(Date > hist_end_date, !is.na(.data[[xr]])) %>%
+      dplyr::summarise(n = dplyr::n()) %>%
+      dplyr::collect() %>%
+      dplyr::pull(n)
+    if (isTRUE(has_future > 0)) {
+      global_future <- c(global_future, xr)
+    }
+  }
+
+  if (length(global_future) > 0) global_future else NULL
 }
 
 #' Function to remove time series that don't contain recent values

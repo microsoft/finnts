@@ -16,6 +16,9 @@
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
+- Added `validate_prepared_input()` to check input data against Finn's preparation rules without starting a run or writing files.
+  - Reports every failed rule with the message `prep_data()` would raise, instead of stopping at the first.
+  - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 
 ## Bug Fixes
 

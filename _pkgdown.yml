@@ -54,3 +54,8 @@ reference:
       - custom_model_control
       - custom_model_feedback
       - print.finnts_custom_model
+
+  - title: "Input Data Checks"
+    desc: Check prepared input data against Finn's preparation rules before starting an Agent or standard run.
+    contents:
+      - validate_prepared_input
