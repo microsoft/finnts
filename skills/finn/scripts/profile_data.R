@@ -159,17 +159,50 @@ profile_filter_action <- function(diag) {
   )
 }
 
+#' Load profile data without losing CSV identifiers before inference
+#'
+#' CSV columns are read lexically first. Configured combos and low-cardinality
+#' columns containing zero-padded integer labels stay as text; other columns
+#' use the usual CSV type conversion. Excel cell types are left unchanged.
+#'
+#' @param file Source path.
+#' @param sheet Optional Excel sheet.
+#' @param combo_variables Configured series columns, or NULL.
+#' @return List with `data` and `combo_variables` to exclude from numeric/date
+#'   suggestions. Missing configured columns are ignored. Does not write files.
+profile_load_data <- function(file, sheet = NULL, combo_variables = NULL) {
+  df <- finn_load_data(file, sheet, all_text = TRUE)
+  combos <- intersect(as.character(unlist(combo_variables)), names(df))
+  if (tolower(tools::file_ext(file)) %in% c("csv", "txt")) {
+    padded <- names(df)[vapply(df, function(x) {
+      any(grepl("^0[0-9]+$", trimws(x))) &&
+        length(unique(x)) < max(0.5 * nrow(df), 2)
+    }, logical(1))]
+    combos <- union(combos, padded)
+    convert <- setdiff(names(df), combos)
+    df[convert] <- lapply(df[convert], utils::type.convert, as.is = TRUE)
+  }
+  list(data = df, combo_variables = combos)
+}
+
+# Profile the selected source using saved combo settings when available.
+# Return suggestions and diagnostics only; never change the source or config.
 finn_main(function(args) {
   file <- finn_arg(args, "file")
   sheet <- finn_arg(args, "sheet")
-  if (is.null(file) && !is.null(finn_arg(args, "project"))) {
+  cfg <- list()
+  if (!is.null(finn_arg(args, "project"))) {
     paths <- finn_project_from_args(args)
     project <- finn_read_project(paths)
-    file <- finn_resolve_data_file(paths, project$data_file)
-    sheet <- sheet %||% project$sheet
+    if (is.null(file)) {
+      file <- finn_resolve_data_file(paths, project$data_file)
+      sheet <- sheet %||% project$sheet
+    }
+    if (file.exists(file.path(paths$dir, "config.json"))) cfg <- finn_read_project_config(paths)
   }
   if (is.null(file)) stop("Pass --file=<data file> or --project=<name>.", call. = FALSE)
-  df <- finn_load_data(file, sheet)
+  loaded <- profile_load_data(file, sheet, cfg$combo_variables)
+  df <- loaded$data
   sheets <- if (tolower(tools::file_ext(file)) %in% c("xlsx", "xls")) readxl::excel_sheets(file) else NULL
   shape_issues <- finn_shape_issues(df)
   reveal <- finn_bool(finn_arg(args, "reveal_labels"))
@@ -223,6 +256,7 @@ finn_main(function(args) {
     )
   })
   date_shares <- vapply(df, profile_date_share, numeric(1))
+  date_shares[loaded$combo_variables] <- 0
   date_guess <- if ("Date" %in% names(df) && date_shares[["Date"]] > 0.9) "Date" else names(which.max(date_shares))
   if (length(date_guess) == 0 || max(date_shares) < 0.9) date_guess <- NULL
 
@@ -232,9 +266,10 @@ finn_main(function(args) {
     present <- !is.na(x) & nzchar(trimws(as.character(x)))
     if (!any(present)) 0 else mean(!is.na(finn_parse_number(x[present])))
   }, numeric(1))
-  numeric_cols <- others[numeric_share > 0.95]
+  numeric_cols <- setdiff(others[numeric_share > 0.95], loaded$combo_variables)
   text_cols <- setdiff(others, numeric_cols)
-  combo_guess <- text_cols[vapply(text_cols, function(nm) length(unique(df[[nm]])) < max(0.5 * nrow(df), 2), logical(1))]
+  combo_guess <- union(loaded$combo_variables,
+    text_cols[vapply(text_cols, function(nm) length(unique(df[[nm]])) < max(0.5 * nrow(df), 2), logical(1))])
   target_guess <- if (length(numeric_cols)) {
     preferred <- numeric_cols[grepl("value|amount|revenue|sales|target|actual|units|qty|quantity|spend|cost", numeric_cols, ignore.case = TRUE)]
     (if (length(preferred)) preferred else numeric_cols)[1]

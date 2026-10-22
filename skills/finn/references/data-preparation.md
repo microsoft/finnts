@@ -62,6 +62,21 @@ contain R code, file paths, or web addresses.
 If a check fails, the response is `gate_failed`, with no token and no file written. Explain
 each FAIL row in plain language, revise the spec, and preview again.
 
+## CSV series identifiers and quick samples
+
+Profiling suggests repeated zero-padded numeric columns, such as `001`, as series
+identifiers rather than numeric drivers. When profiling a project, saved
+`combo_variables` are included, even for numeric-looking IDs without leading
+zeros. Confirm the suggested columns with the user; numeric value and driver columns
+still retain their usual numeric types.
+
+For a quick test subset, use `prepare_data.R --sample_series=<n>
+--combo_variables=Region,Product`. The written CSV keeps exact identifiers, so `001`
+and `1` remain separate series, and includes every row of each selected series.
+When also reshaping, declare the source identifiers with
+`--id_columns=Region,Product`; those values stay intact through header promotion and
+pivoting as well as sampling. The source file is never changed.
+
 ## Spec format
 
 ```json

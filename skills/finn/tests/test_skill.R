@@ -2397,6 +2397,145 @@ local({
   check("ids: the worker passes 001 and 1 on as two series",
     isTRUE(wres$ok) && is.data.frame(seen$data) && setequal(unique(seen$data$Region), c("001", "1")))
 }, envir = new.env(parent = common))
+local({
+  # Run the real input-script entry point with isolated arguments and helpers;
+  # return its result without sourcing the CLI bootstrap or printing JSON.
+  run_input_script <- function(file, args) {
+    entry <- load_functions(file, tx)
+    entry$finn_main <- function(fn) fn(args)
+    eval(tail(as.list(parse(file.path(scripts_dir, file))), 1)[[1]], entry)
+  }
+
+  ids <- file.path(tmp, "profile-sample-ids.csv")
+  writeLines(c("Region,Date,Revenue,Driver", paste0(id_lines[-1], ",", seq(0.1, 0.6, by = 0.1))), ids)
+  source_hash <- unname(tools::md5sum(ids))
+  check("ids: all-text CSV loading is opt-in and preserves numeric-looking values", {
+    lexical <- finn_load_data(ids, all_text = TRUE)
+    inferred <- finn_load_data(ids)
+    all(vapply(lexical, is.character, logical(1))) &&
+      setequal(lexical$Region, c("001", "1")) && is.numeric(inferred$Revenue) &&
+      identical(unique(inferred$Region), 1L)
+  })
+  excel <- file.path(tmp, "excel-dispatch.xlsx")
+  writeLines("Reader stub fixture; no workbook is parsed.", excel)
+  excel_env <- new.env(parent = common)
+  excel_data <- data.frame(Region = c("001", "1"), Revenue = c(10, 20))
+  excel_calls <- list()
+  # Capture readxl delegation without adding an Excel package requirement to
+  # this offline harness; all other namespace lookups use their real exports.
+  excel_env$`::` <- function(package, name) {
+    package <- as.character(substitute(package))
+    name <- as.character(substitute(name))
+    if (identical(package, "readxl") && identical(name, "read_excel")) {
+      return(function(path, sheet) {
+        excel_calls[[length(excel_calls) + 1L]] <<- list(path = path, sheet = sheet)
+        excel_data
+      })
+    }
+    getExportedValue(package, name)
+  }
+  # The fake reader needs no installed package; reject unexpected dependencies.
+  excel_env$finn_require <- function(pkgs) stopifnot(identical(pkgs, "readxl"))
+  excel_loader <- finn_load_data
+  environment(excel_loader) <- excel_env
+  check("ids: CSV text options leave Excel delegation and cell types unchanged",
+    identical(excel_loader(excel, sheet = "2"), excel_data) &&
+      identical(excel_loader(excel, sheet = "2", all_text = TRUE, text_columns = "Revenue"), excel_data) &&
+      identical(excel_calls, rep(list(list(path = excel, sheet = 2L)), 2)))
+
+  profiled <- run_input_script("profile_data.R", list(file = ids))$data
+  check("ids: profile suggests padded combo IDs and counts distinct series",
+    identical(profiled$suggested$combo_variables, list("Region")) &&
+      profiled$facts$series == 2 && profiled$facts$duplicate_keys == 0)
+  check("ids: profile preserves numeric target, decimal regressor, and date suggestions",
+    identical(profiled$suggested$target_variable, "Revenue") &&
+      identical(profiled$suggested$external_regressor_candidates, list("Driver")) &&
+      identical(profiled$suggested$date_column, "Date") && identical(profiled$suggested$date_type, "month"))
+  check("ids: profile reports text IDs without changing numeric display types",
+    identical(vapply(profiled$columns, `[[`, character(1), "type"), c("character", "character", "integer", "numeric")) &&
+      profiled$columns[[1]]$unique == 2 && identical(profiled$columns[[1]]$example[[1]], "001"))
+
+  plain <- file.path(tmp, "profile-plain-ids.csv")
+  writeLines(sub("^001,", "2,", readLines(ids)), plain)
+  ordinary <- run_input_script("profile_data.R", list(file = plain))$data
+  check("ids: unconfigured non-padded numeric columns retain existing inference",
+    is.null(ordinary$suggested$combo_variables) && identical(ordinary$suggested$target_variable, "Revenue") &&
+      identical(ordinary$suggested$external_regressor_candidates, list("Region", "Driver")) &&
+      identical(ordinary$columns[[1]]$type, "integer"))
+  blanks <- file.path(tmp, "profile-blank-ids.csv")
+  writeLines(c(readLines(ids), ",2024-04-01,30,0.7"), blanks)
+  blank_profile <- run_input_script("profile_data.R", list(file = blanks))$data
+  check("ids: blank combo cells do not hide padded IDs",
+    identical(blank_profile$suggested$combo_variables, list("Region")) && blank_profile$columns[[1]]$missing == 1)
+
+  root <- file.path(tmp, "profile-id-projects")
+  paths <- finn_project_paths(root, "ProfileIds")
+  finn_ensure_project_dirs(paths)
+  finn_write_project(paths, list(name = "ProfileIds", data_file = plain))
+  no_config <- run_input_script("profile_data.R", list(root = root, project = "ProfileIds"))$data
+  check("ids: a project can still be profiled before its first config",
+    identical(no_config$suggested, ordinary$suggested))
+  finn_save_project_config(paths, list(combo_variables = "Region", data = list(file = plain)))
+  configured <- run_input_script("profile_data.R", list(root = root, project = "ProfileIds"))$data
+  check("ids: profile honors configured numeric combo columns",
+    identical(configured$suggested$combo_variables, list("Region")) &&
+      configured$facts$series == 2 && configured$facts$duplicate_keys == 0 &&
+      identical(configured$suggested$external_regressor_candidates, list("Driver")))
+  explicit <- run_input_script("profile_data.R", list(root = root, project = "ProfileIds", file = ids))$data
+  check("ids: an explicit profile file still uses project combo settings",
+    identical(explicit$suggested$combo_variables, list("Region")) && explicit$facts$series == 2)
+  finn_save_project_config(paths, list(combo_variables = "Driver", data = list(file = plain)))
+  high_cardinality <- run_input_script("profile_data.R", list(root = root, project = "ProfileIds"))$data
+  check("ids: configured combo columns do not depend on the inference cardinality limit",
+    identical(high_cardinality$suggested$combo_variables, list("Driver")) && high_cardinality$facts$series == 6)
+  writeLines("{broken", file.path(paths$dir, "config.json"))
+  check("ids: profile surfaces damaged project settings instead of silently guessing",
+    errors_with(run_input_script("profile_data.R", list(root = root, project = "ProfileIds")), "Could not read"))
+  distinct <- file.path(tmp, "profile-distinct-numbers.csv")
+  writeLines(c("Number,Date,Revenue", sprintf("%03d,2024-01-%02d,%d", 1:6, 1:6, 11:16)), distinct)
+  distinct_data <- profile_env$profile_load_data(distinct)
+  check("ids: high-cardinality padded numbers are not automatically made combos",
+    !length(distinct_data$combo_variables) && identical(distinct_data$data$Number, 1:6))
+
+  out_dir <- file.path(tmp, "sample-id-output")
+  all_args <- list(file = ids, sample_series = "2", combo_variables = " Region ", out_dir = out_dir)
+  all_sample <- run_input_script("prepare_data.R", all_args)
+  kept <- finn_load_data(all_sample$data$output, text_columns = "Region")
+  check("ids: sampled CSV preserves 001 and 1 as separate whole series",
+    identical(kept$Region, rep(c("001", "1"), each = 3)) && nrow(kept) == 6 &&
+      identical(kept$Revenue, c(10:12, 20:22)))
+  one_args <- modifyList(all_args, list(sample_series = "1", out_name = "one.csv"))
+  one <- run_input_script("prepare_data.R", one_args)
+  again <- run_input_script("prepare_data.R", modifyList(one_args, list(out_name = "again.csv")))
+  one_data <- finn_load_data(one$data$output, text_columns = "Region")
+  again_data <- finn_load_data(again$data$output, text_columns = "Region")
+  check("ids: sampling one padded-ID series keeps exactly its complete rows reproducibly",
+    nrow(one_data) == 3 && length(unique(one_data$Region)) == 1 &&
+      identical(one_data, again_data) &&
+      identical(one_data$Date, c("2024-01-01", "2024-02-01", "2024-03-01")))
+  check("ids: sampling still requires combo variables",
+    errors_with(run_input_script("prepare_data.R", modifyList(all_args, list(combo_variables = ""))), "needs --combo_variables"))
+
+  wide <- file.path(tmp, "wide-sample-ids.csv")
+  writeLines(c("Region,Product,2024-01-01,2024-02-01,2024-03-01",
+    "001,010,10,11,12", "1,010,20,21,22"), wide)
+  pivot <- run_input_script("prepare_data.R", list(file = wide, pivot_longer = "true",
+    id_columns = "Region, Product", sample_series = "2", combo_variables = "Region",
+    value_name = "Revenue", out_dir = out_dir))
+  pivot_data <- finn_load_data(pivot$data$output, text_columns = c("Region", "Product"))
+  check("ids: pivoted samples preserve source ID columns as well as sampled combo columns",
+    setequal(pivot_data$Region, c("001", "1")) && identical(unique(pivot_data$Product), "010") &&
+      nrow(pivot_data) == 6 && identical(sort(pivot_data$Revenue), c(10:12, 20:22)))
+  header <- file.path(tmp, "header-sample-ids.csv")
+  writeLines(c("V1,V2,V3,V4,V5", readLines(wide)), header)
+  header_result <- run_input_script("prepare_data.R", list(file = header, header_row = "1",
+    pivot_longer = "true", id_columns = "Region,Product", sample_series = "2",
+    combo_variables = "Region", value_name = "Revenue", out_dir = out_dir))
+  header_data <- finn_load_data(header_result$data$output, text_columns = c("Region", "Product"))
+  check("ids: header promotion cannot coerce IDs before a pivoted sample",
+    identical(header_data, pivot_data))
+  check("ids: profiling and sampling never change their source CSV", identical(unname(tools::md5sum(ids)), source_hash))
+}, envir = new.env(parent = common))
 with(an, {
   ipaths <- finn_project_paths(file.path(tmp, "root"), "AnalysisIds")
   finn_ensure_project_dirs(ipaths)

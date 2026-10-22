@@ -298,17 +298,24 @@ prepare_transform <- function(args, file, spec_text, validator = finn_tx_default
   ))
 }
 
+# Prepare the requested copy, preserving declared CSV ID columns before sampling.
+# Return its path and changes; neither the source nor an existing copy is replaced.
 finn_main(function(args) {
   file <- finn_arg(args, "file")
   if (is.null(file)) stop("Pass --file=<data file>.", call. = FALSE)
   if (!is.null(finn_arg(args, "transform"))) {
     return(prepare_transform(args, file, prepare_read_spec(finn_arg(args, "transform"))))
   }
-  raw <- finn_load_data(file, finn_arg(args, "sheet"))
   header_row <- finn_arg(args, "header_row")
   pivot <- finn_bool(finn_arg(args, "pivot_longer"))
   drop_totals <- finn_bool(finn_arg(args, "drop_totals"))
   sample_n <- finn_arg(args, "sample_series")
+  combos <- trimws(unlist(strsplit(finn_arg(args, "combo_variables") %||% "", ",")))
+  combos <- combos[nzchar(combos)]
+  ids <- trimws(unlist(strsplit(finn_arg(args, "id_columns") %||% "", ",")))
+  text_columns <- if (!is.null(sample_n)) c(combos, ids[nzchar(ids)])
+  raw <- finn_load_data(file, finn_arg(args, "sheet"),
+    text_columns = text_columns, all_text = !is.null(sample_n) && !is.null(header_row))
   if (is.null(header_row) && !pivot && !drop_totals && is.null(sample_n)) {
     stop("Nothing to do. Pass --header_row, --pivot_longer=true, or --drop_totals=true as suggested by profile_data.R, --sample_series=<n> with --combo_variables for a test subset, or pipe a transform spec with --transform=- for any other layout.", call. = FALSE)
   }
@@ -320,12 +327,10 @@ finn_main(function(args) {
       header_row = header_row, pivot_longer = pivot,
       id_columns = finn_arg(args, "id_columns"),
       value_name = finn_arg(args, "value_name") %||% "Value",
-      drop_totals = drop_totals
+      drop_totals = drop_totals, text_columns = text_columns
     )
   }
   if (!is.null(sample_n)) {
-    combos <- trimws(unlist(strsplit(finn_arg(args, "combo_variables") %||% "", ",")))
-    combos <- combos[nzchar(combos)]
     if (!length(combos)) stop("--sample_series needs --combo_variables=<columns that identify each series>.", call. = FALSE)
     sampled <- prepare_sample_series(shaped$data, combos, sample_n)
     shaped$data <- sampled$data

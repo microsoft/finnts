@@ -1671,8 +1671,10 @@ finn_agent_progress <- function(state, artifacts) {
 #'   apart from `1`. Names the file does not contain are ignored. A blank cell
 #'   in one of these columns is empty text rather than missing. Excel cells
 #'   keep their own type, so this has no effect there.
+#' @param all_text TRUE to read every CSV/text column as text, for inference
+#'   before column roles are known. Defaults to FALSE; ignored for Excel.
 #' @return A data frame.
-finn_load_data <- function(file, sheet = NULL, text_columns = NULL) {
+finn_load_data <- function(file, sheet = NULL, text_columns = NULL, all_text = FALSE) {
   if (is.null(file) || !file.exists(file)) stop("Data file not found: ", file, call. = FALSE)
   ext <- tolower(tools::file_ext(file))
   if (ext %in% c("xlsx", "xls")) {
@@ -1686,8 +1688,8 @@ finn_load_data <- function(file, sheet = NULL, text_columns = NULL) {
     # bytes first and pick the encoding up front.
     bytes <- readBin(file, "raw", file.info(file)$size)
     enc <- if (validUTF8(rawToChar(bytes[bytes != as.raw(0)]))) "UTF-8-BOM" else "latin1"
-    classes <- NA
-    if (length(text_columns)) {
+    classes <- if (isTRUE(all_text)) "character" else NA
+    if (!isTRUE(all_text) && length(text_columns)) {
       header <- tryCatch(
         names(utils::read.csv(file, sep = sep, check.names = FALSE, stringsAsFactors = FALSE, fileEncoding = enc, nrows = 1L)),
         error = function(e) character()
@@ -2008,9 +2010,12 @@ finn_shape_issues <- function(df) {
 #' @param value_name Name for the value column created by pivoting.
 #' @param drop_totals TRUE to drop rows where any text column reads like a
 #'   total, subtotal, grand total, or all.
+#' @param text_columns Columns whose lexical values must survive header
+#'   promotion without type conversion. Uses the promoted column names;
+#'   absent names are ignored. Defaults to NULL.
 #' @return List with `data` and `notes` describing each change.
 finn_reshape_data <- function(df, header_row = NULL, pivot_longer = FALSE, id_columns = NULL,
-                              value_name = "Value", drop_totals = FALSE) {
+                              value_name = "Value", drop_totals = FALSE, text_columns = NULL) {
   notes <- character()
   if (!is.null(header_row)) {
     header_row <- as.integer(header_row)
@@ -2021,7 +2026,8 @@ finn_reshape_data <- function(df, header_row = NULL, pivot_longer = FALSE, id_co
     new_names[is.na(new_names) | !nzchar(new_names)] <- paste0("column_", which(is.na(new_names) | !nzchar(new_names)))
     df <- df[-seq_len(header_row), , drop = FALSE]
     names(df) <- make.unique(new_names)
-    df[] <- lapply(df, function(x) utils::type.convert(as.character(x), as.is = TRUE))
+    convert <- setdiff(names(df), as.character(unlist(text_columns)))
+    df[convert] <- lapply(df[convert], function(x) utils::type.convert(as.character(x), as.is = TRUE))
     rownames(df) <- NULL
     notes <- c(notes, sprintf("Used row %d as the header and removed %d rows above the data.", header_row, header_row))
   }
