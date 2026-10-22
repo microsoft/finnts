@@ -183,6 +183,15 @@ test_that("R10 fails on an invalid fiscal year start", {
 test_that("R11 fails when a Spark table runs without Spark processing", {
   data <- validation_monthly_data()
   class(data) <- c("tbl_spark", "data.frame")
+  # The fake Spark table has no connection, so collecting it must not reach
+  # sparklyr's method when another test has loaded that namespace.
+  testthat::local_mocked_bindings(
+    collect = function(x, ...) {
+      class(x) <- setdiff(class(x), "tbl_spark")
+      x
+    },
+    .package = "dplyr"
+  )
   result <- validate_monthly(data, parallel_processing = "local_machine")
 
   expect_equal(check_status(result, "R11"), "fail")
