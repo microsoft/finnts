@@ -19,7 +19,8 @@
 # already_complete; changed data or other settings return needs_new_version;
 # different installed finnts or R returns needs_confirmation until rerun with
 # --confirm=true. Stop results carry data$reason. A stopped iterate run whose
-# only changes are those two settings continues with them the same way.
+# only changes are those two settings continues with them the same way and
+# reports the Agent version that run recorded.
 #
 # Custom models: config.json `custom_models` lists the saved custom models
 # (custom_models/<name>/<version>.rds) every run of the project uses. Standard
@@ -522,7 +523,9 @@ launch_mode_mismatch <- function(decision, saved_mode, mode) {
 #' @return List with `action` ("resume", "new", or "stop"), plus `prior`,
 #'   `overwrite`, `notes`, and when continuing an Agent version a
 #'   `request_id`, `continuation` and optionally `step_down`; a `result` when
-#'   stopping (see [launch_iterate_again()]).
+#'   stopping (see [launch_iterate_again()]). Continuing a stopped run reports
+#'   the `agent_version` stored on that run; a completed version's
+#'   continuation reports the last finished version.
 launch_decide <- function(paths, mode, cfg, facts, args) {
   runs <- finn_list_runs(paths)
   latest <- launch_latest_of_mode(runs, mode)
@@ -564,10 +567,12 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
     if (!is.null(revised)) {
       # A budget or goal revision runs as a new skill run under the stopped
       # run's request id, so the Agent version and its finished iterations
-      # are kept while the revised values apply.
+      # are kept while the revised values apply. The version reported is the
+      # one the stopped run recorded, which can differ from the last finished
+      # version (or exist when no version has finished).
       return(list(action = "new", overwrite = latest$overwrite %||% FALSE, request_id = latest$request_id,
         step_down = latest$step_down,
-        continuation = list(agent_version = last_agent$agent_version, request_id = latest$request_id,
+        continuation = list(agent_version = latest$agent_version, request_id = latest$request_id,
           from_run_id = latest$run_id, from_status = latest$effective_status, partial = revised$partial,
           max_iter = revised$max_iter, weighted_mape_goal = revised$weighted_mape_goal),
         notes = paste0("Run ", latest$run_id, " stopped (", latest$effective_status, "). This continues its Agent search with ",

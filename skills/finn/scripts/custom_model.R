@@ -124,6 +124,11 @@ custom_model_read_examples <- function(path) {
 #' history rows. Only these checks use the subset; runs fit the model on every
 #' series.
 #'
+#' The history grid follows `date_type` from the first date through the last
+#' history date, so a period missing from every series is a gap in all of them
+#' and the chosen window starts after it. Dates that do not follow `date_type`
+#' (for example month-end dates) use the dates the data contains.
+#'
 #' @param data Prepared input with a `Date` column.
 #' @param combo_variables Series columns.
 #' @param target Target column.
@@ -148,7 +153,9 @@ custom_model_panel <- function(data, combo_variables, target, drivers = characte
   actual <- valid(data[[target]])
   if (!any(actual)) stop("The data has no actuals, so a custom model can't be checked.", call. = FALSE)
   end <- if (is.null(hist_end_date)) max(data$Date[actual]) else as.Date(hist_end_date)
-  grid <- sort(unique(data$Date[data$Date <= end]))
+  observed <- sort(unique(data$Date[data$Date <= end]))
+  expected <- if (length(observed)) tryCatch(seq(observed[1L], end, by = date_type), error = function(e) NULL)
+  grid <- if (!is.null(expected) && all(observed %in% expected)) expected else observed
   n <- length(grid)
   future <- if (length(drivers)) seq(end, by = date_type, length.out = horizon + 1L)[-1L] else as.Date(character())
   key <- do.call(paste, c(lapply(data[combo_variables], as.character), sep = "\r"))

@@ -161,10 +161,39 @@ prepare_write_preview <- function(out_dir, file, run, n = 100L) {
   finn_norm(path)
 }
 
+#' Value-free plan summary for the audit record
+#'
+#' One line per applied step with its number, operation, and affected count,
+#' for example "Step 4: fill_values (1 value)". The spec description, the
+#' reasons, and the labels or values a step used are never included.
+#'
+#' @param changes `ctx$changes` from [finn_tx_run()].
+#' @return Character vector, one element per step.
+prepare_audit_steps <- function(changes) {
+  vapply(changes, function(ch) sprintf("Step %d: %s (%s)", ch$step, ch$op, ch$affects), character(1))
+}
+
+#' Value-free verification results for the audit record
+#'
+#' Keeps each rule's id and status. The message becomes a fixed phrase for
+#' that status, because a validator message can name series labels and values.
+#'
+#' @param checks Gate checks with `Rule`, `Status`, and `Message` columns.
+#' @return List with one `Rule`, `Status`, `Message` list per check.
+prepare_audit_checks <- function(checks) {
+  phrase <- c(pass = "Passed.", report = "Reported.", fail = "Failed.", skipped = "Skipped.")
+  lapply(seq_len(nrow(checks)), function(i) {
+    status <- checks$Status[i]
+    list(Rule = checks$Rule[i], Status = status, Message = if (status %in% names(phrase)) unname(phrase[status]) else "Recorded.")
+  })
+}
+
 #' Append a data preparation audit record to the project
 #'
-#' Keeps the plan summary and verification results only, never the spec or
-#' any data values, and at most the 20 latest records.
+#' Keeps what was done and how it checked out: one line per step (operation
+#' and affected count), each rule's id and status with a fixed message, and
+#' the row counts. Never the spec, its description or reasons, series labels,
+#' validator messages, or data values, and at most the 20 latest records.
 #'
 #' @param args Parsed arguments.
 #' @param file Source path.
@@ -180,12 +209,11 @@ prepare_record_audit <- function(args, file, out, run) {
   if (is.null(project)) {
     return(invisible(NULL))
   }
-  checks <- run$gate$checks
   record <- list(
     prepared_at = finn_now(),
     source = finn_project_relpath(paths, file), output = finn_project_relpath(paths, out),
-    source_md5 = run$ctx$md5, token = run$token, plan_summary = run$plan_summary,
-    checks = lapply(seq_len(nrow(checks)), function(i) as.list(checks[i, c("Rule", "Status", "Message")])),
+    source_md5 = run$ctx$md5, token = run$token, plan_summary = prepare_audit_steps(run$ctx$changes),
+    checks = prepare_audit_checks(run$gate$checks),
     counts = run$gate$counts
   )
   project$data_preparations <- utils::tail(c(project$data_preparations, list(record)), 20L)
@@ -201,8 +229,10 @@ prepare_record_audit <- function(args, file, out, run) {
 #' @param validator Validator function, or NULL to fail closed.
 #' @param today Date used to spot a latest period that has not ended; tests
 #'   pass a fixed date.
-#' @return Finn result list. `data$latest_period` flags a latest period that
-#'   has not ended; it is advisory and never stored in the audit record.
+#' @return Finn result list. `data$checks` holds the validation messages
+#'   masked like the preview tables unless `--reveal_labels=true`.
+#'   `data$latest_period` flags a latest period that has not ended; it is
+#'   advisory and never stored in the audit record.
 prepare_transform <- function(args, file, spec_text, validator = finn_tx_default_validator(), today = Sys.Date()) {
   preview <- finn_bool(finn_arg(args, "preview"))
   token <- finn_arg(args, "approve")
@@ -214,7 +244,7 @@ prepare_transform <- function(args, file, spec_text, validator = finn_tx_default
     sheet = finn_arg(args, "sheet"), reveal_labels = finn_bool(finn_arg(args, "reveal_labels")), today = today
   )
   gate <- run$gate
-  checks <- lapply(seq_len(nrow(gate$checks)), function(i) as.list(gate$checks[i, ]))
+  checks <- lapply(seq_len(nrow(run$display_checks)), function(i) as.list(run$display_checks[i, ]))
   data <- list(
     source = finn_norm(file), passed = isTRUE(gate$passed), preview_markdown = run$preview_markdown,
     plan_summary = as.list(run$plan_summary), needs_confirmation = as.list(run$ctx$confirm %||% character()),

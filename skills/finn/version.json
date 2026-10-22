@@ -8,7 +8,7 @@
       "changes": [
         "Settings reviews show a data check, each input explained, warnings, suggestions, and run time; revisions list only changed inputs, and `run` saves and starts.",
         "Reviews name the run type and suggest the next run from project history: update for new actuals, more Agent iterations, or a standard refresh.",
-        "Fix messy files such as pivots, footnotes, text numbers, and mixed dates with a plan you approve once; totals and finnts input checks must pass first.",
+        "Fix messy files such as pivots, footnotes, text numbers, and mixed dates with a plan you approve once; totals and finnts input checks must pass first. CSV series IDs keep leading zeros.",
         "Flags a latest period that has not ended. A higher `max_iter` or stricter MAPE goal continues a finished Agent version.",
         "Create custom models in plain language with any LLM, including GitHub Copilot; once approved they are saved in the project and reused by standard, iterate, and update runs."
       ]

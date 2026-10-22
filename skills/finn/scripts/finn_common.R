@@ -1664,10 +1664,15 @@ finn_agent_progress <- function(state, artifacts) {
 
 #' Load a CSV or Excel file
 #'
-#' @param file Path to a .csv, .xlsx, or .xls file.
+#' @param file Path to a .csv, .txt, .xlsx, or .xls file.
 #' @param sheet Optional Excel sheet name or index.
+#' @param text_columns Optional column names to read as text in CSV and text
+#'   files, so identifiers such as `001` keep their leading zeros and stay
+#'   apart from `1`. Names the file does not contain are ignored. A blank cell
+#'   in one of these columns is empty text rather than missing. Excel cells
+#'   keep their own type, so this has no effect there.
 #' @return A data frame.
-finn_load_data <- function(file, sheet = NULL) {
+finn_load_data <- function(file, sheet = NULL, text_columns = NULL) {
   if (is.null(file) || !file.exists(file)) stop("Data file not found: ", file, call. = FALSE)
   ext <- tolower(tools::file_ext(file))
   if (ext %in% c("xlsx", "xls")) {
@@ -1681,7 +1686,16 @@ finn_load_data <- function(file, sheet = NULL) {
     # bytes first and pick the encoding up front.
     bytes <- readBin(file, "raw", file.info(file)$size)
     enc <- if (validUTF8(rawToChar(bytes[bytes != as.raw(0)]))) "UTF-8-BOM" else "latin1"
-    out <- utils::read.csv(file, sep = sep, check.names = FALSE, stringsAsFactors = FALSE, fileEncoding = enc)
+    classes <- NA
+    if (length(text_columns)) {
+      header <- tryCatch(
+        names(utils::read.csv(file, sep = sep, check.names = FALSE, stringsAsFactors = FALSE, fileEncoding = enc, nrows = 1L)),
+        error = function(e) character()
+      )
+      as_text <- intersect(as.character(unlist(text_columns)), header)
+      if (length(as_text)) classes <- stats::setNames(rep("character", length(as_text)), as_text)
+    }
+    out <- utils::read.csv(file, sep = sep, check.names = FALSE, stringsAsFactors = FALSE, fileEncoding = enc, colClasses = classes)
     if (identical(enc, "latin1")) attr(out, "finn_encoding") <- "latin1"
     attr(out, "finn_delimiter") <- sep
     return(out)
@@ -2889,6 +2903,9 @@ finn_quality_flags <- function(data, cfg, key, facts) {
 
 #' Load, prepare, and validate the data a config points at
 #'
+#' Series columns are read as text, as in runs, so identifiers such as `001`
+#' and `1` stay two series.
+#'
 #' @param cfg Config list.
 #' @param root Optional storage root for OneDrive warnings.
 #' @return List from [finn_check_config()] plus `data` and `notes`.
@@ -2897,7 +2914,7 @@ finn_load_checked <- function(cfg, root = NULL) {
   if (length(first$errors) > 0) {
     return(c(first, list(data = NULL, notes = character())))
   }
-  raw <- finn_load_data(first$config$data$file, first$config$data$sheet)
+  raw <- finn_load_data(first$config$data$file, first$config$data$sheet, text_columns = first$config$combo_variables)
   prepared <- finn_prepare_input(raw, first$config)
   checked <- finn_check_config(cfg, prepared$data, root = root)
   notes <- prepared$notes

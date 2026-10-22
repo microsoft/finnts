@@ -630,6 +630,46 @@ with(tx, {
   bad_total <- tx_put("bad_total.csv", sub("^East Total,,1200", "East Total,,1250", readLines(tx_outline)))
   rbt <- run(bad_total, tx_spec(tx_outline_steps))
   check("transform: a subtotal that does not match its rows fails P9c", !isTRUE(rbt$gate$passed) && tx_status(rbt)[["P9c"]] == "fail")
+  check("transform: the failed subtotal check shows masked labels in the preview",
+    !grepl("East", rbt$preview_markdown, fixed = TRUE) && grepl("first: 'text_[0-9]+ Total'", rbt$preview_markdown))
+  check("transform: revealing labels shows the failed subtotal check as written",
+    grepl("first: 'East Total'", run(bad_total, tx_spec(tx_outline_steps), reveal_labels = TRUE)$preview_markdown, fixed = TRUE))
+  check("transform: the display checks mask the messages while the gate keeps them as written",
+    any(grepl("East Total", rbt$gate$checks$Message, fixed = TRUE)) && !any(grepl("East", rbt$display_checks$Message, fixed = TRUE)) &&
+      identical(rbt$display_checks[c("Rule", "Description", "Status")], rbt$gate$checks[c("Rule", "Description", "Status")]))
+  rbt_shown <- run(bad_total, tx_spec(tx_outline_steps), reveal_labels = TRUE)
+  check("transform: revealing labels returns the display checks as written", identical(rbt_shown$display_checks, rbt_shown$gate$checks))
+  check("transform: message labels are the prepared text values and dropped totals, not column names",
+    all(c("East", "West", "East Total", "Grand Total") %in% finn_tx_message_labels(rbt)) &&
+      !any(c("Region", "Product", "Value", "Date") %in% finn_tx_message_labels(rbt)))
+
+  # Messages are masked by finding the known labels as whole words in the
+  # original text.
+  mask_msg <- function(text, known, labels = new.env(parent = emptyenv())) finn_tx_mask_text(text, known, labels)
+  check("mask text: a label is replaced as a whole word only",
+    identical(mask_msg("Series East--Eastern has 3 periods", "East"), "Series text_1--Eastern has 3 periods"))
+  check("mask text: the longer label wins and shares the token of its base name",
+    identical(mask_msg("first: 'East Total' and East", c("East", "East Total")), "first: 'text_1 Total' and text_1"))
+  check("mask text: numbers, dates, and total words stay as written",
+    identical(mask_msg("Series 001--East has 12 periods from Jan 2024; Total", c("001", "East", "12", "Jan 2024", "Total")),
+      "Series 001--text_1 has 12 periods from Jan 2024; Total"))
+  check("mask text: punctuation, underscores, and non-ASCII letters belong to a label",
+    identical(mask_msg("R&D, O'Neil, North_America, Caf\u00e9, Caf\u00e9s and Caf", c("R&D", "O'Neil", "North_America", "Caf\u00e9", "Caf")),
+      "text_1, text_2, text_3, text_4, Caf\u00e9s and text_5"))
+  check("mask text: a label spelled like a token is not mixed up with a real token",
+    identical(mask_msg("Series East--text_1", c("East", "text_1")), "Series text_1--text_2"))
+  check("mask text: missing, empty, and unrelated messages pass through",
+    identical(mask_msg(c(NA, "", "Passed.", "East is low"), "East"), c(NA, "", "Passed.", "text_1 is low")) &&
+      identical(mask_msg("Series East", character()), "Series East"))
+  table_tokens <- new.env(parent = emptyenv())
+  finn_tx_mask(c("Quokka", "Wombat"), table_tokens)
+  check("mask text: labels the tables already tokenized keep that token",
+    identical(mask_msg("Series Wombat--Quokka--Kiwi", c("Quokka", "Wombat", "Kiwi"), table_tokens), "Series text_2--text_1--text_3"))
+  many_labels <- sprintf("Account_%03d", 1:300)
+  many_masked <- mask_msg(paste("Levels:", paste(many_labels, collapse = ", ")), many_labels)
+  check("mask text: a message naming many labels masks each with its own token",
+    !grepl("Account_", many_masked, fixed = TRUE) &&
+      length(unique(strsplit(sub("^Levels: ", "", many_masked), ", ", fixed = TRUE)[[1]])) == 300L)
   no_rec <- sub('"columns":["Region","Product"]}', '"columns":["Region","Product"],"reconcile":false}', tx_outline_steps, fixed = TRUE)
   rnr <- run(bad_total, tx_spec(no_rec))
   check("transform: reconcile false reports a total mismatch instead of failing", isTRUE(rnr$gate$passed) && tx_status(rnr)[["P9c"]] == "report")
@@ -751,6 +791,55 @@ with(prep_env, {
     length(rec) == 1 && setequal(names(rec[[1]]), c("prepared_at", "source", "output", "source_md5", "token", "plan_summary", "checks", "counts")) &&
       startsWith(rec[[1]]$output, "input/") && file.exists(pa$data$output))
 
+  # The audit keeps what was done and the verification outcome, never the labels,
+  # reasons, descriptions, or values a plan or validator message carried.
+  audit_csv <- tx_put("audit_fill.csv", c("Region,Date,Value",
+    "Quokka,2024-01-01,10", "Quokka,2024-02-01,", "Quokka,2024-03-01,12",
+    "Wombat,2024-01-01,20", "Wombat,2024-02-01,21", "Wombat,2024-03-01,22"))
+  audit_spec <- tx_spec(c(tx_tidy_steps, '{"op":"fill_values","column":"Value","method":"value","value":7777.25,"reason":"FILL-REASON-9941 for Quokka"}'),
+    settings = tx_region, description = "AUDIT-DESC-MARKER Quokka")
+  label_validator <- function(input_data, ...) {
+    list(passed = TRUE, checks = data.frame(Rule = "R1", Description = "fake", Status = "pass",
+      Message = "Series Quokka--A has 3 periods totalling 7777.25", stringsAsFactors = FALSE), summary = list(), details = list())
+  }
+  apaths <- finn_project_paths(root, "PrepAudit")
+  finn_ensure_project_dirs(apaths)
+  finn_write_project(apaths, list(name = "PrepAudit"))
+  aargs <- list(file = audit_csv, root = root, project = "PrepAudit")
+  atok <- prepare_transform(c(aargs, preview = "true"), audit_csv, audit_spec, label_validator)$data$token
+  prepare_transform(c(aargs, approve = atok), audit_csv, audit_spec, label_validator)
+  arec <- finn_read_project(apaths)$data_preparations
+  check("prepare transform: the audit record holds no labels, reasons, descriptions, or fill values",
+    length(arec) == 1 && !grepl("AUDIT-DESC-MARKER|FILL-REASON-9941|7777\\.25|Quokka|Wombat", finn_to_json(arec)))
+  check("prepare transform: the audit record keeps its keys, one line per step, and the rule outcomes", {
+    arec_checks <- arec[[1]]$checks
+    setequal(names(arec[[1]]), names(rec[[1]])) && setequal(names(arec_checks[[1]]), c("Rule", "Status", "Message")) &&
+      identical(unlist(arec[[1]]$plan_summary)[4], "Step 4: fill_values (1 value)") &&
+      all(c("S1", "R1", "P9a", "P9b") %in% vapply(arec_checks, function(ch) ch$Rule, character(1))) &&
+      all(vapply(arec_checks, function(ch) ch$Status, character(1)) %in% c("pass", "report"))
+  })
+
+  # Verification messages name series like the preview tables do, so they are
+  # masked by default and shown as written only when the user consents.
+  mdir <- file.path(tmp, "tx_out_masked")
+  leaky <- function(input_data, ...) {
+    list(passed = TRUE, checks = data.frame(Rule = "R1", Description = "fake", Status = "pass",
+      Message = "Series East--A has 3 periods", stringsAsFactors = FALSE), summary = list(), details = list())
+  }
+  masked <- prepare_transform(list(file = tx_outline, out_dir = mdir, preview = "true"), tx_outline, spec, leaky)
+  check("prepare transform: validation messages show masked labels by default", {
+    masked_text <- vapply(masked$data$checks, function(ch) ch$Message, character(1))
+    parts <- Filter(function(p) length(p) == 3L,
+      regmatches(masked_text, regexec("^Series (text_[0-9]+)--(text_[0-9]+) has 3 periods$", masked_text)))
+    identical(masked$status, "preview") && length(parts) == 1L && parts[[1]][[2]] != parts[[1]][[3]] &&
+      !any(grepl("East", c(masked_text, masked$data$preview_markdown), fixed = TRUE)) &&
+      grepl(sprintf("Series %s--%s has 3 periods", parts[[1]][[2]], parts[[1]][[3]]), masked$data$preview_markdown, fixed = TRUE)
+  })
+  shown <- prepare_transform(list(file = tx_outline, out_dir = mdir, preview = "true", reveal_labels = "true"), tx_outline, spec, leaky)
+  check("prepare transform: revealing labels shows validation messages as written",
+    "Series East--A has 3 periods" %in% vapply(shown$data$checks, function(ch) ch$Message, character(1)) &&
+      grepl("Series East--A has 3 periods", shown$data$preview_markdown, fixed = TRUE))
+
   rpaths <- finn_project_paths(root, "Recent")
   finn_ensure_project_dirs(rpaths)
   finn_write_project(rpaths, list(name = "Recent"))
@@ -821,7 +910,12 @@ with(common, {
     check("settings review: data check shows last actuals and notes",
       has(review, "**Last period with actuals:** `2022-12-01`") && has(review, "- Read with a comma.") &&
         has(review, "passed with 1 warning`"))
-    check("settings review: auto hist_end_date names the date used", has(review, "Auto uses `2022-12-01`."))
+    check("settings review: a standard null hist_end_date names the latest date in the file and offers a cutoff",
+      has(review, "Auto uses `2023-06-01`, the latest date in the file") && has(review, "set it to `2022-12-01`") &&
+        !has(review, "Auto uses `2022-12-01`") && has(review, "or `null` for the latest date in the file."))
+    flat <- vc$validate_settings_review(config, modifyList(facts, list(date_max = "2022-12-01")), list())
+    check("settings review: a standard null hist_end_date needs no cutoff advice when the file ends with actuals",
+      has(flat, "Auto uses `2022-12-01`, the latest date in the file.") && !has(flat, "To end history at the last actuals instead"))
     check("settings review: suggestions show size and JSON value; run type is not a suggestion",
       has(review, "very large") && has(review, "- `models_to_run`: `[\"xgboost\"]`.") && !has(review, "Run type advice") &&
         has(review, "Fast and predictable."))
@@ -845,6 +939,9 @@ with(common, {
         has(agent_review, "over up to 3 iterations"))
     check("settings review: hidden internals are not shown",
       !has(review, "`seed`") && !has(review, "`parallel`"))
+    check("settings review: an Agent null hist_end_date keeps naming its last period with actuals",
+      has(agent_review, "Auto uses `2022-12-01`.") && has(agent_review, "or `null` for the last period with actuals.") &&
+        !has(agent_review, "the latest date in the file"))
 
     update_run <- list(run_type = "update", label = "Agent update", hint = finn_run_type_hint("update"),
       situation = "agent_refresh", why = "Your last Agent forecast used actuals through `2022-06-01`.",
@@ -1212,6 +1309,19 @@ with(launch, {
         "needs_confirmation"))
     check("stopped iterate: unchanged settings resume the stopped run",
       identical(launch_decide(stopped, "iterate", acfg, list(), list())$action, "resume"))
+    as_failed <- function(state, ...) modifyList(state, list(status = "failed", ...))
+    second <- project_with("StoppedSecond", list(agent_state("iter-1"),
+      as_failed(agent_state("iter-2"), request_id = "req-2", agent_version = 2L, created_at = "2024-02-01T00:00:00+0000")),
+      agent_last("iter-1"))
+    sd2 <- tryCatch(launch_decide(second, "iterate", more, list(), list()), error = function(e) list(action = conditionMessage(e)))
+    check("stopped iterate: a stopped newer version continues that version, not the last completed one",
+      identical(sd2$action, "new") && identical(sd2$continuation$from_run_id, "iter-2") && identical(sd2$request_id, "req-2") &&
+        identical(as.integer(sd2$continuation$agent_version), 2L))
+    first_failed <- project_with("StoppedFirst", list(as_failed(agent_state("iter-1"), request_id = "req-1", agent_version = 1L)))
+    sd3 <- tryCatch(launch_decide(first_failed, "iterate", more, list(), list()), error = function(e) list(action = conditionMessage(e)))
+    check("stopped iterate: a first run that failed reports its own version",
+      identical(sd3$action, "new") && identical(sd3$continuation$from_run_id, "iter-1") &&
+        identical(as.integer(sd3$continuation$agent_version), 1L))
 
     nr_lower <- finn_next_run(ap, modifyList(acfg, list(agent = list(max_iter = 2))), list(last_actual_date = "2023-12-01"))
     check("next run: lower max_iter explains nothing new would run",
@@ -1539,6 +1649,25 @@ with(launch, {
     check("review: a lower max_iter warns that nothing new would run",
       any(grepl("lower than the `3`", lower$data$warnings, fixed = TRUE)))
     review_with(5L)
+    budget_steps <- unlist(budget$next_actions)
+    check("review: a new Agent version of the same run type is not offered as a rerun of the same review",
+      identical(budget$data$run$alternative$run_type, "iterate") && identical(budget$data$run$launch, "--mode=iterate") &&
+        !any(grepl("rerun this script with --run_type=iterate", budget_steps, fixed = TRUE)))
+    check("review: a new Agent version of the same run type names its own flags and needs explicit confirmation",
+      any(grepl("--mode=iterate --new=true --confirm=true", budget_steps, fixed = TRUE) &
+        grepl("explicit confirmation", budget_steps, fixed = TRUE)))
+    check("review: the normal launch instruction keeps the recommended flags",
+      any(grepl("start the run with run_forecast.R --project=<name> --mode=iterate.", budget_steps, fixed = TRUE)))
+    refresh <- load_functions("validate_config.R", common)
+    refresh$finn_load_checked <- function(config, root = NULL) modifyList(checked(config, root), list(facts = list(date_max = "2025-06-01")))
+    refresh$finn_plan_with_others <- plan_stub
+    refresh$finn_main <- function(fn) fn(list(root = cont_root, project = "Continue", run_type = "update"))
+    newer <- tryCatch(eval(preview_expr, refresh), error = function(e) list(data = list(), next_actions = list(), message = conditionMessage(e)))
+    newer_steps <- unlist(newer$next_actions)
+    check("review: a new Agent version of another run type is still offered as a rerun with that run type",
+      identical(newer$data$run$situation, "agent_refresh") && identical(newer$data$run$alternative$run_type, "iterate") &&
+        any(grepl("rerun this script with --run_type=iterate", newer_steps, fixed = TRUE)) &&
+        any(grepl("start the run with run_forecast.R --project=<name> --mode=update.", newer_steps, fixed = TRUE)))
 
     entry <- new.env(parent = launch)
     entry$finn_load_checked <- checked
@@ -2219,6 +2348,70 @@ with(common, {
   check("csv: Latin-1 files still load", nrow(ld) == 1 && identical(attr(ld, "finn_encoding"), "latin1"))
 })
 
+# ---- Combo identifiers keep their text ---------------------------------------------
+id_lines <- c(
+  "Region,Date,Revenue",
+  "001,2024-01-01,10", "001,2024-02-01,11", "001,2024-03-01,12",
+  "1,2024-01-01,20", "1,2024-02-01,21", "1,2024-03-01,22"
+)
+local({
+  ids <- file.path(tmp, "ids.csv")
+  writeLines(id_lines, ids)
+  kept <- tryCatch(finn_load_data(ids, text_columns = "Region"), error = function(e) conditionMessage(e))
+  check("ids: a text column keeps leading zeros and stays apart from 1",
+    is.data.frame(kept) && identical(sort(unique(kept$Region)), c("001", "1")) && is.numeric(kept$Revenue))
+  absent <- tryCatch(withCallingHandlers(finn_load_data(ids, text_columns = c("Region", "Not a column")),
+    warning = function(w) stop(conditionMessage(w), call. = FALSE)), error = function(e) conditionMessage(e))
+  check("ids: a text column missing from the file is ignored quietly", is.data.frame(absent) && ncol(absent) == 3)
+  blank <- file.path(tmp, "ids-blank.csv")
+  writeLines(c("Region,Date,Revenue", "001,2024-01-01,10", ",2024-02-01,11"), blank)
+  bl <- tryCatch(finn_load_data(blank, text_columns = "Region"), error = function(e) conditionMessage(e))
+  check("ids: a blank cell in a text column stays empty text", is.data.frame(bl) && identical(bl$Region, c("001", "")))
+
+  cfg_ids <- list(project_name = "Ids", combo_variables = "Region", target_variable = "Revenue", date_type = "month",
+    forecast_horizon = 3, data = list(file = ids))
+  loaded <- tryCatch(finn_load_checked(cfg_ids), error = function(e) conditionMessage(e))
+  check("ids: validation keeps 001 and 1 as two series",
+    is.list(loaded) && setequal(unique(loaded$data$Region), c("001", "1")) && isTRUE(loaded$facts$n_series == 2) &&
+      !any(grepl("repeat the same series", loaded$errors)))
+
+  worker <- load_functions("run_worker.R", common)
+  worker$library <- function(...) invisible(NULL)
+  seen <- new.env()
+  worker$worker_standard <- function(paths, run_paths, state, data) {
+    seen$data <- data
+    data.frame(x = 1)
+  }
+  wroot <- file.path(tmp, "worker-ids-root")
+  wpaths <- finn_project_paths(wroot, "WorkerIds")
+  finn_ensure_project_dirs(wpaths)
+  finn_write_project(wpaths, list(name = "WorkerIds"))
+  winput <- file.path(wpaths$input, "ids.csv")
+  writeLines(id_lines, winput)
+  finn_update_state(finn_run_paths(wpaths, "std-1"), run_id = "std-1", mode = "standard", status = "queued",
+    created_at = finn_now(), config = finn_merge_config(list(project_name = "WorkerIds", combo_variables = "Region",
+      target_variable = "Revenue", date_type = "month", forecast_horizon = 3, data = list(file = winput))))
+  worker$finn_main <- function(fn) fn(list(root = wroot, project = "WorkerIds", run_id = "std-1"))
+  worker_expr <- tail(as.list(parse(file.path(scripts_dir, "run_worker.R"))), 1)[[1]]
+  wres <- tryCatch(eval(worker_expr, worker), error = function(e) list(ok = FALSE, message = conditionMessage(e)))
+  check("ids: the worker passes 001 and 1 on as two series",
+    isTRUE(wres$ok) && is.data.frame(seen$data) && setequal(unique(seen$data$Region), c("001", "1")))
+}, envir = new.env(parent = common))
+with(an, {
+  ipaths <- finn_project_paths(file.path(tmp, "root"), "AnalysisIds")
+  finn_ensure_project_dirs(ipaths)
+  writeLines(id_lines, file.path(ipaths$input, "ids.csv"))
+  finn_write_project(ipaths, list(name = "AnalysisIds", data_file = "input/ids.csv"))
+  finn_save_project_config(ipaths, list(
+    project_name = "AnalysisIds", data = list(file = "input/ids.csv"),
+    combo_variables = "Region", target_variable = "Revenue", date_type = "month", forecast_horizon = 3
+  ))
+  ictx <- finn_open("AnalysisIds", root = file.path(tmp, "root"))
+  ihist <- tryCatch(finn_history(ictx), error = function(e) conditionMessage(e))
+  check("ids: analysis history keeps 001 and 1 as two series",
+    is.data.frame(ihist) && nrow(ihist) == 6 && setequal(ihist$Region, c("001", "1")) && setequal(ihist$Combo, c("001", "1")))
+})
+
 # ---- Actuals end with future driver rows ------------------------------------------
 with(common, {
   d <- data.frame(
@@ -2716,6 +2909,20 @@ local({
   gs <- panel(gap, hist_start_date = "2022-01-01")
   check("custom_model: panel honors a chosen start", identical(gs$series_used, 1L) && identical(gs$periods, 24L))
   check("custom_model: panel start must be a data date", errors_with(panel(gap, hist_start_date = "2022-01-15"), "--hist_start_date must be one of"))
+  # A period absent from every series leaves no row to reveal it, so the window grid comes from the date type.
+  hole <- cm_data[cm_data$Date != as.Date("2022-05-01"), ]
+  hp <- tryCatch(panel(hole), error = function(e) conditionMessage(e))
+  check("custom_model: panel treats a date missing from every series as a gap",
+    is.list(hp) && identical(hp$hist_start_date, as.Date("2022-06-01")) && identical(hp$series_used, 2L) &&
+      identical(hp$periods, 19L) && nrow(hp$data) == 38 && !any(hp$data$Date == as.Date("2022-05-01")))
+  check("custom_model: panel rejects a start at a date missing from every series",
+    errors_with(panel(hole, hist_start_date = "2022-05-01"), "No series has complete actuals from 2022-05-01"))
+  month_end <- cm_data
+  month_end$Date <- rep(seq(as.Date("2022-02-01"), by = "month", length.out = 24) - 1, 2)
+  me <- tryCatch(panel(month_end), error = function(e) conditionMessage(e))
+  check("custom_model: panel keeps irregular dates it cannot rebuild from the date type",
+    is.list(me) && identical(me$hist_start_date, as.Date("2022-01-31")) && identical(me$series_used, 2L) &&
+      identical(me$periods, 24L) && nrow(me$data) == 48)
   check("custom_model: panel needs actuals", errors_with(panel(transform(cm_data, Revenue = NA_real_)), "has no actuals"))
   last_na <- cm_data
   last_na$Revenue[last_na$Date == as.Date("2023-12-01")] <- NA

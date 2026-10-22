@@ -74,10 +74,36 @@ validate_escape_cell <- function(x) {
   gsub("\n", " ", gsub("|", "\\|", x, fixed = TRUE), fixed = TRUE)
 }
 
+#' What `hist_end_date = null` resolves to
+#'
+#' Standard runs end history at the latest Date in the input file, including
+#' rows that only carry driver values; Agent runs end it at the last period
+#' with actuals. When the two differ, a Standard review offers the last
+#' actuals as an explicit cutoff.
+#'
+#' @param standard Whether the config is a Standard run.
+#' @param facts Data facts from [finn_check_config()].
+#' @return Sentence(s), or NULL when the facts do not say.
+validate_auto_hist_end <- function(standard, facts) {
+  latest <- facts$date_max
+  actual <- facts$last_actual_date
+  if (standard && !is.null(latest)) {
+    if (!is.null(actual) && !identical(as.character(actual), as.character(latest))) {
+      return(sprintf(paste(
+        "Auto uses `%s`, the latest date in the file, including rows that only carry driver values.",
+        "To end history at the last actuals instead, set it to `%s`."
+      ), latest, actual))
+    }
+    return(sprintf("Auto uses `%s`, the latest date in the file.", latest))
+  }
+  if (!is.null(actual)) sprintf("Auto uses `%s`.", actual)
+}
+
 #' Plain-language meaning of one review setting
 #'
 #' Explains each setting and adds context for automatic values,
-#' such as the date `hist_end_date = null` resolves to.
+#' such as the date `hist_end_date = null` resolves to (see
+#' [validate_auto_hist_end()]).
 #'
 #' @param key Setting name.
 #' @param cfg Merged config.
@@ -91,7 +117,10 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
     target_variable = "The input column Finn forecasts.",
     combo_variables = "The columns that define each independent time series.",
     date_type = "The period granularity used for training, backtesting, and forecasting.",
-    hist_end_date = "The last period treated as historical actuals; forecasting begins after it, or `null` for the last period with actuals.",
+    hist_end_date = paste0(
+      "The last period treated as historical actuals; forecasting begins after it, or `null` for ",
+      if (identical(cfg$mode, "standard")) "the latest date in the file." else "the last period with actuals."
+    ),
     forecast_horizon = "The number of periods forecast after `hist_end_date`.",
     external_regressors = "Input-file columns used as forecast drivers, or `null` for none. Drivers need values for every forecast period.",
     hist_start_date = "The first historical period used for training, or `null` for the earliest available period.",
@@ -125,7 +154,7 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
   value <- validate_field_value(cfg, key)
   if (is.null(value)) {
     auto <- switch(key,
-      hist_end_date = if (!is.null(facts$last_actual_date)) sprintf("Auto uses `%s`.", facts$last_actual_date),
+      hist_end_date = validate_auto_hist_end(identical(cfg$mode, "standard"), facts),
       run_ensemble_models = if (identical(cfg$mode, "standard")) "Auto may enable ensembles; set it to `false` unless you asked for ensemble models.",
       date_format = if (!is.null(facts$date_format)) sprintf("Auto-detected `%s`.", facts$date_format),
       decimal_mark = if (!is.null(facts$decimal_mark)) sprintf("Auto-detected `%s`.", facts$decimal_mark),
@@ -224,6 +253,31 @@ validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
     recommended_run_type = recommended,
     prior_max_iter = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_max_iter,
     prior_weighted_mape_goal = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_weighted_mape_goal)
+}
+
+#' Caller instruction for the other option in a review
+#'
+#' An option with a different run type is reviewed by rerunning this script
+#' with that `--run_type`. An option with the same run type (a new Agent
+#' version while iterating) would only repeat the same review, so its
+#' instruction names its own launch flags and requires the user's explicit
+#' confirmation instead.
+#'
+#' @param run Run info from [validate_run_info()].
+#' @param run_type Run type under review.
+#' @return One instruction string, or NULL when the review has no other option.
+validate_alternative_action <- function(run, run_type) {
+  alt <- run$alternative
+  if (is.null(alt)) {
+    return(NULL)
+  }
+  if (identical(alt$run_type, run_type)) {
+    return(sprintf(
+      "If the user prefers %s, it is the same run type, so do not rerun this script. Get their explicit confirmation, then after the config is saved start it with run_forecast.R --project=<name> %s.",
+      alt$label, alt$launch %||% paste0("--mode=", alt$run_type)
+    ))
+  }
+  sprintf("If the user prefers %s, rerun this script with --run_type=%s and show the new review before launching.", alt$label, alt$run_type)
 }
 
 #' Settings review for user confirmation
@@ -510,7 +564,7 @@ finn_main(function(args) {
     },
       if (length(rec$recommendations)) "Offer each item in recommendations with its reason. Apply only the ones the user accepts by writing a draft config outside the project and rerunning with --config=<draft> to show the changes. Never refuse to run with the user's own settings.",
       if (isTRUE(rec$test_subset_first)) "Suggest a quick test first on about 50 series: prepare_data.R --file=<data> --sample_series=50 --combo_variables=<cols> --out_dir=<folder>, then a separate test project from that file.",
-      if (!is.null(run$alternative)) sprintf("If the user prefers %s, rerun this script with --run_type=%s and show the new review before launching.", run$alternative$label, run$alternative$run_type),
+      validate_alternative_action(run, run_type),
       if (is.null(data$saved_to)) sprintf("Rerun with --save=true%s to store this config for run_forecast.R.", if (is.null(finn_arg(args, "run_type"))) "" else paste0(" --run_type=", run_type)),
       sprintf("After the user agrees and the config is saved, start the run with run_forecast.R --project=<name> %s.", run$launch),
       if (!sizing$fits) "Tell the user other forecasts are using this computer; check run_status.R --all=true and start this run after one finishes."))

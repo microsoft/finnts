@@ -79,11 +79,14 @@ finn_forecast <- function(ctx, run_id = NULL, best_only = TRUE) {
 
 #' Input data prepared exactly as runs see it
 #'
+#' Series columns are read as text, as in runs, so identifiers such as `001`
+#' and `1` stay two series.
+#'
 #' @param ctx Context from [finn_open()].
 #' @return Data frame after the skill's date and number cleanup.
 finn_input <- function(ctx) {
   if (is.null(ctx$config)) stop("This project has no saved config yet.", call. = FALSE)
-  raw <- finn_load_data(ctx$config$data$file, ctx$config$data$sheet)
+  raw <- finn_load_data(ctx$config$data$file, ctx$config$data$sheet, text_columns = ctx$config$combo_variables)
   finn_prepare_input(raw, ctx$config)$data
 }
 

@@ -359,6 +359,8 @@ finn_tx_match <- function(ctx, cond) {
 #' @param op Operation name.
 #' @param what Plain-language description.
 #' @param affects Short count such as "12 rows"; "1 rows" is written "1 row".
+#'   The audit record keeps it next to `op`, so it holds counts only, never
+#'   labels or values.
 #' @param confirm TRUE when the change drops, combines, fills, rescales, or
 #'   derives data and needs explicit confirmation.
 #' @return NULL, invisibly.
@@ -1661,7 +1663,9 @@ finn_tx_mask <- function(x, labels, reveal = FALSE) {
   out[num] <- finn_tx_shape(t[num])
   if (!reveal && any(text)) {
     token <- function(u) {
-      if (is.null(labels[[u]])) labels[[u]] <- sprintf("text_%d", length(ls(labels, all.names = TRUE)) + 1L)
+      # length() counts without the sorted listing ls() builds, which adds up
+      # when a message names thousands of labels
+      if (is.null(labels[[u]])) labels[[u]] <- sprintf("text_%d", length(labels) + 1L)
       labels[[u]]
     }
     out[text] <- vapply(t[text], function(u) {
@@ -1677,6 +1681,120 @@ finn_tx_mask <- function(x, labels, reveal = FALSE) {
     }, character(1))
   }
   out
+}
+
+#' Text values that a validation message can name
+#'
+#' Series labels sit in the text columns of the prepared table, and a dropped
+#' total's label comes from the rows or columns it summed. Names of columns and
+#' settings stay readable, because the preview's settings line shows them.
+#'
+#' @param run Result of `finn_tx_run()`; needs `gate` and `settings`.
+#' @return Character vector of unique, trimmed, non-empty values.
+finn_tx_message_labels <- function(run) {
+  out <- run$gate$output
+  cfg <- run$settings
+  is_text <- vapply(out, function(x) is.character(x) || is.factor(x), logical(1))
+  values <- unlist(lapply(out[is_text], function(x) unique(as.character(x))), use.names = FALSE)
+  values <- unique(trimws(c(values, run$gate$totals$label)))
+  values <- values[!is.na(values) & nzchar(values)]
+  setdiff(values, c(names(out), unlist(cfg$combo_variables), cfg$target_variable, unlist(cfg$external_regressors)))
+}
+
+#' Replace the known labels in one string
+#'
+#' Finds each label by position in the original string, so a token that one
+#' replacement writes is never matched by another label. A label counts only
+#' as a whole word or phrase: the characters on both sides are not letters,
+#' digits, or underscores. Where labels overlap, the longer one wins. A match
+#' that [finn_tx_mask()] would not tokenize (a number, date, period name, or
+#' total word) stays as written.
+#'
+#' @param x One non-missing string.
+#' @param found Labels to look for, longest first.
+#' @param labels Environment that maps text to its token, shared with the
+#'   preview tables.
+#' @return `x` with each matched text label replaced by its token; tokens are
+#'   numbered in order of appearance.
+finn_tx_mask_one <- function(x, found, labels) {
+  x <- enc2utf8(x)
+  chars <- strsplit(x, "", fixed = TRUE)[[1]]
+  word <- grepl("(*UCP)[[:alnum:]_]", chars, perl = TRUE)
+  free <- rep(TRUE, length(chars))
+  start <- integer()
+  end <- integer()
+  for (label in found) {
+    first <- as.integer(gregexpr(label, x, fixed = TRUE)[[1]])
+    if (first[1L] < 1L) next
+    last <- first + nchar(label) - 1L
+    for (k in seq_along(first)) {
+      s <- first[k]
+      e <- last[k]
+      if (!all(free[s:e]) || (s > 1L && word[s - 1L]) || (e < length(chars) && word[e + 1L])) next
+      free[s:e] <- FALSE
+      start <- c(start, s)
+      end <- c(end, e)
+    }
+  }
+  if (!length(start)) {
+    return(x)
+  }
+  by_position <- order(start)
+  start <- start[by_position]
+  end <- end[by_position]
+  hit <- substring(x, start, end)
+  seen <- unique(hit)
+  masked <- finn_tx_mask(seen, labels)
+  masked <- ifelse(masked == finn_tx_mask(seen, labels, reveal = TRUE), seen, masked)
+  paste0(substring(x, c(1L, end + 1L), c(start - 1L, length(chars))), c(masked[match(hit, seen)], ""), collapse = "")
+}
+
+#' Mask known labels inside free text
+#'
+#' Replaces each label found in `text` with the token [finn_tx_mask()] gives
+#' it, so a label reads the same in the preview tables and in a message.
+#' Numbers, dates, period names, and total words stay as written: a count or
+#' date in a message cannot be told apart from a numeric label. A short label
+#' can also mask a word of the same spelling in the message; that errs toward
+#' hiding. Matching rules are in [finn_tx_mask_one()].
+#'
+#' @param text Character vector, for example validation messages.
+#' @param known Labels to look for, from [finn_tx_message_labels()].
+#' @param labels Environment that maps text to its token, shared with the
+#'   preview tables.
+#' @return `text` with every known text label replaced by its token.
+finn_tx_mask_text <- function(text, known, labels) {
+  blob <- paste(text[!is.na(text)], collapse = "\n")
+  found <- known[vapply(known, grepl, logical(1), x = blob, fixed = TRUE, USE.NAMES = FALSE)]
+  if (!length(found)) {
+    return(text)
+  }
+  found <- found[order(-nchar(found))]
+  for (i in which(!is.na(text) & nzchar(text))) {
+    text[i] <- finn_tx_mask_one(text[i], found, labels)
+  }
+  text
+}
+
+#' Validation checks as shown to the user
+#'
+#' A verification message can name series labels or a dropped total, so it is
+#' masked like the preview tables unless the user agreed to see labels. Rule
+#' ids, descriptions, and statuses are unchanged, and so is `run$gate$checks`,
+#' which keeps the messages as written.
+#'
+#' @param run Result of `finn_tx_run()`; needs `gate` and `settings`.
+#' @param labels Environment that maps text to its token; the preview tables
+#'   fill it first, so a label has one token in every section.
+#' @param reveal TRUE to return the checks as written.
+#' @return Data frame like `run$gate$checks`.
+finn_tx_mask_checks <- function(run, labels, reveal = FALSE) {
+  checks <- run$gate$checks
+  if (reveal || is.null(checks) || !nrow(checks)) {
+    return(checks)
+  }
+  checks$Message <- finn_tx_mask_text(checks$Message, finn_tx_message_labels(run), labels)
+  checks
 }
 
 #' Markdown table from a data frame
@@ -1713,18 +1831,23 @@ finn_tx_token <- function(spec, md5, cfg) {
 #'
 #' Sections, in order: summary (with a `Latest period` line when the last
 #' period has not ended), Changes, Needs your extra confirmation, Dropped
-#' rows, Before, After, Verification.
+#' rows, Before, After, Verification. The tables are masked first and the
+#' Verification messages after them, so a label has the same token in every
+#' section.
 #'
 #' @param run Result of `finn_tx_run()` without `preview_markdown`.
-#' @param reveal TRUE to show text labels unmasked.
+#' @param reveal TRUE to show text labels unmasked, in the tables and in the
+#'   Verification messages.
 #' @param n_rows Rows shown in the Before and After tables.
+#' @param labels Environment that maps text to its token. `finn_tx_run()`
+#'   passes the one it also gives [finn_tx_mask_checks()], so the returned
+#'   `display_checks` use the preview's tokens.
 #' @return One markdown string.
-finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L) {
+finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L, labels = new.env(parent = emptyenv())) {
   ctx <- run$ctx
   gate <- run$gate
   cfg <- run$settings
   out <- gate$output
-  labels <- new.env(parent = emptyenv())
   src_cols <- utils::head(setdiff(names(ctx$grid), c(".finn_row", ".finn_sheet")), 10)
   before <- ctx$grid[utils::head(seq_len(nrow(ctx$grid)), n_rows), src_cols, drop = FALSE]
   before[] <- lapply(before, finn_tx_mask, labels = labels, reveal = reveal)
@@ -1735,7 +1858,7 @@ finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L) {
   dropped <- if (!is.null(gate$dropped)) {
     data.frame(Reason = gate$dropped$reason, Rows = gate$dropped$rows, `Value in target columns` = format(gate$dropped$value_total, big.mark = ",", digits = 15), check.names = FALSE)
   }
-  ver <- gate$checks
+  ver <- finn_tx_mask_checks(run, labels, reveal)
   ver <- data.frame(Rule = ver$Rule, Check = ver$Description, Result = toupper(ver$Status), Detail = ver$Message, stringsAsFactors = FALSE)
   n_series <- if (all(unlist(cfg$combo_variables) %in% names(out))) length(unique(finn_tx_key(out, unlist(cfg$combo_variables)))) else NA
   dates <- if (inherits(out$Date, "Date") && any(!is.na(out$Date))) sprintf("dates %s to %s", format(min(out$Date, na.rm = TRUE)), format(max(out$Date, na.rm = TRUE))) else "dates not read yet"
@@ -1786,12 +1909,15 @@ finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L) {
 #' @param project_cfg Project config list or NULL.
 #' @param validator Validator function or NULL (fails closed).
 #' @param sheet Default sheet name or number.
-#' @param reveal_labels TRUE to show text labels unmasked in the preview.
+#' @param reveal_labels TRUE to show text labels unmasked in the preview and
+#'   in `display_checks`.
 #' @param today Date used to spot a latest period that has not ended; tests
 #'   pass a fixed date. It never affects the gate or the token.
 #' @return List with `spec`, `settings`, `ctx`, `gate`, `token` (NULL unless
 #'   the gate passed), `plan_summary`, `latest_period` (from
-#'   [finn_tx_latest_period()]), and `preview_markdown`.
+#'   [finn_tx_latest_period()]), `preview_markdown`, and `display_checks`
+#'   (the gate checks with validation messages masked like the preview
+#'   tables unless `reveal_labels`; `gate$checks` keeps them as written).
 finn_tx_run <- function(file, spec_text, project_cfg = NULL, validator = finn_tx_default_validator(), sheet = NULL, reveal_labels = FALSE, today = Sys.Date()) {
   spec <- finn_tx_read_spec(spec_text)
   cfg <- finn_tx_settings(project_cfg, spec$settings)
@@ -1804,7 +1930,9 @@ finn_tx_run <- function(file, spec_text, project_cfg = NULL, validator = finn_tx
     plan_summary = c(spec$description, vapply(ctx$changes, function(ch) sprintf("Step %d: %s (%s)", ch$step, ch$change, ch$affects), character(1))),
     latest_period = finn_tx_latest_period(gate$output, cfg, today)
   )
-  run$preview_markdown <- finn_tx_preview_markdown(run, reveal = reveal_labels)
+  labels <- new.env(parent = emptyenv())
+  run$preview_markdown <- finn_tx_preview_markdown(run, reveal = reveal_labels, labels = labels)
+  run$display_checks <- finn_tx_mask_checks(run, labels, reveal_labels)
   run
 }
 

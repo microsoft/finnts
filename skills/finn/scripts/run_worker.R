@@ -330,7 +330,7 @@ finn_main(function(args) {
     {
       suppressPackageStartupMessages(library(finnts))
       cfg <- state$config
-      raw <- finn_load_data(finn_resolve_data_file(paths, cfg$data$file), cfg$data$sheet)
+      raw <- finn_load_data(finn_resolve_data_file(paths, cfg$data$file), cfg$data$sheet, text_columns = cfg$combo_variables)
       data <- finn_prepare_input(raw, cfg)$data
       if (identical(state$mode, "standard")) {
         list(forecast = worker_standard(paths, run_paths, state, data))

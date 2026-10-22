@@ -42,8 +42,10 @@ contain R code, file paths, or web addresses.
    reformat, or paraphrase it. Its sections are always: Source, Result, Checked against
    settings, Target total, Latest period (only when it has not ended), Changes, Needs your
    extra confirmation, Dropped rows, Before, After, and Verification. The preview masks
-   labels and values. `data.preview_file` is a local CSV with real values for the user to
-   open; never read it into the chat.
+   labels and values, including labels named in the Verification messages, and `data.checks`
+   carries the same masked messages. Numbers and dates in a message stay as written.
+   `data.preview_file` is a local CSV with real values for the user to open; never read it
+   into the chat.
 4. **Approve once.** Ask for one approval of the whole plan, naming every item under
    "Needs your extra confirmation". Nothing is written before approval. If the spec
    changes in any way, preview again and get approval again.
@@ -54,7 +56,8 @@ contain R code, file paths, or web addresses.
 6. **Use the copy.** Replace the project data with the prepared copy
    (`setup_project.R --action=create --project=<name> --data=<output> --replace_data=true`
    after the user agrees), set `date_column` to `Date`, then run `profile_data.R` and
-   `validate_config.R` as usual.
+   `validate_config.R` as usual. The settings review and the forecast run read the series
+   columns of a CSV as text, so IDs such as `001` keep their leading zeros.
 
 If a check fails, the response is `gate_failed`, with no token and no file written. Explain
 each FAIL row in plain language, revise the spec, and preview again.
@@ -166,8 +169,10 @@ the user to update finnts. The check is never skipped.
 ## Privacy, reuse, and limits
 
 - The spec is never saved. Nothing is cached or reused; every new file goes through
-  diagnose, propose, and approve again. Approval records only the plan summary, check
-  results, counts, and a fingerprint of the source file in `project.json`.
+  diagnose, propose, and approve again. Approval records only a value-free summary in
+  `project.json`: each step's number, operation, and affected count; each check's rule and
+  status with a fixed message; the counts; and a fingerprint of the source file. The spec,
+  its descriptions and reasons, labels, validator messages, and values are never recorded.
 - If the same fix is needed on every data refresh, recommend moving it into the
   upstream report, query, or workflow that produces the file. For filtered pivots,
   suggest exporting the flat, unfiltered data instead.
