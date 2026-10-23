@@ -214,6 +214,74 @@ test_that("hierarchical Agent publication and getter ignore per-model reconciled
   expect_false(any(grepl(hash_data(alternative$Model_ID), tracker$payload_paths, fixed = TRUE)))
 })
 
+test_that("Agent forecast getter rejects missing final output and preserves saved formats", {
+  local_mocked_bindings(check_agent_info = function(...) NULL)
+  for (format in c("csv", "rds", "parquet")) {
+    agent <- artifact_test_agent(withr::local_tempdir(), format)
+    info <- agent$project_info
+    info$run_name <- agent$run_id
+    path <- artifact_test_path(info, "final_output", suffix = "-forecast")
+
+    expect_error(get_agent_forecast(agent), "Missing required Finn artifact")
+    future <- artifact_test_forecast(info, write_output = FALSE)
+    historical <- future
+    historical$Train_Test_ID <- 2
+    historical$Date <- as.Date("2024-01-01")
+    historical$Target <- 100
+    expected <- dplyr::bind_rows(future, historical)
+    write_data(expected, NULL, info, "data", "final_output", "-forecast")
+    original <- agent
+    tracker <- local_artifact_spies()
+    expect_equal(get_agent_forecast(agent), expected)
+    expect_identical(agent, original)
+    expect_equal(tracker$listings, 0L)
+    expect_equal(tracker$directory_listings, 0L)
+    if (format == "rds") {
+      writeLines("not an RDS forecast", path)
+      expect_error(get_agent_forecast(agent), "unknown input format")
+    }
+  }
+})
+
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("Agent forecast getter propagates missing and failed downloads on", provider), {
+    source <- artifact_test_agent(withr::local_tempdir(), "rds")
+    info <- source$project_info
+    info$run_name <- source$run_id
+    expected <- artifact_test_forecast(info, write_output = FALSE)
+    write_data(expected, NULL, info, "data", "final_output", "-forecast")
+    source_path <- artifact_test_path(info, "final_output", suffix = "-forecast")
+    agent <- source
+    agent$project_info$path <- "provider-artifacts"
+    agent$project_info$storage_object <- structure(list(), class = provider)
+    downloads <- character()
+    failure <- artifact_http_error()
+    # Simulate only transport; exact-path lookup, strict deserialization and
+    # provider condition propagation still execute through the shared reader.
+    local_mocked_bindings(
+      check_agent_info = function(...) NULL,
+      list_files = function(...) stop("getter must not enumerate directories"),
+      download_exact_artifact = function(storage_object, path, destination, allow_missing) {
+        expect_false(allow_missing)
+        downloads <<- c(downloads, as.character(path))
+        if (!is.null(failure)) stop(failure)
+        fs::file_copy(source_path, destination, overwrite = TRUE)
+        TRUE
+      }
+    )
+    expect_error(get_agent_forecast(agent), class = "http_404")
+    failure <- artifact_http_error(403L, "access denied")
+    expect_error(get_agent_forecast(agent), class = "http_403")
+    failure <- simpleError("storage unavailable")
+    expect_error(get_agent_forecast(agent), "storage unavailable")
+    failure <- NULL
+    expect_equal(get_agent_forecast(agent), expected)
+    expect_identical(unique(downloads), as.character(fs::path(
+      agent$project_info$path, "final_output", fs::path_file(source_path))))
+    expect_length(downloads, 4L)
+  })
+}
+
 test_that("reconciliation reads the selected run split by exact path", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   project_info <- agent_info$project_info

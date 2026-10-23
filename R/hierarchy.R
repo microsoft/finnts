@@ -406,6 +406,11 @@ get_hts_nodes <- function(hts_object,
 
 #' Calculate finite reconciliation weights with bounded nonnegative confidence
 #'
+#' Finite zero or subnormal MSE is floored to the smallest positive normal
+#' double before inversion. Nonnegative reconciliation also retains its relative
+#' confidence bound. Partial missing residuals are omitted; all-missing or
+#' nonfinite MSE raises a node-specific error. Inputs are not changed.
+#'
 #' @param residuals Numeric matrix with one column per hierarchy node.
 #' @param negative_forecast Whether negative forecasts are allowed.
 #' @return Named inverse-MSE weights in the original column order.
@@ -416,7 +421,7 @@ reconciliation_weights <- function(residuals, negative_forecast) {
   }
 
   mse <- colMeans(residuals^2, na.rm = TRUE)
-  invalid <- which(!is.finite(mse) | mse <= 0)
+  invalid <- which(!is.finite(mse))
   if (length(invalid) > 0L) {
     nodes <- if (is.null(names(mse))) invalid else names(mse)[invalid]
     stop(paste0(
@@ -425,6 +430,7 @@ reconciliation_weights <- function(residuals, negative_forecast) {
     ), call. = FALSE)
   }
 
+  mse <- pmax(mse, .Machine$double.xmin)
   if (!negative_forecast) {
     max_weight_ratio <- 1e15
     mse <- pmax(mse, max(mse) / max_weight_ratio)
