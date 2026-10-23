@@ -68,6 +68,7 @@ test_that("R1 fails on missing columns with the prep_data message", {
   expect_equal(check_status(result, "R1"), "fail")
   expect_match(check_message(result, "R1"), "Missing columns: region")
   expect_equal(check_status(result, "R5"), "skipped")
+  expect_equal(check_status(result, "R9"), "skipped")
   expect_true(all(result$checks$Status[result$checks$Rule %in% paste0("P", 1:8)] == "skipped"))
 
   missing_target <- validate_monthly(validation_monthly_data(), target_variable = "sales")

@@ -155,7 +155,7 @@ validate_prepared_input <- function(input_data,
   run_rule("R5", "R1", function() check_input_target_numeric(data, target_variable))
   run_rule("R6", c("R1", "R3"), function() check_input_blank_combos(data, combo_variables))
   run_rule("R7", c("R1", "R3"), function() check_input_duplicates(data, combo_variables))
-  run_rule("R9", "R3", function() validation_check_frequency(data, combo_variables, date_type))
+  run_rule("R9", c("R1", "R3"), function() validation_check_frequency(data, combo_variables, date_type))
   run_rule("R8", c("R3", "R9"), function() check_input_date_alignment(data, date_type))
   run_rule("R10", character(), function() check_input_fiscal_year_start(fiscal_year_start))
 
