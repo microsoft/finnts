@@ -26,8 +26,9 @@ create_custom_model(
 \arguments{
 \item{instructions}{Nonblank business logic for the new model.}
 
-\item{llm}{An ellmer Chat object (ellmer >= 0.4.0). Generation uses a fresh
-empty-history clone.}
+\item{llm}{An ellmer Chat object or \code{\link[=chat_copilot]{chat_copilot()}} template. Generation
+uses a fresh, empty-history session. Both providers require ellmer >= 0.4.0
+for structured response types; Copilot also uses S7 and its CLI dependencies.}
 
 \item{input_data}{Local data frame containing a column named \code{Date} of class
 Date, the target, series keys and declared drivers. Supply this or \code{run_info}.}

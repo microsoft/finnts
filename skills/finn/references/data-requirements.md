@@ -27,7 +27,9 @@ One row per series per period ("long" format):
 
 Wide layouts (one column per month), title rows, and subtotal rows are fine to start with:
 `profile_data.R` detects them and `prepare_data.R` reshapes them after the user agrees.
-The original file is never changed.
+Messier files (pivots, merged headers, footnotes, numbers stored as text, mixed dates,
+fiscal periods, unit changes) are fixed with a transform spec the user approves
+(data-preparation.md). The original file is never changed.
 
 ## How much history
 
@@ -51,9 +53,9 @@ Typical and maximum horizons by date type (beyond the maximum, Finn warns but st
 `validate_config.R` returns these as errors; fix them with the user before running:
 
 - Two rows for the same series and date (duplicates). Ask whether to sum them or which one
-  to keep. With approval, create a separate cleaned copy using analysis code that
-  aggregates or removes the agreed rows; `prepare_data.R` does not aggregate duplicates.
-  Keep the original unchanged and validate the cleaned copy before launching.
+  to keep. With approval, use a transform spec with `aggregate_duplicates` or
+  `drop_duplicates` (data-preparation.md); it writes a separate checked copy and keeps
+  the original unchanged.
 - A configured column that is not in the file (often a renamed header).
 - The date column listed as a series column.
 - A date type other than `day`, `week`, `month`, `quarter`, or `year`.
@@ -74,6 +76,8 @@ Explain these and let the user decide:
 ## Excel and regional files
 
 - Excel files work directly; pass `--sheet=<name>` when the data is not on the first sheet.
+  Formulas are not recalculated: Finn reads the values Excel last saved, so recalculate
+  and save the workbook first if they may be stale.
 - Dates and decimals are detected automatically. When they are ambiguous (for example
   `03/04/2024`, or `1.234,56`), confirm with the user and set `date_format` or
   `decimal_mark` (data-and-settings.md "International data").

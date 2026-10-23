@@ -439,8 +439,90 @@ train_test_split <- function(run_info,
   ) %>%
     dplyr::select(Date)
 
+  train_test_final <- plan_train_test_splits(
+    temp_tbl,
+    hist_end_date,
+    forecast_horizon,
+    back_test_scenarios,
+    back_test_spacing_final
+  )
+
+  # adjust based on models planned to run
+  if (sum(model_workflow_list %in% hyperparam_model_list) == 0) {
+    train_test_final <- train_test_final %>%
+      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
+      rbind(
+        train_test_final %>%
+          dplyr::filter(Run_Type == "Validation") %>%
+          dplyr::slice(1)
+      )
+  } else if (sum(model_workflow_list %in% hyperparam_model_list) > 0 & !run_ensemble_models) {
+    train_test_final <- train_test_final %>%
+      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Validation"))
+  } else {
+    # do nothing, keep the existing tbl
+  }
+
+  # write train test info
+  write_data(
+    x = train_test_final,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "data",
+    folder = "prep_models",
+    suffix = "-train_test_split"
+  )
+
+  # update logging file
+  log_df <- read_file(run_info,
+    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
+    return_type = "df"
+  ) %>%
+    dplyr::mutate(
+      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios),
+      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing),
+      run_ensemble_models = run_ensemble_models
+    )
+
+  write_data(
+    x = log_df,
+    combo = NULL,
+    run_info = run_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = NULL
+  )
+
+  if (return) {
+    return(train_test_final)
+  } else {
+    cli::cli_progress_done()
+  }
+}
+
+#' Plan train, back-test, validation and ensemble splits
+#'
+#' Builds the split table used by `train_test_split()` from a table of dates,
+#' so input validation can reproduce the same fold planning without a run.
+#'
+#' @param date_tbl tibble with a `Date` column covering history and the
+#'   forecast horizon
+#' @param hist_end_date last historical date
+#' @param forecast_horizon number of future periods
+#' @param back_test_scenarios back test scenario override or NULL
+#' @param back_test_spacing_final resolved back test spacing from
+#'   `get_back_test_spacing()`
+#'
+#' @return tibble with Run_Type, Train_Test_ID, Train_End and Test_End; stops
+#'   when no back-test or validation split can be produced
+#' @noRd
+plan_train_test_splits <- function(date_tbl,
+                                   hist_end_date,
+                                   forecast_horizon,
+                                   back_test_scenarios,
+                                   back_test_spacing_final) {
   # get back test info
-  bt <- temp_tbl %>%
+  bt <- date_tbl %>%
     get_back_test_scenario_hist_periods(
       hist_end_date,
       forecast_horizon,
@@ -452,7 +534,7 @@ train_test_split <- function(run_info,
   back_test_initial <- bt$hist_periods_80
 
   # create train/test split info
-  train_test_initial <- temp_tbl %>%
+  train_test_initial <- date_tbl %>%
     timetk::time_series_cv(
       date_var = Date,
       initial = "1 year",
@@ -519,57 +601,7 @@ train_test_split <- function(run_info,
     stop("No back testing data produced. Shorten the forecast horizon, or shorten the number of back test scenarios or back test spacing")
   }
 
-  # adjust based on models planned to run
-  if (sum(model_workflow_list %in% hyperparam_model_list) == 0) {
-    train_test_final <- train_test_final %>%
-      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test")) %>%
-      rbind(
-        train_test_final %>%
-          dplyr::filter(Run_Type == "Validation") %>%
-          dplyr::slice(1)
-      )
-  } else if (sum(model_workflow_list %in% hyperparam_model_list) > 0 & !run_ensemble_models) {
-    train_test_final <- train_test_final %>%
-      dplyr::filter(Run_Type %in% c("Future_Forecast", "Back_Test", "Validation"))
-  } else {
-    # do nothing, keep the existing tbl
-  }
-
-  # write train test info
-  write_data(
-    x = train_test_final,
-    combo = NULL,
-    run_info = run_info,
-    output_type = "data",
-    folder = "prep_models",
-    suffix = "-train_test_split"
-  )
-
-  # update logging file
-  log_df <- read_file(run_info,
-    path = paste0("logs/", hash_data(run_info$project_name), "-", hash_data(run_info$run_name), ".csv"),
-    return_type = "df"
-  ) %>%
-    dplyr::mutate(
-      back_test_scenarios = ifelse(is.null(back_test_scenarios), NA, back_test_scenarios),
-      back_test_spacing = ifelse(is.null(back_test_spacing), NA, back_test_spacing),
-      run_ensemble_models = run_ensemble_models
-    )
-
-  write_data(
-    x = log_df,
-    combo = NULL,
-    run_info = run_info,
-    output_type = "log",
-    folder = "logs",
-    suffix = NULL
-  )
-
-  if (return) {
-    return(train_test_final)
-  } else {
-    cli::cli_progress_done()
-  }
+  train_test_final
 }
 
 #' Locate one combo's prepared recipe files for workflow building

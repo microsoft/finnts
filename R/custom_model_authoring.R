@@ -131,9 +131,10 @@ custom_author_provider_error <- function(error, phase, prompt_bytes, elapsed_sec
       else "request"
     } else if (any(classes %in% c("httr2_timeout", "curl_error_operation_timedout")))
       kind <- "timeout"
-    else if (any(classes %in% c("httr2_failure", "curl_error")))
+    else if (any(classes %in% c("httr2_failure", "curl_error", "finnts_copilot_transport_error")))
       kind <- "transport"
-    else if (any(classes %in% c("ellmer_error_invalid_response", "ellmer_error_parse", "jsonlite_parse_error")))
+    else if (any(classes %in% c("ellmer_error_invalid_response", "ellmer_error_parse", "jsonlite_parse_error",
+      "finnts_copilot_structured_error")))
       kind <- "structured_output"
     if (kind != "unknown" || !is.list(error) || !inherits(error$parent, "condition"))
       break
@@ -1357,8 +1358,9 @@ custom_author_response <- function(request, response) {
 #' you expect, and [custom_model_control()] for advanced settings.
 #'
 #' @param instructions Nonblank business logic for the new model.
-#' @param llm An ellmer Chat object (ellmer >= 0.4.0). Generation uses a fresh
-#'   empty-history clone.
+#' @param llm An ellmer Chat object or [chat_copilot()] template. Generation
+#'   uses a fresh, empty-history session. Both providers require ellmer >= 0.4.0
+#'   for structured response types; Copilot also uses S7 and its CLI dependencies.
 #' @param input_data Local data frame containing a column named `Date` of class
 #'   Date, the target, series keys and declared drivers. Supply this or `run_info`.
 #' @param run_info Compatible prepared run that includes the raw C1 recipe, read without changes.
@@ -1543,7 +1545,7 @@ create_custom_model <- function(
         custom_author_abort("input", "Hierarchy authoring requires local logic without external regressors.")
       }
       if (is.null(llm))
-        custom_author_abort("provider", "Supply llm, an ellmer Chat object, to create a custom model.")
+        custom_author_abort("provider", "Supply llm, an ellmer Chat object or chat_copilot() template, to create a custom model.")
       check_agent_ellmer_version()
       session <- new_llm_session(llm)
       invisible(utils::capture.output(data <- suppressMessages(custom_author_data(input_data, run_info, combo_variables,
@@ -1720,6 +1722,7 @@ custom_author_typed_parameters <- function(values, schema) {
 # interpreting formulas or executing code. Each error must have a matching test;
 # numerical controls cover every mode. Metadata-only normalization is idempotent.
 # Expectation provenance records the supplier, never a claim of mathematical truth.
+# Native JSON [] and character() both mean no optional business invariants.
 custom_author_behavior_contract <- function(error_policy, properties, examples, modes) {
   reject <- function() custom_author_abort("contract", "Error declarations and worked outcomes contradict one another.",
     code = "invalid_error_contract", field = "error_policy"
@@ -1753,10 +1756,10 @@ custom_author_behavior_contract <- function(error_policy, properties, examples, 
     if (is.na(index) || !identical(example$expected_error, errors[[index]][c("phase", "code")]))
       reject()
   }
-  if (is.list(properties) && all(vapply(properties, custom_author_text, logical(1))))
-    properties <- unlist(properties, use.names = FALSE)
   if (is.list(properties) && !length(properties))
     properties <- character()
+  if (is.list(properties) && all(vapply(properties, custom_author_text, logical(1))))
+    properties <- unlist(properties, use.names = FALSE)
   allowed <- c("constant_forecast", "target_scale_equivariant", "independent_series", "fixed_window", "relative_calendar")
   if (!is.character(properties) || anyNA(properties) || anyDuplicated(properties) || !all(properties %in% allowed)) {
     custom_author_abort("contract", "Unsupported validation property declaration.",

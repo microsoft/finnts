@@ -5,7 +5,9 @@ For the required data layout, history length, and template, see
 
 ## Settings (`config.json`)
 
-Change settings only through `validate_config.R` and the user's approval. Key settings:
+Change settings only through `validate_config.R` and the user's approval. Show
+`data.settings_review` exactly as written; to propose a change, validate a draft
+config with `--config=<draft>` and show `data.settings_changes`. Key settings:
 
 | setting | meaning |
 |---|---|
@@ -26,7 +28,8 @@ Change settings only through `validate_config.R` and the user's approval. Key se
 | `clean_outliers`, `clean_missing_values`, `negative_forecast` | data cleaning and sign rules |
 | `parallel` | `auto` (skill picks local or inner parallelism) or `none` |
 | `agent.llm` | AI model for Agent runs (setup.md) |
-| `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches and its accuracy target |
+| `agent.max_iter`, `agent.weighted_mape_goal` | how long the Agent searches (a total per search for the Agent version) and its accuracy target |
+| `custom_models` | saved custom models every run of the project uses, as `[{"name", "version_id"}]`; change only with `custom_model.R --action=enroll` or `--action=unenroll` ([custom-models.md](custom-models.md)) |
 
 ## Choosing settings by size
 
@@ -71,7 +74,8 @@ version.
   `standard_hierarchy` (nested columns, for example region > country) or
   `grouped_hierarchy` (independent groupings). For the Agent, also set
   `agent.allow_hierarchical_forecast`. Input must be the lowest level only, without
-  total rows (`prepare_data.R` removes them).
+  total rows (`prepare_data.R` removes them; a transform spec's `drop_total_rows` also
+  checks that they match first).
 - **Units and scaling:** forecasts come back in the same units as the input. Do not
   rescale input data; convert to thousands or millions only in analysis or exports.
 - **Prediction intervals:** `lo_80`/`hi_80` and `lo_95`/`hi_95` columns are ranges built

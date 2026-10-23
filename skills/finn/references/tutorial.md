@@ -26,7 +26,7 @@ Run `profile_data.R --project=finn_tutorial`. Explain:
 - the **target** is Revenue, the **date** is monthly;
 - Finn needs one row per series per date, in a "long" layout (it can reshape wide files).
 
-## 3. Settings card
+## 3. Settings review
 
 Build the tutorial project's config using the normal configuration template, but
 recommend these settings for the first run:
@@ -40,7 +40,8 @@ them and get the user's agreement before applying them to the project config.
 If reusing a tutorial project, review its saved settings first; do not silently
 overwrite them. Keep other settings unchanged unless the user agrees.
 
-Run `validate_config.R --project=finn_tutorial` and walk through the card:
+Run `validate_config.R --project=finn_tutorial`, show `data.settings_review` exactly
+as written, then walk through these rows of its forecast configuration table:
 
 - **Forecast horizon:** how many months ahead (suggest 12 here).
 - **Back testing:** Finn hides recent months, forecasts them, and compares with actuals to
@@ -56,7 +57,7 @@ Run `validate_config.R --project=finn_tutorial` and walk through the card:
 
 Check that the validated config contains exactly `arima`, `ets`, and `glmnet`
 and has `run_ensemble_models = false`, unless the user explicitly chose otherwise.
-Save with `--save=true` after the user agrees.
+Save with `--save=true` after the user replies `run` or otherwise agrees.
 
 ## 4. Run a standard forecast
 
@@ -102,7 +103,8 @@ Run `export_results.R --project=finn_tutorial` and show where the spreadsheet la
   accuracy. Mention it takes longer and uses Copilot requests.
 - **Large data:** hundreds or thousands of series get size-based suggestions and a
   sample test first (choosing-a-run.md).
-- **New actuals later:** refresh with `--mode=update` after an Agent run, or a new
-  standard run.
+- **New actuals later:** refresh with the same run type as the last forecast:
+  `--mode=update` after an Agent run, or a new standard run. `validate_config.R`
+  proposes the right one and explains why.
 
 The tutorial project can be kept as a reference; Finn never deletes it.

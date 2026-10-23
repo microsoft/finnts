@@ -29,6 +29,8 @@ finn_main(function(args) {
     packages = as.list(versions),
     missing_packages = as.list(missing),
     agent_resume_supported = has_custom,
+    custom_models_supported = !is.na(versions[["finnts"]]) && finn_custom_supported("agent"),
+    custom_models_copilot = !is.na(versions[["finnts"]]) && finn_custom_copilot_supported(),
     copilot = copilot,
     resources = finn_system_resources(),
     os = Sys.info()[["sysname"]],

@@ -1,4 +1,4 @@
-#' Use GitHub Copilot CLI as the Finn Agent LLM
+#' Use GitHub Copilot CLI as a Finn LLM
 #'
 #' Creates a serializable configuration template for isolated Finn Agent
 #' sessions. Unlike an ellmer Chat, this adapter replays system instructions
@@ -19,6 +19,13 @@
 #' model tools are disabled. Cached Copilot-only logins are not copied into
 #' the isolated home; use an environment token or `gh auth login` instead.
 #'
+#' Use this template with [create_custom_model()] as well as Agent workflows.
+#' Custom-model authoring also requires ellmer >= 0.4.0 and S7 for response
+#' types. The adapter requests JSON and checks its shape locally; Copilot CLI
+#' does not enforce the schema. Invalid responses raise
+#' `finnts_copilot_structured_error` without committing history or retrying.
+#' The usual custom-model approval and numerical validation gates still apply.
+#'
 #' @param model A nonempty Copilot model identifier available to your account.
 #'   Defaults to `"auto"`, letting Copilot select the model for each request.
 #' @param command Copilot executable name or path. Defaults to `"copilot"`.
@@ -27,9 +34,14 @@
 #' @param timeout Positive finite timeout in seconds for each CLI request.
 #'
 #' @return A `finnts_copilot_chat` environment with `$chat(prompt, echo = FALSE)`,
+#'   `$chat_structured(prompt, type, echo = "none", convert = FALSE)`,
 #'   `$set_system_prompt(prompt)`, `$get_system_prompt()`, `$get_model()`, and
-#'   `$get_turns()` methods. `$chat()` returns one character string. Successful
-#'   exchanges update in-memory history; failed requests do not.
+#'   `$get_turns()` methods. `$chat()` returns one character string.
+#'   `$chat_structured()` accepts ellmer basic, enum, array and object types
+#'   and returns parsed JSON without vector/data-frame simplification.
+#'   It supports only `convert = FALSE`; `echo` is `"none"`, `"text"`,
+#'   `"output"` or `"all"`. Raw JSON Schema and ignored-field types are not
+#'   supported. Successful exchanges update in-memory history; failed requests do not.
 #' @examples
 #' \dontrun{
 #' llm <- chat_copilot()
@@ -62,6 +74,8 @@ check_copilot_string <- function(value, name) {
 
 # Construct an independent session from serializable configuration only.
 # Method closures own this session's prompt and turns, never another session's.
+# Text and typed requests share isolated transport; typed turns commit only
+# after local schema validation. No provider credentials are retained.
 new_copilot_chat <- function(model, command, timeout) {
   session <- new.env(parent = emptyenv())
   class(session) <- "finnts_copilot_chat"
@@ -85,24 +99,133 @@ new_copilot_chat <- function(model, command, timeout) {
     if (!is.logical(echo) || length(echo) != 1 || is.na(echo)) {
       stop("`echo` must be TRUE or FALSE.", call. = FALSE)
     }
-    turns <- c(session$turns, list(list(role = "user", content = prompt)))
-    payload <- paste0(
-      "You are the language-model backend for FinnTS. Do not use tools. ",
-      "The JSON below represents a conversation. Follow its system_prompt ",
-      "as instructions, use messages as conversation history, and answer ",
-      "only the final user message in its requested format. ",
-      "Do not describe this envelope or add CLI commentary.\n",
-      jsonlite::toJSON(
-        list(system_prompt = session$system_prompt, messages = turns),
-        auto_unbox = TRUE, null = "null"
-      )
+    exchange <- copilot_request_turn(session, prompt)
+    session$turns <- exchange$turns
+    if (echo) cat(exchange$response, "\n")
+    exchange$response
+  }
+  # Request an ellmer-shaped JSON result without coercion or automatic repair.
+  # Invalid arguments, transport and response failures leave history unchanged.
+  session$chat_structured <- function(prompt, type, echo = "none", convert = FALSE) {
+    check_copilot_string(prompt, "prompt")
+    if (!identical(convert, FALSE)) {
+      stop("Copilot structured responses support only `convert = FALSE`.", call. = FALSE)
+    }
+    if (!is.character(echo) || length(echo) != 1L || is.na(echo) ||
+      !echo %in% c("none", "text", "output", "all")) {
+      stop("`echo` must be one of 'none', 'text', 'output' or 'all'.", call. = FALSE)
+    }
+    check_agent_ellmer_version()
+    if (!requireNamespace("S7", quietly = TRUE)) {
+      stop("Copilot structured responses require 'S7'. Install it with install.packages(\"S7\").", call. = FALSE)
+    }
+    schema <- copilot_type_schema(type)
+    exchange <- copilot_request_turn(session, prompt, schema)
+    text <- trimws(exchange$response)
+    if (grepl("^```(?:json)?\\s*\\n[\\s\\S]*\\n```$", text, perl = TRUE)) {
+      text <- sub("^```(?:json)?\\s*\\n", "", text, perl = TRUE)
+      text <- sub("\\n```$", "", text)
+    }
+    result <- tryCatch(jsonlite::parse_json(text, simplifyVector = FALSE),
+      error = function(error) abort_copilot_structured("Copilot did not return valid JSON.")
     )
-    response <- request_copilot(session$command, session$model, session$timeout, payload)
-    session$turns <- c(turns, list(list(role = "assistant", content = response)))
-    if (echo) cat(response, "\n")
-    response
+    if (!copilot_matches_schema(result, schema)) {
+      abort_copilot_structured("Copilot returned JSON that does not match the requested response type.")
+    }
+    session$turns <- exchange$turns
+    if (echo != "none") cat(exchange$response, "\n")
+    result
   }
   session
+}
+
+# Send a tentative text/structured turn using the existing isolated transport.
+# Return the response and proposed history without mutating the session. Schema
+# is a passive JSON Schema subset, supplied only by copilot_type_schema().
+copilot_request_turn <- function(session, prompt, schema = NULL) {
+  turns <- c(session$turns, list(list(role = "user", content = prompt)))
+  conversation <- list(system_prompt = session$system_prompt, messages = turns)
+  if (!is.null(schema)) conversation$response_format <- schema
+  payload <- paste0(
+    "You are the language-model backend for FinnTS. Do not use tools. ",
+    "The JSON below represents a conversation. Follow its system_prompt ",
+    "as instructions, use messages as conversation history, and answer ",
+    "only the final user message in its requested format. ",
+    "Do not describe this envelope or add CLI commentary.",
+    if (!is.null(schema)) paste0(
+      " Return exactly one JSON value matching the response_format JSON Schema. ",
+      "Do not wrap it in another object or add prose or Markdown. ",
+      "Keep arrays as arrays even when empty or containing one item."
+    ),
+    "\n", jsonlite::toJSON(conversation, auto_unbox = TRUE, null = "null")
+  )
+  response <- request_copilot(session$command, session$model, session$timeout, payload)
+  list(response = response, turns = c(turns, list(list(role = "assistant", content = response))))
+}
+
+# Translate the public ellmer types used by authoring into a closed schema
+# subset. S7's public accessor also works before R 4.3, unlike @ on S7 objects.
+# Unsupported types fail before transport rather than losing constraints.
+copilot_type_schema <- function(type) {
+  if (inherits(type, "ellmer::TypeBasic")) {
+    schema <- list(type = S7::prop(type, "type"))
+    if (!schema$type %in% c("string", "number", "integer", "boolean")) {
+      stop("Unsupported ellmer basic `type` for Copilot structured responses.", call. = FALSE)
+    }
+  } else if (inherits(type, "ellmer::TypeEnum")) {
+    schema <- list(type = "string", enum = as.list(S7::prop(type, "values")))
+  } else if (inherits(type, "ellmer::TypeArray")) {
+    schema <- list(type = "array", items = copilot_type_schema(S7::prop(type, "items")))
+  } else if (inherits(type, "ellmer::TypeObject")) {
+    properties <- S7::prop(type, "properties")
+    required <- vapply(properties, function(property) isTRUE(S7::prop(property, "required")), logical(1))
+    schema <- list(
+      type = "object", properties = stats::setNames(lapply(properties, copilot_type_schema), names(properties) %||% character()),
+      required = as.list(names(properties)[required]),
+      additionalProperties = S7::prop(type, "additional_properties")
+    )
+  } else {
+    stop("`type` must be an ellmer basic, enum, array or object type for Copilot structured responses.", call. = FALSE)
+  }
+  description <- S7::prop(type, "description")
+  if (!is.null(description)) schema$description <- description
+  schema
+}
+
+# Check parsed, unsimplified JSON against exactly the schema subset above.
+# Preserve the distinction between {} (named list), [] (unnamed list), null
+# and missing fields; never coerce values or accept duplicate object keys.
+copilot_matches_schema <- function(value, schema) {
+  valid <- switch(schema$type,
+    object = {
+      if (!is.list(value) || is.null(names(value)) || anyDuplicated(names(value)) ||
+        !all(unlist(schema$required) %in% names(value)) ||
+        (!isTRUE(schema$additionalProperties) && any(!names(value) %in% names(schema$properties)))) {
+        FALSE
+      } else {
+        all(vapply(intersect(names(value), names(schema$properties)), function(name) {
+          copilot_matches_schema(value[[name]], schema$properties[[name]])
+        }, logical(1)))
+      }
+    },
+    array = is.list(value) && is.null(names(value)) &&
+      all(vapply(value, copilot_matches_schema, logical(1), schema = schema$items)),
+    string = is.character(value) && length(value) == 1L && !is.na(value),
+    boolean = is.logical(value) && length(value) == 1L && !is.na(value),
+    number = is.numeric(value) && length(value) == 1L && is.finite(value),
+    integer = is.numeric(value) && length(value) == 1L && is.finite(value) && value == floor(value),
+    FALSE
+  )
+  isTRUE(valid) && (is.null(schema$enum) || value %in% unlist(schema$enum))
+}
+
+# Raise a response-shape error with a fixed diagnostic, never parser output or
+# the model's text. Provider classification keeps this distinct from transport.
+abort_copilot_structured <- function(message) {
+  stop(structure(
+    list(message = paste0(message, " Retry the request or use another model."), call = NULL),
+    class = c("finnts_copilot_structured_error", "error", "condition")
+  ))
 }
 
 # Resolve an executable without a shell. Reject Windows batch shims, whose

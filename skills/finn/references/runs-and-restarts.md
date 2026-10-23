@@ -52,13 +52,55 @@ version (`overwrite = TRUE`) is only created when:
 
 Earlier versions and their history stay in `finn_artifacts/`.
 
+Enrolled custom models ([custom-models.md](custom-models.md)) are part of an Agent
+version's settings. Changing the enrollment makes the next iterate a new Agent version,
+and an update must enroll the same custom models as the last Agent version
+(`needs_new_version`, `reason: custom_models_changed`).
+
+### Continuing an Agent version
+
+`agent.max_iter` is the **total** number of iterations per search (the global search and
+each series' own search) for one Agent version, not a number of extra iterations. To
+continue a finished iterate run, show the review with the revised values, save it, and
+launch `--mode=iterate` again. No extra flag is needed. With the same input file and
+every other setting unchanged:
+
+| change from the last iterate run | result |
+|---|---|
+| higher `agent.max_iter` (with or without a goal change) | `started`: same Agent version and `request_id`, nothing overwritten; each search runs only the iterations it has left |
+| stricter (lower) `agent.weighted_mape_goal`, same `max_iter` | `started`: same version; only series whose best model is global and miss the new goal reopen |
+| looser goal only | `already_complete` (`reason: looser_goal_only`) |
+| lower `agent.max_iter` (even with a goal change) | `already_complete` (`reason: lower_max_iter`); iterations can't be undone, so keep it at or above the last value |
+| nothing | `already_complete` (`reason: unchanged`) |
+| input data, forecast design, LLM, seed, or any other setting | `needs_new_version` (`reason: data_changed` or `settings_changed`, with `changed`); a new version needs `--new=true --confirm=true` |
+
+A started continuation returns `data.continuation` with `agent_version`, `request_id`,
+`from_run_id`, `from_status`, `partial`, and `max_iter` / `weighted_mape_goal` (each
+`previous` and `new`). Stop results add `data.reason`. If the installed finnts or R
+differs from the last Agent forecast, the launch returns `needs_confirmation` (`reason:
+software_changed`); after the user agrees, `--confirm=true` continues the same version.
+A newer unfinished update returns `needs_new_version` (`reason: unfinished_update`):
+resume it with `--mode=update` first. If the last Agent forecast was an update, only a new
+version can search again (`reason: last_agent_not_iterate`).
+
+A stopped iterate run whose only changes are a higher or equal `agent.max_iter` and/or a
+different goal continues the same way: a new skill run reuses its `request_id`, so its
+finished iterations are kept and the new values apply. Any other change still asks
+whether to resume with the original settings or start fresh.
+
 ## Updates
 
 `--mode=update` needs a finished Agent forecast and data that ends later than it did
-(`--force=true` if only past values were revised). If the series count changed, or the
-file changed without newer dates, it returns `needs_confirmation` with `changes`; confirm
-with the user and rerun with `--confirm=true`, or suggest a fresh iterate if the series
-changed a lot. A different finnts or R version than the last Agent forecast only adds a
+(`--force=true` if only past values were revised). If `hist_end_date` is set to an
+earlier date than the newest actuals, it returns `no_new_data` and says so; move
+`hist_end_date` with the user's approval. If the only newer period is a month, quarter,
+or year that has not ended yet, `no_new_data` says so and suggests waiting until it ends
+rather than moving `hist_end_date` into partial actuals. If the series count changed,
+the file changed without newer dates, or settings differ from the last Agent forecast,
+it returns `needs_confirmation` with `changes`; confirm with the user and rerun with
+`--confirm=true`, or suggest a fresh iterate if the series or settings changed a lot.
+Projects whose last forecast was standard are refreshed with another standard run, not
+an update. A different finnts or R version than the last Agent forecast only adds a
 note that results may shift slightly.
 
 ## Result statuses to handle
@@ -70,11 +112,12 @@ note that results may shift slightly.
 | `machine_busy` | other projects' runs use the cores or memory this run needs; nothing started | tell the user what is running; relaunch after one finishes (parallelism.md) |
 | `needs_setup` | Agent run but Copilot is not ready | walk through each listed fix (setup.md) |
 | `invalid` | config errors | run `validate_config.R`; fix with the user |
-| `needs_confirmation` | resume with changed inputs, or a new Agent version | ask the user, then rerun with the flags given |
-| `already_complete` | iterate already ran on the same settings and data | show results; a new search needs a confirmed new version |
-| `needs_new_version` | settings/data changed, or the earlier Agent run cannot be resumed | suggest `update` if data is newer; otherwise confirm a new version |
-| `needs_agent_run` | update has no finished Agent forecast | run `--mode=iterate` first or resume the unfinished one |
-| `no_new_data` | update data ends on the same date as last time | add newer actuals, or `--force=true` if past values were revised |
+| `needs_review` | the saved settings were reviewed for another run type | rerun `validate_config.R --run_type=<mode>`, show the review, save, then launch |
+| `needs_confirmation` | resume with changed inputs, update with changed settings, a new Agent version, or different software (`reason: software_changed`) | ask the user, then rerun with the flags given |
+| `already_complete` | iterate would run nothing new: same settings and data, a lower `agent.max_iter`, or only a looser goal (`reason`) | show results; raise `agent.max_iter` or tighten the goal to continue, or confirm a new version |
+| `needs_new_version` | data or other settings changed, a newer update is unfinished, an update enrolls different custom models, or the earlier Agent run cannot be resumed (`reason`) | suggest `update` if data is newer; resume an unfinished update; restore the custom models of the last Agent version; otherwise confirm a new version |
+| `needs_agent_run` | update has no finished Agent forecast | run `--mode=iterate` first or resume the unfinished one; standard projects refresh with `--mode=standard` |
+| `no_new_data` | update data ends on the same date as last time, `hist_end_date` holds it back, or the only newer period has not ended | add newer actuals, move `hist_end_date`, wait for the open period to end, or `--force=true` if past values were revised |
 
 ## Corner cases
 

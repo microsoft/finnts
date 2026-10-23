@@ -69,7 +69,7 @@ custom_model_allowed_packages <- function() {
     "tibble", "tidyr", "tidyselect", "timetk", "tune", "vroom", "workflows",
     "arrow", "AzureStor", "Boruta", "caret", "corrr", "ellmer", "energy", "knitr",
     "Microsoft365R", "nixtlar", "notebookutils", "processx", "qs2", "ranger", "reactable",
-    "rmarkdown", "sparklyr", "testthat", "tseries", "withr", "xgboost", "vip", "modeltime"
+    "rmarkdown", "S7", "sparklyr", "testthat", "tseries", "withr", "xgboost", "vip", "modeltime"
   )
 }
 

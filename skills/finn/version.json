@@ -1,7 +1,18 @@
 {
-  "version": "0.1.0",
-  "released": "2026-10-12",
+  "version": "0.2.0",
+  "released": "2026-10-20",
   "changelog": [
+    {
+      "version": "0.2.0",
+      "date": "2026-10-20",
+      "changes": [
+        "Settings reviews explain each input, warn, suggest, and estimate run time; revisions list only changed inputs, and `run` saves and starts.",
+        "Reviews name the run type and suggest the next run: update for new actuals, more Agent iterations, or a standard refresh.",
+        "Fix messy files (pivots, footnotes, text numbers, mixed dates) with one approved plan that must pass finnts input checks. Totals are checked per period; IDs keep leading zeros.",
+        "Flags a latest period that has not ended. A higher `max_iter` or stricter MAPE goal continues a finished Agent version.",
+        "Create custom models in plain language with any LLM, including GitHub Copilot; approved models are reused by standard, iterate, and update runs."
+      ]
+    },
     {
       "version": "0.1.0",
       "date": "2026-10-12",

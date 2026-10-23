@@ -85,6 +85,7 @@ Suggests:
     ranger,
     reactable,
     rmarkdown,
+    S7,
     sparklyr,
     testthat (>= 3.0.0), 
     tseries,

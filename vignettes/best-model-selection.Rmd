@@ -59,6 +59,27 @@ belong in `custom_model_control()`; approval stays visible at the top level and
 defaults to manual. Manual approval needs an interactive R session; scripts,
 schedulers and coding agents use `approval = "automatic"`.
 
+The `llm` can be an ellmer Chat or `chat_copilot()`, using any model available
+through your GitHub Copilot account. For example, use this template in the
+authoring calls below instead of `ellmer::chat_openai()`:
+
+```{r custom-authoring-copilot, eval=FALSE}
+llm <- chat_copilot(model = "auto", timeout = 600)
+```
+
+Copilot authoring needs ellmer >= 0.4.0 and S7 for structured response types,
+in addition to the CLI, authentication and processx requirements documented in
+`chat_copilot()`. The optional 600-second timeout above limits each CLI request,
+not generated-code execution. Each creation call starts a fresh conversation.
+Copilot receives the same instructions, schema and worked examples as an ellmer
+provider; actual series values are not automatically sent. The CLI retains
+local transcripts under R's temporary directory, so use only approved content.
+Responses are checked as JSON against the requested types before the existing
+business-rule, approval and numerical validation gates run. Invalid responses
+or transport failures stop authoring, without extra automatic provider retries.
+No tools are enabled in Copilot, and creating a model does not bypass the
+generated-R execution warning or alter the saved model format.
+
 Instructions may contain up to **1 MiB (1048576 UTF-8 bytes)**, including
 accumulated review edits. This permits thousands of words and hundreds of code
 lines; text is never silently truncated. The selected LLM's context window must

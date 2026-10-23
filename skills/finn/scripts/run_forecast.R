@@ -8,6 +8,28 @@
 # left off: same run id, same Agent request id, same saved settings, and no
 # new Agent version. --new=true starts a fresh run instead; for Agent runs that
 # creates a new Agent version and needs --confirm=true after asking the user.
+#
+# Continuing an Agent version: after an iterate run finishes, review and save
+# a higher agent.max_iter and/or a stricter agent.weighted_mape_goal, then
+# launch --mode=iterate again (no extra flag). max_iter is the total number of
+# iterations per search for the Agent version, so only the remaining
+# iterations run, under the same request id, without overwriting anything.
+# The result's data$continuation records the version, request id, and the
+# previous and new values. A lower max_iter or only a looser goal returns
+# already_complete; changed data or other settings return needs_new_version;
+# different installed finnts or R returns needs_confirmation until rerun with
+# --confirm=true. Stop results carry data$reason. A stopped iterate run whose
+# only changes are those two settings continues with them the same way and
+# reports the Agent version that run recorded.
+#
+# Custom models: config.json `custom_models` lists the saved custom models
+# (custom_models/<name>/<version>.rds) every run of the project uses. Standard
+# runs train them with the built-in models. Agent runs enroll them in the
+# Agent version; its iterate continuations and updates must enroll the same
+# ones, so a changed enrollment returns needs_new_version (reason
+# custom_models_changed for updates). Agent runs with custom models train
+# series in parallel worker processes instead of within-series parallelism.
+#
 # --wait=true runs in the foreground (used by tests). Nothing here deletes
 # files.
 
@@ -59,31 +81,6 @@ launch_active_guard <- function(paths, args) {
   } else {
     "Check progress with run_status.R, or ask the user before cancelling it with run_cancel.R."
   })
-}
-
-#' Fingerprint of the settings that change forecast results
-#'
-#' Excludes fields that only affect speed or bookkeeping, so changing the
-#' parallel setting does not block a resume. Agent LLM settings do participate:
-#' changing them requires confirmation because resumes use the saved snapshot.
-#'
-#' @param cfg Merged config.
-#' @return Hash string.
-launch_config_hash <- function(cfg) {
-  keep <- cfg
-  keep$parallel <- NULL
-  keep$project_name <- NULL
-  keep$data$file <- basename(keep$data$file %||% "")
-  if (identical(keep$mode, "standard")) keep$agent$llm <- NULL
-  finn_hash(finn_to_json(keep))
-}
-
-#' MD5 of the input data file
-#'
-#' @param file Data file path.
-#' @return Hash string or NA.
-launch_data_md5 <- function(file) {
-  tryCatch(unname(tools::md5sum(file)), error = function(e) NA_character_)
 }
 
 #' Most recent run of a mode, regardless of status
@@ -280,8 +277,10 @@ launch_version_changes <- function(recorded, current = finn_versions()) {
 #' @param cur_md5 Current input file MD5.
 #' @param newer Whether the data has dates past the last forecast, or the
 #'   user already confirmed revised history with `--force=true`.
+#' @param cfg Current validated config, compared with the last Agent
+#'   forecast's settings; NULL skips the settings comparison.
 #' @return Character vector of drift descriptions (possibly empty).
-launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer) {
+launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer, cfg = NULL) {
   prior <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))
   out <- character()
   old_n <- prior$n_series
@@ -292,7 +291,155 @@ launch_update_drift <- function(paths, last_agent, facts, cur_md5, newer) {
   if (!newer && !is.null(last_agent$data_md5) && !identical(last_agent$data_md5, cur_md5)) {
     out <- c(out, "the input file changed but has no newer dates, so earlier history may have been revised")
   }
+  settings <- if (!is.null(cfg) && is.list(prior$config)) finn_settings_drift(prior$config, cfg) else character()
+  if (length(settings)) {
+    out <- c(out, paste0("these settings changed: ", paste(settings, collapse = ", ")))
+  }
   out
+}
+
+#' Decide an iterate launch on a project whose last Agent forecast finished
+#'
+#' Implements the continuation contract: with the same input file and
+#' forecast settings, a higher `agent.max_iter` and/or a stricter
+#' `weighted_mape_goal` continue the last iterate request on the same Agent
+#' version (the request id is reused, nothing is overwritten, and only the
+#' remaining iterations run). `max_iter` is a total per search for the Agent
+#' version, so a lower value or a looser goal alone is `already_complete`.
+#' Changed data or other settings need a new Agent version, which the caller
+#' must request with `--new=true --confirm=true`. A different installed
+#' finnts or R needs `--confirm=true`. A newer unfinished update blocks
+#' continuation until it is resumed.
+#'
+#' @param paths Project paths.
+#' @param runs Runs from [finn_list_runs()], newest first.
+#' @param last_agent `last_agent` entry from project.json.
+#' @param cfg Current validated config.
+#' @param cur_md5 Current input file MD5.
+#' @param cur_hash Current [finn_config_hash()].
+#' @param newer Whether the data has actuals past the last Agent forecast.
+#' @param confirmed Whether `--confirm=true` was given.
+#' @param stop_with Function building a "stop" decision from status, message,
+#'   data, and next actions.
+#' @return A "new" decision reusing the last request id, with `notes` and
+#'   `continuation`, or a "stop" decision whose result data has `reason`.
+launch_iterate_again <- function(paths, runs, last_agent, cfg, cur_md5, cur_hash, newer, confirmed, stop_with) {
+  version <- last_agent$agent_version %||% "?"
+  base <- list(agent_version = last_agent$agent_version, agent_run_id = last_agent$agent_run_id)
+  refresh <- if (newer) "The data has newer dates. Suggest --mode=update to refresh the forecast without a full new search."
+  fresh <- "To search again from scratch, ask the user to confirm a new Agent version, then rerun with --new=true --confirm=true."
+  review <- "To review results instead, use export_results.R or a free-form analysis."
+  stop_reason <- function(status, reason, message, actions, extra = list()) {
+    stop_with(status, message, c(base, list(reason = reason), extra), actions)
+  }
+
+  ids <- vapply(runs, function(s) as.character(s$run_id %||% ""), character(1))
+  agent_pos <- match(last_agent$run_id %||% "", ids)
+  update <- launch_latest_of_mode(runs, "update")
+  if (!is.null(update) && update$effective_status %in% launch_resumable_statuses() &&
+    (is.na(agent_pos) || match(update$run_id, ids) < agent_pos)) {
+    return(stop_reason("needs_new_version", "unfinished_update",
+      paste0("Update run ", update$run_id, " (", update$effective_status, ") started after Agent version ", version,
+        " finished and has not completed, so the search can't continue on that version."),
+      c("Resume the update first: rerun with --mode=update (it picks up where it stopped).", fresh),
+      list(run_id = update$run_id)))
+  }
+
+  same <- identical(last_agent$config_hash, cur_hash) && identical(last_agent$data_md5, cur_md5)
+  if (!identical(last_agent$mode, "iterate")) {
+    return(if (same) {
+      stop_reason("already_complete", "unchanged", "The latest Agent forecast already used these settings and data.",
+        c(refresh, fresh, review))
+    } else {
+      stop_reason("needs_new_version", "last_agent_not_iterate", paste0(
+        "The latest Agent forecast (version ", version, ") was an update, so only a new Agent version can search with changed settings or data."
+      ), c(refresh, fresh, review))
+    })
+  }
+  if (!identical(last_agent$data_md5, cur_md5)) {
+    return(stop_reason("needs_new_version", "data_changed",
+      paste0("The input data changed since Agent version ", version, ", so continuing its search would mix two datasets."),
+      c(refresh, fresh, review), list(changed = "input data")))
+  }
+  prior <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))$config
+  if (!is.list(prior)) {
+    return(if (same) {
+      stop_reason("already_complete", "unchanged", "The latest Agent forecast already used these settings and data.",
+        c(refresh, fresh, review))
+    } else {
+      stop_reason("needs_new_version", "settings_changed", "Settings changed since the latest Agent forecast.",
+        c(refresh, fresh, review))
+    })
+  }
+
+  cont <- finn_iterate_continuation(prior, cfg)
+  old_max <- format(cont$max_iter$previous)
+  new_max <- format(cont$max_iter$new)
+  limits <- list(max_iter = cont$max_iter, weighted_mape_goal = cont$weighted_mape_goal)
+  more <- sprintf(paste(
+    "To search longer on the same Agent version, show the review with a higher agent.max_iter (above %s), save it,",
+    "then rerun this command; only the extra iterations run."
+  ), old_max)
+  stricter <- paste(
+    "Or tighten agent.weighted_mape_goal: series whose best model is global and miss the new goal reopen",
+    "(raise agent.max_iter too to search them longer)."
+  )
+  if (identical(cont$kind, "other_changes")) {
+    changed <- if (length(cont$changed)) cont$changed else "forecast settings"
+    return(stop_reason("needs_new_version", "settings_changed",
+      paste0("Settings changed since Agent version ", version, " (", paste(changed, collapse = ", "),
+        "). Only agent.max_iter and agent.weighted_mape_goal can change on the same Agent version."),
+      c(refresh, fresh, review), c(list(changed = changed), limits)))
+  }
+  if (identical(cont$kind, "unchanged")) {
+    return(stop_reason("already_complete", "unchanged", "The latest Agent forecast already used these settings and data.",
+      c(refresh, more, stricter, fresh, review), limits))
+  }
+  if (identical(cont$kind, "lower_max_iter")) {
+    return(stop_reason("already_complete", "lower_max_iter", paste0(
+      "Agent version ", version, " already ran up to ", old_max, " iterations per search. A lower agent.max_iter (", new_max,
+      ") can't undo iterations, so nothing new would run.",
+      if (cont$goal_changed) paste0(" Keep agent.max_iter at ", old_max, " or higher for the goal change to apply.") else ""
+    ), c(refresh, more, fresh, review), limits))
+  }
+  if (identical(cont$kind, "looser_goal_only")) {
+    return(stop_reason("already_complete", "looser_goal_only", paste0(
+      "A looser weighted MAPE goal (", format(cont$weighted_mape_goal$previous), " -> ", format(cont$weighted_mape_goal$new),
+      ") alone runs nothing new on Agent version ", version, "."
+    ), c(refresh, more, fresh, review), limits))
+  }
+
+  versions <- launch_version_changes(last_agent)
+  if (length(versions) && !confirmed) {
+    return(stop_reason("needs_confirmation", "software_changed", paste0(
+      "Agent version ", version, " ran with different software (", paste(versions, collapse = "; "),
+      "). Continuing it with the installed versions can mix results from two versions."
+    ), c("Ask the user: continue the same Agent version anyway (rerun with --confirm=true), or start a new Agent version with the installed software (rerun with --new=true --confirm=true).",
+      review), c(list(version_changes = versions), limits)))
+  }
+  goal_note <- if (cont$goal_changed) {
+    paste0(" The weighted MAPE goal changes from ", format(cont$weighted_mape_goal$previous), " to ",
+      format(cont$weighted_mape_goal$new), ".")
+  } else {
+    ""
+  }
+  list(action = "new", overwrite = FALSE, request_id = last_agent$request_id,
+    continuation = c(list(agent_version = last_agent$agent_version, request_id = last_agent$request_id,
+      from_run_id = last_agent$run_id, from_status = "completed", partial = cont$partial), limits),
+    notes = c(
+      if (cont$partial) {
+        paste0("This continues Agent version ", version, " with a stricter weighted MAPE goal (",
+          format(cont$weighted_mape_goal$previous), " -> ", format(cont$weighted_mape_goal$new), "). With agent.max_iter still ",
+          old_max, ", only series whose best model is global and now miss the goal reopen; raise agent.max_iter to search longer.")
+      } else {
+        paste0("This continues Agent version ", version, ": it already ran up to ", old_max,
+          " iterations per search, so only the iterations up to ", new_max, " run now.", goal_note)
+      },
+      if (length(versions)) {
+        paste0("The last Agent forecast used different software (", paste(versions, collapse = "; "),
+          "). Tell the user the extra iterations use the installed versions and results may shift slightly.")
+      }
+    ))
 }
 
 #' Rough runtime estimate for a launch
@@ -343,6 +490,29 @@ launch_data_end <- function(cfg, facts) {
   if (is.null(end)) NULL else as.character(end)
 }
 
+#' Stop a new run whose mode differs from the reviewed config
+#'
+#' The settings review is rendered for the saved config's mode, so starting a
+#' new run of the other kind would launch settings the user did not see.
+#' Resumes keep their own saved settings and are never blocked.
+#'
+#' @param decision Result of [launch_decide()].
+#' @param saved_mode Mode stored in the project config ("standard" or "agent").
+#' @param mode Launch mode.
+#' @return NULL when the launch may proceed, otherwise a "needs_review" `finn_result`.
+launch_mode_mismatch <- function(decision, saved_mode, mode) {
+  if (!identical(decision$action, "new") || identical(saved_mode, launch_config_mode(mode))) {
+    return(NULL)
+  }
+  finn_result(FALSE, "needs_review", paste0(
+    "The saved settings are for a ", if (identical(saved_mode, "agent")) "Agent" else "Standard",
+    " forecast, but this launch asks for ", finn_run_type_label(mode), ". Nothing was started."
+  ),
+  list(saved_mode = saved_mode, mode = mode),
+  c(paste0("Rerun validate_config.R with --run_type=", mode, ", show data.settings_review to the user, and save with --save=true once they agree."),
+    paste0("Then rerun this command with --mode=", mode, ".")))
+}
+
 #' Decide whether to resume, refuse, or start fresh
 #'
 #' @param paths Project paths.
@@ -351,7 +521,11 @@ launch_data_end <- function(cfg, facts) {
 #' @param facts Data facts.
 #' @param args Parsed arguments.
 #' @return List with `action` ("resume", "new", or "stop"), plus `prior`,
-#'   `overwrite`, `notes`, and a `result` when stopping.
+#'   `overwrite`, `notes`, and when continuing an Agent version a
+#'   `request_id`, `continuation` and optionally `step_down`; a `result` when
+#'   stopping (see [launch_iterate_again()]). Continuing a stopped run reports
+#'   the `agent_version` stored on that run; a completed version's
+#'   continuation reports the last finished version.
 launch_decide <- function(paths, mode, cfg, facts, args) {
   runs <- finn_list_runs(paths)
   latest <- launch_latest_of_mode(runs, mode)
@@ -359,8 +533,8 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
   confirmed <- finn_bool(finn_arg(args, "confirm"))
   project <- finn_read_project(paths) %||% list()
   last_agent <- project$last_agent
-  cur_hash <- launch_config_hash(cfg)
-  cur_md5 <- launch_data_md5(cfg$data$file)
+  cur_hash <- finn_config_hash(cfg)
+  cur_md5 <- finn_data_md5(cfg$data$file)
   data_end <- launch_data_end(cfg, facts)
   stop_with <- function(status, message, data = NULL, next_actions = character()) {
     list(action = "stop", result = finn_result(FALSE, status, message, data, next_actions))
@@ -369,10 +543,11 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
   if (!want_new && !is.null(latest) && latest$effective_status %in% launch_resumable_statuses()) {
     saved_config <- latest[["config", exact = TRUE]]
     changed <- c(
-      if (!identical(if (!is.null(saved_config)) launch_config_hash(saved_config) else latest$config_hash, cur_hash)) "settings",
+      if (!identical(if (!is.null(saved_config)) finn_config_hash(saved_config) else latest$config_hash, cur_hash)) "settings",
       if (!identical(latest$data_md5, cur_md5)) "input data"
     )
-    if (length(changed) && !confirmed) {
+    revised <- if (identical(changed, "settings")) finn_stopped_iterate_revision(latest, cfg)
+    if (length(changed) && is.null(revised) && !confirmed) {
       return(stop_with("needs_confirmation",
         paste0("Run ", latest$run_id, " stopped before finishing (", latest$effective_status, "). The ",
           paste(changed, collapse = " and "), " changed since it started."),
@@ -385,9 +560,24 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
       return(stop_with("needs_confirmation",
         paste0("Run ", latest$run_id, " started with different software (", paste(versions, collapse = "; "),
           "). Finishing it with the installed versions can mix results from two versions."),
-        list(run_id = latest$run_id, version_changes = versions),
+        list(run_id = latest$run_id, version_changes = versions, reason = "software_changed"),
         c("Ask the user: resume anyway (rerun with --confirm=true), or start fresh with the installed versions (rerun with --new=true; Agent modes also need --confirm=true).")
       ))
+    }
+    if (!is.null(revised)) {
+      # A budget or goal revision runs as a new skill run under the stopped
+      # run's request id, so the Agent version and its finished iterations
+      # are kept while the revised values apply. The version reported is the
+      # one the stopped run recorded, which can differ from the last finished
+      # version (or exist when no version has finished).
+      return(list(action = "new", overwrite = latest$overwrite %||% FALSE, request_id = latest$request_id,
+        step_down = latest$step_down,
+        continuation = list(agent_version = latest$agent_version, request_id = latest$request_id,
+          from_run_id = latest$run_id, from_status = latest$effective_status, partial = revised$partial,
+          max_iter = revised$max_iter, weighted_mape_goal = revised$weighted_mape_goal),
+        notes = paste0("Run ", latest$run_id, " stopped (", latest$effective_status, "). This continues its Agent search with ",
+          "agent.max_iter ", format(revised$max_iter$new), " and weighted MAPE goal ", format(revised$weighted_mape_goal$new),
+          "; iterations it already finished are kept.")))
     }
     return(list(action = "resume", prior = latest, overwrite = latest$overwrite %||% FALSE))
   }
@@ -409,16 +599,8 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
         c("Run diagnose_run.R on that run. To start over, ask the user to confirm a new Agent version, then rerun with --new=true --confirm=true.")))
     }
     if (!want_new) {
-      same <- identical(last_agent$config_hash, cur_hash) && identical(last_agent$data_md5, cur_md5)
       newer <- !is.null(last_agent$hist_end_date) && !is.null(data_end) && data_end > last_agent$hist_end_date
-      msg <- if (same) "The latest Agent forecast already used these settings and data." else "Settings or data changed since the latest Agent forecast."
-      acts <- c(
-        if (newer) "The data has newer dates. Suggest --mode=update to refresh the forecast without a full new search.",
-        "To search again from scratch, ask the user to confirm a new Agent version, then rerun with --new=true --confirm=true.",
-        "To review results instead, use export_results.R or a free-form analysis."
-      )
-      return(stop_with(if (same) "already_complete" else "needs_new_version", msg,
-        list(agent_version = last_agent$agent_version, agent_run_id = last_agent$agent_run_id), acts))
+      return(launch_iterate_again(paths, runs, last_agent, cfg, cur_md5, cur_hash, newer, confirmed, stop_with))
     }
     if (!confirmed) {
       return(stop_with("needs_confirmation",
@@ -431,18 +613,59 @@ launch_decide <- function(paths, mode, cfg, facts, args) {
 
   # update
   if (is.null(last_agent) || !identical(last_agent$status, "completed")) {
+    done <- Filter(function(s) identical(s$effective_status, "completed"), runs)
+    standard_project <- length(done) && identical(done[[1]]$mode, "standard")
     return(stop_with("needs_agent_run",
       "Update needs a finished Agent forecast to build on, and none was found for this project.",
-      NULL, c("Run --mode=iterate first, or check run_status.R for an unfinished Agent run to resume.")))
+      NULL, if (standard_project) {
+        c("This project's forecasts are standard runs. Refresh it with new actuals using a standard run: rerun validate_config.R with --run_type=standard, show the review, then launch with --mode=standard.",
+          "To switch the project to the Agent instead, start with --mode=iterate after the user agrees.")
+      } else {
+        c("Run --mode=iterate first, or check run_status.R for an unfinished Agent run to resume.")
+      }))
   }
   newer <- !is.null(last_agent$hist_end_date) && !is.null(data_end) && data_end > last_agent$hist_end_date
   if (!newer && !finn_bool(finn_arg(args, "force"))) {
+    actual_end <- facts$last_actual_date %||% facts$date_max
+    actual_end <- if (is.null(actual_end)) NULL else as.character(actual_end)
+    pinned <- !is.null(cfg$hist_end_date) && !is.null(actual_end) && actual_end > as.character(cfg$hist_end_date)
+    partial <- facts$incomplete_period
+    open_end <- if (pinned && identical(partial$date, actual_end)) actual_end
+    complete_end <- if (!is.null(open_end)) partial$suggested_hist_end_date else actual_end
+    only_open <- !is.null(open_end) && !(is.character(complete_end) && complete_end > as.character(cfg$hist_end_date))
     return(stop_with("no_new_data",
-      paste0("The actuals end on ", data_end, ", the same as the last Agent forecast (", last_agent$hist_end_date, "). There is nothing new to update with."),
-      list(data_end = data_end, last_end = last_agent$hist_end_date),
-      c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")))
+      if (only_open) {
+        paste0("The only actuals after the last Agent forecast (", last_agent$hist_end_date, ") are for ", open_end,
+          ", a period that has not ended yet, and hist_end_date (", cfg$hist_end_date, ") leaves it out.")
+      } else if (pinned) {
+        paste0("hist_end_date is set to ", cfg$hist_end_date, ", so the update would stop at the same date as the last Agent forecast (",
+          last_agent$hist_end_date, ") even though the file has actuals through ", actual_end, ".",
+          if (!is.null(open_end)) paste0(" The ", open_end, " period has not ended yet; the last complete period is ", complete_end, "."))
+      } else {
+        paste0("The actuals end on ", data_end, ", the same as the last Agent forecast (", last_agent$hist_end_date, "). There is nothing new to update with.")
+      },
+      list(data_end = data_end, last_end = last_agent$hist_end_date, actual_end = actual_end, hist_end_pinned = pinned,
+        incomplete_period = open_end),
+      if (only_open) {
+        c("Tell the user the newer period is still in progress. Usually wait until it ends and the actuals are complete; set hist_end_date to it only if the user wants to update with partial actuals.")
+      } else if (pinned) {
+        c(paste0("Ask the user to change hist_end_date to ", complete_end, " (or remove it): rerun validate_config.R with --run_type=update, show the review, save with --save=true, then rerun this command."))
+      } else {
+        c("Ask the user to add newer actuals to the input file, or rerun with --force=true if earlier values were revised.")
+      }))
   }
-  drift <- launch_update_drift(paths, last_agent, facts, cur_md5, newer || finn_bool(finn_arg(args, "force")))
+  prior_cfg <- if (!is.null(last_agent$run_id)) finn_read_state(finn_run_paths(paths, last_agent$run_id))$config
+  custom_old <- finn_custom_labels(prior_cfg)
+  custom_new <- finn_custom_labels(cfg)
+  if (is.list(prior_cfg) && !identical(custom_old, custom_new)) {
+    return(stop_with("needs_new_version", paste0(
+      "Agent update must reuse the custom models of Agent version ", last_agent$agent_version %||% "?", " (",
+      finn_custom_label_text(custom_old), "), but this config enrolls ", finn_custom_label_text(custom_new), "."
+    ), list(reason = "custom_models_changed", agent_version = last_agent$agent_version,
+      previous = as.list(custom_old), new = as.list(custom_new)),
+    c("Ask the user which they want: restore the previous custom models with custom_model.R --action=enroll or --action=unenroll, rerun validate_config.R --run_type=update, and save; or start a new Agent version that uses the current custom models with --mode=iterate --new=true --confirm=true after they agree.")))
+  }
+  drift <- launch_update_drift(paths, last_agent, facts, cur_md5, newer || finn_bool(finn_arg(args, "force")), cfg)
   if (length(drift) && !confirmed) {
     return(stop_with("needs_confirmation",
       paste0("Since the last Agent forecast, ", paste(drift, collapse = "; "), "."),
@@ -469,6 +692,7 @@ finn_main(function(args) {
   cfg <- finn_read_project_config(paths)
   mode <- finn_arg(args, "mode") %||% (if (identical(cfg$mode, "agent")) "iterate" else "standard")
   if (!mode %in% c("standard", "iterate", "update")) stop("--mode must be standard, iterate, or update.", call. = FALSE)
+  saved_mode <- cfg$mode %||% "standard"
   cfg$mode <- launch_config_mode(mode)
 
   # Hold a project launch lock so two agents cannot both pass the active-run
@@ -507,6 +731,10 @@ finn_main(function(args) {
   if (identical(decision$action, "stop")) {
     return(decision$result)
   }
+  mismatch <- launch_mode_mismatch(decision, saved_mode, mode)
+  if (!is.null(mismatch)) {
+    return(mismatch)
+  }
 
   if (identical(decision$action, "resume")) {
     prior <- decision$prior
@@ -518,8 +746,8 @@ finn_main(function(args) {
     resumed <- as.integer(prior$resume_count %||% 0L) + 1L
   } else {
     run_cfg <- cfg
-    step_down <- 0L
-    request_id <- if (mode == "standard") NULL else finn_new_request_id()
+    step_down <- as.integer(decision$step_down %||% 0L)
+    request_id <- if (mode == "standard") NULL else decision$request_id %||% finn_new_request_id()
     resumed <- 0L
   }
 
@@ -539,6 +767,7 @@ finn_main(function(args) {
     return(launch_machine_busy(claimed, sizing$remaining, data_gb))
   }
   plan <- sizing$plan
+  if (!identical(mode, "standard")) plan <- finn_custom_agent_plan(plan, run_cfg, data_gb, facts$n_series, step_down)
 
   if (!identical(decision$action, "resume")) {
     run_paths <- finn_run_paths(paths, finn_new_run_id(mode))
@@ -555,8 +784,8 @@ finn_main(function(args) {
     run_name = if (mode == "standard") run_paths$id else NULL,
     status = "queued", stage = "starting", host = Sys.info()[["nodename"]],
     n_series = facts$n_series, data_end = launch_data_end(run_cfg, facts),
-    config = run_cfg, config_hash = launch_config_hash(run_cfg),
-    data_md5 = launch_data_md5(run_cfg$data$file),
+    config = run_cfg, config_hash = finn_config_hash(run_cfg),
+    data_md5 = finn_data_md5(run_cfg$data$file),
     parallel = plan, step_down = step_down, request_id = request_id,
     overwrite = isTRUE(decision$overwrite),
     agent_action = switch(mode, iterate = "iterate_forecast", update = "update_forecast", NULL),
@@ -589,6 +818,7 @@ finn_main(function(args) {
   data <- list(run_id = run_paths$id, mode = mode, resumed = identical(decision$action, "resume"),
     request_id = request_id, parallel = plan, log = run_paths$log, output = run_paths$output,
     estimated_runtime = estimate$text, warnings = c(checked$warnings, plan$warnings))
+  if (!is.null(decision$continuation)) data$continuation <- decision$continuation
   if (wait) {
     data$status <- finn_effective_status(state)
     return(finn_result(identical(state$status, "completed"), state$status %||% "unknown",
