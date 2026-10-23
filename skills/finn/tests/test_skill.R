@@ -527,6 +527,29 @@ with(tx, {
   )))
   check("transform: tabular pivot passes", isTRUE(rt$gate$passed) && nrow(rt$gate$output) == 9)
 
+  long_totals <- tx_put("long_totals.csv", c(
+    "Region,Date,Value",
+    "East,2024-01-01,10", "West,2024-01-01,20", "Total,2024-01-01,30",
+    "East,2024-02-01,10", "West,2024-02-01,20", "Total,2024-02-01,30",
+    "East,2024-03-01,10", "West,2024-03-01,20", "Total,2024-03-01,30",
+    "Grand Total,,90"
+  ))
+  long_steps <- c(
+    '{"op":"use_header_rows","rows":[1]}', '{"op":"drop_total_rows","columns":["Region"]}',
+    '{"op":"parse_numbers","columns":["Value"]}', '{"op":"parse_dates","column":"Date"}'
+  )
+  rlt <- run(long_totals, tx_spec(long_steps, settings = tx_region))
+  long_cmp <- rlt$gate$totals
+  check("transform: long-table totals are compared with parts from the same period",
+    isTRUE(rlt$gate$passed) && tx_status(rlt)[["P9c"]] == "pass" && nrow(rlt$gate$output) == 6 &&
+      identical(unique(long_cmp$column), "Value") &&
+      isTRUE(all.equal(long_cmp$sum_of_parts[long_cmp$label == "Total"], c(30, 30, 30))))
+  check("transform: a long-table total with no period is compared with every period",
+    isTRUE(all.equal(long_cmp$sum_of_parts[long_cmp$label == "Grand Total"], 90)))
+  long_wrong <- tx_put("long_totals_wrong.csv", sub("^Total,2024-02-01,30$", "Total,2024-02-01,31", readLines(long_totals)))
+  check("transform: a wrong long-table total in one period still fails reconciliation",
+    tx_status(run(long_wrong, tx_spec(long_steps, settings = tx_region)))[["P9c"]] == "fail")
+
   two_row <- tx_put("two_row.csv", c(",,2023,,2024,", "Region,Product,Nov,Dec,Jan,Feb", "East,A,1,2,3,4", "West,A,5,6,7,8"))
   r2r <- run(two_row, tx_spec(c(
     '{"op":"use_header_rows","rows":[1,2],"sep":" "}', '{"op":"pivot_longer","id_columns":["Region","Product"]}',
@@ -2601,6 +2624,69 @@ local({
   writeLines("{broken", file.path(paths$dir, "config.json"))
   check("ids: profile surfaces damaged project settings instead of silently guessing",
     errors_with(run_input_script("profile_data.R", list(root = root, project = "ProfileIds")), "Could not read"))
+
+  # A project profile reads the file and sheet a run will read: saved config
+  # first, then project metadata. Record what reaches the loader.
+  source_root <- file.path(tmp, "profile-source-projects")
+  source_paths <- finn_project_paths(source_root, "ProfileSource")
+  finn_ensure_project_dirs(source_paths)
+  source_old <- file.path(tmp, "profile-source-old.csv")
+  writeLines(c("Region,Date,Revenue", "East,2024-01-01,10", "East,2024-02-01,11"), source_old)
+  source_prepared <- file.path(tmp, "profile-source-prepared.csv")
+  writeLines(c("Region,Date,Revenue", "East,2024-01-01,10", "East,2024-02-01,11", "East,2024-03-01,12"), source_prepared)
+  source_manual <- file.path(tmp, "profile-source-manual.csv")
+  writeLines(c("Region,Date,Revenue", sprintf("West,2024-%02d-01,%d", 1:4, 5:8)), source_manual)
+  finn_write_project(source_paths, list(name = "ProfileSource", data_file = source_old, sheet = "Raw"))
+  source_config <- file.path(source_paths$dir, "config.json")
+  # Profile the fixture project with optional CLI arguments, returning the
+  # selected file, sheet and row count. Local callbacks capture the source
+  # without replacing the real reader and invoke the entrypoint with those args.
+  profile_source <- function(...) {
+    entry <- load_functions("profile_data.R", tx)
+    seen <- NULL
+    real_load <- entry$profile_load_data
+    entry$profile_load_data <- function(file, sheet = NULL, combo_variables = NULL) {
+      seen <<- list(file = finn_norm(file), sheet = sheet)
+      real_load(file, sheet, combo_variables)
+    }
+    entry$finn_main <- function(fn) fn(list(root = source_root, project = "ProfileSource", ...))
+    out <- eval(tail(as.list(parse(file.path(scripts_dir, "profile_data.R"))), 1)[[1]], entry)
+    c(seen, rows = out$data$facts$rows)
+  }
+  source_inputs <- c(source_old, source_prepared, source_manual)
+  source_md5 <- unname(tools::md5sum(source_inputs))
+  legacy <- profile_source()
+  check("profile: a project without config profiles its metadata file and sheet",
+    identical(legacy$file, finn_norm(source_old)) && identical(legacy$sheet, "Raw") && identical(legacy$rows, 2L))
+  finn_write_json(list(combo_variables = "Region"), source_config)
+  partial <- profile_source()
+  check("profile: config without a data file falls back to project metadata",
+    identical(partial$file, finn_norm(source_old)) && identical(partial$sheet, "Raw") && identical(partial$rows, 2L))
+  finn_save_project_config(source_paths, list(combo_variables = "Region", data = list(file = source_prepared, sheet = "Prepared")))
+  config_md5 <- unname(tools::md5sum(c(source_config, source_paths$project_json)))
+  configured_source <- profile_source()
+  check("profile: a project profiles the saved config file and sheet, not stale metadata",
+    identical(configured_source$file, finn_norm(source_prepared)) && identical(configured_source$sheet, "Prepared") &&
+      identical(configured_source$rows, 3L))
+  explicit_source <- profile_source(file = source_manual, sheet = "Manual")
+  check("profile: explicit file and sheet arguments override the saved config",
+    identical(explicit_source$file, finn_norm(source_manual)) && identical(explicit_source$sheet, "Manual") &&
+      identical(explicit_source$rows, 4L))
+  file_only <- profile_source(file = source_manual)
+  check("profile: an explicit file does not inherit another file's saved sheet",
+    identical(file_only$file, finn_norm(source_manual)) && is.null(file_only$sheet) &&
+      identical(file_only$rows, 4L))
+  sheet_only <- profile_source(sheet = "Manual")
+  check("profile: an explicit sheet keeps the saved config file",
+    identical(sheet_only$file, finn_norm(source_prepared)) && identical(sheet_only$sheet, "Manual"))
+  check("profile: project profiling leaves data, config, and project metadata unchanged",
+    identical(unname(tools::md5sum(source_inputs)), source_md5) &&
+      identical(unname(tools::md5sum(c(source_config, source_paths$project_json))), config_md5))
+  finn_save_project_config(source_paths, list(combo_variables = "Region", data = list(file = source_prepared)))
+  no_saved_sheet <- profile_source()
+  check("profile: a configured file without a sheet does not inherit the metadata sheet",
+    identical(no_saved_sheet$file, finn_norm(source_prepared)) && is.null(no_saved_sheet$sheet) &&
+      identical(no_saved_sheet$rows, 3L))
   distinct <- file.path(tmp, "profile-distinct-numbers.csv")
   writeLines(c("Number,Date,Revenue", sprintf("%03d,2024-01-%02d,%d", 1:6, 1:6, 11:16)), distinct)
   distinct_data <- profile_env$profile_load_data(distinct)

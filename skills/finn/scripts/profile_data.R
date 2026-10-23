@@ -1,7 +1,8 @@
 # Profile a data file and suggest Finn settings.
 # Usage:
 #   Rscript profile_data.R --file=<csv or xlsx> [--sheet=<sheet>]
-#   Rscript profile_data.R --project=<name>      (uses the project's data file)
+#   Rscript profile_data.R --project=<name>      (uses the saved config's data file
+#       and sheet, else the project's)
 #       [--reveal_labels=true]   (show text labels in diagnostics; needs consent)
 # Read-only: never changes the data file. The diagnostics block reports layout
 # problems with text labels masked; it never decides a fix.
@@ -185,7 +186,9 @@ profile_load_data <- function(file, sheet = NULL, combo_variables = NULL) {
   list(data = df, combo_variables = combos)
 }
 
-# Profile the selected source using saved combo settings when available.
+# Profile the selected source using saved combo settings when available. A
+# project profiles the file and sheet a run reads: the saved config's data,
+# else the project's; --file and --sheet override them.
 # Return suggestions and diagnostics only; never change the source or config.
 finn_main(function(args) {
   file <- finn_arg(args, "file")
@@ -194,11 +197,12 @@ finn_main(function(args) {
   if (!is.null(finn_arg(args, "project"))) {
     paths <- finn_project_from_args(args)
     project <- finn_read_project(paths)
-    if (is.null(file)) {
-      file <- finn_resolve_data_file(paths, project$data_file)
-      sheet <- sheet %||% project$sheet
-    }
     if (file.exists(file.path(paths$dir, "config.json"))) cfg <- finn_read_project_config(paths)
+    if (is.null(file)) {
+      input <- if (is.null(cfg$data$file)) list(file = finn_resolve_data_file(paths, project$data_file), sheet = project$sheet) else cfg$data
+      file <- input$file
+      sheet <- sheet %||% input$sheet
+    }
   }
   if (is.null(file)) stop("Pass --file=<data file> or --project=<name>.", call. = FALSE)
   loaded <- profile_load_data(file, sheet, cfg$combo_variables)

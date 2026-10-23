@@ -16,7 +16,9 @@ contain R code, file paths, or web addresses.
 ## The loop: diagnose, propose, approve, write, verify
 
 1. **Diagnose.** Run `profile_data.R --project=<name>` (or `--file=<file>`) and read
-   `data.diagnostics`. It reports the likely header row, title and footnote rows, pivot
+   `data.diagnostics`. `--project` profiles the saved configuration's `data.file` and
+   `data.sheet` when set, otherwise the project's data file; `--file` and `--sheet`
+   override them. It reports the likely header row, title and footnote rows, pivot
    filters, total rows and columns, outline columns, date and number readability,
    duplicate keys, and unit mentions, plus a small masked sample. Column and filter field
    names are shown; data labels and values are masked. This masking covers
@@ -153,6 +155,10 @@ Common orders: outline pivot `use_header_rows` > `fill_down` > `drop_total_rows`
 `pivot_longer` > `parse_numbers` > `parse_dates`; compact pivot `use_header_rows` >
 `split_compact_labels` > `drop_total_rows` (group and item columns) > `pivot_longer` >
 `parse_numbers` > `parse_dates`.
+
+`drop_total_rows` compares each total with rows from the same period: the `Date` column
+or the column `pivot_longer` created. A total with a blank period is compared with every
+period. In a long table, rename the period column to `Date` before `drop_total_rows`.
 
 ## Pivot filters and the latest period
 

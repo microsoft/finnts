@@ -366,6 +366,93 @@ test_that("P7 ignores all-zero dates in sparse data but still finds totals", {
   expect_equal(with_total$details$aggregate_levels$Level, "Total")
 })
 
+test_that("P7 ignores totals removed by combo_cleanup_date but not retained totals", {
+  cleanup_date <- as.Date("2023-10-01")
+  data <- validation_monthly_data()
+  totals <- stats::aggregate(value ~ Date, data = data, FUN = sum)
+  totals$id <- "Total"
+  totals$value[totals$Date >= cleanup_date] <- 0
+  removed <- validate_monthly(
+    rbind(data, totals[, names(data)]),
+    combo_cleanup_date = cleanup_date
+  )
+
+  expect_equal(check_status(removed, "P6"), "report")
+  expect_equal(removed$details$cleanup_combos, "Total")
+  expect_equal(check_status(removed, "P7"), "pass")
+  expect_equal(nrow(removed$details$aggregate_levels), 0)
+  expect_equal(nrow(removed$details$total_like_values), 0)
+
+  data$value[data$id == "C" & data$Date >= cleanup_date] <- 0
+  kept_totals <- stats::aggregate(value ~ Date, data = data, FUN = sum)
+  kept_totals$id <- "Total"
+  retained <- validate_monthly(
+    rbind(data, kept_totals[, names(data)]),
+    combo_cleanup_date = cleanup_date
+  )
+
+  expect_equal(check_status(retained, "P6"), "report")
+  expect_equal(retained$details$cleanup_combos, "C")
+  expect_equal(check_status(retained, "P7"), "fail")
+  expect_equal(retained$details$aggregate_levels$Level, "Total")
+})
+
+test_that("P7 does not attribute a removed aggregate to a kept combo with the same level", {
+  cleanup_date <- as.Date("2023-10-01")
+  east <- validation_monthly_data()
+  east$region <- "East"
+  totals <- stats::aggregate(value ~ Date + region, data = east, FUN = sum)
+  totals$id <- "Total"
+  totals$value[totals$Date >= cleanup_date] <- 0
+  west <- validation_monthly_data(ids = "Total")
+  west$region <- "West"
+  combined <- rbind(east, totals[, names(east)], west)
+
+  without_cleanup <- validate_monthly(combined, combo_variables = c("region", "id"))
+  result <- validate_monthly(
+    combined,
+    combo_variables = c("region", "id"),
+    combo_cleanup_date = cleanup_date
+  )
+
+  expect_equal(check_status(without_cleanup, "P7"), "fail")
+  expect_equal(check_status(result, "P6"), "report")
+  expect_equal(result$details$cleanup_combos, "East--Total")
+  expect_equal(check_status(result, "P7"), "report")
+  expect_equal(nrow(result$details$aggregate_levels), 0)
+  expect_equal(
+    result$details$total_like_values,
+    tibble::tibble(Variable = "id", Level = "Total")
+  )
+})
+
+test_that("P7 does not dilute a kept aggregate with a removed combo sharing its level", {
+  cleanup_date <- as.Date("2023-10-01")
+  east <- validation_monthly_data()
+  east$region <- "East"
+  totals <- stats::aggregate(value ~ Date + region, data = east, FUN = sum)
+  totals$id <- "Total"
+  west <- validation_monthly_data()
+  west$region <- "West"
+  removed <- validation_monthly_data(ids = "Total")
+  removed$region <- "West"
+  removed$value <- ifelse(removed$Date >= cleanup_date, 0, 1)
+
+  result <- validate_monthly(
+    rbind(east, totals[, names(east)], west, removed),
+    combo_variables = c("region", "id"),
+    combo_cleanup_date = cleanup_date
+  )
+
+  expect_equal(check_status(result, "P6"), "report")
+  expect_equal(result$details$cleanup_combos, "West--Total")
+  expect_equal(check_status(result, "P7"), "fail")
+  expect_equal(
+    result$details$aggregate_levels,
+    tibble::tibble(Variable = "id", Level = "Total")
+  )
+})
+
 test_that("P8 fails without enough history and reports late-starting series", {
   short <- validation_monthly_data(months = 6)
   short_result <- validate_monthly(short, forecast_horizon = 6)

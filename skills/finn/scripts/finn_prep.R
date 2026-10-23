@@ -633,9 +633,12 @@ finn_tx_numbers <- function(ctx, col) {
 #'
 #' A row is a total when one of `columns` holds a label such as "Total",
 #' "Grand Total", or "East Total". Each total is compared with the sum of the
-#' non-total rows it covers: rows that match it on earlier label columns and,
-#' for "East Total", have "East" in that column. Mismatches fail the gate
-#' unless `reconcile` is false.
+#' non-total rows it covers: rows from the same period that match it on
+#' earlier label columns and, for "East Total", have "East" in that column.
+#' The period is the `Date` column or the column `pivot_longer` created,
+#' unless that column is one of `columns`; a total with a blank period covers
+#' every period. Period columns are excluded from inferred value columns.
+#' Mismatches fail the gate unless `reconcile` is false.
 #'
 #' @param ctx Context environment.
 #' @param s Step list.
@@ -650,11 +653,11 @@ finn_tx_op_drop_total_rows <- function(ctx, s, tol) {
   })
   any_tot <- Reduce(`|`, is_tot)
   if (!any(any_tot)) stop(sprintf("Step %d: no total rows found in %s.", ctx$step, paste(cols, collapse = ", ")), call. = FALSE)
+  periods <- setdiff(intersect(unique(c(ctx$pivot_names, "Date")), finn_tx_cols(ctx$d)), cols)
   vals <- finn_tx_chr(s$value_columns)
-  if (!length(vals)) vals <- setdiff(finn_tx_cols(ctx$d), c(cols, ctx$pivot_names))
+  if (!length(vals)) vals <- setdiff(finn_tx_cols(ctx$d), c(cols, ctx$pivot_names, periods))
   finn_tx_need_cols(ctx, vals)
   nums <- lapply(stats::setNames(vals, vals), function(v) finn_tx_numbers(ctx, v))
-  extra <- intersect(ctx$pivot_names, finn_tx_cols(ctx$d))
   leaf <- which(!any_tot)
   for (i in which(any_tot)) {
     c_i <- min(which(vapply(is_tot, `[`, logical(1), i)))
@@ -667,7 +670,10 @@ finn_tx_op_drop_total_rows <- function(ctx, s, tol) {
     }
     prior <- vapply(seq_len(c_i - 1), function(k) as.character(ctx$d[[cols[k]]][i]), character(1))
     if (nzchar(stem) && !stem %in% prior) grp <- grp[as.character(ctx$d[[cols[c_i]]][grp]) %in% stem]
-    for (e in extra) grp <- grp[as.character(ctx$d[[e]][grp]) %in% as.character(ctx$d[[e]][i])]
+    for (e in periods) {
+      period <- as.character(ctx$d[[e]][i])
+      if (!finn_tx_blank(period)) grp <- grp[as.character(ctx$d[[e]][grp]) %in% period]
+    }
     cmp <- do.call(rbind, lapply(vals, function(v) {
       t <- nums[[v]][i]
       if (is.na(t)) {

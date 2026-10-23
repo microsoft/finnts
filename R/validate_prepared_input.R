@@ -192,7 +192,9 @@ validate_prepared_input <- function(input_data,
       validation_check_cleanup(data, combo_cleanup_date, bounds)
     })
     run_rule("P7", "P1", function() {
-      validation_check_totals(data, combo_variables, bounds)
+      # Only a P6 report leaves some series; when P6 fails, check them all.
+      removed <- if (identical(state$checks$P6$Status, "report")) state$details$cleanup_combos else character()
+      validation_check_totals(data, combo_variables, bounds, removed)
     })
     run_rule("P8", c("P1", "P5"), function() {
       validation_check_splits(
@@ -652,19 +654,24 @@ validation_check_cleanup <- function(data,
 #' comparable only when its value or its sibling sum is non-zero beyond
 #' `tolerance`: in sparse data every level trivially "equals" an all-zero
 #' sibling sum, which would otherwise flag ordinary series as totals.
+#' Removed combos still contribute to sibling sums, but their rows cannot
+#' supply aggregate evidence, even when a kept combo shares the same level.
 #'
-#' @param data history rows with combo columns, Date and Target
+#' @param data history rows with combo columns, Date and Target; also requires
+#'   Combo when `removed_combos` is nonempty
 #' @param combo_variables combo variable names
 #' @param tolerance relative tolerance for equality; also the absolute
 #'   magnitude below which a value and its sibling sum both count as zero
 #' @param min_share minimum share of comparable dates that must match
+#' @param removed_combos exact Combo identities excluded as aggregate candidates
 #'
 #' @return tibble with Variable and Level for aggregate levels
 #' @noRd
 validation_aggregate_levels <- function(data,
                                         combo_variables,
                                         tolerance = 1e-6,
-                                        min_share = 0.9) {
+                                        min_share = 0.9,
+                                        removed_combos = character()) {
   data <- data[!is.na(data$Target) & is.finite(data$Target), ]
   found <- list()
   for (variable in combo_variables) {
@@ -675,6 +682,9 @@ validation_aggregate_levels <- function(data,
     sibling_sum <- group_total - data$Target
     comparable <- pmax(abs(data$Target), abs(sibling_sum)) > tolerance
     eligible <- group_size >= 3 & comparable
+    if (length(removed_combos)) {
+      eligible <- eligible & !data$Combo %in% removed_combos
+    }
     matches <- abs(data$Target - sibling_sum) <= tolerance * pmax(1, abs(data$Target))
     if (!any(eligible)) next
     level <- as.character(data[[variable]])[eligible]
@@ -695,27 +705,34 @@ validation_aggregate_levels <- function(data,
 #' Check for total series mixed with the series they sum
 #'
 #' Fails when a combo level equals the sum of its sibling levels on nearly
-#' every comparable date; reports values whose names look like totals.
+#' every comparable date; reports values whose names look like totals. All
+#' history contributes sibling values, so a removed part cannot hide a total.
+#' Only exact combos kept by `combo_cleanup_date` supply candidate evidence
+#' and total-like names.
 #'
-#' @param data validated input with combo columns, Date and Target
+#' @param data validated input with Combo, combo columns, Date and Target
 #' @param combo_variables combo variable names
 #' @param bounds list from `resolve_hist_date_bounds()`
+#' @param removed_combos Combo values that `combo_cleanup_date` removes
 #'
 #' @return list with status, message and details
 #' @noRd
 validation_check_totals <- function(data,
                                     combo_variables,
-                                    bounds) {
+                                    bounds,
+                                    removed_combos = character()) {
   total_pattern <- "^(grand[ _-]?)?(sub[ _-]?)?totals?$|^all$|[ _-](sub[ _-]?)?totals?$"
+  kept <- data[!data$Combo %in% removed_combos, ]
   total_like <- dplyr::bind_rows(lapply(combo_variables, function(variable) {
-    values <- unique(as.character(data[[variable]]))
+    values <- unique(as.character(kept[[variable]]))
     values <- values[!is.na(values) & grepl(total_pattern, values, ignore.case = TRUE)]
     tibble::tibble(Variable = rep(variable, length(values)), Level = values)
   }))
 
   aggregates <- validation_aggregate_levels(
     data[data$Date <= bounds$hist_end_date, ],
-    combo_variables
+    combo_variables,
+    removed_combos = removed_combos
   )
   details <- list(total_like_values = total_like, aggregate_levels = aggregates)
 
