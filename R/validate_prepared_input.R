@@ -4,8 +4,10 @@
 #' reports how preparation will treat the data, without starting a run or
 #' writing anything to disk.
 #'
-#' Input rules (`R1`-`R11`) reuse the checks in [prep_data()], so a failure
-#' here carries the same message `prep_data()` would raise. Preparation checks
+#' Input rules `R1`-`R8`, `R10` and `R11` reuse the checks in [prep_data()],
+#' so a failure here carries the same message `prep_data()` would raise. `R9`
+#' is stricter than `prep_data()`: it also checks that `date_type` matches the
+#' spacing of the dates. Preparation checks
 #' (`P1`-`P8`) describe what `prep_data()` and the train/test split planning
 #' will do with the data, such as future rows, padded gaps, missing values,
 #' series removed by `combo_cleanup_date` and short histories. A check fails
@@ -39,6 +41,9 @@
 #' after `R11` is checked.
 #'
 #' @inheritParams prep_data
+#' @param forecast_approach Forecast approach, as passed to [prep_data()].
+#'   It is validated but does not change the checks: every approach expects
+#'   bottom-level series, so totals mixed with their parts fail `P7` for all.
 #' @param back_test_scenarios Number of back-test scenarios, as passed to
 #'   [prep_models()]. Default of NULL chooses them from the history length.
 #' @param back_test_spacing Periods between back-test scenarios, as passed to
@@ -643,11 +648,15 @@ validation_check_cleanup <- function(data,
 #' For each combo variable, compares every level with the sum of the other
 #' levels that share the remaining combo values and date. A level is an
 #' aggregate when it matches on at least `min_share` of at least three
-#' comparable dates, so one missing leaf row does not hide a total.
+#' comparable dates, so one missing leaf row does not hide a total. A row is
+#' comparable only when its value or its sibling sum is non-zero beyond
+#' `tolerance`: in sparse data every level trivially "equals" an all-zero
+#' sibling sum, which would otherwise flag ordinary series as totals.
 #'
 #' @param data history rows with combo columns, Date and Target
 #' @param combo_variables combo variable names
-#' @param tolerance relative tolerance for equality
+#' @param tolerance relative tolerance for equality; also the absolute
+#'   magnitude below which a value and its sibling sum both count as zero
 #' @param min_share minimum share of comparable dates that must match
 #'
 #' @return tibble with Variable and Level for aggregate levels
@@ -664,7 +673,8 @@ validation_aggregate_levels <- function(data,
     group_total <- stats::ave(data$Target, group_key, FUN = sum)
     group_size <- stats::ave(rep(1, nrow(data)), group_key, FUN = sum)
     sibling_sum <- group_total - data$Target
-    eligible <- group_size >= 3
+    comparable <- pmax(abs(data$Target), abs(sibling_sum)) > tolerance
+    eligible <- group_size >= 3 & comparable
     matches <- abs(data$Target - sibling_sum) <= tolerance * pmax(1, abs(data$Target))
     if (!any(eligible)) next
     level <- as.character(data[[variable]])[eligible]

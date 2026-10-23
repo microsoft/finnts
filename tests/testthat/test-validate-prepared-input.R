@@ -346,6 +346,26 @@ test_that("P7 detects subtotals within another combo variable", {
   expect_equal(result$details$aggregate_levels$Level, "Subtotal")
 })
 
+test_that("P7 ignores all-zero dates in sparse data but still finds totals", {
+  data <- validation_monthly_data()
+  data$value <- 0
+  data$value[data$id == "A" & data$Date == as.Date("2021-01-01")] <- 5
+  data$value[data$id == "B" & data$Date == as.Date("2021-02-01")] <- 7
+  data$value[data$id == "C" & data$Date == as.Date("2021-03-01")] <- 9
+  sparse <- validate_monthly(data)
+
+  expect_true(sparse$passed)
+  expect_equal(check_status(sparse, "P7"), "pass")
+  expect_equal(nrow(sparse$details$aggregate_levels), 0)
+
+  totals <- stats::aggregate(value ~ Date, data = data, FUN = sum)
+  totals$id <- "Total"
+  with_total <- validate_monthly(rbind(data, totals[, names(data)]))
+
+  expect_equal(check_status(with_total, "P7"), "fail")
+  expect_equal(with_total$details$aggregate_levels$Level, "Total")
+})
+
 test_that("P8 fails without enough history and reports late-starting series", {
   short <- validation_monthly_data(months = 6)
   short_result <- validate_monthly(short, forecast_horizon = 6)

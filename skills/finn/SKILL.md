@@ -123,7 +123,7 @@ When maintaining this skill, bump `finn_skill_version` and add a matching newest
 entry to [version.json](version.json) for each user-visible skill version change.
 Keep `version` and `released` aligned with the newest `changelog` entry's
 `version` and `date`; each entry has a `changes` array. Keep older entries below
-the newest one. This branch's initial release is a single 0.1.0 entry.
+the newest one. The oldest entry is the single initial 0.1.0 release.
 Write NEWS-style summaries of user-visible changes, not setup instructions or
 implementation details. Each version allows at most 5 change bullets, 200
 characters per bullet, and 800 characters total across its bullets; offline

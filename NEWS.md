@@ -6,8 +6,9 @@
   - Approval is manual in interactive sessions or automatic.
 - Custom models train on a new `C1` recipe selected through `recipes_to_run`, alone or beside built-in models.
   - Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.
-- Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
+- Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows and `create_custom_model()`.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
+  - Custom-model authoring checks Copilot's JSON responses locally against the requested types and needs S7.
   - Copilot saves CLI-local session state under R's temporary directory.
   - Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.
 - Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
@@ -17,7 +18,7 @@
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
 - Added `validate_prepared_input()` to check input data against Finn's preparation rules without starting a run or writing files.
-  - Reports every failed rule with the message `prep_data()` would raise, instead of stopping at the first.
+  - Reports every failed rule instead of stopping at the first, using the messages `prep_data()` would raise; it also checks that `date_type` matches the date spacing.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 
 ## Bug Fixes

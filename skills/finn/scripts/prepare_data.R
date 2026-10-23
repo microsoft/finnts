@@ -121,6 +121,11 @@ prepare_out_dir <- function(args, file) {
 
 #' Project config for the gate, when the project has one
 #'
+#' The prepared copy always has a `Date` column in ISO format and `.` decimal
+#' marks, so the project's source-reading settings (`date_column`,
+#' `date_format`, `decimal_mark`) describe the original file, not the copy, and
+#' are dropped along with the project name and data location.
+#'
 #' @param args Parsed arguments.
 #' @return Config list or NULL.
 prepare_project_config <- function(args) {
@@ -132,7 +137,7 @@ prepare_project_config <- function(args) {
     return(NULL)
   }
   cfg <- finn_read_project_config(paths)
-  cfg[c("project_name", "data")] <- NULL
+  cfg[c("project_name", "data", "date_column", "date_format", "decimal_mark")] <- NULL
   cfg
 }
 
@@ -318,9 +323,13 @@ finn_main(function(args) {
   combos <- trimws(unlist(strsplit(finn_arg(args, "combo_variables") %||% "", ",")))
   combos <- combos[nzchar(combos)]
   ids <- trimws(unlist(strsplit(finn_arg(args, "id_columns") %||% "", ",")))
-  text_columns <- if (!is.null(sample_n)) c(combos, ids[nzchar(ids)])
+  # Declared series and ID columns stay text on every path so CSV identifiers
+  # such as 001 keep their leading zeros, matching how the run loads them.
+  # Before header promotion the real names are unknown, so read every column
+  # as text; finn_reshape_data() converts the non-ID columns after promotion.
+  text_columns <- unique(c(combos, ids[nzchar(ids)]))
   raw <- finn_load_data(file, finn_arg(args, "sheet"),
-    text_columns = text_columns, all_text = !is.null(sample_n) && !is.null(header_row))
+    text_columns = text_columns, all_text = !is.null(header_row))
   if (is.null(header_row) && !pivot && !drop_totals && is.null(sample_n)) {
     stop("Nothing to do. Pass --header_row, --pivot_longer=true, or --drop_totals=true as suggested by profile_data.R, --sample_series=<n> with --combo_variables for a test subset, or pipe a transform spec with --transform=- for any other layout.", call. = FALSE)
   }

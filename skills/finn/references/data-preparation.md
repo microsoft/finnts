@@ -19,7 +19,10 @@ contain R code, file paths, or web addresses.
    `data.diagnostics`. It reports the likely header row, title and footnote rows, pivot
    filters, total rows and columns, outline columns, date and number readability,
    duplicate keys, and unit mentions, plus a small masked sample. Column and filter field
-   names are shown; data labels and values are masked. Add `--reveal_labels=true` only if
+   names are shown; data labels and values are masked. This masking covers
+   `data.diagnostics` only: the rest of the result lists column names read from the first
+   row (in a pivot, possibly a filter's selected item) and, for a readable table, up to
+   three example values per column. Add `--reveal_labels=true` only if
    the user agrees to show real labels in this chat, and ask again for each file.
    When `data.needs_transform` is present, the automatic reshape flags would misread the
    file; use a transform spec and never the flags.

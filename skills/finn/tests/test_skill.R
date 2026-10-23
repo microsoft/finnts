@@ -850,6 +850,21 @@ with(prep_env, {
     length(rec) == 1 && setequal(names(rec[[1]]), c("prepared_at", "source", "output", "source_md5", "token", "plan_summary", "checks", "counts")) &&
       startsWith(rec[[1]]$output, "input/") && file.exists(pa$data$output))
 
+  src_paths <- finn_project_paths(root, "PrepSourceSettings")
+  finn_ensure_project_dirs(src_paths)
+  finn_write_project(src_paths, list(name = "PrepSourceSettings"))
+  finn_save_project_config(src_paths, finn_merge_config(list(mode = "standard", combo_variables = c("Region", "Product"),
+    target_variable = "Value", date_type = "month", forecast_horizon = 3,
+    data = list(file = tx_outline), date_column = "When", date_format = "%d/%m/%Y", decimal_mark = ",")))
+  src_args <- list(file = tx_outline, root = root, project = "PrepSourceSettings")
+  src_cfg <- prepare_project_config(src_args)
+  src_pv <- tryCatch(prepare_transform(c(src_args, preview = "true"), tx_outline, spec, tx_pass_validator),
+    error = function(e) conditionMessage(e))
+  check("prepare transform: a project's source date and number settings do not block the preview",
+    is.list(src_pv) && identical(src_pv$status, "preview") && nchar(src_pv$data$token) == 16 &&
+      !any(c("date_column", "date_format", "decimal_mark") %in% names(src_cfg)) &&
+      identical(src_cfg$target_variable, "Value"))
+
   handoff <- paste(pa$next_actions, collapse = "\n")
   check("prepare transform: handoff updates a draft config before approved saving",
     grepl("data.file", handoff, fixed = TRUE) && grepl("data.sheet", handoff, fixed = TRUE) &&
@@ -2629,6 +2644,18 @@ local({
   header_data <- finn_load_data(header_result$data$output, text_columns = c("Region", "Product"))
   check("ids: header promotion cannot coerce IDs before a pivoted sample",
     identical(header_data, pivot_data))
+  pivot_all <- run_input_script("prepare_data.R", list(file = wide, pivot_longer = "true",
+    id_columns = "Region, Product", value_name = "Revenue", out_dir = out_dir, out_name = "pivot-all.csv"))
+  pivot_all_data <- finn_load_data(pivot_all$data$output, text_columns = c("Region", "Product"))
+  check("ids: pivoting without sampling keeps leading zeros in declared ID columns",
+    setequal(pivot_all_data$Region, c("001", "1")) && identical(unique(pivot_all_data$Product), "010") &&
+      nrow(pivot_all_data) == 6 && is.numeric(pivot_all_data$Revenue) &&
+      identical(sort(pivot_all_data$Revenue), c(10:12, 20:22)))
+  header_all <- run_input_script("prepare_data.R", list(file = header, header_row = "1",
+    pivot_longer = "true", id_columns = "Region,Product", value_name = "Revenue",
+    out_dir = out_dir, out_name = "header-all.csv"))
+  check("ids: header promotion without sampling keeps leading zeros and converts values",
+    identical(finn_load_data(header_all$data$output, text_columns = c("Region", "Product")), pivot_all_data))
   check("ids: profiling and sampling never change their source CSV", identical(unname(tools::md5sum(ids)), source_hash))
 }, envir = new.env(parent = common))
 with(an, {

@@ -59,9 +59,9 @@ Formatted as a numeric value. Default of 1 assumes fiscal year starts in January
 existing series, and does not add new values onto the beginning or end, but does provide a value of 0 for said
 values.}
 
-\item{forecast_approach}{How the forecast is created. The default of 'bottoms_up' trains models for each individual
-time series. Value of 'grouped_hierarchy' creates a grouped time series to forecast at while 'standard_hierarchy' creates
-a more traditional hierarchical time series to forecast, both based on the hts package.}
+\item{forecast_approach}{Forecast approach, as passed to \code{\link[=prep_data]{prep_data()}}.
+It is validated but does not change the checks: every approach expects
+bottom-level series, so totals mixed with their parts fail \code{P7} for all.}
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
@@ -94,8 +94,10 @@ reports how preparation will treat the data, without starting a run or
 writing anything to disk.
 }
 \details{
-Input rules (\code{R1}-\code{R11}) reuse the checks in \code{\link[=prep_data]{prep_data()}}, so a failure
-here carries the same message \code{prep_data()} would raise. Preparation checks
+Input rules \code{R1}-\code{R8}, \code{R10} and \code{R11} reuse the checks in \code{\link[=prep_data]{prep_data()}},
+so a failure here carries the same message \code{prep_data()} would raise. \code{R9}
+is stricter than \code{prep_data()}: it also checks that \code{date_type} matches the
+spacing of the dates. Preparation checks
 (\code{P1}-\code{P8}) describe what \code{prep_data()} and the train/test split planning
 will do with the data, such as future rows, padded gaps, missing values,
 series removed by \code{combo_cleanup_date} and short histories. A check fails

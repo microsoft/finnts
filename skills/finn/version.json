@@ -6,12 +6,11 @@
       "version": "0.2.0",
       "date": "2026-10-20",
       "changes": [
-        "Settings reviews show a data check, each input explained, warnings, suggestions, and run time; revisions list only changed inputs, and `run` saves and starts.",
-        "Reviews name the run type and suggest the next run from project history: update for new actuals, more Agent iterations, or a standard refresh.",
-        "Fix messy files such as pivots, footnotes, text numbers, and mixed dates with a plan you approve once; totals and finnts input checks must pass first. CSV series IDs keep leading zeros.",
-        "Preparation approval binds the selected worksheet, verifies blank series IDs like the forecast worker, and guides an approved config update to the prepared CSV and its reading settings.",
+        "Settings reviews explain each input, warn, suggest, and estimate run time; revisions list only changed inputs, and `run` saves and starts.",
+        "Reviews name the run type and suggest the next run: update for new actuals, more Agent iterations, or a standard refresh.",
+        "Fix messy files (pivots, footnotes, text numbers, mixed dates) with one approved plan that must pass finnts input checks. Series IDs keep leading zeros.",
         "Flags a latest period that has not ended. A higher `max_iter` or stricter MAPE goal continues a finished Agent version.",
-        "Create custom models in plain language with any LLM, including GitHub Copilot; once approved they are saved in the project and reused by standard, iterate, and update runs."
+        "Create custom models in plain language with any LLM, including GitHub Copilot; approved models are reused by standard, iterate, and update runs."
       ]
     },
     {

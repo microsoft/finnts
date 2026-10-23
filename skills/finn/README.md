@@ -134,9 +134,12 @@ definitions of terms like WMAPE and back test are in
 - **Your coding agent sees what it reads.** When you ask questions about your data or
   results, the agent reads the relevant files and sends them to its own model, as with
   any file it opens for you.
-- **Data preparation shows the agent masked data.** When fixing a messy file, the agent
-  sees column names plus masked labels and values; real labels appear only if you agree
-  for that file. The real-value preview is a local file for you to open.
+- **Data preparation masks labels in its diagnostics and previews.** When fixing a messy
+  file, the diagnostics, preview tables, and check messages show column names but mask
+  data labels and values; real labels appear only if you agree for that file. The
+  general profile step still shows column names (in a pivot, these can include a
+  filter's selected item) and up to three example values per column. The real-value
+  preview is a local file for you to open.
 - **Update checks contact GitHub only**, and send no data. Turn them off with
   `FINN_SKILL_NO_UPDATE_CHECK=true`.
 - **API keys** are read from environment variables, never saved, and hidden in logs and
