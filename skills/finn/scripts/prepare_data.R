@@ -18,7 +18,7 @@
 # The spec is read from stdin only and is never saved. Preview applies it,
 # runs the verification gate, and returns a masked preview and, when the gate
 # passes, an approval token. Approve re-applies the same spec, re-runs the gate,
-# and writes the prepared CSV only when the token matches.
+# and writes the prepared CSV only when the token and worksheet selection match.
 
 local({
   args <- commandArgs(trailingOnly = FALSE)
@@ -233,6 +233,8 @@ prepare_record_audit <- function(args, file, out, run) {
 #'   masked like the preview tables unless `--reveal_labels=true`.
 #'   `data$latest_period` flags a latest period that has not ended; it is
 #'   advisory and never stored in the audit record.
+#'   Next actions require a separately approved config draft to switch the
+#'   project to the prepared CSV and its parsing settings; no config is changed here.
 prepare_transform <- function(args, file, spec_text, validator = finn_tx_default_validator(), today = Sys.Date()) {
   preview <- finn_bool(finn_arg(args, "preview"))
   token <- finn_arg(args, "approve")
@@ -273,12 +275,12 @@ prepare_transform <- function(args, file, spec_text, validator = finn_tx_default
       "Show the user preview_markdown exactly as returned and tell them preview_file holds real values they can open locally.",
       partial_action,
       "Ask for one approval of the whole plan, including every item in needs_confirmation.",
-      "After approval, pipe the same spec again with --approve=<token>. Any change to the spec needs a new preview and approval."
+      "After approval, pipe the same spec with the same worksheet selection again with --approve=<token>. Any change to the spec or effective worksheet needs a new preview and approval."
     )))
   }
   if (!isTRUE(gate$passed)) stop("The prepared data failed verification. Run --preview=true to see why. Nothing was written.", call. = FALSE)
   if (!identical(token, run$token)) {
-    stop("The approval token does not match this spec, data file, and settings. Run --preview=true again and get the user's approval for the new preview.", call. = FALSE)
+    stop("The approval token does not match this spec, data file, worksheet selection, and settings. Run --preview=true again and get the user's approval for the new preview.", call. = FALSE)
   }
   out_dir <- prepare_out_dir(args, file)
   name <- finn_arg(args, "out_name") %||% paste0(tools::file_path_sans_ext(basename(file)), "_finn_ready.csv")
@@ -292,14 +294,17 @@ prepare_transform <- function(args, file, spec_text, validator = finn_tx_default
   data$rows <- nrow(gate$output)
   data$columns <- names(gate$output)
   finn_result(TRUE, "ok", sprintf("Wrote the prepared copy with %d rows to %s.", nrow(gate$output), basename(out)), data, c(
-    "Tell the user the original file is untouched and use output as the project data file.",
+    "Tell the user the original file is untouched. Run profile_data.R --file=<output> to inspect the prepared copy, not the project's old input.",
+    "Copy the full saved config (or the template for a new project) to a draft outside the project. Set data.file to output, data.sheet to null, date_column to 'Date', date_format to '%Y-%m-%d', and decimal_mark to '.'. Replacing project data metadata alone does not update a saved config.",
+    "Run validate_config.R --project=<name> --config=<draft>. Show the prepared data path and settings review; after the user's approval, rerun with the same --config=<draft> and --save=true before profiling or forecasting the project.",
     partial_action,
     "If the same fix will be needed on every data refresh, recommend moving it into the upstream workflow or source query."
   ))
 }
 
 # Prepare the requested copy, preserving declared CSV ID columns before sampling.
-# Return its path and changes; neither the source nor an existing copy is replaced.
+# Return its path, changes and config-review instructions; neither the source nor
+# an existing copy is replaced, and switching project input needs separate approval.
 finn_main(function(args) {
   file <- finn_arg(args, "file")
   if (is.null(file)) stop("Pass --file=<data file>.", call. = FALSE)
@@ -352,7 +357,8 @@ finn_main(function(args) {
     list(source = finn_norm(file), output = finn_norm(out), rows = nrow(data), columns = names(data), changes = shaped$notes),
     c(
       "Tell the user what changed and that the original file is untouched.",
-      "Run profile_data.R --file=<output> to confirm the layout, then use the output path as the project data file."
+      "Run profile_data.R --file=<output> to confirm the layout. Copy the full saved config (or the template for a new project) to a draft outside the project, set data.file to output and data.sheet to null, and adjust date parsing settings to match the prepared file.",
+      "Validate with validate_config.R --project=<name> --config=<draft>, show the prepared path and settings review, and save the same draft with --save=true only after the user's approval. Replacing project data metadata alone does not update a saved config."
     )
   )
 })

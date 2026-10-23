@@ -48,16 +48,27 @@ contain R code, file paths, or web addresses.
    into the chat.
 4. **Approve once.** Ask for one approval of the whole plan, naming every item under
    "Needs your extra confirmation". Nothing is written before approval. If the spec
-   changes in any way, preview again and get approval again.
+   or effective worksheet selection changes, preview again and get approval again.
 5. **Write.** Pipe the same spec again with `--approve=<data.token>` instead of
-   `--preview=true`. The skill applies the spec again, reruns the checks, and writes
-   `<file>_finn_ready.csv` only if the token matches the spec, data file, and settings.
+   `--preview=true`, keeping the same `--sheet` when it selected the previewed worksheet.
+   Explicit `source.sheet` or `source.sheets` takes precedence over `--sheet`; without
+   either, Excel uses its first worksheet. The skill applies the spec again, reruns the
+   checks, and writes `<file>_finn_ready.csv` only if the token matches the spec, data
+   file, effective worksheet selection, and settings.
    It never overwrites the original or an existing file.
-6. **Use the copy.** Replace the project data with the prepared copy
-   (`setup_project.R --action=create --project=<name> --data=<output> --replace_data=true`
-   after the user agrees), set `date_column` to `Date`, then run `profile_data.R` and
-   `validate_config.R` as usual. The settings review and the forecast run read the series
-   columns of a CSV as text, so IDs such as `001` keep their leading zeros.
+6. **Use the copy.** Run `profile_data.R --file=<output>` against the prepared file.
+   Copy the full saved configuration (or the template for a new project) to a draft
+   outside the project, preserving all other settings. Set `data.file` to the absolute
+   `data.output` path returned by preparation, `data.sheet` to null, `date_column` to
+   `"Date"`, `date_format` to `"%Y-%m-%d"`, and `decimal_mark` to `"."`.
+   Run `validate_config.R --project=<name> --config=<draft>` without saving. Show the
+   user the prepared file path and the returned settings review. After approval, rerun
+   with the same `--config=<draft>` and `--save=true`, then profile or forecast the
+   project normally. Updating project metadata with `setup_project.R --replace_data=true`
+   alone does **not** replace an existing configuration's `data.file`; do not use it
+   as the configuration handoff. The settings review and the forecast run read series
+   columns as text, so IDs such as `001` keep their leading zeros and blank identifiers
+   fail the same input check during preparation and forecasting.
 
 If a check fails, the response is `gate_failed`, with no token and no file written. Explain
 each FAIL row in plain language, revise the spec, and preview again.

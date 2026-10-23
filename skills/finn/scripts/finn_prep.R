@@ -1454,7 +1454,8 @@ finn_tx_gate <- function(ctx, spec, cfg, validator = finn_tx_default_validator()
   checks <- list()
   add <- function(...) checks[[length(checks) + 1]] <<- finn_tx_check(...)
 
-  # Read the table back as the run will.
+  # Match the worker's read.csv defaults: blank text identifiers remain empty,
+  # so the package's blank-combo check sees the same values in both paths.
   prepared <- NULL
   read_err <- NULL
   shape_ok <- "Date" %in% names(out) && inherits(out$Date, "Date") && target %in% names(out) && is.numeric(out[[target]])
@@ -1463,7 +1464,7 @@ finn_tx_gate <- function(ctx, spec, cfg, validator = finn_tx_default_validator()
   } else {
     lines <- finn_tx_csv_lines(out)
     cls <- stats::setNames(rep("character", length(intersect(combos, names(out)))), intersect(combos, names(out)))
-    back <- utils::read.csv(text = lines, check.names = FALSE, stringsAsFactors = FALSE, colClasses = cls, na.strings = "")
+    back <- utils::read.csv(text = lines, check.names = FALSE, stringsAsFactors = FALSE, colClasses = cls)
     rt_cfg <- utils::modifyList(cfg, list(date_column = "Date", date_format = "%Y-%m-%d", decimal_mark = "."), keep.null = TRUE)
     prepared <- tryCatch(finn_prepare_input(back, rt_cfg)$data, error = function(e) {
       read_err <<- conditionMessage(e)
@@ -1816,9 +1817,10 @@ finn_tx_md_table <- function(df) {
 #' Approval token for one spec, source, and settings
 #'
 #' Recomputed on approval; any change to the spec, the source file, the
-#' settings, or the skill version gives a different token. Never stored.
+#' effective worksheet selection, settings, or skill version gives a different
+#' token. The approval audit stores the token, never the spec.
 #'
-#' @param spec Parsed spec.
+#' @param spec Parsed spec including the resolved Excel worksheet selection.
 #' @param md5 Source file md5.
 #' @param cfg Merged settings.
 #' @return 16-character token.
@@ -1904,11 +1906,15 @@ finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L, labels = 
 
 #' Apply a transform spec and verify the result, without writing anything
 #'
+#' Resolves the effective Excel worksheet into the in-memory spec before
+#' loading and hashing, so a command-line sheet cannot change after preview.
+#' Explicit spec sheets take precedence over the command-line fallback.
+#'
 #' @param file Source path; never modified.
 #' @param spec_text Spec JSON text from standard input.
 #' @param project_cfg Project config list or NULL.
 #' @param validator Validator function or NULL (fails closed).
-#' @param sheet Default sheet name or number.
+#' @param sheet Default sheet name or number; Excel defaults to the first sheet.
 #' @param reveal_labels TRUE to show text labels unmasked in the preview and
 #'   in `display_checks`.
 #' @param today Date used to spot a latest period that has not ended; tests
@@ -1920,6 +1926,13 @@ finn_tx_preview_markdown <- function(run, reveal = FALSE, n_rows = 8L, labels = 
 #'   tables unless `reveal_labels`; `gate$checks` keeps them as written).
 finn_tx_run <- function(file, spec_text, project_cfg = NULL, validator = finn_tx_default_validator(), sheet = NULL, reveal_labels = FALSE, today = Sys.Date()) {
   spec <- finn_tx_read_spec(spec_text)
+  if (tolower(tools::file_ext(file)) %in% c("xlsx", "xls") && !length(finn_tx_chr(spec$source$sheets))) {
+    selected_sheet <- spec$source$sheet %||% sheet %||% 1L
+    if (length(selected_sheet) == 1L && !is.na(selected_sheet) && grepl("^[0-9]+$", selected_sheet)) {
+      selected_sheet <- as.integer(selected_sheet)
+    }
+    spec$source$sheet <- selected_sheet
+  }
   cfg <- finn_tx_settings(project_cfg, spec$settings)
   ctx <- finn_tx_load(file, spec, sheet)
   finn_tx_apply(ctx, spec)

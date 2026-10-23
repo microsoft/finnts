@@ -721,6 +721,65 @@ with(tx, {
       is.null(finn_tx_latest_period(NULL, list(target_variable = "Value", date_type = "month"), tx_oct20)))
 })
 
+local({
+  workbook <- tx_put("approval-sheets.xlsx", "Offline reader fixture; no workbook is parsed.")
+  sheet_env <- load_functions("finn_prep.R", common)
+  grid <- tx$finn_tx_read_grid(tx_tidy)
+  # Identical sheets isolate selection identity from source bytes and output values.
+  sheet_env$finn_tx_read_grid <- function(file, sheet = NULL) grid
+  spec <- tx_spec(tx_tidy_steps, settings = tx_region)
+  selected <- sheet_env$finn_tx_run(workbook, spec, validator = tx_pass_validator, sheet = "Data")
+  other <- sheet_env$finn_tx_run(workbook, spec, validator = tx_pass_validator, sheet = "Other")
+  default <- sheet_env$finn_tx_run(workbook, spec, validator = tx_pass_validator)
+  check("transform: approval binds the CLI worksheet even when its values match another sheet",
+    isTRUE(selected$gate$passed) && isTRUE(other$gate$passed) && isTRUE(default$gate$passed) &&
+      !identical(selected$token, other$token) && !identical(selected$token, default$token))
+  check("transform: the same worksheet selection keeps the approval token",
+    identical(selected$token, sheet_env$finn_tx_run(workbook, spec, validator = tx_pass_validator, sheet = "Data")$token))
+  check("transform: omitted and explicit first-sheet selections have the same identity",
+    identical(default$token, sheet_env$finn_tx_run(workbook, spec, validator = tx_pass_validator, sheet = "1")$token))
+  explicit <- tx_spec(tx_tidy_steps, settings = tx_region, extra = ',"source":{"sheet":"Data"}')
+  check("transform: a spec worksheet overrides an unused CLI worksheet",
+    identical(sheet_env$finn_tx_run(workbook, explicit, validator = tx_pass_validator)$token,
+      sheet_env$finn_tx_run(workbook, explicit, validator = tx_pass_validator, sheet = "Other")$token))
+
+  entry <- load_functions("prepare_data.R", sheet_env)
+  args <- list(file = workbook, out_dir = file.path(tmp, "sheet-approval"))
+  preview <- entry$prepare_transform(c(args, preview = "true", sheet = "Data"), workbook, spec, tx_pass_validator)
+  before <- list.files(args$out_dir)
+  check("prepare transform: changing or omitting the previewed sheet cannot write a prepared file",
+    errors_with(entry$prepare_transform(c(args, approve = preview$data$token, sheet = "Other"), workbook, spec, tx_pass_validator), "does not match") &&
+      errors_with(entry$prepare_transform(c(args, approve = preview$data$token), workbook, spec, tx_pass_validator), "does not match") &&
+      identical(list.files(args$out_dir), before))
+  approved <- entry$prepare_transform(c(args, approve = preview$data$token, sheet = "Data"), workbook, spec, tx_pass_validator)
+  check("prepare transform: replaying the approved sheet writes the verified output",
+    isTRUE(approved$ok) && file.exists(approved$data$output))
+})
+
+local({
+  blank <- tx_put("gate-blank-ids.csv", c(
+    "Region,Date,Value", "001,2024-01-01,10", ",2024-02-01,11", "1,2024-03-01,"
+  ))
+  gate_data <- NULL
+  # Mirror the package's R6 blank predicate and capture the exact validator input.
+  validator <- function(input_data, ...) {
+    gate_data <<- input_data
+    failed <- any(!is.na(input_data$Region) & trimws(input_data$Region) == "")
+    list(passed = !failed, checks = data.frame(Rule = "R6", Description = "Blank identifiers",
+      Status = if (failed) "fail" else "pass", Message = if (failed) "Blank identifier." else "Passed."),
+      summary = list(), details = list())
+  }
+  result <- tx$finn_tx_run(blank, tx_spec(tx_tidy_steps, settings = tx_region), validator = validator)
+  roundtrip <- tx_put("gate-blank-roundtrip.csv", tx$finn_tx_csv_lines(result$gate$output))
+  worker_data <- common$finn_prepare_input(common$finn_load_data(roundtrip, text_columns = "Region"), result$settings)$data
+  check("transform: verification and the worker preserve the same empty and zero-padded identifiers",
+    identical(gate_data$Region, c("001", "", "1")) && identical(gate_data$Region, worker_data$Region) &&
+      identical(gate_data$Date, worker_data$Date) && identical(gate_data$Value, worker_data$Value) &&
+      is.na(gate_data$Value[3]))
+  check("transform: a blank identifier fails verification without an approval token",
+    !isTRUE(result$gate$passed) && is.null(result$token) && identical(tx_status(result)[["R6"]], "fail"))
+})
+
 profile_env <- load_functions("profile_data.R", tx)
 with(profile_env, {
   reasons_for <- function(file) {
@@ -790,6 +849,42 @@ with(prep_env, {
   check("prepare transform: approval records an audit entry without the spec or data",
     length(rec) == 1 && setequal(names(rec[[1]]), c("prepared_at", "source", "output", "source_md5", "token", "plan_summary", "checks", "counts")) &&
       startsWith(rec[[1]]$output, "input/") && file.exists(pa$data$output))
+
+  handoff <- paste(pa$next_actions, collapse = "\n")
+  check("prepare transform: handoff updates a draft config before approved saving",
+    grepl("data.file", handoff, fixed = TRUE) && grepl("data.sheet", handoff, fixed = TRUE) &&
+      grepl("date_column", handoff, fixed = TRUE) && grepl("%Y-%m-%d", handoff, fixed = TRUE) &&
+      grepl("decimal_mark", handoff, fixed = TRUE) && grepl("--config=<draft>", handoff, fixed = TRUE) &&
+      grepl("approval", handoff, fixed = TRUE) && grepl("--save=true", handoff, fixed = TRUE))
+  original <- tx_put("handoff-original.csv", c("When,Region,Product,Value", "01/01/2024,Old,A,999"))
+  previous <- finn_merge_config(list(mode = "standard", combo_variables = c("Region", "Product"),
+    target_variable = "Value", date_type = "month", forecast_horizon = 3,
+    data = list(file = original, sheet = "Source"), date_column = "When", date_format = "%d/%m/%Y", decimal_mark = ","))
+  finn_save_project_config(paths, previous)
+  before_config <- unname(tools::md5sum(file.path(paths$dir, "config.json")))
+  draft <- finn_read_project_config(paths)
+  draft$data$file <- pa$data$output
+  draft$data$sheet <- NULL
+  draft$date_column <- "Date"
+  draft$date_format <- "%Y-%m-%d"
+  draft$decimal_mark <- "."
+  draft_file <- file.path(tmp, "handoff-draft.json")
+  finn_write_json(draft, draft_file)
+  proposed <- finn_read_project_config(paths, draft_file)
+  proposed_data <- finn_prepare_input(finn_load_data(proposed$data$file, proposed$data$sheet,
+    text_columns = proposed$combo_variables), proposed)$data
+  check("prepared handoff: a draft reads the prepared CSV without replacing the saved config",
+    nrow(proposed_data) == 9 && sum(proposed_data$Value) == 3110 &&
+      inherits(proposed_data$Date, "Date") &&
+      identical(unname(tools::md5sum(file.path(paths$dir, "config.json"))), before_config))
+  finn_save_project_config(paths, proposed)
+  saved <- finn_read_project_config(paths)
+  saved_data <- finn_prepare_input(finn_load_data(saved$data$file, saved$data$sheet,
+    text_columns = saved$combo_variables), saved)$data
+  check("prepared handoff: saving the approved draft replaces the old path and parsing settings",
+    identical(saved$data$file, pa$data$output) && is.null(saved$data$sheet) &&
+      identical(saved$date_column, "Date") && identical(saved$date_format, "%Y-%m-%d") &&
+      identical(saved$decimal_mark, ".") && identical(saved_data, proposed_data))
 
   # The audit keeps what was done and the verification outcome, never the labels,
   # reasons, descriptions, or values a plan or validator message carried.
