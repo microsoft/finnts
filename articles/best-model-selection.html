@@ -222,6 +222,26 @@ belong in <code><a href="../reference/custom_model_control.html">custom_model_co
 the top level and defaults to manual. Manual approval needs an
 interactive R session; scripts, schedulers and coding agents use
 <code>approval = "automatic"</code>.</p>
+<p>The <code>llm</code> can be an ellmer Chat or
+<code><a href="../reference/chat_copilot.html">chat_copilot()</a></code>, using any model available through your
+GitHub Copilot account. For example, use this template in the authoring
+calls below instead of <code>ellmer::chat_openai()</code>:</p>
+<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/chat_copilot.html">chat_copilot</a></span><span class="op">(</span>model <span class="op">=</span> <span class="st">"auto"</span>, timeout <span class="op">=</span> <span class="fl">600</span><span class="op">)</span></span></code></pre></div>
+<p>Copilot authoring needs ellmer &gt;= 0.4.0 and S7 for structured
+response types, in addition to the CLI, authentication and processx
+requirements documented in <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code>. The optional
+600-second timeout above limits each CLI request, not generated-code
+execution. Each creation call starts a fresh conversation. Copilot
+receives the same instructions, schema and worked examples as an ellmer
+provider; actual series values are not automatically sent. The CLI
+retains local transcripts under R’s temporary directory, so use only
+approved content. Responses are checked as JSON against the requested
+types before the existing business-rule, approval and numerical
+validation gates run. Invalid responses or transport failures stop
+authoring, without extra automatic provider retries. No tools are
+enabled in Copilot, and creating a model does not bypass the generated-R
+execution warning or alter the saved model format.</p>
 <p>Instructions may contain up to <strong>1 MiB (1048576 UTF-8
 bytes)</strong>, including accumulated review edits. This permits
 thousands of words and hundreds of code lines; text is never silently
@@ -356,7 +376,7 @@ another full source snapshot. Older diagnostics can lack those hashes,
 in which case comparison detail is explicitly unavailable. Existing
 saved reviews remain valid; exact-candidate consent, replay handling and
 retry limits do not change.</p>
-<div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">llm</span> <span class="op">&lt;-</span> <span class="fu">ellmer</span><span class="fu">::</span><span class="fu">chat_openai</span><span class="op">(</span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/custom_model_examples_template.html">custom_model_examples_template</a></span><span class="op">(</span>forecast_horizon <span class="op">=</span> <span class="fl">3</span>, date_type <span class="op">=</span> <span class="st">"month"</span><span class="op">)</span></span>
 <span><span class="va">dates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/seq.html" class="external-link">seq</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2020-01-01"</span><span class="op">)</span>, by <span class="op">=</span> <span class="st">"month"</span>, length.out <span class="op">=</span> <span class="fl">5</span><span class="op">)</span></span>
@@ -522,7 +542,7 @@ without matching caller error cases. Include at least two cases, every
 declared mode, and meaningful edges such as zeros, negative values or
 calendar boundaries. For example, these independently specified checks
 describe a three-point mean:</p>
-<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">dates</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"2020-01-01"</span>, <span class="st">"2020-02-01"</span>, <span class="st">"2020-03-01"</span>, <span class="st">"2020-04-01"</span>, <span class="st">"2020-05-01"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="va">validation_examples</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
 <span>  example <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/rep.html" class="external-link">rep</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"mean"</span>, <span class="st">"edge_zero"</span><span class="op">)</span>, each <span class="op">=</span> <span class="fl">5</span><span class="op">)</span>,</span>
@@ -668,7 +688,7 @@ validated model or a typed actionable error. This deliberately gives up
 source review, not numerical validation. The code runs in the current R
 session with your permissions, without a sandbox or reliable
 interruption.</p>
-<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">custom</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
 <span>  instructions <span class="op">=</span> <span class="st">"Use the mean of historical targets independently for each series."</span>,</span>
 <span>  llm <span class="op">=</span> <span class="va">llm</span>, input_data <span class="op">=</span> <span class="va">data_tbl</span>,</span>
@@ -1054,7 +1074,7 @@ advice to install the package or change the accepted formula. Call
 arguments and arbitrary namespace-load errors are never included.</p>
 <p>Capture an authoring error to inspect its retained diagnostics
 without entering the debugger:</p>
-<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">result</span> <span class="op">&lt;-</span> <span class="kw"><a href="https://rdrr.io/r/base/conditions.html" class="external-link">tryCatch</a></span><span class="op">(</span></span>
 <span>  <span class="fu"><a href="../reference/create_custom_model.html">create_custom_model</a></span><span class="op">(</span></span>
 <span>    instructions <span class="op">=</span> <span class="st">"Use the same calendar month in the prior year."</span>,</span>

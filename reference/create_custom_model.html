@@ -138,8 +138,9 @@ you expect, and <code><a href="custom_model_control.html">custom_model_control()
 
 
 <dt id="arg-llm">llm<a class="anchor" aria-label="anchor" href="#arg-llm"></a></dt>
-<dd><p>An ellmer Chat object (ellmer &gt;= 0.4.0). Generation uses a fresh
-empty-history clone.</p></dd>
+<dd><p>An ellmer Chat object or <code><a href="chat_copilot.html">chat_copilot()</a></code> template. Generation
+uses a fresh, empty-history session. Both providers require ellmer &gt;= 0.4.0
+for structured response types; Copilot also uses S7 and its CLI dependencies.</p></dd>
 
 
 <dt id="arg-input-data">input_data<a class="anchor" aria-label="anchor" href="#arg-input-data"></a></dt>

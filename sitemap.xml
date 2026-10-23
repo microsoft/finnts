@@ -134,6 +134,7 @@
 <url><loc>https://microsoft.github.io/finnts/reference/update.timesfm_model.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update.xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/update_forecast.html</loc></url>
+<url><loc>https://microsoft.github.io/finnts/reference/validate_prepared_input.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_fit_impl.html</loc></url>
 <url><loc>https://microsoft.github.io/finnts/reference/xgboost_multistep_predict_impl.html</loc></url>

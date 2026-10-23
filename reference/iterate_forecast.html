@@ -125,11 +125,19 @@
 
 
 <dt id="arg-max-iter">max_iter<a class="anchor" aria-label="anchor" href="#arg-max-iter"></a></dt>
-<dd><p>Maximum number of iterations for forecast optimization.</p></dd>
+<dd><p>Maximum number of iterations for forecast optimization. This
+is a total per search (the global search and each time series' local
+search) for the Agent version, not a number of extra iterations: calling
+again on the same Agent run with a higher value runs only the remaining
+iterations, and a lower value runs nothing new.</p></dd>
 
 
 <dt id="arg-weighted-mape-goal">weighted_mape_goal<a class="anchor" aria-label="anchor" href="#arg-weighted-mape-goal"></a></dt>
-<dd><p>Weighted MAPE goal the agent is trying to achieve for each time series</p></dd>
+<dd><p>Weighted MAPE goal the agent is trying to achieve
+for each time series. Series that already meet it are not searched again,
+and a search can stop early once it is reached. On the same Agent run, a
+stricter goal reopens time series whose best model is global and that
+miss the new goal.</p></dd>
 
 
 <dt id="arg-parallel-processing">parallel_processing<a class="anchor" aria-label="anchor" href="#arg-parallel-processing"></a></dt>

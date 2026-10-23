@@ -110,8 +110,9 @@
 <li>Custom models train on a new <code>C1</code> recipe selected through <code>recipes_to_run</code>, alone or beside built-in models.
 <ul><li>Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.</li>
 </ul></li>
-<li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows.
+<li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows and <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code>.
 <ul><li>Defaults to automatic model selection, with isolated conversations and tool-disabled requests.</li>
+<li>Custom-model authoring checks Copilot’s JSON responses locally against the requested types and needs S7.</li>
 <li>Copilot saves CLI-local session state under R’s temporary directory.</li>
 <li>Authentication errors list GitHub CLI install, sign-in, and retry steps with a link to the setup guide.</li>
 </ul></li>
@@ -123,6 +124,10 @@
 <li>Added the local <code>naive</code> model, repeating the last observed value, to default standard runs and every Agent iteration.</li>
 <li>
 <code><a href="../reference/update_forecast.html">update_forecast()</a></code> now includes <code>naive</code> and <code>snaive</code> in default models for new or failed series.</li>
+<li>Added <code><a href="../reference/validate_prepared_input.html">validate_prepared_input()</a></code> to check input data against Finn’s preparation rules without starting a run or writing files.
+<ul><li>Reports every failed rule instead of stopping at the first, using the messages <code><a href="../reference/prep_data.html">prep_data()</a></code> would raise; it also checks that <code>date_type</code> matches the date spacing.</li>
+<li>Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.</li>
+</ul></li>
 </ul></div>
 <div class="section level3">
 <h3 id="bug-fixes-0-7-0-9014">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9014"></a></h3>
