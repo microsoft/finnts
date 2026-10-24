@@ -214,9 +214,10 @@ test_that("hierarchical Agent publication and getter ignore per-model reconciled
   expect_false(any(grepl(hash_data(alternative$Model_ID), tracker$payload_paths, fixed = TRUE)))
 })
 
-test_that("Agent forecast getter rejects missing final output and preserves saved formats", {
-  local_mocked_bindings(check_agent_info = function(...) NULL)
-  for (format in c("csv", "rds", "parquet")) {
+for (format in c("csv", "rds", "parquet")) {
+  test_that(paste("Agent forecast getter rejects missing final output and preserves", format), {
+    if (format == "parquet") skip_if_not_installed("arrow")
+    local_mocked_bindings(check_agent_info = function(...) NULL)
     agent <- artifact_test_agent(withr::local_tempdir(), format)
     info <- agent$project_info
     info$run_name <- agent$run_id
@@ -240,8 +241,8 @@ test_that("Agent forecast getter rejects missing final output and preserves save
       writeLines("not an RDS forecast", path)
       expect_error(get_agent_forecast(agent), "unknown input format")
     }
-  }
-})
+  })
+}
 
 for (provider in c("blob_container", "ms_drive")) {
   test_that(paste("Agent forecast getter propagates missing and failed downloads on", provider), {

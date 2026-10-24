@@ -2130,8 +2130,10 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
   original_weights <- reconciliation_weights
   original_read <- read_file
   original_list <- list_files
+  # The remote route builds an Arrow schema before the mocked table read.
+  routes <- c("local", if (requireNamespace("arrow", quietly = TRUE)) "remote")
   for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
-    for (route in c("local", "remote")) {
+    for (route in routes) {
       fixture <- reconciliation_test_case(withr::local_tempdir(), forecast_approach, extreme = TRUE)
       calls <- list()
       listings <- 0L
@@ -2194,9 +2196,11 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
 test_that("discontinued nodes reconcile through Agent and ordinary hierarchy routes", {
   original_read <- read_file
   original_weights <- reconciliation_weights
+  # The remote route builds an Arrow schema before the mocked table read.
+  routes <- c("local", if (requireNamespace("arrow", quietly = TRUE)) "remote")
   for (approach in c("standard_hierarchy", "grouped_hierarchy")) {
     for (negative_forecast in c(FALSE, TRUE)) {
-      for (route in c("local", "remote")) {
+      for (route in routes) {
         fixture <- reconciliation_test_case(withr::local_tempdir(), approach,
           discontinued = TRUE)
         weight_calls <- list()
