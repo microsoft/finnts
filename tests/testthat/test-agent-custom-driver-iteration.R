@@ -27,6 +27,10 @@ test_that("Agent first and later submissions keep custom drivers out of built-in
 
 test_that("public first iteration supplies custom-only drivers without enabling built-in xregs", {
   args <- custom_driver_agent(withr::local_tempdir())
+  args$custom_models$unit_growth <- historical_driver_model()
+  args$input_data$Units <- c(rep(110, 24), NA, NA)
+  args$input_data$Price <- c(rep(10, 24), 12, 13)
+  args$llm <- custom_agent_chat(custom_agent_response("driver_rule---unit_growth"))
   args$external_regressors <- NULL
   local_custom_update_runtime()
   info <- do.call(set_agent_info, args)
@@ -36,6 +40,12 @@ test_that("public first iteration supplies custom-only drivers without enabling 
   forecasts <- get_agent_forecast(info)
   custom <- forecasts[which(forecasts$Model_Name == "driver_rule" & forecasts$Train_Test_ID == 1), ]
   expect_equal(custom$Forecast, 2 * (35:36))
+  historical <- forecasts[which(forecasts$Model_Name == "unit_growth" & forecasts$Train_Test_ID == 1), ]
+  expect_equal(historical$Forecast, c(1452, 1730.3), tolerance = 1e-8)
+  iterate_forecast(info, max_iter = 1, weighted_mape_goal = 0.01, num_cores = 1)
+  expect_identical(get_agent_forecast(info), forecasts)
+  expect_identical(load_agent_custom_state(info)$custom_agent_contract$envelopes$unit_growth,
+    args$custom_models$unit_growth)
   expect_null(info$external_regressors)
 })
 

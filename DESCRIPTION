@@ -1,6 +1,6 @@
 Package: finnts
 Title: Microsoft Finance Time Series Forecasting Framework
-Version: 0.7.0.9015
+Version: 0.7.0.9016
 Authors@R: 
     c(person(given = "Mike",
            family = "Tokic",
@@ -24,7 +24,6 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Additional_repositories:
     https://bgreenwell.r-universe.dev
 Imports: 
@@ -97,3 +96,4 @@ Depends:
     R (>= 4.0), 
     modeltime
 VignetteBuilder: knitr
+Config/roxygen2/version: 8.1.1

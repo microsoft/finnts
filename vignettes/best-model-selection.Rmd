@@ -237,12 +237,49 @@ carry the independently calculated `expected` forecast. There is no recycling
 or inferred answer. The target column may also use the `target_variable` name.
 Add series columns named like `combo_variables` for multi-series cases: one
 series validates local logic and two or more validate global logic. Driver
-columns named like `external_regressors` are filled on every row. Examples
+columns named like `external_regressors` are filled on every history row and,
+for prediction-required drivers, every future row. Historical-only drivers may
+have blank future cells only when their availability is explicitly declared in
+the reviewed contract. Examples
 named `edge_...` or flagged with `edge_case = TRUE` are edge cases. For a
 deliberate error case, set `expected_error = "fit:zero_denominator"` on its rows
 and leave `expected` missing. Optional `how` and `tolerance` (at most 0.01)
 columns document and loosen a case. Two to eight examples including an edge
 case are required; every supplied expectation stays fixed during repair.
+
+### Historical-only and future-required drivers
+
+Keep **all** drivers in `external_regressors`. Explain availability in the
+business instructions; no additional function argument is needed. For example:
+
+> Units_Sold is historical-only. From the last observed units, generate units
+> internally at ten percent compounded growth per month. Multiply those units
+> by the supplied future Price_Index for the corresponding month.
+
+The resulting contract records `historical_only_predictors = "Units_Sold"`.
+Fitting needs observed `Units_Sold` and `Price_Index`; forecasting needs
+`Price_Index`, Date and the series keys, but not future `Units_Sold`. If the last
+observed units are 100 and future prices are 12 and 13, forecasts are
+`100 * 1.1 * 12 = 1320` and `100 * 1.1^2 * 13 = 1573`.
+Supplied future historical-only values are ignored, not used as a hidden override.
+
+Historical-only does **not** mean carrying forward, imputing, or automatically
+forecasting a driver. An observed lag must specify its window/date alignment and
+remain observed throughout the horizon; if it runs out, supply an explicit
+generation rule or an expected-error example. Internal driver forecasts need a
+method, starting state and dependency order. Unspecified availability, lag
+alignment, unsupported horizons, circular dependencies, or contradictory
+instructions/examples require clarification. Manual mode asks before execution;
+automatic mode raises a typed error with `needs_input` feedback rather than
+inventing business logic. This contract and independent examples cannot prove
+the correctness of arbitrary prose or generated formulas.
+
+Raw authoring and direct fitting reject missing/nonfinite required history.
+Existing C1 preparation still zero-fills historical numeric missingness; the
+model cannot recover the original missingness from those prepared zeros.
+Models saved without availability metadata retain their original future-driver
+requirements and content identities. New historical-only models require a
+package version that supports the declaration.
 
 `custom_model_control()` has five settings: `max_attempts = 3L`,
 `validation_budget = 60`, `package_policy = "installed_finnts"`,
@@ -790,6 +827,20 @@ known error stages are retained. Errors still raise normally and are never usabl
 Full diagnostic history remains separately available in `result$diagnostics`
 when an error is captured. Both reports can contain confidential column names,
 provider-visible questions or explicitly chosen artifact paths.
+
+For `code = "invalid_error_contract"`, inspect
+`feedback$details$error_contract`. Its reason distinguishes
+`missing_error_example`, `undeclared_example_error`, `error_phase_mismatch`,
+`invalid_error_declaration`, and `missing_numerical_control`; bounded fields
+identify the error code, expected/actual phase, mode and example index when known.
+For example, a rule declaring `fit:zero_units` needs both an independent
+error-outcome case with that exact phase/code and a valid numerical control.
+A `predict:zero_units` example is a phase mismatch, not an acceptable substitute.
+Supply the missing independent case when `requires_caller_input` is true.
+Package-generated questions are labelled separately from provider proposals.
+Repairable generated examples receive these same details within the existing
+attempt budget; exhausted attempts retain them. Caller expectations, tolerances
+and error outcomes are never invented or changed during repair.
 
 Coding agents should relay `needs_input` questions and any review request to the
 user, then call `create_custom_model()` again with refined instructions or

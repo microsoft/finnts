@@ -51,10 +51,10 @@ custom_draft_source_fingerprints <- function(source) {
 # executable fields are omitted explicitly. The enclosing diagnostic cap may
 # remove the proposal while retaining its hash and package-owned field/code.
 custom_draft_contract_rejection <- function(proposal, settings, failure, field = NULL) {
-  allowed <- custom_author_contract_fields(settings$authoring_protocol, settings$name, settings$model_type, identical(
+  allowed <- c(custom_author_contract_fields(settings$authoring_protocol, settings$name, settings$model_type, identical(
     settings$approval_mode,
     "automatic"
-  ))
+  )), "historical_only_predictors")
   safe <- tryCatch(
     {
       custom_run_passive(proposal)
@@ -91,7 +91,7 @@ validate_custom_draft_contract_rejection <- function(rejection) {
   if (!is.null(rejection$proposal)) {
     allowed <- c(
       custom_author_contract_fields(), "examples", "defaults_used", "history_requirements", "parameter_schema",
-      "error_policy", "validation_properties", "prediction_cohort"
+      "error_policy", "validation_properties", "prediction_cohort", "historical_only_predictors"
     )
     if (!is.list(rejection$proposal) || (length(rejection$proposal) && is.null(names(rejection$proposal))) || any(!names(rejection$proposal) %in%
       allowed) || !identical(rejection$proposal_id, digest::digest(rejection$proposal, algo = "sha256", serializeVersion = 2))) {
@@ -439,7 +439,9 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
       "operation_failed"
     else "invalid_input"
   }
-  needs_input <- identical(state$stage, "clarify") || identical(code, "business_clarification")
+  error_contract <- failure$error_contract %||% error$error_contract
+  needs_input <- identical(state$stage, "clarify") || code %in% c("business_clarification", "contract_conflict") ||
+    isTRUE(error_contract$requires_caller_input)
   status <- if (approved)
     "approved"
   else if (needs_input)
@@ -493,11 +495,21 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
     messages[[code]]
   else "The operation did not produce an approved model. Inspect the condition and supplied inputs before taking further action."
   questions <- state$pending$questions
+  package_questions <- !is.null(error_contract) && isTRUE(error_contract$requires_caller_input)
+  if (package_questions) {
+    questions <- list(paste("Supply an independent", if (error_contract$reason == "missing_numerical_control")
+      "numerical control" else "error-outcome example", "for mode",
+      error_contract$model_type, "and", error_contract$error_code %||% "the declared rule",
+      error_contract$expected_phase %||% "", "phase; existing examples were not changed."))
+  }
   if (is.null(questions) && needs_input) {
     proposal <- state$diagnostics$rejected_contract$proposal$questions
     questions <- tryCatch(custom_author_questions(proposal)$business, error = function(error) character())
     if (!length(questions) && is.character(proposal))
       questions <- proposal
+  }
+  if (!length(questions) && identical(code, "contract_conflict")) {
+    questions <- list("Clarify the conflicting business rule and independent examples, including driver availability, lag alignment and any internal driver-generation order.")
   }
   questions <- lapply(head(as.list(questions), 8L), function(question) {
     if (!custom_author_text(question))
@@ -507,6 +519,8 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
   if (length(questions) && is.null(names(questions)))
     names(questions) <- paste0("question_", seq_along(questions))
   details <- list()
+  if (!is.null(error_contract))
+    details$error_contract <- validate_custom_author_error_contract(error_contract)
   if (identical(code, "provider_failure")) {
     stage <- "provider"
     if (!is.null(error$provider))
@@ -516,7 +530,7 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
     failure <- validate_custom_author_failure(failure, state$definition)
     details <- failure[intersect(c(
       "example_index", "model_type", "unbound_symbol", "property", "dependency", "bindings",
-      "rule_error", "comparisons"
+      "rule_error", "comparisons", "error_contract"
     ), names(failure))]
   }
   resolved <- state$metadata$resolved_inputs %||% list()
@@ -529,7 +543,8 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
     revision = state$revision, request_id = state$pending$request_id, attempts = list(
       used = used, limit_per_phase = limit,
       remaining = remaining
-    ), questions = questions, questions_provenance = if (length(questions)) "provider_proposed" else NULL,
+    ),     questions = questions, questions_provenance = if (length(questions))
+      if (package_questions) "package_generated" else "provider_proposed" else NULL,
     details = details, resolved_inputs = resolved, validation = list(technical_passed = approved, expectation_provenance = state$contract$expectation_provenance %||%
       model$validation$checks$expectation_provenance, checks = model$validation$checks %||% list(), business_correctness_guaranteed = FALSE)
   )
@@ -563,7 +578,13 @@ custom_author_error_feedback <- function(error, state = NULL) {
 #'   questions/details, candidate/request identities and remaining phase budgets.
 #'   NULL counts mean unavailable historical evidence, not unlimited attempts.
 #' @details Status is `approved`, `review_required`, `needs_input` or `failed`.
-#'   Questions are provider proposals, not verified input errors. Remaining counts
+#'   Business questions are provider proposals, not verified input errors.
+#'   Error-contract details have package-generated questions and provenance:
+#'   `details$error_contract` identifies the reason, affected field/code, phases,
+#'   model mode, example index and whether independent caller input is required.
+#'   Declared errors need matching error examples and numerical controls.
+#'   Conflicting business/source contracts also return `needs_input`.
+#'   Remaining counts
 #'   do not authorize retries or execution; rerun [create_custom_model()] with
 #'   clearer instructions or examples instead. Approved envelopes do not retain
 #'   attempt histories, so those counts are NULL. Older models may lack resolved
@@ -701,6 +722,9 @@ custom_draft_drive <- function(state, data, session, llm) {
         if (!is.null(state$diagnostics$rejected_contract)) {
           payload$feedback$field <- state$diagnostics$rejected_contract$field
         }
+        last_failure <- tail(state$diagnostics$history, 1L)[[1L]]$failure
+        if (!is.null(last_failure$error_contract))
+          payload$feedback$error_contract <- validate_custom_author_error_contract(last_failure$error_contract)
         rejected <- state$diagnostics$rejected_contract$proposal
         if (identical(state$diagnostic, "protocol_clarification"))
           payload$feedback$facts <- custom_author_questions(rejected$questions)$facts
@@ -735,10 +759,10 @@ custom_draft_drive <- function(state, data, session, llm) {
         classified <- NULL
         valid <- tryCatch(
           {
-            custom_author_fields(proposal, custom_author_contract_fields(
+            custom_author_fields(proposal, c(custom_author_contract_fields(
               settings$authoring_protocol, settings$name,
               settings$model_type, automatic
-            ), "contract")
+            ), if ("historical_only_predictors" %in% names(proposal)) "historical_only_predictors"), "contract")
             classified <- custom_author_questions(proposal$questions)
             TRUE
           },
@@ -809,6 +833,7 @@ custom_draft_drive <- function(state, data, session, llm) {
           proposal$defaults_used <- NULL
         }
         rejection_field <- NULL
+        rejection_details <- NULL
         contract <- tryCatch(custom_author_contract(proposal, settings$instructions, data$metadata, settings$name,
           settings$model_type, settings$validation_examples, settings$authoring_protocol,
           required_properties = settings$required_properties %||%
@@ -833,22 +858,45 @@ custom_draft_drive <- function(state, data, session, llm) {
           rejection_field <<- if (inherits(error, "finnts_custom_model_authoring_error"))
             error$field
           else NULL
+          rejection_details <<- error$error_contract
+          if (!is.null(rejection_details) && is.null(settings$validation_examples))
+            rejection_details$requires_caller_input <<- FALSE
+          if (!is.null(rejection_details) && !is.null(settings$validation_examples) &&
+            isTRUE(rejection_details$requires_caller_input)) {
+            state <<- custom_draft_record(state, "rejected",
+              custom_author_failure(NULL, "contract", "invalid_error_contract", error_contract = rejection_details),
+              proposal = proposal, field = rejection_field)
+            state <<- custom_draft_save(state)
+            custom_author_abort("clarification",
+              "Caller examples do not cover the declared error contract; supply the requested independent example.",
+              code = "invalid_error_contract", error_contract = rejection_details)
+          }
           retry_history <- identical(recognized, "insufficient_example_history")
           if (example_error && !is.null(settings$validation_examples) && !retry_history) {
             custom_author_abort("examples", paste(
               "Caller-provided validation_examples failed.", feedback$message,
               "Correct those examples and start a new call; they were not changed."
-            ), code = feedback$code)
+            ), code = feedback$code, error_contract = rejection_details)
           }
           state$diagnostic <<- feedback$code
           NULL
         })
         if (is.null(contract)) {
-          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "contract", state$diagnostic),
+          state <- custom_draft_record(state, "rejected", custom_author_failure(NULL, "contract", state$diagnostic,
+            error_contract = rejection_details),
             proposal = proposal, field = rejection_field
           )
           state <- custom_draft_save(state)
           next
+        }
+        required_future <- setdiff(contract$requirements$predictors,
+          contract$requirements$historical_only_predictors)
+        checked_future <- intersect(required_future, names(data$future_valid))
+        invalid_future <- if (length(checked_future))
+          checked_future[!data$future_valid[checked_future]] else character()
+        if (length(invalid_future)) {
+          custom_author_abort("input", paste("Future driver values must be complete and finite for every forecast date:",
+            paste(invalid_future, collapse = ", ")), code = "invalid_input")
         }
         if (automatic) {
           contract$automatic_defaults <- assumptions
@@ -862,7 +910,8 @@ custom_draft_drive <- function(state, data, session, llm) {
         if (!is.null(state$contract) && (!setequal(contract$model_type, state$contract$model_type) || !setequal(
           contract$requirements$predictors,
           state$contract$requirements$predictors
-        ))) {
+        ) || !identical(contract$requirements$historical_only_predictors,
+          state$contract$requirements$historical_only_predictors))) {
           custom_author_abort("contract", "Edits cannot change model modes or predictors; start a new draft with explicit metadata.")
         }
         state$contract <- contract

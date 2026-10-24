@@ -48,9 +48,66 @@ custom_model_workflow <- function(definition, recipe, model_type, recipe_id,
   )
   custom_model_context(definition, context, allow_code)
   custom_model_recipe(recipe, definition)
-  workflows::workflow() %>%
+  result <- workflows::workflow() %>%
     workflows::add_model(custom_model_spec(definition, context, allow_code)) %>%
     workflows::add_recipe(recipe)
+  if (length(definition$requirements$historical_only_predictors)) {
+    if (length(recipe$steps))
+      stop("Historical-only custom workflows require the untransformed zero-step C1 recipe.", call. = FALSE)
+    class(result) <- c("finnts_custom_workflow", class(result))
+  }
+  result
+}
+
+#' Fit a historical-driver workflow without losing its prediction contract
+#'
+#' @param object An unfitted historical-driver C1 workflow.
+#' @param data Analysis-fold training rows.
+#' @param ... Arguments forwarded to the standard workflow fitter.
+#' @return The fitted workflow retaining package-owned prediction dispatch.
+#' @details Standard workflows may reconstruct their preprocessing object while
+#'   fitting. Restore only this custom class after the ordinary fit succeeds.
+#' @noRd
+#' @exportS3Method generics::fit
+fit.finnts_custom_workflow <- function(object, data, ...) {
+  result <- NextMethod("fit")
+  class(result) <- unique(c("finnts_custom_workflow", class(result)))
+  result
+}
+
+#' Predict from an original-scale historical-driver workflow
+#'
+#' @param object A fitted package-owned zero-step C1 workflow.
+#' @param new_data Requested future rows; fit-only driver columns are ignored.
+#' @param type Only numeric predictions are supported.
+#' @param opts Empty prediction options; nonempty options are unsupported.
+#' @param ... Reserved; additional prediction options are rejected.
+#' @return A tibble with one `.pred` value per requested row.
+#' @details Bypasses training-column baking only for the pinned custom engine
+#'   and zero-step C1 recipe. The engine enforces identity, types, consent,
+#'   chronology and cohort scope. No missing predictor is fabricated.
+#' @noRd
+#' @export
+predict.finnts_custom_workflow <- function(object, new_data, type = "numeric", opts = list(), ...) {
+  if ((!is.null(type) && !identical(type, "numeric")) || length(opts) || length(list(...)))
+    stop("Historical-only custom workflows support numeric prediction without additional options.", call. = FALSE)
+  recipe <- workflows::extract_recipe(object, estimated = FALSE)
+  fit <- workflows::extract_fit_engine(object)
+  if (!is.list(fit) || is.null(fit$definition) ||
+    !length(fit$definition$requirements$historical_only_predictors) || length(recipe$steps)) {
+    stop("Historical-only custom workflow has an incompatible fitted engine or recipe.", call. = FALSE)
+  }
+  spec <- workflows::extract_spec_parsnip(object)
+  if (!inherits(spec, "finnts_custom") || !identical(spec$engine, "finnts"))
+    stop("Historical-only custom workflow engine identity changed.", call. = FALSE)
+  arguments <- lapply(spec$eng_args, rlang::eval_tidy)
+  if (!identical(arguments$definition, fit$definition) || !identical(arguments$allow_code, fit$allow_code) ||
+    !setequal(recipe$var_info$variable,
+      unique(c("Target", custom_model_phase_predictors(fit$definition, "fit"))))) {
+    stop("Historical-only custom workflow definition, recipe or consent changed.", call. = FALSE)
+  }
+  custom_model_recipe(recipe, fit$definition)
+  tibble::tibble(.pred = custom_model_predict_impl(fit, new_data))
 }
 
 # Validate identity and scalar representation metadata without executing source.
@@ -213,11 +270,24 @@ custom_model_functions <- function(definition, allow_code) {
   environment
 }
 
-# Reject changed declared business-driver types without executing candidate code.
-# Numeric/integer and character/factor representations are equivalent respectively;
-# no coercion is performed. Internal definitions can omit type declarations.
-custom_model_predictor_types <- function(definition, data) {
-  for (field in names(definition$requirements$predictor_types)) {
+# Resolve the one saved driver contract by execution phase. Absent availability
+# metadata preserves existing definitions unchanged, including their digests.
+# Return identity and phase-required driver names; reject an unknown phase.
+custom_model_phase_predictors <- function(definition, phase = "fit") {
+  if (!phase %in% c("fit", "predict")) stop("Unknown custom model data phase.", call. = FALSE)
+  predictors <- definition$requirements$predictors
+  if (phase == "predict")
+    predictors <- setdiff(predictors, definition$requirements$historical_only_predictors)
+  custom_model_predictor_columns(predictors)
+}
+
+# Check only the types available in the selected phase; history-only columns
+# supplied at prediction are not inputs and are never used or coerced.
+# Numeric/integer and character/factor representations are equivalent; missing
+# optional type declarations preserve existing definitions. Invalid types error.
+custom_model_predictor_types <- function(definition, data, phase = "fit") {
+  for (field in intersect(names(definition$requirements$predictor_types),
+    custom_model_phase_predictors(definition, phase))) {
     value <- data[[field]]
     valid <- switch(definition$requirements$predictor_types[[field]],
       number = is.numeric(value) && !is.object(value),
@@ -231,8 +301,8 @@ custom_model_predictor_types <- function(definition, data) {
 # Validate data identities and declared driver types after baking and return data. Recipes turn
 # character predictors into factors by default; restore Combo labels, never their
 # integer codes. Duplicate series/date keys are always rejected.
-custom_model_data <- function(data, definition, context) {
-  required <- unique(c("Date", "Combo", definition$requirements$predictors))
+custom_model_data <- function(data, definition, context, phase = "fit") {
+  required <- custom_model_phase_predictors(definition, phase)
   if (!is.data.frame(data) || !nrow(data) || anyDuplicated(names(data)) ||
     !all(required %in% names(data)) || ".finnts_row" %in% names(data)) {
     stop("Custom model data has missing required predictors or invalid row identity.", call. = FALSE)
@@ -247,7 +317,16 @@ custom_model_data <- function(data, definition, context) {
   if (context$model_type == "local" && length(unique(data$Combo)) != 1L) {
     stop("Custom model local fitting/prediction requires exactly one Combo.", call. = FALSE)
   }
-  custom_model_predictor_types(definition, data)
+  custom_model_predictor_types(definition, data, phase)
+  if (length(definition$requirements$historical_only_predictors)) {
+    for (field in setdiff(required, c("Date", "Combo"))) {
+      values <- data[[field]]
+      if (anyNA(values) || (is.numeric(values) && any(!is.finite(values))))
+        stop("Custom model requires complete finite predictor values: ", field, ".", call. = FALSE)
+    }
+  }
+  if (phase == "predict")
+    data <- data[setdiff(names(data), definition$requirements$historical_only_predictors)]
   data
 }
 
@@ -340,7 +419,7 @@ custom_model_predict_impl <- function(object, new_data) {
   custom_model_context(object$definition, context[fields], object$allow_code)
   if (!isTRUE(object$allow_code)) stop("Custom model execution requires allow_code = TRUE.", call. = FALSE)
   new_data$Target <- NULL
-  new_data <- custom_model_data(new_data, object$definition, context)
+  new_data <- custom_model_data(new_data, object$definition, context, "predict")
   runtime <- object$definition$requirements$runtime
   if (context$model_type == "global") {
     cohort <- context$prediction_cohort

@@ -177,7 +177,8 @@ custom_author_example_scaffold <- function(metadata, model_type, predictors = ch
 # Require complete scenario/series coverage, nonempty keyed data, declared predictor types and exact horizon lengths.
 # Normalize numeric columns to double; preserve independent expected values and exact declared error outcomes.
 # Return current example records or bounded field errors. No recycling, imputation or oracle generation occurs.
-custom_author_scaffold_examples <- function(values, scaffold, model_type, predictors, predictor_types = NULL) {
+custom_author_scaffold_examples <- function(values, scaffold, model_type, predictors, predictor_types = NULL,
+                                            historical_only_predictors = character()) {
   reject <- function(field, reason) custom_author_abort("examples", reason, code = "invalid_examples_shape", field = field)
   fields <- function(value, required, field) {
     tryCatch(custom_author_fields(value, required, "examples"), error = function(error) {
@@ -262,7 +263,10 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
       reject("examples.series", "Invalid scenario series coverage.")
     tables <- lapply(value$series[match(scenario$combos, combos)], function(series) {
       fields(series$history, c("Target", predictors), "examples.history")
-      fields(series$future, predictors, "examples.future")
+      future_predictors <- setdiff(predictors, historical_only_predictors)
+      if (!is.list(series$future) || any(!names(series$future) %in% predictors))
+        reject("examples.future", "Unknown future driver field.")
+      fields(series$future[intersect(names(series$future), future_predictors)], future_predictors, "examples.future")
       target <- array(series$history$Target, TRUE, "examples.history")
       expected <- if (error_case) {
         if (length(series$expected))
@@ -282,10 +286,11 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
       request <- data.frame(Date = future_dates, Combo = series$combo, stringsAsFactors = FALSE)
       for (predictor in predictors) {
         observed <- array(series$history[[predictor]], field = "examples.history")
-        future <- array(series$future[[predictor]], field = "examples.future")
+        future <- if (predictor %in% future_predictors)
+          array(series$future[[predictor]], field = "examples.future") else NULL
         if (length(observed) != length(target))
           reject("examples.history", "Predictor array length must match its history grid.")
-        if (length(future) != length(future_dates))
+        if (predictor %in% future_predictors && length(future) != length(future_dates))
           reject("examples.future", "Predictor array length must match its future grid.")
         if (!is.null(predictor_types)) {
           matches_type <- switch(predictor_types[[predictor]],
@@ -295,7 +300,7 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
           )
           if (is.null(matches_type) || !matches_type(observed))
             reject("examples.history", "Predictor values must match their captured type.")
-          if (!matches_type(future))
+          if (predictor %in% future_predictors && !matches_type(future))
             reject("examples.future", "Predictor values must match their captured type.")
         }
         if (is.numeric(observed) && is.numeric(future)) {
@@ -303,7 +308,7 @@ custom_author_scaffold_examples <- function(values, scaffold, model_type, predic
           future <- as.numeric(future)
         }
         history[[predictor]] <- observed
-        request[[predictor]] <- future
+        if (predictor %in% future_predictors) request[[predictor]] <- future
       }
       list(history = history, new_data = request, expected = if (error_case) NULL else data.frame(
         Date = future_dates,
@@ -397,7 +402,8 @@ custom_model_examples_template <- function(forecast_horizon = 3, date_type = "mo
 # resolved external_regressors. Local/global is inferred from the series count
 # and must match the effective model_type exactly. Errors name the example,
 # table row and date. Set-level and horizon checks remain in custom_author_examples().
-custom_examples_from_table <- function(table, target_variable, combo_variables, external_regressors, model_type) {
+custom_examples_from_table <- function(table, target_variable, combo_variables, external_regressors, model_type,
+                                       historical_only_predictors = character(), defer_future = FALSE) {
   if (!is.data.frame(table) || !nrow(table)) {
     custom_author_abort("examples", "validation_examples must be a data frame; start from custom_model_examples_template().")
   }
@@ -541,7 +547,8 @@ custom_examples_from_table <- function(table, target_variable, combo_variables, 
     }
     type <- if (length(unique(combo[rows])) > 1L) "global" else "local"
     for (driver in drivers) {
-      if (!driver %in% columns || anyNA(table[[driver]][rows])) {
+      check_rows <- if (defer_future || driver %in% historical_only_predictors) history_rows else rows
+      if (!driver %in% columns || anyNA(table[[driver]][check_rows])) {
         custom_author_abort("examples", paste0(
           "example '", name, "': driver column ", driver, " must be filled on every row, including future rows."
         ))
@@ -551,7 +558,14 @@ custom_examples_from_table <- function(table, target_variable, combo_variables, 
     history <- data.frame(Date = table$Date[history_rows], Combo = combo[history_rows], Target = table[[target]][history_rows], stringsAsFactors = FALSE)
     history[keep] <- table[history_rows, keep, drop = FALSE]
     new_data <- data.frame(Date = table$Date[future_rows], Combo = combo[future_rows], stringsAsFactors = FALSE)
-    new_data[keep] <- table[future_rows, keep, drop = FALSE]
+    future_keep <- setdiff(keep, historical_only_predictors)
+    new_data[future_keep] <- table[future_rows, future_keep, drop = FALSE]
+    if (defer_future) {
+      for (driver in future_keep) {
+        if (anyNA(new_data[[driver]]) || (is.numeric(new_data[[driver]]) && any(!is.finite(new_data[[driver]]))))
+          new_data[[driver]] <- NULL
+      }
+    }
     history <- custom_author_table(history)
     new_data <- custom_author_table(new_data)
     expected <- NULL
@@ -646,7 +660,8 @@ custom_author_table <- function(value) {
 custom_author_examples <- function(examples, definition, metadata) {
   if (!is.list(examples) || length(examples) < 2L || length(examples) > 8L)
     custom_author_abort("examples", "Provide two to eight worked examples including an edge case.")
-  result <- lapply(examples, function(example) {
+  result <- lapply(seq_along(examples), function(example_index) {
+    example <- examples[[example_index]]
     if (!"outcome" %in% names(example)) {
       example$outcome <- "predictions"
       example["expected_error"] <- list(NULL)
@@ -669,7 +684,8 @@ custom_author_examples <- function(examples, definition, metadata) {
     example$new_data <- custom_author_table(example$new_data)
     error_case <- identical(example$outcome, "error")
     if ((!custom_author_text(example$outcome) || !example$outcome %in% c("predictions", "error") || (!error_case && !is.null(example$expected_error))))
-      custom_author_abort("examples", "Invalid example outcome.", code = "invalid_error_contract")
+      custom_author_error_contract("invalid_error_declaration", field = "examples.outcome",
+        model_type = example$model_type, example_index = as.integer(example_index), stage = "examples")
     if (error_case) {
       error <- example$expected_error
       if (!is.null(example$expected) || !isTRUE(example$edge_case) || !is.list(error) || length(error) != 2L || !setequal(
@@ -677,9 +693,8 @@ custom_author_examples <- function(examples, definition, metadata) {
         c("phase", "code")
       ) || !custom_author_text(error$phase) || !error$phase %in% c("fit", "predict") || !custom_author_text(error$code) ||
         !grepl("^[a-z][a-z0-9_]{0,79}$", error$code)) {
-        custom_author_abort("examples", "Error cases require an exact phase/code and no numerical expected output.",
-          code = "invalid_error_contract"
-        )
+        custom_author_error_contract("invalid_error_declaration", field = "examples.expected_error",
+          model_type = example$model_type, example_index = as.integer(example_index), stage = "examples")
       }
       example$expected_error <- error[c("phase", "code")]
     } else example$expected <- custom_author_table(example$expected)
@@ -694,8 +709,11 @@ custom_author_examples <- function(examples, definition, metadata) {
       }
     }
     predictors <- custom_run_predictors(definition, example$history)
+    future_predictors <- custom_model_phase_predictors(definition, "predict")
+    example$new_data <- example$new_data[setdiff(names(example$new_data),
+      definition$requirements$historical_only_predictors)]
     if (!is.numeric(example$history$Target) || any(!is.finite(example$history$Target)) || "Target" %in% names(example$new_data) ||
-      !all(predictors %in% names(example$new_data)) || (!error_case && (!setequal(names(example$expected), c(
+      !all(future_predictors %in% names(example$new_data)) || (!error_case && (!setequal(names(example$expected), c(
       "Combo",
       "Date", ".pred"
     )) || !is.numeric(example$expected$.pred) || !identical(
@@ -708,6 +726,7 @@ custom_author_examples <- function(examples, definition, metadata) {
     if ((example$model_type == "local" && length(combos) != 1L) || (example$model_type == "global" && length(combos) <
       2L) || !setequal(combos, unique(example$new_data$Combo)))
       custom_author_abort("examples", "Worked examples do not cover the declared series mode.")
+    custom_model_data(example$new_data, definition, list(model_type = example$model_type), "predict")
     for (combo in combos) {
       cutoff <- max(example$history$Date[example$history$Combo == combo])
       expected_dates <- seq(cutoff, by = metadata$date_type, length.out = metadata$forecast_horizon + 1L)[-1L]
@@ -738,7 +757,7 @@ custom_author_examples <- function(examples, definition, metadata) {
 # values are not filled, forecasts/vintages are not inferred, and no I/O occurs.
 custom_author_preflight <- function(
     input_data, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
-    hist_start_date, hist_end_date) {
+    hist_start_date, hist_end_date, defer_future = FALSE) {
   if (anyNA(input_data[c(combo_variables, "Date")]) || any(!is.finite(as.numeric(input_data$Date)))) {
     custom_author_abort("input", "Series identifiers and dates must be complete and finite.")
   }
@@ -774,6 +793,7 @@ custom_author_preflight <- function(
     custom_author_abort("input", "Historical dates must cover an uninterrupted cadence aligned with hist_start_date and hist_end_date.")
   }
   future_dates <- seq(hist_end_date, by = date_type, length.out = forecast_horizon + 1L)[-1L]
+  future_valid <- stats::setNames(rep(TRUE, length(external_regressors)), external_regressors)
   for (index in rows) {
     history_rows <- index[historical[index]]
     if (!identical(sort(input_data$Date[history_rows]), dates)) {
@@ -783,7 +803,8 @@ custom_author_preflight <- function(
       custom_author_abort("input", "Historical target values must be observed and finite through hist_end_date; missing actuals cannot become zeros.")
     }
     future_rows <- index[input_data$Date[index] > hist_end_date & input_data$Date[index] <= max(future_dates)]
-    if (length(external_regressors) && !identical(as.numeric(sort(input_data$Date[future_rows])), as.numeric(future_dates))) {
+    complete <- identical(as.numeric(sort(input_data$Date[future_rows])), as.numeric(future_dates))
+    if (!defer_future && length(external_regressors) && !complete) {
       custom_author_abort("input", "Future drivers must cover every forecast date for every series after hist_end_date.")
     }
     for (predictor in external_regressors) {
@@ -796,14 +817,16 @@ custom_author_preflight <- function(
         custom_author_abort("input", "Authoring requires complete finite observed driver history.")
       }
       future <- values[future_rows]
-      if (anyNA(future) || (is.numeric(future) && any(!is.finite(future)))) {
+      valid <- complete && !anyNA(future) && !(is.numeric(future) && any(!is.finite(future)))
+      future_valid[[predictor]] <- future_valid[[predictor]] && valid
+      if (!defer_future && !valid) {
         custom_author_abort("input", "Future driver values must be complete and finite for the entire forecast horizon.")
       }
     }
   }
   list(
     hist_start_date = hist_start_date, hist_end_date = hist_end_date, cutoff_source = cutoff_source, combos = combos,
-    series_checked = length(rows)
+    series_checked = length(rows), future_valid = future_valid
   )
 }
 
@@ -976,7 +999,7 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 # the first three series in hash order.
 custom_author_data <- function(
     input_data, run_info, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
-    hist_start_date, hist_end_date, forecast_approach = "bottoms_up", global_sample = FALSE) {
+    hist_start_date, hist_end_date, forecast_approach = "bottoms_up", global_sample = FALSE, defer_future = FALSE) {
   original_options <- options()
   on.exit(options(original_options), add = TRUE)
   withr::local_preserve_seed()
@@ -999,6 +1022,7 @@ custom_author_data <- function(
   driver_data <- NULL
   prepared_sample <- NULL
   sample_disclosure <- NULL
+  future_valid <- NULL
   if (!is.null(input_data)) {
     resolved <- custom_author_input_metadata(
       input_data, combo_variables, target_variable, date_type, hist_start_date,
@@ -1017,8 +1041,9 @@ custom_author_data <- function(
     check_input_data(input_data, combo_variables, target_variable, external_regressors, date_type, 1, NULL)
     preflight <- custom_author_preflight(
       input_data, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
-      hist_start_date, hist_end_date
+      hist_start_date, hist_end_date, defer_future = defer_future
     )
+    future_valid <- preflight$future_valid
     hist_start_date <- preflight$hist_start_date
     hist_end_date <- preflight$hist_end_date
     if (hierarchical) {
@@ -1127,10 +1152,12 @@ custom_author_data <- function(
           if (!all(c("Date", "Combo", "Target", actual$external_regressors) %in% names(panel))) {
             custom_author_abort("input", "Prepared driver data must retain its declared original columns and complete future values.")
           }
-          custom_author_preflight(
+          checked <- custom_author_preflight(
             panel, "Combo", "Target", date_type, forecast_horizon, actual$external_regressors,
-            actual$hist_start_date, hist_end_date
+            actual$hist_start_date, hist_end_date, defer_future = defer_future
           )
+          if (is.null(future_valid)) future_valid <- checked$future_valid else
+            future_valid <- future_valid & checked$future_valid
           if (global_sample) {
             prepared_sample[[index]] <- panel
             summaries[[index]] <- custom_author_series_summary(panel$Combo[[1L]], panel$Target[panel$Date <= hist_end_date])
@@ -1217,6 +1244,8 @@ custom_author_data <- function(
   result$metadata$cutoff_source <- if (is.null(input_data))
     "prepared_run"
   else preflight$cutoff_source
+  # This call-local validation summary is not part of saved metadata or prompts.
+  if (defer_future) result$future_valid <- future_valid
   result$metadata$resolved_inputs <- list(
     combo_variables = if (is.null(input_data)) actual$combo_variables else combo_variables,
     target_variable = if (is.null(input_data)) actual$target_variable else target_variable, date_type = date_type, forecast_horizon = as.numeric(forecast_horizon),

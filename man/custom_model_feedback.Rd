@@ -22,7 +22,13 @@ ordinary R error semantics.
 }
 \details{
 Status is \code{approved}, \code{review_required}, \code{needs_input} or \code{failed}.
-Questions are provider proposals, not verified input errors. Remaining counts
+Business questions are provider proposals, not verified input errors.
+Error-contract details have package-generated questions and provenance:
+\code{details$error_contract} identifies the reason, affected field/code, phases,
+model mode, example index and whether independent caller input is required.
+Declared errors need matching error examples and numerical controls.
+Conflicting business/source contracts also return \code{needs_input}.
+Remaining counts
 do not authorize retries or execution; rerun \code{\link[=create_custom_model]{create_custom_model()}} with
 clearer instructions or examples instead. Approved envelopes do not retain
 attempt histories, so those counts are NULL. Older models may lack resolved
