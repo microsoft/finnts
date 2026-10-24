@@ -26,6 +26,11 @@ series. This best-only reconciled output contract also applies after
 
 For non-agentic hierarchical runs, \code{\link[=get_forecast_data]{get_forecast_data()}} returns all
 successfully saved per-model reconciled forecasts plus \code{Best-Model}.
+
+The final forecast artifact must exist. Missing local artifacts raise a
+required-artifact error; storage-provider and deserialization errors
+propagate rather than returning an empty forecast. Reads use the exact
+artifact path without directory discovery and do not modify saved outputs.
 }
 \examples{
 \dontrun{

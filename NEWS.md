@@ -1,4 +1,4 @@
-# finnts 0.7.0.9014 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9015 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -23,6 +23,11 @@
 
 ## Bug Fixes
 
+- Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
+  - A numerical floor keeps inverse-MSE weights finite, including discontinued series with zero backtest targets.
+  - Existing nonnegative confidence bounds and errors for nonfinite MSE are preserved.
+- `get_agent_forecast()` reads the exact required final artifact and errors when it is missing.
+  - Missing CSV forecasts no longer return an empty table; storage and read failures propagate.
 - Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.

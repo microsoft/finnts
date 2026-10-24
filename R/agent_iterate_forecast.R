@@ -563,6 +563,11 @@ iterate_forecast <- function(agent_info,
 #'   For non-agentic hierarchical runs, [get_forecast_data()] returns all
 #'   successfully saved per-model reconciled forecasts plus `Best-Model`.
 #'
+#'   The final forecast artifact must exist. Missing local artifacts raise a
+#'   required-artifact error; storage-provider and deserialization errors
+#'   propagate rather than returning an empty forecast. Reads use the exact
+#'   artifact path without directory discovery and do not modify saved outputs.
+#'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
 #' @return A tibble containing the final forecast for the agent.
@@ -610,15 +615,15 @@ get_agent_forecast <- function(agent_info) {
 
   # metadata
   project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
 
   # load the final forecast for the agent
-  final_fcst_tbl <- read_file(
-    run_info = project_info,
-    path = paste0(
-      "/final_output/", hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-forecast.", project_info$data_output
-    )
-  )
+  path <- local_artifact_path(project_info, "final_output", "-forecast")
+  final_fcst_tbl <- if (is.null(project_info$storage_object)) {
+    read_local_artifacts(project_info, path)
+  } else {
+    read_exact_artifact(project_info, path)
+  }
 
   return(final_fcst_tbl)
 }

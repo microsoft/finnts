@@ -2036,6 +2036,31 @@ test_that("reconciliation weights retain partial-missing residual semantics", {
   expect_identical(reconciliation_weights(residuals, FALSE), 1 / colMeans(residuals^2, na.rm = TRUE))
 })
 
+test_that("reconciliation weights support zero and underflowing residual MSE", {
+  mixed <- cbind(zero = c(0, 0), underflow = c(1e-170, -1e-204),
+    subnormal = c(1e-160, -1e-160), ordinary = c(1, -2))
+  for (residuals in list(mixed, mixed[, 1:3], matrix(0, nrow = 2),
+    matrix(1e-200, nrow = 2), matrix(1e-160, nrow = 2),
+    cbind(zero = c(NA_real_, 0), tiny = c(1e-200, NA_real_)))) {
+    original <- residuals
+    for (negative_forecast in c(FALSE, TRUE)) {
+      mse <- pmax(colMeans(residuals^2, na.rm = TRUE), .Machine$double.xmin)
+      if (!negative_forecast) mse <- pmax(mse, max(mse) / 1e15)
+      weights <- reconciliation_weights(residuals, negative_forecast)
+
+      expect_identical(weights, 1 / mse)
+      expect_true(all(is.finite(weights) & weights > 0))
+      expect_identical(names(weights), colnames(residuals))
+      expect_identical(residuals, original)
+      permutation <- rev(seq_len(ncol(residuals)))
+      expect_identical(reconciliation_weights(residuals[, permutation, drop = FALSE],
+        negative_forecast), weights[permutation])
+    }
+  }
+  expect_gt(colMeans(matrix(1e-160, nrow = 2)^2), 0)
+  expect_false(is.finite(1 / colMeans(matrix(1e-160, nrow = 2)^2)))
+})
+
 test_that("reconciliation weights reject unusable matrices and identify invalid nodes", {
   for (residuals in list(numeric(), c(1, 2), data.frame(first = 1),
     matrix(character(), nrow = 0), matrix("invalid", nrow = 1),
@@ -2043,21 +2068,28 @@ test_that("reconciliation weights reject unusable matrices and identify invalid 
     expect_error(reconciliation_weights(residuals, FALSE), "nonempty numeric residual matrix")
   }
 
-  for (invalid in list(c(0, 0), c(NA_real_, NA_real_), c(NaN, NaN),
-    c(Inf, 1), c(1e200, 1e200), c(1e-200, 1e-200))) {
+  for (invalid in list(c(NA_real_, NA_real_), c(NaN, NaN),
+    c(Inf, 1), c(-Inf, 1), c(1e200, 1e200))) {
     residuals <- cbind(valid_node = c(1, 2), invalid_node = invalid)
-    expect_error(reconciliation_weights(residuals, FALSE), "finite positive residual MSE.*invalid_node")
+    for (negative_forecast in c(FALSE, TRUE)) {
+      expect_error(reconciliation_weights(residuals, negative_forecast),
+        "finite positive residual MSE.*invalid_node")
+    }
   }
-  expect_error(reconciliation_weights(matrix(0, nrow = 2), FALSE), "finite positive residual MSE.*1")
-  expect_error(reconciliation_weights(matrix(1e-160, nrow = 2), FALSE), "finite positive weights")
-  expect_error(reconciliation_weights(matrix(1e-160, nrow = 2), TRUE), "finite positive weights")
+  expect_error(reconciliation_weights(matrix(NA_real_, nrow = 2), FALSE),
+    "finite positive residual MSE.*1")
 })
 
-reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE) {
+# Build deterministic hierarchy artifacts without fitting models. Discontinued
+# fixtures retain earlier revenue but have zero backtest targets and tiny
+# nonzero predictions for one bottom node; all stored identities stay unchanged.
+reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE,
+                                     discontinued = FALSE) {
   run_info <- artifact_test_run(path)
   dates <- as.Date(c("2024-01-01", "2024-02-01", "2024-03-01"))
   bottom <- matrix(c(10, 20, 30, 40, 12, 22, 32, 42, 14, 24, 34, 44), nrow = 3, byrow = TRUE)
   colnames(bottom) <- c("A", "B", "C", "D")
+  if (discontinued) bottom[, "A"] <- 0
   if (forecast_approach == "standard_hierarchy") {
     structure <- hts::hts(stats::ts(bottom), nodes = list(2, c(2, 2)))
     nodes <- hts::get_nodes(structure)
@@ -2070,6 +2102,7 @@ reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE) {
   colnames(targets) <- combos
   offsets <- if (extreme) c(1e-8, rep(1, ncol(targets) - 2), 100) else seq_len(ncol(targets)) / 10
   predictions <- sweep(targets, 2, offsets, "+")
+  if (discontinued) predictions[, "A"] <- c(1e-170, -1e-204, 1e-170)
   splits <- tibble::tibble(Train_Test_ID = c(2, 3, 1), Run_Type = c("Back_Test", "Back_Test", "Future_Forecast"))
   forecast <- tibble::tibble(
     Combo = rep(combos, each = 3), Date = rep(dates, length(combos)),
@@ -2080,6 +2113,10 @@ reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE) {
   ) %>% dplyr::mutate(Combo_ID = Combo, Target = ifelse(Train_Test_ID == 1, NA_real_, Target))
   history <- tibble::tibble(Combo = rep(colnames(bottom), each = 3),
     Date = rep(dates, ncol(bottom)), Target = as.numeric(bottom))
+  if (discontinued) {
+    history <- dplyr::bind_rows(history,
+      tibble::tibble(Combo = "A", Date = as.Date("2023-12-01"), Target = 10))
+  }
   write_data(forecast, "batch", run_info, "data", "forecasts", "-condensed")
   write_data(splits, NULL, run_info, "data", "prep_models", "-train_test_split")
   write_data(history, NULL, run_info, "data", "prep_data", "-hts_data")
@@ -2093,8 +2130,10 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
   original_weights <- reconciliation_weights
   original_read <- read_file
   original_list <- list_files
+  # The remote route builds an Arrow schema before the mocked table read.
+  routes <- c("local", if (requireNamespace("arrow", quietly = TRUE)) "remote")
   for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
-    for (route in c("local", "remote")) {
+    for (route in routes) {
       fixture <- reconciliation_test_case(withr::local_tempdir(), forecast_approach, extreme = TRUE)
       calls <- list()
       listings <- 0L
@@ -2150,6 +2189,69 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
       expect_length(calls, 3)
       expect_equal(agent$Forecast, best$Forecast, tolerance = 1e-8)
       expect_setequal(agent$Run_Type, c("Back_Test", "Future_Forecast"))
+    }
+  }
+})
+
+test_that("discontinued nodes reconcile through Agent and ordinary hierarchy routes", {
+  original_read <- read_file
+  original_weights <- reconciliation_weights
+  # The remote route builds an Arrow schema before the mocked table read.
+  routes <- c("local", if (requireNamespace("arrow", quietly = TRUE)) "remote")
+  for (approach in c("standard_hierarchy", "grouped_hierarchy")) {
+    for (negative_forecast in c(FALSE, TRUE)) {
+      for (route in routes) {
+        fixture <- reconciliation_test_case(withr::local_tempdir(), approach,
+          discontinued = TRUE)
+        weight_calls <- list()
+        # Only Spark table access and parallel dispatch are simulated; both
+        # reconciliation entrypoints execute the real numerical helper and hts.
+        local_mocked_bindings(
+          par_start = function(...) list(cl = NULL, packages = character(),
+            foreach_operator = foreach::`%do%`),
+          read_file = function(run_info, path = NULL, return_type = "df", ...) {
+            if (return_type %in% c("sdf", "arrow")) return(fixture$forecast)
+            original_read(run_info, path = path, return_type = return_type, ...)
+          },
+          reconciliation_weights = function(residuals, negative_forecast) {
+            weights <- original_weights(residuals, negative_forecast)
+            weight_calls[[length(weight_calls) + 1L]] <<- weights
+            expect_true(all(is.finite(weights) & weights > 0))
+            if (negative_forecast) {
+              expect_equal(unname(weights["A"]), 1 / .Machine$double.xmin)
+            }
+            weights
+          }
+        )
+        reconcile_hierarchical_data(fixture$run_info,
+          if (route == "local") NULL else "spark", approach,
+          negative_forecast = negative_forecast, date_type = "month", num_cores = 1)
+        best <- original_read(fixture$run_info, file_list = artifact_test_path(
+          fixture$run_info, "forecasts", "Best-Model", "-reconciled"))
+        agent <- reconcile(dplyr::left_join(fixture$forecast, fixture$splits,
+          by = "Train_Test_ID"), fixture$run_info, approach, negative_forecast)
+        expect_length(weight_calls, 3L)
+        expect_identical(weight_calls[[1]], weight_calls[[3]])
+        expect_equal(agent$Forecast, best$Forecast, tolerance = 1e-8)
+        expect_true(all(is.finite(best$Forecast)))
+        expect_equal(nrow(best), length(fixture$bottom_combos) * nrow(fixture$splits))
+        expect_false(anyDuplicated(best[, c("Combo", "Date", "Train_Test_ID")]) > 0L)
+        expect_identical(unique(best$Model_ID), "Best-Model")
+        if (!negative_forecast) expect_true(all(best$Forecast >= -sqrt(.Machine$double.eps)))
+
+        bottom <- best %>% dplyr::select(Date, Combo, Forecast) %>%
+          tidyr::pivot_wider(names_from = Combo, values_from = Forecast) %>%
+          dplyr::arrange(Date)
+        values <- as.matrix(bottom[, fixture$bottom_combos])
+        structure <- if (approach == "standard_hierarchy") {
+          hts::hts(stats::ts(values), nodes = fixture$nodes)
+        } else {
+          hts::gts(stats::ts(values), groups = fixture$nodes)
+        }
+        aggregates <- as.matrix(hts::aggts(structure))
+        expect_equal(as.numeric(aggregates[, 1]), as.numeric(rowSums(values)), tolerance = 1e-8)
+        expect_true(all(is.finite(aggregates)))
+      }
     }
   }
 })
