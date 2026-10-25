@@ -115,6 +115,10 @@ analysis history within each series, refits the exact approved rule, and predict
 the unchanged holdout. Dates, targets, other drivers and cohort membership stay
 fixed. Ten deterministic cyclic shifts contribute to the mean signed holdout
 RMSE increase; identical scenarios reuse diagnostic predictions within the call.
+The baseline and historical perturbation fits start from the same R random seed,
+so fresh fitting randomness is not counted as driver influence. Driver order and
+cache hits do not advance that starting state, and the caller's RNG state is
+restored. This controls R's RNG, not external nondeterminism inside a custom engine.
 Future historical-only cells are not used. A zero score means these reorderings
 did not change accuracy, not that the rule is independent of the driver's level.
 
@@ -303,6 +307,11 @@ Fitting needs observed `Units_Sold` and `Price_Index`; forecasting needs
 observed units are 100 and future prices are 12 and 13, forecasts are
 `100 * 1.1 * 12 = 1320` and `100 * 1.1^2 * 13 = 1573`.
 Supplied future historical-only values are ignored, not used as a hidden override.
+Unrelated input columns are also excluded before prediction source runs; only
+declared future drivers and the required identity columns are passed through.
+Forecast updates reconstruct the same historical-aware workflow, so newly saved
+and reloaded updated fits still predict without historical-only columns. Existing
+saved fits are not rewritten.
 
 Historical-only does **not** mean carrying forward, imputing, or automatically
 forecasting a driver. An observed lag must specify its window/date alignment and

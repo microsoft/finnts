@@ -83,9 +83,11 @@ get_summarized_models <- function(agent_info) {
 # signed RMSE importance, absolute forecast sensitivity (both target units), and
 # driver-specific method/status rows. No identities, outcomes, peers or holdout
 # inputs move. Identical scenarios reuse predictions only within this call.
+# Each uncached refit replays the baseline's seed, preserving the surrounding
+# RNG state so fitting randomness is not attributed to the perturbed driver.
 # Source/domain errors propagate; no failed scenario is silently omitted.
 custom_summary_historical_importance <- function(analysis, assessment, definition,
-    context, drivers, keys, baseline) {
+    context, drivers, keys, baseline, seed) {
   combos <- unique(assessment$Combo)
   groups <- split(seq_len(nrow(analysis)), analysis$Combo)
   predictors <- assessment[setdiff(names(assessment), "Target")]
@@ -97,6 +99,7 @@ custom_summary_historical_importance <- function(analysis, assessment, definitio
   evaluate <- function(x) {
     key <- digest::digest(x, algo = "sha256")
     if (exists(key, cache, inherits = FALSE)) return(get(key, cache, inherits = FALSE))
+    withr::local_seed(seed)
     fitted <- custom_model_fit_impl(x, analysis$Target, definition, context, allow_code = TRUE)
     prediction <- custom_model_predict_impl(fitted, predictors)
     assign(key, prediction, cache)
@@ -178,6 +181,8 @@ custom_summary_historical_importance <- function(analysis, assessment, definitio
 # score/method/status rows, with explicit warnings for non-estimable diagnostics.
 # Unexpected source/data errors propagate. No artifacts or fitted objects change;
 # trusted source executes with its existing permissions and RNG is restored.
+# The baseline and historical interventions start at the same R seed so random
+# fitting variation is held fixed, independently of driver order and cache hits.
 custom_summary_importance <- function(workflow) {
   fit <- workflows::extract_fit_parsnip(workflow)$fit
   definition <- fit$definition
@@ -186,7 +191,8 @@ custom_summary_importance <- function(workflow) {
   future_drivers <- setdiff(drivers, historical)
   if (!length(drivers)) return(NULL)
   withr::local_preserve_seed()
-  set.seed(42L)
+  seed <- 42L
+  set.seed(seed)
   mold <- workflows::extract_mold(workflow)
   data <- as.data.frame(mold$predictors)
   data$Target <- mold$outcomes[[1]]
@@ -293,7 +299,7 @@ custom_summary_importance <- function(workflow) {
   }))
   if (length(historical)) {
     historical_rows <- custom_summary_historical_importance(analysis, assessment,
-      definition, context, historical, keys, baseline)
+      definition, context, historical, keys, baseline, seed)
     future_metadata <- dplyr::bind_rows(lapply(future_drivers, function(driver) {
       dplyr::bind_rows(lapply(combos, function(combo) {
         tibble::tibble(Combo = combo, section = "importance_metadata",
@@ -362,7 +368,9 @@ summarize_model_custom <- function(workflow, model, mode, combo = NULL, cache = 
 #' never inspect arbitrary fitted model internals or call optional importance
 #' engines. Approved custom driver diagnostics refit on an earlier chronological
 #' analysis window and permute complete holdout predictor cohorts, preserving
-#' the pinned formula, identity and consent. This adds trusted-code execution
+#' the pinned formula, identity and consent. Historical-only diagnostics instead
+#' refit perturbed analysis histories from the same R seed as the baseline,
+#' separating fitting randomness from driver interventions. This adds trusted-code execution
 #' and runtime, but never rewrites saved fits or forecasts. No-driver custom
 #' models retain metadata-only summaries. Global recipients share one in-memory
 #' diagnostic computation per fitted workflow within this invocation.

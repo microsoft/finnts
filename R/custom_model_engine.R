@@ -300,7 +300,9 @@ custom_model_predictor_types <- function(definition, data, phase = "fit") {
 
 # Validate data identities and declared driver types after baking and return data. Recipes turn
 # character predictors into factors by default; restore Combo labels, never their
-# integer codes. Duplicate series/date keys are always rejected.
+# integer codes. Duplicate series/date keys are always rejected. Historical-only
+# prediction bypasses baking, so retain only phase-required columns after
+# validating the original input, including reserved row identity.
 custom_model_data <- function(data, definition, context, phase = "fit") {
   required <- custom_model_phase_predictors(definition, phase)
   if (!is.data.frame(data) || !nrow(data) || anyDuplicated(names(data)) ||
@@ -325,8 +327,8 @@ custom_model_data <- function(data, definition, context, phase = "fit") {
         stop("Custom model requires complete finite predictor values: ", field, ".", call. = FALSE)
     }
   }
-  if (phase == "predict")
-    data <- data[setdiff(names(data), definition$requirements$historical_only_predictors)]
+  if (phase == "predict" && length(definition$requirements$historical_only_predictors))
+    data <- data[required]
   data
 }
 

@@ -17,6 +17,29 @@ test_that("normal local/global workflows predict without fit-only columns after 
   }
 })
 
+test_that("historical workflow prediction isolates declared columns before source execution", {
+  for (mode in c("local", "global")) {
+    definition <- historical_driver_definition(mode)
+    definition$source[["predict"]] <- paste0(
+      "function(object, new_data, context) { ",
+      "stopifnot(setequal(names(new_data), c('Date', 'Combo', 'Price', '.finnts_row'))); ",
+      "units <- vapply(new_data$Combo, function(id) object[[id]], numeric(1)); ",
+      "data.frame(.finnts_row = new_data$.finnts_row, ",
+      ".pred = units * 1.1^context$forecast_step * new_data$Price) }")
+    definition$version_id <- custom_model_definition_digest(definition)
+    panel <- historical_driver_panel(mode == "global")
+    workflow <- custom_run_workflows(definition, panel$history,
+      list(date_type = "month", forecast_horizon = 2))$Model_Workflow[[1]]
+    fitted <- generics::fit(workflow, panel$history)
+    request <- transform(panel$future, Units = "ignored", Target = -999,
+      Target_Original = -888, Other_Model_Driver = 777, Train_Test_ID = 1L)
+    expect_equal(predict(fitted, request)$.pred, panel$expected, tolerance = 1e-8)
+    expect_identical(predict(fitted, request), predict(fitted, panel$future))
+    request$.finnts_row <- seq_len(nrow(request))
+    expect_error(predict(fitted, request), "invalid row identity")
+  }
+})
+
 test_that("four finance rules author, fit and roundtrip through real workflows", {
   local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
     new_llm_session = function(llm) list(), .package = "finnts")
@@ -89,6 +112,13 @@ test_that("real preparation, resampling and saved Agent updates work without fut
   rows <- forecast[which(forecast$Model_Name == "unit_growth" & forecast$Train_Test_ID == 1), ]
   expect_equal(rows$Forecast, c(1452, 1730.3), tolerance = 1e-8)
   expect_no_error(audit_agent_custom_best(load_agent_custom_state(current), get_best_agent_run(current)))
+  child$run_name <- get_best_agent_run(current)$best_run_name[[1]]
+  updated <- read_exact_artifact(child, local_artifact_path(child, "models",
+    "-single_models", hash_data("series1"), extension = "rds"), return_type = "object")
+  expect_s3_class(updated$Model_Fit[[1]], "finnts_custom_workflow")
+  request <- data.frame(Date = as.Date(c("2022-01-01", "2022-02-01")),
+    Combo = "series1", Price = c(12, 13))
+  expect_equal(predict(updated$Model_Fit[[1]], request)$.pred, c(1452, 1730.3), tolerance = 1e-8)
   local_mocked_bindings(fit_models = function(...) stop("Completed update must not refit"),
     .package = "finnts")
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)

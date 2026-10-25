@@ -90,6 +90,65 @@ test_that("mixed custom drivers retain assessment permutation and separate histo
   expect_length(historical_importance_value(summary, "historical_sensitivity", "Price"), 0)
 })
 
+test_that("historical diagnostics do not attribute fitting randomness to unused drivers", {
+  for (mode in c("local", "global")) {
+    fixture <- historical_importance_fixture(mode = mode, peer = mode == "global",
+      fit_source = paste0("function(data, context, parameters) ",
+        "lapply(split(data, data$Combo), function(x) as.numeric(sample.int(1000L, 1L)))"))
+    withr::local_preserve_seed()
+    set.seed(81)
+    seed <- .Random.seed
+    summary <- summarize_model_custom(fixture$workflow, fixture$model, mode)
+    expect_equal(historical_importance_value(summary, "importance"), rep(0, if (mode == "global") 2 else 1))
+    expect_equal(historical_importance_value(summary, "historical_sensitivity"), rep(0, if (mode == "global") 2 else 1))
+    expect_identical(.Random.seed, seed)
+  }
+})
+
+test_that("historical refits replay the baseline RNG independently of driver order and cache hits", {
+  fixture <- historical_importance_fixture(mode = "global", peer = TRUE,
+    fit_source = paste0("function(data, context, parameters) lapply(split(data, data$Combo), ",
+      "function(x) x$History[[nrow(x)]] + as.numeric(sample.int(1000L, 1L)))"))
+  definition <- fixture$model$definition
+  definition$requirements$predictors <- c("History", "Unused")
+  definition$requirements$historical_only_predictors <- c("History", "Unused")
+  definition$requirements$predictor_types$Unused <- "number"
+  definition$version_id <- custom_model_definition_digest(definition)
+  model <- fixture$model
+  model$definition <- definition
+  model$approval$version_id <- model$validation$version_id <- definition$version_id
+  data <- fixture$data
+  data$Unused <- rep(c(2, 2, 4, 4, 4), 2)
+  rows <- custom_run_workflows(definition, data, list(date_type = "month", forecast_horizon = 2L))
+  workflow <- generics::fit(rows$Model_Workflow[[match("global", rows$Model_Type)]], data)
+  original_fit <- custom_model_fit_impl
+  seeds <- list()
+  # Record each actual fit's entry seed; repeated scenarios may hit the cache.
+  local_mocked_bindings(custom_model_fit_impl = function(...) {
+    seeds[[length(seeds) + 1L]] <<- .Random.seed
+    original_fit(...)
+  }, .package = "finnts")
+  first <- summarize_model_custom(workflow, model, "global")
+  expect_gt(length(seeds), 1L)
+  expect_true(all(vapply(seeds, identical, logical(1), seeds[[1]])))
+  expect_equal(historical_importance_value(first, "importance", "Unused"), c(0, 0))
+  expect_equal(historical_importance_value(first, "historical_sensitivity", "Unused"), c(0, 0))
+  expect_equal(historical_importance_value(first, "historical_sensitivity"), c(0.3, 0.3))
+  definition$requirements$historical_only_predictors <- c("Unused", "History")
+  definition$version_id <- custom_model_definition_digest(definition)
+  model$definition <- definition
+  model$approval$version_id <- model$validation$version_id <- definition$version_id
+  rows <- custom_run_workflows(definition, data, list(date_type = "month", forecast_horizon = 2L))
+  workflow <- generics::fit(rows$Model_Workflow[[match("global", rows$Model_Type)]], data)
+  second <- summarize_model_custom(workflow, model, "global")
+  for (section in c("importance", "historical_sensitivity")) {
+    for (driver in c("History", "Unused")) {
+      expect_equal(historical_importance_value(first, section, driver),
+        historical_importance_value(second, section, driver))
+    }
+  }
+})
+
 test_that("historical diagnostics preserve analysis targets, RNG and cached global cohorts", {
   fixture <- historical_importance_fixture(mode = "global", peer = TRUE)
   original_fit <- custom_model_fit_impl
