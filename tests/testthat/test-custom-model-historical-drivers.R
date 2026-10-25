@@ -71,6 +71,14 @@ test_that("availability-aware table parsing permits blank future history-only ce
   bad$Price[is.na(bad$Target)] <- NA_real_
   expect_error(custom_examples_from_table(bad, "Target", NULL, c("Units", "Price"), "local",
     historical_only_predictors = "Units"), "Price.*filled")
+  partial <- table
+  partial$Price[which(is.na(partial$Target))[[1L]]] <- NA_real_
+  expect_error(custom_examples_from_table(partial, "Target", NULL, c("Units", "Price"), "local",
+    defer_future = TRUE), "Price.*filled")
+  nonfinite <- table
+  nonfinite$Price[which(is.na(nonfinite$Target))[[1L]]] <- Inf
+  expect_error(custom_examples_from_table(nonfinite, "Target", NULL, c("Units", "Price"), "local",
+    defer_future = TRUE), "Price.*filled")
 })
 
 test_that("new authoring freezes availability before validating future inputs", {
@@ -82,7 +90,7 @@ test_that("new authoring freezes availability before validating future inputs", 
     schema = list(Units = "numeric", Price = "numeric"), available_packages = "base")
   protocol <- custom_author_protocol(metadata, "local", c("Units", "Price"), "base_only", TRUE)
   example <- list(name = "ordinary", model_type = "local", history = panel$history,
-    new_data = panel$future, expected = transform(panel$future, .pred = panel$expected)[c("Date", "Combo", ".pred")],
+    new_data = transform(panel$future, Units = NA_real_), expected = transform(panel$future, .pred = panel$expected)[c("Date", "Combo", ".pred")],
     tolerance = 1e-8, edge_case = FALSE, rationale = "Independent growth oracle.",
     outcome = "predictions", expected_error = NULL)
   edge <- example
@@ -94,9 +102,10 @@ test_that("new authoring freezes availability before validating future inputs", 
   contract <- custom_author_contract(proposal, "Forecast units internally at ten percent; use supplied future price.",
     metadata, NULL, "local", list(example, edge), protocol)
   expect_identical(contract$requirements$historical_only_predictors, "Units")
+  expect_false("Units" %in% names(contract$examples[[1]]$new_data))
   expect_error(custom_author_contract(within(proposal, historical_only_predictors <- character()),
     "Use supplied future units.", metadata, NULL, "local", list(example, edge), protocol),
-    "columns.*match")
+    "identities|columns.*match")
   history_only <- custom_author_data(raw, NULL, "Combo", "value", "month", 2,
     c("Units", "Price"), NULL, NULL, defer_future = TRUE)
   expect_identical(history_only$future_valid, c(Units = FALSE, Price = FALSE))

@@ -190,9 +190,8 @@ custom_summary_importance <- function(workflow) {
   historical <- definition$requirements$historical_only_predictors
   future_drivers <- setdiff(drivers, historical)
   if (!length(drivers)) return(NULL)
-  withr::local_preserve_seed()
   seed <- 42L
-  set.seed(seed)
+  withr::local_seed(seed)
   mold <- workflows::extract_mold(workflow)
   data <- as.data.frame(mold$predictors)
   data$Target <- mold$outcomes[[1]]
@@ -210,6 +209,12 @@ custom_summary_importance <- function(workflow) {
     }))
     if (!length(historical)) return(metadata)
     metadata$value[metadata$name == "method"] <- "Driver-specific history/refit diagnostics unavailable; see status."
+    future_details <- dplyr::bind_rows(lapply(future_drivers, function(driver) {
+      dplyr::bind_rows(lapply(combos, function(combo) {
+        tibble::tibble(Combo = combo, section = "importance_metadata",
+          name = paste0(c("method:", "status:"), driver), value = c(method, reason))
+      }))
+    }))
     details <- dplyr::bind_rows(lapply(historical, function(driver) {
       dplyr::bind_rows(lapply(combos, function(combo) {
         tibble::tibble(Combo = combo,
@@ -220,7 +225,7 @@ custom_summary_importance <- function(workflow) {
             reason))
       }))
     }))
-    dplyr::bind_rows(metadata, details)
+    dplyr::bind_rows(metadata, future_details, details)
   }
   horizon <- fit$context$forecast_horizon
   if (any(table(data$Combo) < horizon + definition$requirements$history$workflow_minimum_rows_per_series))

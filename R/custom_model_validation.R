@@ -553,6 +553,15 @@ custom_examples_from_table <- function(table, target_variable, combo_variables, 
           "example '", name, "': driver column ", driver, " must be filled on every row, including future rows."
         ))
       }
+      if (defer_future && !driver %in% historical_only_predictors) {
+        future_values <- table[[driver]][future_rows]
+        if ((is.numeric(future_values) && any(!is.na(future_values) & !is.finite(future_values))) ||
+          (anyNA(future_values) && !all(is.na(future_values)))) {
+          custom_author_abort("examples", paste0(
+            "example '", name, "': driver column ", driver, " must be filled on every row, including future rows."
+          ))
+        }
+      }
     }
     keep <- c(drivers)
     history <- data.frame(Date = table$Date[history_rows], Combo = combo[history_rows], Target = table[[target]][history_rows], stringsAsFactors = FALSE)
@@ -619,8 +628,9 @@ custom_examples_from_table <- function(table, target_variable, combo_variables, 
 
 # Convert a reviewed example table from plain data.frame or JSON row records.
 # Dates are strict ISO dates, identities are character, numeric values finite.
+# Optional exclude removes declared historical-only columns before missingness checks.
 # No code or arbitrary classes are accepted; returns a stable local data.frame.
-custom_author_table <- function(value) {
+custom_author_table <- function(value, exclude = NULL) {
   if (is.list(value) && !is.data.frame(value)) {
     custom_run_passive(value)
     value <- dplyr::bind_rows(value)
@@ -630,6 +640,9 @@ custom_author_table <- function(value) {
     custom_author_abort("examples", "Expected a nonempty Date/Combo table with unique columns (at most 2000 rows).")
   }
   value <- as.data.frame(value, stringsAsFactors = FALSE)
+  if (length(exclude)) {
+    value <- value[setdiff(names(value), exclude)]
+  }
   if (is.character(value$Date)) {
     if (anyNA(value$Date) || any(!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", value$Date)))
       custom_author_abort("examples", "Dates must be ISO dates.")
@@ -681,7 +694,10 @@ custom_author_examples <- function(examples, definition, metadata) {
       custom_author_abort("examples", "Worked-example model_type must belong to the declared model modes.", code = "example_mode")
     }
     example$history <- custom_author_table(example$history)
-    example$new_data <- custom_author_table(example$new_data)
+    example$new_data <- custom_author_table(
+      example$new_data,
+      definition$requirements$historical_only_predictors
+    )
     error_case <- identical(example$outcome, "error")
     if ((!custom_author_text(example$outcome) || !example$outcome %in% c("predictions", "error") || (!error_case && !is.null(example$expected_error))))
       custom_author_error_contract("invalid_error_declaration", field = "examples.outcome",
@@ -710,8 +726,6 @@ custom_author_examples <- function(examples, definition, metadata) {
     }
     predictors <- custom_run_predictors(definition, example$history)
     future_predictors <- custom_model_phase_predictors(definition, "predict")
-    example$new_data <- example$new_data[setdiff(names(example$new_data),
-      definition$requirements$historical_only_predictors)]
     if (!is.numeric(example$history$Target) || any(!is.finite(example$history$Target)) || "Target" %in% names(example$new_data) ||
       !all(future_predictors %in% names(example$new_data)) || (!error_case && (!setequal(names(example$expected), c(
       "Combo",

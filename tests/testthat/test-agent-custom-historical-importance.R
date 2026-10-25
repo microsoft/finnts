@@ -96,11 +96,14 @@ test_that("historical diagnostics do not attribute fitting randomness to unused 
       fit_source = paste0("function(data, context, parameters) ",
         "lapply(split(data, data$Combo), function(x) as.numeric(sample.int(1000L, 1L)))"))
     withr::local_preserve_seed()
+    RNGkind("L'Ecuyer-CMRG")
     set.seed(81)
+    kind <- RNGkind()
     seed <- .Random.seed
     summary <- summarize_model_custom(fixture$workflow, fixture$model, mode)
     expect_equal(historical_importance_value(summary, "importance"), rep(0, if (mode == "global") 2 else 1))
     expect_equal(historical_importance_value(summary, "historical_sensitivity"), rep(0, if (mode == "global") 2 else 1))
+    expect_identical(RNGkind(), kind)
     expect_identical(.Random.seed, seed)
   }
 })
@@ -230,7 +233,7 @@ test_that("historical holdout guards disclose both diagnostic methods before ref
   rows <- custom_run_workflows(fixture$model$definition, data,
     list(date_type = "month", forecast_horizon = 2L))
   gap <- generics::fit(rows$Model_Workflow[[1]], data)
-  lagged <- historical_importance_fixture(required_lags = 1L)
+  lagged <- historical_importance_fixture(price = 1:5, required_lags = 1L)
   local_mocked_bindings(custom_model_fit_impl = function(...) stop("unexpected diagnostic fit"),
     .package = "finnts")
   expect_warning(summary <- summarize_model_custom(short, fixture$model, "local"), "insufficient")
@@ -240,6 +243,8 @@ test_that("historical holdout guards disclose both diagnostic methods before ref
   expect_false(any(summary$section %in% c("importance", "historical_sensitivity")))
   expect_warning(summary <- summarize_model_custom(lagged$workflow, lagged$model, "local"), "lags")
   expect_false(any(summary$section %in% c("importance", "historical_sensitivity")))
+  expect_true(all(c("method:Price", "status:Price", "method:History", "status:History") %in%
+    summary$name[summary$section == "importance_metadata"]))
 })
 
 test_that("cohort keys cannot be declared historical-only diagnostic drivers", {
