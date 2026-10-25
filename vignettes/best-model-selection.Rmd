@@ -97,7 +97,7 @@ Newly generated Agent model summaries include custom-driver importance without
 requiring `vip`. Finn holds out the latest complete historical forecast horizon,
 refits the exact approved rule on earlier history once per fitted workflow, and
 compares baseline holdout RMSE with ten deterministic cyclic permutations of
-each eligible driver. The score is the **mean signed increase in holdout RMSE**,
+each eligible future-required driver. The score is the **mean signed increase in holdout RMSE**,
 in target units. Zero and negative scores are retained. Scores are conditional
 on the supplied assessment drivers, chosen holdout and correlations; they are
 not causal attribution, percentages, or a model-selection criterion.
@@ -110,13 +110,54 @@ with the same permissions as forecasting; it adds runtime and is not sandboxed.
 It does not overwrite saved fits or forecasts. No-driver models need no extra
 diagnostic fitting.
 
+For approved **historical-only drivers**, Finn instead permutes the earlier
+analysis history within each series, refits the exact approved rule, and predicts
+the unchanged holdout. Dates, targets, other drivers and cohort membership stay
+fixed. Ten deterministic cyclic shifts contribute to the mean signed holdout
+RMSE increase; identical scenarios reuse diagnostic predictions within the call.
+Future historical-only cells are not used. A zero score means these reorderings
+did not change accuracy, not that the rule is independent of the driver's level.
+
+Finn also reports **historical-level sensitivity** separately for plain numeric
+historical-only drivers: it refits on history scaled by 0.9 and 1.1, then reports
+the mean absolute forecast change across both scenarios and holdout dates, in
+target units. This is not an accuracy score or causal contribution and must not
+be combined with importance rankings or normalized to percentages.
+For example, a rule forecasting the historical mean of `c(1, 2, 3)` has zero
+permutation importance because reordering preserves its mean of 2. Scaling
+produces forecasts of 1.8 and 2.2, so its level sensitivity is 0.2.
+
+Historical diagnostics add at most ten permutation refits and two level refits
+per historical-only driver, plus one shared baseline. Constant nonzero history
+can have level sensitivity but not permutation importance. All-zero history has
+no nontrivial multiplicative level intervention; categorical history supports
+type-preserving permutation but not numeric scaling. Classed numeric history is
+not silently coerced for scaling. Cohort keys never move. These perturbations
+can disrupt temporal structure or violate business constraints; they are
+conditional diagnostics, not a claim that every custom rule is estimable.
+Custom source/domain and nonfinite-result errors remain visible rather than
+being converted to zero or averages of successful scenarios.
+
 Insufficient history or lags, incomplete historical holdouts, and constant or
-cohort-key drivers are explicitly reported as not estimable, rather than given
+cohort-key assessment drivers are explicitly reported as not estimable, rather than given
 invented zero scores. Unexpected source, identity, data or storage errors still
 fail. Summary artifacts retain their existing columns and add `importance`
 rows (`name` is the driver, `value` is its score), plus
 `importance_metadata` method/status rows. Consumers should accept these
 additional rows. Existing completed runs and saved summaries are not migrated.
+
+For models declaring historical-only drivers, `importance_metadata` additionally
+records `method:<driver>` and `status:<driver>` rows. Match these using the same
+Combo/model identifiers and driver name; future-required and historical-only
+importance use different perturbations even though both report signed RMSE
+increases. `historical_sensitivity` contains the separate numeric level scores,
+with `historical_sensitivity_metadata` holding their driver-specific method and
+status. Missing/not-estimable scores are not zero. Ordinary future-only custom
+summaries and standard Finn ML importance retain their existing output.
+Explicitly regenerating a summary can write the new diagnostic rows, but
+reading an older summary does not rewrite it. The CSV remains the same flat
+eight-column table: `Combo`, `Model_ID`, `Model_Name`, `Model_Type`, `Best_Model`,
+`section`, `name`, `value`.
 
 New calls default to local models. Raw input must contain a column named `Date`
 and an explicit target and horizon. Grouping can be omitted only when dates are

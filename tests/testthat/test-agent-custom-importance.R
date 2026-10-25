@@ -17,6 +17,8 @@ test_that("custom summaries report independently checked backtest permutation im
   expect_identical(scores$name, "Driver")
   expect_equal(as.numeric(scores$value), 1)
   expect_true(any(grepl("rmse", summary$value, ignore.case = TRUE)))
+  expect_false(any(grepl("historical_sensitivity", summary$section, fixed = TRUE)))
+  expect_setequal(summary$name[summary$section == "importance_metadata"], c("method", "status"))
   expect_identical(serialize(fixture$workflow, NULL), before)
 })
 

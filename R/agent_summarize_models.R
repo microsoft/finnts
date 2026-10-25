@@ -77,10 +77,104 @@ get_summarized_models <- function(agent_info) {
   return(model_summary_tbl)
 }
 
-# Compute conditional driver importance on the latest complete historical
+# Compute historical-only diagnostics from an already validated analysis/holdout
+# split and baseline. Refit the pinned rule on within-series cyclic history
+# shifts and, separately, +/-10% plain numeric history scaling. Return per-series
+# signed RMSE importance, absolute forecast sensitivity (both target units), and
+# driver-specific method/status rows. No identities, outcomes, peers or holdout
+# inputs move. Identical scenarios reuse predictions only within this call.
+# Source/domain errors propagate; no failed scenario is silently omitted.
+custom_summary_historical_importance <- function(analysis, assessment, definition,
+    context, drivers, keys, baseline) {
+  combos <- unique(assessment$Combo)
+  groups <- split(seq_len(nrow(analysis)), analysis$Combo)
+  predictors <- assessment[setdiff(names(assessment), "Target")]
+  original <- analysis[setdiff(names(analysis), "Target")]
+  cache <- new.env(parent = emptyenv())
+  if (!is.null(baseline)) assign(digest::digest(original, algo = "sha256"), baseline, cache)
+  # Evaluate each distinct analysis input once. The target and complete cohort
+  # stay fixed, and the exact approved source/consent boundary owns every refit.
+  evaluate <- function(x) {
+    key <- digest::digest(x, algo = "sha256")
+    if (exists(key, cache, inherits = FALSE)) return(get(key, cache, inherits = FALSE))
+    fitted <- custom_model_fit_impl(x, analysis$Target, definition, context, allow_code = TRUE)
+    prediction <- custom_model_predict_impl(fitted, predictors)
+    assign(key, prediction, cache)
+    prediction
+  }
+  # Score each recipient only after a full-cohort prediction. Preserve signed
+  # RMSE differences; sensitivity measures forecast movement, not accuracy.
+  measure <- function(prediction, sensitivity = FALSE) {
+    vapply(combos, function(combo) {
+      take <- assessment$Combo == combo
+      if (sensitivity) return(mean(abs(prediction[take] - baseline[take])))
+      sqrt(mean((assessment$Target[take] - prediction[take])^2)) -
+        sqrt(mean((assessment$Target[take] - baseline[take])^2))
+    }, numeric(1))
+  }
+  # Emit long-form rows without changing the public summary's column schema.
+  score_rows <- function(section, driver, values) {
+    if (any(!is.finite(values)))
+      stop("Custom historical driver diagnostic produced nonfinite values: ", driver, ".", call. = FALSE)
+    tibble::tibble(Combo = combos, section = section, name = driver,
+      value = as.character(values))
+  }
+  metadata_rows <- function(section, driver, method, status) {
+    dplyr::bind_rows(lapply(combos, function(combo) {
+      tibble::tibble(Combo = combo, section = section,
+        name = paste0(c("method:", "status:"), driver), value = c(method, status))
+    }))
+  }
+  permutation_method <- paste("Mean signed holdout RMSE increase; 10 deterministic within-series",
+    "historical permutations with refitting; target units; conditional, not causal;",
+    "zero does not rule out historical level dependence.")
+  sensitivity_method <- paste("Mean absolute forecast change under -10% and +10% numeric",
+    "historical scaling with refitting; target units; sensitivity, not RMSE importance or causal attribution.")
+  rows <- list()
+  for (driver in drivers) {
+    varying <- any(vapply(groups, function(indices) {
+      length(unique(analysis[[driver]][indices])) > 1L
+    }, logical(1)))
+    status <- if (driver %in% keys) "not estimable: cohort-key driver" else if (!varying)
+      "not estimable: constant within-series analysis history" else "estimated"
+    if (identical(status, "estimated")) {
+      differences <- vapply(seq_len(10L), function(iteration) {
+        permuted <- original
+        for (indices in groups) {
+          order <- ((seq_along(indices) - 1L + iteration) %% length(indices)) + 1L
+          permuted[[driver]][indices] <- original[[driver]][indices[order]]
+        }
+        measure(evaluate(permuted))
+      }, numeric(length(combos)))
+      rows[[length(rows) + 1L]] <- score_rows("importance", driver,
+        rowMeans(matrix(differences, nrow = length(combos))))
+    } else warning("Custom historical driver importance ", driver, " ", status, call. = FALSE)
+    rows[[length(rows) + 1L]] <- metadata_rows("importance_metadata", driver,
+      permutation_method, status)
+    values <- original[[driver]]
+    status <- if (driver %in% keys) "not estimable: cohort-key driver" else if (
+      !is.numeric(values) || is.object(values)) "not estimable: scaling requires plain numeric history" else if (
+      all(values == 0)) "not estimable: all-zero history has no multiplicative level change" else "estimated"
+    if (identical(status, "estimated")) {
+      changes <- vapply(c(0.9, 1.1), function(multiplier) {
+        scaled <- original
+        scaled[[driver]] <- values * multiplier
+        measure(evaluate(scaled), sensitivity = TRUE)
+      }, numeric(length(combos)))
+      rows[[length(rows) + 1L]] <- score_rows("historical_sensitivity", driver,
+        rowMeans(matrix(changes, nrow = length(combos))))
+    } else warning("Custom historical driver sensitivity ", driver, " ", status, call. = FALSE)
+    rows[[length(rows) + 1L]] <- metadata_rows("historical_sensitivity_metadata", driver,
+      sensitivity_method, status)
+  }
+  dplyr::bind_rows(rows)
+}
+
+# Compute conditional driver diagnostics on the latest complete historical
 # horizon, never the fitted engine's in-sample dates. Refit the pinned definition
-# once on earlier rows and average ten deterministic cyclic permutations' signed
-# RMSE increases. Identity/date and cohort keys never move. Returns per-series
+# once on earlier rows for future-driver permutations; historical-only drivers
+# use isolated analysis-history refits and separate level sensitivity.
+# Identity/date and cohort keys never move. Returns per-series
 # score/method/status rows, with explicit warnings for non-estimable diagnostics.
 # Unexpected source/data errors propagate. No artifacts or fitted objects change;
 # trusted source executes with its existing permissions and RNG is restored.
@@ -88,6 +182,8 @@ custom_summary_importance <- function(workflow) {
   fit <- workflows::extract_fit_parsnip(workflow)$fit
   definition <- fit$definition
   drivers <- setdiff(definition$requirements$predictors, c("Date", "Combo"))
+  historical <- definition$requirements$historical_only_predictors
+  future_drivers <- setdiff(drivers, historical)
   if (!length(drivers)) return(NULL)
   withr::local_preserve_seed()
   set.seed(42L)
@@ -102,10 +198,23 @@ custom_summary_importance <- function(workflow) {
   # is possible. The enclosing contract owns these callbacks and their warnings.
   unavailable <- function(reason) {
     warning("Custom driver importance not estimable: ", reason, call. = FALSE)
-    dplyr::bind_rows(lapply(combos, function(combo) {
+    metadata <- dplyr::bind_rows(lapply(combos, function(combo) {
       tibble::tibble(Combo = combo, section = "importance_metadata",
         name = c("method", "status"), value = c(method, reason))
     }))
+    if (!length(historical)) return(metadata)
+    metadata$value[metadata$name == "method"] <- "Driver-specific history/refit diagnostics unavailable; see status."
+    details <- dplyr::bind_rows(lapply(historical, function(driver) {
+      dplyr::bind_rows(lapply(combos, function(combo) {
+        tibble::tibble(Combo = combo,
+          section = rep(c("importance_metadata", "historical_sensitivity_metadata"), each = 2L),
+          name = rep(paste0(c("method:", "status:"), driver), 2L),
+          value = c("Historical permutation/refit; signed holdout RMSE increase; target units; not causal.",
+            reason, "-10%/+10% historical scaling/refit; absolute forecast change; target units; not causal.",
+            reason))
+      }))
+    }))
+    dplyr::bind_rows(metadata, details)
   }
   horizon <- fit$context$forecast_horizon
   if (any(table(data$Combo) < horizon + definition$requirements$history$workflow_minimum_rows_per_series))
@@ -139,15 +248,18 @@ custom_summary_importance <- function(workflow) {
   groups <- if (length(keys)) {
     split(seq_len(nrow(predictors)), interaction(predictors[keys], drop = TRUE, lex.order = TRUE))
   } else list(seq_len(nrow(predictors)))
-  eligible <- setdiff(drivers, keys)
+  eligible <- setdiff(future_drivers, keys)
   eligible <- eligible[vapply(eligible, function(driver) {
     any(vapply(groups, function(indices) length(unique(predictors[[driver]][indices])) > 1L, logical(1)))
   }, logical(1))]
   rows <- list()
-  if (length(eligible)) {
+  baseline <- NULL
+  if (length(eligible) || length(setdiff(historical, keys))) {
     fitted <- custom_model_fit_impl(analysis[setdiff(names(analysis), "Target")],
       analysis$Target, definition, context, allow_code = TRUE)
     baseline <- custom_model_predict_impl(fitted, predictors)
+  }
+  if (length(eligible)) {
     # Permute within declared groups; all peers and the full horizon remain in
     # every prediction request, including global allocation/cohort models.
     for (driver in eligible) {
@@ -171,7 +283,7 @@ custom_summary_importance <- function(workflow) {
         name = driver, value = as.character(rowMeans(differences)))
     }
   }
-  excluded <- setdiff(drivers, eligible)
+  excluded <- setdiff(future_drivers, eligible)
   status <- if (length(excluded)) paste("not estimable for cohort-key or constant holdout drivers:",
     paste(excluded, collapse = ", ")) else "estimated"
   if (length(excluded)) warning("Custom driver importance ", status, call. = FALSE)
@@ -179,6 +291,21 @@ custom_summary_importance <- function(workflow) {
     tibble::tibble(Combo = combo, section = "importance_metadata",
       name = c("method", "status"), value = c(method, status))
   }))
+  if (length(historical)) {
+    historical_rows <- custom_summary_historical_importance(analysis, assessment,
+      definition, context, historical, keys, baseline)
+    future_metadata <- dplyr::bind_rows(lapply(future_drivers, function(driver) {
+      dplyr::bind_rows(lapply(combos, function(combo) {
+        tibble::tibble(Combo = combo, section = "importance_metadata",
+          name = paste0(c("method:", "status:"), driver),
+          value = c(method, if (driver %in% eligible) "estimated" else
+            "not estimable: cohort-key or constant holdout driver"))
+      }))
+    }))
+    metadata$value[metadata$name == "method"] <- "Driver-specific methods are recorded as method:<driver>; do not combine historical sensitivity with RMSE importance."
+    metadata$value[metadata$name == "status"] <- "See driver-specific status:<driver> rows for diagnostic applicability."
+    return(dplyr::bind_rows(c(rows, list(metadata, future_metadata, historical_rows))))
+  }
   dplyr::bind_rows(c(rows, list(metadata)))
 }
 
