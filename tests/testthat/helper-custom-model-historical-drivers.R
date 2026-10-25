@@ -113,3 +113,11 @@ historical_finance_examples <- function(case) {
   edge$edge_case <- TRUE
   list(example, edge)
 }
+
+# Return R source text raising a declared business-rule error with `code`. The
+# condition matches the finntsRuleError() helper injected into authored models
+# (class finnts_custom_rule_error with a bounded code), without parsing it here.
+custom_rule_error_source <- function(code) {
+  paste0("stop(structure(list(message = 'Custom rule error: ", code, "', call = NULL, code = '",
+    code, "'), class = c('finnts_custom_rule_error', 'error', 'condition')))")
+}

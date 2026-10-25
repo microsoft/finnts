@@ -92,6 +92,8 @@ validate_custom_model_control <- function(control) {
 # fields, labelled as provider statements rather than verified input failures.
 # Optional explanation is a provider statement already passed through
 # custom_author_provider_explanation(); it is appended and labelled as such.
+# Optional error_contract is bounded package-built mismatch evidence checked by
+# validate_custom_author_error_contract(); it never contains provider text.
 custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, field = NULL, bindings = NULL, explanation = NULL,
                                 error_contract = NULL) {
   explanation <- custom_author_provider_explanation(explanation)
@@ -219,6 +221,8 @@ custom_author_predictor_types <- function(metadata, predictors) {
 # objects. This describes shape, not the truth of independent expected answers.
 # Explicit property maps preserve predictor names that resemble ellmer arguments.
 # Tagged outcomes and bounded extra error scenarios specify shape, not formulas.
+# Future driver arrays are optional keys because availability is declared in the
+# same response; custom_author_scaffold_examples() enforces required future drivers.
 custom_author_example_type <- function(protocol) {
   scalar <- function(kind) switch(kind,
     number = ellmer::type_number(),
@@ -681,6 +685,8 @@ custom_author_failure_messages <- function() {
 # its runtime condition text is never copied into the failure record.
 # Optional explanation is a sanitized provider statement, kept only for declined
 # source_contract responses (implementation_difficulty or contract_conflict).
+# Optional error_contract is validated package-built evidence and is accepted
+# only for invalid_error_contract failures.
 custom_author_failure <- function(
     definition, phase, reason = "candidate_error", example_index = NULL, model_type = NULL,
     error = NULL, comparisons = list(), dependency = NULL, bindings = NULL, rule_error = NULL, property = NULL, unbound_symbol = NULL,
@@ -718,7 +724,8 @@ custom_author_failure <- function(
 # Missing-variable evidence is optional for legacy records, paired with its
 # reason, and rechecked against source whenever the definition is available.
 # Provider explanations are allowed only on declined source_contract records and
-# must already be in sanitized form.
+# must already be in sanitized form. Error-contract evidence is allowed only on
+# invalid_error_contract records and must pass its bounded validator.
 validate_custom_author_failure <- function(failure, definition = NULL) {
   custom_author_fields(failure, c(
     "version_id", "phase", "reason", "message", "example_index", "model_type",
@@ -1146,6 +1153,8 @@ custom_author_line <- function(label, value, limit = 600L) {
 # Repair reviews explain the prior bounded failure, version change and function
 # names changed; no raw exception, source text or private data is printed by default.
 # Recognized missing-variable failures show only the validated source identifier.
+# Definitions with historical-only drivers also list those and the drivers still
+# required in every forecast period, so reviewers can check availability.
 custom_author_review <- function(review, details = FALSE) {
   contract <- review$contract
   definition <- review$definition
@@ -1854,7 +1863,8 @@ custom_author_behavior_contract <- function(error_policy, properties, examples, 
 # Match saved protocol/field options and declared predictor types, but use a small
 # independent two-period task, base-only packages and no caller observations.
 # The nested builder materializes fixed mean or driver arithmetic without running
-# source. Contract demonstrations include a clarification; source demonstrations
+# source. Contract demonstrations include a clarification and, when drivers
+# exist, an explicit empty historical_only_predictors array; source demonstrations
 # include portable state and row-ordered predictions. Only tests execute their source.
 # These references never enter accepted contracts, draft hashes or consent records.
 custom_author_prompt_examples <- function(stage, payload) {
@@ -1994,6 +2004,10 @@ custom_author_prompt_examples <- function(stage, payload) {
       response$defaults_used <- character()
     }
     response <- response[custom_author_contract_fields(protocol, payload$name, payload$model_type, automatic)]
+    # The live contract schema requests explicit driver availability whenever
+    # drivers exist; these demonstrations use supplied future values for all.
+    if (length(predictors))
+      response$historical_only_predictors <- character()
     if (stage == "contract")
       return(list(request = request, response = response))
     proposal <- response
@@ -2134,6 +2148,8 @@ custom_author_source_response <- function(proposal) {
 # Construct one current typed provider request from fixed metadata, contract and bounded repair evidence.
 # Separate synthetic demonstrations from the actual payload; neither changes caller examples or approval.
 # Contract requests own interpretation/types/error declarations; source requests own calculation bodies.
+# When drivers exist, contract requests also ask for historical_only_predictors
+# and add driver-availability instructions; blank future cells are never a signal.
 # The supplied isolated session performs one structured request. Operational errors retain only bounded diagnostics.
 custom_author_request <- function(session, stage, payload) {
   automatic <- identical(payload$approval_mode, "automatic")
@@ -2387,6 +2403,9 @@ custom_author_request <- function(session, stage, payload) {
 # Normalize parameter types and group declarations, validate required history and
 # error coverage, and record example provenance without proving arithmetic. The
 # temporary definition is inert. No accepted oracle or caller capability changes.
+# Optional historical_only_predictors must be a unique subset of declared drivers;
+# a nonempty set is stored sorted in requirements, and an empty set is omitted
+# so the definition and its digest match a legacy future-only contract.
 custom_author_contract <- function(proposal, instructions, metadata, name, model_type, examples, protocol = NULL, required_properties = character()) {
   supplied_examples <- !is.null(examples)
   declarations <- proposal[c("parameter_schema", "error_policy", "validation_properties")]

@@ -39,6 +39,9 @@ custom_model_spec <- function(definition, context, allow_code = FALSE) {
 # Compose an unfitted workflow from an M1 definition and an unprepped recipe.
 # Explicit context describes the prepared representation, not global run state.
 # Construction is inert; allow_code will gate execution rather than construction.
+# Definitions with historical-only drivers require the zero-step C1 recipe
+# (otherwise an error) and gain the finnts_custom_workflow class, whose fit and
+# predict methods let prediction omit those drivers instead of baking them.
 custom_model_workflow <- function(definition, recipe, model_type, recipe_id,
                                   date_type, forecast_horizon, target_scale,
                                   allow_code = FALSE) {

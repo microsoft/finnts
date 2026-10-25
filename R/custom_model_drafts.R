@@ -50,6 +50,7 @@ custom_draft_source_fingerprints <- function(source) {
 # passive proposal, never a Chat, full state or arbitrary condition. Unknown or
 # executable fields are omitted explicitly. The enclosing diagnostic cap may
 # remove the proposal while retaining its hash and package-owned field/code.
+# historical_only_predictors is always whitelisted because it is optional.
 custom_draft_contract_rejection <- function(proposal, settings, failure, field = NULL) {
   allowed <- c(custom_author_contract_fields(settings$authoring_protocol, settings$name, settings$model_type, identical(
     settings$approval_mode,
@@ -421,6 +422,10 @@ custom_draft_authorize <- function(state) {
 # actions distinguish needed consent, new business input and exhausted budgets.
 # Preflight conditions retain only known stage labels; absent state/model means
 # approval policy is unknown. Manual candidate review requires user input too.
+# Error-contract evidence comes from the condition, or from the latest recorded
+# failure only when that failure produced this condition's code. When it marks
+# required caller input, the report uses one package-generated question and
+# "package_generated" provenance; contract_conflict also returns needs_input.
 custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
   approved <- is.null(error) && (identical(state$status, "approved") || !is.null(model))
   failure <- if (is.null(error) || !length(state$diagnostics$history))
@@ -439,7 +444,11 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
       "operation_failed"
     else "invalid_input"
   }
-  error_contract <- failure$error_contract %||% error$error_contract
+  # Reuse recorded error-contract evidence only for the failure that produced
+  # this condition; an older rejection must not annotate an unrelated error.
+  error_contract <- if (!is.null(failure) && identical(code, failure$reason))
+    failure$error_contract %||% error$error_contract
+  else error$error_contract
   needs_input <- identical(state$stage, "clarify") || code %in% c("business_clarification", "contract_conflict") ||
     isTRUE(error_contract$requires_caller_input)
   status <- if (approved)
@@ -497,10 +506,15 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
   questions <- state$pending$questions
   package_questions <- !is.null(error_contract) && isTRUE(error_contract$requires_caller_input)
   if (package_questions) {
-    questions <- list(paste("Supply an independent", if (error_contract$reason == "missing_numerical_control")
-      "numerical control" else "error-outcome example", "for mode",
-      error_contract$model_type, "and", error_contract$error_code %||% "the declared rule",
-      error_contract$expected_phase %||% "", "phase; existing examples were not changed."))
+    mode <- error_contract$model_type %||% "each declared"
+    questions <- list(if (identical(error_contract$reason, "missing_numerical_control")) {
+      paste0("Supply an independent numerical-control example (an ordinary forecast, not an error) for the ",
+        mode, " mode; existing examples were not changed.")
+    } else {
+      paste0("Supply an independent error-outcome example for the ", mode, " mode with expected_error = \"",
+        error_contract$expected_phase %||% "fit", ":", error_contract$error_code %||% "<code>",
+        "\", or confirm the rule does not require this error; existing examples were not changed.")
+    })
   }
   if (is.null(questions) && needs_input) {
     proposal <- state$diagnostics$rejected_contract$proposal$questions
@@ -543,7 +557,7 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
     revision = state$revision, request_id = state$pending$request_id, attempts = list(
       used = used, limit_per_phase = limit,
       remaining = remaining
-    ),     questions = questions, questions_provenance = if (length(questions))
+    ), questions = questions, questions_provenance = if (length(questions))
       if (package_questions) "package_generated" else "provider_proposed" else NULL,
     details = details, resolved_inputs = resolved, validation = list(technical_passed = approved, expectation_provenance = state$contract$expectation_provenance %||%
       model$validation$checks$expectation_provenance, checks = model$validation$checks %||% list(), business_correctness_guaranteed = FALSE)
@@ -616,6 +630,12 @@ custom_model_feedback <- function(x) {
 # Caller examples and accepted contracts stay fixed; candidate repairs require exact renewed authorization.
 # Only recognized proposal/source defects consume the existing budgets. Operational failures and unchanged failed source stop.
 # Record transitions and bounded diagnostics in memory before returning an approved envelope or a typed error.
+# Error-contract rejections retry within budget except fixed caller examples
+# lacking a numerical control, which ask immediately; exhaustion keeps details.
+# After a contract is accepted, every driver it requires in the forecast period
+# must have complete finite future values in data$future_valid (blank future
+# cells never imply historical-only use); declared historical-only drivers with
+# complete future values warn that those values will be ignored.
 # Transport and approved generated R have side effects; this workflow is not a sandbox or a hard timeout.
 custom_draft_drive <- function(state, data, session, llm) {
   tryCatch(repeat {
@@ -650,10 +670,19 @@ custom_draft_drive <- function(state, data, session, llm) {
         feedback <- if (stage == "contract")
           custom_author_contract_feedback(state$diagnostic)
         else NULL
+        exhausted_contract <- NULL
         if (!is.null(feedback)) {
           reason <- paste(reason, "Last contract rejection:", feedback$message)
           if (!is.null(state$diagnostics$rejected_contract)) {
             reason <- paste(reason, "Field:", state$diagnostics$rejected_contract$field)
+          }
+          last_contract <- if (length(state$diagnostics$history))
+            tail(state$diagnostics$history, 1L)[[1L]]$failure
+          if (identical(last_contract$reason, state$diagnostic) && !is.null(last_contract$error_contract)) {
+            exhausted_contract <- validate_custom_author_error_contract(last_contract$error_contract)
+            if (isTRUE(exhausted_contract$requires_caller_input))
+              reason <- paste(reason, "Caller examples do not cover the declared error contract;",
+                "supply the requested independent example.")
           }
           if (identical(state$diagnostic, "insufficient_example_history")) {
             history <- custom_author_history_feedback(
@@ -687,7 +716,7 @@ custom_draft_drive <- function(state, data, session, llm) {
         }
         custom_author_abort(if (stage == "contract")
           "clarification"
-        else "validation", reason, code = feedback$code)
+        else "validation", reason, code = feedback$code, error_contract = exhausted_contract)
       }
       if (is.null(session)) {
         if (is.null(llm))
@@ -723,8 +752,15 @@ custom_draft_drive <- function(state, data, session, llm) {
           payload$feedback$field <- state$diagnostics$rejected_contract$field
         }
         last_failure <- tail(state$diagnostics$history, 1L)[[1L]]$failure
-        if (!is.null(last_failure$error_contract))
+        if (!is.null(last_failure$error_contract)) {
           payload$feedback$error_contract <- validate_custom_author_error_contract(last_failure$error_contract)
+          if (isTRUE(last_failure$error_contract$requires_caller_input)) {
+            payload$feedback$message <- paste(payload$feedback$message,
+              "The fixed caller examples have no matching error-outcome case for this declaration.",
+              "Keep it only when the business rule explicitly requires that error; otherwise remove it.",
+              "Never invent or change caller examples; FinnTS will ask the caller if the requirement remains.")
+          }
+        }
         rejected <- state$diagnostics$rejected_contract$proposal
         if (identical(state$diagnostic, "protocol_clarification"))
           payload$feedback$facts <- custom_author_questions(rejected$questions)$facts
@@ -861,14 +897,19 @@ custom_draft_drive <- function(state, data, session, llm) {
           rejection_details <<- error$error_contract
           if (!is.null(rejection_details) && is.null(settings$validation_examples))
             rejection_details$requires_caller_input <<- FALSE
+          # Fixed caller examples without a numerical control cannot be repaired
+          # by another provider attempt, so ask the caller now. A declared error
+          # lacking a caller example is retried first: the provider may drop an
+          # unrequested declaration, and exhaustion still returns needs_input.
           if (!is.null(rejection_details) && !is.null(settings$validation_examples) &&
-            isTRUE(rejection_details$requires_caller_input)) {
+            isTRUE(rejection_details$requires_caller_input) &&
+            identical(rejection_details$reason, "missing_numerical_control")) {
             state <<- custom_draft_record(state, "rejected",
               custom_author_failure(NULL, "contract", "invalid_error_contract", error_contract = rejection_details),
               proposal = proposal, field = rejection_field)
             state <<- custom_draft_save(state)
             custom_author_abort("clarification",
-              "Caller examples do not cover the declared error contract; supply the requested independent example.",
+              "Caller examples lack a numerical control for a declared mode; supply the requested independent example.",
               code = "invalid_error_contract", error_contract = rejection_details)
           }
           retry_history <- identical(recognized, "insufficient_example_history")
@@ -895,8 +936,9 @@ custom_draft_drive <- function(state, data, session, llm) {
         invalid_future <- if (length(checked_future))
           checked_future[!data$future_valid[checked_future]] else character()
         if (length(invalid_future)) {
-          custom_author_abort("input", paste("Future driver values must be complete and finite for every forecast date:",
-            paste(invalid_future, collapse = ", ")), code = "invalid_input")
+          custom_author_abort("input", paste0("Future driver values must be complete and finite for every forecast date: ",
+            paste(invalid_future, collapse = ", "), ". Supply those future values, or state in the instructions that ",
+            "the driver is historical-only and how the rule handles later periods."), code = "invalid_input")
         }
         if (automatic) {
           contract$automatic_defaults <- assumptions
@@ -912,7 +954,15 @@ custom_draft_drive <- function(state, data, session, llm) {
           state$contract$requirements$predictors
         ) || !identical(contract$requirements$historical_only_predictors,
           state$contract$requirements$historical_only_predictors))) {
-          custom_author_abort("contract", "Edits cannot change model modes or predictors; start a new draft with explicit metadata.")
+          custom_author_abort("contract", paste("Edits cannot change model modes or predictors, including",
+            "historical-only driver availability; start a new draft with explicit metadata and instructions."))
+        }
+        ignored_future <- intersect(contract$requirements$historical_only_predictors, names(data$future_valid))
+        ignored_future <- ignored_future[data$future_valid[ignored_future]]
+        if (length(ignored_future)) {
+          warning("Historical-only driver(s) ", paste(ignored_future, collapse = ", "),
+            " have complete future values that this model will ignore. Review the contract if those ",
+            "supplied values should be used.", call. = FALSE)
         }
         state$contract <- contract
         state$contract_id <- digest::digest(contract, algo = "sha256", serializeVersion = 2)

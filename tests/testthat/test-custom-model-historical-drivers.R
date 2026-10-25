@@ -39,6 +39,24 @@ test_that("phase-aware checks retain fit drivers and require only real future in
     history$Target, definition, context, TRUE), "Units")
 })
 
+test_that("example future rows violating the driver contract raise typed example errors", {
+  definition <- historical_driver_definition()
+  panel <- historical_driver_panel()
+  example <- list(name = "ordinary", model_type = "local", history = panel$history,
+    new_data = transform(panel$future, Price = as.character(Price)),
+    expected = transform(panel$future, .pred = panel$expected)[c("Date", "Combo", ".pred")],
+    tolerance = 1e-8, edge_case = FALSE, rationale = "Literal ten percent growth calculation.",
+    outcome = "predictions", expected_error = NULL)
+  edge <- example
+  edge$name <- "edge"
+  edge$edge_case <- TRUE
+  error <- tryCatch(custom_author_examples(list(example, edge), definition,
+    list(date_type = "month", forecast_horizon = 2)), error = identity)
+  expect_s3_class(error, "finnts_custom_model_authoring_error")
+  expect_identical(error$code, "invalid_examples")
+  expect_match(conditionMessage(error), "prediction-phase driver contract", fixed = TRUE)
+})
+
 test_that("legacy drivers still require future values", {
   panel <- historical_driver_panel()
   legacy <- historical_driver_definition(historical = FALSE)
@@ -110,6 +128,74 @@ test_that("new authoring freezes availability before validating future inputs", 
     c("Units", "Price"), NULL, NULL, defer_future = TRUE)
   expect_identical(history_only$future_valid, c(Units = FALSE, Price = FALSE))
   expect_false("future_valid" %in% names(history_only$metadata))
+})
+
+test_that("accepted contracts reject blank future cells for required drivers before source", {
+  case <- historical_finance_case("unit_trend")
+  for (scenario in c("historical", "legacy")) local({
+    stages <- character()
+    local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
+      new_llm_session = function(llm) list(),
+      custom_author_request = function(session, stage, payload) {
+        stages <<- c(stages, stage)
+        if (stage != "contract") stop("Source must not be requested")
+        proposal <- author_proposal()
+        proposal$name <- "unit_trend"
+        proposal$interpretation <- case$instructions
+        proposal$defaults_used <- character()
+        proposal$historical_only_predictors <- if (scenario == "historical") case$historical else character()
+        # This first rejection is unrelated to the later input failure.
+        if (length(stages) == 1L) proposal$error_policy <- list(list(code = "zero_units",
+          phase = "fit", description = "Units must be positive."))
+        proposal
+      }, custom_author_validate = function(...) stop("Source must not execute"), .package = "finnts")
+    examples <- historical_finance_examples(case)
+    # Legacy classification needs caller future units so only the raw input is incomplete.
+    if (scenario == "legacy") examples <- lapply(examples, function(example) {
+      example$new_data$Units_Sold <- c(210, 220)
+      example
+    })
+    result <- tryCatch(create_custom_model(case$instructions, list(), input_data = case$history,
+      combo_variables = "Combo", target_variable = "Target", date_type = "month",
+      forecast_horizon = 2, external_regressors = case$predictors, model_type = "local",
+      approval = "automatic", validation_examples = custom_examples_table(examples),
+      control = custom_model_control(max_attempts = 3L, package_policy = "base_only")), error = identity)
+    expect_identical(stages, c("contract", "contract"))
+    expect_identical(result$code, "invalid_input")
+    expect_match(conditionMessage(result), "every forecast date:.*Price_Index")
+    expect_identical(grepl("Units_Sold", conditionMessage(result), fixed = TRUE), scenario == "legacy")
+    feedback <- custom_model_feedback(result)
+    expect_identical(feedback$status, "failed")
+    expect_identical(feedback$next_action, "correct_inputs")
+    expect_null(feedback$details$error_contract)
+  })
+})
+
+test_that("historical-only drivers with supplied future values warn that they are ignored", {
+  case <- historical_finance_case("unit_trend")
+  local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
+    new_llm_session = function(llm) list(),
+    custom_author_request = function(session, stage, payload) {
+      if (stage == "source") return(list(status = "candidate", conflict = "", fit_body = case$fit,
+        predict_body = case$predict, helpers = list()))
+      proposal <- author_proposal()
+      proposal$name <- "unit_trend"
+      proposal$interpretation <- case$instructions
+      proposal$defaults_used <- character()
+      proposal$historical_only_predictors <- case$historical
+      proposal
+    }, .package = "finnts")
+  future <- case$future
+  future$Units_Sold <- c(999, 999)
+  future$Target <- NA_real_
+  raw <- dplyr::bind_rows(case$history, future)
+  expect_warning(model <- suppressMessages(create_custom_model(case$instructions, list(), input_data = raw,
+    combo_variables = "Combo", target_variable = "Target", date_type = "month",
+    forecast_horizon = 2, external_regressors = case$predictors, model_type = "local",
+    approval = "automatic", validation_examples = custom_examples_table(historical_finance_examples(case)),
+    control = custom_model_control(package_policy = "base_only"))), "Units_Sold.*ignore")
+  expect_s3_class(model, "finnts_custom_model")
+  expect_identical(model$definition$requirements$historical_only_predictors, "Units_Sold")
 })
 
 test_that("driver prompts distinguish observed, supplied and internally generated values", {

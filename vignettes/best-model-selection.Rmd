@@ -139,8 +139,13 @@ type-preserving permutation but not numeric scaling. Classed numeric history is
 not silently coerced for scaling. Cohort keys never move. These perturbations
 can disrupt temporal structure or violate business constraints; they are
 conditional diagnostics, not a claim that every custom rule is estimable.
-Custom source/domain and nonfinite-result errors remain visible rather than
-being converted to zero or averages of successful scenarios.
+A declared rule error (raised with `finntsRuleError()`) on the shorter holdout
+analysis window, a permuted holdout or a perturbed history marks the affected
+diagnostic as not estimable and records the rule code in its status, so the
+completed forecast and other summary rows are kept. Any failed scenario voids
+that driver's score; successful scenarios are never averaged on their own.
+Other custom source/domain and nonfinite-result errors remain visible rather
+than being converted to zero or averages of successful scenarios.
 
 Insufficient history or lags, incomplete historical holdouts, and constant or
 cohort-key assessment drivers are explicitly reported as not estimable, rather than given
@@ -307,6 +312,11 @@ Fitting needs observed `Units_Sold` and `Price_Index`; forecasting needs
 observed units are 100 and future prices are 12 and 13, forecasts are
 `100 * 1.1 * 12 = 1320` and `100 * 1.1^2 * 13 = 1573`.
 Supplied future historical-only values are ignored, not used as a hidden override.
+Authoring warns when a driver declared historical-only has complete future
+values, so you can review the contract if those values should be used. A driver
+the contract still requires in the forecast period must have complete future
+values in `input_data`; otherwise authoring stops with `invalid_input` before
+any source is generated.
 Unrelated input columns are also excluded before prediction source runs; only
 declared future drivers and the required identity columns are passed through.
 Forecast updates reconstruct the same historical-aware workflow, so newly saved
@@ -887,6 +897,12 @@ For example, a rule declaring `fit:zero_units` needs both an independent
 error-outcome case with that exact phase/code and a valid numerical control.
 A `predict:zero_units` example is a phase mismatch, not an acceptable substitute.
 Supply the missing independent case when `requires_caller_input` is true.
+With fixed `validation_examples`, a declared error that none of them covers is
+first returned to the provider within the attempt budget, because the provider
+may have added an error the rule never required; if the declaration remains
+after the budget, feedback is `needs_input`. Caller examples that lack a
+numerical control for a declared mode cannot be repaired by the provider, so
+that case returns `needs_input` immediately.
 Package-generated questions are labelled separately from provider proposals.
 Repairable generated examples receive these same details within the existing
 attempt budget; exhausted attempts retain them. Caller expectations, tolerances

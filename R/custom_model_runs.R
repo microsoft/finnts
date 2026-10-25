@@ -529,6 +529,8 @@ custom_run_character_columns <- function(custom) {
 #' Validate required predictors on each actual prepared dataset, not just the
 #' first recipe sample. Returns the declared identity/predictor names; missing,
 #' nonfinite, unsupported, changed declared types or outcome/assessment input values error without I/O.
+#' Historical-only drivers are checked only on rows with an observed Target, so
+#' their blank future cells are allowed; every other driver needs all rows.
 #' @noRd
 custom_run_predictors <- function(definition, data) {
   predictors <- custom_model_predictor_columns(definition$requirements$predictors)

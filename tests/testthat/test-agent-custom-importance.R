@@ -66,6 +66,22 @@ test_that("custom models with no drivers keep metadata without diagnostic execut
   expect_false(any(grepl("importance", summary$section)))
 })
 
+test_that("declared rule errors on permuted holdout drivers are not estimable instead of fatal", {
+  model <- custom_driver_model()
+  model$definition$source[["predict"]] <- paste0("function(object, new_data, context) { ",
+    "if (any(diff(new_data$Driver) < 0)) ", custom_rule_error_source("driver_order"), "; ",
+    "data.frame(.finnts_row = new_data$.finnts_row, .pred = object * new_data$Driver) }")
+  model$definition$version_id <- custom_model_definition_digest(model$definition)
+  model$approval$version_id <- model$validation$version_id <- model$definition$version_id
+  fixture <- custom_importance_fixture(model = model)
+  expect_warning(summary <- summarize_model_custom(fixture$workflow, model, "local"), "driver_order")
+  expect_false(any(summary$section == "importance"))
+  expect_setequal(summary$name[summary$section == "importance_metadata"], c("method", "status"))
+  expect_identical(summary$value[summary$section == "importance_metadata" & summary$name == "status"],
+    "not estimable because permuted holdout inputs violate declared rule domain: Driver (driver_order)")
+  expect_true("custom_model" %in% summary$section)
+})
+
 test_that("negative importance is retained instead of clipped or omitted", {
   model <- custom_driver_model()
   model$definition$source[["predict"]] <- "function(object,new_data,context) data.frame(.finnts_row=new_data$.finnts_row,.pred=-2*new_data$Driver)"

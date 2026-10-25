@@ -77,6 +77,25 @@ get_summarized_models <- function(agent_info) {
   return(model_summary_tbl)
 }
 
+# Evaluate one diagnostic scenario for a summary-only importance calculation.
+# A declared business-rule rejection (finnts_custom_rule_error raised by the
+# approved source, e.g. through finntsRuleError()) means the perturbed or
+# truncated inputs left the rule's approved domain, so the diagnostic is not
+# estimable rather than a reason to fail a completed forecast workflow.
+# Returns list(value = <result>) on success or list(status = <text>) with a
+# bounded lowercase rule code; the condition message is never copied. Every
+# other error, including identity, consent, data and undeclared source errors,
+# propagates unchanged. No I/O; RNG handling stays with the caller.
+custom_summary_attempt <- function(expr, scenario) {
+  tryCatch(list(value = expr), finnts_custom_rule_error = function(error) {
+    code <- error$code
+    if (!is.character(code) || length(code) != 1L || is.na(code) ||
+      !grepl("^[a-z][a-z0-9_]{0,79}$", code)) code <- "unidentified_rule_error"
+    list(status = paste0("not estimable: ", scenario, " violates declared rule domain (", code, ")"),
+      code = code)
+  })
+}
+
 # Compute historical-only diagnostics from an already validated analysis/holdout
 # split and baseline. Refit the pinned rule on within-series cyclic history
 # shifts and, separately, +/-10% plain numeric history scaling. Return per-series
@@ -85,7 +104,9 @@ get_summarized_models <- function(agent_info) {
 # inputs move. Identical scenarios reuse predictions only within this call.
 # Each uncached refit replays the baseline's seed, preserving the surrounding
 # RNG state so fitting randomness is not attributed to the perturbed driver.
-# Source/domain errors propagate; no failed scenario is silently omitted.
+# If any scenario raises a declared rule error, that driver's diagnostic is
+# reported as not estimable with the rule code; successful scenarios are never
+# averaged on their own. Other source/domain errors propagate unchanged.
 custom_summary_historical_importance <- function(analysis, assessment, definition,
     context, drivers, keys, baseline, seed) {
   combos <- unique(assessment$Combo)
@@ -141,17 +162,25 @@ custom_summary_historical_importance <- function(analysis, assessment, definitio
     status <- if (driver %in% keys) "not estimable: cohort-key driver" else if (!varying)
       "not estimable: constant within-series analysis history" else "estimated"
     if (identical(status, "estimated")) {
-      differences <- vapply(seq_len(10L), function(iteration) {
+      differences <- matrix(NA_real_, nrow = length(combos), ncol = 10L)
+      for (iteration in seq_len(10L)) {
         permuted <- original
         for (indices in groups) {
           order <- ((seq_along(indices) - 1L + iteration) %% length(indices)) + 1L
           permuted[[driver]][indices] <- original[[driver]][indices[order]]
         }
-        measure(evaluate(permuted))
-      }, numeric(length(combos)))
-      rows[[length(rows) + 1L]] <- score_rows("importance", driver,
-        rowMeans(matrix(differences, nrow = length(combos))))
-    } else warning("Custom historical driver importance ", driver, " ", status, call. = FALSE)
+        attempt <- custom_summary_attempt(evaluate(permuted), "permuted analysis history")
+        if (!is.null(attempt$status)) {
+          status <- attempt$status
+          break
+        }
+        differences[, iteration] <- measure(attempt$value)
+      }
+      if (identical(status, "estimated"))
+        rows[[length(rows) + 1L]] <- score_rows("importance", driver, rowMeans(differences))
+    }
+    if (!identical(status, "estimated"))
+      warning("Custom historical driver importance ", driver, " ", status, call. = FALSE)
     rows[[length(rows) + 1L]] <- metadata_rows("importance_metadata", driver,
       permutation_method, status)
     values <- original[[driver]]
@@ -159,14 +188,22 @@ custom_summary_historical_importance <- function(analysis, assessment, definitio
       !is.numeric(values) || is.object(values)) "not estimable: scaling requires plain numeric history" else if (
       all(values == 0)) "not estimable: all-zero history has no multiplicative level change" else "estimated"
     if (identical(status, "estimated")) {
-      changes <- vapply(c(0.9, 1.1), function(multiplier) {
+      changes <- matrix(NA_real_, nrow = length(combos), ncol = 2L)
+      for (index in seq_along(c(0.9, 1.1))) {
         scaled <- original
-        scaled[[driver]] <- values * multiplier
-        measure(evaluate(scaled), sensitivity = TRUE)
-      }, numeric(length(combos)))
-      rows[[length(rows) + 1L]] <- score_rows("historical_sensitivity", driver,
-        rowMeans(matrix(changes, nrow = length(combos))))
-    } else warning("Custom historical driver sensitivity ", driver, " ", status, call. = FALSE)
+        scaled[[driver]] <- values * c(0.9, 1.1)[[index]]
+        attempt <- custom_summary_attempt(evaluate(scaled), "scaled analysis history")
+        if (!is.null(attempt$status)) {
+          status <- attempt$status
+          break
+        }
+        changes[, index] <- measure(attempt$value, sensitivity = TRUE)
+      }
+      if (identical(status, "estimated"))
+        rows[[length(rows) + 1L]] <- score_rows("historical_sensitivity", driver, rowMeans(changes))
+    }
+    if (!identical(status, "estimated"))
+      warning("Custom historical driver sensitivity ", driver, " ", status, call. = FALSE)
     rows[[length(rows) + 1L]] <- metadata_rows("historical_sensitivity_metadata", driver,
       sensitivity_method, status)
   }
@@ -179,7 +216,10 @@ custom_summary_historical_importance <- function(analysis, assessment, definitio
 # use isolated analysis-history refits and separate level sensitivity.
 # Identity/date and cohort keys never move. Returns per-series
 # score/method/status rows, with explicit warnings for non-estimable diagnostics.
-# Unexpected source/data errors propagate. No artifacts or fitted objects change;
+# A declared rule error (finnts_custom_rule_error) on the analysis window or on
+# any perturbed scenario becomes a not-estimable status carrying its rule code,
+# so diagnostics never fail a completed forecast. Other source/data errors
+# propagate. No artifacts or fitted objects change;
 # trusted source executes with its existing permissions and RNG is restored.
 # The baseline and historical interventions start at the same R seed so random
 # fitting variation is held fixed, independently of driver order and cache hits.
@@ -266,13 +306,23 @@ custom_summary_importance <- function(workflow) {
   rows <- list()
   baseline <- NULL
   if (length(eligible) || length(setdiff(historical, keys))) {
-    fitted <- custom_model_fit_impl(analysis[setdiff(names(analysis), "Target")],
-      analysis$Target, definition, context, allow_code = TRUE)
-    baseline <- custom_model_predict_impl(fitted, predictors)
+    # A declared rule rejection of the shorter analysis window makes every
+    # diagnostic unavailable; it never fails the completed forecast summary.
+    attempt <- custom_summary_attempt({
+      fitted <- custom_model_fit_impl(analysis[setdiff(names(analysis), "Target")],
+        analysis$Target, definition, context, allow_code = TRUE)
+      list(fitted = fitted, baseline = custom_model_predict_impl(fitted, predictors))
+    }, "holdout analysis window")
+    if (!is.null(attempt$status))
+      return(unavailable(sub("^not estimable: ", "", attempt$status)))
+    fitted <- attempt$value$fitted
+    baseline <- attempt$value$baseline
   }
+  rejected <- list()
   if (length(eligible)) {
     # Permute within declared groups; all peers and the full horizon remain in
     # every prediction request, including global allocation/cohort models.
+    # A declared rule rejection of any permutation voids that driver's score.
     for (driver in eligible) {
       differences <- matrix(NA_real_, nrow = length(combos), ncol = 10L)
       for (iteration in seq_len(10L)) {
@@ -281,13 +331,20 @@ custom_summary_importance <- function(workflow) {
           order <- ((seq_along(indices) - 1L + iteration) %% length(indices)) + 1L
           permuted[[driver]][indices] <- predictors[[driver]][indices[order]]
         }
-        prediction <- custom_model_predict_impl(fitted, permuted)
+        attempt <- custom_summary_attempt(custom_model_predict_impl(fitted, permuted),
+          "permuted holdout inputs")
+        if (!is.null(attempt$status)) {
+          rejected[[driver]] <- attempt
+          break
+        }
+        prediction <- attempt$value
         for (index in seq_along(combos)) {
           take <- assessment$Combo == combos[[index]]
           differences[index, iteration] <- sqrt(mean((assessment$Target[take] - prediction[take])^2)) -
             sqrt(mean((assessment$Target[take] - baseline[take])^2))
         }
       }
+      if (!is.null(rejected[[driver]])) next
       if (any(!is.finite(differences)))
         stop("Custom driver importance produced nonfinite RMSE differences: ", driver, ".", call. = FALSE)
       rows[[driver]] <- tibble::tibble(Combo = combos, section = "importance",
@@ -295,9 +352,14 @@ custom_summary_importance <- function(workflow) {
     }
   }
   excluded <- setdiff(future_drivers, eligible)
-  status <- if (length(excluded)) paste("not estimable for cohort-key or constant holdout drivers:",
-    paste(excluded, collapse = ", ")) else "estimated"
-  if (length(excluded)) warning("Custom driver importance ", status, call. = FALSE)
+  reasons <- c(
+    if (length(excluded)) paste("not estimable for cohort-key or constant holdout drivers:",
+      paste(excluded, collapse = ", ")),
+    if (length(rejected)) paste("not estimable because permuted holdout inputs violate declared rule domain:",
+      paste0(names(rejected), " (", vapply(rejected, `[[`, character(1), "code"), ")", collapse = ", "))
+  )
+  status <- if (length(reasons)) paste(reasons, collapse = "; ") else "estimated"
+  if (length(reasons)) warning("Custom driver importance ", status, call. = FALSE)
   metadata <- dplyr::bind_rows(lapply(combos, function(combo) {
     tibble::tibble(Combo = combo, section = "importance_metadata",
       name = c("method", "status"), value = c(method, status))
@@ -309,7 +371,8 @@ custom_summary_importance <- function(workflow) {
       dplyr::bind_rows(lapply(combos, function(combo) {
         tibble::tibble(Combo = combo, section = "importance_metadata",
           name = paste0(c("method:", "status:"), driver),
-          value = c(method, if (driver %in% eligible) "estimated" else
+          value = c(method, if (!is.null(rejected[[driver]])) rejected[[driver]]$status else
+            if (driver %in% eligible) "estimated" else
             "not estimable: cohort-key or constant holdout driver"))
       }))
     }))
@@ -375,7 +438,10 @@ summarize_model_custom <- function(workflow, model, mode, combo = NULL, cache = 
 #' analysis window and permute complete holdout predictor cohorts, preserving
 #' the pinned formula, identity and consent. Historical-only diagnostics instead
 #' refit perturbed analysis histories from the same R seed as the baseline,
-#' separating fitting randomness from driver interventions. This adds trusted-code execution
+#' separating fitting randomness from driver interventions. A declared custom
+#' rule error raised by the analysis window or a perturbed scenario is recorded
+#' as a not-estimable status with its rule code instead of failing the summary;
+#' other custom source errors still propagate. This adds trusted-code execution
 #' and runtime, but never rewrites saved fits or forecasts. No-driver custom
 #' models retain metadata-only summaries. Global recipients share one in-memory
 #' diagnostic computation per fitted workflow within this invocation.

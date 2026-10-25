@@ -24,6 +24,7 @@ License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
 Additional_repositories:
     https://bgreenwell.r-universe.dev
 Imports: 
@@ -96,4 +97,3 @@ Depends:
     R (>= 4.0), 
     modeltime
 VignetteBuilder: knitr
-Config/roxygen2/version: 8.1.1

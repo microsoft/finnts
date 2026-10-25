@@ -175,6 +175,8 @@ custom_author_example_scaffold <- function(metadata, model_type, predictors = ch
 
 # Materialize current typed value arrays onto fixed synthetic date/series grids without executing candidate source.
 # Require complete scenario/series coverage, nonempty keyed data, declared predictor types and exact horizon lengths.
+# historical_only_predictors need history arrays only: their future keys may be
+# omitted and are never copied into prediction requests. Unknown future keys fail.
 # Normalize numeric columns to double; preserve independent expected values and exact declared error outcomes.
 # Return current example records or bounded field errors. No recycling, imputation or oracle generation occurs.
 custom_author_scaffold_examples <- function(values, scaffold, model_type, predictors, predictor_types = NULL,
@@ -402,6 +404,11 @@ custom_model_examples_template <- function(forecast_horizon = 3, date_type = "mo
 # resolved external_regressors. Local/global is inferred from the series count
 # and must match the effective model_type exactly. Errors name the example,
 # table row and date. Set-level and horizon checks remain in custom_author_examples().
+# Drivers in historical_only_predictors need history values only and are not
+# copied to future rows. With defer_future = TRUE (availability not yet known),
+# every driver needs complete history; a future column must be either complete
+# and finite or entirely blank, and blank future columns are omitted for the
+# later contract check. Partially blank or nonfinite future values still fail.
 custom_examples_from_table <- function(table, target_variable, combo_variables, external_regressors, model_type,
                                        historical_only_predictors = character(), defer_future = FALSE) {
   if (!is.data.frame(table) || !nrow(table)) {
@@ -670,6 +677,9 @@ custom_author_table <- function(value, exclude = NULL) {
 # Validate and canonicalize caller or generated example tables without changing their numerical answers or tolerances.
 # Require declared mode coverage, complete horizons, finite typed inputs and a numerical control per mode.
 # Error cases retain exact phase/code declarations and no numerical output. Return independent current-format examples.
+# Historical-only drivers are dropped from new_data; future rows must satisfy the
+# prediction-phase data contract. Invalid outcome/error declarations raise
+# invalid_error_contract with bounded error_contract details and the example index.
 custom_author_examples <- function(examples, definition, metadata) {
   if (!is.list(examples) || length(examples) < 2L || length(examples) > 8L)
     custom_author_abort("examples", "Provide two to eight worked examples including an edge case.")
@@ -740,7 +750,12 @@ custom_author_examples <- function(examples, definition, metadata) {
     if ((example$model_type == "local" && length(combos) != 1L) || (example$model_type == "global" && length(combos) <
       2L) || !setequal(combos, unique(example$new_data$Combo)))
       custom_author_abort("examples", "Worked examples do not cover the declared series mode.")
-    custom_model_data(example$new_data, definition, list(model_type = example$model_type), "predict")
+    # Apply the prediction-phase data contract to the exact future input the
+    # candidate will receive; failures stay typed example errors, not crashes.
+    tryCatch(custom_model_data(example$new_data, definition, list(model_type = example$model_type), "predict"),
+      error = function(error) custom_author_abort("examples",
+        "Worked-example future rows do not satisfy the prediction-phase driver contract.",
+        code = "invalid_examples"))
     for (combo in combos) {
       cutoff <- max(example$history$Date[example$history$Combo == combo])
       expected_dates <- seq(cutoff, by = metadata$date_type, length.out = metadata$forecast_horizon + 1L)[-1L]
@@ -764,10 +779,14 @@ custom_author_examples <- function(examples, definition, metadata) {
 # Validate the complete raw panel before sampling, padding or provider requests.
 # Bounds are inclusive period labels. An omitted end is inferred only when every
 # series has the same last finite target; this cannot certify business close status.
-# Every series must cover the common historical window and declared drivers must
-# cover the next horizon. Returns resolved dates/source and internal combo labels;
-# inferred bounds retain the input Date representation. Cadence comparisons use
-# exact day values, independent of integer versus double Date storage.
+# Every series must cover the common historical window with complete finite
+# driver history. By default declared drivers must also cover the next horizon;
+# with defer_future = TRUE that future check is recorded instead of enforced,
+# because driver availability is frozen later by the reviewed contract.
+# Returns resolved dates/source, internal combo labels and future_valid, a named
+# logical per driver that is TRUE only when every series has complete finite
+# future values. Inferred bounds retain the input Date representation. Cadence
+# comparisons use exact day values, independent of integer versus double Date storage.
 # values are not filled, forecasts/vintages are not inferred, and no I/O occurs.
 custom_author_preflight <- function(
     input_data, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
@@ -1010,7 +1029,10 @@ custom_author_global_sample <- function(summary, levels = NULL, budget = 10000L,
 # shortest) are mandatory, multi-variable combo levels are covered when they
 # fit, and the rest fills in hash order. Full-panel preflight still covers every
 # series; count-only sampling disclosure enters metadata. Local sampling keeps
-# the first three series in hash order.
+# the first three series in hash order. With defer_future = TRUE, missing future
+# driver values do not fail here; the call-local result$future_valid (named
+# logical per driver, never saved or prompted) lets the draft enforce them once
+# the reviewed contract declares which drivers are historical-only.
 custom_author_data <- function(
     input_data, run_info, combo_variables, target_variable, date_type, forecast_horizon, external_regressors,
     hist_start_date, hist_end_date, forecast_approach = "bottoms_up", global_sample = FALSE, defer_future = FALSE) {

@@ -197,6 +197,52 @@ test_that("historical perturbation errors remain visible instead of selective sc
   expect_error(summarize_model_custom(fixture$workflow, fixture$model, "local"), "approved domain")
 })
 
+test_that("declared rule errors on permuted history are not estimable instead of fatal", {
+  source <- paste0("function(data, context, parameters) { ",
+    "if (any(unlist(lapply(split(data$History, data$Combo), diff)) < 0)) ",
+    custom_rule_error_source("history_decreasing"), "; ",
+    "lapply(split(data, data$Combo), function(x) x$History[[nrow(x)]]) }")
+  fixture <- historical_importance_fixture(fit_source = source)
+  before <- serialize(fixture$workflow, NULL)
+  withr::local_preserve_seed()
+  set.seed(7)
+  seed <- .Random.seed
+  expect_warning(summary <- summarize_model_custom(fixture$workflow, fixture$model, "local"),
+    "history_decreasing")
+  expect_identical(.Random.seed, seed)
+  expect_identical(serialize(fixture$workflow, NULL), before)
+  expect_length(historical_importance_value(summary, "importance"), 0)
+  expect_identical(summary$value[summary$section == "importance_metadata" & summary$name == "status:History"],
+    "not estimable: permuted analysis history violates declared rule domain (history_decreasing)")
+  expect_equal(historical_importance_value(summary, "historical_sensitivity"), 0.3)
+  expect_identical(summary$value[summary$section == "historical_sensitivity_metadata" &
+    summary$name == "status:History"], "estimated")
+})
+
+test_that("declared rule errors on scaled history or the holdout window keep the summary", {
+  cap <- paste0("function(data, context, parameters) { if (any(data$History > 3)) ",
+    custom_rule_error_source("history_cap"), "; ",
+    "lapply(split(data, data$Combo), function(x) x$History[[nrow(x)]]) }")
+  fixture <- historical_importance_fixture(fit_source = cap)
+  expect_warning(summary <- summarize_model_custom(fixture$workflow, fixture$model, "local"), "history_cap")
+  # The 0.9 scenario succeeds, but one rejected scenario voids the whole score.
+  expect_equal(historical_importance_value(summary, "importance"), 1.1)
+  expect_length(historical_importance_value(summary, "historical_sensitivity"), 0)
+  expect_identical(summary$value[summary$section == "historical_sensitivity_metadata" &
+    summary$name == "status:History"],
+    "not estimable: scaled analysis history violates declared rule domain (history_cap)")
+  short <- paste0("function(data, context, parameters) { if (any(table(data$Combo) < 5L)) ",
+    custom_rule_error_source("short_history"), "; ",
+    "lapply(split(data, data$Combo), function(x) x$History[[nrow(x)]]) }")
+  fixture <- historical_importance_fixture(fit_source = short, price = 1:5, target = c(4, 5, 6, 7, 8))
+  expect_warning(summary <- summarize_model_custom(fixture$workflow, fixture$model, "local"), "short_history")
+  expect_false(any(summary$section %in% c("importance", "historical_sensitivity")))
+  expect_true(all(c("status:Price", "status:History") %in% summary$name))
+  expect_true(all(summary$value[grepl("^status", summary$name)] ==
+    "holdout analysis window violates declared rule domain (short_history)"))
+  expect_true("custom_model" %in% summary$section)
+})
+
 test_that("historical irrelevant and negative scores are not fabricated or clipped", {
   fixture <- historical_importance_fixture("irrelevant")
   summary <- summarize_model_custom(fixture$workflow, fixture$model, "local")

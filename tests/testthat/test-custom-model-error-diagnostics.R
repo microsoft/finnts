@@ -81,12 +81,12 @@ test_that("source contract conflicts require input rather than guessed driver pa
   expect_true(length(feedback$questions) > 0L)
 })
 
-test_that("fixed caller error-contract failures preserve diagnostics without execution", {
-  requests <- 0L
+test_that("fixed caller error-contract gaps retry, then ask without execution", {
+  requests <- list()
   local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
     new_llm_session = function(llm) list(),
     custom_author_request = function(session, stage, payload) {
-      requests <<- requests + 1L
+      requests[[length(requests) + 1L]] <<- payload
       expect_identical(stage, "contract")
       proposal <- author_proposal()
       proposal$defaults_used <- character()
@@ -100,13 +100,78 @@ test_that("fixed caller error-contract failures preserve diagnostics without exe
     input_data = author_examples()[[1]]$history, combo_variables = "Combo",
     target_variable = "Target", date_type = "month", forecast_horizon = 1,
     model_type = "local", approval = "automatic", validation_examples = examples,
-    control = custom_model_control(package_policy = "base_only")), error = identity)
+    control = custom_model_control(max_attempts = 2L, package_policy = "base_only")), error = identity)
+  expect_length(requests, 2L)
+  repair <- requests[[2]]$feedback
+  expect_identical(repair$error_contract$reason, "missing_error_example")
+  expect_true(repair$error_contract$requires_caller_input)
+  expect_match(repair$message, "remove it", fixed = TRUE)
+  expect_identical(result$code, "invalid_error_contract")
+  expect_match(conditionMessage(result), "supply the requested independent example", fixed = TRUE)
+  feedback <- custom_model_feedback(result)
+  expect_identical(feedback$status, "needs_input")
+  expect_identical(feedback$details$error_contract$reason, "missing_error_example")
+  expect_identical(feedback$questions_provenance, "package_generated")
+  expect_match(feedback$questions[[1]], "expected_error = \"fit:zero_units\"", fixed = TRUE)
+  expect_identical(serialize(examples, NULL), before)
+})
+
+test_that("caller examples accept a dropped unrequested error declaration on retry", {
+  stages <- character()
+  local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
+    new_llm_session = function(llm) list(),
+    custom_author_request = function(session, stage, payload) {
+      stages <<- c(stages, stage)
+      if (stage == "source") return(author_source())
+      proposal <- author_proposal()
+      proposal$defaults_used <- character()
+      if (length(stages) == 1L) proposal$error_policy <- list(error_contract_fixture()$entry)
+      proposal
+    }, .package = "finnts")
+  examples <- custom_examples_table(author_examples())
+  result <- tryCatch(create_custom_model("Use a historical mean.", list(),
+    input_data = data.frame(Date = seq(as.Date("2020-01-01"), by = "month", length.out = 8),
+      Combo = "example", Target = rep(15, 8)), combo_variables = "Combo",
+    target_variable = "Target", date_type = "month", forecast_horizon = 1,
+    model_type = "local", approval = "automatic", validation_examples = examples,
+    control = custom_model_control(max_attempts = 2L, package_policy = "base_only")), error = identity)
+  expect_false(inherits(result, "error"), info = if (inherits(result, "error")) conditionMessage(result) else NULL)
+  expect_s3_class(result, "finnts_custom_model")
+  expect_identical(stages, c("contract", "contract", "source"))
+})
+
+test_that("fixed caller examples without a numerical control ask immediately", {
+  requests <- 0L
+  local_mocked_bindings(check_agent_ellmer_version = function() invisible(NULL),
+    new_llm_session = function(llm) list(),
+    custom_author_request = function(session, stage, payload) {
+      requests <<- requests + 1L
+      proposal <- author_proposal()
+      proposal$defaults_used <- character()
+      proposal$error_policy <- list(error_contract_fixture()$entry)
+      proposal
+    }, custom_author_validate = function(...) stop("Source must not execute"),
+    .package = "finnts")
+  examples <- error_contract_fixture()$examples
+  examples[[1]] <- examples[[2]]
+  examples[[1]]$name <- "edge_first_error"
+  # Keep an explicit NULL so `$expected` cannot partially match expected_error.
+  examples <- lapply(examples, function(example) {
+    example["expected"] <- list(NULL)
+    example
+  })
+  result <- tryCatch(create_custom_model("Use a mean; reject zero units.", list(),
+    input_data = author_examples()[[1]]$history, combo_variables = "Combo",
+    target_variable = "Target", date_type = "month", forecast_horizon = 1,
+    model_type = "local", approval = "automatic", validation_examples = custom_examples_table(examples),
+    control = custom_model_control(max_attempts = 3L, package_policy = "base_only")), error = identity)
   expect_identical(requests, 1L)
   expect_identical(result$code, "invalid_error_contract")
   feedback <- custom_model_feedback(result)
   expect_identical(feedback$status, "needs_input")
-  expect_identical(feedback$details$error_contract$reason, "missing_error_example")
-  expect_identical(serialize(examples, NULL), before)
+  expect_identical(feedback$details$error_contract$reason, "missing_numerical_control")
+  expect_match(feedback$questions[[1]], "numerical-control example", fixed = TRUE)
+  expect_false(grepl("  ", feedback$questions[[1]], fixed = TRUE))
 })
 
 test_that("generated contract details reach repair prompts and final exhaustion", {
