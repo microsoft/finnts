@@ -25,7 +25,7 @@ ordinary R error semantics."><meta property="og:image" content="https://microsof
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9015</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9016</span>
       </span>
     </div>
 
@@ -130,7 +130,13 @@ NULL counts mean unavailable historical evidence, not unlimited attempts.</p>
     <div id="details">
     <h2>Details</h2>
     <p>Status is <code>approved</code>, <code>review_required</code>, <code>needs_input</code> or <code>failed</code>.
-Questions are provider proposals, not verified input errors. Remaining counts
+Business questions are provider proposals, not verified input errors.
+Error-contract details have package-generated questions and provenance:
+<code>details$error_contract</code> identifies the reason, affected field/code, phases,
+model mode, example index and whether independent caller input is required.
+Declared errors need matching error examples and numerical controls.
+Conflicting business/source contracts also return <code>needs_input</code>.
+Remaining counts
 do not authorize retries or execution; rerun <code><a href="create_custom_model.html">create_custom_model()</a></code> with
 clearer instructions or examples instead. Approved envelopes do not retain
 attempt histories, so those counts are NULL. Older models may lack resolved

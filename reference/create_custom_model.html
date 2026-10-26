@@ -25,7 +25,7 @@ you expect, and custom_model_control() for advanced settings."><meta property="o
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9015</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9016</span>
       </span>
     </div>
 
@@ -174,7 +174,10 @@ one shared complete cadence. Fiscal calendars are not inferred.</p></dd>
 
 <dt id="arg-external-regressors">external_regressors<a class="anchor" aria-label="anchor" href="#arg-external-regressors"></a></dt>
 <dd><p>Explicit driver column names; otherwise inherited
-from prepared metadata or empty. Drivers are never selected automatically.</p></dd>
+from prepared metadata or empty. Drivers are never selected automatically.
+Include both historical-only and future-required drivers. Specify their
+intended availability and any lag or internal generation rule in
+<code>instructions</code>; the reviewed contract freezes that declaration.</p></dd>
 
 
 <dt id="arg-hist-start-date-hist-end-date">hist_start_date, hist_end_date<a class="anchor" aria-label="anchor" href="#arg-hist-start-date-hist-end-date"></a></dt>
@@ -222,8 +225,16 @@ captured error for bounded status and next-action details.</p>
 
 
 <p>Every series needs finite targets on a complete common historical grid.
-Declared drivers must cover that history and every future forecast date.
+Every declared driver must cover fitting history. Drivers also require values
+on every future forecast date unless explicitly declared historical-only in
+the reviewed contract. Missing future cells never imply historical-only use.
+Historical-only values are removed from prediction input even when supplied.
+Use observed lags/fitted statistics or explicitly specify how the model
+generates later driver values, including alignment, starting state and order.
+Unresolved business choices block source execution for clarification.
 Gaps and duplicate keys fail; authoring does not fill or infer business values.
+Existing C1 historical zero-fill behavior is unchanged; a prepared zero does
+not retain evidence that the original historical value was missing.
 Without <code>hist_end_date</code>, series must share their last finite target date.
 This does not certify business close: specify a cutoff when later rows contain
 partial actuals, plans or prior forecasts. Driver holdout scores are conditional
