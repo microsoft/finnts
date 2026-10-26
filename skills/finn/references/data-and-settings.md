@@ -19,7 +19,7 @@ config with `--config=<draft>` and show `data.settings_changes`. Key settings:
 | `fiscal_year_start` | month number (1-12) the fiscal year starts; asked for monthly, quarterly, and yearly data |
 | `forecast_horizon` | periods to forecast |
 | `hist_start_date`, `hist_end_date` | history window; later rows are treated as future driver values |
-| `external_regressors` | driver columns; need values for every forecast period |
+| `external_regressors` | all declared driver columns; custom models require complete history and future values only for prediction-required drivers; built-ins keep their existing feature rules |
 | `back_test_scenarios`, `back_test_spacing` | how many past periods are used to score models |
 | `models_to_run`, `models_not_to_run` | model choices; null = Finn's defaults |
 | `run_global_models`, `run_local_models` | local/global model families |
@@ -68,8 +68,10 @@ version.
   --data=<new file> --replace_data=true` after the user agrees.
 - **Combine a driver file with the main file:** join them by date (and series columns
   when drivers differ by series) in a short R script, write a new file, check there are
-  driver values for every forecast period, then replace the project data as above and add
-  the columns to `external_regressors`.
+  complete historical driver values and, for custom models, future values for every
+  prediction-required driver in the approved rule. Do not fill historical-only future
+  cells or guess availability from blanks. Then replace the project data as above and
+  add all declared driver columns to `external_regressors`.
 - **Hierarchical forecasts** (totals that must add up): set `forecast_approach` to
   `standard_hierarchy` (nested columns, for example region > country) or
   `grouped_hierarchy` (independent groupings). For the Agent, also set

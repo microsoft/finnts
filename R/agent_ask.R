@@ -197,9 +197,13 @@ get_summarized_models KEY COLUMNS:
 - Model_Name - str - model family - label
 - Model_Type - enum {local, global} - flag
 - Best_Model - enum {Yes, No} - flag - GOTCHA: for simple averages, each component may be flagged Yes
-- section - enum {predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, diagnostic} - selector
+- section - enum {predictor, outcome, recipe_step, model_arg, engine_param, coefficient, importance, importance_metadata, historical_sensitivity, historical_sensitivity_metadata, diagnostic} - selector
 - name - str - item within section - dimension
-- value - str|num - item value (often numeric stored as text) - measure - GOTCHA: convert with as.numeric carefully",
+- value - str|num - item value (often numeric stored as text) - measure - GOTCHA: convert with as.numeric carefully
+  * Custom importance: read importance_metadata method:<driver> and status:<driver> for the same Combo/model and driver name. Legacy summaries may have only method/status rows.
+  * Future custom drivers use assessment permutations; historical-only drivers use history permutations with refitting. Scores are signed holdout RMSE increases in target units, not causal contributions; zero does not rule out historical level dependence.
+  * historical_sensitivity is separate: mean absolute forecast change under -10%/+10% historical scaling, in target units. Read historical_sensitivity_metadata method:<driver>/status:<driver>. Never mix sensitivity into importance rankings or interpret it as accuracy, percentages or causal attribution.
+  * Missing/not-estimable diagnostics are not zero. Standard-model importance retains its model-specific meaning; do not assume custom-model units or methods apply to it.",
     get_hierarchy_summary = "
 get_hierarchy_summary KEY COLUMNS:
 - Hierarchy_Combo - str - hierarchy level id - key - joins: EDA/best_run/model_summary$Combo

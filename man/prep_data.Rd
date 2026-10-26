@@ -103,8 +103,11 @@ the custom-model recipe used by custom models: the padded history and future fra
 missing values imputed only when \code{clean_missing_values} is TRUE and no outlier cleaning, Box-Cox, differencing or
 engineered features. C1 is never added by NULL or "all"; c("C1") alone prepares only the custom-model recipe.
 Reserved outcome/assessment columns and unsupported column types are excluded.
-Supply every required custom driver through the forecast horizon; missing
-future values error rather than being forecast or replaced with zero.
+Supply complete history for every declared custom driver and future values
+through the forecast horizon for prediction-required drivers. Drivers explicitly
+declared historical-only in the reviewed custom-model contract do not require
+future values. Missing prediction-required values error rather than being
+forecast or replaced with zero.
 C1 source identity is pinned before preparation, including interrupted runs.
 Changing eligible source data requires a new \code{\link[=set_run_info]{set_run_info()}} run.}
 

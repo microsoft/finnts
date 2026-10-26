@@ -92,7 +92,10 @@ validate_custom_model_control <- function(control) {
 # fields, labelled as provider statements rather than verified input failures.
 # Optional explanation is a provider statement already passed through
 # custom_author_provider_explanation(); it is appended and labelled as such.
-custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, field = NULL, bindings = NULL, explanation = NULL) {
+# Optional error_contract is bounded package-built mismatch evidence checked by
+# validate_custom_author_error_contract(); it never contains provider text.
+custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, field = NULL, bindings = NULL, explanation = NULL,
+                                error_contract = NULL) {
   explanation <- custom_author_provider_explanation(explanation)
   condition <- list(message = paste0("Custom model ", stage, ": ", reason, if (!is.null(explanation))
     paste0(" Provider explanation: ", explanation)
@@ -107,6 +110,8 @@ custom_author_abort <- function(stage, reason, code = NULL, dependency = NULL, f
     condition$field <- custom_author_contract_field(code, field)
   if (!is.null(bindings))
     condition$bindings <- validate_custom_author_bindings(bindings)
+  if (!is.null(error_contract))
+    condition$error_contract <- validate_custom_author_error_contract(error_contract)
   stop(structure(condition, class = c("finnts_custom_model_authoring_error", "error", "condition")))
 }
 
@@ -216,6 +221,8 @@ custom_author_predictor_types <- function(metadata, predictors) {
 # objects. This describes shape, not the truth of independent expected answers.
 # Explicit property maps preserve predictor names that resemble ellmer arguments.
 # Tagged outcomes and bounded extra error scenarios specify shape, not formulas.
+# Future driver arrays are optional keys because availability is declared in the
+# same response; custom_author_scaffold_examples() enforces required future drivers.
 custom_author_example_type <- function(protocol) {
   scalar <- function(kind) switch(kind,
     number = ellmer::type_number(),
@@ -227,7 +234,9 @@ custom_author_example_type <- function(protocol) {
     properties = c(list(Target = ellmer::type_array(ellmer::type_number())), predictors), description = NULL,
     required = TRUE, additional_properties = FALSE
   )
-  future <- ellmer::TypeObject(properties = predictors, description = NULL, required = TRUE, additional_properties = FALSE)
+  future_predictors <- lapply(protocol$predictor_types, function(kind)
+    ellmer::type_array(scalar(kind), required = FALSE))
+  future <- ellmer::TypeObject(properties = future_predictors, description = NULL, required = TRUE, additional_properties = FALSE)
   scenarios <- protocol$scaffold$scenarios
   ids <- vapply(scenarios, `[[`, character(1), "id")
   ids <- c(ids, unlist(lapply(unique(vapply(scenarios, `[[`, character(1), "model_type")), function(mode) paste0(
@@ -676,10 +685,12 @@ custom_author_failure_messages <- function() {
 # its runtime condition text is never copied into the failure record.
 # Optional explanation is a sanitized provider statement, kept only for declined
 # source_contract responses (implementation_difficulty or contract_conflict).
+# Optional error_contract is validated package-built evidence and is accepted
+# only for invalid_error_contract failures.
 custom_author_failure <- function(
     definition, phase, reason = "candidate_error", example_index = NULL, model_type = NULL,
     error = NULL, comparisons = list(), dependency = NULL, bindings = NULL, rule_error = NULL, property = NULL, unbound_symbol = NULL,
-    explanation = NULL) {
+    explanation = NULL, error_contract = NULL) {
   messages <- custom_author_failure_messages()
   if (!custom_author_text(reason) || !reason %in% names(messages))
     reason <- "candidate_error"
@@ -698,6 +709,8 @@ custom_author_failure <- function(
     failure$rule_error <- rule_error
   if (!is.null(property))
     failure$property <- property
+  if (!is.null(error_contract))
+    failure$error_contract <- validate_custom_author_error_contract(error_contract)
   if (!is.null(unbound_symbol))
     failure$unbound_symbol <- validate_custom_author_unbound_symbol(unbound_symbol, definition$source)
   explanation <- custom_author_provider_explanation(explanation)
@@ -711,14 +724,21 @@ custom_author_failure <- function(
 # Missing-variable evidence is optional for legacy records, paired with its
 # reason, and rechecked against source whenever the definition is available.
 # Provider explanations are allowed only on declined source_contract records and
-# must already be in sanitized form.
+# must already be in sanitized form. Error-contract evidence is allowed only on
+# invalid_error_contract records and must pass its bounded validator.
 validate_custom_author_failure <- function(failure, definition = NULL) {
   custom_author_fields(failure, c(
     "version_id", "phase", "reason", "message", "example_index", "model_type",
     "source_message", "comparisons", if ("dependency" %in% names(failure)) "dependency", if ("bindings" %in% names(failure)) "bindings",
+    if ("error_contract" %in% names(failure)) "error_contract",
     if ("rule_error" %in% names(failure)) "rule_error", if ("property" %in% names(failure)) "property", if ("unbound_symbol" %in%
       names(failure)) "unbound_symbol", if ("provider_explanation" %in% names(failure)) "provider_explanation"
   ), "diagnostics")
+  if ("error_contract" %in% names(failure)) {
+    if (!identical(failure$reason, "invalid_error_contract"))
+      custom_author_abort("diagnostics", "Unexpected error-contract evidence.")
+    validate_custom_author_error_contract(failure$error_contract)
+  }
   if ("provider_explanation" %in% names(failure) && (!identical(failure$phase, "source_contract") || !custom_author_text(failure$reason) ||
     !failure$reason %in% c("implementation_difficulty", "contract_conflict") || !identical(
     custom_author_provider_explanation(failure$provider_explanation),
@@ -1133,6 +1153,8 @@ custom_author_line <- function(label, value, limit = 600L) {
 # Repair reviews explain the prior bounded failure, version change and function
 # names changed; no raw exception, source text or private data is printed by default.
 # Recognized missing-variable failures show only the validated source identifier.
+# Definitions with historical-only drivers also list those and the drivers still
+# required in every forecast period, so reviewers can check availability.
 custom_author_review <- function(review, details = FALSE) {
   contract <- review$contract
   definition <- review$definition
@@ -1170,6 +1192,11 @@ custom_author_review <- function(review, details = FALSE) {
   custom_author_line("Predictors", if (length(definition$requirements$predictors))
     definition$requirements$predictors
   else "none")
+  if (length(definition$requirements$historical_only_predictors)) {
+    custom_author_line("Historical-only drivers", definition$requirements$historical_only_predictors)
+    future <- setdiff(definition$requirements$predictors, definition$requirements$historical_only_predictors)
+    custom_author_line("Required future drivers", if (length(future)) future else "none")
+  }
   custom_author_line("Missing data", definition$requirements$missing_data, if (details)
     Inf
   else 600L)
@@ -1374,6 +1401,9 @@ custom_author_response <- function(request, response) {
 #' @param forecast_horizon Positive integer periods to forecast; required for raw input.
 #' @param external_regressors Explicit driver column names; otherwise inherited
 #'   from prepared metadata or empty. Drivers are never selected automatically.
+#'   Include both historical-only and future-required drivers. Specify their
+#'   intended availability and any lag or internal generation rule in
+#'   `instructions`; the reviewed contract freezes that declaration.
 #' @param hist_start_date,hist_end_date Optional inclusive Date period labels.
 #'   For first-of-month data, August 2026 is `as.Date("2026-08-01")`.
 #'   Bounds select authoring history, not a permanent cutoff for later model fits.
@@ -1396,8 +1426,16 @@ custom_author_response <- function(request, response) {
 #'
 #' @section Inputs and Validation:
 #' Every series needs finite targets on a complete common historical grid.
-#' Declared drivers must cover that history and every future forecast date.
+#' Every declared driver must cover fitting history. Drivers also require values
+#' on every future forecast date unless explicitly declared historical-only in
+#' the reviewed contract. Missing future cells never imply historical-only use.
+#' Historical-only values are removed from prediction input even when supplied.
+#' Use observed lags/fitted statistics or explicitly specify how the model
+#' generates later driver values, including alignment, starting state and order.
+#' Unresolved business choices block source execution for clarification.
 #' Gaps and duplicate keys fail; authoring does not fill or infer business values.
+#' Existing C1 historical zero-fill behavior is unchanged; a prepared zero does
+#' not retain evidence that the original historical value was missing.
 #' Without `hist_end_date`, series must share their last finite target date.
 #' This does not certify business close: specify a cutoff when later rows contain
 #' partial actuals, plans or prior forecasts. Driver holdout scores are conditional
@@ -1550,13 +1588,15 @@ create_custom_model <- function(
       session <- new_llm_session(llm)
       invisible(utils::capture.output(data <- suppressMessages(custom_author_data(input_data, run_info, combo_variables,
         target_variable, date_type, forecast_horizon, external_regressors, hist_start_date, hist_end_date,
-        forecast_approach = forecast_approach, global_sample = "global" %in% model_type
+        forecast_approach = forecast_approach, global_sample = "global" %in% model_type,
+        defer_future = TRUE
       ))))
       if (!is.null(validation_examples)) {
         resolved <- data$metadata$resolved_inputs
         validation_examples <- custom_examples_from_table(
           validation_examples, resolved$target_variable, resolved$combo_variables,
-          data$metadata$input_context$external_regressors %||% character(), model_type %||% "local"
+          data$metadata$input_context$external_regressors %||% character(), model_type %||% "local",
+          defer_future = TRUE
         )
       }
       forecast_approach <- forecast_approach %||% data$metadata$forecast_approach %||% "bottoms_up"
@@ -1718,43 +1758,92 @@ custom_author_typed_parameters <- function(values, schema) {
   list(values = normalized, schema = unname(declarations))
 }
 
-# Validate declared error behavior and optional business invariants without
-# interpreting formulas or executing code. Each error must have a matching test;
-# numerical controls cover every mode. Metadata-only normalization is idempotent.
-# Expectation provenance records the supplier, never a claim of mathematical truth.
-# Native JSON [] and character() both mean no optional business invariants.
+# Validate bounded package-built mismatch context before condition, retry or
+# feedback reuse. Nullable fields represent unavailable evidence, never guesses.
+validate_custom_author_error_contract <- function(details) {
+  fields <- c("reason", "field", "error_code", "expected_phase", "actual_phase",
+    "model_type", "example_index", "requires_caller_input")
+  custom_author_fields(details, fields, "diagnostics")
+  reasons <- c("missing_error_example", "undeclared_example_error", "error_phase_mismatch",
+    "invalid_error_declaration", "missing_numerical_control")
+  valid_optional <- function(value, choices) is.null(value) ||
+    (custom_author_text(value) && value %in% choices)
+  if (!custom_author_text(details$reason) || !details$reason %in% reasons ||
+    !custom_author_text(details$field) || !details$field %in% c("error_policy", "examples",
+      "examples.expected_error", "examples.outcome") ||
+    (!is.null(details$error_code) && (!custom_author_text(details$error_code) ||
+      !grepl("^[a-z][a-z0-9_]{0,79}$", details$error_code))) ||
+    !valid_optional(details$expected_phase, c("fit", "predict")) ||
+    !valid_optional(details$actual_phase, c("fit", "predict")) ||
+    !valid_optional(details$model_type, c("local", "global")) ||
+    (!is.null(details$example_index) && (!is.numeric(details$example_index) ||
+      length(details$example_index) != 1L || !is.finite(details$example_index) ||
+      details$example_index < 1 || details$example_index > 8 ||
+      details$example_index != floor(details$example_index))) ||
+    !is.logical(details$requires_caller_input) || length(details$requires_caller_input) != 1L ||
+    is.na(details$requires_caller_input)) {
+    custom_author_abort("diagnostics", "Invalid bounded error-contract details.")
+  }
+  details
+}
+
+# Raise the existing failure code with passive mismatch details. Invalid provider
+# identifiers are omitted, not copied into messages, history or repair prompts.
+custom_author_error_contract <- function(reason, field = "error_policy", error_code = NULL,
+                                         expected_phase = NULL, actual_phase = NULL,
+                                         model_type = NULL, example_index = NULL,
+                                         requires_caller_input = FALSE, stage = "contract") {
+  if (!custom_author_text(error_code) || !grepl("^[a-z][a-z0-9_]{0,79}$", error_code))
+    error_code <- NULL
+  details <- list(reason = reason, field = field, error_code = error_code,
+    expected_phase = expected_phase, actual_phase = actual_phase, model_type = model_type,
+    example_index = example_index, requires_caller_input = requires_caller_input)
+  custom_author_abort(stage, paste("Error declarations and worked outcomes contradict one another.", reason),
+    code = "invalid_error_contract", field = "error_policy", error_contract = details)
+}
+
+# Check declarations before references/phases, then per-mode numerical controls
+# and error coverage. Preserve all independent expected values and error outcomes.
+# Return normalized declarations, optional invariants and expectation provenance
+# without interpreting formulas or running code; every error needs a matching test.
 custom_author_behavior_contract <- function(error_policy, properties, examples, modes) {
-  reject <- function() custom_author_abort("contract", "Error declarations and worked outcomes contradict one another.",
-    code = "invalid_error_contract", field = "error_policy"
-  )
+  reject <- custom_author_error_contract
   if (!is.list(error_policy) || length(error_policy) > 8L)
-    reject()
+    reject("invalid_error_declaration")
   errors <- lapply(error_policy, function(entry) {
     if (!is.list(entry) || !setequal(names(entry), c("code", "phase", "description")) || length(entry) != 3L || !custom_author_text(entry$code) ||
       !grepl("^[a-z][a-z0-9_]{0,79}$", entry$code) || !custom_author_text(entry$phase) || !entry$phase %in% c(
       "fit",
       "predict"
     ) || !custom_author_text(entry$description) || nchar(entry$description, type = "bytes") > 1000L)
-      reject()
+      reject("invalid_error_declaration")
     entry
   })
   codes <- vapply(errors, `[[`, character(1), "code")
   if (anyDuplicated(codes))
-    reject()
+    reject("invalid_error_declaration", error_code = codes[[anyDuplicated(codes)]])
   outcomes <- vapply(examples, function(example) example$outcome %||% "predictions", character(1))
+  for (index in which(outcomes == "error")) {
+    example <- examples[[index]]
+    match <- match(example$expected_error$code, codes)
+    if (is.na(match))
+      reject("undeclared_example_error", "examples.expected_error",
+        error_code = example$expected_error$code, actual_phase = example$expected_error$phase,
+        model_type = example$model_type, example_index = as.integer(index))
+    if (!identical(example$expected_error, errors[[match]][c("phase", "code")]))
+      reject("error_phase_mismatch", "examples.expected_error", error_code = codes[[match]],
+        expected_phase = errors[[match]]$phase, actual_phase = example$expected_error$phase,
+        model_type = example$model_type, example_index = as.integer(index))
+  }
   for (mode in modes) {
     selected <- examples[vapply(examples, function(example) identical(example$model_type, mode), logical(1))]
     if (!any(vapply(selected, function(example) is.null(example$expected_error), logical(1))))
-      reject()
+      reject("missing_numerical_control", "examples", model_type = mode, requires_caller_input = TRUE)
     for (entry in errors) {
       if (!any(vapply(selected, function(example) identical(example$expected_error, entry[c("phase", "code")]), logical(1))))
-        reject()
+        reject("missing_error_example", "examples.expected_error", error_code = entry$code,
+          expected_phase = entry$phase, model_type = mode, requires_caller_input = TRUE)
     }
-  }
-  for (example in examples[outcomes == "error"]) {
-    index <- match(example$expected_error$code, codes)
-    if (is.na(index) || !identical(example$expected_error, errors[[index]][c("phase", "code")]))
-      reject()
   }
   if (is.list(properties) && !length(properties))
     properties <- character()
@@ -1774,7 +1863,8 @@ custom_author_behavior_contract <- function(error_policy, properties, examples, 
 # Match saved protocol/field options and declared predictor types, but use a small
 # independent two-period task, base-only packages and no caller observations.
 # The nested builder materializes fixed mean or driver arithmetic without running
-# source. Contract demonstrations include a clarification; source demonstrations
+# source. Contract demonstrations include a clarification and, when drivers
+# exist, an explicit empty historical_only_predictors array; source demonstrations
 # include portable state and row-ordered predictions. Only tests execute their source.
 # These references never enter accepted contracts, draft hashes or consent records.
 custom_author_prompt_examples <- function(stage, payload) {
@@ -1914,6 +2004,10 @@ custom_author_prompt_examples <- function(stage, payload) {
       response$defaults_used <- character()
     }
     response <- response[custom_author_contract_fields(protocol, payload$name, payload$model_type, automatic)]
+    # The live contract schema requests explicit driver availability whenever
+    # drivers exist; these demonstrations use supplied future values for all.
+    if (length(predictors))
+      response$historical_only_predictors <- character()
     if (stage == "contract")
       return(list(request = request, response = response))
     proposal <- response
@@ -2054,6 +2148,8 @@ custom_author_source_response <- function(proposal) {
 # Construct one current typed provider request from fixed metadata, contract and bounded repair evidence.
 # Separate synthetic demonstrations from the actual payload; neither changes caller examples or approval.
 # Contract requests own interpretation/types/error declarations; source requests own calculation bodies.
+# When drivers exist, contract requests also ask for historical_only_predictors
+# and add driver-availability instructions; blank future cells are never a signal.
 # The supplied isolated session performs one structured request. Operational errors retain only bounded diagnostics.
 custom_author_request <- function(session, stage, payload) {
   automatic <- identical(payload$approval_mode, "automatic")
@@ -2094,6 +2190,8 @@ custom_author_request <- function(session, stage, payload) {
     if ("global" %in% (payload$model_type %||% payload$contract$model_type))
       fields$prediction_cohort <- ellmer::type_object(scope = ellmer::type_enum(c("series", "groups", "all")), group_columns = ellmer::type_array(ellmer::type_string()))
     fields <- fields[custom_author_contract_fields(protocol, payload$name, payload$model_type, automatic)]
+    if (length(protocol$predictors))
+      fields$historical_only_predictors <- ellmer::type_array(ellmer::type_string())
     schema <- do.call(ellmer::type_object, fields)
     instruction <- paste(
       "Interpret the human's fixed business rule, not accuracy optimization. Return exactly the requested native structured fields.",
@@ -2235,6 +2333,22 @@ custom_author_request <- function(session, stage, payload) {
   }
   if (stage == "contract")
     instruction <- paste(instruction, "Generated numerical examples are suggestions whose mismatches will warn, not reject code. Still calculate them carefully; do not introduce rounding or approximate numbers unless the business rule explicitly requests it. Caller-provided validation_examples remain fixed mandatory expectations.")
+  if (length(protocol$predictors)) {
+    instruction <- paste(instruction,
+      "DRIVER AVAILABILITY: classify explicitly from the user's rule, never from blank future cells.",
+      "historical_only_predictors is a subset of declared predictors; other drivers require supplied values in history and every forecast period.",
+      "For each driver, interpretation must distinguish observed-history lags/fitted statistics, caller-supplied contemporaneous future inputs, or an explicitly specified internally generated future path.",
+      "An internal driver forecast is historical-only from the caller's perspective. Store its required history, starting state and coefficients in portable fitted state.",
+      "Historical-only columns are REMOVED from new_data even when supplied. Their observed values are available only in fit data and saved object state.",
+      "Do not consume future observations, fabricate inputs, impute future drivers, silently carry forward or substitute zero.",
+      "An observed lag must reach an actually observed date. When the horizon exceeds observed lag support, require the user's explicit recursive/generation method or declared error.",
+      "Block ambiguous driver use, unspecified lag/window/date alignment, unspecified internal-generation method/starting state/ordering, unresolved circular dependencies and contradictions with fixed examples.",
+      if (stage == "contract")
+        "Return business clarification questions for every unresolved essential driver choice; automatic mode must not guess. Supply historical_only_predictors explicitly (empty means every driver needs future inputs). Future example keys may omit only historical-only drivers."
+      else
+        "If fixed driver requirements contradict the rule, return contract_conflict before executable candidate content. Otherwise implement explicit guards for the declared lag/generation domain and error_policy; missing required future inputs are errors, not alternative models or zero forecasts."
+    )
+  }
   if (stage == "contract" && !is.null(payload$validation_examples))
     instruction <- paste(
       instruction, "The actual request includes the caller's fixed validation_examples. Read their history, future rows, expected outputs, and expected_error declarations before proposing the contract. Do not generate replacements or change their values, tolerance, outcome, error code or error phase.",
@@ -2289,11 +2403,25 @@ custom_author_request <- function(session, stage, payload) {
 # Normalize parameter types and group declarations, validate required history and
 # error coverage, and record example provenance without proving arithmetic. The
 # temporary definition is inert. No accepted oracle or caller capability changes.
+# Optional historical_only_predictors must be a unique subset of declared drivers;
+# a nonempty set is stored sorted in requirements, and an empty set is omitted
+# so the definition and its digest match a legacy future-only contract.
 custom_author_contract <- function(proposal, instructions, metadata, name, model_type, examples, protocol = NULL, required_properties = character()) {
   supplied_examples <- !is.null(examples)
   declarations <- proposal[c("parameter_schema", "error_policy", "validation_properties")]
   prediction_cohort <- proposal$prediction_cohort
-  custom_author_fields(proposal, custom_author_contract_fields(protocol, name, model_type), "contract")
+  historical <- proposal$historical_only_predictors
+  custom_author_fields(proposal, c(custom_author_contract_fields(protocol, name, model_type),
+    if ("historical_only_predictors" %in% names(proposal)) "historical_only_predictors"), "contract")
+  if (is.list(historical) && !length(historical)) historical <- character()
+  if (is.list(historical) && all(vapply(historical, custom_author_text, logical(1))))
+    historical <- unlist(historical, use.names = FALSE)
+  if (is.null(historical)) historical <- character()
+  if (!is.character(historical) || anyNA(historical) || anyDuplicated(historical) ||
+    any(!historical %in% protocol$predictors)) {
+    custom_author_abort("contract", "historical_only_predictors must be a unique subset of declared drivers.",
+      code = "invalid_contract_metadata", field = "metadata")
+  }
   history_requirements <- custom_author_history_requirements(proposal$history_requirements)
   modes <- model_type %||% unlist(proposal$model_type, use.names = FALSE)
   name <- name %||% proposal$name
@@ -2302,7 +2430,8 @@ custom_author_contract <- function(proposal, instructions, metadata, name, model
     if (nchar(jsonlite::toJSON(values, auto_unbox = TRUE, digits = NA), type = "bytes") > 200000L) {
       custom_author_abort("examples", "Generated examples exceed the size limit.", code = "invalid_examples_shape")
     }
-    examples <- custom_author_scaffold_examples(values, protocol$scaffold, modes, protocol$predictors, predictor_types = protocol$predictor_types)
+    examples <- custom_author_scaffold_examples(values, protocol$scaffold, modes, protocol$predictors,
+      predictor_types = protocol$predictor_types, historical_only_predictors = historical)
   }
   # Structured arrays are lists with convert=FALSE; accept only flat text.
   strings <- function(value) {
@@ -2321,6 +2450,8 @@ custom_author_contract <- function(proposal, instructions, metadata, name, model
     history = history_requirements, predictor_types = protocol$predictor_types
   )
   requirements$runtime <- list(prediction_scope = "complete_horizon", cohort = "series", group_columns = character())
+  if (length(historical))
+    requirements$historical_only_predictors <- sort(unname(historical), method = "radix")
   if ("global" %in% model_type) {
     custom_author_fields(prediction_cohort, c("scope", "group_columns"), "contract")
     requirements$runtime <- list(

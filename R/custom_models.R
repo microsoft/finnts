@@ -83,6 +83,8 @@ custom_model_allowed_packages <- function() {
 # Chronological original-scale C1 and complete-horizon execution are mandatory.
 # Optional hierarchy metadata requires explicit local per-node reconciliation
 # and univariate logic; exact field sets reject obsolete development artifacts.
+# Optional requirements$historical_only_predictors must be unique declared
+# nonidentity, nongroup drivers; omitting it keeps legacy definitions and digests.
 validate_custom_model_definition <- function(definition) {
   # Recursively reject executable or attributed values before S3 dispatch is
   # possible. Plain names are allowed, must be unique, and cannot be blank.
@@ -187,7 +189,8 @@ validate_custom_model_definition <- function(definition) {
   requirement_fields <- c(
     "predictors", "recipes", "target_scale", "date_types",
     "forecast_horizon", "missing_data", "runtime", "history", "predictor_types",
-    if ("hierarchy" %in% names(requirements)) "hierarchy"
+    if ("hierarchy" %in% names(requirements)) "hierarchy",
+    if ("historical_only_predictors" %in% names(requirements)) "historical_only_predictors"
   )
   if (!is.list(requirements) || !setequal(names(requirements), requirement_fields)) {
     stop("Custom model requirements must declare: ",
@@ -196,6 +199,14 @@ validate_custom_model_definition <- function(definition) {
     )
   }
   check_text(requirements$predictors, "requirements$predictors", empty = TRUE)
+  if ("historical_only_predictors" %in% names(requirements)) {
+    historical <- requirements$historical_only_predictors
+    check_text(historical, "requirements$historical_only_predictors", empty = TRUE)
+    if (any(!historical %in% setdiff(requirements$predictors, c("Date", "Combo"))) ||
+      any(historical %in% requirements$runtime$group_columns)) {
+      stop("Custom model historical_only_predictors must be declared nonidentity, nongroup drivers.", call. = FALSE)
+    }
+  }
   types <- requirements$predictor_types
   if (!is.list(types) || (length(types) && (is.null(names(types)) ||
     any(!names(types) %in% setdiff(requirements$predictors, c("Date", "Combo"))) ||

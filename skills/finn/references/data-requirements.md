@@ -19,11 +19,14 @@ One row per series per period ("long" format):
 - **Series columns** (`combo_variables`): one or more text columns that name a series,
   such as region, product, or account. Each unique combination is one series.
 - **Target column**: the numeric value to forecast, such as revenue or units.
-- **Driver columns** (optional): numbers that help explain the target, such as price or
-  headcount. A driver is only useful if the user also has its values for the future
-  periods being forecast.
+- **Driver columns** (optional): values that help explain the target, such as price or
+  headcount. Custom models may use drivers only from history if their reviewed rule
+  explicitly defines that use; other drivers need supplied future values. Built-in
+  ML models keep their existing past-feature and future-feature rules.
 - **Future rows** (only with drivers): rows after the last actual date, with the target
-  left empty and driver values filled in.
+  left empty and prediction-required driver values filled in. Historical-only custom
+  drivers can be blank in future rows; a history-only rule may need no future rows.
+  Keep all declared drivers in `external_regressors` (custom-models.md).
 
 Wide layouts (one column per month), title rows, and subtotal rows are fine to start with:
 `profile_data.R` detects them and `prepare_data.R` reshapes them after the user agrees.
@@ -72,6 +75,10 @@ Explain these and let the user decide:
 - Fiscal year start not set for monthly, quarterly, or yearly data.
 - 100 or more series stored on OneDrive (sync can slow runs; see storage.md).
 - Driver columns with no future values.
+
+These generic warnings do not waive custom-model contract errors: missing
+prediction-required drivers stop creation or forecasting. Never fabricate future
+values or classify a driver as historical-only merely because cells are empty.
 
 ## Excel and regional files
 

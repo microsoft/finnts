@@ -2,6 +2,10 @@ test_that("saved custom updates and new-series defaults preserve model-owned dri
   args <- custom_driver_agent(withr::local_tempdir())
   args$input_data$Driver <- 101:126
   args$input_data$value <- c(2 * (101:124), NA, NA)
+  args$custom_models$unit_growth <- historical_driver_model()
+  args$input_data$Units <- c(rep(110, 24), NA, NA)
+  args$input_data$Price <- c(rep(10, 24), 12, 13)
+  args$llm <- custom_agent_chat(custom_agent_response("driver_rule---unit_growth"))
   local_custom_update_runtime()
   local_custom_default_grid()
   original_prep <- finnts:::prep_models
@@ -33,6 +37,14 @@ test_that("saved custom updates and new-series defaults preserve model-owned dri
     rows <- forecasts[which(forecasts$Combo == combo & forecasts$Model_Name == "driver_rule" &
       forecasts$Train_Test_ID == 1), ]
     expect_equal(rows$Forecast, (if (combo == "series1") 2 else 1.5) * (125:126))
+    historical <- forecasts[which(forecasts$Combo == combo & forecasts$Model_Name == "unit_growth" &
+      forecasts$Train_Test_ID == 1), ]
+    if (combo == "new-series")
+      expect_equal(historical$Forecast, c(1452, 1730.3), tolerance = 1e-8)
+    else
+      expect_length(historical$Forecast, 0)
   }
+  expect_identical(load_agent_custom_state(current)$custom_agent_contract$envelopes$unit_growth,
+    args$custom_models$unit_growth)
   expect_no_error(audit_agent_custom_best(load_agent_custom_state(current), get_best_agent_run(current)))
 })

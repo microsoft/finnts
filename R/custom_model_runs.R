@@ -529,6 +529,8 @@ custom_run_character_columns <- function(custom) {
 #' Validate required predictors on each actual prepared dataset, not just the
 #' first recipe sample. Returns the declared identity/predictor names; missing,
 #' nonfinite, unsupported, changed declared types or outcome/assessment input values error without I/O.
+#' Historical-only drivers are checked only on rows with an observed Target, so
+#' their blank future cells are allowed; every other driver needs all rows.
 #' @noRd
 custom_run_predictors <- function(definition, data) {
   predictors <- custom_model_predictor_columns(definition$requirements$predictors)
@@ -540,11 +542,13 @@ custom_run_predictors <- function(definition, data) {
   }
   custom_model_predictor_types(definition, data)
   for (field in predictors) {
-    values <- data[[field]]
+    observed <- if (field %in% definition$requirements$historical_only_predictors)
+      which(!is.na(data$Target)) else seq_len(nrow(data))
+    values <- data[[field]][observed]
     if (anyNA(values) || (is.numeric(values) && any(!is.finite(values))) || !(is.numeric(values) || is.character(values) ||
       is.factor(values) || is.logical(values) || inherits(values, "Date"))) {
       invalid <- is.na(values) | if (is.numeric(values)) !is.finite(values) else FALSE
-      rows <- which(invalid)
+      rows <- observed[which(invalid)]
       detail <- if (length(rows)) paste0(" for series ", as.character(data$Combo[[rows[[1]]]]),
         " at ", as.character(data$Date[[rows[[1]]]])) else ""
       stop("Custom model ", definition$name, " requires complete supported predictor values: ", field, detail, ".", call. = FALSE)

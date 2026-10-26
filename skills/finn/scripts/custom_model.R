@@ -142,7 +142,9 @@ custom_model_read_examples <- function(path) {
 #'   series instead of 3.
 #' @return List with `data`, `hist_start_date`, `hist_end_date`,
 #'   `series_used`, `series_total`, and `periods`. Errors in plain language
-#'   when no series qualifies.
+#'   when no series has complete actuals and driver history. Future rows are
+#'   retained unchanged; only the later reviewed contract decides which future
+#'   drivers must be complete. Missing future values never classify a driver.
 custom_model_panel <- function(data, combo_variables, target, drivers = character(), date_type, horizon,
                                hist_end_date = NULL, hist_start_date = NULL, global = FALSE) {
   data <- as.data.frame(data, stringsAsFactors = FALSE)[, c("Date", combo_variables, target, drivers), drop = FALSE]
@@ -166,9 +168,6 @@ custom_model_panel <- function(data, combo_variables, target, drivers = characte
     if (!n || !present[n]) {
       return(NA_integer_)
     }
-    if (length(drivers) && !all(future %in% data$Date[i[drivers_ok[i]]])) {
-      return(NA_integer_)
-    }
     gaps <- which(!present)
     if (length(gaps)) as.integer(max(gaps) + 1L) else 1L
   }, integer(1))
@@ -176,7 +175,7 @@ custom_model_panel <- function(data, combo_variables, target, drivers = characte
   if (!length(eligible)) {
     stop(sprintf(
       "No series has actuals%s for its latest periods through %s, so the new model can't be checked. Set hist_end_date to the last complete period.",
-      if (length(drivers)) " and complete drivers (including future driver values)" else "", format(end)
+      if (length(drivers)) " and complete historical drivers" else "", format(end)
     ), call. = FALSE)
   }
   if (!is.null(hist_start_date)) {
@@ -208,7 +207,8 @@ custom_model_panel <- function(data, combo_variables, target, drivers = characte
 #'
 #' Lists the model's folder, which is genuine discovery of unknown version
 #' files. Metadata comes from each `<version>.json`, or from the model file
-#' when the metadata file is missing.
+#' when the metadata file is missing. Availability always comes from the verified
+#' RDS contract, including for older JSON files; reads never rewrite metadata.
 #'
 #' @param paths Project paths.
 #' @param name Custom model name.
@@ -228,9 +228,19 @@ custom_model_versions <- function(paths, name) {
       if (!inherits(model, "finnts_custom_model")) {
         return(NULL)
       }
+      finn_custom_verify(model)
+      if (!identical(model$definition$name, name) ||
+        !identical(basename(rds), paste0(finn_custom_version_short(model$definition$version_id), ".rds"))) {
+        stop("Saved custom model identity does not match its file: ", finn_norm(rds), ".", call. = FALSE)
+      }
       meta <- finn_custom_metadata(model)
+    } else {
+      model <- finn_custom_read(paths, list(name = name, version_id = meta$version_id), verify = TRUE)
     }
     meta$version <- finn_custom_version_short(meta$version_id)
+    availability <- finn_custom_availability(model)
+    meta$historical_only_drivers <- availability$historical_only_drivers
+    meta$future_required_drivers <- availability$future_required_drivers
     meta$rds <- finn_norm(rds)
     meta
   })
@@ -267,9 +277,11 @@ custom_model_pick <- function(versions, name, version = NULL) {
 #' Short listing of saved versions for a user choice
 #'
 #' @param versions Metadata lists from [custom_model_versions()].
-#' @return List of `version`, `created_at`, `model_type`, and `drivers`.
+#' @return List of version identifiers, creation time, model types, drivers and
+#'   approved historical-only/future-required driver lists.
 custom_model_version_choices <- function(versions) {
-  lapply(versions, function(v) v[intersect(c("version", "created_at", "model_type", "drivers"), names(v))])
+  lapply(versions, function(v) v[intersect(c("version", "created_at", "model_type", "drivers",
+    "historical_only_drivers", "future_required_drivers"), names(v))])
 }
 
 #' Enroll or unenroll a custom model in the saved project config
@@ -346,7 +358,9 @@ custom_model_template <- function(args, paths) {
   utils::write.csv(template, path, row.names = FALSE, na = "")
   finn_result(TRUE, "ok", sprintf("Wrote a worked-examples template for `%s`.", name), data, c(
     guide,
-    if (length(drivers)) "Fill every driver column on every row, including future rows.",
+    if (length(drivers)) paste("Fill every driver on historical rows. Future rows need values only for drivers",
+      "your rule requires at prediction. Describe historical-only drivers, lag alignment and any internal",
+      "generation explicitly; the reviewed contract must confirm this, not infer it from blanks."),
     sprintf("Then pass --examples=%s to --action=create.", finn_norm(path))
   ))
 }
@@ -404,6 +418,11 @@ custom_model_create <- function(args, paths) {
   }
   instructions <- custom_model_instructions(args)
   drivers <- custom_model_drivers(args, cfg)
+  if (length(drivers) && !finn_custom_historical_supported()) {
+    return(finn_result(FALSE, "blocked",
+      "The installed finnts lacks availability-aware custom driver authoring.", list(),
+      "Ask before running install_finnts.R --confirm=true to update finnts; updating the skill alone is not enough."))
+  }
   model_type <- custom_model_split(finn_arg(args, "model_type", "local"))
   if (!length(model_type) || !all(model_type %in% c("local", "global"))) {
     stop("--model_type must be local, global, or local,global.", call. = FALSE)
@@ -454,7 +473,7 @@ custom_model_create <- function(args, paths) {
     custom_model_author(
       instructions = instructions, llm = llm, input_data = panel$data,
       combo_variables = unlist(cfg$combo_variables), target_variable = cfg$target_variable,
-      date_type = cfg$date_type, forecast_horizon = horizon,
+      date_type = cfg$date_type, forecast_horizon = as.numeric(horizon),
       external_regressors = if (length(drivers)) drivers,
       hist_start_date = panel$hist_start_date, hist_end_date = panel$hist_end_date,
       name = name, model_type = model_type, validation_examples = examples,
@@ -521,7 +540,9 @@ custom_model_list <- function(args, paths) {
   models <- lapply(model_names, function(n) {
     versions <- lapply(custom_model_versions(paths, n), function(v) {
       v$enrolled <- paste0(n, "@", v$version) %in% enrolled
-      v[intersect(c("version", "version_id", "created_at", "model_type", "drivers", "date_types", "hierarchy", "provider", "llm_model", "examples", "enrolled"), names(v))]
+      v[intersect(c("version", "version_id", "created_at", "model_type", "drivers",
+        "historical_only_drivers", "future_required_drivers", "date_types", "hierarchy",
+        "provider", "llm_model", "examples", "enrolled"), names(v))]
     })
     examples <- finn_custom_examples_file(paths, n)
     list(name = n, versions = versions, examples_file = if (file.exists(examples)) finn_norm(examples))

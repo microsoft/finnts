@@ -3024,6 +3024,8 @@ update_model_execution <- function(expression, model, recoverable) {
 #' @details Temporal custom workflows evaluate complete horizons using existing
 #'   predictor rows, then discard unrequested predictions before scoring. Analysis
 #'   rows, target isolation, selected components and exact source identity remain.
+#'   Reconstructed historical-driver workflows retain their prediction dispatch
+#'   in the returned fitted objects, including after serialization.
 #' @noRd
 fit_models <- function(run_info,
                        combo,
@@ -3153,16 +3155,17 @@ fit_models <- function(run_info,
     workflow_recipe <- workflows::extract_recipe(workflow, estimated = FALSE) # unprepped
     workflow_spec <- workflows::extract_spec_parsnip(workflow) # model spec
     if (is_custom) {
-      # Authenticate the predecessor above, then construct the current spec.
+      # Authenticate the predecessor above, then construct the current workflow.
       # Never carry a fitted state or its old horizon into the new fit.
-      workflow_spec <- custom_model_spec(custom$pool$custom[[model]],
-        list(model_type = model_run$Model_Type[[1]], recipe_id = "C1",
-          date_type = custom$manifest$context$date_type, forecast_horizon = as.numeric(forecast_horizon),
-          target_scale = "original"), TRUE)
+      workflow <- custom_model_workflow(custom$pool$custom[[model]], workflow_recipe,
+        model_type = model_run$Model_Type[[1]], recipe_id = "C1",
+        date_type = custom$manifest$context$date_type, forecast_horizon = as.numeric(forecast_horizon),
+        target_scale = "original", allow_code = TRUE)
+    } else {
+      workflow <- workflows::workflow() %>%
+        workflows::add_recipe(workflow_recipe) %>%
+        workflows::add_model(workflow_spec)
     }
-    workflow <- workflows::workflow() %>%
-      workflows::add_recipe(workflow_recipe) %>%
-      workflows::add_model(workflow_spec)
 
     # adjust models based on data
     if (nrow(prep_data) > 500 & model == "xgboost") {

@@ -721,10 +721,11 @@ test_that("reference responses satisfy contracts and execute their stated predic
         expect_length(contracts, 2L)
         request <- contracts[[1]]$request
         response <- contracts[[1]]$response
-        expect_setequal(names(response), custom_author_contract_fields(
+        expect_setequal(names(response), c(custom_author_contract_fields(
           protocol, request$name, request$model_type,
           supplied
-        ))
+        ), "historical_only_predictors"))
+        expect_identical(response$historical_only_predictors, character())
         expect_length(contracts[[2]]$response$questions, 1L)
         expect_identical(contracts[[2]]$response$parameters_json, "{}")
         proposal <- response

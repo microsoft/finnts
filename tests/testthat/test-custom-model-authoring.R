@@ -175,10 +175,11 @@ test_that("reference JSON preserves typed arrays, policies and retry payloads", 
         expect_identical(serialize(payload, NULL), original)
         expect_equal(references[[1]]$request$automatic_policy$effective$forecast_horizon, 2)
         if (stage == "contract") {
-          expect_setequal(names(references[[1]]$response), custom_author_contract_fields(
+          expect_setequal(names(references[[1]]$response), c(custom_author_contract_fields(
             protocol, "actual_name",
             "local", TRUE
-          ))
+          ), if (length(protocol$predictors)) "historical_only_predictors"))
+          expect_length(references[[1]]$response$historical_only_predictors, 0L)
           if (supplied) {
             expect_null(references[[1]]$response$examples)
             expect_true(length(references[[1]]$request$validation_examples) >= 2L)

@@ -97,7 +97,7 @@ Newly generated Agent model summaries include custom-driver importance without
 requiring `vip`. Finn holds out the latest complete historical forecast horizon,
 refits the exact approved rule on earlier history once per fitted workflow, and
 compares baseline holdout RMSE with ten deterministic cyclic permutations of
-each eligible driver. The score is the **mean signed increase in holdout RMSE**,
+each eligible future-required driver. The score is the **mean signed increase in holdout RMSE**,
 in target units. Zero and negative scores are retained. Scores are conditional
 on the supplied assessment drivers, chosen holdout and correlations; they are
 not causal attribution, percentages, or a model-selection criterion.
@@ -110,13 +110,63 @@ with the same permissions as forecasting; it adds runtime and is not sandboxed.
 It does not overwrite saved fits or forecasts. No-driver models need no extra
 diagnostic fitting.
 
+For approved **historical-only drivers**, Finn instead permutes the earlier
+analysis history within each series, refits the exact approved rule, and predicts
+the unchanged holdout. Dates, targets, other drivers and cohort membership stay
+fixed. Ten deterministic cyclic shifts contribute to the mean signed holdout
+RMSE increase; identical scenarios reuse diagnostic predictions within the call.
+The baseline and historical perturbation fits start from the same R random seed,
+so fresh fitting randomness is not counted as driver influence. Driver order and
+cache hits do not advance that starting state, and the caller's RNG state is
+restored. This controls R's RNG, not external nondeterminism inside a custom engine.
+Future historical-only cells are not used. A zero score means these reorderings
+did not change accuracy, not that the rule is independent of the driver's level.
+
+Finn also reports **historical-level sensitivity** separately for plain numeric
+historical-only drivers: it refits on history scaled by 0.9 and 1.1, then reports
+the mean absolute forecast change across both scenarios and holdout dates, in
+target units. This is not an accuracy score or causal contribution and must not
+be combined with importance rankings or normalized to percentages.
+For example, a rule forecasting the historical mean of `c(1, 2, 3)` has zero
+permutation importance because reordering preserves its mean of 2. Scaling
+produces forecasts of 1.8 and 2.2, so its level sensitivity is 0.2.
+
+Historical diagnostics add at most ten permutation refits and two level refits
+per historical-only driver, plus one shared baseline. Constant nonzero history
+can have level sensitivity but not permutation importance. All-zero history has
+no nontrivial multiplicative level intervention; categorical history supports
+type-preserving permutation but not numeric scaling. Classed numeric history is
+not silently coerced for scaling. Cohort keys never move. These perturbations
+can disrupt temporal structure or violate business constraints; they are
+conditional diagnostics, not a claim that every custom rule is estimable.
+A declared rule error (raised with `finntsRuleError()`) on the shorter holdout
+analysis window, a permuted holdout or a perturbed history marks the affected
+diagnostic as not estimable and records the rule code in its status, so the
+completed forecast and other summary rows are kept. Any failed scenario voids
+that driver's score; successful scenarios are never averaged on their own.
+Other custom source/domain and nonfinite-result errors remain visible rather
+than being converted to zero or averages of successful scenarios.
+
 Insufficient history or lags, incomplete historical holdouts, and constant or
-cohort-key drivers are explicitly reported as not estimable, rather than given
+cohort-key assessment drivers are explicitly reported as not estimable, rather than given
 invented zero scores. Unexpected source, identity, data or storage errors still
 fail. Summary artifacts retain their existing columns and add `importance`
 rows (`name` is the driver, `value` is its score), plus
 `importance_metadata` method/status rows. Consumers should accept these
 additional rows. Existing completed runs and saved summaries are not migrated.
+
+For models declaring historical-only drivers, `importance_metadata` additionally
+records `method:<driver>` and `status:<driver>` rows. Match these using the same
+Combo/model identifiers and driver name; future-required and historical-only
+importance use different perturbations even though both report signed RMSE
+increases. `historical_sensitivity` contains the separate numeric level scores,
+with `historical_sensitivity_metadata` holding their driver-specific method and
+status. Missing/not-estimable scores are not zero. Ordinary future-only custom
+summaries and standard Finn ML importance retain their existing output.
+Explicitly regenerating a summary can write the new diagnostic rows, but
+reading an older summary does not rewrite it. The CSV remains the same flat
+eight-column table: `Combo`, `Model_ID`, `Model_Name`, `Model_Type`, `Best_Model`,
+`section`, `name`, `value`.
 
 New calls default to local models. Raw input must contain a column named `Date`
 and an explicit target and horizon. Grouping can be omitted only when dates are
@@ -237,12 +287,59 @@ carry the independently calculated `expected` forecast. There is no recycling
 or inferred answer. The target column may also use the `target_variable` name.
 Add series columns named like `combo_variables` for multi-series cases: one
 series validates local logic and two or more validate global logic. Driver
-columns named like `external_regressors` are filled on every row. Examples
+columns named like `external_regressors` are filled on every history row and,
+for prediction-required drivers, every future row. Historical-only drivers may
+have blank future cells only when their availability is explicitly declared in
+the reviewed contract. Examples
 named `edge_...` or flagged with `edge_case = TRUE` are edge cases. For a
 deliberate error case, set `expected_error = "fit:zero_denominator"` on its rows
 and leave `expected` missing. Optional `how` and `tolerance` (at most 0.01)
 columns document and loosen a case. Two to eight examples including an edge
 case are required; every supplied expectation stays fixed during repair.
+
+### Historical-only and future-required drivers
+
+Keep **all** drivers in `external_regressors`. Explain availability in the
+business instructions; no additional function argument is needed. For example:
+
+> Units_Sold is historical-only. From the last observed units, generate units
+> internally at ten percent compounded growth per month. Multiply those units
+> by the supplied future Price_Index for the corresponding month.
+
+The resulting contract records `historical_only_predictors = "Units_Sold"`.
+Fitting needs observed `Units_Sold` and `Price_Index`; forecasting needs
+`Price_Index`, Date and the series keys, but not future `Units_Sold`. If the last
+observed units are 100 and future prices are 12 and 13, forecasts are
+`100 * 1.1 * 12 = 1320` and `100 * 1.1^2 * 13 = 1573`.
+Supplied future historical-only values are ignored, not used as a hidden override.
+Authoring warns when a driver declared historical-only has complete future
+values, so you can review the contract if those values should be used. A driver
+the contract still requires in the forecast period must have complete future
+values in `input_data`; otherwise authoring stops with `invalid_input` before
+any source is generated.
+Unrelated input columns are also excluded before prediction source runs; only
+declared future drivers and the required identity columns are passed through.
+Forecast updates reconstruct the same historical-aware workflow, so newly saved
+and reloaded updated fits still predict without historical-only columns. Existing
+saved fits are not rewritten.
+
+Historical-only does **not** mean carrying forward, imputing, or automatically
+forecasting a driver. An observed lag must specify its window/date alignment and
+remain observed throughout the horizon; if it runs out, supply an explicit
+generation rule or an expected-error example. Internal driver forecasts need a
+method, starting state and dependency order. Unspecified availability, lag
+alignment, unsupported horizons, circular dependencies, or contradictory
+instructions/examples require clarification. Manual mode asks before execution;
+automatic mode raises a typed error with `needs_input` feedback rather than
+inventing business logic. This contract and independent examples cannot prove
+the correctness of arbitrary prose or generated formulas.
+
+Raw authoring and direct fitting reject missing/nonfinite required history.
+Existing C1 preparation still zero-fills historical numeric missingness; the
+model cannot recover the original missingness from those prepared zeros.
+Models saved without availability metadata retain their original future-driver
+requirements and content identities. New historical-only models require a
+package version that supports the declaration.
 
 `custom_model_control()` has five settings: `max_attempts = 3L`,
 `validation_budget = 60`, `package_policy = "installed_finnts"`,
@@ -791,6 +888,26 @@ Full diagnostic history remains separately available in `result$diagnostics`
 when an error is captured. Both reports can contain confidential column names,
 provider-visible questions or explicitly chosen artifact paths.
 
+For `code = "invalid_error_contract"`, inspect
+`feedback$details$error_contract`. Its reason distinguishes
+`missing_error_example`, `undeclared_example_error`, `error_phase_mismatch`,
+`invalid_error_declaration`, and `missing_numerical_control`; bounded fields
+identify the error code, expected/actual phase, mode and example index when known.
+For example, a rule declaring `fit:zero_units` needs both an independent
+error-outcome case with that exact phase/code and a valid numerical control.
+A `predict:zero_units` example is a phase mismatch, not an acceptable substitute.
+Supply the missing independent case when `requires_caller_input` is true.
+With fixed `validation_examples`, a declared error that none of them covers is
+first returned to the provider within the attempt budget, because the provider
+may have added an error the rule never required; if the declaration remains
+after the budget, feedback is `needs_input`. Caller examples that lack a
+numerical control for a declared mode cannot be repaired by the provider, so
+that case returns `needs_input` immediately.
+Package-generated questions are labelled separately from provider proposals.
+Repairable generated examples receive these same details within the existing
+attempt budget; exhausted attempts retain them. Caller expectations, tolerances
+and error outcomes are never invented or changed during repair.
+
 Coding agents should relay `needs_input` questions and any review request to the
 user, then call `create_custom_model()` again with refined instructions or
 `approval = "automatic"`. Feedback does not authorize execution, restart an
@@ -885,9 +1002,11 @@ make a mixed run appear successful.
 
 C1 retains eligible original numeric, character, factor, logical and Date
 columns; reserved outcome/assessment columns and unsupported types are excluded.
-Supply each declared driver's future values through the forecast horizon.
-Finn neither forecasts those future drivers nor replaces missing values with
-zero. This remains true when built-ins use other xregs, the Agent's first
+Supply complete history for every declared custom driver, and future values
+through the forecast horizon for prediction-required drivers. A driver explicitly
+declared historical-only in the reviewed contract needs no supplied future values;
+its future use must follow the agreed historical rule. Finn neither fills missing
+prediction-required drivers nor replaces them with zero. This remains true when built-ins use other xregs, the Agent's first
 iteration uses none, or update recovery uses simple defaults. C1 source identity
 is pinned before recipe writes, including partial preparation: changing eligible
 source values requires a new standard run or Agent version, not a restart.

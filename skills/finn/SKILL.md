@@ -175,7 +175,12 @@ Do not change the finnts package version for a skill-only change.
    use, OneDrive sync), and check `run_status.R` when they ask.
    Data `warnings` (zero-only series, values after `hist_end_date`, a latest period that
    has not ended, drivers without future values) never block a run; explain them and let
-   the user decide.
+   the user decide. These warnings do not waive custom-model contract errors:
+   all drivers need history and prediction-required drivers need future values.
+   Historical-only use must be explicit in the reviewed rule, not inferred from blanks.
+   Follow [references/custom-models.md](references/custom-models.md), check
+   `custom_models_historical_drivers`, and ask for clarification on ambiguous driver
+   logic; never invent future values or bypass required inputs.
 7. When it completes, summarize accuracy and the forecast (in the input's units), offer
    `export_results.R`, and answer follow-ups with free-form analysis. After the first
    completed run (or the tutorial), offer three or four next prompts from

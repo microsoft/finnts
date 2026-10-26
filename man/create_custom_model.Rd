@@ -48,7 +48,10 @@ one shared complete cadence. Fiscal calendars are not inferred.}
 \item{forecast_horizon}{Positive integer periods to forecast; required for raw input.}
 
 \item{external_regressors}{Explicit driver column names; otherwise inherited
-from prepared metadata or empty. Drivers are never selected automatically.}
+from prepared metadata or empty. Drivers are never selected automatically.
+Include both historical-only and future-required drivers. Specify their
+intended availability and any lag or internal generation rule in
+\code{instructions}; the reviewed contract freezes that declaration.}
 
 \item{hist_start_date, hist_end_date}{Optional inclusive Date period labels.
 For first-of-month data, August 2026 is \code{as.Date("2026-08-01")}.
@@ -85,8 +88,16 @@ you expect, and \code{\link[=custom_model_control]{custom_model_control()}} for 
 \section{Inputs and Validation}{
 
 Every series needs finite targets on a complete common historical grid.
-Declared drivers must cover that history and every future forecast date.
+Every declared driver must cover fitting history. Drivers also require values
+on every future forecast date unless explicitly declared historical-only in
+the reviewed contract. Missing future cells never imply historical-only use.
+Historical-only values are removed from prediction input even when supplied.
+Use observed lags/fitted statistics or explicitly specify how the model
+generates later driver values, including alignment, starting state and order.
+Unresolved business choices block source execution for clarification.
 Gaps and duplicate keys fail; authoring does not fill or infer business values.
+Existing C1 historical zero-fill behavior is unchanged; a prepared zero does
+not retain evidence that the original historical value was missing.
 Without \code{hist_end_date}, series must share their last finite target date.
 This does not certify business close: specify a cutoff when later rows contain
 partial actuals, plans or prior forecasts. Driver holdout scores are conditional

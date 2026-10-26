@@ -1,7 +1,16 @@
 {
-  "version": "0.2.0",
-  "released": "2026-10-20",
+  "version": "0.3.0",
+  "released": "2026-10-26",
   "changelog": [
+    {
+      "version": "0.3.0",
+      "date": "2026-10-26",
+      "changes": [
+        "Custom models can use historical-only drivers without invented future values; reviewed rules distinguish them from drivers that need future inputs.",
+        "Model lists and settings reviews show historical-only and future-required drivers; ambiguous rules require clarification before creation.",
+        "Explains historical-driver importance and separate level sensitivity while preserving the saved model-summary CSV format."
+      ]
+    },
     {
       "version": "0.2.0",
       "date": "2026-10-20",

@@ -72,8 +72,14 @@ reactable::reactable(
 Approved custom models use the separate original-scale `C1` recipe, not R1/R2.
 C1 retains eligible original input columns independently of built-in
 `external_regressors`, but each custom workflow receives only its declared
-predictors plus Date and Combo. Required custom drivers must include supplied
-future values through the horizon, even if built-ins use different xregs or none.
+predictors plus Date and Combo. All declared drivers are required during fitting.
+Prediction-required drivers need supplied future values through the horizon,
+even if built-ins use different xregs or none. Business instructions and contract
+review can explicitly mark a driver historical-only: prediction then uses only
+observed lags/fitted statistics or explicitly specified internal driver forecasts.
+Missing future cells never select that policy automatically; ambiguous alignment
+or driver-generation logic requires clarification. Existing C1 historical
+zero-fill behavior is unchanged.
 The same declarations apply in Agent iterations, updates and default recovery.
 See the [custom-model walkthrough](best-model-selection.html#experimental-custom-models).
 
