@@ -16,6 +16,9 @@ Never create, edit, copy, or delete files under `custom_models/` yourself.
 - `check_env.R` reports `custom_models_supported` (finnts can create and run custom
   models, including in Agent runs) and `custom_models_copilot` (it can create them with
   GitHub Copilot). If either is false and needed, offer `install_finnts.R --confirm=true`.
+- Models with drivers also need `custom_models_historical_drivers` from `check_env.R`.
+  If false, creation is blocked before contacting the LLM. Ask permission to update
+  finnts; updating the skill alone does not add package capabilities.
 - Creation uses the project's `agent.llm` (setup.md), even for standard projects:
   GitHub Copilot through `finnts::chat_copilot()` by default, or an `azure_openai` or
   `openai` provider through ellmer. Copilot creation waits at least 600 seconds; pass
@@ -28,7 +31,10 @@ Never create, edit, copy, or delete files under `custom_models/` yourself.
 1. **Understand the rule.** Ask what the model should do, whether it forecasts each
    series on its own (`local`, the default) or learns across series (`global`), which
    drivers it may use (they must already be in `external_regressors`), and what it
-   should do for edge cases such as zeros, missing values, or short history. Agree on a
+   should do for edge cases such as zeros, missing values, or short history. For each
+   driver, establish whether it needs supplied future values or uses only history.
+   Resolve exact lags, internally generated values, growth rules and circular
+   dependencies; missing future cells alone are not a declaration. Agree on a
    name: it starts with a lowercase letter, uses only lowercase letters, digits, `_`, or
    `-` (no `--`), and differs from Finn's model names and the words `all`, `all-data`,
    `best-model`, `local`, `global`, `ensemble`, and `average`.
@@ -38,7 +44,9 @@ Never create, edit, copy, or delete files under `custom_models/` yourself.
    from their rule, including at least one edge case (example names starting with
    `edge_`). History rows fill the target and leave `expected` blank; future rows leave
    the target blank and fill `expected`. Examples are sent to the LLM, so use made-up
-   values. Skipping them (`--skip_examples=true`) means finnts can't confirm the model
+   values. Fill every historical driver; future rows need only drivers the rule
+   requires at prediction time. Leave historical-only future cells blank rather than
+   inventing values. Skipping them (`--skip_examples=true`) means finnts can't confirm the model
    matches the rule; recommend examples.
 3. **Preview.** `--action=create --name=<model> --instructions="<rule>"
    --examples=<csv>` (or `--instructions_file=<path>` for longer rules; add `--drivers`,
@@ -51,7 +59,8 @@ Never create, edit, copy, or delete files under `custom_models/` yourself.
    yes, then rerun the same command with `--confirm=true`. Add `--enroll=true` only if
    the user also wants this project's runs to use the model.
 5. **Explain the result.** On `ok`, describe `data.model.interpretation` in plain words
-   and say that passing its checks does not guarantee forecast accuracy.
+   and its `historical_only_drivers` and `future_required_drivers` lists, and say that
+   passing its checks does not guarantee forecast accuracy.
 6. **Enroll.** `--action=enroll --name=<model> [--version=<v>]` returns
    `needs_confirmation`; after the user agrees, rerun with `--confirm=true`. When the
    model has several saved versions and no `--version`, it returns `needs_input` with
@@ -71,6 +80,28 @@ the latest stretch of complete actuals that keeps the most series and periods, u
 to 3 series (100 for a global model) and at most 10,000 rows. `--hist_start_date`
 chooses its start. `data.check_window` reports the series and dates used.
 
+## Historical-only and future-required drivers
+
+All declared drivers stay in `external_regressors`. Every driver needs complete
+history during fitting. Only prediction-required drivers need supplied values for
+every future period. The reviewed package contract, not a guess based on missing
+cells or column names, decides this split. Historical-only columns are excluded
+from the data passed to prediction code.
+
+For example, "grow the last historical Units by 10% each month and multiply by
+supplied future Price" uses historical-only Units and future-required Price.
+With last Units = 100 and future Price = 12 and 13, forecasts are 1320 and 1573.
+Future Units can be absent; future Price cannot. A customer model that grows the
+last historical customer count and multiplies by a fixed agreed revenue per customer
+may need no future driver rows at all.
+
+If the rule says only "use Units and Price", ask how future Units are obtained and
+which Price values apply. Do not infer that blanks mean historical-only, invent
+future values, or remove drivers to bypass validation. Return `needs_input` questions
+to the user; incompatible examples or missing required inputs must be corrected
+before approval. Built-in ML models retain their existing lag/past versus future
+feature rules; this custom-model exception does not change them.
+
 ## Create statuses
 
 | status | meaning | what to do |
@@ -79,7 +110,7 @@ chooses its start. `data.check_window` reports the series and dates used.
 | `ok` | created, checked, approved, and saved (enrolled with `--enroll=true`); "already saved" means this exact version existed and nothing was replaced | explain the interpretation; offer to enroll |
 | `needs_input` | the LLM needs business answers (`data.questions`) | ask the user, add the answers to the instructions, and run create again |
 | `not_created` | the LLM failed or the model failed its checks (`data.feedback`); nothing was saved | explain in plain words; adjust the instructions or examples with the user and try again |
-| `blocked` | the installed finnts can't create custom models, or can't with Copilot | offer `install_finnts.R --confirm=true`, or switch `agent.llm` to another provider |
+| `blocked` | installed finnts lacks custom-model, driver-availability, or required Copilot support | ask permission to update finnts; switching providers only addresses missing Copilot support |
 | `invalid` | the project config has errors | fix them with `validate_config.R`, then try again |
 
 ## Saved files and settings
@@ -97,6 +128,11 @@ Enrollment is saved in `config.json` as
 `custom_models: [{"name": "<model>", "version_id": "<64 characters>"}]`; change it only
 with `--action=enroll` or `--action=unenroll`. Runs check each enrolled file again
 before using it; a missing or changed file is a config error.
+
+New JSON details include `historical_only_drivers` and `future_required_drivers`.
+List, show and review derive availability from the verified saved model, including
+older JSON without these fields, without rewriting that JSON. A legacy model with
+no historical-only contract treats all its declared drivers as future-required.
 
 ## How runs use them
 

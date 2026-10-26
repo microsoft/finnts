@@ -1002,9 +1002,11 @@ make a mixed run appear successful.
 
 C1 retains eligible original numeric, character, factor, logical and Date
 columns; reserved outcome/assessment columns and unsupported types are excluded.
-Supply each declared driver's future values through the forecast horizon.
-Finn neither forecasts those future drivers nor replaces missing values with
-zero. This remains true when built-ins use other xregs, the Agent's first
+Supply complete history for every declared custom driver, and future values
+through the forecast horizon for prediction-required drivers. A driver explicitly
+declared historical-only in the reviewed contract needs no supplied future values;
+its future use must follow the agreed historical rule. Finn neither fills missing
+prediction-required drivers nor replaces them with zero. This remains true when built-ins use other xregs, the Agent's first
 iteration uses none, or update recovery uses simple defaults. C1 source identity
 is pinned before recipe writes, including partial preparation: changing eligible
 source values requires a new standard run or Agent version, not a restart.

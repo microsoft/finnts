@@ -51,6 +51,23 @@ $env:FINN_SKILL_SCRIPTS = "<skill>\scripts"
 
 ## Examples
 
+### Custom-model driver diagnostics
+
+Read saved summaries with `get_summarized_models()` and a read-only Agent handle;
+do not refit models or call an LLM to answer a results question. The summary CSV
+keeps its eight columns: `Combo`, `Model_ID`, `Model_Name`, `Model_Type`,
+`Best_Model`, `section`, `name`, `value`.
+
+For historical-only custom drivers, `importance` measures signed holdout RMSE
+increase after permuting analysis history and refitting the exact model. Ordinary
+future-required custom drivers retain their existing assessment-permutation
+method, and standard ML importance is unchanged. A zero permutation score does
+not prove a historical driver is irrelevant: shuffling preserves its average.
+The separate `historical_sensitivity` section measures mean absolute prediction
+change under -10% and +10% historical level changes, not an accuracy ranking.
+Check per-driver `method:<driver>` and `status:<driver>` metadata before comparing
+values; report unsupported or failed diagnostics as such, never as zero importance.
+
 Accuracy by series:
 
 ```r

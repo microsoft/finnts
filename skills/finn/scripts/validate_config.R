@@ -122,7 +122,9 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
       if (identical(cfg$mode, "standard")) "the latest date in the file." else "the last period with actuals."
     ),
     forecast_horizon = "The number of periods forecast after `hist_end_date`.",
-    external_regressors = "Input-file columns used as forecast drivers, or `null` for none. Drivers need values for every forecast period.",
+    external_regressors = paste("Input-file columns used as forecast drivers, or `null` for none.",
+      "Custom models need complete history for all declared drivers, but future values only for",
+      "prediction-required drivers in their approved contract. Built-ins retain their past/future feature rules."),
     hist_start_date = "The first historical period used for training, or `null` for the earliest available period.",
     combo_cleanup_date = "Removes series with no values after this date, or `null` to keep them.",
     back_test_scenarios = "The number of historical forecast folds used to measure model accuracy, or `null` for automatic sizing.",
@@ -395,8 +397,13 @@ validate_custom_models_section <- function(models, run_type = "standard") {
     paste("Saved, approved custom models from this project. The Agent tries them alongside its own models;",
       "later iterate and update runs of this Agent version must use the same ones.")
   }
+  availability <- vapply(models, function(m) {
+    sprintf("- `%s`: Historical-only: %s. Future-required: %s.", m$name,
+      list_text(m$historical_only_drivers), list_text(m$future_required_drivers %||% m$drivers))
+  }, character(1))
   paste(c("### Custom models", "", note, "",
-    "| Model | Version | Type | Drivers | What it does |", "|---|---|---|---|---|", rows), collapse = "\n")
+    "| Model | Version | Type | Drivers | What it does |", "|---|---|---|---|---|", rows,
+    "", availability), collapse = "\n")
 }
 
 #' Revision view listing only the settings that changed

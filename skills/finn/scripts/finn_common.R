@@ -7,7 +7,7 @@
 #    "next_actions": [...]}
 # Coding agents read only that final line. Nothing here deletes files.
 
-finn_skill_version <- "0.2.0"
+finn_skill_version <- "0.3.0"
 finn_schema_version <- 1L
 
 #' Null-coalescing helper
@@ -2894,13 +2894,16 @@ finn_quality_flags <- function(data, cfg, key, facts) {
     future <- data$Date > boundary
     if (!any(future)) {
       out <- c(out, sprintf(
-        "Drivers (%s) have no values after %s, so finnts can only use their past values.",
+        paste("Drivers (%s) have no values after %s, so finnts can only use their past values.",
+          "Custom models still require future values for prediction-required drivers in their approved contract."),
         paste(regs, collapse = ", "), format(boundary)
       ))
     } else {
       gaps <- regs[vapply(regs, function(r) anyNA(data[[r]][future]), logical(1))]
       if (length(gaps) > 0) {
-        out <- c(out, sprintf("Drivers %s have blank future values after %s.", paste(gaps, collapse = ", "), format(boundary)))
+        out <- c(out, sprintf(paste("Drivers %s have blank future values after %s.",
+          "Past-only use can be valid; custom models require future values only for",
+          "prediction-required drivers in their approved contract."), paste(gaps, collapse = ", "), format(boundary)))
       }
     }
   }
@@ -3330,6 +3333,32 @@ finn_custom_copilot_supported <- function() {
     exists("copilot_request_turn", envir = asNamespace("finnts"), inherits = FALSE)
 }
 
+#' Whether the installed package supports reviewed historical-only availability
+#'
+#' @return Logical based on phase-aware prediction and deferred-future authoring
+#'   capabilities. Does not execute model source, infer availability or install.
+finn_custom_historical_supported <- function() {
+  if (!requireNamespace("finnts", quietly = TRUE)) return(FALSE)
+  ns <- asNamespace("finnts")
+  exists("custom_model_phase_predictors", envir = ns, inherits = FALSE) &&
+    exists("custom_author_data", envir = ns, inherits = FALSE) &&
+    "defer_future" %in% names(formals(get("custom_author_data", envir = ns)))
+}
+
+#' Derive driver availability from a verified model's approved contract
+#'
+#' @param model Verified custom model object; no code is executed.
+#' @param combo_variables Identity columns excluded from drivers.
+#' @return Two driver lists. Missing availability metadata means all declared
+#'   drivers require prediction inputs. No files or model objects are changed.
+finn_custom_availability <- function(model, combo_variables = NULL) {
+  req <- model$definition$requirements %||% list()
+  drivers <- setdiff(unlist(req$predictors), c("Date", "Combo", unlist(combo_variables)))
+  historical <- intersect(drivers, unlist(req$historical_only_predictors))
+  list(historical_only_drivers = as.list(historical),
+    future_required_drivers = as.list(setdiff(drivers, historical)))
+}
+
 #' Check that a saved custom model is intact and approved
 #'
 #' Uses `finnts::custom_model_feedback()`, which checks the model's integrity
@@ -3480,15 +3509,19 @@ finn_custom_agent_plan <- function(plan, cfg, data_gb, n_series, step_down = 0L)
 #' @param model Custom model object.
 #' @param combo_variables Series columns, left out of the driver list.
 #' @return List with `name`, `version_id`, `version` (short id), `model_type`,
-#'   `drivers`, `date_types`, `hierarchy` (approach or NULL), `approval`, and
+#'   `drivers`, `historical_only_drivers`, `future_required_drivers`, `date_types`,
+#'   `hierarchy` (approach or NULL), `approval`, and
 #'   `interpretation`.
 finn_custom_summary <- function(model, combo_variables = NULL) {
   def <- model$definition
   req <- def$requirements %||% list()
+  availability <- finn_custom_availability(model, combo_variables)
   list(
     name = def$name, version_id = def$version_id, version = finn_custom_version_short(def$version_id),
     model_type = as.list(unlist(def$model_type)),
     drivers = as.list(setdiff(unlist(req$predictors), c("Date", "Combo", unlist(combo_variables)))),
+    historical_only_drivers = availability$historical_only_drivers,
+    future_required_drivers = availability$future_required_drivers,
     date_types = as.list(unlist(req$date_types)),
     hierarchy = req$hierarchy$forecast_approach,
     approval = model$approval$mode,
@@ -3509,6 +3542,7 @@ finn_custom_metadata <- function(model, llm_cfg = list(), n_examples = 0L, combo
   s <- finn_custom_summary(model, combo_variables)
   list(
     name = s$name, version_id = s$version_id, model_type = s$model_type, drivers = s$drivers,
+    historical_only_drivers = s$historical_only_drivers, future_required_drivers = s$future_required_drivers,
     date_types = s$date_types, hierarchy = s$hierarchy, approval = s$approval,
     checks = as.list(names(model$validation$checks)),
     provider = llm_cfg$provider %||% "copilot", llm_model = llm_cfg$model %||% "auto",

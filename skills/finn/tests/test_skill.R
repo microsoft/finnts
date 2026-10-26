@@ -3031,7 +3031,8 @@ local({
   finn_write_project(p, list(name = "CustomChecks"))
   drv <- fake_model("drv", predictors = c("Date", "Combo", "Region", "Price"))
   meta <- finn_custom_metadata(drv, list(provider = "openai", model = "gpt"), 2L, "Region")
-  check("custom models: metadata fields", identical(names(meta), c("name", "version_id", "model_type", "drivers", "date_types",
+  check("custom models: metadata fields", identical(names(meta), c("name", "version_id", "model_type", "drivers",
+    "historical_only_drivers", "future_required_drivers", "date_types",
     "hierarchy", "approval", "checks", "provider", "llm_model", "created_at", "examples")) &&
     identical(meta$drivers, list("Price")) && identical(meta$provider, "openai") && identical(meta$examples, 2L))
   saved <- finn_custom_save(p, drv, meta)

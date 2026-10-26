@@ -11,7 +11,8 @@ first sentence; add the second only if they ask for more.
 | **Back test** | Pretending it is an earlier date, forecasting periods whose actuals are already known, and scoring the result. This is how Finn judges models fairly. |
 | **WMAPE** | Weighted mean absolute percentage error: the average miss as a percentage of actuals, with bigger series counting more. Lower is better; 10% means forecasts were off by about 10% on average. |
 | **Accuracy** | An easier way to say it: 100% minus WMAPE, so a 10% WMAPE is roughly 90% accurate. Finn's outputs report WMAPE itself. |
-| **Driver** (external regressor) | A column, like price or headcount, that helps explain the target. It needs values for every future period being forecast. |
+| **Driver** (external regressor) | A column, like price or headcount, that helps explain the target. Custom models need all driver history, but only their reviewed prediction-required drivers need future values. Built-ins keep their existing feature rules. |
+| **Historical-only driver** | A custom-model driver explicitly used only from history, for example to calculate a growth rate or generate future units internally. Future cells may be blank; the approved rule, not the blanks, determines availability. |
 | **Model** | One forecasting method, such as ARIMA, exponential smoothing, or a machine-learning model. Finn tries many and keeps the best. |
 | **Local model** | A model trained on one series at a time. |
 | **Global model** | One model trained on many series together; faster and often better for many related series. |

@@ -31,6 +31,7 @@ finn_main(function(args) {
     agent_resume_supported = has_custom,
     custom_models_supported = !is.na(versions[["finnts"]]) && finn_custom_supported("agent"),
     custom_models_copilot = !is.na(versions[["finnts"]]) && finn_custom_copilot_supported(),
+    custom_models_historical_drivers = !is.na(versions[["finnts"]]) && finn_custom_historical_supported(),
     copilot = copilot,
     resources = finn_system_resources(),
     os = Sys.info()[["sysname"]],
