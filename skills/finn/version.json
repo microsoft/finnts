@@ -8,7 +8,8 @@
       "changes": [
         "Parse formatted GitHub commit metadata before pinning shell-installer downloads.",
         "Confirm the worker and captured descendants have exited before marking a run cancelled.",
-        "Load finnts in a fresh R process before accepting its version and build identity."
+        "Load finnts in a fresh R process before accepting its version and build identity.",
+        "Detect finnts builds missing chat_copilot in Agent readiness checks."
       ]
     },
     {

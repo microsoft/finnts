@@ -1234,6 +1234,20 @@ local({
   missing_agent <- tryCatch(common$finn_check_finnts_capabilities(partial), error = identity)
   check("readiness reports missing agent capabilities separately",
     is.list(missing_agent) && "get_agent_forecast" %in% missing_agent$missing_agent)
+
+  agent_without_chat <- new.env(parent = emptyenv())
+  for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
+    "final_models", "get_forecast_data", "validate_prepared_input",
+    "set_agent_info_custom", "iterate_forecast", "update_forecast", "get_agent_forecast")) {
+    agent_without_chat[[name]] <- function() NULL
+  }
+  missing_chat <- common$finn_check_finnts_capabilities(agent_without_chat)
+  check("readiness reports missing chat_copilot as an agent capability",
+    identical(missing_chat$missing_agent, "chat_copilot"))
+  agent_without_chat$chat_copilot <- function() NULL
+  with_chat <- common$finn_check_finnts_capabilities(agent_without_chat)
+  check("readiness accepts chat_copilot when all agent capabilities are present",
+    identical(with_chat$missing_agent, character()))
 })
 
 if (requireNamespace("finnts", quietly = TRUE)) {
