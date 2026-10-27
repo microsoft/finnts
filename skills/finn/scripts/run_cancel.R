@@ -16,26 +16,41 @@ local({
 #'
 #' Children are stopped first so parallel workers do not linger. Verifies the
 #' process creation time to avoid stopping an unrelated process that reused
-#' the pid.
+#' the pid, and confirms every captured descendant is gone.
 #'
 #' @param pid Process id.
 #' @param create_time Recorded creation time in epoch seconds, or NULL.
+#' @param process_api Process inspection API, normally the ps namespace.
+#' @param is_alive Function checking a pid and creation time.
 #' @return List with `stopped` (count) and `note`.
-cancel_kill_tree <- function(pid, create_time = NULL) {
-  alive <- finn_pid_alive(pid, create_time)
+cancel_kill_tree <- function(pid, create_time = NULL, process_api = asNamespace("ps"),
+                             is_alive = finn_pid_alive) {
+  alive <- is_alive(pid, create_time)
   if (identical(alive, FALSE)) {
-    return(list(stopped = 0L, confirmed = TRUE, note = "The worker process was no longer running."))
+    if (is.null(pid) || length(pid) == 0 || is.na(pid)) {
+      return(list(stopped = 0L, confirmed = TRUE, note = "No worker process was recorded."))
+    }
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = "The worker was already gone, so its descendants could not be verified."))
   }
   if (!isTRUE(alive)) {
     return(list(stopped = 0L, confirmed = FALSE, note = "Could not confirm whether the worker process is running."))
   }
-  h <- ps::ps_handle(as.integer(pid))
-  kids <- tryCatch(ps::ps_children(h, recursive = TRUE), error = function(e) list())
+  h <- process_api$ps_handle(as.integer(pid))
+  kids <- tryCatch(process_api$ps_children(h, recursive = TRUE), error = identity)
+  if (inherits(kids, "error")) {
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = paste0("Could not inspect worker descendants: ", conditionMessage(kids))))
+  }
+  child_ids <- lapply(kids, function(k) tryCatch(
+    list(pid = process_api$ps_pid(k), create_time = as.numeric(process_api$ps_create_time(k))),
+    error = identity
+  ))
   stopped <- 0L
   for (k in rev(kids)) {
     ok <- tryCatch(
       {
-        ps::ps_kill(k)
+        process_api$ps_kill(k)
         TRUE
       },
       error = function(e) FALSE
@@ -44,23 +59,30 @@ cancel_kill_tree <- function(pid, create_time = NULL) {
   }
   ok <- tryCatch(
     {
-      ps::ps_kill(h)
+      process_api$ps_kill(h)
       TRUE
     },
     error = function(e) FALSE
   )
   stopped <- stopped + as.integer(ok)
   still_alive <- TRUE
+  descendants_alive <- rep(NA, length(child_ids))
   for (i in seq_len(20L)) {
-    still_alive <- finn_pid_alive(pid, create_time)
-    if (identical(still_alive, FALSE) || is.na(still_alive)) break
+    still_alive <- is_alive(pid, create_time)
+    descendants_alive <- vapply(child_ids, function(child) {
+      if (inherits(child, "error")) return(NA)
+      is_alive(child$pid, child$create_time)
+    }, logical(1))
+    if (identical(still_alive, FALSE) && all(vapply(descendants_alive, identical, logical(1), FALSE))) break
+    if (is.na(still_alive) || anyNA(descendants_alive)) break
     Sys.sleep(0.1)
   }
-  confirmed <- identical(still_alive, FALSE)
+  confirmed <- identical(still_alive, FALSE) &&
+    all(vapply(descendants_alive, identical, logical(1), FALSE))
   note <- if (confirmed) {
     sprintf("Stopped %d process(es).", stopped)
   } else {
-    "The worker process could not be confirmed stopped."
+    "The worker and every captured descendant could not be confirmed stopped."
   }
   list(stopped = stopped, confirmed = confirmed, note = note)
 }

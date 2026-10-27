@@ -59,12 +59,118 @@ if ! fetch "https://api.github.com/repos/$repo/commits/$ref" "$commit_file"; the
   echo "Could not resolve the GitHub ref. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
   exit 1
 fi
-sha="$(sed -n 's/^{"sha":"\([0-9a-fA-F]\{40\}\)".*/\1/p' "$commit_file")"
-tree_sha="$(sed -n 's/.*"tree":{"sha":"\([0-9a-fA-F]\{40\}\)".*/\1/p' "$commit_file")"
-if [ -z "$sha" ] || [ -z "$tree_sha" ]; then
+identity="$(awk '
+  { json = json $0 "\n" }
+  function next_token(    c, value, escaped) {
+    while (pos <= length(json) && substr(json, pos, 1) ~ /[[:space:]]/) pos++
+    c = substr(json, pos, 1)
+    if (c == "") {
+      token_type = ""
+      token_value = ""
+      return
+    }
+    if (c == "\"") {
+      pos++
+      value = ""
+      escaped = 0
+      while (pos <= length(json)) {
+        c = substr(json, pos++, 1)
+        if (escaped) {
+          value = value c
+          escaped = 0
+        } else if (c == "\\") {
+          escaped = 1
+        } else if (c == "\"") {
+          token_type = "string"
+          token_value = value
+          return
+        } else {
+          value = value c
+        }
+      }
+      token_type = "invalid"
+      return
+    }
+    if (c == "{" || c == "}" || c == "[" || c == "]" || c == ":" || c == ",") {
+      pos++
+      token_type = c
+      token_value = c
+      return
+    }
+    value = ""
+    while (pos <= length(json)) {
+      c = substr(json, pos, 1)
+      if (c ~ /[[:space:]]/ || c == "{" || c == "}" || c == "[" || c == "]" || c == ":" || c == ",") break
+      value = value c
+      pos++
+    }
+    token_type = "primitive"
+    token_value = value
+  }
+  function parse_value(path,    key, child_path) {
+    if (token_type == "{") {
+      next_token()
+      if (token_type == "}") return 1
+      while (1) {
+        if (token_type != "string") return 0
+        key = token_value
+        next_token()
+        if (token_type != ":") return 0
+        if (path == "" && key == "commit") commit_objects++
+        if (path == "commit" && key == "tree") tree_objects++
+        if (path == "" && key == "sha") commit_shas++
+        if (path == "commit.tree" && key == "sha") tree_shas++
+        child_path = path == "" ? key : path "." key
+        next_token()
+        if (!parse_value(child_path)) return 0
+        next_token()
+        if (token_type == "}") return 1
+        if (token_type != ",") return 0
+        next_token()
+      }
+    }
+    if (token_type == "[") {
+      next_token()
+      if (token_type == "]") return 1
+      while (1) {
+        if (!parse_value(path)) return 0
+        next_token()
+        if (token_type == "]") return 1
+        if (token_type != ",") return 0
+        next_token()
+      }
+    }
+    if (token_type == "string") {
+      if (path == "sha") commit_sha = token_value
+      if (path == "commit.tree.sha") tree_sha = token_value
+      return 1
+    }
+    return token_type == "primitive"
+  }
+  END {
+    pos = 1
+    next_token()
+    if (!parse_value("")) exit 1
+    next_token()
+    if (token_type != "" || commit_objects != 1 || tree_objects != 1 ||
+        commit_shas != 1 || tree_shas != 1 ||
+        length(commit_sha) != 40 || commit_sha !~ /^[[:xdigit:]]+$/ ||
+        length(tree_sha) != 40 || tree_sha !~ /^[[:xdigit:]]+$/) {
+      exit 1
+    }
+    printf "%s %s\n", commit_sha, tree_sha
+  }
+' "$commit_file")" || {
+  echo "GitHub did not return an unambiguous commit and tree identity. Nothing was installed." >&2
+  exit 1
+}
+set -- $identity
+if [ "$#" -ne 2 ]; then
   echo "GitHub did not return valid commit and tree identities. Nothing was installed." >&2
   exit 1
 fi
+sha=$1
+tree_sha=$2
 
 echo "Finding the Finn skill files at commit $sha..."
 if ! fetch "https://api.github.com/repos/$repo/git/trees/$tree_sha?recursive=1" "$tree_file"; then

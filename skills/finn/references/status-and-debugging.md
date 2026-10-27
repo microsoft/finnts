@@ -62,9 +62,10 @@ Rscript scripts/run_cancel.R --project=<name> --run_id=<id> --confirm=true
 ```
 
 Without `--confirm=true` it returns `needs_confirmation`. Cancel stops the worker and its
-child processes, then verifies that the worker is gone before marking the run `cancelled`.
-If termination or liveness cannot be confirmed, it reports an error and does not claim
-the run was cancelled; check `run_status.R` before retrying. It deletes nothing; saved
+captured descendants, then verifies that the worker and every captured child are gone
+before marking the run `cancelled`. If descendant enumeration, termination, or liveness
+cannot be confirmed, it reports an error and does not claim the run was cancelled; check
+`run_status.R` before retrying. It deletes nothing; saved
 progress is kept and a cancelled run can be resumed later with the same `run_forecast.R`
 command. A run started on another computer returns `other_machine` and must be cancelled
 there. If that computer is off or the run died there, the user can confirm and launch with

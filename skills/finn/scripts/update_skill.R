@@ -278,6 +278,7 @@ finn_fresh_finnts_version <- function() {
 #' @return List with version, source, and GitHub SHA; NULL when finnts does not load.
 finn_fresh_finnts_build <- function() {
   expression <- paste(
+    "suppressPackageStartupMessages(loadNamespace('finnts'))",
     "d <- utils::packageDescription('finnts')",
     "source <- d$RemoteType",
     "if (is.null(source) && identical(d$Repository, 'CRAN')) source <- 'cran'",
