@@ -19,6 +19,11 @@ finn_main(function(args) {
 
   has_custom <- !is.na(versions[["finnts"]]) &&
     exists("set_agent_info_custom", envir = asNamespace("finnts"), inherits = FALSE)
+  capabilities <- if (!is.na(versions[["finnts"]])) {
+    finn_check_finnts_capabilities(asNamespace("finnts"))
+  } else {
+    list(missing_core = character(), missing_agent = character())
+  }
   copilot <- if (is.na(versions[["finnts"]])) NULL else finn_copilot_status(finn_arg(args, "copilot_command", "copilot"))
 
   r_ok <- getRversion() >= "4.1.0"
@@ -28,6 +33,8 @@ finn_main(function(args) {
     rscript = finn_rscript(),
     packages = as.list(versions),
     missing_packages = as.list(missing),
+    missing_core_capabilities = as.list(capabilities$missing_core),
+    missing_agent_capabilities = as.list(capabilities$missing_agent),
     agent_resume_supported = has_custom,
     custom_models_supported = !is.na(versions[["finnts"]]) && finn_custom_supported("agent"),
     custom_models_copilot = !is.na(versions[["finnts"]]) && finn_custom_copilot_supported(),
@@ -64,11 +71,27 @@ finn_main(function(args) {
       c("Ask the user before installing, then run install_finnts.R --confirm=true.", update_action)
     ))
   }
+  if (length(capabilities$missing_core) > 0) {
+    return(finn_result(
+      FALSE, "needs_update",
+      paste0("Installed finnts is missing required forecast capabilities: ",
+        paste(capabilities$missing_core, collapse = ", "), "."),
+      data,
+      "Ask the user before updating finnts, then rerun check_env.R."
+    ))
+  }
   next_actions <- character()
   disk_note <- finn_disk_warning(finn_load_settings()$root %||% tempdir())
   if (!is.null(disk_note)) next_actions <- c(next_actions, disk_note)
   if (!has_custom) {
     next_actions <- c(next_actions, "This finnts version cannot resume Agent runs by request id. Offer install_finnts.R --confirm=true (installs the latest finnts from GitHub) for Agent mode.")
+  }
+  if (length(capabilities$missing_agent) > 0) {
+    next_actions <- c(next_actions, paste0(
+      "Agent mode is missing required finnts capabilities: ",
+      paste(capabilities$missing_agent, collapse = ", "),
+      ". Ask the user before updating finnts."
+    ))
   }
   if (!isTRUE(copilot$ready)) {
     next_actions <- c(next_actions, paste(

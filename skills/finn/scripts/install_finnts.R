@@ -46,6 +46,41 @@ finn_unmet_dependencies <- function(pkg = "finnts") {
   unique(unmet)
 }
 
+#' Validate finnts installation postconditions
+#'
+#' @param source Requested package source.
+#' @param expected_version Expected package version, or NULL when unavailable.
+#' @param expected_sha Expected GitHub commit, or NULL when unavailable.
+#' @param installed Installed package metadata.
+#' @param unmet Declared dependencies still below their required versions.
+#' @param missing_capabilities Required forecast APIs that are unavailable.
+#' @return NULL on success, otherwise a user-facing error message.
+finn_install_validation_error <- function(source, expected_version, expected_sha, installed,
+                                          unmet, missing_capabilities) {
+  if (is.null(installed$version) || !nzchar(installed$version)) {
+    return("finnts is not available after installation.")
+  }
+  if (!is.null(expected_version) && !identical(installed$version, expected_version)) {
+    return(paste0("Installed finnts ", installed$version, " does not match expected version ", expected_version, "."))
+  }
+  if (identical(source, "github")) {
+    if (!identical(installed$source, "github") || is.null(installed$sha) || !nzchar(installed$sha)) {
+      return("The installed GitHub finnts build has no verifiable commit identity.")
+    }
+    if (!is.null(expected_sha) && !identical(installed$sha, expected_sha)) {
+      return("The installed finnts commit does not match the commit selected for installation.")
+    }
+  }
+  if (length(unmet) > 0) {
+    return(paste0("finnts still has unmet dependencies: ", paste(unmet, collapse = ", "), "."))
+  }
+  if (length(missing_capabilities) > 0) {
+    return(paste0("Installed finnts is missing required forecast capabilities: ",
+      paste(missing_capabilities, collapse = ", "), "."))
+  }
+  NULL
+}
+
 #' Look up the finnts build a GitHub ref points to
 #'
 #' Never fails: network problems are reported in `error` so installs still
@@ -184,8 +219,22 @@ finn_main(function(args) {
   plan$finnts_version <- installed$version
   plan$installed <- installed
   plan$unmet_dependencies <- as.list(unmet)
-  agent_fns <- c("chat_copilot", "set_agent_info_custom")
-  plan$agent_mode_supported <- all(vapply(agent_fns, exists, logical(1), envir = asNamespace("finnts"), inherits = FALSE))
+  capabilities <- finn_check_finnts_capabilities(asNamespace("finnts"))
+  plan$missing_core_capabilities <- as.list(capabilities$missing_core)
+  plan$missing_agent_capabilities <- as.list(capabilities$missing_agent)
+  plan$agent_mode_supported <- length(capabilities$missing_agent) == 0L
+  postcondition_error <- finn_install_validation_error(
+    source = source_type,
+    expected_version = if (source_type == "github") target$finnts_version else cran_version,
+    expected_sha = if (source_type == "github") target$sha else NULL,
+    installed = installed,
+    unmet = unmet,
+    missing_capabilities = capabilities$missing_core
+  )
+  if (!is.null(postcondition_error)) {
+    return(finn_result(FALSE, "error", postcondition_error, plan,
+      c("Check the first installation error, then run check_env.R before forecasting.")))
+  }
   tryCatch(finn_append_history(list(
     type = "finnts_install", source = source_type, ref = if (source_type == "github") ref else cran_version,
     sha = if (source_type == "github") installed$sha %||% target$sha, force = force,

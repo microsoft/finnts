@@ -62,10 +62,12 @@ Rscript scripts/run_cancel.R --project=<name> --run_id=<id> --confirm=true
 ```
 
 Without `--confirm=true` it returns `needs_confirmation`. Cancel stops the worker and its
-child processes and marks the run `cancelled`. It deletes nothing; saved progress is kept
-and the run can be resumed later with the same `run_forecast.R` command. A run started on
-another computer returns `other_machine` and must be cancelled there. If that computer is
-off or the run died there, the user can confirm and launch with
+child processes, then verifies that the worker is gone before marking the run `cancelled`.
+If termination or liveness cannot be confirmed, it reports an error and does not claim
+the run was cancelled; check `run_status.R` before retrying. It deletes nothing; saved
+progress is kept and a cancelled run can be resumed later with the same `run_forecast.R`
+command. A run started on another computer returns `other_machine` and must be cancelled
+there. If that computer is off or the run died there, the user can confirm and launch with
 `run_forecast.R ... --takeover=true` to mark it `interrupted` and resume it here.
 
 ## Debugging a run
@@ -81,6 +83,10 @@ off or the run died there, the user can confirm and launch with
    the original saved settings and data. For configuration or data corrections,
    get approval and start fresh with `--new=true --confirm=true` instead.
    Launch-time parallel settings can change on resume for memory recovery.
+
+If saving outputs or finalizing project state fails, the worker records a `failed` run
+with the finalization error when state storage is available. Inspect that error and the
+saved artifacts before resuming; outputs already written are not removed.
 
 Support reports do not include input tables, but errors, settings, and log lines
 may contain business values or names. Masking is best-effort for recognized

@@ -304,6 +304,41 @@ worker_record_agent <- function(paths, state, agent_info) {
   invisible(project)
 }
 
+#' Save forecast outputs and finalize run state
+#'
+#' A failure during output or project finalization is reported as a failed run,
+#' rather than leaving the run marked as running.
+#'
+#' @param paths Project paths.
+#' @param run_paths Run paths.
+#' @param state Latest saved run state.
+#' @param outcome Worker forecast and optional Agent information.
+#' @return A completed or failed `finn_result`.
+worker_finalize_run <- function(paths, run_paths, state, outcome) {
+  tryCatch({
+    results <- worker_save_outputs(outcome$forecast, run_paths$output)
+    if (!is.null(outcome$agent_info)) worker_record_agent(paths, state, outcome$agent_info)
+    finn_update_state(run_paths,
+      status = "completed", stage = "done", finished_at = finn_now(),
+      results = results
+    )
+    finn_log("Run completed. Outputs in ", run_paths$output)
+    finn_result(TRUE, "completed", "Run completed.", results)
+  }, error = function(e) {
+    message <- finn_redact(conditionMessage(e))
+    state_error <- tryCatch({
+      finn_update_state(run_paths, status = "failed", finished_at = finn_now(), error = message)
+      NULL
+    }, error = identity)
+    if (inherits(state_error, "error")) {
+      message <- paste0(message, " (Could not persist failed run state: ",
+        finn_redact(conditionMessage(state_error)), ")")
+    }
+    finn_log("Run finalization failed: ", message)
+    finn_result(FALSE, "failed", message, list(error = message))
+  })
+}
+
 finn_main(function(args) {
   paths <- finn_project_from_args(args)
   run_id <- finn_arg(args, "run_id")
@@ -358,12 +393,5 @@ finn_main(function(args) {
     return(finn_result(FALSE, "failed", msg))
   }
 
-  results <- worker_save_outputs(outcome$forecast, run_paths$output)
-  if (!is.null(outcome$agent_info)) worker_record_agent(paths, latest, outcome$agent_info)
-  finn_update_state(run_paths,
-    status = "completed", stage = "done", finished_at = finn_now(),
-    results = results
-  )
-  finn_log("Run completed. Outputs in ", run_paths$output)
-  finn_result(TRUE, "completed", "Run completed.", results)
+  worker_finalize_run(paths, run_paths, latest, outcome)
 })

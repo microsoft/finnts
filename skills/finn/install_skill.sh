@@ -51,22 +51,35 @@ else
 fi
 
 stage="$(mktemp -d 2>/dev/null || mktemp -d -t finn-skill)"
-tree="$stage.tree.json"
+commit_file="$stage.commit.json"
+tree_file="$stage.tree.json"
 
-echo "Finding the Finn skill files in $repo ($ref)..."
-if ! fetch "https://api.github.com/repos/$repo/git/trees/$ref?recursive=1" "$tree"; then
-  echo "Could not reach GitHub. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
+echo "Resolving $repo ($ref) to an immutable commit..."
+if ! fetch "https://api.github.com/repos/$repo/commits/$ref" "$commit_file"; then
+  echo "Could not resolve the GitHub ref. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
+  exit 1
+fi
+sha="$(sed -n 's/^{"sha":"\([0-9a-fA-F]\{40\}\)".*/\1/p' "$commit_file")"
+tree_sha="$(sed -n 's/.*"tree":{"sha":"\([0-9a-fA-F]\{40\}\)".*/\1/p' "$commit_file")"
+if [ -z "$sha" ] || [ -z "$tree_sha" ]; then
+  echo "GitHub did not return valid commit and tree identities. Nothing was installed." >&2
   exit 1
 fi
 
-if grep -q '"truncated": *true' "$tree"; then
+echo "Finding the Finn skill files at commit $sha..."
+if ! fetch "https://api.github.com/repos/$repo/git/trees/$tree_sha?recursive=1" "$tree_file"; then
+  echo "Could not read the resolved commit tree. Nothing was installed." >&2
+  exit 1
+fi
+
+if grep -q '"truncated": *true' "$tree_file"; then
   echo "GitHub returned a partial file list. Install manually (see skills/finn/README.md)." >&2
   exit 1
 fi
 
 # Put each tree entry on its own line (works for pretty or compact JSON), keep
 # blobs, and strip the skills/finn/ prefix. Skill file names contain no spaces.
-files="$(tr -d '\n\r' < "$tree" | tr '{' '\n' | grep '"type": *"blob"' |
+files="$(tr -d '\n\r' < "$tree_file" | tr '{' '\n' | grep '"type": *"blob"' |
   sed -n 's/.*"path": *"skills\/finn\/\([^"]*\)".*/\1/p')"
 
 case "$files" in
@@ -84,13 +97,14 @@ for f in $files; do
   i=$((i + 1))
   echo "  [$i/$total] $f"
   mkdir -p "$skill/$(dirname "$f")"
-  if ! fetch "https://raw.githubusercontent.com/$repo/$ref/skills/finn/$f" "$skill/$f"; then
+  if ! fetch "https://raw.githubusercontent.com/$repo/$sha/skills/finn/$f" "$skill/$f"; then
     echo "Download failed for $f. Nothing was installed. Try again later." >&2
     exit 1
   fi
 done
 
-for required in SKILL.md scripts/finn_common.R scripts/update_skill.R; do
+required_files="SKILL.md version.json scripts/finn_common.R scripts/update_skill.R scripts/install_finnts.R scripts/run_forecast.R"
+for required in $required_files; do
   if [ ! -f "$skill/$required" ]; then
     echo "The download is incomplete ($required is missing). Nothing was installed." >&2
     exit 1
@@ -102,9 +116,15 @@ if ! cp -R "$skill" "$dest" || [ ! -f "$dest/SKILL.md" ]; then
   echo "Copying into $dest failed. Nothing was installed." >&2
   exit 1
 fi
+for required in $required_files; do
+  if [ ! -f "$dest/$required" ] || ! cmp -s "$skill/$required" "$dest/$required"; then
+    echo "The installation at $dest is incomplete or differs from commit $sha ($required)." >&2
+    exit 1
+  fi
+done
 
 echo ""
-echo "Installed the Finn skill at $dest"
+echo "Installed the Finn skill from commit $sha at $dest"
 echo "Next steps:"
 echo "  1. Start a new chat (or reload your agent) so it finds the skill."
 echo "  2. Say: 'Use the Finn skill to give me the Finn tutorial.'"

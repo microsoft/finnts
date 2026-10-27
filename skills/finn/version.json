@@ -1,7 +1,16 @@
 {
-  "version": "0.3.0",
-  "released": "2026-10-26",
+  "version": "0.3.1",
+  "released": "2026-10-27",
   "changelog": [
+    {
+      "version": "0.3.1",
+      "date": "2026-10-27",
+      "changes": [
+        "Pin first-time installer downloads to one resolved Git commit and verify essential files after copying.",
+        "Report install readiness only after required dependencies and forecast APIs are verified; rollback checks exact build identity.",
+        "Preserve finalization errors in run state and report cancellation only after termination is confirmed."
+      ]
+    },
     {
       "version": "0.3.0",
       "date": "2026-10-26",

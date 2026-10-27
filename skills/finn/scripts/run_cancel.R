@@ -22,8 +22,12 @@ local({
 #' @param create_time Recorded creation time in epoch seconds, or NULL.
 #' @return List with `stopped` (count) and `note`.
 cancel_kill_tree <- function(pid, create_time = NULL) {
-  if (!isTRUE(finn_pid_alive(pid, create_time))) {
-    return(list(stopped = 0L, note = "The worker process was no longer running."))
+  alive <- finn_pid_alive(pid, create_time)
+  if (identical(alive, FALSE)) {
+    return(list(stopped = 0L, confirmed = TRUE, note = "The worker process was no longer running."))
+  }
+  if (!isTRUE(alive)) {
+    return(list(stopped = 0L, confirmed = FALSE, note = "Could not confirm whether the worker process is running."))
   }
   h <- ps::ps_handle(as.integer(pid))
   kids <- tryCatch(ps::ps_children(h, recursive = TRUE), error = function(e) list())
@@ -45,7 +49,20 @@ cancel_kill_tree <- function(pid, create_time = NULL) {
     },
     error = function(e) FALSE
   )
-  list(stopped = stopped + as.integer(ok), note = sprintf("Stopped %d process(es).", stopped + as.integer(ok)))
+  stopped <- stopped + as.integer(ok)
+  still_alive <- TRUE
+  for (i in seq_len(20L)) {
+    still_alive <- finn_pid_alive(pid, create_time)
+    if (identical(still_alive, FALSE) || is.na(still_alive)) break
+    Sys.sleep(0.1)
+  }
+  confirmed <- identical(still_alive, FALSE)
+  note <- if (confirmed) {
+    sprintf("Stopped %d process(es).", stopped)
+  } else {
+    "The worker process could not be confirmed stopped."
+  }
+  list(stopped = stopped, confirmed = confirmed, note = note)
 }
 
 finn_main(function(args) {
@@ -80,8 +97,21 @@ finn_main(function(args) {
     return(finn_result(FALSE, "other_machine", sprintf("Run %s was started on another computer (%s); cancel it there.", run_id, host)))
   }
 
-  finn_update_state(run_paths, status = "cancelled", cancelled_at = finn_now(), finished_at = finn_now())
   killed <- cancel_kill_tree(state$pid, state$pid_create_time)
+  if (!isTRUE(killed$confirmed)) {
+    finn_log("Could not confirm cancellation of run ", run_id, ". ", killed$note)
+    return(finn_result(FALSE, "error",
+      sprintf("Run %s was not marked cancelled. %s", run_id, killed$note),
+      list(run_id = run_id, stage = state$stage, stopped_processes = killed$stopped),
+      "Check run_status.R before retrying cancellation."
+    ))
+  }
+  latest <- finn_read_state(run_paths)
+  if (identical(finn_effective_status(latest), "completed")) {
+    return(finn_result(TRUE, "completed", sprintf("Run %s completed before cancellation took effect.", run_id),
+      list(run_id = run_id, stage = latest$stage)))
+  }
+  finn_update_state(run_paths, status = "cancelled", cancelled_at = finn_now(), finished_at = finn_now())
   finn_log("Cancelled run ", run_id, ". ", killed$note)
   finn_result(TRUE, "cancelled",
     sprintf("Run %s was cancelled. %s Nothing was deleted.", run_id, killed$note),
