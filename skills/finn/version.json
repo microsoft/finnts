@@ -1,7 +1,16 @@
 {
-  "version": "0.3.1",
+  "version": "0.3.2",
   "released": "2026-10-27",
   "changelog": [
+    {
+      "version": "0.3.2",
+      "date": "2026-10-27",
+      "changes": [
+        "Parse formatted GitHub commit metadata before pinning shell-installer downloads.",
+        "Confirm the worker and captured descendants have exited before marking a run cancelled.",
+        "Load finnts in a fresh R process before accepting its version and build identity."
+      ]
+    },
     {
       "version": "0.3.1",
       "date": "2026-10-27",

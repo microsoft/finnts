@@ -7,7 +7,7 @@
 #    "next_actions": [...]}
 # Coding agents read only that final line. Nothing here deletes files.
 
-finn_skill_version <- "0.3.1"
+finn_skill_version <- "0.3.2"
 finn_schema_version <- 1L
 
 #' Null-coalescing helper
