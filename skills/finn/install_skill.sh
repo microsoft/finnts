@@ -55,7 +55,21 @@ commit_file="$stage.commit.json"
 tree_file="$stage.tree.json"
 
 echo "Resolving $repo ($ref) to an immutable commit..."
-if ! fetch "https://api.github.com/repos/$repo/commits/$ref" "$commit_file"; then
+# Percent-encode the ref so branch names such as users/me/fix stay one path segment.
+encoded_ref="$(printf '%s' "$ref" | LC_ALL=C awk '
+  BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+  { text = (NR > 1 ? text "\n" : "") $0 }
+  END {
+    out = ""
+    for (i = 1; i <= length(text); i++) {
+      c = substr(text, i, 1)
+      if (c ~ /[A-Za-z0-9._~-]/) out = out c
+      else out = out sprintf("%%%02X", ord[c])
+    }
+    printf "%s", out
+  }
+')"
+if ! fetch "https://api.github.com/repos/$repo/commits/$encoded_ref" "$commit_file"; then
   echo "Could not resolve the GitHub ref. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
   exit 1
 fi

@@ -2752,6 +2752,18 @@ local({
     is.list(final_result) && !isTRUE(final_result$ok) && identical(final_result$status, "failed") &&
       identical(failed_state$status, "failed") &&
       identical(failed_state$error, "output finalization failed"))
+  completed_state <- list(status = "running", error = NULL)
+  worker$finn_update_state <- function(paths, ...) {
+    completed_state <<- modifyList(completed_state, list(...))
+    completed_state
+  }
+  worker$worker_save_outputs <- function(...) list(files = list("forecast.csv"))
+  worker$finn_log <- function(...) stop("log write failed")
+  logged_result <- tryCatch(worker$worker_finalize_run(list(), list(output = "unused"), completed_state,
+    list(forecast = data.frame(x = 1))), error = identity)
+  check("worker completion-log failure keeps the saved completed state",
+    is.list(logged_result) && isTRUE(logged_result$ok) && identical(logged_result$status, "completed") &&
+      identical(completed_state$status, "completed") && is.null(completed_state$error))
 }, envir = new.env(parent = common))
 local({
   # Run the real input-script entry point with isolated arguments and helpers;
@@ -3194,8 +3206,13 @@ local({
         "{\n  \"commit\": { \"tree\": { \"url\": \"fixture\", ",
         "\"sha\": \"", tree_sha, "\" } },\n  \"sha\": \"",
         commit_sha, "\",\n  \"html_url\": \"fixture\"\n}"
+      ),
+      slash_ref = paste0(
+        "{\"sha\":\"", commit_sha, "\",\"commit\":{\"tree\":{\"sha\":\"",
+        tree_sha, "\"}}}"
       )
     )
+    case_refs <- c(compact = "main", formatted_reordered = "main", slash_ref = "users/me/fix-1")
     installer_ok <- logical(length(commit_cases))
     names(installer_ok) <- names(commit_cases)
     installer_logs <- vector("list", length(commit_cases))
@@ -3214,7 +3231,7 @@ local({
         paste0("export PATH=", shQuote(shell_path, type = "sh")),
         paste0("export FINN_SKILL_DEST=", shQuote(to_shell_path(dest), type = "sh")),
         "export FINN_SKILL_REPO=microsoft/finnts",
-        "export FINN_SKILL_REF=main",
+        paste0("export FINN_SKILL_REF=", shQuote(case_refs[[case]], type = "sh")),
         paste0("export FAKE_COMMIT_JSON=", shQuote(to_shell_path(fixture), type = "sh")),
         paste0("export FAKE_TREE_JSON=", shQuote(to_shell_path(tree_file), type = "sh")),
         paste0("export FAKE_CURL_LOG=", shQuote(to_shell_path(log_file), type = "sh")),
@@ -3247,6 +3264,9 @@ local({
         paste0("raw.githubusercontent.com/microsoft/finnts/", commit_sha, "/skills/finn/SKILL.md"),
         log, fixed = TRUE
       )), logical(1))))
+    check("shell installer percent-encodes a slash-containing ref for the commit API",
+      any(grepl("/commits/users%2Fme%2Ffix-1", installer_logs[["slash_ref"]], fixed = TRUE)) &&
+        !any(grepl("/commits/users/me", installer_logs[["slash_ref"]], fixed = TRUE)))
   }
 })
 local({

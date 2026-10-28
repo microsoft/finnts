@@ -306,8 +306,10 @@ worker_record_agent <- function(paths, state, agent_info) {
 
 #' Save forecast outputs and finalize run state
 #'
-#' A failure during output or project finalization is reported as a failed run,
-#' rather than leaving the run marked as running.
+#' A failure while saving outputs, recording Agent information, or persisting
+#' the completed state is reported as a failed run rather than leaving the run
+#' marked as running. Once the completed state is saved, a failure to write the
+#' completion log line is ignored so it cannot overwrite that state.
 #'
 #' @param paths Project paths.
 #' @param run_paths Run paths.
@@ -315,17 +317,17 @@ worker_record_agent <- function(paths, state, agent_info) {
 #' @param outcome Worker forecast and optional Agent information.
 #' @return A completed or failed `finn_result`.
 worker_finalize_run <- function(paths, run_paths, state, outcome) {
-  tryCatch({
+  results <- tryCatch({
     results <- worker_save_outputs(outcome$forecast, run_paths$output)
     if (!is.null(outcome$agent_info)) worker_record_agent(paths, state, outcome$agent_info)
     finn_update_state(run_paths,
       status = "completed", stage = "done", finished_at = finn_now(),
       results = results
     )
-    finn_log("Run completed. Outputs in ", run_paths$output)
-    finn_result(TRUE, "completed", "Run completed.", results)
-  }, error = function(e) {
-    message <- finn_redact(conditionMessage(e))
+    results
+  }, error = identity)
+  if (inherits(results, "error")) {
+    message <- finn_redact(conditionMessage(results))
     state_error <- tryCatch({
       finn_update_state(run_paths, status = "failed", finished_at = finn_now(), error = message)
       NULL
@@ -335,8 +337,10 @@ worker_finalize_run <- function(paths, run_paths, state, outcome) {
         finn_redact(conditionMessage(state_error)), ")")
     }
     finn_log("Run finalization failed: ", message)
-    finn_result(FALSE, "failed", message, list(error = message))
-  })
+    return(finn_result(FALSE, "failed", message, list(error = message)))
+  }
+  tryCatch(finn_log("Run completed. Outputs in ", run_paths$output), error = function(e) NULL)
+  finn_result(TRUE, "completed", "Run completed.", results)
 }
 
 finn_main(function(args) {
