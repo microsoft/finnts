@@ -2,9 +2,9 @@
 # Usage:
 #   Rscript run_cancel.R --project=<name> --run_id=<id> --confirm=true
 #
-# Marks the run cancelled, then stops the worker process and its children
-# (for example parallel workers). Saved artifacts stay in place, so the run
-# can be resumed later with run_forecast.R.
+# Stops the worker process and its children (for example parallel workers),
+# confirms they exited, then marks the run cancelled. Saved artifacts stay in
+# place, so the run can be resumed later with run_forecast.R.
 
 local({
   args <- commandArgs(trailingOnly = FALSE)
@@ -22,14 +22,17 @@ local({
 #' @param create_time Recorded creation time in epoch seconds, or NULL.
 #' @param process_api Process inspection API, normally the ps namespace.
 #' @param is_alive Function checking a pid and creation time.
-#' @return List with `stopped` (count) and `note`.
+#' @return List with `stopped` (count), `confirmed`, and `note`. A run with no
+#'   recorded worker pid is still starting, so it is never confirmed: its worker
+#'   could start after a cancelled state is written and overwrite it.
 cancel_kill_tree <- function(pid, create_time = NULL, process_api = asNamespace("ps"),
                              is_alive = finn_pid_alive) {
+  if (is.null(pid) || length(pid) == 0 || is.na(pid)) {
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = "The run is still starting and has no worker process yet. Retry cancellation in a few seconds."))
+  }
   alive <- is_alive(pid, create_time)
   if (identical(alive, FALSE)) {
-    if (is.null(pid) || length(pid) == 0 || is.na(pid)) {
-      return(list(stopped = 0L, confirmed = TRUE, note = "No worker process was recorded."))
-    }
     return(list(stopped = 0L, confirmed = FALSE,
       note = "The worker was already gone, so its descendants could not be verified."))
   }
@@ -120,6 +123,15 @@ finn_main(function(args) {
   }
 
   killed <- cancel_kill_tree(state$pid, state$pid_create_time)
+  # The worker may have finished while it was being stopped; report that outcome
+  # instead of a cancellation error, and never overwrite a finished state.
+  latest <- finn_read_state(run_paths)
+  finished <- latest$status %||% ""
+  if (finished %in% c("completed", "failed", "cancelled")) {
+    return(finn_result(TRUE, finished,
+      sprintf("Run %s was already %s before cancellation took effect.", run_id, finished),
+      list(run_id = run_id, stage = latest$stage)))
+  }
   if (!isTRUE(killed$confirmed)) {
     finn_log("Could not confirm cancellation of run ", run_id, ". ", killed$note)
     return(finn_result(FALSE, "error",
@@ -127,11 +139,6 @@ finn_main(function(args) {
       list(run_id = run_id, stage = state$stage, stopped_processes = killed$stopped),
       "Check run_status.R before retrying cancellation."
     ))
-  }
-  latest <- finn_read_state(run_paths)
-  if (identical(finn_effective_status(latest), "completed")) {
-    return(finn_result(TRUE, "completed", sprintf("Run %s completed before cancellation took effect.", run_id),
-      list(run_id = run_id, stage = latest$stage)))
   }
   finn_update_state(run_paths, status = "cancelled", cancelled_at = finn_now(), finished_at = finn_now())
   finn_log("Cancelled run ", run_id, ". ", killed$note)

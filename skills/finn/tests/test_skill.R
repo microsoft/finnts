@@ -1245,6 +1245,13 @@ local({
   missing_run_info <- common$finn_check_finnts_capabilities(partial)
   check("readiness rejects missing set_run_info",
     identical(missing_run_info$missing_core, "set_run_info"))
+  partial$set_run_info <- function() NULL
+  # Older builds (including the 0.7.0 release) predate validate_prepared_input();
+  # only data preparation needs it, so readiness and rollback must not require it.
+  rm(list = "validate_prepared_input", envir = partial)
+  without_validator <- common$finn_check_finnts_capabilities(partial)
+  check("readiness accepts an older finnts build without validate_prepared_input",
+    identical(without_validator$missing_core, character()))
 
   agent_without_chat <- new.env(parent = emptyenv())
   for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
@@ -1993,6 +2000,18 @@ local({
     !isTRUE(result$ok) && !identical(result$status, "cancelled") &&
       identical(state$status, "running"))
 
+  finished <- modifyList(state, list(status = "completed", stage = "done"))
+  state_reads <- 0L
+  cancel_env$finn_read_state <- function(...) {
+    state_reads <<- state_reads + 1L
+    if (state_reads == 1L) state else finished
+  }
+  result_done <- eval(cancel_expr, cancel_env)
+  check("cancel reports a run that finished before termination was confirmed",
+    isTRUE(result_done$ok) && identical(result_done$status, "completed") &&
+      identical(state$status, "running"))
+  cancel_env$finn_read_state <- function(...) state
+
   cancel_env$cancel_kill_tree <- real_cancel_kill_tree
   fake_process_api <- list(
     ps_handle = function(pid) list(pid = pid),
@@ -2001,6 +2020,10 @@ local({
     ps_create_time = function(handle) 1,
     ps_kill = function(handle) invisible(TRUE)
   )
+  starting <- tryCatch(cancel_env$cancel_kill_tree(NULL, NULL, process_api = fake_process_api,
+    is_alive = function(...) FALSE), error = identity)
+  check("cancel treats a run without a worker PID as still starting, not cancelled",
+    is.list(starting) && identical(starting$confirmed, FALSE))
   worker_checks <- 0L
   child_alive <- function(pid, create_time = NULL) {
     if (identical(as.integer(pid), 101L)) {
@@ -2782,6 +2805,18 @@ local({
   check("worker completion-log failure keeps the saved completed state",
     is.list(logged_result) && isTRUE(logged_result$ok) && identical(logged_result$status, "completed") &&
       identical(completed_state$status, "completed") && is.null(completed_state$error))
+  failed_log_state <- list(status = "running", error = NULL)
+  worker$finn_update_state <- function(paths, ...) {
+    failed_log_state <<- modifyList(failed_log_state, list(...))
+    failed_log_state
+  }
+  worker$worker_save_outputs <- function(...) stop("output finalization failed")
+  failed_logged <- tryCatch(worker$worker_finalize_run(list(), list(output = "unused"), failed_log_state,
+    list(forecast = data.frame(x = 1))), error = identity)
+  check("worker finalization failure keeps the original error when logging also fails",
+    is.list(failed_logged) && !isTRUE(failed_logged$ok) && identical(failed_logged$status, "failed") &&
+      identical(failed_logged$message, "output finalization failed") &&
+      identical(failed_log_state$status, "failed"))
 }, envir = new.env(parent = common))
 local({
   # Run the real input-script entry point with isolated arguments and helpers;
@@ -3261,13 +3296,11 @@ local({
       writeLines(commit_cases[[case]], fixture, useBytes = TRUE)
       log_file <- file.path(fake_root, paste0(case, "-curl.log"))
       dest <- file.path(fake_root, paste0(case, "-install"))
-      shell_path <- paste(
-        to_shell_path(fake_bin),
-        to_shell_path(dirname(sh_exe)),
-        sep = if (.Platform$OS.type == "windows") ":" else .Platform$path.sep
-      )
+      # Put the fake curl first but keep the shell's inherited PATH: on macOS sh lives
+      # in /bin while awk and mktemp live in /usr/bin.
+      shell_path <- paste(to_shell_path(fake_bin), to_shell_path(dirname(sh_exe)), sep = ":")
       env <- c(
-        paste0("export PATH=", shQuote(shell_path, type = "sh")),
+        paste0("export PATH=", shQuote(shell_path, type = "sh"), ":\"$PATH\""),
         paste0("export FINN_SKILL_DEST=", shQuote(to_shell_path(dest), type = "sh")),
         "export FINN_SKILL_REPO=microsoft/finnts",
         paste0("export FINN_SKILL_REF=", shQuote(case_refs[[case]], type = "sh")),
@@ -3277,8 +3310,9 @@ local({
         paste0("export TMPDIR=", shQuote(to_shell_path(fake_root), type = "sh"))
       )
       wrapper <- file.path(fake_root, paste0(case, "-run-installer.sh"))
+      # Run through sh: a checkout does not keep the installer's executable bit.
       writeLines(c("#!/bin/sh", env,
-        paste0("exec ", shQuote(to_shell_path(file.path(skill_dir, "install_skill.sh")), type = "sh"))
+        paste0("exec sh ", shQuote(to_shell_path(file.path(skill_dir, "install_skill.sh")), type = "sh"))
       ), wrapper)
       output <- suppressWarnings(system2(
         sh_exe, shQuote(to_shell_path(wrapper), type = "sh"),

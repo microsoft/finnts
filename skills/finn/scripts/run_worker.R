@@ -308,8 +308,9 @@ worker_record_agent <- function(paths, state, agent_info) {
 #'
 #' A failure while saving outputs, recording Agent information, or persisting
 #' the completed state is reported as a failed run rather than leaving the run
-#' marked as running. Once the completed state is saved, a failure to write the
-#' completion log line is ignored so it cannot overwrite that state.
+#' marked as running. Log writes are best-effort: a failed completion log cannot
+#' overwrite the saved completed state, and a failed failure log cannot replace
+#' the original finalization error.
 #'
 #' @param paths Project paths.
 #' @param run_paths Run paths.
@@ -336,7 +337,7 @@ worker_finalize_run <- function(paths, run_paths, state, outcome) {
       message <- paste0(message, " (Could not persist failed run state: ",
         finn_redact(conditionMessage(state_error)), ")")
     }
-    finn_log("Run finalization failed: ", message)
+    tryCatch(finn_log("Run finalization failed: ", message), error = function(e) NULL)
     return(finn_result(FALSE, "failed", message, list(error = message)))
   }
   tryCatch(finn_log("Run completed. Outputs in ", run_paths$output), error = function(e) NULL)

@@ -9,7 +9,7 @@
         "Pin initial installer downloads to one resolved Git commit; parse formatted GitHub metadata and verify essential files after copying.",
         "Always install finnts from GitHub; require declared dependencies and core forecast APIs before reporting it ready, and report missing Agent capabilities.",
         "Verify fresh-process finnts version and commit identity; rollback restores the exact GitHub build and leaves unchanged local installs alone.",
-        "Record finalization errors as failed runs; mark cancellations only after the worker and captured descendants are confirmed stopped.",
+        "Record finalization errors as failed runs; cancel only after the worker and its children are confirmed stopped, and report runs that finished first.",
         "Encode installer refs containing slashes; a failed completion-log write no longer turns a completed run into a failed one."
       ]
     },
