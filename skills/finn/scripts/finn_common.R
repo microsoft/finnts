@@ -1403,7 +1403,8 @@ finn_directory_lock_acquire <- function(path, timeout = 30, stale = 120) {
 #' @return Missing core forecast and Agent capability names.
 finn_check_finnts_capabilities <- function(namespace) {
   core <- c("prep_data", "prep_models", "train_models", "ensemble_models",
-    "final_models", "get_forecast_data", "validate_prepared_input")
+    "final_models", "get_forecast_data", "validate_prepared_input",
+    "set_project_info", "set_run_info")
   agent <- c("set_agent_info_custom", "iterate_forecast", "update_forecast", "get_agent_forecast", "chat_copilot")
   missing <- function(names) names[!vapply(names, exists, logical(1), envir = namespace, inherits = FALSE)]
   list(missing_core = missing(core), missing_agent = missing(agent))

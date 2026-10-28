@@ -9,13 +9,8 @@
         "Parse formatted GitHub commit metadata before pinning shell-installer downloads.",
         "Confirm the worker and captured descendants have exited before marking a run cancelled.",
         "Load finnts in a fresh R process before accepting its version and build identity.",
-        "Detect finnts builds missing chat_copilot in Agent readiness checks."
-      ]
-    },
-    {
-      "version": "0.3.1",
-      "date": "2026-10-27",
-      "changes": [
+        "Detect finnts builds missing chat_copilot in Agent readiness checks.",
+        "Check project-registration and run-metadata APIs during finnts readiness validation.",
         "Pin first-time installer downloads to one resolved Git commit and verify essential files after copying.",
         "Report install readiness only after required dependencies and forecast APIs are verified; rollback checks exact build identity.",
         "Preserve finalization errors in run state and report cancellation only after termination is confirmed."

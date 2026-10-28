@@ -1220,6 +1220,8 @@ local({
   partial$final_models <- function() NULL
   partial$get_forecast_data <- function() NULL
   partial$validate_prepared_input <- function() NULL
+  partial$set_project_info <- function() NULL
+  partial$set_run_info <- function() NULL
   partial$set_agent_info_custom <- function() NULL
   partial$iterate_forecast <- function() NULL
   partial$update_forecast <- function() NULL
@@ -1234,10 +1236,20 @@ local({
   missing_agent <- tryCatch(common$finn_check_finnts_capabilities(partial), error = identity)
   check("readiness reports missing agent capabilities separately",
     is.list(missing_agent) && "get_agent_forecast" %in% missing_agent$missing_agent)
+  rm(list = "set_project_info", envir = partial)
+  missing_project_info <- common$finn_check_finnts_capabilities(partial)
+  check("readiness rejects missing set_project_info",
+    identical(missing_project_info$missing_core, "set_project_info"))
+  partial$set_project_info <- function() NULL
+  rm(list = "set_run_info", envir = partial)
+  missing_run_info <- common$finn_check_finnts_capabilities(partial)
+  check("readiness rejects missing set_run_info",
+    identical(missing_run_info$missing_core, "set_run_info"))
 
   agent_without_chat <- new.env(parent = emptyenv())
   for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
     "final_models", "get_forecast_data", "validate_prepared_input",
+    "set_project_info", "set_run_info",
     "set_agent_info_custom", "iterate_forecast", "update_forecast", "get_agent_forecast")) {
     agent_without_chat[[name]] <- function() NULL
   }
@@ -1254,7 +1266,8 @@ if (requireNamespace("finnts", quietly = TRUE)) {
   readiness_env <- load_functions("check_env.R", common)
   fake_namespace <- new.env(parent = emptyenv())
   for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
-    "get_forecast_data", "validate_prepared_input", "set_agent_info_custom",
+    "get_forecast_data", "validate_prepared_input", "set_project_info", "set_run_info",
+    "set_agent_info_custom",
     "iterate_forecast", "update_forecast", "get_agent_forecast")) {
     fake_namespace[[name]] <- function() NULL
   }
