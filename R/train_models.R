@@ -278,23 +278,27 @@ train_models <- function(run_info,
 
   # define columns to check for input changes
   custom_run_training_controls(custom_run, run_local_models, run_global_models, negative_forecast)
-  forecast_pattern <- paste0(
-    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-    hash_data(run_info$run_name), "*.", run_info$data_output
-  )
-  # Multi-series custom runs on local storage list existing forecasts once,
-  # before the audit, so it never probes outputs that parallel workers write
-  # later (FUSE mounts cache "not found"). The listing is reused below.
-  listed_early <- !"combo" %in% names(run_info) && !is.null(custom_run) &&
-    is.null(run_info$storage_object)
-  forecast_files <- if (listed_early) list_files(run_info$storage_object, forecast_pattern) else NULL
-  custom_run_audit(run_info, custom_run, run_local_models, run_global_models, all_combo_list,
-    complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)),
-    present = forecast_files)
   cols_check_list <- c(
     "run_global_models", "run_local_models", "global_model_recipes",
     "feature_selection", "seed"
   )
+  forecast_pattern <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name), "*.", run_info$data_output
+  )
+  # When multi-series custom training will run on local storage, take the
+  # existing completed-forecast listing before the audit (instead of after) so
+  # the audit never probes outputs parallel workers write later (FUSE mounts
+  # cache "not found"); it is reused below. Completed or changed-input runs
+  # return before training, so their audit reads the existing outputs exactly
+  # and adds no listing. Averages/ensembles belong to later steps.
+  listed_early <- !"combo" %in% names(run_info) && !is.null(custom_run) &&
+    is.null(run_info$storage_object) &&
+    (!all(cols_check_list %in% colnames(log_df)) || isTRUE(run_info$rebuild_update_models))
+  forecast_files <- if (listed_early) list_files(run_info$storage_object, forecast_pattern) else NULL
+  custom_run_audit(run_info, custom_run, run_local_models, run_global_models, all_combo_list,
+    complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)),
+    present = forecast_files, skip = c("-average_models", "-ensemble_models"))
 
   # check if input values have changed from previous run
   if (all(cols_check_list %in% colnames(log_df))) {

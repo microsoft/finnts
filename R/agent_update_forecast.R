@@ -922,28 +922,11 @@ validate_global_update_publication <- function(result, combos) {
 #'   unselected averages are allowed; recognized corrupt averages require refit.
 #'   Returned predictions retain all saved rows without writes or conversion.
 #'   Hierarchical results also return their already-read run log for resume.
-#' @param present Optional folder-qualified names (`forecasts/<file>` and
-#'   `models/<file>`) from the coordinator's one-time listing of the forecasts
-#'   and models folders. On local storage, fitted models, source forecasts,
-#'   averages and reconciliations absent from it are treated as missing without
-#'   probing their names, because a FUSE mount (for example Synapse /synfs)
-#'   caches "not found" and would hide a worker's later refit. Folder
-#'   qualification keeps a forecast and fit that share a file name distinct.
-#'   Remote storage ignores it.
 #' @noRd
 read_update_result <- function(info, combos, global, horizon, approach = "bottoms_up",
                                splits = NULL, recipes = NULL, selected_ids = NULL,
-                               previous_hierarchy = NULL, allow_selection_recovery = FALSE,
-                               present = NULL) {
-  # Read one output unless the coordinator's listing shows it is not written.
-  read_output <- function(path, missing_value = NULL) {
-    key <- paste0(fs::path_file(fs::path_dir(path)), "/", fs::path_file(path))
-    if (!is.null(present) && is.null(info$storage_object) && !key %in% present) {
-      return(missing_value)
-    }
-    read_update_artifact(info, path, missing_value)
-  }
-  models <- read_output(local_artifact_path(info, "models", "-single_models",
+                               previous_hierarchy = NULL, allow_selection_recovery = FALSE) {
+  models <- read_update_artifact(info, local_artifact_path(info, "models", "-single_models",
     hash_data(if (global) "All-Data" else combos[[1]]), info$object_output))
   if (!is.data.frame(models) || !nrow(models) ||
       !all(c("Model_ID", "Model_Fit") %in% names(models)) ||
@@ -960,13 +943,13 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
   for (index in seq_along(sources)) {
     combo <- sources[[index]]
     combo_hash <- hash_data(combo)
-    single <- read_output(local_artifact_path(info, "forecasts",
+    single <- read_update_artifact(info, local_artifact_path(info, "forecasts",
       if (global) "-global_models" else "-single_models", combo_hash))
     if (!is.data.frame(single) || !nrow(single) || !"Best_Model" %in% names(single)) return(NULL)
     if (is.null(coverage)) {
       coverage <- read_update_keys(info, sources[[1]], splits, recipes)
     }
-    average <- read_output(
+    average <- read_update_artifact(info,
       local_artifact_path(info, "forecasts", "-average_models", combo_hash), missing_value = absent)
     if (identical(average, absent)) {
       rows <- single
@@ -1010,7 +993,7 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
   }
   rows <- dplyr::bind_rows(forecasts)
   if (hierarchical) {
-    rows <- read_output(local_artifact_path(info, "forecasts", "-reconciled", hash_data("Best-Model")))
+    rows <- read_update_artifact(info, local_artifact_path(info, "forecasts", "-reconciled", hash_data("Best-Model")))
     if (!is.data.frame(rows) || !"Combo" %in% names(rows)) return(NULL)
     rows <- rows[rows$Combo %in% combos, , drop = FALSE]
     for (combo in combos) {
@@ -1105,13 +1088,11 @@ resume_update_result <- function(agent_info, info, combos, global, splits, compo
 #'
 #' @param agent_info Current agent identity and storage settings.
 #' @param metadata Current per-series best-run records, not predecessor records.
-#' @param present Optional coordinator listing passed to read_update_result();
-#'   NULL keeps exact-path checks (workers and remote storage).
 #' @return Valid records only. Shared global fits are read once per run; missing
 #'   or damaged models/forecasts leave the group eligible for refitting. No artifacts are
 #'   written and no fitted objects are retained in the returned work metadata.
 #' @noRd
-completed_update_runs <- function(agent_info, metadata, present = NULL) {
+completed_update_runs <- function(agent_info, metadata) {
   if (!nrow(metadata)) return(metadata)
   if (!validate_completed_run_metadata(metadata, agent_info$run_id)) {
     stop("Invalid current best-run metadata; restore its series and run identity before updating.",
@@ -1129,28 +1110,9 @@ completed_update_runs <- function(agent_info, metadata, present = NULL) {
     info$run_name <- record$best_run_name
     valid[indices] <- !is.null(read_update_result(info, as.character(metadata$combo[indices]),
       global, agent_info$forecast_horizon, record$forecast_approach %||% "bottoms_up",
-      recipes = record[["recipes_to_run"]], present = present))
+      recipes = record[["recipes_to_run"]]))
   }
   metadata[valid, , drop = FALSE]
-}
-
-# List update child outputs once for the coordinator's restart completion check.
-# Child runs have their own hashed project/run prefixes, so this lists the
-# forecasts folder and fitted single-model objects folder-wide, one call each,
-# and returns folder-qualified names (`forecasts/<file>`, `models/<file>`) so a
-# forecast and fit sharing a file name stay distinct. Local storage only;
-# remote storage returns NULL and keeps exact downloads. Listing failures propagate.
-update_output_listing <- function(project_info) {
-  if (!is.null(project_info$storage_object)) return(NULL)
-  forecasts <- list_files(NULL, paste0(project_info$path, "/forecasts/*.", project_info$data_output),
-    fail_on_error = TRUE)
-  models <- list_files(NULL, paste0(project_info$path, "/models/*-single_models.", project_info$object_output),
-    fail_on_error = TRUE)
-  qualify <- function(folder, files) {
-    files <- fs::path_file(as.character(files))
-    if (length(files)) paste0(folder, "/", files) else character()
-  }
-  c(qualify("forecasts", forecasts), qualify("models", models))
 }
 
 #' Initial Checks for Update Forecast
@@ -1158,8 +1120,6 @@ update_output_listing <- function(project_info) {
 #' Checks current recorded outputs before skipping completed series, then loads
 #' the predecessor for unfinished series. Missing current metadata does not
 #' trigger artifact reads. Invalid metadata or storage access remains an error.
-#' On local storage, current outputs are checked against one listing of the
-#' forecasts and models folders, never by probing names workers may refit.
 #' Agent-log run IDs are parsed as text so numeric-looking hashes retain their
 #' exact artifact identity; numeric versions still determine predecessor order.
 #'
@@ -1191,10 +1151,7 @@ initial_checks <- function(agent_info) {
   current_agent_run_tbl <- load_update_runs(agent_info)
 
   if (nrow(current_agent_run_tbl) > 0) {
-    # unfinished children are refit on parallel workers under the same run
-    # names, so check completion against one listing instead of name probes
-    completed_runs_tbl <- completed_update_runs(agent_info, current_agent_run_tbl,
-      present = update_output_listing(project_info))
+    completed_runs_tbl <- completed_update_runs(agent_info, current_agent_run_tbl)
     finished_combos <- completed_runs_tbl %>%
       dplyr::rowwise() %>%
       dplyr::mutate(combo_hash = hash_data(combo)) %>%

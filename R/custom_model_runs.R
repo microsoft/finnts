@@ -890,9 +890,16 @@ custom_run_ensemble_ids <- function() {
 #' training saves the model first; an orphaned fit is retrained, not audited.
 #' The shared global fit is read only when a global forecast is listed. Remote
 #' storage ignores `present` and keeps exact downloads.
+#'
+#' `skip` names optional forecast suffixes (`-average_models`,
+#' `-ensemble_models`) a step does not own; they are neither read nor probed and
+#' return NULL. Steps that write them later audit them before reuse
+#' (`ensemble_models()` audits ensembles, `final_models()` averages), so earlier
+#' steps never look up a name a later parallel worker will write. Callers use
+#' this, or a listing they already make, rather than adding a new listing.
 #' @noRd
 custom_run_audit <- function(run_info, custom, local, global, combos = NULL, complete = FALSE,
-                             present = NULL) {
+                             present = NULL, skip = character()) {
   if (is.null(custom))
     return(NULL)
   candidates <- custom_run_candidates(custom, local, global)
@@ -961,10 +968,10 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     saved[[combo]] <- list(single = read_rows("forecasts", "-single_models", combo, complete && isTRUE(local)), global = read_rows(
       "forecasts",
       "-global_models", combo, complete && isTRUE(global)
-    ), average = read_rows(
+    ), average = if (!"-average_models" %in% skip) read_rows(
       "forecasts", "-average_models", combo,
       FALSE
-    ), ensemble = read_rows("forecasts", "-ensemble_models", combo, FALSE))
+    ), ensemble = if (!"-ensemble_models" %in% skip) read_rows("forecasts", "-ensemble_models", combo, FALSE))
     read_rows("models", "-single_models", combo, complete && isTRUE(local), object = TRUE,
       available = forecast_listed("-single_models", combo))
   }

@@ -469,11 +469,11 @@ agent_custom_submission <- function(inputs, agent_info, combo) {
 # caller has verified it is the saved winner (`saved_winner = TRUE`); no log
 # status is stored. Required artifacts and ownership are read exactly;
 # mismatches remain hard errors. Returns the saved custom audit, or the replay
-# audit for non-default update children. `present` forwards a caller's existing
-# forecast listing to custom_run_audit() so a restart never probes outputs that
-# parallel workers have not written yet.
+# audit for non-default update children. `skip` passes downstream-owned optional
+# outputs to custom_run_audit() so a restart never probes names that parallel
+# workers write later.
 audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, complete = TRUE, saved_winner = FALSE,
-                                     present = NULL) {
+                                     skip = character()) {
   contract <- agent_info$custom_agent_contract
   if (is.null(contract)) return(NULL)
   validate_agent_custom_models(contract)
@@ -524,7 +524,7 @@ audit_agent_custom_child <- function(agent_info, run_info, combos = NULL, comple
     }
   }
   saved <- custom_run_audit(run_info, custom, log$run_local_models, log$run_global_models, combos, complete,
-    present = present)
+    skip = skip)
   if (!is.null(agent_info$custom_agent_update_audit)) {
     owner <- if (isTRUE(log$run_global_models)) hash_data("All-Data") else combos
     for (combo in owner) {

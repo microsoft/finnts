@@ -191,7 +191,7 @@ test_that("hierarchical final_models finds Best-Model from its single listing", 
   expect_equal(tracker$listings, 1L)
 })
 
-test_that("global best-run promotion lists records once instead of probing each series", {
+test_that("global best-run promotion reads only records known to exist, without listing", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
@@ -201,14 +201,54 @@ test_that("global best-run promotion lists records once instead of probing each 
     hash_data(project_info$project_name), "-", hash_data(project_info$run_name), "-",
     hash_data("B"), "-agent_best_run.csv"
   )))
-  tracker <- local_artifact_spies(max_listings = 1L)
+  known <- new.env(parent = emptyenv())
+  known$series <- "A"
+  tracker <- local_artifact_spies()
 
-  records <- read_agent_best_run_records(project_info, c("A", "B"))
+  records <- read_agent_best_run_records(project_info, c("A", "B"), known)
 
   expect_identical(names(records), c("A", "B"))
   expect_equal(nrow(records$A), 1L)
   expect_identical(as.character(records$A$best_run_name), "candidate")
   expect_equal(nrow(records$B), 0L)
   expect_false(missing %in% c(tracker$metadata_paths, tracker$payload_paths))
-  expect_equal(tracker$listings, 1L)
+  expect_equal(tracker$listings, 0L)
+  expect_equal(tracker$directory_listings, 0L)
+
+  # without the workflow's known set, each series keeps its original exact read
+  fallback <- read_agent_best_run_records(project_info, c("A", "B"))
+  expect_equal(fallback$A, records$A)
+  expect_equal(nrow(fallback$B), 0L)
+  expect_true(missing %in% tracker$metadata_paths)
+  expect_equal(tracker$listings, 0L)
+})
+
+# Record the path of every list_files() call while delegating to the real
+# function. Returns an environment whose `paths` field accumulates them.
+local_listing_paths <- function(.env = parent.frame()) {
+  state <- new.env(parent = emptyenv())
+  state$paths <- character()
+  original <- list_files
+  testthat::local_mocked_bindings(list_files = function(storage_object, path, ...) {
+    state$paths <- c(state$paths, as.character(path))
+    original(storage_object, path, ...)
+  }, .package = "finnts", .env = .env)
+  state
+}
+
+test_that("completed custom training and ensembles-off runs add no forecast listing", {
+  info <- copy_lookup_run(lookup_templates()$trained, withr::local_tempdir())
+  lookups <- local_audit_missing_lookups()
+  listings <- local_listing_paths()
+
+  train_models(info, run_global_models = FALSE, run_local_models = TRUE)
+  ensemble_models(info)
+
+  expect_false(any(grepl("/forecasts/", listings$paths, fixed = TRUE)))
+  # global models are disabled here, so global forecasts and the shared fit are
+  # never written later; the audit still checks them exactly (as before) to
+  # catch foreign outputs
+  global_fit <- as.character(local_artifact_path(info, "models", "-single_models", hash_data("All-Data"), "rds"))
+  local_missing <- setdiff(lookups$missing, global_fit)
+  expect_identical(local_missing[!grepl("-global_models", local_missing, fixed = TRUE)], character())
 })
