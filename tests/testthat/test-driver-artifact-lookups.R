@@ -37,11 +37,49 @@ prepare_custom_lookup_run <- function(path, model) {
   info
 }
 
+# Copy every artifact folder of `template` into the empty root `path` and return
+# the template's run info re-rooted there. The template itself is never changed.
+copy_lookup_run <- function(template, path) {
+  for (folder in c("logs", "prep_data", "prep_models", "models", "forecasts")) {
+    fs::dir_create(fs::path(path, folder))
+    files <- fs::dir_ls(fs::path(template$path, folder), type = "file")
+    if (length(files)) fs::file_copy(files, fs::path(path, folder, fs::path_file(files)))
+  }
+  info <- template
+  info$path <- path
+  info
+}
+
+# Build, once per test session, one prepared custom run and one copy of it with
+# local models trained, so tests copy files instead of repeating prep_models()
+# and train_models(). Returns list(prepared, trained, model); the cached files
+# must stay unchanged, which every call verifies by hash.
+lookup_templates <- local({
+  cache <- new.env(parent = emptyenv())
+  function() {
+    if (is.null(cache$prepared)) {
+      model <- standard_custom_model()
+      prepared <- prepare_custom_lookup_run(withr::local_tempdir(.local_envir = cache), model)
+      trained <- copy_lookup_run(prepared, withr::local_tempdir(.local_envir = cache))
+      train_models(trained, run_global_models = FALSE, run_local_models = TRUE)
+      cache$model <- model
+      cache$prepared <- prepared
+      cache$trained <- trained
+      cache$hashes <- tools::md5sum(c(
+        list.files(prepared$path, recursive = TRUE, full.names = TRUE),
+        list.files(trained$path, recursive = TRUE, full.names = TRUE)
+      ))
+    }
+    expect_identical(tools::md5sum(names(cache$hashes)), cache$hashes)
+    list(prepared = cache$prepared, trained = cache$trained, model = cache$model)
+  }
+})
+
 # Normalize artifact paths to the forward-slash form recorded by the I/O spies.
 spy_path <- function(path) gsub("\\", "/", as.character(path), fixed = TRUE)
 
 test_that("custom runs never probe per-series outputs before workers write them", {
-  info <- prepare_custom_lookup_run(withr::local_tempdir(), standard_custom_model())
+  info <- copy_lookup_run(lookup_templates()$prepared, withr::local_tempdir())
   lookups <- local_audit_missing_lookups()
 
   train_models(info, run_global_models = TRUE, run_local_models = TRUE, negative_forecast = TRUE)
@@ -57,10 +95,9 @@ test_that("custom runs never probe per-series outputs before workers write them"
 })
 
 test_that("custom restarts audit and reuse only completed series outputs", {
-  model <- standard_custom_model()
-  full <- prepare_custom_lookup_run(withr::local_tempdir(), model)
-  partial <- prepare_custom_lookup_run(withr::local_tempdir(), model)
-  train_models(full, run_global_models = FALSE, run_local_models = TRUE)
+  templates <- lookup_templates()
+  full <- copy_lookup_run(templates$trained, withr::local_tempdir())
+  partial <- copy_lookup_run(templates$prepared, withr::local_tempdir())
   combos <- vapply(c("A", "B"), hash_data, character(1))
   done <- c(
     local_artifact_path(full, "forecasts", "-single_models", combos[[1]]),
@@ -85,20 +122,19 @@ test_that("custom restarts audit and reuse only completed series outputs", {
 
   stale <- read_exact_artifact(full, done[[1]])
   stale$Model_ID[stale$Model_Name == "business_mean"] <- paste0("custom-", standard_custom_model(offset = 1)$definition$version_id, "--local--C1")
-  tampered <- prepare_custom_lookup_run(withr::local_tempdir(), model)
+  tampered <- copy_lookup_run(templates$prepared, withr::local_tempdir())
   write_data(stale, "A", tampered, "data", "forecasts", "-single_models")
   expect_error(train_models(tampered, run_global_models = FALSE, run_local_models = TRUE), "identity|pool")
 })
 
 test_that("a saved custom fit without its forecast is retrained instead of audited", {
-  model <- standard_custom_model()
-  trained <- prepare_custom_lookup_run(withr::local_tempdir(), model)
-  train_models(trained, run_global_models = FALSE, run_local_models = TRUE)
+  templates <- lookup_templates()
+  trained <- templates$trained
   fit_path <- local_artifact_path(trained, "models", "-single_models", hash_data("A"), "rds")
   fitted <- read_exact_artifact(trained, fit_path, return_type = "object")
   custom_index <- which(fitted$Model_Name == "business_mean")
   fitted$Model_Fit[[custom_index]]$fit$fit$fit$context$forecast_horizon <- 1
-  interrupted <- prepare_custom_lookup_run(withr::local_tempdir(), model)
+  interrupted <- copy_lookup_run(templates$prepared, withr::local_tempdir())
   write_data(fitted, "A", interrupted, "object", "models", "-single_models")
   orphan <- local_artifact_path(interrupted, "models", "-single_models", hash_data("A"), "rds")
   before <- tools::md5sum(orphan)
@@ -110,8 +146,7 @@ test_that("a saved custom fit without its forecast is retrained instead of audit
 })
 
 test_that("custom audits read only listed outputs and keep required errors", {
-  info <- prepare_custom_lookup_run(withr::local_tempdir(), standard_custom_model())
-  train_models(info, run_global_models = FALSE, run_local_models = TRUE)
+  info <- copy_lookup_run(lookup_templates()$trained, withr::local_tempdir())
   custom <- custom_run_read(info, TRUE)
   combos <- vapply(c("A", "B"), hash_data, character(1))
   all_listed <- fs::path_file(fs::dir_ls(fs::path(info$path, "forecasts")))
