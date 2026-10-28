@@ -456,6 +456,7 @@ run_initial_checks_case <- function(final_outputs,
     agent_info$project_info$date_type <- "month"
   }
   original_reader <- read_file
+  original_list <- list_files
   agent_runs <- make_update_agent_run_table(forecast_approach)
   run_ids <- agent_runs$run_id
   run_files <- paste0(run_ids, "-agent_run.csv")
@@ -479,7 +480,15 @@ run_initial_checks_case <- function(final_outputs,
     check_agent_info = function(...) invisible(NULL),
     final_agent_artifact_exists = function(...) TRUE,
     hash_data = function(x) x,
-    list_files = function(...) run_files,
+    # agent-run discovery returns the synthetic run logs; current-output
+    # listings see the real artifact files (none without an artifact path)
+    list_files = function(storage_object, path, ...) {
+      if (grepl("/(forecasts|models)/", path)) {
+        if (is.null(artifact_path)) return(character())
+        return(original_list(storage_object, path, ...))
+      }
+      run_files
+    },
     read_file = function(run_info,
                          path = NULL,
                          file_list = NULL,
