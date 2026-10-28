@@ -1,9 +1,9 @@
 # Offline tests for the Finn skill scripts.
 # Usage: Rscript skills/finn/tests/test_skill.R
 #
-# Needs jsonlite and digest (both installed with finnts). Does not train
-# models, call an LLM, or touch the user's saved Finn settings: settings and
-# projects live in a temporary folder.
+# Needs jsonlite, digest, and a POSIX shell (sh). Does not train models, call an
+# LLM, or touch the user's saved Finn settings: settings and projects live in
+# a temporary folder.
 
 skill_dir <- local({
   args <- commandArgs(trailingOnly = FALSE)
@@ -1210,6 +1210,98 @@ with(common, {
   check("status: never includes token values", !any(grepl("ghp_|gho_|github_pat_", unlist(st))))
 })
 
+# ---- Finn package readiness --------------------------------------------------------
+local({
+  partial <- new.env(parent = emptyenv())
+  partial$prep_data <- function() NULL
+  partial$prep_models <- function() NULL
+  partial$train_models <- function() NULL
+  partial$ensemble_models <- function() NULL
+  partial$final_models <- function() NULL
+  partial$get_forecast_data <- function() NULL
+  partial$validate_prepared_input <- function() NULL
+  partial$set_project_info <- function() NULL
+  partial$set_run_info <- function() NULL
+  partial$set_agent_info_custom <- function() NULL
+  partial$iterate_forecast <- function() NULL
+  partial$update_forecast <- function() NULL
+  complete <- tryCatch(common$finn_check_finnts_capabilities(partial), error = identity)
+  check("readiness reports missing required forecast capabilities",
+    is.list(complete) && identical(complete$missing_core, character()))
+  rm(list = "final_models", envir = partial)
+  missing <- tryCatch(common$finn_check_finnts_capabilities(partial), error = identity)
+  check("readiness does not accept a missing final-model capability",
+    is.list(missing) && identical(missing$missing_core, "final_models"))
+  partial$final_models <- function() NULL
+  missing_agent <- tryCatch(common$finn_check_finnts_capabilities(partial), error = identity)
+  check("readiness reports missing agent capabilities separately",
+    is.list(missing_agent) && "get_agent_forecast" %in% missing_agent$missing_agent)
+  rm(list = "set_project_info", envir = partial)
+  missing_project_info <- common$finn_check_finnts_capabilities(partial)
+  check("readiness rejects missing set_project_info",
+    identical(missing_project_info$missing_core, "set_project_info"))
+  partial$set_project_info <- function() NULL
+  rm(list = "set_run_info", envir = partial)
+  missing_run_info <- common$finn_check_finnts_capabilities(partial)
+  check("readiness rejects missing set_run_info",
+    identical(missing_run_info$missing_core, "set_run_info"))
+  partial$set_run_info <- function() NULL
+  # Older builds (including the 0.7.0 release) predate validate_prepared_input();
+  # only data preparation needs it, so readiness and rollback must not require it.
+  rm(list = "validate_prepared_input", envir = partial)
+  without_validator <- common$finn_check_finnts_capabilities(partial)
+  check("readiness accepts an older finnts build without validate_prepared_input",
+    identical(without_validator$missing_core, character()))
+
+  agent_without_chat <- new.env(parent = emptyenv())
+  for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
+    "final_models", "get_forecast_data", "validate_prepared_input",
+    "set_project_info", "set_run_info",
+    "set_agent_info_custom", "iterate_forecast", "update_forecast", "get_agent_forecast")) {
+    agent_without_chat[[name]] <- function() NULL
+  }
+  missing_chat <- common$finn_check_finnts_capabilities(agent_without_chat)
+  check("readiness reports missing chat_copilot as an agent capability",
+    identical(missing_chat$missing_agent, "chat_copilot"))
+  agent_without_chat$chat_copilot <- function() NULL
+  with_chat <- common$finn_check_finnts_capabilities(agent_without_chat)
+  check("readiness accepts chat_copilot when all agent capabilities are present",
+    identical(with_chat$missing_agent, character()))
+})
+
+if (requireNamespace("finnts", quietly = TRUE)) {
+  readiness_env <- load_functions("check_env.R", common)
+  fake_namespace <- new.env(parent = emptyenv())
+  for (name in c("prep_data", "prep_models", "train_models", "ensemble_models",
+    "get_forecast_data", "validate_prepared_input", "set_project_info", "set_run_info",
+    "set_agent_info_custom",
+    "iterate_forecast", "update_forecast", "get_agent_forecast")) {
+    fake_namespace[[name]] <- function() NULL
+  }
+  readiness_env$requireNamespace <- function(...) TRUE
+  readiness_env$`::` <- function(package, name) {
+    package <- as.character(substitute(package))
+    name <- as.character(substitute(name))
+    if (identical(package, "utils") && identical(name, "packageVersion")) {
+      return(function(package) package_version("1.0.0"))
+    }
+    getExportedValue(package, name)
+  }
+  readiness_env$asNamespace <- function(package) fake_namespace
+  readiness_env$finn_custom_supported <- function(...) FALSE
+  readiness_env$finn_custom_copilot_supported <- function(...) FALSE
+  readiness_env$finn_custom_historical_supported <- function(...) FALSE
+  readiness_env$finn_copilot_status <- function(...) list(ready = TRUE, problems = character())
+  readiness_env$finn_system_resources <- function(...) list()
+  readiness_env$finn_update_check_enabled <- function(...) FALSE
+  readiness_env$finn_main <- function(fn) fn(list())
+  readiness_expr <- tail(as.list(parse(file.path(scripts_dir, "check_env.R"))), 1)[[1]]
+  readiness_result <- eval(readiness_expr, readiness_env)
+  check("environment readiness blocks missing core finnts capabilities",
+    !isTRUE(readiness_result$ok) && identical(readiness_result$status, "needs_update") &&
+      identical(unlist(readiness_result$data$missing_core_capabilities), "final_models"))
+}
+
 # ---- finnts argument types ------------------------------------------------------
 if (requireNamespace("finnts", quietly = TRUE)) {
   with(common, {
@@ -1642,6 +1734,18 @@ with(launch, {
         finn_update_state(ar, status = "completed", pid = NULL)
       })
     }
+    init_lock <- file.path(tmp, "owner-init-lock")
+    original_write_json <- common$finn_write_json
+    on.exit(common$finn_write_json <- original_write_json, add = TRUE)
+    common$finn_write_json <- function(x, path) {
+      if (identical(basename(path), "owner.json")) stop("owner metadata write failed")
+      original_write_json(x, path)
+    }
+    init_error <- tryCatch(finn_directory_lock_acquire(init_lock, timeout = 0), error = identity)
+    check("machine lock metadata failure never leaves an active ownerless lock",
+      inherits(init_error, "error") && !dir.exists(init_lock) &&
+        length(Sys.glob(paste0(init_lock, ".abandoned-init-*"))) == 1L)
+    common$finn_write_json <- original_write_json
     if (requireNamespace("processx", quietly = TRUE) && requireNamespace("ps", quietly = TRUE)) {
       race_script <- file.path(tmp, "allocation-race.R")
       writeLines(c(
@@ -1871,6 +1975,87 @@ with(launch, {
   }
 })
 
+# ---- Run cancellation -------------------------------------------------------------
+local({
+  cancel_env <- load_functions("run_cancel.R", common)
+  real_cancel_kill_tree <- cancel_env$cancel_kill_tree
+  paths <- list(name = "CancelFailure")
+  run_paths <- list(id = "run-1")
+  state <- list(run_id = "run-1", status = "running", host = Sys.info()[["nodename"]], mode = "standard")
+  cancel_env$finn_require <- function(...) invisible(TRUE)
+  cancel_env$finn_project_from_args <- function(...) paths
+  cancel_env$finn_run_paths <- function(...) run_paths
+  cancel_env$finn_read_state <- function(...) state
+  cancel_env$finn_effective_status <- function(x) x$status
+  cancel_env$cancel_kill_tree <- function(...) list(stopped = 0L, confirmed = FALSE, note = "The worker is still running.")
+  cancel_env$finn_update_state <- function(...) {
+    state <<- modifyList(state, list(...))
+    state
+  }
+  cancel_env$finn_log <- function(...) invisible(NULL)
+  cancel_env$finn_main <- function(fn) fn(list(run_id = "run-1", confirm = "true"))
+  cancel_expr <- tail(as.list(parse(file.path(scripts_dir, "run_cancel.R"))), 1)[[1]]
+  result <- eval(cancel_expr, cancel_env)
+  check("cancel reports termination failure without persisting cancelled",
+    !isTRUE(result$ok) && !identical(result$status, "cancelled") &&
+      identical(state$status, "running"))
+
+  finished <- modifyList(state, list(status = "completed", stage = "done"))
+  state_reads <- 0L
+  cancel_env$finn_read_state <- function(...) {
+    state_reads <<- state_reads + 1L
+    if (state_reads == 1L) state else finished
+  }
+  result_done <- eval(cancel_expr, cancel_env)
+  check("cancel reports a run that finished before termination was confirmed",
+    isTRUE(result_done$ok) && identical(result_done$status, "completed") &&
+      identical(state$status, "running"))
+  cancel_env$finn_read_state <- function(...) state
+
+  cancel_env$cancel_kill_tree <- real_cancel_kill_tree
+  fake_process_api <- list(
+    ps_handle = function(pid) list(pid = pid),
+    ps_children = function(handle, recursive) list(list(pid = 201L), list(pid = 202L)),
+    ps_pid = function(handle) handle$pid,
+    ps_create_time = function(handle) 1,
+    ps_kill = function(handle) invisible(TRUE)
+  )
+  starting <- tryCatch(cancel_env$cancel_kill_tree(NULL, NULL, process_api = fake_process_api,
+    is_alive = function(...) FALSE), error = identity)
+  check("cancel treats a run without a worker PID as still starting, not cancelled",
+    is.list(starting) && identical(starting$confirmed, FALSE))
+  worker_checks <- 0L
+  child_alive <- function(pid, create_time = NULL) {
+    if (identical(as.integer(pid), 101L)) {
+      worker_checks <<- worker_checks + 1L
+      return(worker_checks == 1L)
+    }
+    identical(as.integer(pid), 202L)
+  }
+  survivor <- tryCatch(cancel_env$cancel_kill_tree(
+    101L, 1, process_api = fake_process_api, is_alive = child_alive
+  ), error = identity)
+  check("cancel requires every captured child to be gone",
+    is.list(survivor) && identical(survivor$confirmed, FALSE))
+
+  worker_checks <- 0L
+  all_gone <- tryCatch(cancel_env$cancel_kill_tree(
+    101L, 1, process_api = fake_process_api,
+    is_alive = function(pid, create_time = NULL) {
+      if (identical(as.integer(pid), 101L)) {
+        worker_checks <<- worker_checks + 1L
+        return(worker_checks == 1L)
+      }
+      FALSE
+    }
+  ), error = identity)
+  if (!is.list(all_gone) || !identical(all_gone$confirmed, TRUE)) {
+    message("  cancellation fixture result: ", paste(capture.output(str(all_gone)), collapse = " "))
+  }
+  check("cancel confirms success only after worker and captured children exit",
+    is.list(all_gone) && identical(all_gone$confirmed, TRUE))
+})
+
 # ---- Analysis helpers ---------------------------------------------------------------
 an <- new.env(parent = globalenv())
 sys.source(file.path(scripts_dir, "finn_analysis_helpers.R"), envir = an)
@@ -1988,6 +2173,24 @@ with(common, {
 
 inst <- load_functions("install_finnts.R", parent = common)
 with(inst, {
+  check("installer rejects unverified GitHub build identity",
+    !is.null(finn_install_validation_error(
+      source = "github", expected_version = "1.2.0", expected_sha = "abc123",
+      installed = list(version = "1.2.0", source = "github", sha = "different"),
+      unmet = character(), missing_capabilities = character()
+    )))
+  check("installer rejects unmet declared dependencies",
+    !is.null(finn_install_validation_error(
+      source = "cran", expected_version = NULL, expected_sha = NULL,
+      installed = list(version = "1.2.0", source = "cran"),
+      unmet = "dplyr", missing_capabilities = character()
+    )))
+  check("installer accepts verified build with all dependencies and capabilities",
+    is.null(finn_install_validation_error(
+      source = "github", expected_version = "1.2.0", expected_sha = "abc123",
+      installed = list(version = "1.2.0", source = "github", sha = "abc123"),
+      unmet = character(), missing_capabilities = character()
+    )))
   gh_fetch <- function(url, timeout) {
     if (grepl("/commits/", url)) return("{\"sha\":\"abc123\"}")
     if (grepl("finn_common.R$", url)) return("finn_skill_version <- \"9.0.0\"")
@@ -2013,6 +2216,42 @@ with(inst, {
 
 up <- load_functions("update_skill.R", parent = common)
 with(up, {
+  verifier_env <- new.env(parent = up)
+  verifier_env$finn_rscript <- function() "Rscript"
+  verifier_args <- NULL
+  verifier_env$system2 <- function(command, args, stdout, stderr) {
+    verifier_args <<- args
+    structure(
+      "{\"version\":\"1.2.0\",\"source\":\"github\",\"sha\":\"abc123\"}",
+      status = 0L
+    )
+  }
+  fresh_verifier <- up$finn_fresh_finnts_build
+  environment(fresh_verifier) <- verifier_env
+  fresh_build <- fresh_verifier()
+  check("fresh finnts verification loads namespace before reading package identity",
+    is.list(fresh_build) && identical(fresh_build$sha, "abc123") &&
+      any(grepl("loadNamespace('finnts')", verifier_args, fixed = TRUE)))
+  verifier_env$system2 <- function(...) structure("load failed", status = 1L)
+  check("fresh finnts verification rejects a process that cannot load finnts",
+    is.null(fresh_verifier()))
+
+  check("same-version GitHub builds with unknown identity are not equivalent",
+    !finn_same_finnts(list(version = "1.2.0", source = "github", sha = NULL),
+      list(version = "1.2.0", source = "github", sha = "abc123")))
+  check("identical local or unrecorded-source finnts installs are the same build",
+    finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.2.0", source = "local")) &&
+      finn_same_finnts(list(version = "1.2.0"), list(version = "1.2.0")) &&
+      finn_verified_finnts_build(list(version = "1.2.0", source = "local"), list(version = "1.2.0", source = "local")))
+  check("non-GitHub installs still differ by version, source, or recorded commit",
+    !finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.3.0", source = "local")) &&
+      !finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.2.0")) &&
+      !finn_same_finnts(list(version = "1.2.0", source = "local", sha = "a"), list(version = "1.2.0", source = "local", sha = "b")))
+  check("fresh rollback verification requires exact GitHub identity",
+    finn_verified_finnts_build(list(version = "1.2.0", source = "github", sha = "abc123"),
+      list(version = "1.2.0", source = "github", sha = "abc123")) &&
+      !finn_verified_finnts_build(list(version = "1.2.0", source = "github", sha = "wrong"),
+        list(version = "1.2.0", source = "github", sha = "abc123")))
   #' Build an offline version.json fixture with newest-first versions.
   #' @param versions Version strings; first is the top-level version.
   #' @return JSON text with the same schema as the installed history.
@@ -2169,7 +2408,7 @@ with(up, {
     fake_finnts <<- list(version = if (identical(ref, "abc123")) "99.0.0" else "1.0.0", source = "github", sha = ref, ref = ref)
     list(ok = TRUE)
   }
-  verify <- function() fake_finnts$version
+  verify <- function() fake_finnts
   args <- list(skill_dir = installed)
 
   check("remote skill files keep only skills/finn", setequal(finn_remote_skill_files("abc123", fetch), names(remote_files)))
@@ -2315,6 +2554,16 @@ with(up, {
     })
     identical(rc$status, "needs_confirmation") && identical(rc$data$restore_finnts$version, "0.6.0") && is.null(cran_args)
   })
+  fake_finnts <- list(version = "1.0.0", source = "local")
+  local_backup <- finn_backup_skill(installed, "local finnts fixture")
+  local_installs <- 0L
+  rl <- finn_do_rollback(c(args, to = local_backup$id, confirm = "true"), installer = function(d, a) {
+    local_installs <<- local_installs + 1L
+    list(ok = FALSE, message = "must not reinstall an unchanged finnts")
+  }, verify = verify)
+  check("full rollback with an unchanged local finnts does not report partial restoration",
+    identical(rl$status, "rolled_back") && local_installs == 0L &&
+      !any(grepl("cannot be restored automatically", unlist(rl$next_actions))))
   Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "settings"))
 })
 
@@ -2529,6 +2778,45 @@ local({
   wres <- tryCatch(eval(worker_expr, worker), error = function(e) list(ok = FALSE, message = conditionMessage(e)))
   check("ids: the worker passes 001 and 1 on as two series",
     isTRUE(wres$ok) && is.data.frame(seen$data) && setequal(unique(seen$data$Region), c("001", "1")))
+  failed_state <- list(status = "running", error = NULL)
+  worker$finn_update_state <- function(paths, ...) {
+    failed_state <<- modifyList(failed_state, list(...))
+    failed_state
+  }
+  worker$finn_result <- common$finn_result
+  worker$finn_redact <- common$finn_redact
+  worker$finn_now <- common$finn_now
+  worker$worker_save_outputs <- function(...) stop("output finalization failed")
+  final_result <- tryCatch(worker$worker_finalize_run(list(), list(output = "unused"), failed_state,
+    list(forecast = data.frame(x = 1))), error = identity)
+  check("worker finalization failure preserves failed state and original error",
+    is.list(final_result) && !isTRUE(final_result$ok) && identical(final_result$status, "failed") &&
+      identical(failed_state$status, "failed") &&
+      identical(failed_state$error, "output finalization failed"))
+  completed_state <- list(status = "running", error = NULL)
+  worker$finn_update_state <- function(paths, ...) {
+    completed_state <<- modifyList(completed_state, list(...))
+    completed_state
+  }
+  worker$worker_save_outputs <- function(...) list(files = list("forecast.csv"))
+  worker$finn_log <- function(...) stop("log write failed")
+  logged_result <- tryCatch(worker$worker_finalize_run(list(), list(output = "unused"), completed_state,
+    list(forecast = data.frame(x = 1))), error = identity)
+  check("worker completion-log failure keeps the saved completed state",
+    is.list(logged_result) && isTRUE(logged_result$ok) && identical(logged_result$status, "completed") &&
+      identical(completed_state$status, "completed") && is.null(completed_state$error))
+  failed_log_state <- list(status = "running", error = NULL)
+  worker$finn_update_state <- function(paths, ...) {
+    failed_log_state <<- modifyList(failed_log_state, list(...))
+    failed_log_state
+  }
+  worker$worker_save_outputs <- function(...) stop("output finalization failed")
+  failed_logged <- tryCatch(worker$worker_finalize_run(list(), list(output = "unused"), failed_log_state,
+    list(forecast = data.frame(x = 1))), error = identity)
+  check("worker finalization failure keeps the original error when logging also fails",
+    is.list(failed_logged) && !isTRUE(failed_logged$ok) && identical(failed_logged$status, "failed") &&
+      identical(failed_logged$message, "output finalization failed") &&
+      identical(failed_log_state$status, "failed"))
 }, envir = new.env(parent = common))
 local({
   # Run the real input-script entry point with isolated arguments and helpers;
@@ -2907,6 +3195,153 @@ for (f in c("install_skill.ps1", "install_skill.sh", "templates/data_template.cs
   "references/glossary.md", "references/starter-prompts.md")) {
   check(paste("onboarding file exists:", f), file.exists(file.path(skill_dir, f)))
 }
+local({
+  setup_md <- paste(readLines(file.path(skill_dir, "references", "setup.md"), warn = FALSE), collapse = "\n")
+  installer <- paste(readLines(file.path(scripts_dir, "install_finnts.R"), warn = FALSE), collapse = "\n")
+  check("finnts install guidance installs from GitHub and never offers a CRAN fallback",
+    !grepl("--source=cran", setup_md, fixed = TRUE) && !grepl("--source=cran", installer, fixed = TRUE))
+})
+local({
+  ps1 <- paste(readLines(file.path(skill_dir, "install_skill.ps1"), warn = FALSE), collapse = "\n")
+  sh <- paste(readLines(file.path(skill_dir, "install_skill.sh"), warn = FALSE), collapse = "\n")
+  check("PowerShell installer fetches files from the resolved commit",
+    grepl("/commits/", ps1, fixed = TRUE) &&
+      grepl("$sha/$prefix$f", ps1, fixed = TRUE) &&
+      !grepl("$ref/$prefix$f", ps1, fixed = TRUE))
+  # PowerShell treats `?` as part of a bare variable name, so "$x?y" reads $x?y, not $x.
+  check("PowerShell installer never places ? directly after a bare variable",
+    !grepl("\\$[A-Za-z_][A-Za-z0-9_]*\\?", ps1, perl = TRUE))
+  ps_exe <- Sys.which(c("pwsh", "powershell"))
+  ps_exe <- ps_exe[nzchar(ps_exe)]
+  tree_uri <- regmatches(ps1, regexpr("\"https://api\\.github\\.com/repos/[^\"]*/git/trees/[^\"]*\"", ps1))
+  if (length(ps_exe) > 0 && length(tree_uri) == 1L) {
+    probe <- file.path(tmp, "ps-tree-uri.ps1")
+    writeLines(c("$repo = 'microsoft/finnts'", "$treeSha = '89abcdef0123456789abcdef0123456789abcdef'",
+      paste0("Write-Output ", tree_uri)), probe)
+    uri_out <- suppressWarnings(system2(ps_exe[[1]], c("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+      "-File", shQuote(probe)), stdout = TRUE, stderr = TRUE))
+    check("PowerShell installer requests the tree by its parsed tree SHA", identical(trimws(utils::tail(uri_out, 1)),
+      "https://api.github.com/repos/microsoft/finnts/git/trees/89abcdef0123456789abcdef0123456789abcdef?recursive=1"))
+  }
+  check("shell installer fetches files from the resolved commit",
+    grepl("/commits/", sh, fixed = TRUE) &&
+      grepl("$sha/skills/finn/$f", sh, fixed = TRUE) &&
+      !grepl("$ref/skills/finn/$f", sh, fixed = TRUE))
+
+  sh_exe <- Sys.which("sh")
+  if (!nzchar(sh_exe)) {
+    check("shell installer parses formatted GitHub commit JSON", FALSE)
+  } else {
+    to_shell_path <- function(path) {
+      if (.Platform$OS.type != "windows") return(path)
+      normalized <- normalizePath(path, winslash = "/", mustWork = FALSE)
+      if (grepl("^[A-Za-z]:/", normalized)) {
+        return(paste0("/", tolower(substr(normalized, 1, 1)), substring(normalized, 3)))
+      }
+      normalized
+    }
+    fake_root <- file.path(tmp, "shell-installer-json")
+    fake_bin <- file.path(fake_root, "bin")
+    dir.create(fake_bin, recursive = TRUE, showWarnings = FALSE)
+    commit_sha <- "0123456789abcdef0123456789abcdef01234567"
+    tree_sha <- "89abcdef0123456789abcdef0123456789abcdef"
+    tree_json <- paste0(
+      "{\"truncated\":false,\"tree\":[",
+      "{\"path\":\"skills/finn/SKILL.md\",\"type\":\"blob\"},",
+      "{\"path\":\"skills/finn/version.json\",\"type\":\"blob\"},",
+      "{\"path\":\"skills/finn/scripts/finn_common.R\",\"type\":\"blob\"},",
+      "{\"path\":\"skills/finn/scripts/update_skill.R\",\"type\":\"blob\"},",
+      "{\"path\":\"skills/finn/scripts/install_finnts.R\",\"type\":\"blob\"},",
+      "{\"path\":\"skills/finn/scripts/run_forecast.R\",\"type\":\"blob\"}]}"
+    )
+    tree_file <- file.path(fake_root, "tree.json")
+    writeLines(tree_json, tree_file, useBytes = TRUE)
+    fake_curl <- file.path(fake_bin, "curl")
+    writeLines(c(
+      "#!/bin/sh",
+      "url=$4",
+      "out=$6",
+      "printf '%s\\n' \"$url\" >> \"$FAKE_CURL_LOG\"",
+      "case \"$url\" in",
+      "  */commits/*) cp \"$FAKE_COMMIT_JSON\" \"$out\" ;;",
+      "  */git/trees/*) cp \"$FAKE_TREE_JSON\" \"$out\" ;;",
+      "  https://raw.githubusercontent.com/*) printf 'fixture' > \"$out\" ;;",
+      "  *) exit 2 ;;",
+      "esac"
+    ), fake_curl)
+    Sys.chmod(fake_curl, mode = "0755")
+
+    commit_cases <- list(
+      compact = paste0(
+        "{\"sha\":\"", commit_sha, "\",\"commit\":{\"tree\":{\"sha\":\"",
+        tree_sha, "\"}}}"
+      ),
+      formatted_reordered = paste0(
+        "{\n  \"commit\": { \"tree\": { \"url\": \"fixture\", ",
+        "\"sha\": \"", tree_sha, "\" } },\n  \"sha\": \"",
+        commit_sha, "\",\n  \"html_url\": \"fixture\"\n}"
+      ),
+      slash_ref = paste0(
+        "{\"sha\":\"", commit_sha, "\",\"commit\":{\"tree\":{\"sha\":\"",
+        tree_sha, "\"}}}"
+      )
+    )
+    case_refs <- c(compact = "main", formatted_reordered = "main", slash_ref = "users/me/fix-1")
+    installer_ok <- logical(length(commit_cases))
+    names(installer_ok) <- names(commit_cases)
+    installer_logs <- vector("list", length(commit_cases))
+    names(installer_logs) <- names(commit_cases)
+    for (case in names(commit_cases)) {
+      fixture <- file.path(fake_root, paste0(case, "-commit.json"))
+      writeLines(commit_cases[[case]], fixture, useBytes = TRUE)
+      log_file <- file.path(fake_root, paste0(case, "-curl.log"))
+      dest <- file.path(fake_root, paste0(case, "-install"))
+      # Put the fake curl first but keep the shell's inherited PATH: on macOS sh lives
+      # in /bin while awk and mktemp live in /usr/bin.
+      shell_path <- paste(to_shell_path(fake_bin), to_shell_path(dirname(sh_exe)), sep = ":")
+      env <- c(
+        paste0("export PATH=", shQuote(shell_path, type = "sh"), ":\"$PATH\""),
+        paste0("export FINN_SKILL_DEST=", shQuote(to_shell_path(dest), type = "sh")),
+        "export FINN_SKILL_REPO=microsoft/finnts",
+        paste0("export FINN_SKILL_REF=", shQuote(case_refs[[case]], type = "sh")),
+        paste0("export FAKE_COMMIT_JSON=", shQuote(to_shell_path(fixture), type = "sh")),
+        paste0("export FAKE_TREE_JSON=", shQuote(to_shell_path(tree_file), type = "sh")),
+        paste0("export FAKE_CURL_LOG=", shQuote(to_shell_path(log_file), type = "sh")),
+        paste0("export TMPDIR=", shQuote(to_shell_path(fake_root), type = "sh"))
+      )
+      wrapper <- file.path(fake_root, paste0(case, "-run-installer.sh"))
+      # Run through sh: a checkout does not keep the installer's executable bit.
+      writeLines(c("#!/bin/sh", env,
+        paste0("exec sh ", shQuote(to_shell_path(file.path(skill_dir, "install_skill.sh")), type = "sh"))
+      ), wrapper)
+      output <- suppressWarnings(system2(
+        sh_exe, shQuote(to_shell_path(wrapper), type = "sh"),
+        stdout = TRUE, stderr = TRUE
+      ))
+      status <- attr(output, "status")
+      installer_ok[[case]] <- is.null(status) || identical(as.integer(status), 0L)
+      installer_logs[[case]] <- if (file.exists(log_file)) readLines(log_file, warn = FALSE) else character()
+      if (!installer_ok[[case]]) {
+        message("  shell installer fixture [", case, "] exit ",
+          if (is.null(status)) 0L else status, ": ", paste(output, collapse = " | "))
+      }
+    }
+    check("shell installer resolves compact and formatted commit JSON",
+      all(installer_ok))
+    check("shell installer requests the tree by its parsed tree SHA",
+      all(vapply(installer_logs, function(log) any(grepl(
+        paste0("/git/trees/", tree_sha, "?recursive=1"), log, fixed = TRUE
+      )), logical(1))))
+    check("shell installer downloads files from the parsed commit SHA",
+      all(vapply(installer_logs, function(log) any(grepl(
+        paste0("raw.githubusercontent.com/microsoft/finnts/", commit_sha, "/skills/finn/SKILL.md"),
+        log, fixed = TRUE
+      )), logical(1))))
+    check("shell installer percent-encodes a slash-containing ref for the commit API",
+      any(grepl("/commits/users%2Fme%2Ffix-1", installer_logs[["slash_ref"]], fixed = TRUE)) &&
+        !any(grepl("/commits/users/me", installer_logs[["slash_ref"]], fixed = TRUE)))
+  }
+})
 local({
   skill_md <- paste(readLines(file.path(skill_dir, "SKILL.md"), warn = FALSE), collapse = "\n")
   for (f in c("data-requirements.md", "glossary.md", "starter-prompts.md", "--report=true")) {

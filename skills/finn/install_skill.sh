@@ -51,22 +51,155 @@ else
 fi
 
 stage="$(mktemp -d 2>/dev/null || mktemp -d -t finn-skill)"
-tree="$stage.tree.json"
+commit_file="$stage.commit.json"
+tree_file="$stage.tree.json"
 
-echo "Finding the Finn skill files in $repo ($ref)..."
-if ! fetch "https://api.github.com/repos/$repo/git/trees/$ref?recursive=1" "$tree"; then
-  echo "Could not reach GitHub. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
+echo "Resolving $repo ($ref) to an immutable commit..."
+# Percent-encode the ref so branch names such as users/me/fix stay one path segment.
+encoded_ref="$(printf '%s' "$ref" | LC_ALL=C awk '
+  BEGIN { for (i = 1; i < 256; i++) ord[sprintf("%c", i)] = i }
+  { text = (NR > 1 ? text "\n" : "") $0 }
+  END {
+    out = ""
+    for (i = 1; i <= length(text); i++) {
+      c = substr(text, i, 1)
+      if (c ~ /[A-Za-z0-9._~-]/) out = out c
+      else out = out sprintf("%%%02X", ord[c])
+    }
+    printf "%s", out
+  }
+')"
+if ! fetch "https://api.github.com/repos/$repo/commits/$encoded_ref" "$commit_file"; then
+  echo "Could not resolve the GitHub ref. Check your internet connection or proxy, or install manually (see skills/finn/README.md)." >&2
+  exit 1
+fi
+identity="$(awk '
+  { json = json $0 "\n" }
+  function next_token(    c, value, escaped) {
+    while (pos <= length(json) && substr(json, pos, 1) ~ /[[:space:]]/) pos++
+    c = substr(json, pos, 1)
+    if (c == "") {
+      token_type = ""
+      token_value = ""
+      return
+    }
+    if (c == "\"") {
+      pos++
+      value = ""
+      escaped = 0
+      while (pos <= length(json)) {
+        c = substr(json, pos++, 1)
+        if (escaped) {
+          value = value c
+          escaped = 0
+        } else if (c == "\\") {
+          escaped = 1
+        } else if (c == "\"") {
+          token_type = "string"
+          token_value = value
+          return
+        } else {
+          value = value c
+        }
+      }
+      token_type = "invalid"
+      return
+    }
+    if (c == "{" || c == "}" || c == "[" || c == "]" || c == ":" || c == ",") {
+      pos++
+      token_type = c
+      token_value = c
+      return
+    }
+    value = ""
+    while (pos <= length(json)) {
+      c = substr(json, pos, 1)
+      if (c ~ /[[:space:]]/ || c == "{" || c == "}" || c == "[" || c == "]" || c == ":" || c == ",") break
+      value = value c
+      pos++
+    }
+    token_type = "primitive"
+    token_value = value
+  }
+  function parse_value(path,    key, child_path) {
+    if (token_type == "{") {
+      next_token()
+      if (token_type == "}") return 1
+      while (1) {
+        if (token_type != "string") return 0
+        key = token_value
+        next_token()
+        if (token_type != ":") return 0
+        if (path == "" && key == "commit") commit_objects++
+        if (path == "commit" && key == "tree") tree_objects++
+        if (path == "" && key == "sha") commit_shas++
+        if (path == "commit.tree" && key == "sha") tree_shas++
+        child_path = path == "" ? key : path "." key
+        next_token()
+        if (!parse_value(child_path)) return 0
+        next_token()
+        if (token_type == "}") return 1
+        if (token_type != ",") return 0
+        next_token()
+      }
+    }
+    if (token_type == "[") {
+      next_token()
+      if (token_type == "]") return 1
+      while (1) {
+        if (!parse_value(path)) return 0
+        next_token()
+        if (token_type == "]") return 1
+        if (token_type != ",") return 0
+        next_token()
+      }
+    }
+    if (token_type == "string") {
+      if (path == "sha") commit_sha = token_value
+      if (path == "commit.tree.sha") tree_sha = token_value
+      return 1
+    }
+    return token_type == "primitive"
+  }
+  END {
+    pos = 1
+    next_token()
+    if (!parse_value("")) exit 1
+    next_token()
+    if (token_type != "" || commit_objects != 1 || tree_objects != 1 ||
+        commit_shas != 1 || tree_shas != 1 ||
+        length(commit_sha) != 40 || commit_sha !~ /^[[:xdigit:]]+$/ ||
+        length(tree_sha) != 40 || tree_sha !~ /^[[:xdigit:]]+$/) {
+      exit 1
+    }
+    printf "%s %s\n", commit_sha, tree_sha
+  }
+' "$commit_file")" || {
+  echo "GitHub did not return an unambiguous commit and tree identity. Nothing was installed." >&2
+  exit 1
+}
+set -- $identity
+if [ "$#" -ne 2 ]; then
+  echo "GitHub did not return valid commit and tree identities. Nothing was installed." >&2
+  exit 1
+fi
+sha=$1
+tree_sha=$2
+
+echo "Finding the Finn skill files at commit $sha..."
+if ! fetch "https://api.github.com/repos/$repo/git/trees/$tree_sha?recursive=1" "$tree_file"; then
+  echo "Could not read the resolved commit tree. Nothing was installed." >&2
   exit 1
 fi
 
-if grep -q '"truncated": *true' "$tree"; then
+if grep -q '"truncated": *true' "$tree_file"; then
   echo "GitHub returned a partial file list. Install manually (see skills/finn/README.md)." >&2
   exit 1
 fi
 
 # Put each tree entry on its own line (works for pretty or compact JSON), keep
 # blobs, and strip the skills/finn/ prefix. Skill file names contain no spaces.
-files="$(tr -d '\n\r' < "$tree" | tr '{' '\n' | grep '"type": *"blob"' |
+files="$(tr -d '\n\r' < "$tree_file" | tr '{' '\n' | grep '"type": *"blob"' |
   sed -n 's/.*"path": *"skills\/finn\/\([^"]*\)".*/\1/p')"
 
 case "$files" in
@@ -84,13 +217,14 @@ for f in $files; do
   i=$((i + 1))
   echo "  [$i/$total] $f"
   mkdir -p "$skill/$(dirname "$f")"
-  if ! fetch "https://raw.githubusercontent.com/$repo/$ref/skills/finn/$f" "$skill/$f"; then
+  if ! fetch "https://raw.githubusercontent.com/$repo/$sha/skills/finn/$f" "$skill/$f"; then
     echo "Download failed for $f. Nothing was installed. Try again later." >&2
     exit 1
   fi
 done
 
-for required in SKILL.md scripts/finn_common.R scripts/update_skill.R; do
+required_files="SKILL.md version.json scripts/finn_common.R scripts/update_skill.R scripts/install_finnts.R scripts/run_forecast.R"
+for required in $required_files; do
   if [ ! -f "$skill/$required" ]; then
     echo "The download is incomplete ($required is missing). Nothing was installed." >&2
     exit 1
@@ -102,9 +236,15 @@ if ! cp -R "$skill" "$dest" || [ ! -f "$dest/SKILL.md" ]; then
   echo "Copying into $dest failed. Nothing was installed." >&2
   exit 1
 fi
+for required in $required_files; do
+  if [ ! -f "$dest/$required" ] || ! cmp -s "$skill/$required" "$dest/$required"; then
+    echo "The installation at $dest is incomplete or differs from commit $sha ($required)." >&2
+    exit 1
+  fi
+done
 
 echo ""
-echo "Installed the Finn skill at $dest"
+echo "Installed the Finn skill from commit $sha at $dest"
 echo "Next steps:"
 echo "  1. Start a new chat (or reload your agent) so it finds the skill."
 echo "  2. Say: 'Use the Finn skill to give me the Finn tutorial.'"

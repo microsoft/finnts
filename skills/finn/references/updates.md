@@ -93,7 +93,10 @@ The exact compared commit is installed, so the build the user approved is the bu
 get. If `data$github$skill_version` is newer than the skill, also offer a skill update.
 The install is recorded in `update_history.json`, so
 `update_skill.R --action=rollback --package_only=true --confirm=true` restores the
-previous build.
+previous build. `install_finnts.R` reports success only when required declared
+dependencies and core forecast capabilities are available. GitHub installs must
+identify the selected commit; an unverifiable build or unmet dependency is an
+explicit error, not a successful install.
 
 ## What an update does
 
@@ -106,7 +109,7 @@ previous build.
 3. Downloads the new skill files, checks every script parses, and copies them in.
    Files no longer in the new version are kept and listed in `data$stale_files`.
 4. If finnts is newer, installs it from the same commit and verifies a fresh R session
-   loads the expected version.
+   loads the expected version and GitHub commit identity.
 5. If copying or installation fails, attempts to restore the backed-up skill and
    previous finnts build. `error` with `data$restored = true` means the previous
    software versions were verified, not that every file is unchanged: extra staged
@@ -122,7 +125,9 @@ deleted; old backups can be removed by the user by hand.
 A rollback first backs up the current skill (so it can be undone too), restores the
 chosen backup, and reinstalls the finnts build recorded with it. For a finnts CRAN build,
 the matching CRAN version is installed. `--package_only=true` reinstalls the previous
-finnts build from the update history and leaves the skill unchanged.
+finnts build from the update history and leaves the skill unchanged. A matching version
+number alone is not sufficient: GitHub rollbacks require the recorded commit SHA to
+match both the installed package and the package loaded by a fresh R process.
 
 After an update or rollback, ask the user to start a new chat so the agent rereads
 `SKILL.md`. Unfinished runs resume as usual; if finnts changed, `run_forecast.R` asks

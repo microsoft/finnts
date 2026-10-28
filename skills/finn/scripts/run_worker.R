@@ -304,6 +304,46 @@ worker_record_agent <- function(paths, state, agent_info) {
   invisible(project)
 }
 
+#' Save forecast outputs and finalize run state
+#'
+#' A failure while saving outputs, recording Agent information, or persisting
+#' the completed state is reported as a failed run rather than leaving the run
+#' marked as running. Log writes are best-effort: a failed completion log cannot
+#' overwrite the saved completed state, and a failed failure log cannot replace
+#' the original finalization error.
+#'
+#' @param paths Project paths.
+#' @param run_paths Run paths.
+#' @param state Latest saved run state.
+#' @param outcome Worker forecast and optional Agent information.
+#' @return A completed or failed `finn_result`.
+worker_finalize_run <- function(paths, run_paths, state, outcome) {
+  results <- tryCatch({
+    results <- worker_save_outputs(outcome$forecast, run_paths$output)
+    if (!is.null(outcome$agent_info)) worker_record_agent(paths, state, outcome$agent_info)
+    finn_update_state(run_paths,
+      status = "completed", stage = "done", finished_at = finn_now(),
+      results = results
+    )
+    results
+  }, error = identity)
+  if (inherits(results, "error")) {
+    message <- finn_redact(conditionMessage(results))
+    state_error <- tryCatch({
+      finn_update_state(run_paths, status = "failed", finished_at = finn_now(), error = message)
+      NULL
+    }, error = identity)
+    if (inherits(state_error, "error")) {
+      message <- paste0(message, " (Could not persist failed run state: ",
+        finn_redact(conditionMessage(state_error)), ")")
+    }
+    tryCatch(finn_log("Run finalization failed: ", message), error = function(e) NULL)
+    return(finn_result(FALSE, "failed", message, list(error = message)))
+  }
+  tryCatch(finn_log("Run completed. Outputs in ", run_paths$output), error = function(e) NULL)
+  finn_result(TRUE, "completed", "Run completed.", results)
+}
+
 finn_main(function(args) {
   paths <- finn_project_from_args(args)
   run_id <- finn_arg(args, "run_id")
@@ -358,12 +398,5 @@ finn_main(function(args) {
     return(finn_result(FALSE, "failed", msg))
   }
 
-  results <- worker_save_outputs(outcome$forecast, run_paths$output)
-  if (!is.null(outcome$agent_info)) worker_record_agent(paths, latest, outcome$agent_info)
-  finn_update_state(run_paths,
-    status = "completed", stage = "done", finished_at = finn_now(),
-    results = results
-  )
-  finn_log("Run completed. Outputs in ", run_paths$output)
-  finn_result(TRUE, "completed", "Run completed.", results)
+  worker_finalize_run(paths, run_paths, latest, outcome)
 })

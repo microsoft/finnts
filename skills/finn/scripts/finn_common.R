@@ -7,7 +7,7 @@
 #    "next_actions": [...]}
 # Coding agents read only that final line. Nothing here deletes files.
 
-finn_skill_version <- "0.3.0"
+finn_skill_version <- "0.3.2"
 finn_schema_version <- 1L
 
 #' Null-coalescing helper
@@ -1354,9 +1354,20 @@ finn_directory_lock_acquire <- function(path, timeout = 30, stale = 120) {
   deadline <- Sys.time() + timeout
   repeat {
     if (dir.create(path, showWarnings = FALSE)) {
-      created <- if (requireNamespace("ps", quietly = TRUE)) as.numeric(ps::ps_create_time(ps::ps_handle()))
-      finn_write_json(list(token = token, pid = Sys.getpid(), create_time = created,
-        host = Sys.info()[["nodename"]]), file.path(path, "owner.json"))
+      owner_error <- tryCatch({
+        created <- if (requireNamespace("ps", quietly = TRUE)) as.numeric(ps::ps_create_time(ps::ps_handle()))
+        finn_write_json(list(token = token, pid = Sys.getpid(), create_time = created,
+          host = Sys.info()[["nodename"]]), file.path(path, "owner.json"))
+        NULL
+      }, error = identity)
+      if (inherits(owner_error, "error")) {
+        archived <- paste0(path, ".abandoned-init-", token)
+        if (!file.rename(path, archived)) {
+          stop("Could not archive Finn's lock after owner metadata failed: ", path, " (",
+            conditionMessage(owner_error), ")", call. = FALSE)
+        }
+        stop(owner_error)
+      }
       return(token)
     }
     owner_file <- file.path(path, "owner.json")
@@ -1384,6 +1395,23 @@ finn_directory_lock_acquire <- function(path, timeout = 30, stale = 120) {
     if (Sys.time() >= deadline) return(NULL)
     Sys.sleep(0.2)
   }
+}
+
+#' Check required finnts forecast capabilities
+#'
+#' Core capabilities are the APIs every forecast run calls. Data-preparation
+#' helpers such as `validate_prepared_input()` are excluded: they are newer than
+#' some builds that rollback may restore, and the preparation scripts report
+#' their absence themselves.
+#'
+#' @param namespace Loaded finnts namespace.
+#' @return Missing core forecast and Agent capability names.
+finn_check_finnts_capabilities <- function(namespace) {
+  core <- c("prep_data", "prep_models", "train_models", "ensemble_models",
+    "final_models", "get_forecast_data", "set_project_info", "set_run_info")
+  agent <- c("set_agent_info_custom", "iterate_forecast", "update_forecast", "get_agent_forecast", "chat_copilot")
+  missing <- function(names) names[!vapply(names, exists, logical(1), envir = namespace, inherits = FALSE)]
+  list(missing_core = missing(core), missing_agent = missing(agent))
 }
 
 #' Runs that must finish before changing the installed software

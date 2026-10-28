@@ -273,6 +273,26 @@ finn_fresh_finnts_version <- function() {
   if (length(v) == 0 || !nzchar(v)) NULL else v
 }
 
+#' finnts build identity seen by a brand-new R process
+#'
+#' @return List with version, source, and GitHub SHA; NULL when finnts does not load.
+finn_fresh_finnts_build <- function() {
+  expression <- paste(
+    "suppressPackageStartupMessages(loadNamespace('finnts'))",
+    "d <- utils::packageDescription('finnts')",
+    "source <- d$RemoteType",
+    "if (is.null(source) && identical(d$Repository, 'CRAN')) source <- 'cran'",
+    "cat(jsonlite::toJSON(list(version = d$Version, source = source, sha = d$RemoteSha), auto_unbox = TRUE, null = 'null'))",
+    sep = "; "
+  )
+  out <- suppressWarnings(system2(finn_rscript(), c("-e", shQuote(expression)), stdout = TRUE, stderr = FALSE))
+  status <- attr(out, "status")
+  if (!is.null(status) && status != 0) return(NULL)
+  json <- utils::tail(out, 1)
+  if (!length(json) || !nzchar(json)) return(NULL)
+  tryCatch(jsonlite::fromJSON(json, simplifyVector = FALSE), error = function(e) NULL)
+}
+
 #' Installer arguments that reproduce a recorded finnts install
 #'
 #' @param finnts List from [finn_installed_finnts()].
@@ -292,10 +312,41 @@ finn_reinstall_args <- function(finnts) {
 
 #' Whether two recorded finnts installs are the same build
 #'
+#' GitHub builds must share a recorded commit. CRAN builds match by version.
+#' Other sources (local or unrecorded) match by version and source, and by
+#' commit when both record one, so an unchanged install is not reported as
+#' different.
+#'
 #' @param a,b Lists from [finn_installed_finnts()].
 #' @return Logical.
 finn_same_finnts <- function(a, b) {
-  identical(a$version, b$version) && (is.null(a$sha) || is.null(b$sha) || identical(a$sha, b$sha))
+  if (!identical(a$version, b$version) || !identical(a$source, b$source)) return(FALSE)
+  if (identical(a$source, "cran")) return(TRUE)
+  has_sha <- function(x) !is.null(x$sha) && nzchar(x$sha)
+  if (identical(a$source, "github")) {
+    return(has_sha(a) && has_sha(b) && identical(a$sha, b$sha))
+  }
+  !has_sha(a) || !has_sha(b) || identical(a$sha, b$sha)
+}
+
+#' Verify a fresh-process package build against a recorded target
+#'
+#' @param target Expected finnts installation metadata.
+#' @param loaded Build identity returned by a new R process.
+#' @return TRUE only when the package version and source identity match.
+finn_verified_finnts_build <- function(target, loaded) {
+  if (is.null(loaded) || !is.list(loaded)) return(FALSE)
+  if (!identical(target$version, loaded$version)) return(FALSE)
+  if (identical(target$source, "github")) {
+    return(identical(loaded$source, "github") &&
+      !is.null(target$sha) && nzchar(target$sha) &&
+      !is.null(loaded$sha) && nzchar(loaded$sha) &&
+      identical(target$sha, loaded$sha))
+  }
+  if (identical(target$source, "cran")) {
+    return(identical(loaded$source, "cran"))
+  }
+  finn_same_finnts(target, loaded)
 }
 
 #' Default finnts installer used by update and rollback
@@ -317,7 +368,7 @@ finn_default_installer <- function(skill_dir, install_args) {
 #' @param verify Function returning the finnts version a new process loads.
 #' @return Result list from [finn_result()].
 finn_do_update <- function(args, fetch = finn_http_get, download = finn_download_file,
-                           installer = finn_default_installer, verify = finn_fresh_finnts_version) {
+                           installer = finn_default_installer, verify = finn_fresh_finnts_build) {
   software <- finn_software_guard(args)
   if (!is.null(software$result)) return(software$result)
   if (software$owned) on.exit(finn_machine_lock_release(software$token), add = TRUE)
@@ -378,7 +429,7 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
       recovery_error <- c(recovery_error, paste("Recovery verification failed:", conditionMessage(verified)))
     }
     if (!finn_same_finnts(finn_installed_finnts(), local_finnts) ||
-        (!is.null(local_finnts$version) && !identical(verified, local_finnts$version))) {
+        (!is.null(local_finnts$version) && !finn_verified_finnts_build(local_finnts, verified))) {
       recovery_error <- c(recovery_error, "The previous finnts build was not verified after recovery.")
     }
     data$restored <- !length(recovery_error)
@@ -405,11 +456,14 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
     }
     loaded <- tryCatch(verify(), error = function(e) e)
     if (inherits(loaded, "error")) return(restore(paste("Could not verify finnts:", conditionMessage(loaded))))
-    if (is.null(loaded) || !identical(loaded, remote$finnts_version)) {
-      return(restore(paste0("a new R session loads finnts ", loaded %||% "(none)", ", expected ", remote$finnts_version)))
+    expected <- list(version = remote$finnts_version, source = "github", sha = remote$sha)
+    if (!finn_verified_finnts_build(expected, loaded)) {
+      loaded_version <- if (is.list(loaded)) loaded$version else NULL
+      return(restore(paste0("a new R session loads finnts ", loaded_version %||% "(unverified)", ", expected ",
+        remote$finnts_version, " from commit ", remote$sha)))
     }
     data$finnts_updated <- TRUE
-    data$finnts_version <- loaded
+    data$finnts_version <- loaded$version
   }
   finn_append_history(list(
     type = "skill_update", from = finn_skill_version, to = remote$skill_version, sha = remote$sha,
@@ -433,7 +487,7 @@ finn_do_update <- function(args, fetch = finn_http_get, download = finn_download
 #' @param installer Function `(skill_dir, install_args)` returning a result.
 #' @param verify Function returning the finnts version a new process loads.
 #' @return Result list from [finn_result()].
-finn_do_rollback <- function(args, installer = finn_default_installer, verify = finn_fresh_finnts_version) {
+finn_do_rollback <- function(args, installer = finn_default_installer, verify = finn_fresh_finnts_build) {
   software <- finn_software_guard(args)
   if (!is.null(software$result)) return(software$result)
   if (software$owned) on.exit(finn_machine_lock_release(software$token), add = TRUE)
@@ -496,9 +550,12 @@ finn_do_rollback <- function(args, installer = finn_default_installer, verify = 
     } else {
       res <- tryCatch(installer(skill_dir, install_args), error = function(e) list(ok = FALSE, message = conditionMessage(e)))
       loaded <- if (isTRUE(res$ok)) verify()
-      data$finnts_restored <- identical(loaded, target$version)
+      data$finnts_restored <- isTRUE(finn_same_finnts(finn_installed_finnts(), target)) &&
+        finn_verified_finnts_build(target, loaded)
       if (!data$finnts_restored) {
-        acts <- c(acts, paste0("finnts ", target$version, " could not be reinstalled (", res$message %||% paste("loaded", loaded %||% "none"), "). Check the network, then rerun the rollback."))
+        loaded_version <- if (is.list(loaded)) loaded$version else NULL
+        acts <- c(acts, paste0("finnts ", target$version, " could not be reinstalled (", res$message %||%
+          paste("loaded", loaded_version %||% "unverified"), "). Check the network, then rerun the rollback."))
       }
     }
   }

@@ -27,12 +27,12 @@ Rscript scripts/install_finnts.R                        # dry run: shows the pla
 Rscript scripts/install_finnts.R --confirm=true         # finnts from GitHub + helpers
 Rscript scripts/install_finnts.R --ref=<commit or tag> --confirm=true   # a specific build
 Rscript scripts/install_finnts.R --force=true --confirm=true   # reinstall even if up to date
-Rscript scripts/install_finnts.R --source=cran --confirm=true   # fallback when GitHub is blocked
 ```
 
-finnts installs from the GitHub repository by default so it matches the skill version;
+finnts always installs from the GitHub repository so it matches the skill version;
 the CRAN release can lag behind and may lack `chat_copilot()`. GitHub installs use the
-`remotes` package (installed automatically).
+`remotes` package (installed automatically). Dependencies install from CRAN, as
+prebuilt binaries where CRAN provides them (Windows and macOS).
 
 Helpers: jsonlite, ps, processx, digest, readxl, and ellmer (skip with
 `--include_llm=false`). If the default library is not writable, the script installs to
@@ -89,9 +89,9 @@ they are close to the limit.
 - **No admin rights:** R installs per user on Windows (choose "Install just for me"), and
   `install_finnts.R` falls back to the user library. Never ask for elevation.
 - **Proxy or firewall:** installs need `github.com` and `api.github.com` (finnts, update
-  checks) and a CRAN mirror (`cloud.r-project.org`, dependencies). If GitHub is blocked,
-  use `--source=cran`. If downloads fail, ask the user (or their IT team)
-  for the proxy address and have them set `HTTPS_PROXY`/`HTTP_PROXY` in their user
+  checks) and a CRAN mirror (`cloud.r-project.org`, dependencies). If GitHub or downloads
+  are blocked, ask the user (or their IT team) to allow those hosts, or to provide the
+  proxy address and set `HTTPS_PROXY`/`HTTP_PROXY` in the user's
   environment. Copilot Agent runs also need the Copilot endpoints to be reachable.
 - **Organization Copilot policy:** an organization can turn off the Copilot CLI or certain
   models. `diagnose_run.R` reports `copilot_policy`; the user checks with their admin or

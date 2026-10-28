@@ -2,9 +2,9 @@
 # Usage:
 #   Rscript run_cancel.R --project=<name> --run_id=<id> --confirm=true
 #
-# Marks the run cancelled, then stops the worker process and its children
-# (for example parallel workers). Saved artifacts stay in place, so the run
-# can be resumed later with run_forecast.R.
+# Stops the worker process and its children (for example parallel workers),
+# confirms they exited, then marks the run cancelled. Saved artifacts stay in
+# place, so the run can be resumed later with run_forecast.R.
 
 local({
   args <- commandArgs(trailingOnly = FALSE)
@@ -16,22 +16,44 @@ local({
 #'
 #' Children are stopped first so parallel workers do not linger. Verifies the
 #' process creation time to avoid stopping an unrelated process that reused
-#' the pid.
+#' the pid, and confirms every captured descendant is gone.
 #'
 #' @param pid Process id.
 #' @param create_time Recorded creation time in epoch seconds, or NULL.
-#' @return List with `stopped` (count) and `note`.
-cancel_kill_tree <- function(pid, create_time = NULL) {
-  if (!isTRUE(finn_pid_alive(pid, create_time))) {
-    return(list(stopped = 0L, note = "The worker process was no longer running."))
+#' @param process_api Process inspection API, normally the ps namespace.
+#' @param is_alive Function checking a pid and creation time.
+#' @return List with `stopped` (count), `confirmed`, and `note`. A run with no
+#'   recorded worker pid is still starting, so it is never confirmed: its worker
+#'   could start after a cancelled state is written and overwrite it.
+cancel_kill_tree <- function(pid, create_time = NULL, process_api = asNamespace("ps"),
+                             is_alive = finn_pid_alive) {
+  if (is.null(pid) || length(pid) == 0 || is.na(pid)) {
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = "The run is still starting and has no worker process yet. Retry cancellation in a few seconds."))
   }
-  h <- ps::ps_handle(as.integer(pid))
-  kids <- tryCatch(ps::ps_children(h, recursive = TRUE), error = function(e) list())
+  alive <- is_alive(pid, create_time)
+  if (identical(alive, FALSE)) {
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = "The worker was already gone, so its descendants could not be verified."))
+  }
+  if (!isTRUE(alive)) {
+    return(list(stopped = 0L, confirmed = FALSE, note = "Could not confirm whether the worker process is running."))
+  }
+  h <- process_api$ps_handle(as.integer(pid))
+  kids <- tryCatch(process_api$ps_children(h, recursive = TRUE), error = identity)
+  if (inherits(kids, "error")) {
+    return(list(stopped = 0L, confirmed = FALSE,
+      note = paste0("Could not inspect worker descendants: ", conditionMessage(kids))))
+  }
+  child_ids <- lapply(kids, function(k) tryCatch(
+    list(pid = process_api$ps_pid(k), create_time = as.numeric(process_api$ps_create_time(k))),
+    error = identity
+  ))
   stopped <- 0L
   for (k in rev(kids)) {
     ok <- tryCatch(
       {
-        ps::ps_kill(k)
+        process_api$ps_kill(k)
         TRUE
       },
       error = function(e) FALSE
@@ -40,12 +62,32 @@ cancel_kill_tree <- function(pid, create_time = NULL) {
   }
   ok <- tryCatch(
     {
-      ps::ps_kill(h)
+      process_api$ps_kill(h)
       TRUE
     },
     error = function(e) FALSE
   )
-  list(stopped = stopped + as.integer(ok), note = sprintf("Stopped %d process(es).", stopped + as.integer(ok)))
+  stopped <- stopped + as.integer(ok)
+  still_alive <- TRUE
+  descendants_alive <- rep(NA, length(child_ids))
+  for (i in seq_len(20L)) {
+    still_alive <- is_alive(pid, create_time)
+    descendants_alive <- vapply(child_ids, function(child) {
+      if (inherits(child, "error")) return(NA)
+      is_alive(child$pid, child$create_time)
+    }, logical(1))
+    if (identical(still_alive, FALSE) && all(vapply(descendants_alive, identical, logical(1), FALSE))) break
+    if (is.na(still_alive) || anyNA(descendants_alive)) break
+    Sys.sleep(0.1)
+  }
+  confirmed <- identical(still_alive, FALSE) &&
+    all(vapply(descendants_alive, identical, logical(1), FALSE))
+  note <- if (confirmed) {
+    sprintf("Stopped %d process(es).", stopped)
+  } else {
+    "The worker and every captured descendant could not be confirmed stopped."
+  }
+  list(stopped = stopped, confirmed = confirmed, note = note)
 }
 
 finn_main(function(args) {
@@ -80,8 +122,25 @@ finn_main(function(args) {
     return(finn_result(FALSE, "other_machine", sprintf("Run %s was started on another computer (%s); cancel it there.", run_id, host)))
   }
 
-  finn_update_state(run_paths, status = "cancelled", cancelled_at = finn_now(), finished_at = finn_now())
   killed <- cancel_kill_tree(state$pid, state$pid_create_time)
+  # The worker may have finished while it was being stopped; report that outcome
+  # instead of a cancellation error, and never overwrite a finished state.
+  latest <- finn_read_state(run_paths)
+  finished <- latest$status %||% ""
+  if (finished %in% c("completed", "failed", "cancelled")) {
+    return(finn_result(TRUE, finished,
+      sprintf("Run %s was already %s before cancellation took effect.", run_id, finished),
+      list(run_id = run_id, stage = latest$stage)))
+  }
+  if (!isTRUE(killed$confirmed)) {
+    finn_log("Could not confirm cancellation of run ", run_id, ". ", killed$note)
+    return(finn_result(FALSE, "error",
+      sprintf("Run %s was not marked cancelled. %s", run_id, killed$note),
+      list(run_id = run_id, stage = state$stage, stopped_processes = killed$stopped),
+      "Check run_status.R before retrying cancellation."
+    ))
+  }
+  finn_update_state(run_paths, status = "cancelled", cancelled_at = finn_now(), finished_at = finn_now())
   finn_log("Cancelled run ", run_id, ". ", killed$note)
   finn_result(TRUE, "cancelled",
     sprintf("Run %s was cancelled. %s Nothing was deleted.", run_id, killed$note),

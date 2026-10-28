@@ -43,12 +43,26 @@
   }
 
   $headers = @{ "User-Agent" = "finn-skill"; "Accept" = "application/vnd.github+json" }
-  Write-Host "Finding the Finn skill files in $repo ($ref)..."
+  Write-Host "Resolving $repo ($ref) to an immutable commit..."
   try {
-    $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "https://api.github.com/repos/$repo/git/trees/$([uri]::EscapeDataString($ref))?recursive=1"
+    $commit = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "https://api.github.com/repos/$repo/commits/$([uri]::EscapeDataString($ref))"
   } catch {
-    Write-Host "Could not reach GitHub: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Could not resolve the GitHub ref: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Check your internet connection or proxy, or install manually (see skills/finn/README.md)."
+    return
+  }
+  $sha = [string]$commit.sha
+  $treeSha = [string]$commit.commit.tree.sha
+  if ($sha -notmatch "^[0-9a-fA-F]{40}$" -or $treeSha -notmatch "^[0-9a-fA-F]{40}$") {
+    Write-Host "GitHub did not return valid commit and tree identities. Nothing was installed." -ForegroundColor Red
+    return
+  }
+  Write-Host "Finding the Finn skill files at commit $sha..."
+  try {
+    $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "https://api.github.com/repos/$repo/git/trees/${treeSha}?recursive=1"
+  } catch {
+    Write-Host "Could not read the resolved commit tree: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "Nothing was installed. Try again later."
     return
   }
   if ($tree.truncated) {
@@ -69,7 +83,7 @@
     Write-Host ("  [{0}/{1}] {2}" -f $i, $files.Count, $f)
     $target = Join-Path $stage ($f -replace "/", [IO.Path]::DirectorySeparatorChar)
     New-Item -ItemType Directory -Force -Path (Split-Path $target -Parent) | Out-Null
-    $url = "https://raw.githubusercontent.com/$repo/$ref/$prefix$f"
+    $url = "https://raw.githubusercontent.com/$repo/$sha/$prefix$f"
     try {
       Invoke-WebRequest -UseBasicParsing -Headers @{ "User-Agent" = "finn-skill" } -Uri $url -OutFile $target
     } catch {
@@ -79,22 +93,34 @@
     }
   }
 
-  foreach ($required in @("SKILL.md", "scripts/finn_common.R", "scripts/update_skill.R")) {
+  $requiredFiles = @("SKILL.md", "version.json", "scripts/finn_common.R", "scripts/update_skill.R", "scripts/install_finnts.R", "scripts/run_forecast.R")
+  foreach ($required in $requiredFiles) {
     if (-not (Test-Path -LiteralPath (Join-Path $stage $required))) {
       Write-Host "The download is incomplete ($required is missing). Nothing was installed." -ForegroundColor Red
       return
     }
   }
 
-  New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
-  Copy-Item -Recurse -LiteralPath $stage -Destination $dest
-  if (-not (Test-Path -LiteralPath (Join-Path $dest "SKILL.md"))) {
-    Write-Host "Copying into $dest failed. Nothing was installed." -ForegroundColor Red
+  try {
+    New-Item -ItemType Directory -Force -Path (Split-Path $dest -Parent) | Out-Null
+    Copy-Item -Recurse -LiteralPath $stage -Destination $dest
+  } catch {
+    Write-Host "Copying into $dest failed: $($_.Exception.Message)" -ForegroundColor Red
     return
+  }
+  foreach ($required in $requiredFiles) {
+    $stagedFile = Join-Path $stage $required
+    $installedFile = Join-Path $dest $required
+    if (-not (Test-Path -LiteralPath $installedFile) -or
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $stagedFile).Hash -ne
+        (Get-FileHash -Algorithm SHA256 -LiteralPath $installedFile).Hash) {
+      Write-Host "The installation at $dest is incomplete or differs from commit $sha ($required)." -ForegroundColor Red
+      return
+    }
   }
 
   Write-Host ""
-  Write-Host "Installed the Finn skill at $dest" -ForegroundColor Green
+  Write-Host "Installed the Finn skill from commit $sha at $dest" -ForegroundColor Green
   Write-Host "Next steps:"
   Write-Host "  1. Start a new chat (or reload your agent) so it finds the skill."
   Write-Host "  2. Say: 'Use the Finn skill to give me the Finn tutorial.'"
