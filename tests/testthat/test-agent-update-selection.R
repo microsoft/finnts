@@ -966,6 +966,68 @@ test_that("completion audits reject truncated backtests and shifted future dates
   })
 })
 
+# Coordinator completion checks run before parallel workers refit unfinished
+# update children under the same run names. On FUSE mounts such as Synapse
+# /synfs, probing a not-yet-written output by name caches "not found" and hides
+# the worker's later write, so only outputs in the coordinator's listing are read.
+test_that("coordinator update completion reads only listed child outputs", {
+  fixture <- make_global_update_selection_fixture(global = FALSE)
+  info <- fixture$previous
+  log <- fixture$log
+  log$weighted_mape <- 0.1
+  write_data(log, combo = NULL, run_info = info, output_type = "log", folder = "logs", suffix = NULL)
+  metadata <- data.frame(combo = "first", agent_run_id = fixture$agent$run_id,
+    best_run_name = info$run_name, model_type = "local", weighted_mape = 0.1,
+    forecast_approach = "bottoms_up")
+  forecasts <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "forecasts"))))
+  models <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "models"))))
+  average <- forecasts[grepl("-average_models", forecasts, fixed = TRUE)]
+  expect_length(average, 1L)
+  expect_equal(nrow(completed_update_runs(fixture$agent, metadata, present = c(forecasts, models))), 1L)
+  requested <- character()
+  original <- read_update_artifact
+  testthat::local_mocked_bindings(read_update_artifact = function(run_info, path, ...) {
+    requested <<- c(requested, as.character(fs::path_file(path)))
+    original(run_info, path, ...)
+  }, .package = "finnts")
+
+  expect_equal(nrow(completed_update_runs(fixture$agent, metadata, present = forecasts)), 0L)
+  expect_false(any(models %in% requested))
+  requested <- character()
+  expect_equal(nrow(completed_update_runs(fixture$agent, metadata,
+    present = c(setdiff(forecasts, average), models))), 0L)
+  expect_false(average %in% requested)
+  expect_true(any(models %in% requested))
+})
+
+test_that("update restarts list current outputs once before completion checks", {
+  fixture <- make_global_update_selection_fixture(global = FALSE)
+  agent <- fixture$agent
+  agent$overwrite <- TRUE
+  metadata <- data.frame(combo = "first", agent_run_id = agent$run_id,
+    best_run_name = fixture$previous$run_name, model_type = "local", weighted_mape = 0.1)
+  expected <- c(
+    as.character(fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "forecasts")))),
+    as.character(fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "models"))))
+  )
+  captured <- NULL
+  testthat::local_mocked_bindings(
+    reject_agent_custom_update = function(...) invisible(NULL),
+    check_agent_info = function(...) invisible(NULL),
+    load_update_runs = function(...) metadata,
+    completed_update_runs = function(agent_info, metadata, present = NULL) {
+      captured <<- present
+      stop("completion checked", call. = FALSE)
+    },
+    .package = "finnts"
+  )
+  tracker <- local_artifact_spies(max_listings = 2L)
+
+  expect_error(initial_checks(agent), "completion checked")
+  expect_setequal(captured, expected)
+  expect_equal(tracker$listings, 2L)
+})
+
 test_that("completion keys cover every cadence and partial-length backtest scenario", {
   for (cadence in c("day", "week", "month", "quarter", "year")) local({
     fixture <- make_global_update_selection_fixture(cadence, cadence == "week", global = FALSE)
