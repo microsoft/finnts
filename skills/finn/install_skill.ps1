@@ -59,7 +59,7 @@
   }
   Write-Host "Finding the Finn skill files at commit $sha..."
   try {
-    $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "https://api.github.com/repos/$repo/git/trees/$treeSha?recursive=1"
+    $tree = Invoke-RestMethod -UseBasicParsing -Headers $headers -Uri "https://api.github.com/repos/$repo/git/trees/${treeSha}?recursive=1"
   } catch {
     Write-Host "Could not read the resolved commit tree: $($_.Exception.Message)" -ForegroundColor Red
     Write-Host "Nothing was installed. Try again later."

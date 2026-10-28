@@ -312,13 +312,21 @@ finn_reinstall_args <- function(finnts) {
 
 #' Whether two recorded finnts installs are the same build
 #'
+#' GitHub builds must share a recorded commit. CRAN builds match by version.
+#' Other sources (local or unrecorded) match by version and source, and by
+#' commit when both record one, so an unchanged install is not reported as
+#' different.
+#'
 #' @param a,b Lists from [finn_installed_finnts()].
 #' @return Logical.
 finn_same_finnts <- function(a, b) {
   if (!identical(a$version, b$version) || !identical(a$source, b$source)) return(FALSE)
   if (identical(a$source, "cran")) return(TRUE)
-  !is.null(a$sha) && nzchar(a$sha) && !is.null(b$sha) && nzchar(b$sha) &&
-    identical(a$sha, b$sha)
+  has_sha <- function(x) !is.null(x$sha) && nzchar(x$sha)
+  if (identical(a$source, "github")) {
+    return(has_sha(a) && has_sha(b) && identical(a$sha, b$sha))
+  }
+  !has_sha(a) || !has_sha(b) || identical(a$sha, b$sha)
 }
 
 #' Verify a fresh-process package build against a recorded target

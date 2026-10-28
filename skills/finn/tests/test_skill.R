@@ -2216,6 +2216,14 @@ with(up, {
   check("same-version GitHub builds with unknown identity are not equivalent",
     !finn_same_finnts(list(version = "1.2.0", source = "github", sha = NULL),
       list(version = "1.2.0", source = "github", sha = "abc123")))
+  check("identical local or unrecorded-source finnts installs are the same build",
+    finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.2.0", source = "local")) &&
+      finn_same_finnts(list(version = "1.2.0"), list(version = "1.2.0")) &&
+      finn_verified_finnts_build(list(version = "1.2.0", source = "local"), list(version = "1.2.0", source = "local")))
+  check("non-GitHub installs still differ by version, source, or recorded commit",
+    !finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.3.0", source = "local")) &&
+      !finn_same_finnts(list(version = "1.2.0", source = "local"), list(version = "1.2.0")) &&
+      !finn_same_finnts(list(version = "1.2.0", source = "local", sha = "a"), list(version = "1.2.0", source = "local", sha = "b")))
   check("fresh rollback verification requires exact GitHub identity",
     finn_verified_finnts_build(list(version = "1.2.0", source = "github", sha = "abc123"),
       list(version = "1.2.0", source = "github", sha = "abc123")) &&
@@ -2523,6 +2531,16 @@ with(up, {
     })
     identical(rc$status, "needs_confirmation") && identical(rc$data$restore_finnts$version, "0.6.0") && is.null(cran_args)
   })
+  fake_finnts <- list(version = "1.0.0", source = "local")
+  local_backup <- finn_backup_skill(installed, "local finnts fixture")
+  local_installs <- 0L
+  rl <- finn_do_rollback(c(args, to = local_backup$id, confirm = "true"), installer = function(d, a) {
+    local_installs <<- local_installs + 1L
+    list(ok = FALSE, message = "must not reinstall an unchanged finnts")
+  }, verify = verify)
+  check("full rollback with an unchanged local finnts does not report partial restoration",
+    identical(rl$status, "rolled_back") && local_installs == 0L &&
+      !any(grepl("cannot be restored automatically", unlist(rl$next_actions))))
   Sys.setenv(FINN_SETTINGS_DIR = file.path(tmp, "settings"))
 })
 
@@ -3149,6 +3167,21 @@ local({
     grepl("/commits/", ps1, fixed = TRUE) &&
       grepl("$sha/$prefix$f", ps1, fixed = TRUE) &&
       !grepl("$ref/$prefix$f", ps1, fixed = TRUE))
+  # PowerShell treats `?` as part of a bare variable name, so "$x?y" reads $x?y, not $x.
+  check("PowerShell installer never places ? directly after a bare variable",
+    !grepl("\\$[A-Za-z_][A-Za-z0-9_]*\\?", ps1, perl = TRUE))
+  ps_exe <- Sys.which(c("pwsh", "powershell"))
+  ps_exe <- ps_exe[nzchar(ps_exe)]
+  tree_uri <- regmatches(ps1, regexpr("\"https://api\\.github\\.com/repos/[^\"]*/git/trees/[^\"]*\"", ps1))
+  if (length(ps_exe) > 0 && length(tree_uri) == 1L) {
+    probe <- file.path(tmp, "ps-tree-uri.ps1")
+    writeLines(c("$repo = 'microsoft/finnts'", "$treeSha = '89abcdef0123456789abcdef0123456789abcdef'",
+      paste0("Write-Output ", tree_uri)), probe)
+    uri_out <- suppressWarnings(system2(ps_exe[[1]], c("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+      "-File", shQuote(probe)), stdout = TRUE, stderr = TRUE))
+    check("PowerShell installer requests the tree by its parsed tree SHA", identical(trimws(utils::tail(uri_out, 1)),
+      "https://api.github.com/repos/microsoft/finnts/git/trees/89abcdef0123456789abcdef0123456789abcdef?recursive=1"))
+  }
   check("shell installer fetches files from the resolved commit",
     grepl("/commits/", sh, fixed = TRUE) &&
       grepl("$sha/skills/finn/$f", sh, fixed = TRUE) &&
