@@ -979,10 +979,13 @@ test_that("coordinator update completion reads only listed child outputs", {
   metadata <- data.frame(combo = "first", agent_run_id = fixture$agent$run_id,
     best_run_name = info$run_name, model_type = "local", weighted_mape = 0.1,
     forecast_approach = "bottoms_up")
-  forecasts <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "forecasts"))))
-  models <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "models"))))
-  average <- forecasts[grepl("-average_models", forecasts, fixed = TRUE)]
-  expect_length(average, 1L)
+  forecast_files <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "forecasts"))))
+  model_files <- as.character(fs::path_file(fs::dir_ls(fs::path(info$path, "models"))))
+  forecasts <- paste0("forecasts/", forecast_files)
+  models <- paste0("models/", model_files)
+  average_file <- forecast_files[grepl("-average_models", forecast_files, fixed = TRUE)]
+  expect_length(average_file, 1L)
+  average <- paste0("forecasts/", average_file)
   expect_equal(nrow(completed_update_runs(fixture$agent, metadata, present = c(forecasts, models))), 1L)
   requested <- character()
   original <- read_update_artifact
@@ -992,12 +995,34 @@ test_that("coordinator update completion reads only listed child outputs", {
   }, .package = "finnts")
 
   expect_equal(nrow(completed_update_runs(fixture$agent, metadata, present = forecasts)), 0L)
-  expect_false(any(models %in% requested))
+  expect_false(any(model_files %in% requested))
   requested <- character()
   expect_equal(nrow(completed_update_runs(fixture$agent, metadata,
     present = c(setdiff(forecasts, average), models))), 0L)
-  expect_false(average %in% requested)
-  expect_true(any(models %in% requested))
+  expect_false(average_file %in% requested)
+  expect_true(any(model_files %in% requested))
+})
+
+test_that("update completion keeps same-named forecasts and fits distinct", {
+  path <- withr::local_tempdir()
+  info <- list(project_name = "rds-update_first", run_name = "current", path = path,
+    data_output = "rds", object_output = "rds", storage_object = NULL)
+  fs::dir_create(fs::path(path, c("forecasts", "models")))
+  fit_path <- local_artifact_path(info, "models", "-single_models", hash_data("first"), "rds")
+  forecast_path <- local_artifact_path(info, "forecasts", "-single_models", hash_data("first"), "rds")
+  expect_identical(fs::path_file(fit_path), fs::path_file(forecast_path))
+  saveRDS(tibble::tibble(Model_ID = "meanf--local--R1", Model_Fit = list(1)), fit_path)
+  present <- update_output_listing(info)
+  expect_identical(present, paste0("models/", fs::path_file(fit_path)))
+  requested <- character()
+  original <- read_update_artifact
+  testthat::local_mocked_bindings(read_update_artifact = function(run_info, path, ...) {
+    requested <<- c(requested, as.character(path))
+    original(run_info, path, ...)
+  }, .package = "finnts")
+
+  expect_null(read_update_result(info, "first", FALSE, 6, present = present))
+  expect_identical(requested, as.character(fit_path))
 })
 
 test_that("update restarts list current outputs once before completion checks", {
@@ -1007,8 +1032,8 @@ test_that("update restarts list current outputs once before completion checks", 
   metadata <- data.frame(combo = "first", agent_run_id = agent$run_id,
     best_run_name = fixture$previous$run_name, model_type = "local", weighted_mape = 0.1)
   expected <- c(
-    as.character(fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "forecasts")))),
-    as.character(fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "models"))))
+    paste0("forecasts/", fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "forecasts")))),
+    paste0("models/", fs::path_file(fs::dir_ls(fs::path(fixture$previous$path, "models"))))
   )
   captured <- NULL
   testthat::local_mocked_bindings(

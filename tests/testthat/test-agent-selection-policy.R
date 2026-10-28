@@ -242,6 +242,22 @@ make_selected_agent_log_fixture <- function(path, series = c("North--Revenue", "
   list(info = info, agent = agent, parent = parent, log = log)
 }
 
+# Permit only the global promotion's one best-run listing per check; any other
+# enumeration still fails with `message`. Returns an environment whose `count`
+# records best-run listings so tests can require exactly one per promotion
+# check rather than per-series discovery. Mocks end with the calling scope.
+local_promotion_listings <- function(message, .env = parent.frame()) {
+  state <- new.env(parent = emptyenv())
+  state$count <- 0L
+  original <- list_files
+  testthat::local_mocked_bindings(list_files = function(storage_object, path, ...) {
+    if (!grepl("*-agent_best_run.csv", path, fixed = TRUE)) stop(message, call. = FALSE)
+    state$count <- state$count + 1L
+    original(storage_object, path, ...)
+  }, .package = "finnts", .env = .env)
+  state
+}
+
 test_that("global iteration promotion never mixes per-series winners", {
   cases <- list(
     list(wmape = c(0.08, 0.13), winner = "iteration-1", saved_wmape = c(0.1, 0.1)),
@@ -257,8 +273,8 @@ test_that("global iteration promotion never mixes per-series winners", {
         selection
       }
     )
+    listings <- local_promotion_listings("global promotion must not enumerate artifacts")
     local_mocked_bindings(
-      list_files = function(...) stop("global promotion must not enumerate artifacts"),
       get_run_info = function(...) stop("global promotion must not rescan run history"),
       forecast_path_risk = function(...) stop("global promotion must not reassess future paths")
     )
@@ -301,6 +317,7 @@ test_that("global iteration promotion never mixes per-series winners", {
     }))
     expect_identical(unique(promoted$best_run_name), third$run_name)
     expect_equal(promoted$weighted_mape, c(0.03, 0.12))
+    expect_identical(listings$count, 3L)
   })
 })
 
@@ -321,9 +338,10 @@ test_that("incomplete global iterations cannot promote an available subset", {
     later_log <- fixture$log
     later_log$run_name <- later$run_name
     write_data(later_log, combo = NULL, run_info = later, output_type = "log", folder = "logs")
-    local_mocked_bindings(list_files = function(...) stop("partial promotion must not enumerate"))
+    listings <- local_promotion_listings("partial promotion must not enumerate")
 
     expect_no_error(log_best_run(fixture$agent, later, Inf, check_best_run = mode != "forced"))
+    expect_identical(listings$count, as.integer(mode != "forced"))
 
     saved <- dplyr::bind_rows(lapply(series, function(combo) {
       read_selection_file(fixture$parent, "logs", "-agent_best_run", combo)
@@ -500,8 +518,8 @@ test_that("completed metrics weight signed selected backtests and govern global 
   future <- rows
   future$Run_Type <- "Future_Forecast"
   future$Forecast <- Inf
+  listings <- local_promotion_listings("completed accuracy must not enumerate artifacts")
   local_mocked_bindings(
-    list_files = function(...) stop("completed accuracy must not enumerate artifacts"),
     read_series_history = function(...) stop("completed accuracy must use loaded rows"),
     forecast_path_risk = function(...) stop("completed accuracy must not rescore future paths")
   )
@@ -538,6 +556,7 @@ test_that("completed metrics weight signed selected backtests and govern global 
     expect_identical(saved$best_run_name, fixture$info$run_name)
   }
   expect_equal(read_selection_file(later, "logs")$weighted_mape, 0.3667)
+  expect_identical(listings$count, 1L)
 })
 
 test_that("unavailable completed metrics cannot promote a global iteration", {
@@ -676,9 +695,9 @@ test_that("global promotion uses the workflow's existing iteration history", {
     submit_fcst_run = function(...) later,
     get_fcst_output = function(run_info) make_agent_metric_forecasts(run_info$forecast_selection),
     get_run_info = function(...) stop("promotion must reuse the loaded iteration history"),
-    list_files = function(...) stop("promotion must not enumerate artifacts"),
     finalize_run = function(...) "finalized"
   )
+  listings <- local_promotion_listings("promotion must not enumerate artifacts")
 
   fcst_agent_workflow(fixture$agent, combo = NULL, weighted_mape_goal = 0.01,
     parallel_processing = NULL, inner_parallel = FALSE, num_cores = 1,
@@ -689,6 +708,7 @@ test_that("global promotion uses the workflow's existing iteration history", {
   }))
   expect_identical(saved$best_run_name, c("local-1", "local-2"))
   expect_identical(saved$model_type, rep("local", 2))
+  expect_identical(listings$count, 1L)
 })
 
 test_that("an incomplete global result cannot satisfy the workflow accuracy goal", {

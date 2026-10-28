@@ -922,11 +922,13 @@ validate_global_update_publication <- function(result, combos) {
 #'   unselected averages are allowed; recognized corrupt averages require refit.
 #'   Returned predictions retain all saved rows without writes or conversion.
 #'   Hierarchical results also return their already-read run log for resume.
-#' @param present Optional file names from the coordinator's one-time listing of
-#'   the forecasts and models folders. On local storage, fitted models, source
-#'   forecasts, averages and reconciliations absent from it are treated as
-#'   missing without probing their names, because a FUSE mount (for example
-#'   Synapse /synfs) caches "not found" and would hide a worker's later refit.
+#' @param present Optional folder-qualified names (`forecasts/<file>` and
+#'   `models/<file>`) from the coordinator's one-time listing of the forecasts
+#'   and models folders. On local storage, fitted models, source forecasts,
+#'   averages and reconciliations absent from it are treated as missing without
+#'   probing their names, because a FUSE mount (for example Synapse /synfs)
+#'   caches "not found" and would hide a worker's later refit. Folder
+#'   qualification keeps a forecast and fit that share a file name distinct.
 #'   Remote storage ignores it.
 #' @noRd
 read_update_result <- function(info, combos, global, horizon, approach = "bottoms_up",
@@ -935,7 +937,8 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
                                present = NULL) {
   # Read one output unless the coordinator's listing shows it is not written.
   read_output <- function(path, missing_value = NULL) {
-    if (!is.null(present) && is.null(info$storage_object) && !fs::path_file(path) %in% present) {
+    key <- paste0(fs::path_file(fs::path_dir(path)), "/", fs::path_file(path))
+    if (!is.null(present) && is.null(info$storage_object) && !key %in% present) {
       return(missing_value)
     }
     read_update_artifact(info, path, missing_value)
@@ -1134,15 +1137,20 @@ completed_update_runs <- function(agent_info, metadata, present = NULL) {
 # List update child outputs once for the coordinator's restart completion check.
 # Child runs have their own hashed project/run prefixes, so this lists the
 # forecasts folder and fitted single-model objects folder-wide, one call each,
-# and returns their file names. Local storage only; remote storage returns NULL
-# and keeps exact downloads. Listing failures propagate.
+# and returns folder-qualified names (`forecasts/<file>`, `models/<file>`) so a
+# forecast and fit sharing a file name stay distinct. Local storage only;
+# remote storage returns NULL and keeps exact downloads. Listing failures propagate.
 update_output_listing <- function(project_info) {
   if (!is.null(project_info$storage_object)) return(NULL)
   forecasts <- list_files(NULL, paste0(project_info$path, "/forecasts/*.", project_info$data_output),
     fail_on_error = TRUE)
   models <- list_files(NULL, paste0(project_info$path, "/models/*-single_models.", project_info$object_output),
     fail_on_error = TRUE)
-  as.character(fs::path_file(as.character(c(forecasts, models))))
+  qualify <- function(folder, files) {
+    files <- fs::path_file(as.character(files))
+    if (length(files)) paste0(folder, "/", files) else character()
+  }
+  c(qualify("forecasts", forecasts), qualify("models", models))
 }
 
 #' Initial Checks for Update Forecast
