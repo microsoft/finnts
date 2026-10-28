@@ -3161,6 +3161,12 @@ for (f in c("install_skill.ps1", "install_skill.sh", "templates/data_template.cs
   check(paste("onboarding file exists:", f), file.exists(file.path(skill_dir, f)))
 }
 local({
+  setup_md <- paste(readLines(file.path(skill_dir, "references", "setup.md"), warn = FALSE), collapse = "\n")
+  installer <- paste(readLines(file.path(scripts_dir, "install_finnts.R"), warn = FALSE), collapse = "\n")
+  check("finnts install guidance installs from GitHub and never offers a CRAN fallback",
+    !grepl("--source=cran", setup_md, fixed = TRUE) && !grepl("--source=cran", installer, fixed = TRUE))
+})
+local({
   ps1 <- paste(readLines(file.path(skill_dir, "install_skill.ps1"), warn = FALSE), collapse = "\n")
   sh <- paste(readLines(file.path(skill_dir, "install_skill.sh"), warn = FALSE), collapse = "\n")
   check("PowerShell installer fetches files from the resolved commit",

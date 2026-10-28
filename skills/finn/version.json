@@ -7,7 +7,7 @@
       "date": "2026-10-27",
       "changes": [
         "Pin initial installer downloads to one resolved Git commit; parse formatted GitHub metadata and verify essential files after copying.",
-        "Require declared dependencies and forecast APIs before reporting finnts ready, including project/run metadata and Agent chat capabilities.",
+        "Always install finnts from GitHub; require declared dependencies and core forecast APIs before reporting it ready, and report missing Agent capabilities.",
         "Verify fresh-process finnts version and commit identity; rollback restores the exact GitHub build and leaves unchanged local installs alone.",
         "Record finalization errors as failed runs; mark cancellations only after the worker and captured descendants are confirmed stopped.",
         "Encode installer refs containing slashes; a failed completion-log write no longer turns a completed run into a failed one."

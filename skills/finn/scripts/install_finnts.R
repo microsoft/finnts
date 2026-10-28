@@ -1,11 +1,12 @@
 # Install finnts and the helper packages the Finn skill needs.
 # Usage: Rscript install_finnts.R --confirm=true [--ref=main] [--force=true]
 #        [--source=github|cran] [--version=<cran version>] [--include_llm=true]
-# finnts installs from GitHub by default (the skill and package ship together).
-# The plan compares the installed finnts with the GitHub build, so users can get
-# the latest finnts even when the skill itself is up to date. --force=true
-# reinstalls an identical build (repair). Use --source=cran only when GitHub is
-# blocked. Without --confirm=true it only reports what it would install.
+# finnts always installs from GitHub (the skill and package ship together);
+# dependencies install from CRAN. The plan compares the installed finnts with the
+# GitHub build, so users can get the latest finnts even when the skill itself is
+# up to date. --force=true reinstalls an identical build (repair). The cran source
+# exists only so rollback can restore a recorded CRAN build; do not offer it as an
+# install option. Without --confirm=true it only reports what it would install.
 # Refuses to run while a forecast is active.
 
 local({
@@ -207,7 +208,7 @@ finn_main(function(args) {
 
   if (!requireNamespace("finnts", quietly = TRUE)) {
     return(finn_result(FALSE, "error", "finnts did not install. Check the log above for the first error.", plan,
-      c("Share the first install error with the user. If GitHub is blocked, try install_finnts.R --source=cran --confirm=true.")))
+      c("Share the first install error with the user. If GitHub is blocked, ask the user or their IT team to allow github.com and api.github.com (see references/setup.md), then retry.")))
   }
   unmet <- finn_unmet_dependencies()
   if (length(unmet) > 0) {
