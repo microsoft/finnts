@@ -278,8 +278,19 @@ train_models <- function(run_info,
 
   # define columns to check for input changes
   custom_run_training_controls(custom_run, run_local_models, run_global_models, negative_forecast)
+  forecast_pattern <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name), "*.", run_info$data_output
+  )
+  # Multi-series custom runs on local storage list existing forecasts once,
+  # before the audit, so it never probes outputs that parallel workers write
+  # later (FUSE mounts cache "not found"). The listing is reused below.
+  listed_early <- !"combo" %in% names(run_info) && !is.null(custom_run) &&
+    is.null(run_info$storage_object)
+  forecast_files <- if (listed_early) list_files(run_info$storage_object, forecast_pattern) else NULL
   custom_run_audit(run_info, custom_run, run_local_models, run_global_models, all_combo_list,
-    complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)))
+    complete = all(c("run_local_models", "run_global_models", "seed") %in% names(log_df)),
+    present = forecast_files)
   cols_check_list <- c(
     "run_global_models", "run_local_models", "global_model_recipes",
     "feature_selection", "seed"
@@ -325,13 +336,11 @@ train_models <- function(run_info,
     combo_diff <- current_combo_list
   } else {
     # Multi combo mode - check which combos have already been completed
-    prev_combo_tbl <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*.", run_info$data_output
-      )
-    ) %>%
+    prev_combo_tbl <- (if (listed_early) {
+      forecast_files
+    } else {
+      list_files(run_info$storage_object, forecast_pattern)
+    }) %>%
       tibble::tibble(
         Path = .
       ) %>%

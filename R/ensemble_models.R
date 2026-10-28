@@ -82,7 +82,21 @@ ensemble_models <- function(run_info,
     return_type = "df"
   )
   custom_run <- custom_run_load(run_info, log_df)
-  custom_run_audit(run_info, custom_run, log_df$run_local_models, log_df$run_global_models, complete = TRUE)
+  local_combo <- is.null(run_info$storage_object) && length(run_info$combo) == 1L &&
+    run_info$data_output %in% c("csv", "parquet", "rds")
+  model_forecast_pattern <- paste0(
+    run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+    hash_data(run_info$run_name), "*_models.", run_info$data_output
+  )
+  # Multi-series custom runs on local storage list model forecasts once before
+  # the audit, so it never probes outputs that parallel workers write later
+  # (FUSE mounts cache "not found"). The listing also supplies the series below.
+  listed_early <- !local_combo && !is.null(custom_run) && is.null(run_info$storage_object)
+  model_forecast_files <- if (listed_early) {
+    list_files(run_info$storage_object, model_forecast_pattern)
+  } else NULL
+  custom_run_audit(run_info, custom_run, log_df$run_local_models, log_df$run_global_models, complete = TRUE,
+    present = model_forecast_files)
 
   num_hyperparameters <- as.numeric(log_df$num_hyperparameters)
   negative_forecast <- log_df$negative_forecast
@@ -90,8 +104,6 @@ ensemble_models <- function(run_info,
   run_local_models <- log_df$run_local_models
   models_to_run <- log_df$models_to_run
   models_not_to_run <- log_df$models_not_to_run
-  local_combo <- is.null(run_info$storage_object) && length(run_info$combo) == 1L &&
-    run_info$data_output %in% c("csv", "parquet", "rds")
 
   if (log_df$run_ensemble_models == FALSE) {
     cli::cli_alert_info("Ensemble models have been turned off.")
@@ -100,13 +112,11 @@ ensemble_models <- function(run_info,
 
   combo_list <- if (local_combo) {
     run_info$combo
-  } else list_files(
-    run_info$storage_object,
-    paste0(
-      run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-      hash_data(run_info$run_name), "*_models.", run_info$data_output
-    )
-  ) %>%
+  } else (if (listed_early) {
+    model_forecast_files
+  } else {
+    list_files(run_info$storage_object, model_forecast_pattern)
+  }) %>%
     tibble::tibble(
       Path = .,
       File = fs::path_file(.)

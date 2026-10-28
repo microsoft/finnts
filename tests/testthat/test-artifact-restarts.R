@@ -50,58 +50,6 @@ test_that("ensemble completion counts persisted outputs instead of worker return
   expect_equal(tracker$listings, 0L)
 })
 
-artifact_completed_final_outputs <- function(run_info, combos = "A", date_type = "month") {
-  log <- artifact_test_model_log(run_info, "standard_hierarchy")
-  log$hist_end_date <- as.Date("2024-01-01")
-  log$date_type <- date_type
-  write_data(log, NULL, run_info, "log", "logs")
-  future_date <- seq(log$hist_end_date, by = date_type, length.out = 2L)[2]
-  history <- tibble::tibble(Combo = "A",
-    Date = c(rev(seq(log$hist_end_date, by = paste("-1", date_type), length.out = 13L)), future_date),
-    Target = c(rep(100, 13), NA_real_))
-  write_data(history, "A", run_info, "data", "prep_data", "-R1")
-  splits <- tibble::tibble(Run_Type = c("Future_Forecast", "Back_Test"), Train_Test_ID = c(1, 2),
-    Train_End = c(log$hist_end_date, history$Date[12]),
-    Test_End = c(future_date, log$hist_end_date))
-  write_data(splits, NULL, run_info, "data", "prep_models", "-train_test_split")
-  forecast <- artifact_test_forecast(run_info, write_output = FALSE)
-  forecast$Date <- future_date
-  backtest <- forecast
-  backtest$Train_Test_ID <- 2
-  backtest$Date <- as.Date("2024-01-01")
-  backtest$Target <- 100
-  predictions <- dplyr::bind_rows(forecast, backtest)
-  predictions$Horizon <- 1
-  predictions$Run_Type <- c("Future_Forecast", "Back_Test")
-  predictions$lo_80 <- 98
-  predictions$lo_95 <- 95
-  predictions$hi_80 <- 102
-  predictions$hi_95 <- 105
-  write_data(predictions, "A", run_info, "data", "forecasts", "-single_models")
-  average <- predictions
-  average$Model_ID <- "meanf--local--R1_snaive--local--R1"
-  average$Model_Name <- "model_average"
-  average$Best_Model <- "No"
-  write_data(average, "A", run_info, "data", "forecasts", "-average_models")
-  series <- list(history = history[history$Date <= log$hist_end_date, ], calendar = history$Date)
-  expect_identical(completed_forecast_selection(dplyr::bind_rows(predictions, average), series, splits)$selected_id,
-    "meanf--local--R1")
-  predictions <- dplyr::bind_rows(lapply(combos, function(combo) {
-    rows <- predictions
-    rows$Combo <- rows$Combo_ID <- combo
-    if (combo != "A") {
-      history$Combo <- combo
-      average$Combo <- average$Combo_ID <- combo
-      write_data(history, combo, run_info, "data", "prep_data", "-R1")
-      write_data(rows, combo, run_info, "data", "forecasts", "-single_models")
-      write_data(average, combo, run_info, "data", "forecasts", "-average_models")
-    }
-    rows
-  }))
-  write_data(list(original_combos = combos, hts_combos = combos), NULL, run_info, "object", "prep_data", "-hts_info")
-  predictions[, setdiff(names(predictions), "Run_Type")]
-}
-
 test_that("completed hierarchy restart reuses discovery and checks the exact reconciliation", {
   run_info <- artifact_test_run(withr::local_tempdir())
   predictions <- artifact_completed_final_outputs(run_info)

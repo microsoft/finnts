@@ -2245,6 +2245,9 @@ reject_saved_default_forecasts <- function(run_info, run_log, combos, global) {
 #'   enrollment.
 #'   Default replacements also retain the current update marker, so accepted
 #'   results can be audited independently from predecessor replay choices.
+#'   Restarted global custom children on local storage list their forecasts
+#'   once before the custom audit, so later parallel finalization outputs are
+#'   never probed by name first.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2364,7 +2367,16 @@ submit_fcst_run <- function(agent_info,
       stop("Custom Agent child parent identity changed; start a new run.", call. = FALSE)
     }
     if (nrow(prior) && all(c("run_local_models", "run_global_models", "negative_forecast", "feature_selection") %in% names(prior))) {
-      audit_agent_custom_child(agent_info, child_info, vapply(unique(input_data$Combo), hash_data, character(1)), complete = FALSE)
+      # global children later run final_models() on parallel workers; list their
+      # forecasts once so the restart audit never probes unwritten outputs
+      present <- if (is.null(combo) && is.null(child_info$storage_object)) {
+        list_files(NULL, paste0(
+          child_info$path, "/forecasts/*", hash_data(project_name), "-",
+          hash_data(run_name), "*.", child_info$data_output
+        ))
+      } else NULL
+      audit_agent_custom_child(agent_info, child_info, vapply(unique(input_data$Combo), hash_data, character(1)),
+        complete = FALSE, present = present)
     }
     pca <- FALSE
   }
@@ -3013,6 +3025,34 @@ log_best_run <- function(agent_info,
   return("Run logged successfully.")
 }
 
+# Read the saved per-series best-run records a global promotion compares
+# against. `project_info` carries the Agent run ID as `run_name`; `series` are
+# raw combo names. Returns a list named by `series` holding each record, or an
+# empty tibble when none exists. Local storage lists the best-run files once and
+# reads only listed names: series without a record are later written by
+# parallel local workers, and an earlier exact probe would let a FUSE mount
+# (for example Synapse /synfs) cache "not found" and hide those files. Remote
+# storage keeps exact downloads. Listing and read failures propagate.
+read_agent_best_run_records <- function(project_info, series) {
+  listed <- if (is.null(project_info$storage_object)) {
+    fs::path_file(as.character(list_files(
+      NULL,
+      paste0(
+        project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
+        hash_data(project_info$run_name), "*-agent_best_run.csv"
+      ),
+      fail_on_error = TRUE
+    )))
+  } else NULL
+  prefix <- paste0(hash_data(project_info$project_name), "-", hash_data(project_info$run_name), "-")
+  stats::setNames(lapply(series, function(combo) {
+    if (!is.null(listed) && !paste0(prefix, hash_data(combo), "-agent_best_run.csv") %in% listed) {
+      return(tibble::tibble())
+    }
+    read_selection_file(project_info, "logs", "-agent_best_run", combo, optional = TRUE)
+  }), series)
+}
+
 # Persist a completed iteration using its in-memory selections and metric
 # attributes; run_history supplies recorded search-context evidence, not forecasts.
 # Global promotion is one run-level decision; per-series guards protect local
@@ -3061,9 +3101,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
   previous_by_series <- NULL
   promote_global <- isTRUE(summary$acceptable) && is.finite(current_log$weighted_mape) && promote_run
   if (global && check_best_run) {
-    previous_by_series <- stats::setNames(lapply(names(current_result$selections), function(series) {
-      read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
-    }), names(current_result$selections))
+    previous_by_series <- read_agent_best_run_records(project_info, names(current_result$selections))
     previous_global <- dplyr::bind_rows(previous_by_series)
     if (nrow(previous_global)) {
       previous_global <- previous_global[
