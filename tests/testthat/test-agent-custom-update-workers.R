@@ -102,3 +102,33 @@ test_that("installed mixed custom updates preserve choices on two real workers",
     expect_identical(routed$prev_best_runs_tbl$combo, "first")
   })
 })
+
+test_that("installed custom updates refit custom backtest folds with inner_parallel", {
+  skip_on_cran()
+  namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Inner parallel update workers are verified from the installed namespace")
+  withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
+  local_custom_update_runtime()
+  sequential <- custom_update_fixture(updated = FALSE)
+  parallel <- custom_update_fixture(updated = FALSE)
+  update_forecast(sequential$current, allow_iterate_forecast = FALSE, num_cores = 1)
+  refits <- list()
+  original_refit <- finnts:::custom_run_fit_resamples
+  # record the parallel controls finnts hands to the custom update refit
+  local_mocked_bindings(custom_run_fit_resamples = function(workflow, data, splits, control) {
+    refits[[length(refits) + 1L]] <<- list(allow_par = control$allow_par, workers = foreach::getDoParWorkers())
+    original_refit(workflow, data, splits, control)
+  }, .package = "finnts")
+  update_forecast(parallel$current, allow_iterate_forecast = FALSE, inner_parallel = TRUE, num_cores = 2)
+  expect_gt(length(refits), 0L)
+  expect_true(all(vapply(refits, function(refit) isTRUE(refit$allow_par) && refit$workers == 2L, logical(1))))
+  columns <- c("Combo", "Date", "Model_ID", "Train_Test_ID", "Forecast", "Best_Model")
+  arrange <- function(forecast) dplyr::arrange(forecast[, columns], Combo, Date, Model_ID, Train_Test_ID)
+  expected <- get_agent_forecast(sequential$current)
+  actual <- get_agent_forecast(parallel$current)
+  expect_equal(arrange(actual), arrange(expected))
+  expect_identical(sort(unique(actual$Model_ID[actual$Best_Model == "Yes"])),
+    sort(unique(expected$Model_ID[expected$Best_Model == "Yes"])))
+  expect_identical(read_agent_custom_update(parallel$current, TRUE), read_agent_custom_update(sequential$current, TRUE))
+  expect_false(any(get_summarized_models(parallel$current)$section == "error"))
+})

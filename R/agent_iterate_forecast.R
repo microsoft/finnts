@@ -137,7 +137,7 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   approved models and original-scale R1 settings, plus the raw C1 recipe. Missing proposal fields
 #'   do not acquire built-in defaults. Local/mounted CSV data, RDS objects and
 #'   sequential, local-machine or Spark execution are required; `inner_parallel`
-#'   runs custom backtest folds in parallel like built-in models. Global-only
+#'   applies to custom models as it does to built-in models. Global-only
 #'   pools require at least two series. Saved parent and
 #'   child identities are verified before completed results can be reused.
 #'   Ordinary EDA still runs; model source and approval payloads are not sent to

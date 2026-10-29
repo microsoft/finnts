@@ -373,8 +373,8 @@ load_agent_custom_update_state <- function(agent_info) {
 
 # Reject unsupported custom execution controls before EDA, provider work or fits.
 # Takes the Agent info and outer parallel backend; legacy inputs are unaffected.
-# inner_parallel is not checked: custom fits share train_models()' inner
-# fit_resamples() path with built-ins, so their backtest folds may run in parallel.
+# inner_parallel is not checked: custom fits share the inner fit_resamples()
+# controls of train_models() and fit_models() with built-in models.
 # Returns invisibly without I/O or default changes; errors on unsupported controls.
 agent_custom_preflight <- function(agent_info, parallel_processing = NULL) {
   if (is.null(agent_info$custom_agent_contract)) return(invisible(NULL))

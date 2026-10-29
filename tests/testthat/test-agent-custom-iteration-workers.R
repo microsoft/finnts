@@ -63,12 +63,12 @@ test_that("installed custom Agent submission runs custom backtest folds with inn
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Inner parallel workers are verified from the installed namespace")
   withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
-  clusters <- 0L
-  original_parallel <- finnts:::par_start
-  testthat::local_mocked_bindings(par_start = function(...) {
-    parallel_info <- original_parallel(...)
-    if (!is.null(parallel_info$cl)) clusters <<- clusters + 1L
-    parallel_info
+  refits <- list()
+  original_refit <- finnts:::custom_run_fit_resamples
+  # record the parallel controls finnts hands to each custom refit
+  testthat::local_mocked_bindings(custom_run_fit_resamples = function(workflow, data, splits, control) {
+    refits[[length(refits) + 1L]] <<- list(allow_par = control$allow_par, workers = foreach::getDoParWorkers())
+    original_refit(workflow, data, splits, control)
   }, .package = "finnts")
   # Submit one mixed custom/built-in child run and return its forecasts after
   # checking that the parent contract identity and child audit are unchanged.
@@ -85,9 +85,12 @@ test_that("installed custom Agent submission runs custom backtest folds with inn
     list(forecast = get_forecast_data(run), model_id = paste0("custom-", args$custom_models$business_mean$definition$version_id, "--local--C1"))
   }
   sequential <- submit(FALSE, 1)
-  expect_identical(clusters, 0L)
+  expect_gt(length(refits), 0L)
+  expect_false(any(vapply(refits, function(refit) isTRUE(refit$allow_par), logical(1))))
+  refits <- list()
   parallel <- submit(TRUE, 2)
-  expect_gt(clusters, 0L)
+  expect_gt(length(refits), 0L)
+  expect_true(all(vapply(refits, function(refit) isTRUE(refit$allow_par) && refit$workers == 2L, logical(1))))
   columns <- c("Combo", "Date", "Model_ID", "Train_Test_ID", "Forecast", "Best_Model")
   arrange <- function(forecast) dplyr::arrange(forecast[, columns], Model_ID, Train_Test_ID, Date)
   expect_equal(arrange(parallel$forecast), arrange(sequential$forecast))
