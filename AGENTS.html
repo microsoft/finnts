@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9016</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9017</span>
       </span>
     </div>
 
@@ -190,6 +190,7 @@
 <li>Prefer direct reads of deterministic artifact paths over <code>list_files()</code> or wildcard directory enumeration whenever the project, run, combo, recipe, and artifact suffix are already known. This is especially important during per-series iteration and training against large ADLS-backed logging and artifact folders.</li>
 <li>Do not list a directory merely to locate or check the existence of a known file. Reuse the storage abstraction’s exact-path read/download support; distinguish a genuinely missing optional artifact from authentication, storage, and deserialization failures.</li>
 <li>Keep listings for genuine discovery of unknown artifact names. When discovery is necessary, perform it once in the coordinating workflow and reuse the resulting paths or metadata across loops and workers where safe. Avoid repeated per-series, per-model, or per-retry listings and stale cross-run caches.</li>
+<li>Exception: coordinating code must not probe an exact path that parallel workers may write later in the same session. FUSE mounts such as Synapse <code>/synfs</code> cache the “not found” answer and hide the later file. Decide which known paths exist from the workflow’s existing listing or already-loaded metadata, or skip outputs a later step owns; never add a listing to avoid the probe. Keep these checks in <code>tests/testthat/test-driver-artifact-lookups.R</code>.</li>
 <li>Preserve supported storage backends, output formats, restart behavior, and required-artifact errors. Add focused tests that reject unexpected directory enumeration on known-path workflows and verify unchanged results; do not trade fewer listings for redundant downloads or reads.</li>
 </ul></div>
 <div class="section level2">
