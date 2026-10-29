@@ -135,9 +135,10 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'
 #'   Custom pools enrolled by [set_agent_info()] constrain every proposal to
 #'   approved models and original-scale R1 settings, plus the raw C1 recipe. Missing proposal fields
-#'   do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
-#'   sequential or local-machine execution and `inner_parallel = FALSE` are
-#'   required. Global-only pools require at least two series. Saved parent and
+#'   do not acquire built-in defaults. Local/mounted CSV data, RDS objects and
+#'   sequential, local-machine or Spark execution are required; `inner_parallel`
+#'   applies to custom models as it does to built-in models. Global-only
+#'   pools require at least two series. Saved parent and
 #'   child identities are verified before completed results can be reused.
 #'   Ordinary EDA still runs; model source and approval payloads are not sent to
 #'   forecast reasoning. The Agent can choose a subset but cannot rewrite source,
@@ -227,7 +228,7 @@ iterate_forecast <- function(agent_info,
   check_input_type("num_cores", num_cores, c("numeric", "NULL"))
 
   agent_info <- load_agent_custom_state(agent_info)
-  agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+  agent_custom_preflight(agent_info, parallel_processing)
   if (!is.null(agent_info$custom_agent_contract)) {
     agent_info$custom_foundation_suffix <- agent_custom_foundations(agent_info$custom_agent_contract)
   }
@@ -1113,7 +1114,7 @@ fcst_agent_workflow <- function(agent_info,
                                 eda_results = NULL) {
   agent_info$custom_enrollment_cache <- new.env(parent = emptyenv())
   agent_info <- load_agent_custom_state(agent_info)
-  agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+  agent_custom_preflight(agent_info, parallel_processing)
   agent_info$allow_quality_rejection <- TRUE
   if (is.null(agent_info$selection_cache)) agent_info$selection_cache <- new.env(parent = emptyenv())
   agent_info$global_forecast_approaches <- if (!is.null(agent_info$custom_agent_contract)) "bottoms_up" else if (is.null(combo)) {
@@ -2278,7 +2279,7 @@ submit_fcst_run <- function(agent_info,
   agent_info <- load_agent_custom_state(agent_info)
   custom_contract <- agent_info$custom_agent_contract
   if (!is.null(custom_contract)) {
-    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    agent_custom_preflight(agent_info, parallel_processing)
     inputs <- agent_custom_submission(inputs, agent_info, combo)
   }
   cli::cli_alert_info(

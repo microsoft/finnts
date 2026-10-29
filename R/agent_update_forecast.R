@@ -206,7 +206,7 @@ update_forecast <- function(agent_info,
 
   agent_info <- load_agent_custom_state(agent_info)
   if (!is.null(agent_info$custom_agent_contract)) {
-    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    agent_custom_preflight(agent_info, parallel_processing)
     if (missing(allow_iterate_forecast) || !identical(allow_iterate_forecast, FALSE)) stop("Custom Agent updates are unsupported unless allow_iterate_forecast = FALSE is explicit.", call. = FALSE)
   } else reject_agent_custom_update(agent_info)
 
@@ -278,7 +278,7 @@ update_fcst_agent_workflow <- function(agent_info,
                                        seed = 123) {
   agent_info <- load_agent_custom_state(agent_info)
   if (!is.null(agent_info$custom_agent_contract)) {
-    agent_custom_preflight(agent_info, parallel_processing, inner_parallel)
+    agent_custom_preflight(agent_info, parallel_processing)
     if (!identical(allow_iterate_forecast, FALSE)) stop("Custom update requires allow_iterate_forecast = FALSE.", call. = FALSE)
     agent_info <- prepare_agent_custom_update(agent_info, seed)
   }

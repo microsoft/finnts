@@ -372,15 +372,17 @@ load_agent_custom_update_state <- function(agent_info) {
 }
 
 # Reject unsupported custom execution controls before EDA, provider work or fits.
-# Legacy inputs are unaffected; return invisibly without I/O or default changes.
-agent_custom_preflight <- function(agent_info, parallel_processing = NULL, inner_parallel = FALSE) {
+# Takes the Agent info and outer parallel backend; legacy inputs are unaffected.
+# inner_parallel is not checked: custom fits share the inner fit_resamples()
+# controls of train_models() and fit_models() with built-in models.
+# Returns invisibly without I/O or default changes; errors on unsupported controls.
+agent_custom_preflight <- function(agent_info, parallel_processing = NULL) {
   if (is.null(agent_info$custom_agent_contract)) return(invisible(NULL))
   validate_agent_custom_models(agent_info$custom_agent_contract)
   if (!identical(agent_info$project_info$data_output, "csv")) stop("Custom Agent requires CSV data artifacts.", call. = FALSE)
   if (!is.null(parallel_processing) && !parallel_processing %in% c("local_machine", "spark")) {
     stop("Custom Agent requires sequential, local_machine or spark execution.", call. = FALSE)
   }
-  if (!identical(inner_parallel, FALSE)) stop("Custom Agent requires inner_parallel = FALSE.", call. = FALSE)
   invisible(NULL)
 }
 

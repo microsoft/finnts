@@ -82,9 +82,10 @@ whole-set fallback, or extra refitting.
 
 Custom pools enrolled by \code{\link[=set_agent_info]{set_agent_info()}} constrain every proposal to
 approved models and original-scale R1 settings, plus the raw C1 recipe. Missing proposal fields
-do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
-sequential or local-machine execution and \code{inner_parallel = FALSE} are
-required. Global-only pools require at least two series. Saved parent and
+do not acquire built-in defaults. Local/mounted CSV data, RDS objects and
+sequential, local-machine or Spark execution are required; \code{inner_parallel}
+applies to custom models as it does to built-in models. Global-only
+pools require at least two series. Saved parent and
 child identities are verified before completed results can be reused.
 Ordinary EDA still runs; model source and approval payloads are not sent to
 forecast reasoning. The Agent can choose a subset but cannot rewrite source,

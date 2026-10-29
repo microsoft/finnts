@@ -74,7 +74,7 @@ test_that("custom execution and update guards run before expensive work", {
     load_update_runs = function(...) stop("Unexpected completion scan"), .package = "finnts"
   )
   expect_error(iterate_forecast(stripped, parallel_processing = "spark"), "Unexpected EDA")
-  expect_error(iterate_forecast(info, inner_parallel = TRUE), "inner_parallel")
+  expect_error(iterate_forecast(info, inner_parallel = TRUE), "Unexpected EDA")
   expect_error(update_forecast(stripped), "Custom Agent.*update|custom.*update")
   stripped$overwrite <- TRUE
   expect_error(initial_checks(stripped), "Custom Agent.*update|custom.*update")
