@@ -307,6 +307,13 @@ iterate_forecast <- function(agent_info,
   agent_info$selection_cache <- new.env(parent = emptyenv())
 
   best_run_tbl <- load_best_agent_run(agent_info = agent_info)
+  # Series with saved best-run records, from the one listing above. Global
+  # promotion reads only these (plus records it writes) so it never probes a
+  # record parallel local workers write later; see read_agent_best_run_records().
+  agent_info$best_run_records <- new.env(parent = emptyenv())
+  agent_info$best_run_records$series <- if (nrow(best_run_tbl)) {
+    unique(as.character(best_run_tbl$combo))
+  } else character()
   global_models_ran <- FALSE
 
   # optimize global models
@@ -2245,6 +2252,9 @@ reject_saved_default_forecasts <- function(run_info, run_log, combos, global) {
 #'   enrollment.
 #'   Default replacements also retain the current update marker, so accepted
 #'   results can be audited independently from predecessor replay choices.
+#'   Restarted global custom children skip averages and ensembles in their
+#'   custom audit, because parallel finalization writes those later; no
+#'   listing is added.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2364,7 +2374,10 @@ submit_fcst_run <- function(agent_info,
       stop("Custom Agent child parent identity changed; start a new run.", call. = FALSE)
     }
     if (nrow(prior) && all(c("run_local_models", "run_global_models", "negative_forecast", "feature_selection") %in% names(prior))) {
-      audit_agent_custom_child(agent_info, child_info, vapply(unique(input_data$Combo), hash_data, character(1)), complete = FALSE)
+      # global children later finalize on parallel workers, so the restart
+      # audit skips outputs that step writes rather than probing their names
+      audit_agent_custom_child(agent_info, child_info, vapply(unique(input_data$Combo), hash_data, character(1)),
+        complete = FALSE, skip = if (is.null(combo)) c("-average_models", "-ensemble_models") else character())
     }
     pca <- FALSE
   }
@@ -3013,6 +3026,23 @@ log_best_run <- function(agent_info,
   return("Run logged successfully.")
 }
 
+# Read the saved per-series best-run records a global promotion compares
+# against. `project_info` carries the Agent run ID as `run_name`; `series` are
+# raw combo names. Returns a list named by `series` holding each record, or an
+# empty tibble when none exists. `known` is the environment iterate_forecast()
+# fills from its one best-run listing (series with saved records), extended as
+# promotions write records on the coordinator. With it, only known series are
+# read: an exact probe of a series without a record would let a FUSE mount (for
+# example Synapse /synfs) cache "not found" and hide the record parallel local
+# workers write later. No listing is added. Without it (direct callers), each
+# series is read exactly as before. Read failures propagate.
+read_agent_best_run_records <- function(project_info, series, known = NULL) {
+  stats::setNames(lapply(series, function(combo) {
+    if (!is.null(known) && !combo %in% known$series) return(tibble::tibble())
+    read_selection_file(project_info, "logs", "-agent_best_run", combo, optional = TRUE)
+  }), series)
+}
+
 # Persist a completed iteration using its in-memory selections and metric
 # attributes; run_history supplies recorded search-context evidence, not forecasts.
 # Global promotion is one run-level decision; per-series guards protect local
@@ -3061,9 +3091,8 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
   previous_by_series <- NULL
   promote_global <- isTRUE(summary$acceptable) && is.finite(current_log$weighted_mape) && promote_run
   if (global && check_best_run) {
-    previous_by_series <- stats::setNames(lapply(names(current_result$selections), function(series) {
-      read_selection_file(project_info, "logs", "-agent_best_run", series, optional = TRUE)
-    }), names(current_result$selections))
+    previous_by_series <- read_agent_best_run_records(project_info, names(current_result$selections),
+      agent_info$best_run_records)
     previous_global <- dplyr::bind_rows(previous_by_series)
     if (nrow(previous_global)) {
       previous_global <- previous_global[
@@ -3136,6 +3165,10 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     write_data(best_log, combo = series, run_info = project_info, output_type = "log",
       folder = "logs", suffix = "-agent_best_run")
     written <- c(written, series)
+  }
+  # records written here (on the coordinator for global runs) are known to exist
+  if (!is.null(agent_info$best_run_records)) {
+    agent_info$best_run_records$series <- union(agent_info$best_run_records$series, written)
   }
   for (series in written) {
     saved <- read_selection_file(project_info, "logs", "-agent_best_run", series)

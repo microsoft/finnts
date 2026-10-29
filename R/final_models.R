@@ -174,8 +174,22 @@ final_models <- function(run_info,
     custom_run_training_controls(custom_run, prev_log_df$run_local_models, prev_log_df$run_global_models,
       prev_log_df$negative_forecast)
   }
+  # Multi-series runs list all of the run's forecasts once, before the custom
+  # audit, so neither it nor the reconciliation check probes an output that
+  # parallel workers write later (FUSE mounts cache "not found"). The listing
+  # supplies the series and, on local storage, the Best-Model reconciliation.
+  forecast_files <- if (!"combo" %in% names(run_info)) {
+    list_files(
+      run_info$storage_object,
+      paste0(
+        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
+        hash_data(run_info$run_name), "*.", run_info$data_output
+      )
+    )
+  } else NULL
   custom_saved <- custom_run_audit(run_info, custom_run,
-    prev_log_df$run_local_models, prev_log_df$run_global_models, complete = TRUE)
+    prev_log_df$run_local_models, prev_log_df$run_global_models, complete = TRUE,
+    present = forecast_files)
 
   date_type <- prev_log_df$date_type
   forecast_approach <- prev_log_df$forecast_approach
@@ -233,15 +247,10 @@ final_models <- function(run_info,
     combo_list <- run_info$combo
     combo_diff <- combo_list
   } else {
-    # Multi combo mode - get all combos and check which are complete
-    forecast_files <- list_files(
-      run_info$storage_object,
-      paste0(
-        run_info$path, "/forecasts/*", hash_data(run_info$project_name), "-",
-        hash_data(run_info$run_name), "*_models.", run_info$data_output
-      )
-    )
-    combo_list <- forecast_files %>%
+    # Multi combo mode - get all combos from the model forecasts listed above
+    model_files <- forecast_files[endsWith(fs::path_file(as.character(forecast_files)),
+      paste0("_models.", run_info$data_output))]
+    combo_list <- model_files %>%
       tibble::tibble(
         Path = .,
         File = fs::path_file(.)
@@ -257,11 +266,13 @@ final_models <- function(run_info,
   # check if previous run is complete
   recon_complete <- TRUE
   if (forecast_approach != "bottoms_up") {
-    recon_files <- if (local_reads) {
-      local_artifact_files(
-        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-        allow_missing = TRUE
-      )
+    recon_path <- local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model"))
+    recon_files <- if (local_reads && !is.null(forecast_files)) {
+      # validate only a listed reconciliation; never probe the name before it is written
+      listed <- as.character(forecast_files)[fs::path_file(as.character(forecast_files)) == fs::path_file(recon_path)]
+      if (length(listed)) local_artifact_files(listed) else character()
+    } else if (local_reads) {
+      local_artifact_files(recon_path, allow_missing = TRUE)
     } else list_files(
       run_info$storage_object,
       paste0(

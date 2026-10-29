@@ -880,11 +880,37 @@ custom_run_ensemble_ids <- function() {
 #' one storage-aware discovery. Confirmed optional absence is allowed, but access
 #' and parsing failures propagate. Missing required artifacts and mismatched
 #' identities error rather than being repaired or treated as fallback candidates.
+#'
+#' `present` optionally holds the run's forecast file names from a listing the
+#' caller already made. On local storage the audit then never probes an
+#' unlisted name: FUSE mounts (for example Synapse `/synfs`) cache a "not found"
+#' answer and would hide a file a parallel worker writes later. Unlisted
+#' optional outputs are treated as absent and unlisted required outputs error.
+#' A series' fitted-model RDS is read only when its forecast is listed, because
+#' training saves the model first; an orphaned fit is retrained, not audited.
+#' The shared global fit is read only when a global forecast is listed. Remote
+#' storage ignores `present` and keeps exact downloads.
+#'
+#' `skip` names optional forecast suffixes (`-average_models`,
+#' `-ensemble_models`) a step does not own; they are neither read nor probed and
+#' return NULL. Steps that write them later audit them before reuse
+#' (`ensemble_models()` audits ensembles, `final_models()` averages), so earlier
+#' steps never look up a name a later parallel worker will write. Callers use
+#' this, or a listing they already make, rather than adding a new listing.
 #' @noRd
-custom_run_audit <- function(run_info, custom, local, global, combos = NULL, complete = FALSE) {
+custom_run_audit <- function(run_info, custom, local, global, combos = NULL, complete = FALSE,
+                             present = NULL, skip = character()) {
   if (is.null(custom))
     return(NULL)
   candidates <- custom_run_candidates(custom, local, global)
+  listed <- if (!is.null(present) && is.null(run_info$storage_object))
+    fs::path_file(as.character(present))
+  else NULL
+  prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-")
+  # TRUE when no listing restricts reads or the forecast output is listed.
+  forecast_listed <- function(suffix, combo) {
+    is.null(listed) || fs::path_file(local_artifact_path(run_info, "forecasts", suffix, combo)) %in% listed
+  }
   if (is.null(combos)) {
     if (length(run_info$combo))
       combos <- run_info$combo
@@ -895,14 +921,20 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
         list_files(run_info$storage_object,
           local_artifact_path(run_info, "prep_data", "-*-C1"), fail_on_error = TRUE)
       }
-      prefix <- paste0(hash_data(run_info$project_name), "-", hash_data(run_info$run_name), "-")
       combos <- sub(paste0("-C1\\.", run_info$data_output, "$"), "", substring(basename(files), nchar(prefix) + 1L))
     }
   }
-  read_rows <- function(folder, suffix, combo, required, object = FALSE) {
+  # Read and validate one exact output. `available = FALSE` means the caller's
+  # listing shows it is not written yet, so it is never probed by name.
+  read_rows <- function(folder, suffix, combo, required, object = FALSE,
+                        available = object || forecast_listed(suffix, combo)) {
     path <- local_artifact_path(run_info, folder, suffix, combo, extension = if (object)
       "rds"
     else run_info$data_output)
+    if (!available) {
+      if (required) stop("Missing required Finn artifact: ", path, call. = FALSE)
+      return(NULL)
+    }
     rows <- if (object) {
       read_exact_artifact(run_info, path, return_type = "object", allow_missing = !required)
     } else {
@@ -936,12 +968,16 @@ custom_run_audit <- function(run_info, custom, local, global, combos = NULL, com
     saved[[combo]] <- list(single = read_rows("forecasts", "-single_models", combo, complete && isTRUE(local)), global = read_rows(
       "forecasts",
       "-global_models", combo, complete && isTRUE(global)
-    ), average = read_rows(
+    ), average = if (!"-average_models" %in% skip) read_rows(
       "forecasts", "-average_models", combo,
       FALSE
-    ), ensemble = read_rows("forecasts", "-ensemble_models", combo, FALSE))
-    read_rows("models", "-single_models", combo, complete && isTRUE(local), object = TRUE)
+    ), ensemble = if (!"-ensemble_models" %in% skip) read_rows("forecasts", "-ensemble_models", combo, FALSE))
+    read_rows("models", "-single_models", combo, complete && isTRUE(local), object = TRUE,
+      available = forecast_listed("-single_models", combo))
   }
-  read_rows("models", "-single_models", hash_data("All-Data"), complete && isTRUE(global), object = TRUE)
+  global_listed <- is.null(listed) || any(startsWith(listed, prefix) &
+    endsWith(listed, paste0("-global_models.", run_info$data_output)))
+  read_rows("models", "-single_models", hash_data("All-Data"), complete && isTRUE(global), object = TRUE,
+    available = global_listed)
   saved
 }
