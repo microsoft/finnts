@@ -115,8 +115,9 @@ test_that("execution entry restores saved identity and rejects conflicting conte
   record_only$run_id <- "record-only"
   write_agent_custom_record(record_only, info$custom_agent_contract)
   expect_error(load_agent_custom_state(record_only), "parent log")
-  expect_no_error(agent_custom_preflight(info, "spark", FALSE))
-  expect_error(agent_custom_preflight(info, NULL, TRUE), "inner_parallel")
+  expect_no_error(agent_custom_preflight(info, "spark"))
+  expect_no_error(agent_custom_preflight(info, NULL))
+  expect_error(agent_custom_preflight(info, "dask"), "sequential, local_machine or spark")
 })
 
 test_that("worker references omit nested enrollment and coordinating caches", {

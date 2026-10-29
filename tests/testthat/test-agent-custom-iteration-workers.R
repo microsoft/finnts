@@ -57,3 +57,41 @@ test_that("installed custom Agent forecasts dispatch to two independent real wor
   expect_length(payloads, 2L)
   expect_true(all(vapply(payloads, function(payload) payload$lean, logical(1))))
 })
+
+test_that("installed custom Agent submission runs custom backtest folds with inner_parallel", {
+  skip_on_cran()
+  namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Inner parallel workers are verified from the installed namespace")
+  withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
+  clusters <- 0L
+  original_parallel <- finnts:::par_start
+  testthat::local_mocked_bindings(par_start = function(...) {
+    parallel_info <- original_parallel(...)
+    if (!is.null(parallel_info$cl)) clusters <<- clusters + 1L
+    parallel_info
+  }, .package = "finnts")
+  # Submit one mixed custom/built-in child run and return its forecasts after
+  # checking that the parent contract identity and child audit are unchanged.
+  submit <- function(inner_parallel, num_cores) {
+    args <- custom_agent_inputs(withr::local_tempdir())
+    info <- load_agent_custom_state(do.call(set_agent_info, args))
+    proposal <- validate_agent_custom_proposal(
+      jsonlite::fromJSON(custom_agent_response("business_mean---meanf")), info$custom_agent_contract, "combo"
+    )
+    run <- submit_fcst_run(info, proposal, hash_data("series1"), "fixed",
+      inner_parallel = inner_parallel, num_cores = num_cores)
+    expect_identical(read_selection_file(run, "logs")$custom_agent_contract_id, info$custom_agent_contract_id)
+    expect_no_error(audit_agent_custom_child(info, run, hash_data("series1")))
+    list(forecast = get_forecast_data(run), model_id = paste0("custom-", args$custom_models$business_mean$definition$version_id, "--local--C1"))
+  }
+  sequential <- submit(FALSE, 1)
+  expect_identical(clusters, 0L)
+  parallel <- submit(TRUE, 2)
+  expect_gt(clusters, 0L)
+  columns <- c("Combo", "Date", "Model_ID", "Train_Test_ID", "Forecast", "Best_Model")
+  arrange <- function(forecast) dplyr::arrange(forecast[, columns], Model_ID, Train_Test_ID, Date)
+  expect_equal(arrange(parallel$forecast), arrange(sequential$forecast))
+  custom <- parallel$forecast[parallel$forecast$Model_ID == parallel$model_id, ]
+  expect_gt(nrow(custom), 0L)
+  expect_true(all(custom$Forecast == 100))
+})

@@ -3,7 +3,13 @@ test_that("custom update execution controls and provenance cannot change on rest
   current <- fixture$current
   local_custom_update_runtime()
   expect_error(update_forecast(current), "allow_iterate_forecast")
-  expect_error(update_forecast(current, allow_iterate_forecast = FALSE, inner_parallel = TRUE), "inner_parallel")
+  local({
+    # stop after both preflights; inner_parallel no longer blocks custom updates
+    testthat::local_mocked_bindings(prepare_agent_custom_update = function(...) stop("Reached custom update preparation"),
+      .package = "finnts")
+    expect_error(update_forecast(current, allow_iterate_forecast = FALSE, inner_parallel = TRUE, num_cores = 2),
+      "Reached custom update preparation")
+  })
   changed <- current
   changed$hist_start_date <- as.Date("2020-02-01")
   before <- tools::md5sum(list.files(fixture$args$project_info$path, recursive = TRUE, full.names = TRUE))
