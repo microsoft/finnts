@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9017</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9018</span>
       </span>
     </div>
 
@@ -198,9 +198,10 @@ reconciliation publishes the selected mixture without future-quality scoring,
 whole-set fallback, or extra refitting.</p>
 <p>Custom pools enrolled by <code><a href="set_agent_info.html">set_agent_info()</a></code> constrain every proposal to
 approved models and original-scale R1 settings, plus the raw C1 recipe. Missing proposal fields
-do not acquire built-in defaults. Local/mounted CSV data, RDS objects,
-sequential or local-machine execution and <code>inner_parallel = FALSE</code> are
-required. Global-only pools require at least two series. Saved parent and
+do not acquire built-in defaults. Local/mounted CSV data, RDS objects and
+sequential, local-machine or Spark execution are required; <code>inner_parallel</code>
+applies to custom models as it does to built-in models. Global-only
+pools require at least two series. Saved parent and
 child identities are verified before completed results can be reused.
 Ordinary EDA still runs; model source and approval payloads are not sent to
 forecast reasoning. The Agent can choose a subset but cannot rewrite source,
