@@ -445,6 +445,37 @@ reconciliation_weights <- function(residuals, negative_forecast) {
   weights
 }
 
+#' Arrow schema for unreconciled hierarchy forecast artifacts
+#'
+#' Shared by the Spark reconciliation workers and the custom coverage check so
+#' that CSV and Parquet forecast files are read with the same column types and
+#' CSV `"NA"` values are parsed as missing.
+#'
+#' @return An Arrow schema with identity, split, date, target, forecast and
+#'   prediction-interval fields in forecast-artifact column order.
+#' @noRd
+hierarchy_forecast_schema <- function() {
+  arrow::schema(
+    arrow::field("Combo_ID", arrow::string()),
+    arrow::field("Model_ID", arrow::string()),
+    arrow::field("Model_Name", arrow::string()),
+    arrow::field("Model_Type", arrow::string()),
+    arrow::field("Recipe_ID", arrow::string()),
+    arrow::field("Train_Test_ID", arrow::float64()),
+    arrow::field("Hyperparameter_ID", arrow::float64()),
+    arrow::field("Best_Model", arrow::string()),
+    arrow::field("Combo", arrow::string()),
+    arrow::field("Horizon", arrow::float64()),
+    arrow::field("Date", arrow::date32()),
+    arrow::field("Target", arrow::float64()),
+    arrow::field("Forecast", arrow::float64()),
+    arrow::field("lo_95", arrow::float64()),
+    arrow::field("lo_80", arrow::float64()),
+    arrow::field("hi_80", arrow::float64()),
+    arrow::field("hi_95", arrow::float64())
+  )
+}
+
 #' Check custom hierarchy candidate coverage before reconciliation
 #'
 #' Every enrolled candidate, any reconciled ensemble and the selected mixture
@@ -454,11 +485,12 @@ reconciliation_weights <- function(residuals, negative_forecast) {
 #' recipe variant that is present must be complete. Simple averages are
 #' validated by membership only, because hierarchy reconciles their components
 #' rather than the average rows. No winner quota is imposed and no artifact is
-#' written. Lazy tables are checked with distinct identities and grouped
-#' coverage summaries; forecast rows are not collected into memory.
+#' written. Arrow datasets and queries are checked with distinct identities and
+#' grouped coverage summaries; forecast rows are not collected into memory.
 #'
 #' @param forecasts Unreconciled forecast rows from single, global, average and
-#'   ensemble artifacts; may be a data frame or lazy table.
+#'   ensemble artifacts; may be a data frame or an Arrow dataset, table or
+#'   query read with [hierarchy_forecast_schema()].
 #' @param metadata Hierarchy metadata with `hts_combos`.
 #' @param splits Train/test split table.
 #' @param custom_run Loaded custom run.
@@ -468,8 +500,8 @@ reconciliation_weights <- function(residuals, negative_forecast) {
 custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_run) {
   required <- c("Combo", "Date", "Train_Test_ID", "Forecast", "Target", "Best_Model")
   identity_columns <- c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")
-  lazy <- inherits(forecasts, "tbl_lazy")
-  columns <- if (lazy) dplyr::tbl_vars(forecasts) else names(forecasts)
+  lazy <- inherits(forecasts, c("Dataset", "ArrowTabular", "arrow_dplyr_query"))
+  columns <- names(forecasts)
   if ((!is.data.frame(forecasts) && !lazy) ||
     !all(c(required, if (lazy) identity_columns) %in% columns) ||
     (!lazy && !nrow(forecasts))) {
@@ -502,8 +534,8 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
     rows <- forecasts %>%
       dplyr::filter(Train_Test_ID %in% selected_splits$Train_Test_ID)
     forecast_types <- rows %>%
-      dplyr::filter(FALSE) %>%
       dplyr::select(Forecast, Target) %>%
+      utils::head(0) %>%
       dplyr::collect()
     combos <- rows %>%
       dplyr::distinct(Combo) %>%
@@ -653,9 +685,11 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
 #'   forecasts are disallowed.
 #'
 #' @details Spark forecast tables remain lazy during preflight. The enrollment
-#'   guard collects distinct model IDs, and custom coverage validation collects
-#'   distinct identities and grouped coverage statistics rather than forecast
-#'   rows. Reconciled output is written to the existing forecast artifact path.
+#'   guard collects distinct model IDs. Custom coverage validation reads the
+#'   forecast files as the typed Arrow dataset the Spark workers use, so CSV
+#'   `"NA"` values stay missing, and collects distinct identities and grouped
+#'   coverage statistics rather than forecast rows. Reconciled output is
+#'   written to the existing forecast artifact path.
 #'
 #' @return hierarchy structure
 #' @noRd
@@ -747,7 +781,16 @@ reconcile_hierarchical_data <- function(run_info,
       stop("Custom hierarchy requires validated enrollment before reconciliation.", call. = FALSE)
     }
   }
-  if (!is.null(custom_run)) custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
+  if (!is.null(custom_run)) {
+    # Spark CSV schema inference reads "NA" as text, so validate the same typed
+    # dataset the Spark workers reconcile.
+    coverage_tbl <- if (identical(return_type, "sdf")) {
+      read_file(run_info, path = fcst_path, return_type = "arrow", schema = hierarchy_forecast_schema())
+    } else {
+      unreconciled_tbl
+    }
+    custom_reconciliation_coverage(coverage_tbl, hts_list, model_train_test_tbl, custom_run)
+  }
 
   # get models to reconcile down to lowest level
   model_list <- unreconciled_tbl %>%
@@ -1005,30 +1048,10 @@ reconcile_hierarchical_data <- function(run_info,
             ) %>%
               dplyr::select(Combo, Date, Target)
 
-            schema <- arrow::schema(
-              arrow::field("Combo_ID", arrow::string()),
-              arrow::field("Model_ID", arrow::string()),
-              arrow::field("Model_Name", arrow::string()),
-              arrow::field("Model_Type", arrow::string()),
-              arrow::field("Recipe_ID", arrow::string()),
-              arrow::field("Train_Test_ID", arrow::float64()),
-              arrow::field("Hyperparameter_ID", arrow::float64()),
-              arrow::field("Best_Model", arrow::string()),
-              arrow::field("Combo", arrow::string()),
-              arrow::field("Horizon", arrow::float64()),
-              arrow::field("Date", arrow::date32()),
-              arrow::field("Target", arrow::float64()),
-              arrow::field("Forecast", arrow::float64()),
-              arrow::field("lo_95", arrow::float64()),
-              arrow::field("lo_80", arrow::float64()),
-              arrow::field("hi_80", arrow::float64()),
-              arrow::field("hi_95", arrow::float64())
-            )
-
             unreconciled_tbl <- read_file(run_info,
               path = fcst_path,
               return_type = "arrow",
-              schema = schema
+              schema = hierarchy_forecast_schema()
             )
 
             if (model == "Best-Model") {

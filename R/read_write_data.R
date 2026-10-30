@@ -858,8 +858,7 @@ read_file <- function(run_info,
       parquet = arrow::open_dataset(
         sources = files,
         format = "parquet",
-        schema = schema,
-        skip = ifelse(is.null(schema), 0, 1)
+        schema = schema
       ),
       csv = arrow::open_dataset(
         sources = files,

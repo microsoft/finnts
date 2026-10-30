@@ -211,100 +211,65 @@ hierarchy_reconciliation_fixture <- function(approach = "standard_hierarchy", da
   fixture
 }
 
-# Return a test-only collect callback for a hierarchy fixture and forecast
-# frame. It supplies bounded identities and grouped statistics, rejects
-# full-row queries, and performs no I/O.
-hierarchy_lazy_collector <- function(fixture, forecasts) {
-  selected <- forecasts[forecasts$Train_Test_ID %in% fixture$splits$Train_Test_ID, , drop = FALSE]
-  summary <- selected %>%
-    dplyr::group_by(Model_ID, Combo, Train_Test_ID) %>%
-    dplyr::summarise(
-      row_count = dplyr::n(),
-      date_count = dplyr::n_distinct(Date),
-      forecast_missing = sum(is.na(Forecast)),
-      forecast_min = min(Forecast, na.rm = TRUE),
-      forecast_max = max(Forecast, na.rm = TRUE),
-      target_missing = sum(is.na(Target)),
-      target_min = if (all(is.na(Target))) NA_real_ else min(Target, na.rm = TRUE),
-      target_max = if (all(is.na(Target))) NA_real_ else max(Target, na.rm = TRUE),
-      .groups = "drop"
-    )
-  best_summary <- selected %>%
-    dplyr::filter(Best_Model == "Yes") %>%
-    dplyr::group_by(Combo, Train_Test_ID) %>%
-    dplyr::summarise(
-      row_count = dplyr::n(),
-      date_count = dplyr::n_distinct(Date),
-      target_missing = sum(is.na(Target)),
-      target_min = if (all(is.na(Target))) NA_real_ else min(Target, na.rm = TRUE),
-      target_max = if (all(is.na(Target))) NA_real_ else max(Target, na.rm = TRUE),
-      .groups = "drop"
-    )
-
-  # Only return bounded projections or aggregate fixtures for lazy queries.
-  function(x, ...) {
-    if (is.data.frame(x)) return(x)
-    columns <- as.character(dplyr::tbl_vars(x))
-    query <- as.character(dbplyr::sql_render(x))
-    if ("invalid_rows" %in% columns) {
-      split_id <- as.numeric(regmatches(query, regexec('"Train_Test_ID" = ([0-9.]+)', query))[[1]][2])
-      allowed <- regmatches(query, regexec('"Date" IN \\(([^)]*)\\)', query))[[1]][2]
-      allowed <- as.Date(regmatches(allowed, gregexpr("[0-9]{4}-[0-9]{2}-[0-9]{2}", allowed))[[1]])
-      if (is.na(split_id) || !length(allowed)) {
-        stop(paste("Unrecognized date predicate:", query), call. = FALSE)
-      }
-      invalid <- forecasts[
-        forecasts$Train_Test_ID == split_id & (is.na(forecasts$Date) | !forecasts$Date %in% allowed), ,
-        drop = FALSE
-      ]
-      return(dplyr::count(tibble::as_tibble(invalid), Model_ID, Combo, Train_Test_ID, name = "invalid_rows"))
+# Write forecast rows to a temporary CSV or Parquet artifact in `schema` column
+# order, padding absent schema columns with NA, and return the file path. CSV
+# uses the package writer, so missing values are text "NA". The directory is
+# removed when `env` exits.
+hierarchy_forecast_file <- function(forecasts, schema, format = "csv", env = parent.frame()) {
+  rows <- as.data.frame(forecasts)
+  for (column in names(schema)) {
+    type <- schema[[column]]$type$ToString()
+    value <- if (column %in% names(rows)) rows[[column]] else rep(NA, nrow(rows))
+    rows[[column]] <- if (type == "string") {
+      as.character(value)
+    } else if (startsWith(type, "date32")) {
+      as.Date(value)
+    } else {
+      as.numeric(value)
     }
-    if (identical(columns, c("Forecast", "Target"))) {
-      return(forecasts[0, c("Forecast", "Target"), drop = FALSE])
-    }
-    if (identical(columns, c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID"))) {
-      return(unique(forecasts[, columns]))
-    }
-    if (identical(columns, "Model_ID")) {
-      return(data.frame(Model_ID = unique(forecasts$Model_ID)))
-    }
-    if (identical(columns, "Combo")) {
-      return(data.frame(Combo = unique(forecasts$Combo)))
-    }
-    if (identical(columns, "Best_Model")) {
-      return(data.frame(Best_Model = unique(forecasts$Best_Model)))
-    }
-    if (all(c("row_count", "date_count", "forecast_min", "forecast_max") %in% columns)) {
-      return(summary)
-    }
-    if (all(c("row_count", "date_count", "target_min", "target_max") %in% columns)) {
-      return(best_summary)
-    }
-    stop(
-      paste("Unexpected lazy collection:", paste(columns, collapse = ","), query),
-      call. = FALSE
-    )
   }
+  rows <- rows[, names(schema), drop = FALSE]
+  path <- file.path(withr::local_tempdir(.local_envir = env), paste0("forecasts.", format))
+  if (format == "csv") {
+    vroom::vroom_write(rows, path, delim = ",", progress = FALSE)
+  } else {
+    arrow::write_parquet(arrow::arrow_table(rows, schema = schema), path)
+  }
+  path
 }
 
 # Run reconciliation using fixture artifacts, optionally overriding forecasts,
-# the nonnegative setting, and simulating the Spark lazy-table route. Return
-# captured writes as a list; `written` remains available on errors. No
-# persistent artifacts are created.
+# the nonnegative setting, and simulating the Spark route. The Spark table holds
+# Forecast and Target as text, as Spark CSV inference does with "NA", while
+# typed reads use the package reader on a `lazy_format` forecast file. Return
+# captured writes as a list; `written` remains available on errors. Temporary
+# files are removed on exit.
 hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv()),
-                                parallel_processing = NULL, lazy = FALSE, negative_forecast = TRUE) {
+                                parallel_processing = NULL, lazy = FALSE, negative_forecast = TRUE,
+                                lazy_format = "csv") {
   original_validate_best_model <- validate_best_model
+  original_read_file <- read_file
+  files <- new.env(parent = emptyenv())
+  harness_env <- environment()
   testthat::local_mocked_bindings(
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
-    list_files = function(...) character(), read_file = function(run_info, path, return_type = "df", ...) {
+    list_files = function(...) character(), read_file = function(run_info, path, return_type = "df", schema = NULL, ...) {
       if (return_type == "object")
         return(fixture$metadata)
       if (grepl("train_test_split", path, fixed = TRUE))
         return(fixture$splits)
       if (grepl("hts_data", path, fixed = TRUE))
         return(fixture$history)
-      if (lazy && return_type == "sdf") return(do.call(dbplyr::lazy_frame, as.list(forecasts)))
-      if (lazy && return_type == "arrow") return(forecasts)
+      if (lazy && return_type == "sdf") {
+        spark_rows <- dplyr::mutate(forecasts, dplyr::across(c(Forecast, Target), ~ ifelse(is.na(.x), "NA", as.character(.x))))
+        return(arrow::arrow_table(spark_rows))
+      }
+      if (lazy && return_type == "arrow") {
+        if (is.null(files$typed)) {
+          files$typed <- hierarchy_forecast_file(forecasts, schema, lazy_format, harness_env)
+        }
+        return(original_read_file(run_info, file_list = files$typed, return_type = "arrow", schema = schema))
+      }
       forecasts
     },
     validate_best_model = function(forecast_tbl, context) {
@@ -314,12 +279,6 @@ hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written 
     write_data = function(x, combo, ...) written[[combo]] <- x,
     .package = "finnts"
   )
-  if (lazy) {
-    testthat::local_mocked_bindings(
-      collect = hierarchy_lazy_collector(fixture, forecasts),
-      .package = "dplyr"
-    )
-  }
   reconcile_hierarchical_data(fixture$project_info, parallel_processing, fixture$custom$manifest$context$forecast_approach,
     negative_forecast, FALSE,
     fixture$project_info$date_type, 1,
@@ -353,16 +312,23 @@ test_that("custom reconciliation rejects incomplete candidates before publicatio
   expect_length(as.list(written), 0L)
 })
 
-test_that("custom Spark reconciliation validates lazy coverage before publication", {
+test_that("custom Spark reconciliation validates typed coverage before publication", {
   skip_if_not_installed("arrow")
-  skip_if_not_installed("dbplyr")
   fixture <- hierarchy_reconciliation_fixture()
   local_result <- hierarchy_reconcile(fixture)
-  lazy_result <- hierarchy_reconcile(fixture, parallel_processing = "spark", lazy = TRUE)
-  expect_setequal(names(lazy_result), names(local_result))
-  for (model in names(local_result)) {
-    expect_equal(lazy_result[[model]], local_result[[model]], tolerance = 1e-8, info = model)
+  for (format in c("csv", "parquet")) {
+    lazy_result <- hierarchy_reconcile(fixture, parallel_processing = "spark", lazy = TRUE, lazy_format = format)
+    expect_setequal(names(lazy_result), names(local_result))
+    for (model in names(local_result)) {
+      expect_equal(lazy_result[[model]], local_result[[model]], tolerance = 1e-8, info = paste(format, model))
+    }
   }
+
+  spark_rows <- dplyr::mutate(fixture$forecasts, Target = ifelse(is.na(Target), "NA", as.character(Target)))
+  expect_error(
+    custom_reconciliation_coverage(arrow::arrow_table(spark_rows), fixture$metadata, fixture$splits, fixture$custom),
+    "complete finite candidate coverage"
+  )
 
   for (defect in c("missing", "duplicate", "nonfinite", "foreign", "out_of_calendar", "missing_date")) {
     forecasts <- fixture$forecasts
@@ -391,7 +357,6 @@ test_that("custom Spark reconciliation validates lazy coverage before publicatio
 
 test_that("custom reconciliation floors near-zero forecasts on local and Spark routes", {
   skip_if_not_installed("arrow")
-  skip_if_not_installed("dbplyr")
   fixture <- hierarchy_reconciliation_fixture()
   forecasts <- fixture$forecasts
   index <- which(forecasts$Model_Name == "node_rule")[1:2]
