@@ -557,14 +557,8 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
       if (!length(expected_dates)) {
         stop("Custom hierarchy requires complete unique candidate/node/date coverage; no fallback is permitted.", call. = FALSE)
       }
-      allowed_dates <- rlang::expr(Date == !!expected_dates[[1]])
-      if (length(expected_dates) > 1) {
-        for (date in expected_dates[-1]) {
-          allowed_dates <- rlang::expr(!!allowed_dates | Date == !!date)
-        }
-      }
       invalid_dates <- rows %>%
-        dplyr::filter(Train_Test_ID == !!split_id, is.na(Date) | !(!!allowed_dates)) %>%
+        dplyr::filter(Train_Test_ID == !!split_id, is.na(Date) | !(Date %in% !!expected_dates)) %>%
         dplyr::count(Model_ID, Combo, Train_Test_ID, name = "invalid_rows") %>%
         dplyr::collect()
       if (nrow(invalid_dates)) {

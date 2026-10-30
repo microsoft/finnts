@@ -247,10 +247,17 @@ hierarchy_lazy_collector <- function(fixture, forecasts) {
     columns <- as.character(dplyr::tbl_vars(x))
     query <- as.character(dbplyr::sql_render(x))
     if ("invalid_rows" %in% columns) {
-      return(tibble::tibble(
-        Model_ID = character(), Combo = character(), Train_Test_ID = numeric(),
-        invalid_rows = integer()
-      ))
+      split_id <- as.numeric(regmatches(query, regexec('"Train_Test_ID" = ([0-9.]+)', query))[[1]][2])
+      allowed <- regmatches(query, regexec('"Date" IN \\(([^)]*)\\)', query))[[1]][2]
+      allowed <- as.Date(regmatches(allowed, gregexpr("[0-9]{4}-[0-9]{2}-[0-9]{2}", allowed))[[1]])
+      if (is.na(split_id) || !length(allowed)) {
+        stop(paste("Unrecognized date predicate:", query), call. = FALSE)
+      }
+      invalid <- forecasts[
+        forecasts$Train_Test_ID == split_id & (is.na(forecasts$Date) | !forecasts$Date %in% allowed), ,
+        drop = FALSE
+      ]
+      return(dplyr::count(tibble::as_tibble(invalid), Model_ID, Combo, Train_Test_ID, name = "invalid_rows"))
     }
     if (identical(columns, c("Forecast", "Target"))) {
       return(forecasts[0, c("Forecast", "Target"), drop = FALSE])
@@ -357,7 +364,7 @@ test_that("custom Spark reconciliation validates lazy coverage before publicatio
     expect_equal(lazy_result[[model]], local_result[[model]], tolerance = 1e-8, info = model)
   }
 
-  for (defect in c("missing", "duplicate", "nonfinite", "foreign")) {
+  for (defect in c("missing", "duplicate", "nonfinite", "foreign", "out_of_calendar", "missing_date")) {
     forecasts <- fixture$forecasts
     index <- which(forecasts$Model_Name == "node_rule" & forecasts$Train_Test_ID != 1)[[1]]
     if (defect == "missing")
@@ -368,10 +375,15 @@ test_that("custom Spark reconciliation validates lazy coverage before publicatio
       forecasts$Forecast[index] <- Inf
     if (defect == "foreign")
       forecasts$Model_ID[index] <- "foreign--local--R1"
+    if (defect == "out_of_calendar")
+      forecasts$Date[index] <- as.Date("1900-01-01")
+    if (defect == "missing_date")
+      forecasts$Date[index] <- as.Date(NA)
     written <- new.env(parent = emptyenv())
     expect_error(
       hierarchy_reconcile(fixture, forecasts, written, parallel_processing = "spark", lazy = TRUE),
-      "coverage|identity|pool"
+      "coverage|identity|pool",
+      info = defect
     )
     expect_length(as.list(written), 0L)
   }
