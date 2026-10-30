@@ -211,10 +211,82 @@ hierarchy_reconciliation_fixture <- function(approach = "standard_hierarchy", da
   fixture
 }
 
-# Replace artifact transport only while running real hts reconciliation. Writes
-# are captured in a caller-visible environment, including on error; no files,
-# models or forecasts are generated outside this small deterministic fixture.
-hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv())) {
+# Return a test-only collect callback for a hierarchy fixture and forecast
+# frame. It supplies bounded identities and grouped statistics, rejects
+# full-row queries, and performs no I/O.
+hierarchy_lazy_collector <- function(fixture, forecasts) {
+  selected <- forecasts[forecasts$Train_Test_ID %in% fixture$splits$Train_Test_ID, , drop = FALSE]
+  summary <- selected %>%
+    dplyr::group_by(Model_ID, Combo, Train_Test_ID) %>%
+    dplyr::summarise(
+      row_count = dplyr::n(),
+      date_count = dplyr::n_distinct(Date),
+      forecast_missing = sum(is.na(Forecast)),
+      forecast_min = min(Forecast, na.rm = TRUE),
+      forecast_max = max(Forecast, na.rm = TRUE),
+      target_missing = sum(is.na(Target)),
+      target_min = if (all(is.na(Target))) NA_real_ else min(Target, na.rm = TRUE),
+      target_max = if (all(is.na(Target))) NA_real_ else max(Target, na.rm = TRUE),
+      .groups = "drop"
+    )
+  best_summary <- selected %>%
+    dplyr::filter(Best_Model == "Yes") %>%
+    dplyr::group_by(Combo, Train_Test_ID) %>%
+    dplyr::summarise(
+      row_count = dplyr::n(),
+      date_count = dplyr::n_distinct(Date),
+      target_missing = sum(is.na(Target)),
+      target_min = if (all(is.na(Target))) NA_real_ else min(Target, na.rm = TRUE),
+      target_max = if (all(is.na(Target))) NA_real_ else max(Target, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # Only return bounded projections or aggregate fixtures for lazy queries.
+  function(x, ...) {
+    if (is.data.frame(x)) return(x)
+    columns <- as.character(dplyr::tbl_vars(x))
+    query <- as.character(dbplyr::sql_render(x))
+    if ("invalid_rows" %in% columns) {
+      return(tibble::tibble(
+        Model_ID = character(), Combo = character(), Train_Test_ID = numeric(),
+        invalid_rows = integer()
+      ))
+    }
+    if (identical(columns, c("Forecast", "Target"))) {
+      return(forecasts[0, c("Forecast", "Target"), drop = FALSE])
+    }
+    if (identical(columns, c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID"))) {
+      return(unique(forecasts[, columns]))
+    }
+    if (identical(columns, "Model_ID")) {
+      return(data.frame(Model_ID = unique(forecasts$Model_ID)))
+    }
+    if (identical(columns, "Combo")) {
+      return(data.frame(Combo = unique(forecasts$Combo)))
+    }
+    if (identical(columns, "Best_Model")) {
+      return(data.frame(Best_Model = unique(forecasts$Best_Model)))
+    }
+    if (all(c("row_count", "date_count", "forecast_min", "forecast_max") %in% columns)) {
+      return(summary)
+    }
+    if (all(c("row_count", "date_count", "target_min", "target_max") %in% columns)) {
+      return(best_summary)
+    }
+    stop(
+      paste("Unexpected lazy collection:", paste(columns, collapse = ","), query),
+      call. = FALSE
+    )
+  }
+}
+
+# Run reconciliation using fixture artifacts, optionally overriding forecasts,
+# the nonnegative setting, and simulating the Spark lazy-table route. Return
+# captured writes as a list; `written` remains available on errors. No
+# persistent artifacts are created.
+hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv()),
+                                parallel_processing = NULL, lazy = FALSE, negative_forecast = TRUE) {
+  original_validate_best_model <- validate_best_model
   testthat::local_mocked_bindings(
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
     list_files = function(...) character(), read_file = function(run_info, path, return_type = "df", ...) {
@@ -224,12 +296,25 @@ hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written 
         return(fixture$splits)
       if (grepl("hts_data", path, fixed = TRUE))
         return(fixture$history)
+      if (lazy && return_type == "sdf") return(do.call(dbplyr::lazy_frame, as.list(forecasts)))
+      if (lazy && return_type == "arrow") return(forecasts)
       forecasts
-    }, write_data = function(x, combo, ...) {
-      written[[combo]] <- x
-    }, .package = "finnts"
+    },
+    validate_best_model = function(forecast_tbl, context) {
+      if (lazy) return(invisible(forecast_tbl))
+      original_validate_best_model(forecast_tbl, context)
+    },
+    write_data = function(x, combo, ...) written[[combo]] <- x,
+    .package = "finnts"
   )
-  reconcile_hierarchical_data(fixture$project_info, NULL, fixture$custom$manifest$context$forecast_approach, TRUE, FALSE,
+  if (lazy) {
+    testthat::local_mocked_bindings(
+      collect = hierarchy_lazy_collector(fixture, forecasts),
+      .package = "dplyr"
+    )
+  }
+  reconcile_hierarchical_data(fixture$project_info, parallel_processing, fixture$custom$manifest$context$forecast_approach,
+    negative_forecast, FALSE,
     fixture$project_info$date_type, 1,
     custom_run = fixture$custom
   )
@@ -259,6 +344,72 @@ test_that("custom reconciliation rejects incomplete candidates before publicatio
   local_mocked_bindings(combinef = function(...) stop("Deliberate reconciliation failure"), .package = "hts")
   expect_error(hierarchy_reconcile(fixture, written = written), "Deliberate reconciliation failure")
   expect_length(as.list(written), 0L)
+})
+
+test_that("custom Spark reconciliation validates lazy coverage before publication", {
+  skip_if_not_installed("arrow")
+  skip_if_not_installed("dbplyr")
+  fixture <- hierarchy_reconciliation_fixture()
+  local_result <- hierarchy_reconcile(fixture)
+  lazy_result <- hierarchy_reconcile(fixture, parallel_processing = "spark", lazy = TRUE)
+  expect_setequal(names(lazy_result), names(local_result))
+  for (model in names(local_result)) {
+    expect_equal(lazy_result[[model]], local_result[[model]], tolerance = 1e-8, info = model)
+  }
+
+  for (defect in c("missing", "duplicate", "nonfinite", "foreign")) {
+    forecasts <- fixture$forecasts
+    index <- which(forecasts$Model_Name == "node_rule" & forecasts$Train_Test_ID != 1)[[1]]
+    if (defect == "missing")
+      forecasts <- forecasts[-index, ]
+    if (defect == "duplicate")
+      forecasts <- rbind(forecasts, forecasts[index, ])
+    if (defect == "nonfinite")
+      forecasts$Forecast[index] <- Inf
+    if (defect == "foreign")
+      forecasts$Model_ID[index] <- "foreign--local--R1"
+    written <- new.env(parent = emptyenv())
+    expect_error(
+      hierarchy_reconcile(fixture, forecasts, written, parallel_processing = "spark", lazy = TRUE),
+      "coverage|identity|pool"
+    )
+    expect_length(as.list(written), 0L)
+  }
+})
+
+test_that("custom reconciliation floors near-zero forecasts on local and Spark routes", {
+  skip_if_not_installed("arrow")
+  skip_if_not_installed("dbplyr")
+  fixture <- hierarchy_reconciliation_fixture()
+  forecasts <- fixture$forecasts
+  index <- which(forecasts$Model_Name == "node_rule")[1:2]
+  forecasts$Forecast[index] <- c(0.0005, -0.0005)
+  original_combinef <- hts::combinef
+
+  # Reconcile through one route and return its writes with combinef inputs.
+  reconcile_route <- function(...) {
+    inputs <- list()
+    local_mocked_bindings(
+      combinef = function(fcasts, ...) {
+        inputs[[length(inputs) + 1L]] <<- as.numeric(fcasts)
+        original_combinef(fcasts, ...)
+      },
+      .package = "hts"
+    )
+    result <- hierarchy_reconcile(fixture, forecasts, negative_forecast = FALSE, ...)
+    list(result = result, inputs = unlist(inputs))
+  }
+
+  local_route <- reconcile_route()
+  lazy_route <- reconcile_route(parallel_processing = "spark", lazy = TRUE)
+  for (route in list(local_route, lazy_route)) {
+    expect_false(any(route$inputs > -0.001 & route$inputs < 0.001))
+    expect_true(any(route$inputs == 0.001))
+  }
+  expect_setequal(names(lazy_route$result), names(local_route$result))
+  for (model in names(local_route$result)) {
+    expect_equal(lazy_route$result[[model]], local_route$result[[model]], tolerance = 1e-8, info = model)
+  }
 })
 
 test_that("custom reconciliation needs each built-in once and complete present recipe variants", {

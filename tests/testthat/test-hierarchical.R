@@ -2130,14 +2130,21 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
   original_weights <- reconciliation_weights
   original_read <- read_file
   original_list <- list_files
+  original_validate_best_model <- validate_best_model
   # The remote route builds an Arrow schema before the mocked table read.
-  routes <- c("local", if (requireNamespace("arrow", quietly = TRUE)) "remote")
+  has_arrow <- requireNamespace("arrow", quietly = TRUE)
+  routes <- c(
+    "local",
+    if (has_arrow) "remote",
+    if (has_arrow && requireNamespace("dbplyr", quietly = TRUE)) "spark-lazy"
+  )
   for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
     for (route in routes) {
       fixture <- reconciliation_test_case(withr::local_tempdir(), forecast_approach, extreme = TRUE)
       calls <- list()
       listings <- 0L
       remote_reads <- character()
+      collected_queries <- character()
       testthat::local_mocked_bindings(
         reconciliation_weights = function(residuals, negative_forecast) {
           result <- original_weights(residuals, negative_forecast)
@@ -2145,9 +2152,16 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
           result
         },
         par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+        validate_best_model = function(forecast_tbl, context) {
+          if (route == "spark-lazy") return(invisible(forecast_tbl))
+          original_validate_best_model(forecast_tbl, context)
+        },
         read_file = function(run_info, path = NULL, return_type = "df", ...) {
           if (return_type %in% c("sdf", "arrow")) {
             remote_reads <<- c(remote_reads, return_type)
+            if (identical(return_type, "sdf") && route == "spark-lazy") {
+              return(do.call(dbplyr::lazy_frame, as.list(fixture$forecast)))
+            }
             return(fixture$forecast)
           }
           original_read(run_info, path = path, return_type = return_type, ...)
@@ -2158,6 +2172,20 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
         },
         .package = "finnts"
       )
+      if (route == "spark-lazy") {
+        testthat::local_mocked_bindings(
+          collect = function(x, ...) {
+            if (is.data.frame(x)) return(x)
+            query <- as.character(dbplyr::sql_render(x))
+            collected_queries <<- c(collected_queries, query)
+            if (!grepl('SELECT DISTINCT "Model_ID"', query, fixed = TRUE)) {
+              stop("Unexpected lazy forecast collection in hierarchy test.", call. = FALSE)
+            }
+            tibble::tibble(Model_ID = unique(fixture$forecast$Model_ID))
+          },
+          .package = "dplyr"
+        )
+      }
       reconcile_hierarchical_data(fixture$run_info, if (route == "local") NULL else "spark",
         forecast_approach, negative_forecast = FALSE, date_type = "month", num_cores = 1)
       expect_length(calls, 2)
@@ -2167,6 +2195,7 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
       expect_lte(max(calls[[1]]$weights) / min(calls[[1]]$weights), 1e15 * (1 + 1e-12))
       expect_identical(calls[[1]]$weights, calls[[2]]$weights)
       expect_identical(remote_reads, if (route == "local") character() else c("sdf", "arrow", "arrow"))
+      if (route == "spark-lazy") expect_length(collected_queries, 2L)
       expected <- if (forecast_approach == "standard_hierarchy") {
         hts::combinef(fixture$predictions, nodes = fixture$nodes, weights = calls[[1]]$weights,
           keep = "bottom", nonnegative = TRUE)
