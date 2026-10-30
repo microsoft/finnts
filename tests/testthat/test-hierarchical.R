@@ -2222,6 +2222,34 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
   }
 })
 
+test_that("Spark hierarchy reads typed Parquet artifacts with simple-average rows", {
+  skip_if_not_installed("arrow")
+  directory <- withr::local_tempdir()
+  base <- tibble::tibble(
+    Combo_ID = "A", Model_ID = "meanf--local--R1", Model_Name = "meanf", Model_Type = "local",
+    Recipe_ID = "R1", Train_Test_ID = 1, Hyperparameter_ID = 1, Best_Model = "No", Combo = "A",
+    Horizon = 1, Date = as.Date("2020-01-01"), Target = NA_real_, Forecast = 10,
+    lo_95 = 8, lo_80 = 9, hi_80 = 11, hi_95 = 12
+  )
+  average <- dplyr::mutate(base,
+    Model_ID = "meanf--local--R1_snaive--local--R1", Model_Name = "NA",
+    Recipe_ID = "simple_average", Hyperparameter_ID = "NA", Best_Model = "Yes", Forecast = 11
+  )
+  files <- file.path(directory, c("single_models.parquet", "average_models.parquet"))
+  arrow::write_parquet(base, files[[1]])
+  arrow::write_parquet(average, files[[2]])
+
+  forecasts <- read_file(list(), file_list = files, return_type = "arrow", schema = hierarchy_forecast_schema())
+  best <- forecasts %>% dplyr::filter(Best_Model == "Yes") %>% dplyr::collect()
+  expect_identical(best$Model_ID, average$Model_ID)
+  expect_equal(best$Forecast, 11)
+  expect_s3_class(best$Date, "Date")
+  expect_true(is.na(best$Target))
+  all_rows <- dplyr::collect(forecasts)
+  expect_equal(nrow(all_rows), 2L)
+  expect_setequal(all_rows$Hyperparameter_ID, c("1", "NA"))
+})
+
 test_that("discontinued nodes reconcile through Agent and ordinary hierarchy routes", {
   original_read <- read_file
   original_weights <- reconciliation_weights

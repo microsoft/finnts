@@ -449,7 +449,9 @@ reconciliation_weights <- function(residuals, negative_forecast) {
 #'
 #' Shared by the Spark reconciliation workers and the custom coverage check so
 #' that CSV and Parquet forecast files are read with the same column types and
-#' CSV `"NA"` values are parsed as missing.
+#' CSV `"NA"` values are parsed as missing. `Hyperparameter_ID` is read as a
+#' string because simple-average artifacts store it as `"NA"` text, which
+#' Parquet keeps as a string column; reconciliation does not use its value.
 #'
 #' @return An Arrow schema with identity, split, date, target, forecast and
 #'   prediction-interval fields in forecast-artifact column order.
@@ -462,7 +464,7 @@ hierarchy_forecast_schema <- function() {
     arrow::field("Model_Type", arrow::string()),
     arrow::field("Recipe_ID", arrow::string()),
     arrow::field("Train_Test_ID", arrow::float64()),
-    arrow::field("Hyperparameter_ID", arrow::float64()),
+    arrow::field("Hyperparameter_ID", arrow::string()),
     arrow::field("Best_Model", arrow::string()),
     arrow::field("Combo", arrow::string()),
     arrow::field("Horizon", arrow::float64()),
