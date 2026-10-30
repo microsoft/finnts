@@ -1176,13 +1176,21 @@ convert_weekly_to_daily <- function(fcst_tbl,
 
 #' Validate that every combo has at least one Best_Model = "Yes"
 #'
-#' @param forecast_tbl data frame with Combo and Best_Model columns
+#' @param forecast_tbl Forecast rows with Combo and Best_Model columns: a data
+#'   frame, a lazy Spark table, or an Arrow dataset, table or query. Lazy inputs
+#'   are summarised to one best-model flag per combo before collection.
 #' @param context character string describing the calling function for error messages
 #'
 #' @return forecast_tbl invisibly if valid; otherwise stops with an error
 #' @noRd
 validate_best_model <- function(forecast_tbl, context = "forecast") {
-  if (!"Best_Model" %in% colnames(forecast_tbl)) {
+  # colnames() returns NULL for Arrow datasets and queries.
+  columns <- if (inherits(forecast_tbl, c("Dataset", "ArrowTabular", "arrow_dplyr_query"))) {
+    names(forecast_tbl)
+  } else {
+    colnames(forecast_tbl)
+  }
+  if (!"Best_Model" %in% columns) {
     stop(
       paste0("Error in ", context, "(). Best_Model column is missing from forecast data."),
       call. = FALSE

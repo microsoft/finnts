@@ -239,15 +239,13 @@ hierarchy_forecast_file <- function(forecasts, schema, format = "csv", env = par
 }
 
 # Run reconciliation using fixture artifacts, optionally overriding forecasts,
-# the nonnegative setting, and simulating the Spark route. The Spark table holds
-# Forecast and Target as text, as Spark CSV inference does with "NA", while
-# typed reads use the package reader on a `lazy_format` forecast file. Return
-# captured writes as a list; `written` remains available on errors. Temporary
-# files are removed on exit.
+# the nonnegative setting, and simulating the Spark route. Spark routes read the
+# forecasts through the package's typed Arrow reader on a `lazy_format` forecast
+# file, and any Spark-reader request fails. Return captured writes as a list;
+# `written` remains available on errors. Temporary files are removed on exit.
 hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv()),
                                 parallel_processing = NULL, lazy = FALSE, negative_forecast = TRUE,
                                 lazy_format = "csv") {
-  original_validate_best_model <- validate_best_model
   original_read_file <- read_file
   files <- new.env(parent = emptyenv())
   harness_env <- environment()
@@ -260,10 +258,8 @@ hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written 
         return(fixture$splits)
       if (grepl("hts_data", path, fixed = TRUE))
         return(fixture$history)
-      if (lazy && return_type == "sdf") {
-        spark_rows <- dplyr::mutate(forecasts, dplyr::across(c(Forecast, Target), ~ ifelse(is.na(.x), "NA", as.character(.x))))
-        return(arrow::arrow_table(spark_rows))
-      }
+      if (return_type == "sdf")
+        stop("Spark hierarchy reconciliation must not read forecasts with Spark readers.", call. = FALSE)
       if (lazy && return_type == "arrow") {
         if (is.null(files$typed)) {
           files$typed <- hierarchy_forecast_file(forecasts, schema, lazy_format, harness_env)
@@ -271,10 +267,6 @@ hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written 
         return(original_read_file(run_info, file_list = files$typed, return_type = "arrow", schema = schema))
       }
       forecasts
-    },
-    validate_best_model = function(forecast_tbl, context) {
-      if (lazy) return(invisible(forecast_tbl))
-      original_validate_best_model(forecast_tbl, context)
     },
     write_data = function(x, combo, ...) written[[combo]] <- x,
     .package = "finnts"

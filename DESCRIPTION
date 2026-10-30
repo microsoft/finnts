@@ -74,7 +74,6 @@ Suggests:
     Boruta (>= 8.0.0),
     caret,
     corrr,
-    dbplyr,
     ellmer (>= 0.4.0), 
     energy,
     knitr,

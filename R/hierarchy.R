@@ -686,12 +686,15 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
 #'   fallback. Like other runs, it floors near-zero predictions when negative
 #'   forecasts are disallowed.
 #'
-#' @details Spark forecast tables remain lazy during preflight. The enrollment
-#'   guard collects distinct model IDs. Custom coverage validation reads the
-#'   forecast files as the typed Arrow dataset the Spark workers use, so CSV
-#'   `"NA"` values stay missing, and collects distinct identities and grouped
-#'   coverage statistics rather than forecast rows. Reconciled output is
-#'   written to the existing forecast artifact path.
+#' @details Spark runs read the forecast files as the typed Arrow dataset the
+#'   Spark workers use, with [hierarchy_forecast_schema()], instead of a Spark
+#'   table. CSV `"NA"` values therefore stay missing, and Parquet files that
+#'   store `Hyperparameter_ID` as numbers and as text can be read together. The
+#'   dataset stays lazy during preflight: the enrollment guard and model list
+#'   collect distinct model IDs, the best-model check collects one flag per
+#'   combo, and custom coverage validation collects distinct identities and
+#'   grouped coverage statistics rather than forecast rows. Reconciled output
+#'   is written to the existing forecast artifact path.
 #'
 #' @return hierarchy structure
 #' @noRd
@@ -743,13 +746,10 @@ reconcile_hierarchical_data <- function(run_info,
   }
 
   # get unreconciled forecast data
-  if (is.null(parallel_processing)) {
-    return_type <- "df"
-  } else if (parallel_processing == "spark") {
-    return_type <- "sdf"
-  } else {
-    return_type <- "df"
-  }
+  # Spark runs read the typed Arrow dataset the Spark workers reconcile. Spark's
+  # own readers infer CSV "NA" values as text and cannot combine Parquet files
+  # that store Hyperparameter_ID as both numbers and text.
+  spark_run <- identical(parallel_processing, "spark")
 
   if (condensed) {
     fcst_path <- paste0(
@@ -763,12 +763,14 @@ reconcile_hierarchical_data <- function(run_info,
     )
   }
 
-  unreconciled_tbl <- if (condensed && is.null(run_info$storage_object) &&
-    identical(return_type, "df") && run_info$data_output %in% c("csv", "parquet", "rds")) {
+  unreconciled_tbl <- if (spark_run) {
+    read_file(run_info, path = fcst_path, return_type = "arrow", schema = hierarchy_forecast_schema())
+  } else if (condensed && is.null(run_info$storage_object) &&
+    run_info$data_output %in% c("csv", "parquet", "rds")) {
     read_local_artifacts(run_info, condensed_files)
   } else read_file(run_info,
     path = fcst_path,
-    return_type = return_type
+    return_type = "df"
   )
   unreconciled_tbl <- unreconciled_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
@@ -784,14 +786,7 @@ reconcile_hierarchical_data <- function(run_info,
     }
   }
   if (!is.null(custom_run)) {
-    # Spark CSV schema inference reads "NA" as text, so validate the same typed
-    # dataset the Spark workers reconcile.
-    coverage_tbl <- if (identical(return_type, "sdf")) {
-      read_file(run_info, path = fcst_path, return_type = "arrow", schema = hierarchy_forecast_schema())
-    } else {
-      unreconciled_tbl
-    }
-    custom_reconciliation_coverage(coverage_tbl, hts_list, model_train_test_tbl, custom_run)
+    custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
   }
 
   # get models to reconcile down to lowest level
