@@ -445,38 +445,80 @@ reconciliation_weights <- function(residuals, negative_forecast) {
   weights
 }
 
+#' Arrow schema for unreconciled hierarchy forecast artifacts
+#'
+#' Shared by the Spark reconciliation workers and the custom coverage check so
+#' that CSV and Parquet forecast files are read with the same column types and
+#' CSV `"NA"` values are parsed as missing. `Hyperparameter_ID` is read as a
+#' string because simple-average artifacts store it as `"NA"` text, which
+#' Parquet keeps as a string column; reconciliation does not use its value.
+#'
+#' @return An Arrow schema with identity, split, date, target, forecast and
+#'   prediction-interval fields in forecast-artifact column order.
+#' @noRd
+hierarchy_forecast_schema <- function() {
+  arrow::schema(
+    arrow::field("Combo_ID", arrow::string()),
+    arrow::field("Model_ID", arrow::string()),
+    arrow::field("Model_Name", arrow::string()),
+    arrow::field("Model_Type", arrow::string()),
+    arrow::field("Recipe_ID", arrow::string()),
+    arrow::field("Train_Test_ID", arrow::float64()),
+    arrow::field("Hyperparameter_ID", arrow::string()),
+    arrow::field("Best_Model", arrow::string()),
+    arrow::field("Combo", arrow::string()),
+    arrow::field("Horizon", arrow::float64()),
+    arrow::field("Date", arrow::date32()),
+    arrow::field("Target", arrow::float64()),
+    arrow::field("Forecast", arrow::float64()),
+    arrow::field("lo_95", arrow::float64()),
+    arrow::field("lo_80", arrow::float64()),
+    arrow::field("hi_80", arrow::float64()),
+    arrow::field("hi_95", arrow::float64())
+  )
+}
+
 #' Check custom hierarchy candidate coverage before reconciliation
 #'
 #' Every enrolled candidate, any reconciled ensemble and the selected mixture
 #' must cover every node/fold key before reconciliation can fill gaps or publish
 #' partial coverage. Custom candidates must be present on C1; each selected
 #' built-in must be present under at least one R recipe, and every built-in
-#' recipe variant that is present must be complete. Simple averages are validated by membership only, because
-#' hierarchy reconciles their components rather than the average rows. No
-#' winner quota is imposed and no I/O occurs.
+#' recipe variant that is present must be complete. Simple averages are
+#' validated by membership only, because hierarchy reconciles their components
+#' rather than the average rows. No winner quota is imposed and no artifact is
+#' written. Forecasts are summarised once per model identity, node and split,
+#' with dates joined to the expected calendar keys; every check then runs on
+#' that summary. Arrow inputs therefore need a single grouped scan, plus one
+#' best-row scan only when best rows for a node and split span model groups.
+#' Forecast rows are not collected into memory.
 #'
 #' @param forecasts Unreconciled forecast rows from single, global, average and
-#'   ensemble artifacts.
+#'   ensemble artifacts; may be a data frame or an Arrow dataset, table or
+#'   query read with [hierarchy_forecast_schema()].
 #' @param metadata Hierarchy metadata with `hts_combos`.
 #' @param splits Train/test split table.
 #' @param custom_run Loaded custom run.
 #'
-#' @return Invisibly NULL; errors on any coverage or identity gap.
+#' @return Invisibly, a data frame of distinct `Model_ID`, `Model_Name`,
+#'   `Combo` and `Best_Model` values, where `Best_Model` is `"Yes"` when any row
+#'   of that model and node is a best row. Errors on any coverage or identity
+#'   gap.
 #' @noRd
 custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_run) {
   required <- c("Combo", "Date", "Train_Test_ID", "Forecast", "Target", "Best_Model")
-  if (!is.data.frame(forecasts) || !all(required %in% names(forecasts)) || !nrow(forecasts)) {
+  identity_columns <- c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")
+  lazy <- inherits(forecasts, c("Dataset", "ArrowTabular", "arrow_dplyr_query"))
+  if ((!is.data.frame(forecasts) && !lazy) || !all(c(required, identity_columns) %in% names(forecasts)) ||
+    (!lazy && !nrow(forecasts))) {
     stop("Custom hierarchy requires complete candidate coverage.", call. = FALSE)
   }
-  candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
-  identities <- unique(forecasts[, c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")])
-  custom_run_membership(identities, custom_run, candidates, averages = TRUE, required_custom = TRUE, ensembles = TRUE)
-  present <- candidates$Model_ID %in% identities$Model_ID
-  builtin_key <- paste(candidates$Model_Name, candidates$Model_Type)
-  builtin_key[candidates$Recipe_ID == "C1"] <- NA_character_
-  missing_builtin <- setdiff(stats::na.omit(builtin_key), builtin_key[present])
-  required_ids <- candidates$Model_ID[candidates$Recipe_ID == "C1" | present]
-  reconciled_ids <- unique(c(required_ids, identities$Model_ID[identities$Recipe_ID %in% "ensemble"]))
+  incomplete <- function() {
+    stop("Custom hierarchy requires complete finite candidate coverage.", call. = FALSE)
+  }
+  uncovered <- function() {
+    stop("Custom hierarchy requires complete unique candidate/node/date coverage; no fallback is permitted.", call. = FALSE)
+  }
   selected_splits <- splits[splits$Run_Type %in% c("Back_Test", "Future_Forecast"), , drop = FALSE]
   if (!all(c("Back_Test", "Future_Forecast") %in% selected_splits$Run_Type) || anyDuplicated(selected_splits$Train_Test_ID)) {
     stop("Custom hierarchy requires complete backtest and future coverage.", call. = FALSE)
@@ -484,25 +526,95 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
   context <- list(train_test_split = selected_splits, calendar = seq(min(as.Date(selected_splits$Train_End)),
     max(as.Date(selected_splits$Test_End)), by = custom_run$manifest$context$date_type))
   expected <- dplyr::bind_rows(forecast_selection_keys(context, "Back_Test"), forecast_selection_keys(context, "Future_Forecast"))
-  rows <- forecasts[forecasts$Train_Test_ID %in% selected_splits$Train_Test_ID, , drop = FALSE]
-  if (!is.numeric(rows$Forecast) || any(!is.finite(rows$Forecast)) || anyNA(rows$Combo) ||
-    anyNA(rows$Best_Model) || any(!rows$Best_Model %in% c("Yes", "No")) ||
-    !setequal(unique(rows$Combo), metadata$hts_combos) || !all(required_ids %in% rows$Model_ID) ||
-    length(missing_builtin)) {
-    stop("Custom hierarchy requires complete finite candidate coverage.", call. = FALSE)
+  if (!nrow(expected)) incomplete()
+  expected_keys <- data.frame(
+    Train_Test_ID = as.numeric(expected$Train_Test_ID), Date = as.Date(expected$Date), expected_key = TRUE
+  )
+  if (lazy) {
+    expected_keys <- arrow::arrow_table(expected_keys)
+    forecasts <- dplyr::mutate(forecasts, Train_Test_ID = as.numeric(Train_Test_ID))
+  } else {
+    forecasts$Date <- as.Date(forecasts$Date)
+    forecasts$Train_Test_ID <- as.numeric(forecasts$Train_Test_ID)
   }
-  for (candidate in c(reconciled_ids, "Best-Model")) {
-    model <- if (candidate == "Best-Model") rows[rows$Best_Model == "Yes", , drop = FALSE] else
-      rows[rows$Model_ID == candidate, , drop = FALSE]
-    for (combo in metadata$hts_combos) {
-      node <- model[model$Combo == combo, , drop = FALSE]
-      backtest <- node$Train_Test_ID %in% selected_splits$Train_Test_ID[selected_splits$Run_Type == "Back_Test"]
-      if (!forecast_keys_complete(node, expected) || !is.numeric(node$Target) || any(!is.finite(node$Target[backtest]))) {
-        stop("Custom hierarchy requires complete unique candidate/node/date coverage; no fallback is permitted.", call. = FALSE)
-      }
+  # One grouped scan per call; dates outside the expected calendar have no key.
+  summarise_coverage <- function(rows, groups) {
+    rows %>%
+      dplyr::left_join(expected_keys, by = c("Train_Test_ID", "Date")) %>%
+      dplyr::group_by(!!!rlang::syms(groups)) %>%
+      dplyr::summarise(
+        row_count = dplyr::n(),
+        date_count = dplyr::n_distinct(Date),
+        invalid_dates = sum(dplyr::if_else(is.na(expected_key), 1L, 0L)),
+        best_rows = sum(dplyr::if_else(!is.na(Best_Model) & Best_Model == "Yes", 1L, 0L)),
+        invalid_best = sum(dplyr::if_else(is.na(Best_Model) | !(Best_Model %in% c("Yes", "No")), 1L, 0L)),
+        forecast_missing = sum(dplyr::if_else(is.na(Forecast), 1L, 0L)),
+        forecast_min = min(Forecast, na.rm = TRUE),
+        forecast_max = max(Forecast, na.rm = TRUE),
+        target_missing = sum(dplyr::if_else(is.na(Target), 1L, 0L)),
+        target_min = min(Target, na.rm = TRUE),
+        target_max = max(Target, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      dplyr::collect() %>%
+      suppressWarnings()
+  }
+  summary <- summarise_coverage(forecasts, c(identity_columns, "Combo", "Train_Test_ID"))
+  if (!is.numeric(summary$forecast_min) || !is.numeric(summary$target_min)) incomplete()
+
+  candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
+  identities <- dplyr::distinct(summary[, identity_columns])
+  custom_run_membership(identities, custom_run, candidates, averages = TRUE, required_custom = TRUE, ensembles = TRUE)
+  present <- candidates$Model_ID %in% identities$Model_ID
+  builtin_key <- paste(candidates$Model_Name, candidates$Model_Type)
+  builtin_key[candidates$Recipe_ID == "C1"] <- NA_character_
+  missing_builtin <- setdiff(stats::na.omit(builtin_key), builtin_key[present])
+  required_ids <- candidates$Model_ID[candidates$Recipe_ID == "C1" | present]
+  reconciled_ids <- unique(c(required_ids, identities$Model_ID[identities$Recipe_ID %in% "ensemble"]))
+
+  selected_ids <- selected_splits$Train_Test_ID
+  selected <- summary[summary$Train_Test_ID %in% selected_ids, , drop = FALSE]
+  if (!nrow(selected) || anyNA(selected$Combo) || any(selected$invalid_best != 0) ||
+    !setequal(unique(selected$Combo), metadata$hts_combos) || !all(required_ids %in% selected$Model_ID) ||
+    length(missing_builtin) || any(selected$forecast_missing != 0) ||
+    any(!is.finite(selected$forecast_min)) || any(!is.finite(selected$forecast_max))) {
+    incomplete()
+  }
+
+  expected_counts <- dplyr::count(expected, Train_Test_ID, name = "expected_rows")
+  backtest_ids <- selected_splits$Train_Test_ID[selected_splits$Run_Type == "Back_Test"]
+  # Each key must appear once with exactly the expected distinct calendar dates.
+  check_coverage <- function(observed, keys, expected_groups) {
+    expected_rows <- expected_counts$expected_rows[match(observed$Train_Test_ID, expected_counts$Train_Test_ID)]
+    backtest <- observed$Train_Test_ID %in% backtest_ids
+    if (nrow(observed) != expected_groups || anyDuplicated(observed[, keys]) || anyNA(expected_rows) ||
+      any(observed$row_count != expected_rows) || any(observed$date_count != expected_rows) ||
+      any(observed$invalid_dates != 0) ||
+      any(backtest & (observed$target_missing != 0 | !is.finite(observed$target_min) | !is.finite(observed$target_max)))) {
+      uncovered()
     }
   }
-  invisible(NULL)
+  node_splits <- length(metadata$hts_combos) * nrow(expected_counts)
+  check_coverage(
+    selected[selected$Model_ID %in% reconciled_ids, , drop = FALSE],
+    c("Model_ID", "Combo", "Train_Test_ID"), length(reconciled_ids) * node_splits
+  )
+
+  # Best rows normally come from one model per node and split, so its group
+  # summary is exact. Rescan only when best rows are split across groups.
+  best <- selected[selected$best_rows > 0, , drop = FALSE]
+  if (anyDuplicated(best[, c("Combo", "Train_Test_ID")]) || any(best$best_rows != best$row_count)) {
+    best <- summarise_coverage(
+      dplyr::filter(forecasts, Best_Model == "Yes", Train_Test_ID %in% selected_ids),
+      c("Combo", "Train_Test_ID")
+    )
+  }
+  check_coverage(best, c("Combo", "Train_Test_ID"), node_splits)
+
+  summary %>%
+    dplyr::mutate(Best_Model = ifelse(best_rows > 0, "Yes", "No")) %>%
+    dplyr::distinct(Model_ID, Model_Name, Combo, Best_Model) %>%
+    invisible()
 }
 
 #' Reconcile hierarchical forecasts down to lowest bottoms up level
@@ -517,7 +629,20 @@ custom_reconciliation_coverage <- function(forecasts, metadata, splits, custom_r
 #' @param custom_run Optional validated custom enrollment passed by finalization.
 #'   Its exact candidate IDs restore readable aliases in reconciled output.
 #'   Custom hierarchy requires complete candidate coverage, retains finite base
-#'   predictions without clipping and propagates errors instead of fallback.
+#'   predictions without large-value capping and propagates errors instead of
+#'   fallback. Like other runs, it floors near-zero predictions when negative
+#'   forecasts are disallowed.
+#'
+#' @details Spark runs read the forecast files as the typed Arrow dataset the
+#'   Spark workers use, with [hierarchy_forecast_schema()], instead of a Spark
+#'   table. CSV `"NA"` values therefore stay missing, and Parquet files that
+#'   store `Hyperparameter_ID` as numbers and as text can be read together.
+#'   Path-based Spark runs list the forecast files once and pass that list to
+#'   every Spark task. The dataset stays lazy during preflight: one distinct
+#'   model/node index, or the custom coverage summary, serves the enrollment
+#'   guard, the model list and the best-model check, so forecast rows are not
+#'   collected or rescanned per check. Reconciled output is written to the
+#'   existing forecast artifact path.
 #'
 #' @return hierarchy structure
 #' @noRd
@@ -569,13 +694,10 @@ reconcile_hierarchical_data <- function(run_info,
   }
 
   # get unreconciled forecast data
-  if (is.null(parallel_processing)) {
-    return_type <- "df"
-  } else if (parallel_processing == "spark") {
-    return_type <- "sdf"
-  } else {
-    return_type <- "df"
-  }
+  # Spark runs read the typed Arrow dataset the Spark workers reconcile. Spark's
+  # own readers infer CSV "NA" values as text and cannot combine Parquet files
+  # that store Hyperparameter_ID as both numbers and text.
+  spark_run <- identical(parallel_processing, "spark")
 
   if (condensed) {
     fcst_path <- paste0(
@@ -589,33 +711,51 @@ reconcile_hierarchical_data <- function(run_info,
     )
   }
 
-  unreconciled_tbl <- if (condensed && is.null(run_info$storage_object) &&
-    identical(return_type, "df") && run_info$data_output %in% c("csv", "parquet", "rds")) {
+  # Path-based Spark runs discover forecast files once and share the list with
+  # every task. Provider-backed runs download per task because driver temp files
+  # are not visible to Spark workers.
+  forecast_files <- if (spark_run && is.null(run_info$storage_object) && !is.null(run_info$path)) {
+    if (condensed) condensed_files else list_files(NULL, fs::path(run_info$path, fcst_path))
+  }
+
+  unreconciled_tbl <- if (spark_run) {
+    read_file(run_info,
+      path = fcst_path, file_list = forecast_files, return_type = "arrow",
+      schema = hierarchy_forecast_schema()
+    )
+  } else if (condensed && is.null(run_info$storage_object) &&
+    run_info$data_output %in% c("csv", "parquet", "rds")) {
     read_local_artifacts(run_info, condensed_files)
   } else read_file(run_info,
     path = fcst_path,
-    return_type = return_type
+    return_type = "df"
   )
   unreconciled_tbl <- unreconciled_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
-  if (is.null(custom_run) && any(grepl("^custom-[a-f0-9]{64}--", unreconciled_tbl$Model_ID))) {
+  # One small model/node index serves the enrollment guard, the model list and
+  # the best-model check, so lazy forecasts are not rescanned for each.
+  forecast_index <- if (is.null(custom_run)) {
+    unreconciled_tbl %>%
+      dplyr::select(dplyr::any_of(c("Model_ID", "Model_Name", "Combo", "Best_Model"))) %>%
+      dplyr::distinct() %>%
+      dplyr::collect()
+  } else {
+    custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
+  }
+  if (is.null(custom_run) && any(grepl("^custom-[a-f0-9]{64}--", forecast_index$Model_ID))) {
     stop("Custom hierarchy requires validated enrollment before reconciliation.", call. = FALSE)
   }
-  if (!is.null(custom_run)) custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
 
   # get models to reconcile down to lowest level
-  model_list <- unreconciled_tbl %>%
+  model_list <- forecast_index %>%
     dplyr::filter(!is.na(Model_Name) & Model_Name != "NA") %>%
-    dplyr::select(Model_ID) %>%
-    dplyr::distinct() %>%
-    dplyr::collect() %>%
-    dplyr::distinct() %>%
     dplyr::pull(Model_ID) %>%
+    unique() %>%
     c("Best-Model") %>%
     suppressWarnings()
 
-  validate_best_model(unreconciled_tbl, context = "reconcile_hierarchical_data")
+  validate_best_model(forecast_index, context = "reconcile_hierarchical_data")
 
   if (is.null(parallel_processing) || parallel_processing == "local_machine") {
     hist_tbl <- read_file(run_info,
@@ -860,30 +1000,11 @@ reconcile_hierarchical_data <- function(run_info,
             ) %>%
               dplyr::select(Combo, Date, Target)
 
-            schema <- arrow::schema(
-              arrow::field("Combo_ID", arrow::string()),
-              arrow::field("Model_ID", arrow::string()),
-              arrow::field("Model_Name", arrow::string()),
-              arrow::field("Model_Type", arrow::string()),
-              arrow::field("Recipe_ID", arrow::string()),
-              arrow::field("Train_Test_ID", arrow::float64()),
-              arrow::field("Hyperparameter_ID", arrow::float64()),
-              arrow::field("Best_Model", arrow::string()),
-              arrow::field("Combo", arrow::string()),
-              arrow::field("Horizon", arrow::float64()),
-              arrow::field("Date", arrow::date32()),
-              arrow::field("Target", arrow::float64()),
-              arrow::field("Forecast", arrow::float64()),
-              arrow::field("lo_95", arrow::float64()),
-              arrow::field("lo_80", arrow::float64()),
-              arrow::field("hi_80", arrow::float64()),
-              arrow::field("hi_95", arrow::float64())
-            )
-
             unreconciled_tbl <- read_file(run_info,
               path = fcst_path,
+              file_list = forecast_files,
               return_type = "arrow",
-              schema = schema
+              schema = hierarchy_forecast_schema()
             )
 
             if (model == "Best-Model") {
@@ -982,6 +1103,7 @@ reconcile_hierarchical_data <- function(run_info,
             }
           },
           error = function(e) {
+            if (!is.null(custom_run)) stop(e)
             if (inherits(e, "finnts_forecast_selection_rejected")) {
               if (model == "Best-Model") stop(e)
               return(NULL)
@@ -1038,6 +1160,13 @@ reconcile_hierarchical_data <- function(run_info,
           ) %>%
           convert_weekly_to_daily(date_type, weekly_to_daily) %>%
           suppressWarnings()
+
+        if (!is.null(custom_run)) {
+          candidates <- custom_run_candidates(custom_run, TRUE, FALSE)
+          positions <- match(reconciled_tbl$Model_ID, candidates$Model_ID)
+          known <- !is.na(positions)
+          reconciled_tbl$Model_Name[known] <- candidates$Model_Name[positions[known]]
+        }
 
         write_data(
           x = reconciled_tbl, combo = model, run_info = run_info,

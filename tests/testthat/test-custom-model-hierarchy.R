@@ -211,25 +211,68 @@ hierarchy_reconciliation_fixture <- function(approach = "standard_hierarchy", da
   fixture
 }
 
-# Replace artifact transport only while running real hts reconciliation. Writes
-# are captured in a caller-visible environment, including on error; no files,
-# models or forecasts are generated outside this small deterministic fixture.
-hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv())) {
+# Write forecast rows to a temporary CSV or Parquet artifact in `schema` column
+# order, padding absent schema columns with NA, and return the file path. CSV
+# uses the package writer, so missing values are text "NA". The directory is
+# removed when `env` exits.
+hierarchy_forecast_file <- function(forecasts, schema, format = "csv", env = parent.frame()) {
+  rows <- as.data.frame(forecasts)
+  for (column in names(schema)) {
+    type <- schema[[column]]$type$ToString()
+    value <- if (column %in% names(rows)) rows[[column]] else rep(NA, nrow(rows))
+    rows[[column]] <- if (type == "string") {
+      as.character(value)
+    } else if (startsWith(type, "date32")) {
+      as.Date(value)
+    } else {
+      as.numeric(value)
+    }
+  }
+  rows <- rows[, names(schema), drop = FALSE]
+  path <- file.path(withr::local_tempdir(.local_envir = env), paste0("forecasts.", format))
+  if (format == "csv") {
+    vroom::vroom_write(rows, path, delim = ",", progress = FALSE)
+  } else {
+    arrow::write_parquet(arrow::arrow_table(rows, schema = schema), path)
+  }
+  path
+}
+
+# Run reconciliation using fixture artifacts, optionally overriding forecasts,
+# the nonnegative setting, and simulating the Spark route. Spark routes read the
+# forecasts through the package's typed Arrow reader on a `lazy_format` forecast
+# file, and any Spark-reader request fails. Return captured writes as a list;
+# `written` remains available on errors. Temporary files are removed on exit.
+hierarchy_reconcile <- function(fixture, forecasts = fixture$forecasts, written = new.env(parent = emptyenv()),
+                                parallel_processing = NULL, lazy = FALSE, negative_forecast = TRUE,
+                                lazy_format = "csv") {
+  original_read_file <- read_file
+  files <- new.env(parent = emptyenv())
+  harness_env <- environment()
   testthat::local_mocked_bindings(
     par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
-    list_files = function(...) character(), read_file = function(run_info, path, return_type = "df", ...) {
+    list_files = function(...) character(), read_file = function(run_info, path, return_type = "df", schema = NULL, ...) {
       if (return_type == "object")
         return(fixture$metadata)
       if (grepl("train_test_split", path, fixed = TRUE))
         return(fixture$splits)
       if (grepl("hts_data", path, fixed = TRUE))
         return(fixture$history)
+      if (return_type == "sdf")
+        stop("Spark hierarchy reconciliation must not read forecasts with Spark readers.", call. = FALSE)
+      if (lazy && return_type == "arrow") {
+        if (is.null(files$typed)) {
+          files$typed <- hierarchy_forecast_file(forecasts, schema, lazy_format, harness_env)
+        }
+        return(original_read_file(run_info, file_list = files$typed, return_type = "arrow", schema = schema))
+      }
       forecasts
-    }, write_data = function(x, combo, ...) {
-      written[[combo]] <- x
-    }, .package = "finnts"
+    },
+    write_data = function(x, combo, ...) written[[combo]] <- x,
+    .package = "finnts"
   )
-  reconcile_hierarchical_data(fixture$project_info, NULL, fixture$custom$manifest$context$forecast_approach, TRUE, FALSE,
+  reconcile_hierarchical_data(fixture$project_info, parallel_processing, fixture$custom$manifest$context$forecast_approach,
+    negative_forecast, FALSE,
     fixture$project_info$date_type, 1,
     custom_run = fixture$custom
   )
@@ -259,6 +302,137 @@ test_that("custom reconciliation rejects incomplete candidates before publicatio
   local_mocked_bindings(combinef = function(...) stop("Deliberate reconciliation failure"), .package = "hts")
   expect_error(hierarchy_reconcile(fixture, written = written), "Deliberate reconciliation failure")
   expect_length(as.list(written), 0L)
+})
+
+test_that("custom Spark reconciliation validates typed coverage before publication", {
+  skip_if_not_installed("arrow")
+  fixture <- hierarchy_reconciliation_fixture()
+  local_result <- hierarchy_reconcile(fixture)
+  for (format in c("csv", "parquet")) {
+    lazy_result <- hierarchy_reconcile(fixture, parallel_processing = "spark", lazy = TRUE, lazy_format = format)
+    expect_setequal(names(lazy_result), names(local_result))
+    for (model in names(local_result)) {
+      expect_equal(lazy_result[[model]], local_result[[model]], tolerance = 1e-8, info = paste(format, model))
+    }
+  }
+
+  spark_rows <- dplyr::mutate(fixture$forecasts, Target = ifelse(is.na(Target), "NA", as.character(Target)))
+  expect_error(
+    custom_reconciliation_coverage(arrow::arrow_table(spark_rows), fixture$metadata, fixture$splits, fixture$custom),
+    "complete finite candidate coverage"
+  )
+
+  for (defect in c("missing", "duplicate", "nonfinite", "foreign", "out_of_calendar", "missing_date")) {
+    forecasts <- fixture$forecasts
+    index <- which(forecasts$Model_Name == "node_rule" & forecasts$Train_Test_ID != 1)[[1]]
+    if (defect == "missing")
+      forecasts <- forecasts[-index, ]
+    if (defect == "duplicate")
+      forecasts <- rbind(forecasts, forecasts[index, ])
+    if (defect == "nonfinite")
+      forecasts$Forecast[index] <- Inf
+    if (defect == "foreign")
+      forecasts$Model_ID[index] <- "foreign--local--R1"
+    if (defect == "out_of_calendar")
+      forecasts$Date[index] <- as.Date("1900-01-01")
+    if (defect == "missing_date")
+      forecasts$Date[index] <- as.Date(NA)
+    written <- new.env(parent = emptyenv())
+    expect_error(
+      hierarchy_reconcile(fixture, forecasts, written, parallel_processing = "spark", lazy = TRUE),
+      "coverage|identity|pool",
+      info = defect
+    )
+    expect_length(as.list(written), 0L)
+  }
+})
+
+test_that("custom Spark coverage scans forecasts once regardless of split count", {
+  skip_if_not_installed("arrow")
+  fixture <- hierarchy_reconciliation_fixture()
+  original_collect <- dplyr::collect
+  scans <- 0L
+  testthat::local_mocked_bindings(
+    collect = function(x, ...) {
+      if (!is.data.frame(x)) scans <<- scans + 1L
+      original_collect(x, ...)
+    },
+    .package = "dplyr"
+  )
+  test_env <- environment()
+  typed <- function(forecasts) {
+    read_file(list(),
+      file_list = hierarchy_forecast_file(forecasts, hierarchy_forecast_schema(), "parquet", test_env),
+      return_type = "arrow", schema = hierarchy_forecast_schema()
+    )
+  }
+  local_index <- custom_reconciliation_coverage(fixture$forecasts, fixture$metadata, fixture$splits, fixture$custom)
+  scans <- 0L
+  lazy_index <- custom_reconciliation_coverage(typed(fixture$forecasts), fixture$metadata, fixture$splits, fixture$custom)
+  expect_identical(scans, 1L)
+  expect_gt(length(unique(fixture$splits$Train_Test_ID)), 1L)
+  sort_index <- function(x) dplyr::arrange(as.data.frame(x), Model_ID, Combo)
+  expect_equal(sort_index(lazy_index), sort_index(local_index))
+  expect_setequal(names(lazy_index), c("Model_ID", "Model_Name", "Combo", "Best_Model"))
+  expect_true(all(unique(fixture$forecasts$Combo) %in% lazy_index$Combo[lazy_index$Best_Model == "Yes"]))
+
+  # Best rows split across models for one node need the exact best-row rescan.
+  forecasts <- fixture$forecasts
+  combo <- forecasts$Combo[[1]]
+  best_id <- forecasts$Model_ID[forecasts$Best_Model == "Yes" & forecasts$Combo == combo][[1]]
+  other_id <- setdiff(unique(forecasts$Model_ID[forecasts$Combo == combo]), best_id)[[1]]
+  dates <- sort(unique(forecasts$Date[forecasts$Combo == combo]))
+  moved <- forecasts$Combo == combo & forecasts$Date %in% dates[seq(1, length(dates), by = 2)]
+  forecasts$Best_Model[moved & forecasts$Model_ID == best_id] <- "No"
+  forecasts$Best_Model[moved & forecasts$Model_ID == other_id] <- "Yes"
+  scans <- 0L
+  expect_no_error(custom_reconciliation_coverage(typed(forecasts), fixture$metadata, fixture$splits, fixture$custom))
+  expect_identical(scans, 2L)
+  expect_no_error(custom_reconciliation_coverage(forecasts, fixture$metadata, fixture$splits, fixture$custom))
+
+  forecasts$Best_Model[moved & forecasts$Model_ID == best_id] <- "Yes"
+  expect_error(
+    custom_reconciliation_coverage(typed(forecasts), fixture$metadata, fixture$splits, fixture$custom),
+    "coverage"
+  )
+  expect_error(
+    custom_reconciliation_coverage(forecasts, fixture$metadata, fixture$splits, fixture$custom),
+    "coverage"
+  )
+})
+
+test_that("custom reconciliation floors near-zero forecasts on local and Spark routes", {
+  skip_if_not_installed("arrow")
+  fixture <- hierarchy_reconciliation_fixture()
+  forecasts <- fixture$forecasts
+  index <- which(forecasts$Model_Name == "node_rule")[1:2]
+  forecasts$Forecast[index] <- c(0.0005, -0.0005)
+  original_combinef <- hts::combinef
+
+  # Reconcile through one route and return its writes with combinef inputs.
+  reconcile_route <- function(...) {
+    inputs <- list()
+    local_mocked_bindings(
+      combinef = function(fcasts, ...) {
+        inputs[[length(inputs) + 1L]] <<- as.numeric(fcasts)
+        original_combinef(fcasts, ...)
+      },
+      .package = "hts"
+    )
+    result <- hierarchy_reconcile(fixture, forecasts, negative_forecast = FALSE, ...)
+    list(result = result, inputs = unlist(inputs))
+  }
+
+  local_route <- reconcile_route()
+  lazy_route <- reconcile_route(parallel_processing = "spark", lazy = TRUE)
+  for (route in list(local_route, lazy_route)) {
+    expect_false(any(route$inputs > -0.001 & route$inputs < 0.001))
+    expect_true(any(route$inputs == 0.001))
+  }
+  expect_setequal(names(lazy_route$result), names(local_route$result))
+  for (model in names(local_route$result)) {
+    expect_equal(lazy_route$result[[model]], local_route$result[[model]], tolerance = 1e-8, info = model)
+  }
 })
 
 test_that("custom reconciliation needs each built-in once and complete present recipe variants", {

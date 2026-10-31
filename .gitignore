@@ -49,3 +49,4 @@ docs
 .codex
 CLAUDE.local.md
 .claude/settings.local.json
+.vscode/
