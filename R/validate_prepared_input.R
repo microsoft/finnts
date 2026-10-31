@@ -4,7 +4,7 @@
 #' reports how preparation will treat the data, without starting a run or
 #' writing anything to disk.
 #'
-#' Input rules `R1`-`R8`, `R10` and `R11` reuse the checks in [prep_data()],
+#' Input rules `R1`-`R8` and `R10`-`R12` reuse the checks in [prep_data()],
 #' so a failure here carries the same message `prep_data()` would raise. `R9`
 #' is stricter than `prep_data()`: it also checks that `date_type` matches the
 #' spacing of the dates. Preparation checks
@@ -26,6 +26,10 @@
 #' * `R9` `date_type` is valid and is not finer or coarser than the data.
 #' * `R10` `fiscal_year_start` is a number from 1 to 12.
 #' * `R11` Spark tables run with Spark parallel processing.
+#' * `R12` standard and grouped hierarchies can name every series: no grouped
+#'   combo column mixes missing values with the text `"NA"`, no two series map
+#'   to the same name after name cleanup, and at least two series remain after
+#'   `combo_cleanup_date`. Always passes for `bottoms_up`.
 #' * `P1` history end date and the rows treated as future periods.
 #' * `P2` external regressors with future values and their coverage.
 #' * `P3` missing periods that preparation pads.
@@ -42,8 +46,9 @@
 #'
 #' @inheritParams prep_data
 #' @param forecast_approach Forecast approach, as passed to [prep_data()].
-#'   It is validated but does not change the checks: every approach expects
-#'   bottom-level series, so totals mixed with their parts fail `P7` for all.
+#'   It only changes `R12`, which builds the hierarchy's series names for
+#'   standard and grouped hierarchies. Every approach expects bottom-level
+#'   series, so totals mixed with their parts fail `P7` for all.
 #' @param back_test_scenarios Number of back-test scenarios, as passed to
 #'   [prep_models()]. Default of NULL chooses them from the history length.
 #' @param back_test_spacing Periods between back-test scenarios, as passed to
@@ -163,8 +168,14 @@ validate_prepared_input <- function(input_data,
   run_rule("R9", c("R1", "R3"), function() validation_check_frequency(data, combo_variables, date_type))
   run_rule("R8", c("R3", "R9"), function() check_input_date_alignment(data, date_type))
   run_rule("R10", character(), function() check_input_fiscal_year_start(fiscal_year_start))
+  run_rule("R12", c("R1", "R3", "R4", "R5", "R6"), function() {
+    validation_check_hierarchy(
+      data, combo_variables, target_variable, forecast_approach,
+      hist_start_date, hist_end_date, combo_cleanup_date
+    )
+  })
 
-  input_rules <- paste0("R", 1:11)
+  input_rules <- paste0("R", 1:12)
   bounds <- NULL
   if (all(vapply(input_rules, function(r) identical(state$checks[[r]]$Status, "pass"), logical(1)))) {
     data$Combo <- do.call(paste, c(unname(as.list(data[combo_variables])), sep = "--"))
@@ -253,6 +264,7 @@ validation_check_row <- function(rule, status, message) {
     R9 = "date_type is valid and matches the data frequency",
     R10 = "fiscal_year_start is a number from 1 to 12",
     R11 = "Spark tables use Spark parallel processing",
+    R12 = "Hierarchy series labels are unambiguous",
     P1 = "History end date and future rows",
     P2 = "Future external regressor values",
     P3 = "Missing periods padded during preparation",
@@ -268,6 +280,62 @@ validation_check_row <- function(rule, status, message) {
     Status = status,
     Message = message
   )
+}
+
+#' Check that hierarchy series labels can be prepared
+#'
+#' For standard and grouped hierarchies, builds the hierarchy's series names
+#' through `hierarchy_series_names()`, the same helpers `prep_data()` uses, so a
+#' failure carries the `prep_data()` message. It fails when a grouped combo
+#' column mixes missing values and literal `"NA"` text, when two series map to
+#' the same name after name cleanup, or when fewer than two series remain.
+#' Series that `combo_cleanup_date` removes are excluded, as in preparation;
+#' when the history bounds cannot be resolved, every series is checked and the
+#' bounds problem is left to `P1`. Bottoms-up forecasts pass.
+#'
+#' @param data normalized input data
+#' @param combo_variables combo variable names
+#' @param target_variable target column name
+#' @param forecast_approach forecast approach passed to `prep_data()`
+#' @param hist_start_date,hist_end_date history bounds passed to `prep_data()`
+#' @param combo_cleanup_date cleanup date passed to `prep_data()`, or NULL
+#'
+#' @return NULL when the hierarchy builds, or a list with `status` and
+#'   `message` for bottoms-up forecasts. Errors become a failed check in
+#'   `validate_prepared_input()`. No I/O.
+#' @noRd
+validation_check_hierarchy <- function(data,
+                                       combo_variables,
+                                       target_variable,
+                                       forecast_approach,
+                                       hist_start_date,
+                                       hist_end_date,
+                                       combo_cleanup_date) {
+  if (forecast_approach == "bottoms_up") {
+    return(list(status = "pass", message = "Not applicable to bottoms_up forecasts."))
+  }
+
+  data$Combo <- do.call(paste, c(unname(as.list(data[combo_variables])), sep = "--"))
+
+  if (!is.null(combo_cleanup_date)) {
+    data$Target <- data[[target_variable]]
+    bounds <- tryCatch(
+      resolve_hist_date_bounds(data, hist_start_date, hist_end_date),
+      error = function(e) NULL
+    )
+    if (!is.null(bounds)) {
+      kept <- unique(combo_cleanup_fn(
+        data[, c("Combo", "Date", "Target")],
+        combo_cleanup_date,
+        bounds$hist_end_date
+      )$Combo)
+      # P6 reports a cleanup that removes every series.
+      if (length(kept) > 0) data <- data[data$Combo %in% kept, , drop = FALSE]
+    }
+  }
+
+  hierarchy_series_names(data, combo_variables, forecast_approach)
+  NULL
 }
 
 #' Count whole periods between consecutive dates

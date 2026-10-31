@@ -26,33 +26,8 @@ prep_hierarchical_data <- function(input_data,
 
   # initial data prep
   input_data_adj <- input_data %>%
-    adjust_df()
-
-  # If standard hierarchy, arrange data by hierarchy order (top to bottom)
-  if (forecast_approach == "standard_hierarchy") {
-    combo_tbl_temp <- input_data_adj %>%
-      dplyr::select(tidyselect::all_of(combo_variables)) %>%
-      dplyr::distinct()
-
-    hierarchy_length_tbl <- tibble::tibble()
-
-    for (variable in combo_variables) {
-      hierarchy_length_tbl <- rbind(
-        hierarchy_length_tbl,
-        tibble::tibble(
-          Variable = variable,
-          Count = length(unique(combo_tbl_temp[[variable]]))
-        )
-      )
-    }
-
-    hierarchy_order <- hierarchy_length_tbl %>%
-      dplyr::arrange(Count) %>%
-      dplyr::pull(Variable)
-
-    input_data_adj <- input_data_adj %>%
-      dplyr::arrange(dplyr::across(tidyselect::all_of(hierarchy_order)))
-  }
+    adjust_df() %>%
+    arrange_hierarchy_input(combo_variables, forecast_approach)
 
   combo_tbl <- input_data_adj %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
@@ -179,6 +154,85 @@ prep_hierarchical_data <- function(input_data,
     dplyr::select(Combo, Date, Target, tidyselect::any_of(external_regressors))
 
   return(return_data)
+}
+
+#' Order input rows for hierarchy construction
+#'
+#' Standard hierarchies need bottom series ordered top to bottom: rows are
+#' arranged by combo variables in increasing distinct-count order, so the
+#' bottom columns match the node counts from `get_standard_nodes()`. Grouped
+#' hierarchies and other approaches keep the input row order.
+#'
+#' @param input_data local data frame containing the combo variables
+#' @param combo_variables combo variables
+#' @param forecast_approach forecast approach
+#'
+#' @return `input_data`, arranged for standard hierarchies. No I/O.
+#' @noRd
+arrange_hierarchy_input <- function(input_data,
+                                    combo_variables,
+                                    forecast_approach) {
+  if (forecast_approach != "standard_hierarchy") {
+    return(input_data)
+  }
+
+  combo_tbl_temp <- input_data %>%
+    dplyr::select(tidyselect::all_of(combo_variables)) %>%
+    dplyr::distinct()
+
+  hierarchy_length_tbl <- tibble::tibble()
+
+  for (variable in combo_variables) {
+    hierarchy_length_tbl <- rbind(
+      hierarchy_length_tbl,
+      tibble::tibble(
+        Variable = variable,
+        Count = length(unique(combo_tbl_temp[[variable]]))
+      )
+    )
+  }
+
+  hierarchy_order <- hierarchy_length_tbl %>%
+    dplyr::arrange(Count) %>%
+    dplyr::pull(Variable)
+
+  input_data %>%
+    dplyr::arrange(dplyr::across(tidyselect::all_of(hierarchy_order)))
+}
+
+#' Build the series names a hierarchy would use, without data or I/O
+#'
+#' Mirrors `prep_hierarchical_data()` on the series structure only: rows are
+#' ordered with `arrange_hierarchy_input()`, nodes come from
+#' `pick_right_hierarchy()`, and names from `hts_node_names()` on an all-zero
+#' two-period panel. Used by `validate_prepared_input()` so validation raises the
+#' same errors as preparation, such as a grouped column mixing missing values and
+#' `"NA"` text, colliding series names, or fewer than two series.
+#'
+#' @param input_data local data frame with a `Combo` column and the combo
+#'   variables, one or more rows per bottom series
+#' @param combo_variables combo variables
+#' @param forecast_approach `"standard_hierarchy"` or `"grouped_hierarchy"`
+#'
+#' @return character vector of hierarchy series names; errors propagate from
+#'   the shared helpers. No I/O.
+#' @noRd
+hierarchy_series_names <- function(input_data,
+                                   combo_variables,
+                                   forecast_approach) {
+  input_data <- arrange_hierarchy_input(input_data, combo_variables, forecast_approach)
+
+  hts_nodes <- input_data %>%
+    dplyr::select(tidyselect::all_of(combo_variables)) %>%
+    dplyr::distinct() %>%
+    pick_right_hierarchy(combo_variables, forecast_approach)
+
+  bottom_combos <- unique(input_data$Combo)
+  bottom_level <- matrix(0, nrow = 2, ncol = length(bottom_combos),
+    dimnames = list(NULL, bottom_combos))
+  hierarchical_object <- get_hts(stats::ts(bottom_level), hts_nodes, forecast_approach)
+
+  hts_node_names(colnames(hts::allts(hierarchical_object)))
 }
 
 #' Return correct data frame format

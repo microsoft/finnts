@@ -623,8 +623,8 @@ with(tx, {
     errors_with(run(tx_tidy, tx_spec(tx_tidy_steps, settings = '{"target_variable":"Value"}')), "needs the run settings"))
 
   # Negative fixtures: gate rules.
-  rules <- c(paste0("R", 1:11), paste0("P", 1:8))
-  check("transform: every finnts rule failure (R1-R11, P1-P8) fails the gate", all(vapply(rules, function(rule) {
+  rules <- c(paste0("R", 1:12), paste0("P", 1:8))
+  check("transform: every finnts rule failure (R1-R12, P1-P8) fails the gate", all(vapply(rules, function(rule) {
     g <- run(tx_tidy, tx_spec(tx_tidy_steps, settings = tx_region), tx_fail_validator(rule))
     !isTRUE(g$gate$passed) && is.null(g$token) && tx_status(g)[[rule]] == "fail" && grepl("**Overall: FAILED.**", g$preview_markdown, fixed = TRUE)
   }, logical(1))))

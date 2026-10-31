@@ -1438,7 +1438,7 @@ finn_tx_close <- function(a, b, tol) {
 #' Verification gate for a prepared table
 #'
 #' Reads the table back the way the run will, then runs finnts'
-#' `validate_prepared_input()` with the real run settings (rules R1-R11 and
+#' `validate_prepared_input()` with the real run settings (rules R1-R12 and
 #' P1-P8) plus the checks that need the source: every dropped row and column
 #' explained, every target value traced to the source cells it came from
 #' (each used at most once), totals that were dropped reconcile with the rows
