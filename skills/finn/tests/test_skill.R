@@ -1383,9 +1383,16 @@ with(launch, {
     "finnts 0.5.0 -> 0.6.0"
   ))
   finn_update_state(rp, finnts_version = "0.0.1")
-  dv <- launch_decide(paths, "standard", cfg, list(), list())
-  check("version change on resume needs confirmation", identical(dv$action, "stop") && length(dv$result$data$version_changes) == 1)
-  check("confirmed version change resumes", identical(launch_decide(paths, "standard", cfg, list(), list(confirm = "true"))$action, "resume"))
+  # Pin the current finnts version so the comparison does not depend on finnts
+  # being installed; finn_versions() reports no version when it is absent.
+  local({
+    original_versions <- common$finn_versions
+    on.exit(common$finn_versions <- original_versions)
+    common$finn_versions <- function() list(finnts_version = "99.0.0", r_version = original_versions()$r_version)
+    dv <- launch_decide(paths, "standard", cfg, list(), list())
+    check("version change on resume needs confirmation", identical(dv$action, "stop") && length(dv$result$data$version_changes) == 1)
+    check("confirmed version change resumes", identical(launch_decide(paths, "standard", cfg, list(), list(confirm = "true"))$action, "resume"))
+  })
   finn_update_state(rp, finnts_version = finn_versions()$finnts_version %||% "0.0.1", n_series = 4L)
 
   la <- list(run_id = rp$id, data_md5 = "old")
@@ -1606,6 +1613,9 @@ with(launch, {
   rp2 <- finn_run_paths(paths, "std-20240102-000000")
   finn_update_state(rp2, run_id = rp2$id, mode = "standard", status = "running", created_at = finn_now(), pid = 999999L, host = Sys.info()[["nodename"]])
   if (requireNamespace("ps", quietly = TRUE)) {
+    check("exited pid is reported gone and own pid alive on every OS",
+      identical(finn_pid_alive(2147483647L), FALSE) && identical(finn_pid_alive(999999L), FALSE) &&
+        isTRUE(finn_pid_alive(Sys.getpid())))
     check("dead worker is reported as interrupted", identical(finn_effective_status(finn_read_state(rp2)), "interrupted"))
   }
   finn_update_state(rp2, status = "interrupted")
@@ -2131,7 +2141,14 @@ with(common, {
   check("remote versions resolve one commit", identical(rv$sha, "abc123") && identical(rv$skill_version, "9.0.0") && identical(rv$finnts_version, "99.0.0"))
 
   calls <- 0L
-  u1 <- finn_update_check(force = TRUE, fetch = remote_fetch)
+  # Pin the installed finnts version so this does not depend on finnts being
+  # installed; finn_installed_finnts() reports no version when it is absent.
+  u1 <- local({
+    original_installed <- common$finn_installed_finnts
+    on.exit(common$finn_installed_finnts <- original_installed)
+    common$finn_installed_finnts <- function() list(version = "0.7.0", source = "github", sha = NULL, ref = NULL)
+    finn_update_check(force = TRUE, fetch = remote_fetch)
+  })
   check("update check finds newer skill", isTRUE(u1$update_available) && !isTRUE(u1$from_cache) && is.null(u1$error))
   check("update check finds newer finnts", isTRUE(u1$finnts_update_available))
   n <- calls
