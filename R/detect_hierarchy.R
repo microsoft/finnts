@@ -18,7 +18,8 @@
 #' @details Character and factor combo boundaries are trimmed using the same
 #'   normalization as [prep_data()]. The caller's data is unchanged. Missing
 #'   combo values form an `"NA"` label, as in [prep_data()] combo names; a
-#'   column with both a missing value and the literal text `"NA"` is ambiguous.
+#'   column with both a missing value and the literal text `"NA"` (after
+#'   trimming) is ambiguous and produces an error.
 #'   Blank, nonfinite, or unsupported combo labels, ambiguous `"--"`-joined
 #'   combo identities, invalid cleanup inputs, and an empty retained population
 #'   produce errors.
@@ -94,6 +95,9 @@ detect_hierarchy <- function(input_data,
   combo_ids <- do.call(paste, c(combos, sep = "--"))
   if (anyDuplicated(combo_ids)) {
     stop("Different combo tuples produce the same '--'-joined engine identity.", call. = FALSE)
+  }
+  for (variable in combo_variables) {
+    check_mixed_missing_labels(combos[[variable]], variable)
   }
 
   if (!is.null(combo_cleanup_date)) {

@@ -15,6 +15,7 @@
   - Optionally cleans inactive series compatibly with preprocessing.
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
   - Missing combo values form an `"NA"` label, as in `prep_data()` combo names, instead of raising an error.
+  - A column with both missing values and the literal text `"NA"` raises an error instead of merging them.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
@@ -27,6 +28,7 @@
 
 - Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
+  - A combo column with both missing values and the literal text `"NA"` stops with an error rather than merging them into one group.
   - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
   - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
 - Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.

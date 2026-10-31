@@ -167,6 +167,21 @@ test_that("missing combo labels form the engine's NA label", {
   expect_error(detect_hierarchy(data.frame(A = c(1, -Inf, NA)), "A"), "nonfinite")
 })
 
+test_that("a column mixing missing values and literal NA text is rejected", {
+  mixed <- data.frame(A = c(NA, "NA", "North", "North"), B = c("X", "Y", "X", "Y"))
+  expect_error(detect_hierarchy(mixed, c("A", "B")),
+    "Combo column 'A' contains both missing values and the text \"NA\"", fixed = TRUE)
+  trimmed <- data.frame(A = c(NA, " NA ", "North", "North"), B = c("X", "Y", "X", "Y"))
+  expect_error(detect_hierarchy(trimmed, c("A", "B")), "Combo column 'A'", fixed = TRUE)
+  factor_mixed <- data.frame(A = factor(c(NA, "NA", "North", "North")), B = c("X", "Y", "X", "Y"))
+  expect_error(detect_hierarchy(factor_mixed, c("A", "B")), "Combo column 'A'", fixed = TRUE)
+  # Either form alone remains a valid label.
+  expect_identical(detect_hierarchy(transform(mixed, A = c("NA", "NA", "North", "North")),
+    c("A", "B"))$forecast_approach, "grouped_hierarchy")
+  expect_identical(detect_hierarchy(transform(mixed, A = c(NA, NA, "North", "North")),
+    c("A", "B"))$forecast_approach, "grouped_hierarchy")
+})
+
 test_that("seeded structures agree with exhaustive nesting oracle", {
   withr::local_seed(69431)
   orders <- list(c(1, 2, 3), c(1, 3, 2), c(2, 1, 3), c(2, 3, 1), c(3, 1, 2), c(3, 2, 1))

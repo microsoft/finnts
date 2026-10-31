@@ -243,6 +243,33 @@ pick_right_hierarchy <- function(input_data,
   }
 }
 
+#' Reject a combo column that mixes missing values and literal "NA" text
+#'
+#' Combo names write a missing value as the text `"NA"` (`tidyr::unite()`), so
+#' a column holding both a missing value and the literal text `"NA"` cannot be
+#' told apart once labelled. Grouped hierarchies and `detect_hierarchy()` call
+#' this before treating missing values as the `"NA"` label, so the two are never
+#' silently merged into one group.
+#'
+#' @param values combo column values, already whitespace-trimmed when
+#'   character-like; factors are compared by their labels
+#' @param variable combo column name used in the error message
+#'
+#' @return `NULL` invisibly; stops with an actionable error when the column
+#'   contains both forms. No I/O.
+#' @noRd
+check_mixed_missing_labels <- function(values, variable) {
+  if (anyNA(values) && any(as.character(values) == "NA", na.rm = TRUE)) {
+    stop(
+      "Combo column '", variable, "' contains both missing values and the text \"NA\", ",
+      "which finnts names identically. Replace the missing values or the \"NA\" text ",
+      "with a distinct label.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 #' Grouped hierarchy structure
 #'
 #' Builds the group matrix passed to [hts::gts()]: one row per combo variable
@@ -250,7 +277,9 @@ pick_right_hierarchy <- function(input_data,
 #' Missing combo values are stored as the text label `"NA"`, matching the
 #' `tidyr::unite()` combo names and the hts level names (for example
 #' `Leader_NA`); `hts::combinef()` cannot reconcile `NA` group labels. The
-#' matrix keeps its original type when no value is missing.
+#' matrix keeps its original type when no value is missing. A column holding
+#' both missing values and the literal text `"NA"` stops with an error rather
+#' than merging the two into one group.
 #'
 #' @param input_data distinct combo rows, one per bottom series
 #' @param combo_variables combo variables
@@ -264,6 +293,7 @@ get_grouped_nodes <- function(input_data,
 
   for (variable in combo_variables) {
     var <- input_data[[variable]]
+    check_mixed_missing_labels(var, variable)
 
     group_list <- rbind(group_list, var)
   }

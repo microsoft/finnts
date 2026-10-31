@@ -491,6 +491,36 @@ test_that("standard hierarchy structure is unchanged by missing combo values", {
   )
 })
 
+test_that("grouped hierarchy rejects a column mixing missing values and NA text", {
+  combos <- data.frame(Leader = c(NA, "NA", "North", "North"), Product = c("X", "Y", "X", "Y"),
+    stringsAsFactors = FALSE)
+  data <- merge(combos, data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))))
+  data$Target <- as.numeric(seq_len(nrow(data)))
+  data <- tidyr::unite(tibble::as_tibble(data), "Combo", Leader, Product, sep = "--", remove = FALSE)
+  # Series identities stay distinct, so only the group label is ambiguous.
+  expect_equal(dplyr::n_distinct(data$Combo), 4L)
+
+  writes <- 0L
+  testthat::local_mocked_bindings(write_data = function(...) {
+    writes <<- writes + 1L
+    invisible(NULL)
+  })
+  expect_error(
+    prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "grouped_hierarchy", 12),
+    "Combo column 'Leader' contains both missing values and the text \"NA\"", fixed = TRUE
+  )
+  expect_error(get_grouped_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
+  expect_identical(writes, 0L)
+
+  # Standard hierarchies keep the two values as separate parents.
+  standard <- prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+    c("Leader", "Product"), NULL, "standard_hierarchy", 12)
+  expect_false(anyDuplicated(standard[c("Combo", "Date")]) > 0)
+  expect_equal(standard$Target[standard$Combo == "Total" & standard$Date == as.Date("2020-01-01")],
+    sum(data$Target[data$Date == as.Date("2020-01-01")]))
+})
+
 test_that("prep_hierarchical_data works with more than 10 combo variables", {
   n_dates <- 3
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)
