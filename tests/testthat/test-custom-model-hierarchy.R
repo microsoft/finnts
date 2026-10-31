@@ -347,6 +347,60 @@ test_that("custom Spark reconciliation validates typed coverage before publicati
   }
 })
 
+test_that("custom Spark coverage scans forecasts once regardless of split count", {
+  skip_if_not_installed("arrow")
+  fixture <- hierarchy_reconciliation_fixture()
+  original_collect <- dplyr::collect
+  scans <- 0L
+  testthat::local_mocked_bindings(
+    collect = function(x, ...) {
+      if (!is.data.frame(x)) scans <<- scans + 1L
+      original_collect(x, ...)
+    },
+    .package = "dplyr"
+  )
+  test_env <- environment()
+  typed <- function(forecasts) {
+    read_file(list(),
+      file_list = hierarchy_forecast_file(forecasts, hierarchy_forecast_schema(), "parquet", test_env),
+      return_type = "arrow", schema = hierarchy_forecast_schema()
+    )
+  }
+  local_index <- custom_reconciliation_coverage(fixture$forecasts, fixture$metadata, fixture$splits, fixture$custom)
+  scans <- 0L
+  lazy_index <- custom_reconciliation_coverage(typed(fixture$forecasts), fixture$metadata, fixture$splits, fixture$custom)
+  expect_identical(scans, 1L)
+  expect_gt(length(unique(fixture$splits$Train_Test_ID)), 1L)
+  sort_index <- function(x) dplyr::arrange(as.data.frame(x), Model_ID, Combo)
+  expect_equal(sort_index(lazy_index), sort_index(local_index))
+  expect_setequal(names(lazy_index), c("Model_ID", "Model_Name", "Combo", "Best_Model"))
+  expect_true(all(unique(fixture$forecasts$Combo) %in% lazy_index$Combo[lazy_index$Best_Model == "Yes"]))
+
+  # Best rows split across models for one node need the exact best-row rescan.
+  forecasts <- fixture$forecasts
+  combo <- forecasts$Combo[[1]]
+  best_id <- forecasts$Model_ID[forecasts$Best_Model == "Yes" & forecasts$Combo == combo][[1]]
+  other_id <- setdiff(unique(forecasts$Model_ID[forecasts$Combo == combo]), best_id)[[1]]
+  dates <- sort(unique(forecasts$Date[forecasts$Combo == combo]))
+  moved <- forecasts$Combo == combo & forecasts$Date %in% dates[seq(1, length(dates), by = 2)]
+  forecasts$Best_Model[moved & forecasts$Model_ID == best_id] <- "No"
+  forecasts$Best_Model[moved & forecasts$Model_ID == other_id] <- "Yes"
+  scans <- 0L
+  expect_no_error(custom_reconciliation_coverage(typed(forecasts), fixture$metadata, fixture$splits, fixture$custom))
+  expect_identical(scans, 2L)
+  expect_no_error(custom_reconciliation_coverage(forecasts, fixture$metadata, fixture$splits, fixture$custom))
+
+  forecasts$Best_Model[moved & forecasts$Model_ID == best_id] <- "Yes"
+  expect_error(
+    custom_reconciliation_coverage(typed(forecasts), fixture$metadata, fixture$splits, fixture$custom),
+    "coverage"
+  )
+  expect_error(
+    custom_reconciliation_coverage(forecasts, fixture$metadata, fixture$splits, fixture$custom),
+    "coverage"
+  )
+})
+
 test_that("custom reconciliation floors near-zero forecasts on local and Spark routes", {
   skip_if_not_installed("arrow")
   fixture <- hierarchy_reconciliation_fixture()

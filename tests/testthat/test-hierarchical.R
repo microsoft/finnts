@@ -2133,26 +2133,42 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
   # Remote routes build an Arrow schema before the mocked table read.
   has_arrow <- requireNamespace("arrow", quietly = TRUE)
   routes <- c("local", if (has_arrow) c("remote", "spark-arrow"))
+  scans <- 0L
+  original_collect <- dplyr::collect
+  testthat::local_mocked_bindings(
+    collect = function(x, ...) {
+      if (!is.data.frame(x)) scans <<- scans + 1L
+      original_collect(x, ...)
+    },
+    .package = "dplyr"
+  )
   for (forecast_approach in c("standard_hierarchy", "grouped_hierarchy")) {
     for (route in routes) {
       fixture <- reconciliation_test_case(withr::local_tempdir(), forecast_approach, extreme = TRUE)
       calls <- list()
       listings <- 0L
       remote_reads <- character()
+      remote_file_lists <- list()
+      driver_scans <- NA_integer_
+      scans <- 0L
       testthat::local_mocked_bindings(
         reconciliation_weights = function(residuals, negative_forecast) {
           result <- original_weights(residuals, negative_forecast)
           calls[[length(calls) + 1L]] <<- list(residuals = residuals, negative_forecast = negative_forecast, weights = result)
           result
         },
-        par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
-        read_file = function(run_info, path = NULL, return_type = "df", ...) {
+        par_start = function(...) {
+          driver_scans <<- scans
+          list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+        },
+        read_file = function(run_info, path = NULL, return_type = "df", file_list = NULL, ...) {
           if (return_type %in% c("sdf", "arrow")) {
             remote_reads <<- c(remote_reads, return_type)
+            remote_file_lists <<- c(remote_file_lists, list(file_list))
             if (route == "spark-arrow") return(arrow::arrow_table(fixture$forecast))
             return(fixture$forecast)
           }
-          original_read(run_info, path = path, return_type = return_type, ...)
+          original_read(run_info, path = path, return_type = return_type, file_list = file_list, ...)
         },
         list_files = function(storage_object, path, ...) {
           if (grepl("*", path, fixed = TRUE)) listings <<- listings + 1L
@@ -2170,6 +2186,13 @@ test_that("all hierarchy routes use shared weights and preserve reconciled artif
       expect_identical(calls[[1]]$weights, calls[[2]]$weights)
       # Spark readers cannot combine typed artifacts, so preflight reads Arrow too.
       expect_identical(remote_reads, if (route == "local") character() else c("arrow", "arrow", "arrow"))
+      if (route != "local") {
+        # Spark tasks reuse the driver's file discovery instead of listing again.
+        expect_length(remote_file_lists, length(remote_reads))
+        expect_true(all(vapply(remote_file_lists, function(files) length(files) > 0L, logical(1))))
+        expect_true(all(vapply(remote_file_lists, identical, logical(1), remote_file_lists[[1]])))
+      }
+      if (route == "spark-arrow") expect_identical(driver_scans, 1L)
       expected <- if (forecast_approach == "standard_hierarchy") {
         hts::combinef(fixture$predictions, nodes = fixture$nodes, weights = calls[[1]]$weights,
           keep = "bottom", nonnegative = TRUE)
@@ -2222,13 +2245,6 @@ test_that("Spark hierarchy reads typed Parquet artifacts with simple-average row
   all_rows <- dplyr::collect(forecasts)
   expect_equal(nrow(all_rows), 2L)
   expect_setequal(all_rows$Hyperparameter_ID, c("1", "NA"))
-  # Driver preflight runs on the same lazy query without collecting rows first.
-  query <- dplyr::mutate(forecasts, Train_Test_ID = as.numeric(Train_Test_ID))
-  expect_identical(validate_best_model(query, "test"), query)
-  expect_error(
-    validate_best_model(dplyr::filter(query, Best_Model == "No"), "test"),
-    "missing a best model"
-  )
 })
 
 test_that("discontinued nodes reconcile through Agent and ordinary hierarchy routes", {
