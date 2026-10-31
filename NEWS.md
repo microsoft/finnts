@@ -29,7 +29,7 @@
 
 - Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
-  - A combo column with both missing values and the literal text `"NA"` stops with an error rather than merging them into one group.
+  - A combo column with both missing values and literal `"NA"` text now errors instead of merging them.
   - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
   - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
 - Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
