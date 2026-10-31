@@ -42,8 +42,10 @@ changing input data, running preprocessing, or saving artifacts.
 }
 \details{
 Character and factor combo boundaries are trimmed using the same
-normalization as \code{\link[=prep_data]{prep_data()}}. The caller's data is unchanged. Missing,
-blank, nonfinite, or unsupported combo labels, ambiguous \code{"--"}-joined
+normalization as \code{\link[=prep_data]{prep_data()}}. The caller's data is unchanged. Missing
+combo values form an \code{"NA"} label, as in \code{\link[=prep_data]{prep_data()}} combo names; a
+column with both a missing value and the literal text \code{"NA"} is ambiguous.
+Blank, nonfinite, or unsupported combo labels, ambiguous \code{"--"}-joined
 combo identities, invalid cleanup inputs, and an empty retained population
 produce errors.
 

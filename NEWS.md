@@ -1,4 +1,4 @@
-# finnts 0.7.0.9019 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9020 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -14,6 +14,7 @@
 - Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
   - Optionally cleans inactive series compatibly with preprocessing.
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
+  - Missing combo values form an `"NA"` label, as in `prep_data()` combo names, instead of raising an error.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
@@ -24,6 +25,10 @@
 
 ## Bug Fixes
 
+- Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
+  - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
+  - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
+  - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
 - Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
   - A numerical floor keeps inverse-MSE weights finite, including discontinued series with zero backtest targets.
   - Existing nonnegative confidence bounds and errors for nonfinite MSE are preserved.

@@ -245,10 +245,18 @@ pick_right_hierarchy <- function(input_data,
 
 #' Grouped hierarchy structure
 #'
-#' @param input_data initial historical data
+#' Builds the group matrix passed to [hts::gts()]: one row per combo variable
+#' and one column per bottom series, in the row order of `input_data`.
+#' Missing combo values are stored as the text label `"NA"`, matching the
+#' `tidyr::unite()` combo names and the hts level names (for example
+#' `Leader_NA`); `hts::combinef()` cannot reconcile `NA` group labels. The
+#' matrix keeps its original type when no value is missing.
+#'
+#' @param input_data distinct combo rows, one per bottom series
 #' @param combo_variables combo variables
 #'
-#' @return hierarchy structure
+#' @return group matrix, with rows reordered and an optional constant guard
+#'   row so [hts::gts()] builds its Total and Bottom levels
 #' @noRd
 get_grouped_nodes <- function(input_data,
                               combo_variables) {
@@ -260,6 +268,12 @@ get_grouped_nodes <- function(input_data,
     group_list <- rbind(group_list, var)
   }
   rownames(group_list) <- combo_variables
+
+  # Guarded because assigning text coerces a numeric matrix even when no
+  # element is selected.
+  if (anyNA(group_list)) {
+    group_list[is.na(group_list)] <- "NA"
+  }
 
   # Reorder rows to avoid hts::gts() / GmatrixG() dimension mismatch.
   # GmatrixG() conditionally skips adding a "Total" row when the first
