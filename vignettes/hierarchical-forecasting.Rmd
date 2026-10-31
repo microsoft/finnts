@@ -43,6 +43,10 @@ with a cleanup date it uses the existing target-sum cleanup policy and excludes
 future targets from activity. One retained series selects `bottoms_up`, and no
 retained series produces an error. Character-like labels are trimmed consistently
 with preprocessing; invalid labels and ambiguous combo identities fail explicitly.
+Missing combo values form an `NA` label, matching the `NA` text in `prep_data()`
+combo names, for both standard and grouped hierarchies. Hierarchy series names
+must stay unique after name cleanup, so combo values that differ only by
+punctuation (for example `v1.0` and `v1_0`) stop preparation with an error.
 Collect Spark data frames before detection.
 
 Detection describes observed data, not unobserved business relationships.

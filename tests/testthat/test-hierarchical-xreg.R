@@ -266,3 +266,92 @@ test_that("the candidate budget does not impose a three-column width limit", {
   data$Date <- as.Date("2026-08-01")
   expect_identical(external_regressor_mapping(data, vars, "Reg")$Var, "A---B---C---D")
 })
+
+# Build two-level monthly rows from first-level labels a and second-level labels
+# b: crossed for grouped hierarchies, or nested (b prefixed by its parent) for
+# standard ones. LevelDriver is one value per first-level label and date, so it
+# maps to column A; Target is unique per series and date. No I/O.
+hierarchy_label_input <- function(a, b, nested = FALSE) {
+  grid <- if (nested) {
+    data.frame(A = rep(a, each = length(b)),
+      B = paste0(rep(a, each = length(b)), "~", b), stringsAsFactors = FALSE)
+  } else {
+    expand.grid(A = a, B = b, stringsAsFactors = FALSE)
+  }
+  grid$id <- seq_len(nrow(grid))
+  dates <- as.Date(c("2026-06-01", "2026-07-01", "2026-08-01"))
+  data <- merge(grid, data.frame(Date = dates))
+  data$Target <- 2^(data$id - 1) * match(data$Date, dates)
+  data$LevelDriver <- 1000 * match(data$A, a) + match(data$Date, dates)
+  data$id <- NULL
+  tidyr::unite(data, "Combo", A, B, sep = "--", remove = FALSE)
+}
+
+# Prepare a two-level hierarchy with LevelDriver and return the prepared rows
+# plus the hts_info object it saved under a fresh local run.
+prep_label_hierarchy <- function(data, approach) {
+  run_info <- artifact_test_run(withr::local_tempdir(.local_envir = parent.frame()))
+  result <- prep_hierarchical_data(data, run_info, c("A", "B"), "LevelDriver", approach, 12)
+  hts_info <- readRDS(artifact_test_path(run_info, "prep_data",
+    suffix = "-hts_info", extension = "rds"))
+  list(data = result, hts_info = hts_info)
+}
+
+test_that("level drivers reach bottom series whose names start with digits", {
+  for (approach in c("grouped_hierarchy", "standard_hierarchy")) {
+    data <- hierarchy_label_input(c("2024", "2025"), c("X", "Y"),
+      nested = approach == "standard_hierarchy")
+    expect_identical(external_regressor_mapping(data, c("A", "B"), "LevelDriver")$Var, "A")
+    prepared <- prep_label_hierarchy(data, approach)
+    result <- prepared$data
+    hts_info <- prepared$hts_info
+
+    expect_false(anyNA(result$LevelDriver), info = approach)
+    expect_false(anyDuplicated(result[c("Combo", "Date")]) > 0, info = approach)
+    # Saved series names keep their existing data.frame()-style X prefix.
+    bottom_nodes <- utils::tail(hts_info$hts_combos, length(hts_info$original_combos))
+    expect_true(all(startsWith(bottom_nodes, "X2024") | startsWith(bottom_nodes, "X2025")),
+      info = approach)
+    for (i in seq_along(bottom_nodes)) {
+      expected <- data[data$Combo == hts_info$original_combos[i], c("Date", "LevelDriver")]
+      actual <- result[result$Combo == bottom_nodes[i], c("Date", "LevelDriver")]
+      expect_equal(actual$LevelDriver[order(actual$Date)],
+        expected$LevelDriver[order(expected$Date)], info = paste(approach, bottom_nodes[i]))
+    }
+  }
+})
+
+test_that("labels disambiguated by name cleanup keep distinct series", {
+  data <- hierarchy_label_input(c("A B", "A-B"), c("X", "Y"))
+  result <- prep_label_hierarchy(data, "grouped_hierarchy")$data
+  expect_false(anyDuplicated(result[c("Combo", "Date")]) > 0)
+  expect_true(all(c("A_B_X", "A_B_X_1", "A_A_B", "A_A_B_1") %in% result$Combo))
+  expect_false(anyNA(result$LevelDriver))
+  expect_equal(nrow(result), dplyr::n_distinct(result$Combo) * 3)
+})
+
+test_that("series names that collide after cleanup fail before artifacts are written", {
+  writes <- 0L
+  testthat::local_mocked_bindings(write_data = function(...) {
+    writes <<- writes + 1L
+    invisible(NULL)
+  })
+  collisions <- list(
+    list(hierarchy_label_input(c("v1.0", "v1_0"), c("X", "Y")), "grouped_hierarchy", "'v1_0_X'"),
+    list(hierarchy_label_input(c("v1.0", "v1_0"), c("X", "Y"), nested = TRUE), "standard_hierarchy", "v1_0"),
+    list(hierarchy_label_input(c("B", "A"), c("A", "B")), "grouped_hierarchy", "'B_A'")
+  )
+  for (case in collisions) {
+    expect_error(
+      prep_hierarchical_data(case[[1]], artifact_test_run(withr::local_tempdir()),
+        c("A", "B"), NULL, case[[2]], 12),
+      "map to the same name", info = case[[2]]
+    )
+    expect_error(
+      prep_hierarchical_data(case[[1]], artifact_test_run(withr::local_tempdir()),
+        c("A", "B"), NULL, case[[2]], 12),
+      case[[3]], fixed = TRUE, info = case[[2]]
+    )
+  }
+  expect_identical(writes, 0L)
+})

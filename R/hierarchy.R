@@ -1342,14 +1342,15 @@ external_regressor_mapping <- function(data,
 # Preserve bottom observations and missing bottoms; aggregate missing-only dates
 # remain NA. source_level encodes column names with "---", not source values;
 # tuple identity is assigned by an exact join. Inputs use the exact column order
-# of bottom_level_tbl. No writes.
+# of bottom_level_tbl. Output Combo names come from hts_node_names(), matching
+# sum_hts_data() so regressors join every node. No writes.
 aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
                                           forecast_approach, frequency_number,
                                           source_level, regressor) {
   object <- get_hts(stats::ts(as.matrix(bottom_level_tbl[, -1, drop = FALSE]),
     frequency = frequency_number), nodes, forecast_approach)
   membership <- hts::smatrix(object)
-  node_names <- snakecase::to_any_case(colnames(hts::allts(object)), case = "none")
+  node_names <- hts_node_names(colnames(hts::allts(object)))
   bottom_names <- colnames(bottom_level_tbl)[-1]
   source_columns <- strsplit(source_level, "---", fixed = TRUE)[[1]]
   source_keys <- dplyr::distinct(input_data[, source_columns, drop = FALSE])
@@ -1382,6 +1383,45 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
   dplyr::bind_rows(aggregates, bottoms)
 }
 
+#' Name hierarchy series as finnts saves them
+#'
+#' Converts the column labels of an hts/gts object (for example `Total`,
+#' `Leader/A`, or a bottom combo such as `2024--X`) into the series names used
+#' for `hts_combos`, hierarchical data, and regressor joins. Labels are made
+#' syntactic and unique with [make.names()], exactly as `data.frame()` does, and
+#' then converted with `snakecase::to_any_case(case = "none")`, so existing
+#' names such as `X2024_X` are unchanged. Every caller must use this helper so
+#' all hierarchy tables agree on series names.
+#'
+#' @param hts_labels character vector of `colnames(hts::allts(object))`, in
+#'   hierarchy order
+#'
+#' @return character vector of unique series names in the same order. Errors,
+#'   listing up to five conflicts, when cleanup maps different series to one name
+#'   (for example labels that differ only by `.` versus `_`), because such
+#'   series would otherwise be silently merged. No I/O.
+#' @noRd
+hts_node_names <- function(hts_labels) {
+  node_names <- snakecase::to_any_case(make.names(hts_labels, unique = TRUE), case = "none")
+  duplicate_names <- unique(node_names[duplicated(node_names)])
+
+  if (length(duplicate_names) > 0) {
+    conflicts <- vapply(duplicate_names, function(name) {
+      paste0(paste0("'", hts_labels[node_names == name], "'", collapse = " and "), " -> '", name, "'")
+    }, character(1))
+
+    stop(
+      "Hierarchy series names must stay unique after name cleanup, but these series map to the same name: ",
+      paste(utils::head(conflicts, 5), collapse = "; "), ". ",
+      "Rename the combo values so they differ by more than punctuation, and so no combo value ",
+      "combined with its column name matches another series name.",
+      call. = FALSE
+    )
+  }
+
+  node_names
+}
+
 #' Create hierarchical aggregations
 #'
 #' @param bottom_level_tbl bottom level table
@@ -1391,7 +1431,9 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
 #' @param frequency_number frequency number
 #' @param return_type return type
 #'
-#' @return data frame of hierarchical aggregations
+#' @return data frame of hierarchical aggregations with series names from
+#'   `hts_node_names()`, or the final hts node structure when `return_type` is
+#'   `"nodes"`
 #' @noRd
 sum_hts_data <- function(bottom_level_tbl,
                          hts_nodes,
@@ -1419,9 +1461,12 @@ sum_hts_data <- function(bottom_level_tbl,
     return(hts_nodes_final)
   }
 
-  hierarchical_tbl <- hierarchical_object %>%
-    hts::allts() %>%
+  all_series <- hts::allts(hierarchical_object)
+  node_names <- hts_node_names(colnames(all_series))
+
+  hierarchical_tbl <- all_series %>%
     data.frame() %>%
+    stats::setNames(node_names) %>%
     tibble::add_column(
       Date = Date,
       .before = 1
@@ -1429,8 +1474,7 @@ sum_hts_data <- function(bottom_level_tbl,
     tidyr::pivot_longer(!Date,
       names_to = "Combo",
       values_to = sum_var
-    ) %>%
-    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+    )
 
   return(hierarchical_tbl)
 }

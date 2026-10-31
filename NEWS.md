@@ -29,6 +29,11 @@
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
   - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
   - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
+- Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
+  - Previously these series silently received missing regressor values.
+  - Series names are unchanged.
+- Hierarchical preparation now stops with a clear error when two series map to the same name after name cleanup.
+  - For example, combo values differing only by `.` versus `_`. Such series were previously merged silently.
 - Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
   - A numerical floor keeps inverse-MSE weights finite, including discontinued series with zero backtest targets.
   - Existing nonnegative confidence bounds and errors for nonfinite MSE are preserved.
