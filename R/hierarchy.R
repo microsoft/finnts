@@ -1391,15 +1391,17 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
 #' syntactic and unique with [make.names()], exactly as `data.frame()` does, and
 #' then converted with `snakecase::to_any_case(case = "none")`, so existing
 #' names such as `X2024_X` are unchanged. Every caller must use this helper so
-#' all hierarchy tables agree on series names.
+#' all hierarchy tables agree on series names. Labels that [make.names()]
+#' already maps to one string (for example `A B` and `A-B`) keep the existing
+#' behavior: later ones get a numeric suffix (`_1`) in hierarchy order.
 #'
 #' @param hts_labels character vector of `colnames(hts::allts(object))`, in
 #'   hierarchy order
 #'
 #' @return character vector of unique series names in the same order. Errors,
-#'   listing up to five conflicts, when cleanup maps different series to one name
-#'   (for example labels that differ only by `.` versus `_`), because such
-#'   series would otherwise be silently merged. No I/O.
+#'   listing up to five conflicts, when snake-case cleanup maps different series
+#'   to one name (for example labels that differ only by `.` versus `_`), because
+#'   such series would otherwise be silently merged. No I/O.
 #' @noRd
 hts_node_names <- function(hts_labels) {
   node_names <- snakecase::to_any_case(make.names(hts_labels, unique = TRUE), case = "none")
