@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9019</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
       </span>
     </div>
 
@@ -160,7 +160,21 @@ cleanup policy and excludes future targets from activity. One retained
 series selects <code>bottoms_up</code>, and no retained series produces
 an error. Character-like labels are trimmed consistently with
 preprocessing; invalid labels and ambiguous combo identities fail
-explicitly. Collect Spark data frames before detection.</p>
+explicitly. Missing combo values form an <code>NA</code> label, matching
+the <code>NA</code> text in <code><a href="../reference/prep_data.html">prep_data()</a></code> combo names, for
+both standard and grouped hierarchies. Grouped hierarchies and detection
+also count numeric <code>NaN</code> values as missing. A column that
+holds both missing values and the literal text <code>NA</code>, or both
+numeric <code>NA</code> and <code>NaN</code>, is ambiguous: detection
+and grouped hierarchies stop with an error, so give one of them a
+distinct label. Hierarchy series names must stay unique after name
+cleanup. Combo values that become identical only after cleanup (for
+example <code>v1.0</code> and <code>v1_0</code>) stop preparation with
+an error. Values that R’s name cleanup already treats as identical (for
+example <code>A B</code> and <code>A-B</code>) keep separate series,
+with a numeric suffix such as <code>_1</code> assigned in input order,
+so keep such labels distinct to get stable series names. Collect Spark
+data frames before detection.</p>
 <p>Detection describes observed data, not unobserved business
 relationships. Inspect <code>hierarchy_order</code> and
 <code>conflicts</code> when validating the result. Existing explicit

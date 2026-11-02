@@ -25,7 +25,7 @@ writing anything to disk."><meta property="og:image" content="https://microsoft.
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9019</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
       </span>
     </div>
 
@@ -192,8 +192,10 @@ values.</p></dd>
 
 <dt id="arg-forecast-approach">forecast_approach<a class="anchor" aria-label="anchor" href="#arg-forecast-approach"></a></dt>
 <dd><p>Forecast approach, as passed to <code><a href="prep_data.html">prep_data()</a></code>.
-It is validated but does not change the checks: every approach expects
-bottom-level series, so totals mixed with their parts fail <code>P7</code> for all.</p></dd>
+It only changes <code>R12</code>, which builds the hierarchy's series names and maps
+external regressors for standard and grouped hierarchies. Every approach
+expects bottom-level series, so totals mixed with their parts fail <code>P7</code>
+for all.</p></dd>
 
 
 <dt id="arg-parallel-processing">parallel_processing<a class="anchor" aria-label="anchor" href="#arg-parallel-processing"></a></dt>
@@ -227,7 +229,7 @@ history and future row counts, <code>date_type</code> and <code>forecast_horizon
 </ul></div>
     <div id="details">
     <h2>Details</h2>
-    <p>Input rules <code>R1</code>-<code>R8</code>, <code>R10</code> and <code>R11</code> reuse the checks in <code><a href="prep_data.html">prep_data()</a></code>,
+    <p>Input rules <code>R1</code>-<code>R8</code> and <code>R10</code>-<code>R12</code> reuse the checks in <code><a href="prep_data.html">prep_data()</a></code>,
 so a failure here carries the same message <code><a href="prep_data.html">prep_data()</a></code> would raise. <code>R9</code>
 is stricter than <code><a href="prep_data.html">prep_data()</a></code>: it also checks that <code>date_type</code> matches the
 spacing of the dates. Preparation checks
@@ -247,6 +249,12 @@ automatically is returned with status <code>"report"</code>.</p>
 <li><p><code>R9</code> <code>date_type</code> is valid and is not finer or coarser than the data.</p></li>
 <li><p><code>R10</code> <code>fiscal_year_start</code> is a number from 1 to 12.</p></li>
 <li><p><code>R11</code> Spark tables run with Spark parallel processing.</p></li>
+<li><p><code>R12</code> standard and grouped hierarchies can name every series and map every
+external regressor: no grouped combo column mixes missing values with the
+text <code>"NA"</code> or numeric <code>NA</code> with <code>NaN</code>, no two series map to the same name
+after name cleanup, at least two series remain after <code>combo_cleanup_date</code>,
+and no external regressor has <code>NaN</code>, infinite or conflicting values or an
+ambiguous source level. Always passes for <code>bottoms_up</code>.</p></li>
 <li><p><code>P1</code> history end date and the rows treated as future periods.</p></li>
 <li><p><code>P2</code> external regressors with future values and their coverage.</p></li>
 <li><p><code>P3</code> missing periods that preparation pads.</p></li>
@@ -279,7 +287,7 @@ after <code>R11</code> is checked.</p>
 <span class="r-in"><span><span class="va">result</span><span class="op">$</span><span class="va">passed</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] TRUE</span>
 <span class="r-in"><span><span class="va">result</span><span class="op">$</span><span class="va">checks</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 19 × 4</span></span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #949494;"># A tibble: 20 × 4</span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    Rule  Description                                              Status Message</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span> <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>                                                    <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  <span style="color: #949494; font-style: italic;">&lt;chr&gt;</span>  </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;"> 1</span> R1    Required columns exist                                   pass   Passed.</span>
@@ -293,14 +301,15 @@ after <code>R11</code> is checked.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;"> 9</span> R9    date_type is valid and matches the data frequency        pass   260 of…</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">10</span> R10   fiscal_year_start is a number from 1 to 12               pass   Passed.</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">11</span> R11   Spark tables use Spark parallel processing               pass   Passed.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">12</span> P1    History end date and future rows                         pass   Histor…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">13</span> P2    Future external regressor values                         pass   No ext…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">14</span> P3    Missing periods padded during preparation                pass   No mis…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">15</span> P4    Missing and non-finite target values                     pass   No mis…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">16</span> P5    Dates align to the date_type grid                        pass   Passed.</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">17</span> P6    Series removed by combo_cleanup_date                     pass   combo_…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">18</span> P7    No total series mixed with the series they sum           pass   No tot…</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">19</span> P8    History supports the forecast horizon and back tests     pass   13 bac…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">12</span> R12   Hierarchy series and regressors can be prepared          pass   Not ap…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">13</span> P1    History end date and future rows                         pass   Histor…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">14</span> P2    Future external regressor values                         pass   No ext…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">15</span> P3    Missing periods padded during preparation                pass   No mis…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">16</span> P4    Missing and non-finite target values                     pass   No mis…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">17</span> P5    Dates align to the date_type grid                        pass   Passed.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">18</span> P6    Series removed by combo_cleanup_date                     pass   combo_…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">19</span> P7    No total series mixed with the series they sum           pass   No tot…</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> <span style="color: #BCBCBC;">20</span> P8    History supports the forecast horizon and back tests     pass   13 bac…</span>
 </code></pre></div>
     </div>
   </div>

@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9019</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9019" id="finnts-0709019-development-version">finnts 0.7.0.9019 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709019-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9020" id="finnts-0709020-development-version">finnts 0.7.0.9020 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709020-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9019">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9019"></a></h3>
+<h3 id="improvements-0-7-0-9020">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9020"></a></h3>
 <ul><li>
 <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> creates reusable local/global forecasting models from business rules, validated against worked examples.
 <ul><li>Approval is manual in interactive sessions or automatic.</li>
@@ -119,6 +119,8 @@
 <li>Added <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> for explicit, read-only standard/grouped selection using nesting checks.
 <ul><li>Optionally cleans inactive series compatibly with preprocessing.</li>
 <li>Agent detection shares this structural analysis; explicit <code><a href="../reference/prep_data.html">prep_data()</a></code> choices are unchanged.</li>
+<li>Missing combo values form an <code>"NA"</code> label, as in <code><a href="../reference/prep_data.html">prep_data()</a></code> combo names, instead of raising an error.</li>
+<li>A column with both missing values and the literal text <code>"NA"</code> raises an error instead of merging them.</li>
 </ul></li>
 <li>Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.</li>
 <li>Added the local <code>naive</code> model, repeating the last observed value, to default standard runs and every Agent iteration.</li>
@@ -127,12 +129,26 @@
 <li>Added <code><a href="../reference/validate_prepared_input.html">validate_prepared_input()</a></code> to check input data against Finn’s preparation rules without starting a run or writing files.
 <ul><li>Reports every failed rule using the messages <code><a href="../reference/prep_data.html">prep_data()</a></code> would raise, instead of stopping at the first.</li>
 <li>Also checks that <code>date_type</code> matches the date spacing.</li>
+<li>For hierarchies, also checks every series and external regressor can be prepared, with <code><a href="../reference/prep_data.html">prep_data()</a></code> errors.</li>
 <li>Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.</li>
 </ul></li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9019">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9019"></a></h3>
-<ul><li>Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
+<h3 id="bug-fixes-0-7-0-9020">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9020"></a></h3>
+<ul><li>Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
+<ul><li>Missing values form the <code>"NA"</code> group already used in combo and hierarchy names, so series names and hashes are unchanged.</li>
+<li>A combo column with both missing values and literal <code>"NA"</code> text now errors instead of merging them.</li>
+<li>Previously reconciliation failed with <code>'i' and 'j' must not contain NA</code> after every model had trained.</li>
+<li>Runs that already saved a hierarchy with missing labels need a new run or <code>overwrite = TRUE</code>.</li>
+</ul></li>
+<li>Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
+<ul><li>Previously these series silently received missing regressor values.</li>
+<li>Series names are unchanged.</li>
+</ul></li>
+<li>Hierarchical preparation now stops with a clear error when two series map to the same name after name cleanup.
+<ul><li>For example, combo values differing only by <code>.</code> versus <code>_</code>. Such series were previously merged silently.</li>
+</ul></li>
+<li>Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
 <ul><li>A numerical floor keeps inverse-MSE weights finite, including discontinued series with zero backtest targets.</li>
 <li>Existing nonnegative confidence bounds and errors for nonfinite MSE are preserved.</li>
 </ul></li>
